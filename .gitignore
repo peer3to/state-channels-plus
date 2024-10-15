@@ -1,0 +1,13 @@
+node_modules
+.vscode
+.env
+coverage
+coverage.json
+typechain
+contracts.json
+dist
+
+#Hardhat files
+cache
+artifacts
+typechain-types

@@ -1,0 +1,76 @@
+.App {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background-color: #f0f0f0;
+}
+
+.game {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* Center all content */
+  justify-content: center; /* Center vertically */
+  text-align: center; /* Center align text */
+  width: 100%; /* Ensure it takes full width */
+}
+
+.board-container {
+  display: flex;
+  flex-direction: column; /* Stack timer above the board */
+  align-items: center; /* Center board and timer */
+  justify-content: center;
+  margin-top: 20px; /* Adds some spacing from other elements */
+}
+
+.board-row {
+  display: flex;
+}
+
+.square {
+  width: 60px;
+  height: 60px;
+  background-color: #fff;
+  border: 1px solid #999;
+  font-size: 24px;
+  font-weight: bold;
+  cursor: pointer;
+  outline: none;
+}
+
+.square:focus {
+  outline: none;
+}
+
+.game-info {
+  font-size: 24px;
+  margin-bottom: 20px; /* Adds spacing below the timer */
+}
+
+.buttons-container {
+  display: flex;
+  justify-content: center;
+  gap: 20px; /* Adds space between the buttons */
+  margin-top: 20px; /* Adds some space above the buttons */
+}
+
+button {
+  padding: 10px 20px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+input[type="text"] {
+  padding: 15px; /* Increase padding for a larger input field */
+  margin: 20px 0;
+  font-size: 18px; /* Increase font size */
+  width: 300px; /* Make the input wider */
+  border-radius: 8px; /* Rounded corners for a modern look */
+  border: 1px solid #ccc; /* Light gray border */
+  text-align: center; /* Center text inside the input */
+}
