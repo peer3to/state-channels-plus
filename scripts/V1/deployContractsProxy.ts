@@ -1,19 +1,10 @@
 import { ethers } from "hardhat";
-import {
-    AddressLike,
-    Wallet,
-    NonceManager,
-    Signer,
-    JsonRpcProvider
-} from "ethers";
-import path from "path";
+import { Wallet, NonceManager, Signer } from "ethers";
 import DeployUtils from "../../src/utils/DeployUtils";
-// import dotenv from "dotenv";
-import { MathStateChannelManagerProxy } from "../../typechain-types";
+import dotenv from "dotenv";
 
-let PROVIDER_URL = "http://localhost:8545";
-// dotenv.config();
-// PROVIDER_URL = process.env.PROVIDER_URL || "http://localhost:8545";
+dotenv.config();
+const PROVIDER_URL = process.env.PROVIDER_URL || "http://localhost:8545";
 
 const getRandomSigner = () => {
     let randomSinger: Signer = Wallet.createRandom(

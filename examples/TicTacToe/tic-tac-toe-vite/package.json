@@ -8,26 +8,25 @@
       "width": 550
     },
     "links": [
-      "http://localhost:8545",
-      "http://127.0.0.1:8545",
-      "https://fraa-dancebox-3126-rpc.a.dancebox.tanssi.network/"
     ]
   },
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "install-all":"yarn && cd hyperswarm && yarn && cd ..",
     "dev": "vite",
     "build": "node ./pre-build.js && tsc -b && vite build && node ./build.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@peer3/state-channel-plus": "^0.0.1",
     "ethers": "^6.13.2",
+    "fs-extra": "^11.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "symlink-dir": "^6.0.2",
-    "@peer3/state-channel-plus": "^0.0.1"
+    "symlink-dir": "^6.0.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.0",

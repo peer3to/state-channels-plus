@@ -23,8 +23,6 @@
     "hardhat-gas-reporter": "^1.0.8",
     "solidity-coverage": "^0.8.1",
     "ts-node": "^10.9.2",
-    "typescript": "^5.6.2",
-    "@peer3/state-channel-plus": "^0.0.1"
-
+    "typescript": "^5.6.2"
   }
 }

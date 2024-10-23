@@ -2,6 +2,7 @@ import fs from "fs";
 import path, { dirname } from "path";
 import symlinkDir from "symlink-dir";
 import { fileURLToPath } from "url";
+import getProviderUrl from "./getProviderUrl.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -24,6 +25,15 @@ async function main() {
   // Copy package.json to build directory
   fs.copyFileSync("package.json", "dist/package.json");
 
+  // Append provider url to pear.links within package.json
+  const packageJsonPath = path.join(__dirname, "dist", "package.json");
+  const packageJsonContent = fs.readFileSync(packageJsonPath, "utf8");
+  const packageJson = JSON.parse(packageJsonContent);
+  if (Array.isArray(packageJson.pear?.links)) {
+    packageJson.pear.links.push(getProviderUrl());
+  }
+  fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2), "utf8");
+  
   //copy injectHyperswarm.js to build/static/js
   fs.copyFileSync("injectHyperswarm.js", "dist/assets/injectHyperswarm.min.js");
 

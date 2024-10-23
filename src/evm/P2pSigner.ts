@@ -126,7 +126,6 @@ class P2pSigner implements Signer {
     setChannelId(channelId: BytesLike) {
         this.p2pManager.stateManager.setChannelId(channelId);
     }
-    //TODO - think does this async maybe break something - for now everything is fine
     public async confirmBlock(signedBlock: SignedBlockStruct) {
         let block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
         let confirmedBlock = await EvmUtils.signBlock(block, this.signer);
