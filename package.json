@@ -2,7 +2,7 @@
   "name": "@peer3/state-channels-plus",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "repository": {
     "type": "git",
     "url": "https://github.com/peer3to/state-channels-plus"

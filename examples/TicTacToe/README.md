@@ -3,7 +3,7 @@
 This is an implementation of Tic-Tac-Toe. It showcases how to build a typical consumer application with the SDK.
 
 The [contracts](./contracts/) hold the state machine logic that is ultimately enforced by a blockchain.
-The [user interface](./tic-tac-toe-vite/) is built with React and utilizes the typescript portion of the SDK. 
+The [user interface](./tic-tac-toe-vite/) is built with React and utilizes the TypeScript portion of the SDK. 
 
 ## Installation
 ```shell

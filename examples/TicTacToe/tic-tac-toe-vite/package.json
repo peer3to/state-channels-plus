@@ -7,21 +7,20 @@
       "height": 600,
       "width": 550
     },
-    "links": [
-    ]
+    "links": []
   },
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "install-all":"yarn && cd hyperswarm && yarn && cd ..",
+    "install-all": "yarn && cd hyperswarm && yarn && cd ..",
     "dev": "vite",
     "build": "node ./pre-build.js && tsc -b && vite build && node ./build.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@peer3/state-channel-plus": "^0.0.1",
+    "@peer3/state-channels-plus": "^0.0.5",
     "ethers": "^6.13.2",
     "fs-extra": "^11.2.0",
     "react": "^18.3.1",

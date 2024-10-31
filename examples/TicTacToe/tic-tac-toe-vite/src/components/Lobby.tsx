@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import Board from "./Board";
 import TempSingleton from "../stateChannel/TempSingleton";
 import Account from "./Account";
-import { EvmUtils } from "@peer3/state-channel-plus";
+import { EvmUtils } from "@peer3/state-channels-plus";
 
 interface LobbyProps {
   gameId: string;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.8;
 
-import "@peer3/state-channel-plus/contracts/V1/AStateMachine.sol";
+import "@peer3/state-channels-plus/contracts/V1/AStateMachine.sol";
 
 enum Cell {
     None,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.8;
 
-import "@peer3/state-channel-plus/contracts/V1/StateChannelDiamondProxy/AStateChannelManagerProxy.sol";
+import "@peer3/state-channels-plus/contracts/V1/StateChannelDiamondProxy/AStateChannelManagerProxy.sol";
 import "./TicTacToeStateMachine.sol";
 
 // import "../StateChannelDiamondProxy/StateChannelUtilLibrary.sol";
@@ -28,7 +28,7 @@ contract TicTacToeStateChannelManagerProxy is AStateChannelManagerProxy {
         require(
             openChannelData.length > 0 &&
                 openChannelData.length == signatures.length,
-            "MathStateChannelManager: openChannel (openChannel <> signatures) incorect length"
+            "TicTacToeStateChannelManager: openChannel (openChannel <> signatures) incorect length"
         );
 
         JoinChannel[] memory joinChannels = new JoinChannel[](
@@ -57,33 +57,33 @@ contract TicTacToeStateChannelManagerProxy is AStateChannelManagerProxy {
 
         require(
             isValid,
-            "MathStateChannelManager: openChannel (openChannel <> signatures) singatures don't match"
+            "TicTacToeStateChannelManager: openChannel (openChannel <> signatures) singatures don't match"
         );
 
         require(
             channelId != bytes32(0),
-            "MathStateChannelManager: openChannel channelId cannot be 0x0"
+            "TicTacToeStateChannelManager: openChannel channelId cannot be 0x0"
         );
 
         require(
             !isChannelOpen(channelId),
-            "MathStateChannelManager: openChannel - channel already open"
+            "TicTacToeStateChannelManager: openChannel - channel already open"
         );
         for (uint i = 0; i < joinChannels.length; i++) {
             require(
                 channelId == joinChannels[i].channelId,
-                "MathStateChannelManager: openChannel channelId doesn't match"
+                "TicTacToeStateChannelManager: openChannel channelId doesn't match"
             );
 
             require(
                 joinChannels[i].amount > 0,
-                "MathStateChannelManager: openChannel amount must be greater than 0"
+                "TicTacToeStateChannelManager: openChannel amount must be greater than 0"
             );
             //TODO process deposits (this is composable with the global state (other contracts))
 
             require(
                 joinChannels[i].deadlineTimestamp > block.timestamp,
-                "MathStateChannelManager: openChannel timestampDeadline must be in the future"
+                "TicTacToeStateChannelManager: openChannel timestampDeadline must be in the future"
             );
         }
         //AStateMachine genesis state
@@ -99,10 +99,4 @@ contract TicTacToeStateChannelManagerProxy is AStateChannelManagerProxy {
         genesisTimestamps[channelId][0] = block.timestamp;
         emit SetState(channelId, genesisStateEcoded, 0, block.timestamp);
     }
-
-    function removeParticipant(
-        bytes32 channelId,
-        bytes[] calldata removeParticipantData,
-        bytes[] calldata signatures
-    ) public virtual override {}
 }

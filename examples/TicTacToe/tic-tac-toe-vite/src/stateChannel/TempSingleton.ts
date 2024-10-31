@@ -5,7 +5,7 @@ import {
     AStateChannelManagerProxy,
     EvmUtils,
     P2pEventHooks
-} from "@peer3/state-channel-plus";
+} from "@peer3/state-channels-plus";
 import { Signer } from "ethers";
 import {
     getDltContracts,

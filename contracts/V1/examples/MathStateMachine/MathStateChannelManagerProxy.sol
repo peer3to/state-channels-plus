@@ -98,10 +98,4 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
         genesisTimestamps[channelId][0] = block.timestamp;
         emit SetState(channelId, genesisStateEcoded, 0, block.timestamp);
     }
-
-    function removeParticipant(
-        bytes32 channelId,
-        bytes[] calldata removeParticipantData,
-        bytes[] calldata signatures
-    ) public virtual override {}
 }

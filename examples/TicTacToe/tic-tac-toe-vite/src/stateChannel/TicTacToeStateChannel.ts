@@ -4,7 +4,7 @@ import {
     P2pEventHooks,
     P2pSigner,
     EvmUtils
-} from "@peer3/state-channel-plus";
+} from "@peer3/state-channels-plus";
 import {
     TicTacToeStateChannelManagerProxy,
     TicTacToeStateMachine,

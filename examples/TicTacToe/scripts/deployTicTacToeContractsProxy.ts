@@ -1,6 +1,6 @@
 import { ethers } from "hardhat";
 import { Wallet, NonceManager, Signer } from "ethers";
-import { DeployUtils } from "@peer3/state-channel-plus";
+import { DeployUtils } from "@peer3/state-channels-plus";
 import dotenv from "dotenv";
 import {
     TicTacToeStateChannelManagerProxy,

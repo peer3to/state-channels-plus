@@ -13,6 +13,7 @@ We recommend waiting for the Full Feature Set before using it in production.
 - [Examples](#examples)
 - [Run Tests](#run-tests)
 - [Get In Touch](#contact)
+- [Docs (MFS)](./docs/mfsDocs.md)
 - [License](#license)
 
 ## Videos
@@ -33,7 +34,7 @@ We recommend watching our [tech explanation video](https://www.youtube.com/watch
 While you can do general (arbitrary) execution, the SDK requires the state machines to implement a base contract [AStateMachine](./contracts/V1/AStateMachine.sol).
 The implemented contract executes p2p with shared security enforced by a blockchain, concretely by a StateChannelManager contract that extends [AStateChannelManager](./contracts/V1/StateChannelDiamondProxy/AStateChannelManagerProxy.sol).
 
-The typescript part of the SDK currently builds on top of [ethers](https://github.com/ethers-io/ethers.js).
+The TypeScript part of the SDK currently builds on top of [ethers](https://github.com/ethers-io/ethers.js).
 
 The SDK abstracts away most of the complexities of the system and is designed to have the same development experience as if the contracts were executing on-chain. It takes an ethers contract instance and enshrines it during [setup](./src/evm/EvmStateMachine.ts#205). The enshrined contract has the same type and functionality as the original contract, but it executes p2p. The setup also wraps the ethers signer by giving it more functionality that's used within the system.
 

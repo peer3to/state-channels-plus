@@ -74,14 +74,17 @@ abstract contract AStateMachine {
         Transaction calldata transaction
     ) external _nonReentrant returns (bool) {
         _tx = transaction;
-        (bool success, bytes memory result) = address(this).call(transaction.body.data);
+        (bool success, bytes memory result) = address(this).call(
+            transaction.body.data
+        );
         // emit TxExecutedA(success, getState());
-        if(!success) {
-            if(result.length == 0) revert("AStateMachine - Call failed - result lenght 0");
+        if (!success) {
+            if (result.length == 0)
+                revert("AStateMachine - Call failed - result lenght 0");
             assembly {
-                    let returndata_size := mload(result)
-                    revert(add(32, result), returndata_size)
-                }
+                let returndata_size := mload(result)
+                revert(add(32, result), returndata_size)
+            }
         }
         return success;
     }

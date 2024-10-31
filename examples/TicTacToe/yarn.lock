@@ -971,10 +971,10 @@
   resolved "https://registry.yarnpkg.com/@openzeppelin/contracts/-/contracts-5.0.2.tgz#b1d03075e49290d06570b2fd42154d76c2a5d210"
   integrity sha512-ytPc6eLGcHHnapAZ9S+5qsdomhjo6QBHTDRRBFfTxXIpsicMhVPouPgmUPebZZZGX7vt9USA+Z+0M0dSVtSUEA==
 
-"@peer3/state-channel-plus@^0.0.1":
-  version "0.0.1"
-  resolved "https://registry.yarnpkg.com/@peer3/state-channel-plus/-/state-channel-plus-0.0.1.tgz#de5f8adabbcf8df73d0f164bb5ab8d0a7f756cf2"
-  integrity sha512-1gYb7exvOE9oX28AtO1QfLU0fphvEPp/SRjJT9+K8iIpr+JZpbjdfuVI7aLEu/3HoGGvcdRB4tLeCLjuuT4W7w==
+"@peer3/state-channels-plus@^0.0.5":
+  version "0.0.5"
+  resolved "https://registry.yarnpkg.com/@peer3/state-channels-plus/-/state-channels-plus-0.0.5.tgz#e1e85985396c0e4de750e42a377c4365a34fab2b"
+  integrity sha512-XSPF1r9OXYnlsybX7/h3X4pK05yx2eBIGqGwgbgo2ppashlkxddjZX9NAlRVwq8HT/64EQN0vGpKBgITJ07veA==
   dependencies:
     "@ethereumjs/evm" "^3.1.0"
     "@nomicfoundation/hardhat-toolbox" "^4.0.0"
