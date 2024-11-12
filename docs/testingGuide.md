@@ -84,5 +84,5 @@ Networking, discovery, p2p state machine replication, agreement tracking, disput
 To run these tests:
 
 ```shell
-yarn hardhat test test/V1/DiamondProxy/DisputeManager/Timeout.test.ts
+yarn hardhat test test/V1/EvmStateMachine.test.ts
 ```
