@@ -104,10 +104,12 @@ class StateManager {
     public getNextTransactionCnt(): number {
         return this.agreementManager.getNextTransactionCnt();
     }
+    //Triggered by the On-chain Event Listener when a dispute is emitted on-chain
     public async onDisputeUpdate(dispute: DisputeStruct) {
         // console.log("StateManager - onDisputeUpdate", dispute);
         this.disputeHandler.onDispute(dispute);
     }
+    //Triggered by the On-chain Event Listener when block calldata is posted on-chain
     public async collectOnChainBlock(
         signedBlock: SignedBlockStruct,
         timestamp: BigNumberish
@@ -154,6 +156,12 @@ class StateManager {
             if (flag == ExecutionFlags.DISPUTE) break; //TODO! - think about this
         }
     }
+    /**
+     * Triggered by the On-chain Event Listener when a new state is set on-chain
+     * @param encodedState - Encoded state of the state machine
+     * @param _forkCnt - new fork count
+     * @param _timestamp - on-chain timestamp
+     */
     public async setState(
         encodedState: string,
         _forkCnt: BigNumberish,
@@ -176,6 +184,7 @@ class StateManager {
         await this.onSuccessCommon();
     }
 
+    // Passes the signedBlock through a verification pipeline and returns an execution flag based on the outcome
     public async onSignedBlock(
         signedBlock: SignedBlockStruct
     ): Promise<ExecutionFlags> {
@@ -322,7 +331,7 @@ class StateManager {
             this.mutex.unlock();
         }
     }
-
+    // Passes the block confirmation through a verification pipeline and returns an execution flag based on the outcome
     public async onBlockConfirmation(
         originalSignedBlock: SignedBlockStruct,
         confirmationSignature: BytesLike
@@ -406,7 +415,7 @@ class StateManager {
             );
         }
     }
-
+    //Aplies a transaction to the state machine and returns the encoded state with a success callback
     public async applyTransaction(transaction: TransactionStruct): Promise<{
         success: boolean;
         encodedState: string;
@@ -421,6 +430,7 @@ class StateManager {
         };
     }
 
+    // Used when authoring a block - Ecxecutes the transaction and returns a signed block
     public async playTransaction(
         tx: TransactionStruct
     ): Promise<SignedBlockStruct> {
@@ -496,6 +506,7 @@ class StateManager {
         }
     }
 
+    // returns participants who haven't signed the block
     public async getPlayersWhoHaventSignedBlock(
         block: BlockStruct
     ): Promise<AddressLike[]> {
@@ -565,7 +576,7 @@ class StateManager {
         }
         return ExecutionFlags.SUCCESS;
     }
-
+    // Checks does the block timestamp satisfy the invariant by taking into account on-chain calldata posted. This is used for the grant, but we have a better solution for the full feature set.
     private async isGoodTimestampNonDeterministic(
         block: BlockStruct
     ): Promise<boolean> {
@@ -605,6 +616,7 @@ class StateManager {
             this.timeConfig.chainFallbackTime
         );
     }
+    // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute
     private async tryTimeoutParticipant(
         forkCnt: BigNumberish,
         transactionCnt: BigNumberish,
@@ -672,6 +684,7 @@ class StateManager {
             );
         }, this.getTimeoutWaitTimeSeconds() * 1000);
     }
+    // Helper function that takes appropriate action on the signed block based on the execution flag and agreement flag
     private async processExecutionDecision(
         signedBlock: SignedBlockStruct,
         executionFlag: ExecutionFlags,
@@ -722,7 +735,7 @@ class StateManager {
                 );
         }
     }
-
+    // Helper function that takes appropriate action on the block condirmation based on the execution flag and agreement flag
     private async processConfirmationDecision(
         originalSignedBlock: SignedBlockStruct,
         confirmationSignature: SignatureLike,

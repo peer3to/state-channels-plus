@@ -60,12 +60,13 @@ class DisputeHandler {
 
     public async onDispute(dispute: DisputeStruct): Promise<void> {
         this.setForkDisputed(Number(dispute.forkCnt));
-        let success = this.rechallengeRecusrisve(dispute);
+        let success = this.rechallengeRecursive(dispute);
         if (!success)
             throw new Error(
                 "DisputeHandler - onDispute - rechallenge failed - internal error"
             );
     }
+    //Creates a dispute based on the generated proofs or optimistically timeouts (folds) the provided participant
     public async createDispute(
         forkCnt: BigNumberish,
         foldedParticipant: AddressLike,
@@ -121,13 +122,14 @@ class DisputeHandler {
                 "DisputeHandler - createDispute - no dispute created"
             );
         }
-        let success = await this.rechallengeRecusrisve(newDispute);
+        let success = await this.rechallengeRecursive(newDispute);
         if (!success)
             throw new Error(
                 "DisputeHandler - createDispute - rechallenge failed - internal error"
             );
     }
 
+    // Creates a FoldRechallenge proof for the provided forkCnt and transactionCnt or undefined if the block is not signed by everyone
     public createFoldRechallengeProof(
         forkCnt: BigNumberish,
         transactionCnt: BigNumberish
@@ -174,7 +176,7 @@ class DisputeHandler {
         this.diputes.set(forkCnt, dispute);
         return true;
     }
-    private async rechallengeRecusrisve(
+    private async rechallengeRecursive(
         dispute: DisputeStruct
     ): Promise<boolean> {
         let forkCnt = Number(dispute.forkCnt);
@@ -214,9 +216,10 @@ class DisputeHandler {
             dispute.channelId
         );
         if (newDispute.challengeCnt == dispute.challengeCnt) return false;
-        return await this.rechallengeRecusrisve(newDispute);
+        return await this.rechallengeRecursive(newDispute);
     }
 
+    // Extracts dispute proofs to be tracked locally
     private extractProofs(dispute: DisputeStruct): ProofStruct[] {
         let forkCnt = Number(dispute.forkCnt);
         let transactionCnt = Number(dispute.foldedTransactionCnt);
@@ -228,7 +231,7 @@ class DisputeHandler {
         }
         return this.filterProofs(dispute);
     }
-
+    // Filters valid proofs
     private filterProofs(dispute: DisputeStruct): ProofStruct[] {
         let filteredProofs: ProofStruct[] = [];
         let proofs = this.localProofs.get(Number(dispute.forkCnt));

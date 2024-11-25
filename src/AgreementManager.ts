@@ -215,6 +215,7 @@ class AgreementManager {
         if (!agreement) return [];
         return agreement.blockSignatures;
     }
+    // Returns the signature of the block author
     public getOriginalSignature(block: BlockStruct): SignatureLike | undefined {
         let agreement = this.getAgreement(
             Number(block.transaction.header.forkCnt),
