@@ -1,5 +1,5 @@
 pragma solidity ^0.8.0;
-import "hardhat/console.sol";
+// import "hardhat/console.sol";
 
 struct NodeData {
     bytes32 tableId;
@@ -98,7 +98,7 @@ contract DoubleLinkedList {
         bytes32 current = headNode.uniquePtr;
         for (uint i = 0; i < length; i++) {
             Node memory node = map[current];
-            console.logBytes32(node.data.tableId);
+            // console.logBytes32(node.data.tableId);
             current = node.next;
         }
     }

@@ -2,17 +2,34 @@ import React from "react";
 import Square from "./Square";
 
 interface BoardProps {
+  myPlayer: string; // X or O
   squares: Array<string | null>;
   onClick: (index: number) => void;
+  isMyTurn: boolean;
 }
 
-const Board: React.FC<BoardProps> = ({ squares, onClick }) => {
+const Board: React.FC<BoardProps> = ({
+  myPlayer,
+  squares,
+  onClick,
+  isMyTurn,
+}) => {
   const renderSquare = (index: number) => {
-    return <Square value={squares[index]} onClick={() => onClick(index)} />;
+    return (
+      <Square
+        myPlayer={myPlayer}
+        position={index}
+        value={squares[index]}
+        onClick={() => onClick(index)}
+      />
+    );
   };
 
   return (
-    <div>
+    <div
+      className="game-board"
+      style={{ boxShadow: isMyTurn ? "0 0 50px #4e7cf4" : undefined }}
+    >
       <div className="board-row">
         {renderSquare(0)}
         {renderSquare(1)}

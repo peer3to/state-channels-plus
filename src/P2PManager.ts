@@ -14,6 +14,8 @@ import PeerProfile from "./PeerProfile";
 import DebugProxy from "./utils/DebugProxy";
 import { RpcHandleMethods } from "./rpc/RpcProxy";
 import LocalDiscoveryServer from "./utils/LocalDiscoveryServer";
+import { Buffer } from "buffer";
+import { TransportType } from "./transport/TransportType";
 
 let DEBUG_P2P_MANAGER = false;
 let DEBUG_LOCAL_TRANSPORT = false;
@@ -31,6 +33,7 @@ class P2PManager implements IOnMessage {
     openConnections: ATransport[] = [];
     holepunch: Holepunch;
     self = DEBUG_P2P_MANAGER ? DebugProxy.createProxy(this) : this;
+    preferredTransport: TransportType = TransportType.HOLEPUNCH;
 
     constructor(stateManager: StateManager, signer: ethers.Signer) {
         this.stateManager = stateManager;
@@ -85,33 +88,20 @@ class P2PManager implements IOnMessage {
         await this.holepunch.join(topic);
     }
     public addConnection(transport: ATransport) {
-        let peerProfile = new PeerProfile(transport);
-        this.profileManager.registerProfile(peerProfile);
         this.openConnections.push(transport);
-        this.initHandshake(transport);
+        this.localRpcService.initHandshakeService.initHandshake(transport);
     }
     public removeConnection(transport: ATransport) {
         this.openConnections = this.openConnections.filter(
             (t) => t !== transport
         );
         let profile = this.profileManager.getProfileByTransport(transport);
-        profile && this.profileManager.unregisterProfile(profile);
-        transport.close();
+        profile && this.profileManager.removeTransport(transport);
     }
     public disconnectAll() {
         for (let transport of this.openConnections) {
             this.removeConnection(transport);
         }
-    }
-    private initHandshake(transport: ATransport) {
-        console.log("initHandshake !");
-        let randomChallengeHash = ethers.keccak256(ethers.randomBytes(32));
-        let time = Clock.getTimeInSeconds();
-        let profile = this.profileManager.getProfileByTransport(transport);
-        profile?.setChallenge({ randomChallengeHash, initTime: time });
-        this.rpcProxy
-            .onInitHandshakeRequest(randomChallengeHash, time)
-            .sendOne(transport);
     }
 }
 

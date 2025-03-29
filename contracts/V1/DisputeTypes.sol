@@ -7,7 +7,12 @@ contract DisputeTypes {
     constructor(
         Dispute memory a,
         Proof memory b,
-        FoldRechallengeProof memory c
+        FoldRechallengeProof memory c,
+        DoubleSignProof memory d,
+        IncorrectDataProof memory e,
+        NewerStateProof memory f,
+        FoldPriorBlockProof memory g,
+        BlockTooFarInFutureProof memory h
     ) {}
 }
 

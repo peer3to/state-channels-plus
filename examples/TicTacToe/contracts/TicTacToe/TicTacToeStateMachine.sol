@@ -10,17 +10,19 @@ enum Cell {
 }
 struct TicTacToeState {
     address[] participants;
+    uint[] balances;
     Cell[3][3] board;
     address currentPlayer;
     bool gameActive;
     uint movesCount;
+    uint betAmount;
 }
 
 contract TicTacToeStateMachine is AStateMachine {
     TicTacToeState state;
     event MoveMade(address player, uint8 row, uint8 col, Cell cell);
     event GameOver(Cell winner);
-
+    event RemovedParticipant(address participant, uint amount);
     modifier onlyCurrentPlayer() {
         require(_tx.header.participant == state.currentPlayer, "Not your turn");
         _;
@@ -31,6 +33,9 @@ contract TicTacToeStateMachine is AStateMachine {
         _;
     }
 
+    function getBalance(address adr) public view returns (uint) {
+        return state.balances[adr == state.participants[0] ? 0 : 1];
+    }
     function makeMove(
         uint8 row,
         uint8 col
@@ -46,12 +51,24 @@ contract TicTacToeStateMachine is AStateMachine {
 
         if (checkWinner(row, col)) {
             state.gameActive = false;
+            if(state.board[row][col] == Cell.X){
+                // X (first player) won
+                uint transferAmount = state.betAmount > state.balances[1] ? state.balances[1] : state.betAmount;
+                state.balances[0] += transferAmount;
+                state.balances[1] -= transferAmount;
+            } else {
+                // O (second player) won
+                uint transferAmount = state.betAmount > state.balances[0] ? state.balances[0] : state.betAmount;
+                state.balances[0] -= transferAmount;
+                state.balances[1] += transferAmount;
+            }
             resetGame();
             emit GameOver(state.board[row][col]); // Last played cell won
         } else if (state.movesCount == 9) {
             state.gameActive = false;
             resetGame();
             emit GameOver(Cell.None); // Draw
+
         } else {
             state.currentPlayer = state.participants[state.movesCount % 2];
         }
@@ -103,6 +120,11 @@ contract TicTacToeStateMachine is AStateMachine {
         state.participants[0] = state.participants[1];
         state.participants[1] = t;
 
+        //swap balances
+        uint b = state.balances[0];
+        state.balances[0] = state.balances[1];
+        state.balances[1] = b;
+
         state.currentPlayer = state.participants[0];
         state.gameActive = true;
         state.movesCount = 0;
@@ -151,11 +173,18 @@ contract TicTacToeStateMachine is AStateMachine {
         ProcessExit memory processExit;
         for (uint256 i = 0; i < length; i++) {
             if (state.participants[i] == adr) {
-                state.participants[i] = state.participants[length - 1];
-                state.participants.pop();
+                uint transferAmount = state.betAmount > state.balances[i] ? state.balances[i] : state.betAmount;
+                state.balances[i] -= transferAmount;
+                state.balances[(i + 1) % 2] += transferAmount;
 
                 processExit.participant = adr;
-                processExit.amount = 0;
+                processExit.amount = state.balances[i];
+                
+                state.participants[i] = state.participants[length - 1];
+                state.participants.pop();
+                state.balances[i] = state.balances[length - 1];
+                state.balances.pop();
+                emit RemovedParticipant(adr, processExit.amount);
                 return (true, processExit);
             }
         }

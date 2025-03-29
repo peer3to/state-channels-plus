@@ -11,3 +11,6 @@ dist
 cache
 artifacts
 typechain-types
+
+# Ignore all .tgz files
+*.tgz

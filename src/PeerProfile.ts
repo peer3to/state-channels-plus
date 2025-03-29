@@ -1,23 +1,17 @@
 import { AddressLike } from "ethers";
 import ATransport from "./transport/ATransport";
 
-type ConnectionChallenge = {
-    randomChallengeHash: string;
-    initTime: number;
-};
-
 //TODO? maybe rename to ParticipantProfile to be consistent with the rest of the codebase, eventhough PeerProfile sounds better
 class PeerProfile {
-    transport: ATransport;
-    evmAddress: AddressLike | undefined; //TODO! - AAdress -> base class for different address types (when we do substrate and other address formats)
+    transport: ATransport | undefined;
+    evmAddress: AddressLike; //TODO! - AAdress -> base class for different address types (when we do substrate and other address formats)
     hpAddress: string | undefined;
     isLeader: boolean;
     isBlackListed: boolean;
-    challenge: ConnectionChallenge | undefined;
     isHandshakeCompleted = false;
     constructor(
         transport: ATransport,
-        evmAddress?: AddressLike | undefined,
+        evmAddress: AddressLike,
         hpAddress?: string | undefined
     ) {
         this.transport = transport;
@@ -36,20 +30,17 @@ class PeerProfile {
     public getTransport() {
         return this.transport;
     }
-    public setEvmAddress(evmAddress: AddressLike) {
-        this.evmAddress = evmAddress;
+    public setTransport(transport: ATransport) {
+        this.transport = transport;
+    }
+    public removeTransport() {
+        this.transport = undefined;
     }
     public getEvmAddress() {
         return this.evmAddress;
     }
     public getHpAddress() {
         return this.hpAddress;
-    }
-    public setChallenge(challenge: ConnectionChallenge) {
-        this.challenge = challenge;
-    }
-    public getChallenge() {
-        return this.challenge;
     }
     public setIsLeader(value: boolean) {
         this.isLeader = value;

@@ -10,3 +10,6 @@ test
 .env
 contracts.json
 hardhat.config.ts
+
+# Ignore all .tgz files
+*.tgz

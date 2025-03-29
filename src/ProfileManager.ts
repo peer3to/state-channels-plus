@@ -14,7 +14,8 @@ class ProfileManager {
     >();
 
     public registerProfile(profile: PeerProfile) {
-        this.mapTransportToProfile.set(profile.getTransport(), profile);
+        let transport = profile.getTransport();
+        if (transport) this.mapTransportToProfile.set(transport, profile);
         let evmAddress = profile.getEvmAddress();
         if (evmAddress)
             this.mapEvmAddressToProfile.set(evmAddress.toString(), profile);
@@ -24,12 +25,27 @@ class ProfileManager {
         }
     }
     public unregisterProfile(profile: PeerProfile) {
-        this.mapTransportToProfile.delete(profile.getTransport());
+        let transport = profile.getTransport();
+        if (transport) this.mapTransportToProfile.delete(transport);
         let evmAddress = profile.getEvmAddress();
         if (evmAddress)
             this.mapEvmAddressToProfile.delete(evmAddress.toString());
         let hpAddress = profile.getHpAddress();
         if (hpAddress) this.mapHpAddressToProfile.delete(hpAddress);
+    }
+    public updateTransport(profileAddress: string, newTransport: ATransport) {
+        let profile = this.mapEvmAddressToProfile.get(profileAddress);
+        if (!profile) return;
+        let oldTransport = profile.getTransport();
+        if (oldTransport) this.removeTransport(oldTransport);
+        profile.setTransport(newTransport);
+        this.mapTransportToProfile.set(newTransport, profile);
+    }
+    public removeTransport(transport: ATransport) {
+        let profile = this.mapTransportToProfile.get(transport);
+        if (!profile) return;
+        this.mapTransportToProfile.delete(transport);
+        transport.close();
     }
     public getProfileByTransport(
         transport: ATransport
