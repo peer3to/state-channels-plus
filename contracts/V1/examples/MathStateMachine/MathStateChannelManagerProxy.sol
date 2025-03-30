@@ -113,7 +113,7 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
 
     function addParticipant(
         bytes32 channelId,
-        bytes[] calldata removeParticipantData,
+        bytes[] calldata addParticipantData,
         bytes[] calldata signatures
     ) public virtual override {}
 
