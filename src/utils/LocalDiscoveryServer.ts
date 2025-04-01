@@ -1,6 +1,6 @@
 import WebSocket, { WebSocketServer } from "ws";
-import P2PManager from "../P2PManager";
-import LocalTransport from "../transport/LocalTransport";
+import P2PManager from "@/P2PManager";
+import { LocalTransport } from "@/transport";
 
 const PORT = 2001;
 

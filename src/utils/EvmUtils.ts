@@ -5,12 +5,12 @@ import {
     SignedBlockStruct,
     SignedJoinChannelStruct,
     TransactionStruct
-} from "../../typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/DataTypes";
 import {
     BlockEthersType,
     JoinChannelEthersType,
     TransactionEthersType
-} from "../DataTypes";
+} from "@/DataTypes";
 
 class EvmUtils {
     public static encodeTransaction(transaction: TransactionStruct): string {

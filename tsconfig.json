@@ -14,7 +14,8 @@
         "paths": {
             "@/*": ["src/*"],
             "@test/*": ["test/*"],
-            "@typechain-types/*": ["typechain-types/*"]
+            "@typechain-types/*": ["typechain-types/*"],
+            "@typechain-types": ["typechain-types/index"]
         }
     },
     "exclude": ["examples", "dist", "node_modules"],

@@ -1,5 +1,5 @@
 import { AddressLike } from "ethers";
-import IOnMessage from "../IOnMessage";
+import IOnMessage from "@/IOnMessage";
 class BroadcastLocal {
     private static instance: BroadcastLocal;
 

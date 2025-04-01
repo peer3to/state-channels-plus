@@ -1,9 +1,10 @@
 import { BigNumberish, BytesLike } from "ethers";
-import { AStateChannelManagerProxy } from "../typechain-types";
-import { SignedBlockStruct } from "../typechain-types/contracts/V1/DataTypes";
-import StateManager from "./StateManager";
-import { DisputeStruct } from "../typechain-types/contracts/V1/DisputeTypes";
-import P2pEventHooks from "./P2pEventHooks";
+import { AStateChannelManagerProxy } from "@typechain-types";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import StateManager from "@/StateManager";
+import P2pEventHooks from "@/P2pEventHooks";
+
 //TODO - made a PR to ethers.js to fix Deferred Topic Filter
 
 class StateChannelEventListener {

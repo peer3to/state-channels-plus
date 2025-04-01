@@ -1,5 +1,5 @@
-import ATransport from "./transport/ATransport";
-import PeerProfile from "./PeerProfile";
+import { ATransport } from "@/transport";
+import PeerProfile from "@/PeerProfile";
 
 class ProfileManager {
     private mapTransportToProfile: WeakMap<ATransport, PeerProfile> =

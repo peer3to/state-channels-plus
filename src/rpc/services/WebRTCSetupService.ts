@@ -1,9 +1,7 @@
-import { AddressLike, BytesLike } from "ethers";
-import ARpcService from "../ARpcService";
-import MainRpcService from "../MainRpcService";
+import { ARpcService, MainRpcService } from "@/rpc";
 //@ts-ignore
 import { RTCPeerConnection } from "get-webrtc";
-import WebRTCTransport from "../../transport/WebRTCTransport";
+import WebRTCTransport from "@/transport/WebRTCTransport";
 
 class WebRTCSetupService extends ARpcService {
     connectionMap: Map<string, RTCPeerConnection> = new Map();

@@ -1,4 +1,4 @@
-import MainRpcService from "./MainRpcService";
+import { MainRpcService } from "@/rpc";
 
 abstract class ARpcService {
     mainRpcService: MainRpcService;

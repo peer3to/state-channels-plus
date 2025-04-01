@@ -1,17 +1,17 @@
-import ARpcService from "../ARpcService";
-import MainRpcService from "../MainRpcService";
-import Clock from "../../Clock";
 import { ethers } from "ethers";
-import { TransportType } from "../../transport/TransportType";
-import ATransport from "../../transport/ATransport";
-import PeerProfile from "../../PeerProfile";
+import { ARpcService, MainRpcService } from "@/rpc";
+import Clock from "@/Clock";
+
+import { TransportType } from "@/transport/TransportType";
+import ATransport from "@/transport/ATransport";
+import PeerProfile from "@/PeerProfile";
 
 type ConnectionChallenge = {
     randomChallengeHash: string;
     initTime: number;
 };
 
-class InitHandskaheService extends ARpcService {
+class InitHandshakeService extends ARpcService {
     private mapTransportToChallenge: WeakMap<ATransport, ConnectionChallenge> =
         new WeakMap<ATransport, ConnectionChallenge>();
 
@@ -39,11 +39,9 @@ class InitHandskaheService extends ARpcService {
             //TODO!
             //Disconnect & resolve(false)
             console.log(
-                `onInitHandshakeRequest - time difference too big - time:${time} localTime:${localTime} diff:${
-                    time - localTime
-                } aggreeTime:${
-                    this.mainRpcService.p2pManager.stateManager.timeConfig
-                        .agreementTime
+                `onInitHandshakeRequest - time difference too big - time:${time} localTime:${localTime} diff:${time - localTime
+                } aggreeTime:${this.mainRpcService.p2pManager.stateManager.timeConfig
+                    .agreementTime
                 }`
             );
             return;
@@ -131,10 +129,10 @@ class InitHandskaheService extends ARpcService {
         if (
             (preferredTransport === TransportType.WEBRTC ||
                 this.mainRpcService.p2pManager.preferredTransport ===
-                    TransportType.WEBRTC) &&
+                TransportType.WEBRTC) &&
             senderTransport.transportType != TransportType.WEBRTC &&
             this.mainRpcService.p2pManager.p2pSigner.signerAddress <
-                signerAddress
+            signerAddress
         ) {
             this.mainRpcService.webRTCSetunService.initiateWebRTC();
         }
@@ -165,4 +163,4 @@ class InitHandskaheService extends ARpcService {
     }
 }
 
-export default InitHandskaheService;
+export default InitHandshakeService;

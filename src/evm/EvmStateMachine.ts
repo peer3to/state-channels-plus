@@ -1,16 +1,15 @@
-import AStateMachine from "../AStateMachine";
+import AStateMachine from "@/AStateMachine";
 import { EVM } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
 import { BytesLike, ethers, Signer } from "ethers";
-import { TransactionStruct } from "../../typechain-types/contracts/V1/DataTypes";
+import { AStateChannelManagerProxy, AStateMachine as AStateMachineContract } from "@typechain-types";
+import { TransactionStruct } from "@typechain-types/contracts/V1/DataTypes";
 import P2pSigner from "./P2pSigner";
-import StateManager from "../StateManager";
-import { AStateChannelManagerProxy } from "../../typechain-types";
-import { AStateMachine as AStateMachineContract } from "../../typechain-types";
-import Clock from "../Clock";
-import { TimeConfig } from "../DataTypes";
-import DebugProxy from "../utils/DebugProxy";
-import P2pEventHooks from "../P2pEventHooks";
+import StateManager from "@/StateManager";
+import Clock from "@/Clock";
+import { TimeConfig } from "@/DataTypes";
+import DebugProxy from "@/utils/DebugProxy";
+import P2pEventHooks from "@/P2pEventHooks";
 
 let DEBUG_CHANNEL_CONTRACT = true;
 
@@ -75,7 +74,7 @@ class EvmStateMachine extends AStateMachine {
                 hex
             );
             console.log("Decoded string:", decodedString);
-            return { success: false, successCallback: () => {} };
+            return { success: false, successCallback: () => { } };
         }
 
         //Process logs
@@ -181,7 +180,7 @@ class EvmStateMachine extends AStateMachine {
                 event!.name,
                 ...Object.values(event!.args)
             );
-        } catch (e) {}
+        } catch (e) { }
     }
 
     public static async createStandalone(
