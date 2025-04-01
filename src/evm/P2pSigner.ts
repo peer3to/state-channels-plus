@@ -6,17 +6,15 @@ import {
     Signer,
     TransactionResponse
 } from "ethers";
-import EvmStateMachine from "./EvmStateMachine";
+
 import {
-    BlockStruct,
     JoinChannelStruct,
     SignedBlockStruct,
     TransactionStruct
-} from "../../typechain-types/contracts/V1/DataTypes";
-import Clock from "../Clock";
-import StateManager from "../StateManager";
-import P2PManager from "../P2PManager";
-import EvmUtils from "../utils/EvmUtils";
+} from "@typechain-types/contracts/V1/DataTypes";
+import Clock from "@/Clock";
+import P2PManager from "@/P2PManager";
+import EvmUtils from "@/utils/EvmUtils";
 class P2pSigner implements Signer {
     signer: Signer;
     signerAddress: AddressLike;

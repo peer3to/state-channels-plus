@@ -1,4 +1,4 @@
-import { SignedBlockEthersType } from "./DataTypes";
+import { SignedBlockEthersType } from "@/DataTypes";
 
 export const FoldRechallengeProofEthersType = `tuple(
     string encodedBlock,

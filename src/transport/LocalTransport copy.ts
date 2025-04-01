@@ -1,4 +1,4 @@
-import P2PManager from "../P2PManager";
+import P2PManager from "@/P2PManager";
 import ATransport from "./ATransport";
 import WebSocket from "ws";
 import { TransportType } from "./TransportType";

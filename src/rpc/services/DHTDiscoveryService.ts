@@ -1,6 +1,5 @@
 import { AddressLike, BytesLike } from "ethers";
-import ARpcService from "../ARpcService";
-import MainRpcService from "../MainRpcService";
+import { ARpcService, MainRpcService } from "@/rpc";
 
 class DHTDiscoveryService extends ARpcService {
     constructor(mainRpcService: MainRpcService) {

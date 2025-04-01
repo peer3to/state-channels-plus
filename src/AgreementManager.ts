@@ -1,11 +1,9 @@
-import { AddressLike, BigNumberish, BytesLike, SignatureLike } from "ethers";
+import { AddressLike, BigNumberish, SignatureLike, ethers } from "ethers";
 import {
-    TransactionStruct,
     SignedBlockStruct,
     BlockStruct,
     ConfirmedBlockStruct
-} from "../typechain-types/contracts/V1/DataTypes";
-import { ethers } from "ethers";
+} from "@typechain-types/contracts/V1/DataTypes";
 import EvmUtils from "./utils/EvmUtils";
 // A fork is created by a DLT by disputing someone or asking the DLT to enforce a state.
 // The user initiating the process submits:
@@ -152,9 +150,9 @@ class AgreementManager {
         if (!agreement) return undefined;
         if (
             EvmUtils.encodeBlock(agreement.block) !=
-                EvmUtils.encodeBlock(block) &&
+            EvmUtils.encodeBlock(block) &&
             agreement.block.transaction.header.participant ==
-                block.transaction.header.participant
+            block.transaction.header.participant
         ) {
             let { didSign, siganture } = this.didParticipantSign(
                 agreement.block,

@@ -1,6 +1,6 @@
 import { AddressLike, BigNumberish, BytesLike, ethers } from "ethers";
 import AgreementManager from "./AgreementManager";
-import { AStateChannelManagerProxy } from "../typechain-types";
+import { AStateChannelManagerProxy } from "@typechain-types";
 import {
     DoubleSignProofStruct,
     DoubleSignStruct,
@@ -11,17 +11,17 @@ import {
     ProofStruct,
     BlockTooFarInFutureProofStruct,
     DisputeStruct
-} from "../typechain-types/contracts/V1/DisputeTypes";
+} from "@typechain-types/contracts/V1/DisputeTypes";
 import {
     BlockStruct,
     SignedBlockStruct
-} from "../typechain-types/contracts/V1/DataTypes";
-import { ProofType, getEthersTypeForDisputeProof } from "./DisputeTypes";
-import EvmUtils from "./utils/EvmUtils";
-import Clock from "./Clock";
+} from "@typechain-types/contracts/V1/DataTypes";
+import { ProofType, getEthersTypeForDisputeProof } from "@/DisputeTypes";
+import EvmUtils from "@/utils/EvmUtils";
+import Clock from "@/Clock";
 // import dotenv from "dotenv";
-import DebugProxy from "./utils/DebugProxy";
-import P2pEventHooks from "./P2pEventHooks";
+import DebugProxy from "@/utils/DebugProxy";
+import P2pEventHooks from "@/P2pEventHooks";
 
 let DEBUG_DISPUTE_HANDLER = true;
 // dotenv.config();

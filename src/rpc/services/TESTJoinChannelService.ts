@@ -1,5 +1,4 @@
-import ARpcService from "../ARpcService";
-import MainRpcService from "../MainRpcService";
+import { ARpcService, MainRpcService } from "@/rpc";
 
 class TESTJoinChannelService extends ARpcService {
     constructor(mainRpcService: MainRpcService) {

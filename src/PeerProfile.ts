@@ -1,5 +1,5 @@
 import { AddressLike } from "ethers";
-import ATransport from "./transport/ATransport";
+import { ATransport } from "@/transport";
 
 //TODO? maybe rename to ParticipantProfile to be consistent with the rest of the codebase, eventhough PeerProfile sounds better
 class PeerProfile {

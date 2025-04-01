@@ -2,7 +2,7 @@ import {
     TransactionStruct,
     SignedBlockStruct,
     BlockStruct
-} from "../typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/DataTypes";
 import {
     AddressLike,
     BigNumberish,
@@ -11,21 +11,24 @@ import {
     ethers
 } from "ethers";
 import AgreementManager, { AgreementFlag } from "./AgreementManager";
-import { AStateChannelManagerProxy } from "../typechain-types";
-import Clock from "./Clock";
-import DisputeHandler from "./DisputeHandler";
-import P2PManager from "./P2PManager";
-import { ProofStruct } from "../typechain-types/contracts/V1/DisputeTypes";
-import AStateMachine from "./AStateMachine";
-import EvmUtils from "./utils/EvmUtils";
-import { ExecutionFlags, TimeConfig } from "./DataTypes";
-import StateChannelEventListener from "./StateChannelEventListener";
-import P2pSigner from "./evm/P2pSigner";
-import Mutex from "./utils/Mutex";
-import { DisputeStruct } from "../typechain-types/contracts/V1/DisputeTypes";
-import DebugProxy from "./utils/DebugProxy";
+import { AStateChannelManagerProxy } from "@typechain-types";
+import {
+    ProofStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/DisputeTypes";
+import Clock from "@/Clock";
+import DisputeHandler from "@/DisputeHandler";
+import P2PManager from "@/P2PManager";
+
+import AStateMachine from "@/AStateMachine";
+import EvmUtils from "@/utils/EvmUtils";
+import { ExecutionFlags, TimeConfig } from "@/DataTypes";
+import StateChannelEventListener from "@/StateChannelEventListener";
+import Mutex from "@/utils/Mutex";
+
+import DebugProxy from "@/utils/DebugProxy";
 // import dotenv from "dotenv";
-import P2pEventHooks from "./P2pEventHooks";
+import P2pEventHooks from "@/P2pEventHooks";
 
 let DEBUG_STATE_MANAGER = false;
 // dotenv.config();
@@ -250,7 +253,7 @@ class StateManager {
             if (
                 Number(block.transaction.header.forkCnt) > this.getForkCnt() ||
                 Number(block.transaction.header.transactionCnt) >
-                    this.getNextTransactionCnt()
+                this.getNextTransactionCnt()
             ) {
                 //TODO! - fetch latest forkCnt from DLT to double check - this can be async since it's stored in the queue
                 executionFlag = ExecutionFlags.NOT_READY;
@@ -671,7 +674,7 @@ class StateManager {
                 Number(forkCnt),
                 Number(transactionCnt)
             ) +
-                this.getTimeoutWaitTimeSeconds()
+            this.getTimeoutWaitTimeSeconds()
         )
             return;
         let response = await this.stateChannelManagerContract.getBlockCallData(

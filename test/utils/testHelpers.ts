@@ -1,15 +1,14 @@
 import { ethers, ContractTransactionResponse, AddressLike } from "ethers";
 import { HardhatEthersHelpers } from "hardhat/types/runtime";
-// import { HardhatEthersHelpers } from "../../typechain-types/hardhat";
 import {
     MathStateChannelManagerProxy,
     MathStateMachine,
     StateChannelUtilLibrary
-} from "../../typechain-types";
+} from "@typechain-types";
 
-import { JoinChannelStruct } from "../../typechain-types/contracts/V1/DataTypes";
-import Clock from "../../src/Clock";
-import P2pEventHooks from "../../src/P2pEventHooks";
+import { JoinChannelStruct } from "@typechain-types/contracts/V1/DataTypes";
+import Clock from "@/Clock";
+import P2pEventHooks from "@/P2pEventHooks";
 
 export const createJoinChannelTestObject = (
     address: AddressLike,
@@ -25,11 +24,11 @@ export const createJoinChannelTestObject = (
         participant: address,
         channelId: channelId
             ? ethers.keccak256(
-                  ethers.AbiCoder.defaultAbiCoder().encode(
-                      ["string"],
-                      [channelId]
-                  )
-              )
+                ethers.AbiCoder.defaultAbiCoder().encode(
+                    ["string"],
+                    [channelId]
+                )
+            )
             : ethers.keccak256("0x2371"),
         amount: 500,
         deadlineTimestamp: currentTime + 120, // 2 minutes from now

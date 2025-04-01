@@ -1,24 +1,15 @@
-import { AddressLike, BytesLike, SignatureLike, ethers } from "ethers";
+import { AddressLike, BytesLike, SignatureLike, } from "ethers";
 import {
     SignedBlockStruct,
     SignedJoinChannelStruct
-} from "../../typechain-types/contracts/V1/DataTypes";
-import Clock from "../Clock";
-import { ExecutionFlags } from "../DataTypes";
-import P2PManager from "../P2PManager";
-import RpcProxy, { RpcHandleMethods } from "./RpcProxy";
-import ATransport from "../transport/ATransport";
-import EvmUtils from "../utils/EvmUtils";
-import SignatureCollectionMap from "../utils/SignatureCollectionMap";
-// import dotenv from "dotenv";
-import DebugProxy from "../utils/DebugProxy";
-import { TransportType } from "../transport/TransportType";
-import InitHandskaheService from "./services/InitHandshakeService";
-import StateTransitionService from "./services/StateTransitionService";
-import TESTJoinChannelService from "./services/TESTJoinChannelService";
-import DHTDiscoveryService from "./services/DHTDiscoveryService";
-import JoinChannelService from "./services/JoinChannelService";
-import WebRTCSetupService from "./services/WebRTCSetupService";
+} from "@typechain-types/contracts/V1/DataTypes";
+
+import P2PManager from "@/P2PManager";
+import RpcProxy from "./RpcProxy";
+import ATransport from "@/transport/ATransport";
+import DebugProxy from "@/utils/DebugProxy";
+import { TransportType } from "@/transport/TransportType";
+import { InitHandshakeService, StateTransitionService, TESTJoinChannelService, DHTDiscoveryService, JoinChannelService, WebRTCSetupService } from "./services";
 
 let DEBUG_RPC = false;
 // dotenv.config();
@@ -38,7 +29,7 @@ class MainRpcService {
     self = DEBUG_RPC ? DebugProxy.createProxy(this) : this;
 
     //RPC Services
-    initHandshakeService = new InitHandskaheService(this.self);
+    initHandshakeService = new InitHandshakeService(this.self);
     webRTCSetunService = new WebRTCSetupService(this.self);
     stateTransitionService = new StateTransitionService(this.self);
     testJoinChannelService = new TESTJoinChannelService(this.self);

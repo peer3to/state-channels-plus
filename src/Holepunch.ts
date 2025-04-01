@@ -4,11 +4,10 @@ import Hyperswarm from "hyperswarm";
 import DHT from "@hyperswarm/dht-relay";
 //@ts-ignore
 import Stream from "@hyperswarm/dht-relay/ws";
-import P2PManager from "./P2PManager";
-import HolepunchTransport from "./transport/HolepunchTransport";
+import P2PManager from "@/P2PManager";
+import { HolepunchTransport, TransportType } from "@/transport";
 import { Buffer } from "buffer";
-import { TransportType } from "./transport/TransportType";
-import HolepunchRelay from "./HolepunchRelay";
+import HolepunchRelay from "@/HolepunchRelay";
 
 class Holepunch {
     swarm: any;

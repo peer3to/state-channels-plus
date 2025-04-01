@@ -1,8 +1,7 @@
 import { BytesLike } from "ethers";
-import { SignedBlockStruct } from "../../../typechain-types/contracts/V1/DataTypes";
-import { ExecutionFlags } from "../../DataTypes";
-import ARpcService from "../ARpcService";
-import MainRpcService from "../MainRpcService";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { ExecutionFlags } from "@/DataTypes";
+import { ARpcService, MainRpcService } from "@/rpc";
 
 class StateTransitionService extends ARpcService {
     constructor(mainRpcService: MainRpcService) {

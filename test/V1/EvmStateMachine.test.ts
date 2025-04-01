@@ -1,20 +1,14 @@
 import { ethers as hre } from "hardhat";
-import { AddressLike, ethers, Signer, TransactionResponse } from "ethers";
 import { BigNumberish } from "ethers";
-import EvmStateMachine from "../../src/evm/EvmStateMachine";
-import { TransactionStruct } from "../../typechain-types/contracts/V1/DataTypes";
-import {
-    MathStateMachine,
-    MathStateMachine__factory
-} from "../../typechain-types";
-import { JoinChannelStruct } from "../../typechain-types/contracts/V1/DataTypes";
+import EvmStateMachine from "@/evm/EvmStateMachine";
+import { MathStateMachine } from "@typechain-types";
 import {
     createJoinChannelTestObject,
     deployMathChannelProxyFixture,
     getMathP2pEventHooks
-} from "../utils/testHelpers";
-import P2pEventHooks from "../../src/P2pEventHooks";
-import EvmUtils from "../../src/utils/EvmUtils";
+} from "@test/utils/testHelpers";
+import P2pEventHooks from "@/P2pEventHooks";
+import EvmUtils from "@/utils/EvmUtils";
 
 describe("EvmStateMachine", function () {
     it("EvmStateMachine - P2P simulation - success", async function () {
@@ -39,7 +33,7 @@ describe("EvmStateMachine", function () {
             mathscm,
             mathsm,
             {
-                ...getMathP2pEventHooks(() => {}, await signerOne.getAddress())
+                ...getMathP2pEventHooks(() => { }, await signerOne.getAddress())
             } as unknown as P2pEventHooks
         );
 
@@ -49,7 +43,7 @@ describe("EvmStateMachine", function () {
             mathscm,
             mathsm,
             {
-                ...getMathP2pEventHooks(() => {}, await signerTwo.getAddress())
+                ...getMathP2pEventHooks(() => { }, await signerTwo.getAddress())
             } as unknown as P2pEventHooks
         );
         mathContractFirstPlayer = p2pOne.p2pContractInstance;

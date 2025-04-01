@@ -1,11 +1,6 @@
 import fs from "fs";
 import path from "path";
-import {
-    Contract,
-    ContractFactory,
-    BaseContract,
-    ContractTransactionResponse
-} from "ethers";
+import { ContractFactory } from "ethers";
 
 type ReturnTypeOfT<T extends ContractFactory> = T extends {
     deploy(...args: any): infer U;
