@@ -1,21 +1,27 @@
 import { AddressLike, BigNumberish, BytesLike, ethers } from "ethers";
 import AgreementManager from "./AgreementManager";
-import { AStateChannelManagerProxy } from "../typechain-types";
+import { AStateChannelManagerProxy } from "@typechain-types";
 import {
+    DoubleSignProofStruct,
+    DoubleSignStruct,
+    FoldPriorBlockProofStruct,
+    FoldRechallengeProofStruct,
+    IncorrectDataProofStruct,
+    NewerStateProofStruct,
     ProofStruct,
-    DisputeStruct,
-    FoldRechallengeProofStruct
-} from "../typechain-types/contracts/V1/DisputeTypes";
+    BlockTooFarInFutureProofStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/DisputeTypes";
 import {
     BlockStruct,
     SignedBlockStruct
-} from "../typechain-types/contracts/V1/DataTypes";
-import { ProofType, getEthersTypeForDisputeProof } from "./DisputeTypes";
-import EvmUtils from "./utils/EvmUtils";
-import Clock from "./Clock";
+} from "@typechain-types/contracts/V1/DataTypes";
+import { ProofType, getEthersTypeForDisputeProof } from "@/DisputeTypes";
+import EvmUtils from "@/utils/EvmUtils";
+import Clock from "@/Clock";
 // import dotenv from "dotenv";
-import DebugProxy from "./utils/DebugProxy";
-import P2pEventHooks from "./P2pEventHooks";
+import DebugProxy from "@/utils/DebugProxy";
+import P2pEventHooks from "@/P2pEventHooks";
 
 let DEBUG_DISPUTE_HANDLER = true;
 // dotenv.config();
@@ -29,7 +35,7 @@ class DisputeHandler {
     stateChannelManagerContract: AStateChannelManagerProxy;
     channelId: BytesLike;
     localProofs: Map<ForkCnt, ProofStruct[]> = new Map();
-    diputes: Map<ForkCnt, DisputeStruct> = new Map();
+    disputes: Map<ForkCnt, DisputeStruct> = new Map();
     disputedForks: Map<ForkCnt, boolean> = new Map();
     p2pEventHooks: P2pEventHooks;
     self = DEBUG_DISPUTE_HANDLER ? DebugProxy.createProxy(this) : this;
@@ -57,6 +63,71 @@ class DisputeHandler {
     public setChannelId(channelId: BytesLike): void {
         this.channelId = channelId;
     }
+    public async disputeFoldRechallenge(
+        forkCnt: BigNumberish,
+        transactionCnt: BigNumberish
+    ): Promise<void> {
+        console.log("DisputeHandler - disputeFoldRechallenge");
+        let proof = this.createFoldRechallengeProof(forkCnt, transactionCnt);
+        if (!proof) return;
+        await this.createDispute(forkCnt, "0x00", 0, [proof]);
+    }
+    public async disputeDoubleSign(
+        conflictingBlocks: SignedBlockStruct[]
+    ): Promise<void> {
+        console.log("DisputeHandler - disputeDoubleSign");
+        let proof = this.createDoubleSignProof(conflictingBlocks);
+        let _firstBlock = EvmUtils.decodeBlock(
+            conflictingBlocks[0].encodedBlock
+        );
+        await this.createDispute(
+            _firstBlock.transaction.header.forkCnt,
+            "0x00",
+            0,
+            [proof]
+        );
+    }
+
+    public async disputeIncorrectData(
+        incorrectBlockSigned: SignedBlockStruct
+    ): Promise<void> {
+        console.log("DisputeHandler - disputeIncorrectData");
+        let proof = this.createIncorrectDataProof(incorrectBlockSigned);
+        let _block = EvmUtils.decodeBlock(incorrectBlockSigned.encodedBlock);
+        await this.createDispute(_block.transaction.header.forkCnt, "0x00", 0, [
+            proof
+        ]);
+    }
+
+    // Not needed publicly - just internaly
+    // public async disputeNewerState(
+    //     forkCnt: number,
+    //     participantAdr: AddressLike
+    // ): Promise<void> {
+    //     let proof = this.createNewerStateProof(forkCnt, participantAdr, );
+    //     if (!proof) return;
+    //     await this.createDispute(forkCnt, participantAdr, 0, [proof]);
+    // }
+
+    public async disputeFoldPriorBlock(
+        forkCnt: BigNumberish,
+        transactionCnt: number
+    ): Promise<void> {
+        console.log("DisputeHandler - disputeFoldPriorBlock");
+        let proof = this.createFoldPriorBlockProof(transactionCnt);
+        await this.createDispute(forkCnt, "0x00", 0, [proof]);
+    }
+
+    public async disputeBlockTooFarInFuture(
+        BlockSigned: SignedBlockStruct
+    ): Promise<void> {
+        console.log("DisputeHandler - disputeBlockTooFarInFuture");
+        let block = EvmUtils.decodeBlock(BlockSigned.encodedBlock);
+        let proof = this.createBlockTooFarInFutureProof(BlockSigned);
+        await this.createDispute(block.transaction.header.forkCnt, "0x00", 0, [
+            proof
+        ]);
+    }
 
     public async onDispute(dispute: DisputeStruct): Promise<void> {
         this.setForkDisputed(Number(dispute.forkCnt));
@@ -79,7 +150,7 @@ class DisputeHandler {
         this.setForkDisputed(Number(forkCnt));
         for (let i = 0; i < proofs.length; i++)
             this.addProof(Number(forkCnt), proofs[i]);
-        let _dispute = this.diputes.get(Number(forkCnt));
+        let _dispute = this.disputes.get(Number(forkCnt));
         if (!_dispute) {
             let {
                 encodedLatestFinalizedState,
@@ -110,7 +181,25 @@ class DisputeHandler {
                 console.log("DISPUTE CREATED ##", txReceipt);
             } catch (e) {
                 //TODO! - in hardhat test network (unlike production networks) - on revert - there is no txReceipt -> it will throw and be caught here
-                console.log("DISPUTE CATCH ##", e);
+                console.log("ERROR - DISPUTE CATCH ##", e);
+
+                //TODO !!!!!!!!!!!!! - quick fix for time race condition - remove this
+                let txResponse =
+                    await this.stateChannelManagerContract.createDispute(
+                        this.channelId,
+                        forkCnt,
+                        encodedLatestFinalizedState,
+                        encodedLatestCorrectState,
+                        virtualVotingBlocks,
+                        foldedParticipant,
+                        foldedTransactionCnt,
+                        proofs,
+                        { gasLimit: 4000000 } //TODO! - gas limit
+                    );
+                console.log("TX HASH SECOND ##", txResponse.hash);
+                let txReceipt = await txResponse.wait();
+                // await block.wait(); //not needed - will be comunicated back through the event
+                console.log("DISPUTE CREATED SECOND ##", txReceipt);
             }
         }
         let newDispute = await this.stateChannelManagerContract.getDispute(
@@ -155,7 +244,154 @@ class DisputeHandler {
             )!
         };
     }
+    /**
+     *
+     * @param conflictingBlocks array of BLOCK [block1,block2...] that have conflicts in agreementManager [block1',block2'...]
+     * @returns
+     */
+    public createDoubleSignProof(
+        conflictingBlocks: SignedBlockStruct[]
+    ): ProofStruct {
+        let doubleSigns: DoubleSignStruct[] = [];
+        for (let i = 0; i < conflictingBlocks.length; i++) {
+            let signedBlock = conflictingBlocks[i];
+            let conflictingBlock =
+                this.agreementManager.getDoubleSignedBlock(signedBlock);
+            if (conflictingBlock) {
+                doubleSigns.push({
+                    block1: signedBlock,
+                    block2: conflictingBlock
+                });
+            }
+        }
+        let doubleSignProofStruct: DoubleSignProofStruct = {
+            doubleSigns
+        };
+        return {
+            proofType: ProofType.DoubleSign,
+            encodedProof: DisputeHandler.encodeProof(
+                ProofType.DoubleSign,
+                doubleSignProofStruct
+            )!
+        };
+    }
 
+    public createIncorrectDataProof(
+        incorrectBlockSigned: SignedBlockStruct
+    ): ProofStruct {
+        let incorrectBlock = EvmUtils.decodeBlock(
+            incorrectBlockSigned.encodedBlock
+        );
+        //if BLOCK is after genesis state
+        if (Number(incorrectBlock.transaction.header.transactionCnt) <= 0) {
+            let encodedGenesisState =
+                this.agreementManager.getForkGenesisStateEncoded(
+                    Number(incorrectBlock.transaction.header.forkCnt)
+                );
+            //TODO! - this only checks currecnt (disputed fork) - prior and future forks are ignored for now
+            encodedGenesisState = encodedGenesisState
+                ? encodedGenesisState
+                : "0x";
+
+            let incorrectDataProofStruct: IncorrectDataProofStruct = {
+                block1: incorrectBlockSigned,
+                block2: incorrectBlockSigned,
+                encodedState: encodedGenesisState
+            };
+            return {
+                proofType: ProofType.IncorrectData,
+                encodedProof: DisputeHandler.encodeProof(
+                    ProofType.IncorrectData,
+                    incorrectDataProofStruct
+                )!
+            };
+        }
+        //BLOCK is not after genesis state
+        let priorBlock = this.agreementManager.getBlock(
+            Number(incorrectBlock.transaction.header.forkCnt),
+            Number(incorrectBlock.transaction.header.transactionCnt) - 1
+        );
+        let encodedPriorBlock = EvmUtils.encodeBlock(priorBlock!); //TODO - this can be undefined
+        let priorBlockOriginalSignature =
+            this.agreementManager.getOriginalSignature(priorBlock!); //TODO - this can be undefined
+        let priorEncodedState = this.agreementManager.getEncodedState(
+            Number(priorBlock!.transaction.header.forkCnt),
+            Number(priorBlock!.transaction.header.transactionCnt)
+        );
+        let incorrectDataProofStruct: IncorrectDataProofStruct = {
+            block1: incorrectBlockSigned,
+            block2: {
+                encodedBlock: encodedPriorBlock,
+                signature: priorBlockOriginalSignature! as string
+            },
+            encodedState: priorEncodedState!
+        };
+
+        return {
+            proofType: ProofType.IncorrectData,
+            encodedProof: DisputeHandler.encodeProof(
+                ProofType.IncorrectData,
+                incorrectDataProofStruct
+            )!
+        };
+    }
+    public createNewerStateProof(
+        forkCnt: number,
+        participantAdr: AddressLike,
+        currentTransactionCnt: number
+    ): ProofStruct | undefined {
+        let _block = this.agreementManager.getLatestSignedBlockByParticipant(
+            forkCnt,
+            participantAdr
+        );
+        if (!_block) return undefined;
+        if (
+            currentTransactionCnt >=
+            Number(_block.block.transaction.header.transactionCnt)
+        )
+            return undefined;
+        let newerStateProofStruct: NewerStateProofStruct = {
+            encodedBlock: EvmUtils.encodeBlock(_block.block),
+            confirmationSignature: _block.signature as string
+        };
+        return {
+            proofType: ProofType.NewerState,
+            encodedProof: DisputeHandler.encodeProof(
+                ProofType.NewerState,
+                newerStateProofStruct
+            )!
+        };
+    }
+
+    //TODO - think more about this
+    public createFoldPriorBlockProof(transactionCnt: number): ProofStruct {
+        let foldPriorBlockProofStruct: FoldPriorBlockProofStruct = {
+            transactionCnt
+        };
+        return {
+            proofType: ProofType.FoldPriorBlock,
+            encodedProof: DisputeHandler.encodeProof(
+                ProofType.FoldPriorBlock,
+                foldPriorBlockProofStruct
+            )!
+        };
+    }
+
+    //TODO - think
+    public createBlockTooFarInFutureProof(
+        BlockSigned: SignedBlockStruct
+    ): ProofStruct {
+        let blockTooFarInFutureProofStruct: BlockTooFarInFutureProofStruct = {
+            block1: BlockSigned
+        };
+        return {
+            proofType: ProofType.BlockTooFarInFuture,
+            encodedProof: DisputeHandler.encodeProof(
+                ProofType.BlockTooFarInFuture,
+                blockTooFarInFutureProofStruct
+            )!
+        };
+    }
     public setForkDisputed(forkCnt: number): void {
         this.disputedForks.set(forkCnt, true);
     }
@@ -170,10 +406,10 @@ class DisputeHandler {
     }
     private trySetDispute(dispute: DisputeStruct): boolean {
         let forkCnt = Number(dispute.forkCnt);
-        let _dispute = this.diputes.get(forkCnt);
+        let _dispute = this.disputes.get(forkCnt);
         if (_dispute && dispute.challengeCnt <= _dispute.challengeCnt)
             return false;
-        this.diputes.set(forkCnt, dispute);
+        this.disputes.set(forkCnt, dispute);
         return true;
     }
     private async rechallengeRecursive(
@@ -229,6 +465,25 @@ class DisputeHandler {
             proof = this.createFoldRechallengeProof(forkCnt, transactionCnt);
             if (proof) this.addProof(forkCnt, proof);
         }
+        // Can prove newer state? (for the disputer)
+        let lastTransactionCnt = 0; //assume genessis
+        if (dispute.virtualVotingBlocks.length) {
+            //not genessis
+            let lastBlock = EvmUtils.decodeBlock(
+                dispute.virtualVotingBlocks[
+                    dispute.virtualVotingBlocks.length - 1
+                ].encodedBlock
+            );
+            lastTransactionCnt = Number(
+                lastBlock.transaction.header.transactionCnt
+            );
+        }
+        proof = this.createNewerStateProof(
+            forkCnt,
+            dispute.postedStateDisputer,
+            lastTransactionCnt
+        );
+        if (proof) this.addProof(forkCnt, proof);
         return this.filterProofs(dispute);
     }
     // Filters valid proofs
@@ -255,6 +510,97 @@ class DisputeHandler {
                     ) {
                         filteredProofs.push(proof);
                     }
+                    break;
+                case ProofType.DoubleSign:
+                    let doubleSignProof = DisputeHandler.decodeProof(
+                        proof.proofType,
+                        proof.encodedProof
+                    ) as DoubleSignProofStruct;
+                    for (let doubleSign of doubleSignProof.doubleSigns) {
+                        //checking block1 is enough
+                        let block1 = EvmUtils.decodeBlock(
+                            doubleSign.block1.encodedBlock
+                        );
+                        if (
+                            !dispute.slashedParticipants.includes(
+                                block1.transaction.header.participant
+                            )
+                        ) {
+                            filteredProofs.push(proof);
+                            break; //if at least one is valid - we can incldue the proof
+                        }
+                    }
+                    break;
+                case ProofType.IncorrectData:
+                    let incorrectDataProof = DisputeHandler.decodeProof(
+                        proof.proofType,
+                        proof.encodedProof
+                    ) as IncorrectDataProofStruct;
+                    //checkin block2 is enough
+                    let block2 = EvmUtils.decodeBlock(
+                        incorrectDataProof.block2.encodedBlock
+                    );
+                    if (
+                        !dispute.slashedParticipants.includes(
+                            block2.transaction.header.participant
+                        )
+                    )
+                        filteredProofs.push(proof);
+
+                    break;
+                case ProofType.NewerState:
+                    let newerStateProof = DisputeHandler.decodeProof(
+                        proof.proofType,
+                        proof.encodedProof
+                    ) as NewerStateProofStruct;
+                    block = EvmUtils.decodeBlock(newerStateProof.encodedBlock);
+                    let latestBlock = EvmUtils.decodeBlock(
+                        dispute.virtualVotingBlocks[
+                            dispute.virtualVotingBlocks.length - 1
+                        ].encodedBlock
+                    );
+                    let latestTransactionCnt = Number(
+                        latestBlock.transaction.header.transactionCnt
+                    );
+                    if (
+                        !dispute.slashedParticipants.includes(
+                            block.transaction.header.participant
+                        ) &&
+                        block.transaction.header.participant ==
+                            dispute.postedStateDisputer &&
+                        Number(block.transaction.header.transactionCnt) >
+                            latestTransactionCnt
+                    )
+                        filteredProofs.push(proof);
+                    break;
+                case ProofType.FoldPriorBlock:
+                    let foldPriorBlockProof = DisputeHandler.decodeProof(
+                        proof.proofType,
+                        proof.encodedProof
+                    ) as FoldPriorBlockProofStruct;
+                    if (
+                        foldPriorBlockProof.transactionCnt <
+                            dispute.foldedTransactionCnt &&
+                        dispute.timedoutParticipant != ethers.ZeroAddress
+                    )
+                        filteredProofs.push(proof);
+                    break;
+                case ProofType.BlockTooFarInFuture:
+                    let blockTooFarInFutureProof = DisputeHandler.decodeProof(
+                        proof.proofType,
+                        proof.encodedProof
+                    ) as BlockTooFarInFutureProofStruct;
+                    block = EvmUtils.decodeBlock(
+                        blockTooFarInFutureProof.block1.encodedBlock
+                    );
+                    if (
+                        Number(block.transaction.header.timestamp) >
+                            Clock.getTimeInSeconds() &&
+                        !dispute.slashedParticipants.includes(
+                            block.transaction.header.participant
+                        )
+                    )
+                        filteredProofs.push(proof);
                     break;
                 default:
                     throw new Error(

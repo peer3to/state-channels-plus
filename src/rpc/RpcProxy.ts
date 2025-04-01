@@ -1,4 +1,4 @@
-import ARpcService from "./ARpcService";
+import MainRpcService from "./MainRpcService";
 import Rpc from "./Rpc";
 import RpcHandler from "./RpcHandler";
 
@@ -12,16 +12,17 @@ type RpcHandleMethod<T> = T extends (...args: infer A) => any
 /**
  * Transforms all function/method return types into RpcHandlers
  */
-export type RpcHandleMethods<T extends ARpcService> = {
+export type RpcHandleMethods<T extends MainRpcService> = {
     [K in keyof T]: RpcHandleMethod<T[K]>;
 };
 
 class RpcProxy {
-    public static createProxy<T extends ARpcService>(service: T) {
+    public static createProxy<T extends MainRpcService>(service: T) {
         return new Proxy(
             {},
             {
                 get(target, prop, receiver) {
+                    //Target is {} - this won't trigger
                     if (Reflect.has(target, prop)) {
                         return Reflect.get(target, prop, receiver);
                     }

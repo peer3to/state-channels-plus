@@ -9,6 +9,17 @@
         "resolveJsonModule": true,
         "outDir": "./dist",
         "declaration": true,
+        "sourceMap": true,
+        "baseUrl": ".",
+        "paths": {
+            "@/*": ["src/*"],
+            "@test/*": ["test/*"],
+            "@typechain-types/*": ["typechain-types/*"],
+            "@typechain-types": ["typechain-types/index"]
+        }
     },
-    "exclude": ["examples","dist", "node_modules"]
+    "exclude": ["examples", "dist", "node_modules"],
+    "ts-node": {
+        "require": ["tsconfig-paths/register"]
+    }
 }

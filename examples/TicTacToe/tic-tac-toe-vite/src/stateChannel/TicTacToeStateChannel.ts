@@ -13,11 +13,13 @@ import {
 import TempSingleton from "./TempSingleton";
 import TicTacToeStateMachineJSON from "../TicTacToeStateMachine.json";
 import ContractsJSON from "../contracts.json";
-import ProviderConfig from "../providerConfig.json";
 
+const PROVIDER_URL = "http://localhost:8545";
+const WSS_PROVIDER_URL = "ws://localhost:8545";
 export const getRandomSigner = () => {
     let randomSinger: Signer = Wallet.createRandom(
-        new ethers.WebSocketProvider(ProviderConfig.providerUrl)
+        new ethers.WebSocketProvider(WSS_PROVIDER_URL)
+        // new ethers.JsonRpcProvider(PROVIDER_URL)
     );
     // randomSinger = new NonceManager(randomSinger);
     return randomSinger;

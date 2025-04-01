@@ -1,15 +1,16 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.8;
 
 import "@peer3/state-channels-plus/contracts/V1/StateChannelDiamondProxy/AStateChannelManagerProxy.sol";
 import "./TicTacToeStateMachine.sol";
-
 // import "../StateChannelDiamondProxy/StateChannelUtilLibrary.sol";
 
 // Uncomment this line to use console.log
 // import "hardhat/console.sol";
 
 contract TicTacToeStateChannelManagerProxy is AStateChannelManagerProxy {
+    uint public totalChannelsOpened;
+
     constructor(
         address aStateMaachineAddress,
         address disputeManagerFacet
@@ -90,13 +91,44 @@ contract TicTacToeStateChannelManagerProxy is AStateChannelManagerProxy {
         TicTacToeState memory genesisState;
         genesisState.gameActive = true;
         genesisState.participants = new address[](joinChannels.length);
+        genesisState.balances = new uint256[](joinChannels.length);
         for (uint i = 0; i < joinChannels.length; i++) {
             genesisState.participants[i] = joinChannels[i].participant;
+            genesisState.balances[i] = joinChannels[i].amount;
         }
         genesisState.currentPlayer = genesisState.participants[0];
+        genesisState.betAmount = 50;
         bytes memory genesisStateEcoded = abi.encode(genesisState);
         encodedStates[channelId][0] = genesisStateEcoded;
         genesisTimestamps[channelId][0] = block.timestamp;
+        totalChannelsOpened++;
         emit SetState(channelId, genesisStateEcoded, 0, block.timestamp);
     }
+
+    function closeChannel(
+        bytes32 channelId,
+        bytes[] calldata closeChannelData,
+        bytes[] calldata signatures
+    ) public virtual override {}
+
+    function removeParticipant(
+        bytes32 channelId,
+        bytes[] calldata removeParticipantData,
+        bytes[] calldata signatures
+    ) public virtual override {}
+
+    function addParticipant(
+        bytes32 channelId,
+        bytes[] calldata removeParticipantData,
+        bytes[] calldata signatures
+    ) public virtual override {}
+
+    function _addParticipantComposable(
+        JoinChannel memory joinChannel
+    ) internal virtual override returns (bool) {}
+
+    function _removeParticipantComposable(
+        bytes32 channelId,
+        ProcessExit memory processExit
+    ) internal virtual override returns (bool) {}
 }

@@ -23,9 +23,16 @@ We recommend waiting for the Full Feature Set before using it in production.
 
 ## Installation
 
+For usage in other projects, install from npm:
 ```shell
 yarn add @peer3/state-channels-plus
 ```
+
+For usage in this repository, install local dependencies and build the SDK:
+```shell
+yarn && yarn build
+```
+
 
 ## Getting Started
 The SDK currently supports running EVM smart contracts (state machines).
@@ -41,6 +48,12 @@ The SDK abstracts away most of the complexities of the system and is designed to
 ## Examples
 
 [Tic-Tac-Toe](./examples/TicTacToe) - the code used in the [demo video](https://www.youtube.com/watch?v=W_CWPOezjU8)
+
+<b style="color: yellow;">Note: The examples within this repository use the current version of the SDK(this repository) and not the remote package available on npm. This requires to install dependencies and build the SDK locally, before proceeding. </b>
+
+```shell
+yarn && yarn build
+```
 
 ## Run Tests
 Install local dependencies

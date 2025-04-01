@@ -2,7 +2,7 @@ import {
     TransactionStruct,
     SignedBlockStruct,
     BlockStruct
-} from "../typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/DataTypes";
 import {
     AddressLike,
     BigNumberish,
@@ -11,21 +11,24 @@ import {
     ethers
 } from "ethers";
 import AgreementManager, { AgreementFlag } from "./AgreementManager";
-import { AStateChannelManagerProxy } from "../typechain-types";
-import Clock from "./Clock";
-import DisputeHandler from "./DisputeHandler";
-import P2PManager from "./P2PManager";
-import { ProofStruct } from "../typechain-types/contracts/V1/DisputeTypes";
-import AStateMachine from "./AStateMachine";
-import EvmUtils from "./utils/EvmUtils";
-import { ExecutionFlags, TimeConfig } from "./DataTypes";
-import StateChannelEventListener from "./StateChannelEventListener";
-import P2pSigner from "./evm/P2pSigner";
-import Mutex from "./utils/Mutex";
-import { DisputeStruct } from "../typechain-types/contracts/V1/DisputeTypes";
-import DebugProxy from "./utils/DebugProxy";
+import { AStateChannelManagerProxy } from "@typechain-types";
+import {
+    ProofStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/DisputeTypes";
+import Clock from "@/Clock";
+import DisputeHandler from "@/DisputeHandler";
+import P2PManager from "@/P2PManager";
+
+import AStateMachine from "@/AStateMachine";
+import EvmUtils from "@/utils/EvmUtils";
+import { ExecutionFlags, TimeConfig } from "@/DataTypes";
+import StateChannelEventListener from "@/StateChannelEventListener";
+import Mutex from "@/utils/Mutex";
+
+import DebugProxy from "@/utils/DebugProxy";
 // import dotenv from "dotenv";
-import P2pEventHooks from "./P2pEventHooks";
+import P2pEventHooks from "@/P2pEventHooks";
 
 let DEBUG_STATE_MANAGER = false;
 // dotenv.config();
@@ -59,7 +62,8 @@ class StateManager {
         this.stateChannelManagerContract = stateChannelManagerContract;
         this.stateChannelEventListener = new StateChannelEventListener(
             this.self,
-            this.stateChannelManagerContract
+            this.stateChannelManagerContract,
+            this.p2pEventHooks
         );
         this.agreementManager = new AgreementManager();
         this.disputeHandler = new DisputeHandler(
@@ -108,6 +112,7 @@ class StateManager {
     public async onDisputeUpdate(dispute: DisputeStruct) {
         // console.log("StateManager - onDisputeUpdate", dispute);
         this.disputeHandler.onDispute(dispute);
+        this.p2pEventHooks.onDisputeUpdate?.(dispute);
     }
     //Triggered by the On-chain Event Listener when block calldata is posted on-chain
     public async collectOnChainBlock(
@@ -122,9 +127,26 @@ class StateManager {
         let block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
         let disputeProof: ProofStruct;
         if (flag == AgreementFlag.DOUBLE_SIGN) {
-            throw new Error("Not implemented");
+            console.log("StateManager - collectOnChainBlock - double sign");
+            disputeProof = this.disputeHandler.createDoubleSignProof([
+                signedBlock
+            ]);
+            this.disputeHandler.createDispute(
+                block.transaction.header.forkCnt,
+                "0x00",
+                0,
+                [disputeProof]
+            );
         } else if (flag == AgreementFlag.INCORRECT_DATA) {
-            throw new Error("Not implemented");
+            console.log("StateManager - collectOnChainBlock - incorrect data");
+            disputeProof =
+                this.disputeHandler.createIncorrectDataProof(signedBlock);
+            this.disputeHandler.createDispute(
+                block.transaction.header.forkCnt,
+                "0x00",
+                0,
+                [disputeProof]
+            );
         }
         console.log("StateManager - collectOnChainBlock - done");
         this.onSuccessCommon();
@@ -231,7 +253,7 @@ class StateManager {
             if (
                 Number(block.transaction.header.forkCnt) > this.getForkCnt() ||
                 Number(block.transaction.header.transactionCnt) >
-                    this.getNextTransactionCnt()
+                this.getNextTransactionCnt()
             ) {
                 //TODO! - fetch latest forkCnt from DLT to double check - this can be async since it's stored in the queue
                 executionFlag = ExecutionFlags.NOT_READY;
@@ -571,7 +593,14 @@ class StateManager {
             return ExecutionFlags.NOT_ENOUGH_TIME;
         //2*avgBlockTime
         if (blockTimestamp - BigInt(10) > myTime) {
-            throw new Error("Not implemented");
+            //TODO! - Dispute future timestamp
+            //TODO! - Change this to executionFlags?
+            let disputeProof =
+                this.disputeHandler.createBlockTooFarInFutureProof(signedBlock);
+            this.disputeHandler.createDispute(this.getForkCnt(), "0x00", 0, [
+                disputeProof
+                //TODO!!! - if this fails -> revert dispute side effects
+            ]);
             return ExecutionFlags.DISPUTE;
         }
         return ExecutionFlags.SUCCESS;
@@ -645,7 +674,7 @@ class StateManager {
                 Number(forkCnt),
                 Number(transactionCnt)
             ) +
-                this.getTimeoutWaitTimeSeconds()
+            this.getTimeoutWaitTimeSeconds()
         )
             return;
         let response = await this.stateChannelManagerContract.getBlockCallData(
@@ -655,13 +684,30 @@ class StateManager {
             participantAdr
         );
         if (response.found) return;
-        this.disputeHandler.createDispute(
-            forkCnt,
-            participantAdr,
-            transactionCnt,
-            []
-        );
-        console.log("Timeout participant!");
+        //This should be enough since Clock should always lag behind DLT clock
+        let delayTimeSeconds =
+            this.getTimeoutWaitTimeSeconds() -
+            (Clock.getTimeInSeconds() -
+                this.agreementManager.getLatestBlockTimestamp(Number(forkCnt)));
+        if (delayTimeSeconds < 0) {
+            this.disputeHandler.createDispute(
+                forkCnt,
+                participantAdr,
+                transactionCnt,
+                []
+            );
+            console.log("Timeout participant!");
+        } else {
+            setTimeout(async () => {
+                this.disputeHandler.createDispute(
+                    forkCnt,
+                    participantAdr,
+                    transactionCnt,
+                    []
+                );
+                console.log("Timeout participant! - delayed", delayTimeSeconds);
+            }, delayTimeSeconds * 1000);
+        }
     }
 
     private async onSuccessCommon() {
@@ -708,10 +754,10 @@ class StateManager {
             case ExecutionFlags.DISPUTE:
                 switch (agreementFlag) {
                     case AgreementFlag.DOUBLE_SIGN:
-                        throw new Error("Not implemented");
+                        this.disputeHandler.disputeDoubleSign([signedBlock]);
                         break;
                     case AgreementFlag.INCORRECT_DATA:
-                        throw new Error("Not implemented");
+                        this.disputeHandler.disputeIncorrectData(signedBlock);
                         break;
                     default:
                         //None of the other cases should happen in this case

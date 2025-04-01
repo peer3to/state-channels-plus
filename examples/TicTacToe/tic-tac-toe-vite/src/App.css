@@ -1,76 +1,220 @@
 .App {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
-  background-color: #f0f0f0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background-color: #161719;
 }
 
-.game {
-  display: flex;
-  flex-direction: column;
-  align-items: center; /* Center all content */
-  justify-content: center; /* Center vertically */
-  text-align: center; /* Center align text */
-  width: 100%; /* Ensure it takes full width */
+.main-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    /* background-color: #222222; */
+    width: 100%;
 }
-
-.board-container {
-  display: flex;
-  flex-direction: column; /* Stack timer above the board */
-  align-items: center; /* Center board and timer */
-  justify-content: center;
-  margin-top: 20px; /* Adds some spacing from other elements */
+.central-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: #222222;
+    border-radius: 12px;
+    width: 80%;
+    max-width: 480px;
+    height: 320px;
 }
-
-.board-row {
-  display: flex;
-}
-
-.square {
-  width: 60px;
-  height: 60px;
-  background-color: #fff;
-  border: 1px solid #999;
-  font-size: 24px;
-  font-weight: bold;
-  cursor: pointer;
-  outline: none;
-}
-
-.square:focus {
-  outline: none;
-}
-
-.game-info {
-  font-size: 24px;
-  margin-bottom: 20px; /* Adds spacing below the timer */
+.input-button-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
 }
 
 .buttons-container {
-  display: flex;
-  justify-content: center;
-  gap: 20px; /* Adds space between the buttons */
-  margin-top: 20px; /* Adds some space above the buttons */
+    display: flex;
+}
+.game-board {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: #222222;
+    /* background-color: #4e7cf4; */
+    border-radius: 12px;
+    width: 320px;
+    height: 320px;
+}
+
+.game {
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Center all content */
+    justify-content: center; /* Center vertically */
+    text-align: center; /* Center align text */
+    width: 100%; /* Ensure it takes full width */
+}
+
+.board-container {
+    display: flex;
+    flex-direction: column; /* Stack timer above the board */
+    align-items: center; /* Center board and timer */
+    justify-content: center;
+    margin-top: 20px; /* Adds some spacing from other elements */
+}
+
+.board-row {
+    display: flex;
+}
+
+.square {
+    width: 100px;
+    height: 100px;
+    background-color: #222222;
+    /* background-color: #4e7cf4; */
+    border: 1px solid #999;
+    /* border: 1px solid #222222; */
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+    outline: none;
+    border-radius: 0;
+}
+
+.square:focus {
+    outline: none;
+}
+
+.game-info {
+    display: flex;
+    /* justify-content: space-around; */
+    flex-wrap: wrap;
+    font-size: 24px;
+    /* margin-bottom: 20px; Adds spacing below the timer */
+    width: 100%; /* Ensure it takes full width */
+}
+
+.player-info {
+    display: flex;
+    flex-direction: row;
+    justify-content: center; /* Center horizontally */
+    align-items: center; /* Center vertically */
+    width: 45%;
+    background-color: #222222;
+    color: #fff;
+    border-radius: 8px;
+    height: 60px;
+    margin-right: auto;
+    font-size: 18px;
+}
+.player-info div {
+    display: inline-block;
+    color: #4e7cf4;
+    font-weight: bold;
+}
+.time-info {
+    display: flex;
+    flex-direction: column;
+    justify-content: center; /* Center vertically */
+    width: 45%;
+    background-color: #222222;
+    color: #fff;
+    border-radius: 8px;
+    height: 60px;
+    margin-left: auto;
+    font-size: 18px;
+}
+.status-info {
+    display: flex;
+    flex-basis: 100%;
+    justify-content: center; /* Center horizontally */
+    align-items: center; /* Center vertically */
+    width: 100%;
+    /* background-color: #222222; */
+    color: #fff;
+    /* border-radius: 8px; */
+    height: 60px;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.buttons-container {
+    display: flex;
+    justify-content: center;
+    gap: 20px; /* Adds space between the buttons */
+    margin-top: 20px; /* Adds some space above the buttons */
+    background-color: #222222;
+}
+
+.notification-loby {
+    font-weight: bold;
+    color: white;
+    position: absolute;
+    top: -100px;
+    background-color: #4e7cf4;
+    border-radius: 6px;
+    padding: 5px;
+}
+
+.notification-game {
+    font-weight: bold;
+    color: white;
+    background-color: #4e7cf4;
+    border-radius: 6px;
+    padding: 5px;
 }
 
 button {
-  padding: 10px 20px;
-  cursor: pointer;
-  font-size: 16px;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 16px;
+    border-radius: 36px;
+    border: none;
+    color: #fff;
+    background-color: #4e7cf4;
 }
 
 button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
+    cursor: not-allowed;
+    opacity: 0.5;
 }
 
 input[type="text"] {
-  padding: 15px; /* Increase padding for a larger input field */
-  margin: 20px 0;
-  font-size: 18px; /* Increase font size */
-  width: 300px; /* Make the input wider */
-  border-radius: 8px; /* Rounded corners for a modern look */
-  border: 1px solid #ccc; /* Light gray border */
-  text-align: center; /* Center text inside the input */
+    padding: 15px; /* Increase padding for a larger input field */
+    margin: 20px 0;
+    font-size: 18px; /* Increase font size */
+    width: 300px; /* Make the input wider */
+    border-radius: 8px; /* Rounded corners for a modern look */
+    border: 1px solid #ccc; /* Light gray border */
+    text-align: center; /* Center text inside the input */
+}
+
+.footer-container {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between; /* Center vertically */
+    /* background-color: #222222; */
+    /* color: #fff; */
+    border-radius: 8px;
+    width: 80%;
+    max-width: 480px;
+    padding-top: 10px;
+    font-size: 18px;
+}
+
+.tutorial {
+    width: 48%;
+}
+
+.explanation {
+    width: 48%;
+}
+
+.footer-container button {
+    border-radius: 12px;
+    width: 100%;
+    background-color: #222222;
+    height: 78px;
+    font-size: 20px;
 }

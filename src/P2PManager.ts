@@ -1,19 +1,16 @@
-import { AddressLike, ethers } from "ethers";
-import BroadcastLocal from "./utils/BroadcastLocal";
-import IOnMessage from "./IOnMessage";
-import StateManager from "./StateManager";
-import { deserializeRpc } from "./rpc/Rpc";
-import MainRpcService from "./rpc/MainRpcService";
-import P2pSigner from "./evm/P2pSigner";
-import ATransport from "./transport/ATransport";
-import ProfileManager from "./ProfileManager";
-import Clock from "./Clock";
-import Holepunch from "./Holepunch";
-import PeerProfile from "./PeerProfile";
-// import dotenv from "dotenv";
-import DebugProxy from "./utils/DebugProxy";
-import { RpcHandleMethods } from "./rpc/RpcProxy";
-import LocalDiscoveryServer from "./utils/LocalDiscoveryServer";
+import IOnMessage from "@/IOnMessage";
+import StateManager from "@/StateManager";
+import { deserializeRpc } from "@/rpc/Rpc";
+import MainRpcService from "@/rpc/MainRpcService";
+import P2pSigner from "@/evm/P2pSigner";
+import { ATransport, TransportType } from "@/transport";
+import ProfileManager from "@/ProfileManager";
+import Holepunch from "@/Holepunch";
+import { ethers } from "ethers";
+import DebugProxy from "@/utils/DebugProxy";
+import { RpcHandleMethods } from "@/rpc/RpcProxy";
+import LocalDiscoveryServer from "@/utils/LocalDiscoveryServer";
+import { Buffer } from "buffer";
 
 let DEBUG_P2P_MANAGER = false;
 let DEBUG_LOCAL_TRANSPORT = false;
@@ -31,6 +28,7 @@ class P2PManager implements IOnMessage {
     openConnections: ATransport[] = [];
     holepunch: Holepunch;
     self = DEBUG_P2P_MANAGER ? DebugProxy.createProxy(this) : this;
+    preferredTransport: TransportType = TransportType.HOLEPUNCH;
 
     constructor(stateManager: StateManager, signer: ethers.Signer) {
         this.stateManager = stateManager;
@@ -85,33 +83,20 @@ class P2PManager implements IOnMessage {
         await this.holepunch.join(topic);
     }
     public addConnection(transport: ATransport) {
-        let peerProfile = new PeerProfile(transport);
-        this.profileManager.registerProfile(peerProfile);
         this.openConnections.push(transport);
-        this.initHandshake(transport);
+        this.localRpcService.initHandshakeService.initHandshake(transport);
     }
     public removeConnection(transport: ATransport) {
         this.openConnections = this.openConnections.filter(
             (t) => t !== transport
         );
         let profile = this.profileManager.getProfileByTransport(transport);
-        profile && this.profileManager.unregisterProfile(profile);
-        transport.close();
+        profile && this.profileManager.removeTransport(transport);
     }
     public disconnectAll() {
         for (let transport of this.openConnections) {
             this.removeConnection(transport);
         }
-    }
-    private initHandshake(transport: ATransport) {
-        console.log("initHandshake !");
-        let randomChallengeHash = ethers.keccak256(ethers.randomBytes(32));
-        let time = Clock.getTimeInSeconds();
-        let profile = this.profileManager.getProfileByTransport(transport);
-        profile?.setChallenge({ randomChallengeHash, initTime: time });
-        this.rpcProxy
-            .onInitHandshakeRequest(randomChallengeHash, time)
-            .sendOne(transport);
     }
 }
 

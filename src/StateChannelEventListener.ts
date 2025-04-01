@@ -1,23 +1,27 @@
 import { BigNumberish, BytesLike } from "ethers";
-import { AStateChannelManagerProxy } from "../typechain-types";
-import { SignedBlockStruct } from "../typechain-types/contracts/V1/DataTypes";
-import StateManager from "./StateManager";
-import { DisputeStruct } from "../typechain-types/contracts/V1/DisputeTypes";
-import P2pEventHooks from "./P2pEventHooks";
+import { AStateChannelManagerProxy } from "@typechain-types";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import StateManager from "@/StateManager";
+import P2pEventHooks from "@/P2pEventHooks";
+
 //TODO - made a PR to ethers.js to fix Deferred Topic Filter
 
 class StateChannelEventListener {
     stateManager: StateManager;
     stateChannelManagerContract: AStateChannelManagerProxy;
+    p2pEventHooks: P2pEventHooks;
     setStateFilter: any;
     postedBlockCallDataFilter: any;
     disputeUpdateFilter: any;
     constructor(
         stateManager: StateManager,
-        stateChannelManagerContract: AStateChannelManagerProxy
+        stateChannelManagerContract: AStateChannelManagerProxy,
+        p2pEventHooks: P2pEventHooks
     ) {
         this.stateManager = stateManager;
         this.stateChannelManagerContract = stateChannelManagerContract;
+        this.p2pEventHooks = p2pEventHooks;
 
         // stateChannelManagerContract.off(stateChannelManagerContract.getEvent("GameCreated"));
     }
@@ -68,7 +72,7 @@ class StateChannelEventListener {
             this.postedBlockCallDataFilter,
             async (logObj: any) => {
                 console.log("BlockCalldataPosted EVENT !!!!!!!!!!!");
-                this.stateManager.p2pEventHooks.onPostedCalldata?.();
+                this.p2pEventHooks.onPostedCalldata?.();
                 let signedBlock = logObj.args.signedBlock as SignedBlockStruct;
                 let timestamp = logObj.args.timestamp as BigNumberish;
                 await this.stateManager.collectOnChainBlock(

@@ -1,7 +1,11 @@
-import P2PManager from "../P2PManager";
+import { MainRpcService } from "@/rpc";
 
 abstract class ARpcService {
-    abstract p2pManager: P2PManager;
+    mainRpcService: MainRpcService;
+
+    constructor(mainRpcService: MainRpcService) {
+        this.mainRpcService = mainRpcService;
+    }
 }
 
 export default ARpcService;

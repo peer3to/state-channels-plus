@@ -4,16 +4,16 @@ import {
     deployMathChannelProxyFixture,
     getMathDeploymentTransaction,
     getMathP2pEventHooks
-} from "../../../utils/testHelpers";
-import EvmUtils from "../../../../src/utils/EvmUtils";
+} from "@test/utils/testHelpers";
+import EvmUtils from "@/utils/EvmUtils";
 import EvmStateMachine, {
     P2pInteraction
-} from "../../../../src/evm/EvmStateMachine";
-import BarrierLocal from "../../../../src/utils/BarrierLocal";
+} from "@/evm/EvmStateMachine";
+import BarrierLocal from "@/utils/BarrierLocal";
 import {
     MathStateChannelManagerProxy,
     MathStateMachine
-} from "../../../../typechain-types";
+} from "@typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 describe("DisputeManagerProxy", function () {

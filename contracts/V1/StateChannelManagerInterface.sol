@@ -10,6 +10,24 @@ abstract contract StateChannelManagerInterface {
         bytes[] calldata signatures
     ) public virtual;
 
+    function closeChannel(
+        bytes32 channelId,
+        bytes[] calldata closeChannelData,
+        bytes[] calldata signatures
+    ) public virtual;
+
+    function removeParticipant(
+        bytes32 channelId,
+        bytes[] calldata removeParticipantData,
+        bytes[] calldata signatures
+    ) public virtual;
+
+    function addParticipant(
+        bytes32 channelId,
+        bytes[] calldata removeParticipantData,
+        bytes[] calldata signatures
+    ) public virtual;
+
     function isChannelOpen(
         bytes32 channelId
     ) public view virtual returns (bool);
@@ -56,6 +74,12 @@ abstract contract StateChannelManagerInterface {
         bytes32 channelId,
         uint forkCnt
     ) public view virtual returns (uint);
+
+    function executeStateTransitionOnState(
+        bytes32 channelId,
+        bytes memory encodedState,
+        Transaction memory _tx
+    ) public virtual returns (bool, bytes memory);
 
     function postBlockCalldata(SignedBlock memory signedBlock) public virtual;
 

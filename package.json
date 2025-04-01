@@ -2,10 +2,10 @@
   "name": "@peer3/state-channels-plus",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
-  "version": "0.0.5",
+  "version": "0.0.7",
   "repository": {
     "type": "git",
-    "url": "https://github.com/peer3to/state-channels-plus"
+    "url": "git+https://github.com/peer3to/state-channels-plus.git"
   },
   "license": "MIT",
   "devDependencies": {
@@ -23,21 +23,27 @@
     "@types/node": "^20.11.24",
     "chai": "^4.2.0",
     "hardhat-gas-reporter": "^1.0.8",
+    "rimraf": "^6.0.1",
     "solidity-coverage": "^0.8.1",
+    "source-map-support": "^0.5.21",
     "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
     "typechain": "^8.3.0",
     "typescript": "^5.3.3",
     "web3": "4.5.0"
   },
   "dependencies": {
     "@ethereumjs/evm": "^3.1.0",
+    "@hyperswarm/dht-relay": "0.3.0",
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",
     "@nomiclabs/hardhat-ethers": "2.2.3",
     "@nomiclabs/hardhat-waffle": "2.0.6",
     "@openzeppelin/contracts": "^5.0.2",
+    "buffer": "^6.0.3",
     "dotenv": "^16.4.5",
     "ethereum-waffle": "4.0.10",
     "ethers": "^6.4.0",
+    "get-webrtc": "^1.0.1",
     "glob": "10.3.10",
     "hardhat": "^2.22.1",
     "hyperswarm": "4.3.5",
@@ -50,7 +56,7 @@
     "testts": "yarn hardhat test --no-compile",
     "testc": "yarn hardhat clean && yarn hardhat compile --force && yarn hardhat typechain && yarn hardhat test",
     "test": "yarn hardhat test",
-    "build": "rm -rf dist && tsc"
+    "build": "rimraf dist && tsc && npm pack && node rename-pack.js"
   },
   "files": [
     "dist",
@@ -62,5 +68,16 @@
       "import": "./dist/src/index.js",
       "default": "./dist/src/index.js"
     }
-  }
+  },
+  "description": "This is an SDK for creating scalable and resilient client side peer-to-peer (p2p) state channels for arbitrary state machines with shared security inherited from a distributed ledger (blockchain).",
+  "bugs": {
+    "url": "https://github.com/peer3to/state-channels-plus/issues"
+  },
+  "homepage": "https://github.com/peer3to/state-channels-plus#readme",
+  "directories": {
+    "doc": "docs",
+    "example": "examples",
+    "test": "test"
+  },
+  "author": ""
 }

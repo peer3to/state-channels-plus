@@ -25,7 +25,7 @@ export async function deployTicTacToe(): Promise<
     let randomSinger = getRandomSigner();
     let contractsJSONpath = path.resolve(__dirname, "../contracts.json");
     const deployUtils = new DeployUtils(contractsJSONpath);
-    console.log(".env PROVIDER_URL:", process.env.PROVIDER_URL);
+
     console.log("Provider url:", PROVIDER_URL);
 
     //Deploy library
@@ -93,8 +93,11 @@ export async function deployTicTacToe(): Promise<
         await TicTacToeStateChannelContactInstance.getAddress()
     );
     // await new Promise((resolve) => setTimeout(resolve, 20000));
-    // console.log("Finished sleeping for 20 seconds");
-    // console.log("TIME - ", await mathStateChannelContactInstance.getAllTimes());
+    // console.log("This is needed so the block is mined and the contract is deployed");
+    // console.log(
+    //     "TIME - ",
+    //     await TicTacToeStateChannelContactInstance.getAllTimes()
+    // );
     return [TicTacToeStateChannelContactInstance, TicTacToeContactInstance];
 }
 

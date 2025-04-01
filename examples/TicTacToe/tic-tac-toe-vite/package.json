@@ -4,25 +4,28 @@
     "type": "desktop",
     "gui": {
       "backgroundColor": "#1F2430",
-      "height": 600,
-      "width": 550
+      "height": 900,
+      "width": 750
     },
-    "links": []
+    "links": [
+      "http://localhost:8545",
+      "http://127.0.0.1:8545"
+    ]
   },
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "install-all": "yarn && cd hyperswarm && yarn && cd ..",
     "dev": "vite",
-    "build": "node ./pre-build.js && tsc -b && vite build && node ./build.js",
+    "install-all": "yarn && cd hyperswarm && yarn && cd ..",
+    "build:pear": "node ./pre-build.js && tsc -b && vite build && node ./build.js",
+    "build:browser": "node ./pre-build.js && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@peer3/state-channels-plus": "^0.0.5",
-    "ethers": "^6.13.2",
-    "fs-extra": "^11.2.0",
+    "@peer3/state-channels-plus": "../../../peer3-local-package.tgz",
+    "ethers": "6.13.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "symlink-dir": "^6.0.2"

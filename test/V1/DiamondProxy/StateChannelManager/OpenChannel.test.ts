@@ -6,12 +6,12 @@ import {
     deployMathChannelProxyFixture,
     getSigners,
     createJoinChannelTestObject
-} from "../../../utils/testHelpers";
-import EvmUtils from "../../../../src/utils/EvmUtils";
+} from "@test/utils/testHelpers";
+import EvmUtils from "@/utils/EvmUtils";
 import {
     MathStateChannelManagerProxy,
     MathStateMachine
-} from "../../../../typechain-types";
+} from "@typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 describe("StateChannelManagerProxy", function () {

@@ -14,6 +14,7 @@ import {
 } from "./TicTacToeStateChannel";
 import { TicTacToeStateMachine } from "./typechain-types";
 import { ethers, BigNumberish } from "ethers";
+import { DisputeStruct } from "@peer3/state-channels-plus";
 //Singleton just for demo!
 class TempSingleton {
     private static instance: TempSingleton;
@@ -22,6 +23,8 @@ class TempSingleton {
     p2pContract: TicTacToeStateMachine | undefined;
     p2pSigner: P2pSigner | undefined;
     stateChannelManagerContract: AStateChannelManagerProxy | undefined;
+    myBalance = 500;
+    opponentBalance = 500;
     //game data
     isX: boolean = true;
     setGameStarted = (started: boolean) => {};
@@ -38,6 +41,15 @@ class TempSingleton {
         return "";
     };
     p2pDispose = async () => {};
+
+    getMyBalance = (): number => {
+        return this.myBalance;
+    };
+    setMyBalance = (balance: number) => {};
+    getOpponentBalance = (): number => {
+        return this.opponentBalance;
+    };
+    setOpponentBalance = (balance: number) => {};
     private constructor() {
         // Private constructor to prevent instantiation from outside
     }
@@ -60,11 +72,11 @@ class TempSingleton {
         console.log("encodedChannelId:", encodedChannelId);
         let channelIdHash = ethers.keccak256(encodedChannelId);
         console.log("channelIdHash:", channelIdHash);
-
+        console.log("My Balance:", this.getMyBalance());
         this.joinChanel = {
             channelId: channelIdHash,
             participant: await this.signer.getAddress(),
-            amount: 500,
+            amount: this.getMyBalance(),
             deadlineTimestamp: Clock.getTimeInSeconds() + 120,
             data: "0x00"
         };
@@ -119,13 +131,10 @@ class TempSingleton {
                     console.log("onSetState");
                     let participants =
                         await p2p.p2pContractInstance.getParticipants();
+                    await this.updateBalances();
                     this.setSquares(Array(9).fill(null));
                     if (participants.length < 2) {
-                        await p2p.dispose();
-                        this.setGameStarted(false);
-                        this.setOpponentAddress("");
-                        this.setCreatedGame(false);
-                        this.setGameId("");
+                        await this.finishGame();
                         return;
                     }
                     let firstPlayer =
@@ -140,6 +149,35 @@ class TempSingleton {
                         timeConfig.agreementTime,
                         timeConfig.chainFallbackTime
                     ]);
+                },
+                onDisputeUpdate: async (dispute: DisputeStruct) => {
+                    console.log("onDisputeUpdate", dispute);
+                    for (let i = 0; i < dispute.processExits.length; i++) {
+                        let processExit = dispute.processExits[i];
+                        let participant = processExit.participant;
+                        let amount = processExit.amount;
+                        if (participant === this.p2pSigner?.signerAddress) {
+                            this.myBalance = Number(amount);
+                            console.log(
+                                "Removed Participant My Balance",
+                                this.myBalance
+                            );
+                            console.trace("Removed Participant My Balance");
+                            this.setMyBalance(this.myBalance);
+                            //!!!! Can NOT !!! set opponent's balance (from local state) since this executed on-chain
+                        } else {
+                            this.opponentBalance = Number(amount);
+                            console.log(
+                                "Removed Participant Opponent Balance",
+                                this.opponentBalance
+                            );
+                            console.trace(
+                                "Removed Participant Opponent Balance"
+                            );
+                            this.setOpponentBalance(this.opponentBalance);
+                            //!!!! Can NOT !!! set my balance (fron local state) since this executed on-chain
+                        }
+                    }
                 }
             }
         );
@@ -180,6 +218,7 @@ class TempSingleton {
                     let firstPlayer =
                         await p2p.p2pContractInstance.getNextToWrite();
                     this.isX = firstPlayer === (await this.signer.getAddress());
+                    await this.updateBalances();
                     console.log("Game Over EVENT is X", this.isX);
                     this.setSquares(Array(9).fill(null));
                     this.setIsXNext(true);
@@ -193,9 +232,62 @@ class TempSingleton {
                 }, 2000);
             }
         );
+        // this.p2pContract.on(
+        //   this.p2pContract.filters.RemovedParticipant,
+        //   async (participant: string, amount: BigNumberish) => {
+        //     //Special case for update balances
+        //     if (participant === this.p2pSigner?.signerAddress) {
+        //       this.myBalance = Number(amount);
+        //       console.log("Removed Participant My Balance", this.myBalance);
+        //       console.trace("Removed Participant My Balance");
+        //       this.setMyBalance(this.myBalance);
+        //       //!!!! Can NOT !!! set opponent's balance (from local state) since this executed on-chain
+        //     } else {
+        //       this.opponentBalance = Number(amount);
+        //       console.log(
+        //         "Removed Participant Opponent Balance",
+        //         this.opponentBalance
+        //       );
+        //       console.trace("Removed Participant Opponent Balance");
+        //       this.setOpponentBalance(this.opponentBalance);
+        //       //!!!! Can NOT !!! set my balance (fron local state) since this executed on-chain
+        //     }
+        //   }
+        // );
     }
     public getJoinChannel() {
         return this.joinChanel;
+    }
+
+    private async updateBalances() {
+        let participants = await this.p2pContract!.getParticipants();
+        let shouldTerminate = false;
+        for (let i = 0; i < participants.length; i++) {
+            if (participants[i] === this.p2pSigner!.signerAddress) {
+                this.myBalance = Number(
+                    await this.p2pContract!.getBalance(participants[i])
+                );
+                console.log("Update My Balance", this.myBalance);
+                this.setMyBalance(this.myBalance);
+                if (this.myBalance === 0) shouldTerminate = true;
+            } else {
+                this.opponentBalance = Number(
+                    await this.p2pContract!.getBalance(participants[i])
+                );
+                console.log("Update Opponent Balance", this.opponentBalance);
+                this.setOpponentBalance(this.opponentBalance);
+                if (this.opponentBalance === 0) shouldTerminate = true;
+            }
+        }
+        if (shouldTerminate) await this.finishGame();
+    }
+
+    private async finishGame() {
+        await this.p2pDispose();
+        this.setGameStarted(false);
+        this.setOpponentAddress("");
+        this.setCreatedGame(false);
+        this.setGameId("");
     }
 }
 
