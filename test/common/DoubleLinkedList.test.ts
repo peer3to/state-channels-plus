@@ -1,8 +1,7 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { ContractTransactionResponse } from "ethers";
-import { DoubleLinkedList } from "../../typechain-types";
-import path from "path";
+import { DoubleLinkedList } from "@typechain-types";
 
 describe("DoubleLinkedList contract", function () {
     // We define a fixture to reuse the same setup in every test. We use
