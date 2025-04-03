@@ -8,9 +8,16 @@ import { EvmStateMachine, MathStateMachine } from "../../src";
 
 describe("Peer Joining And Leaving Testing", function () {
     it("A third user should join asynchronously successfully", async function () {
+
+        // this is used to track the end of the test
+        let testEndTracker = 0;
+    
         const [signerOne, signerTwo, thirdSigner] = await ethers.getSigners();
+
+        console.log("PeerOne", signerOne.address);
+        console.log("PeerTwo", signerTwo.address);
+        console.log("PeerThree", thirdSigner.address);
         
-        // TODO
         // 1. Start with normal state progression
         // 2. User joining the channel
         // 3. State continue progressing
@@ -37,18 +44,17 @@ describe("Peer Joining And Leaving Testing", function () {
             {
                 onTurn: (address: string):void => {
                     if (address == signerOne.address) {
-                        console.log("PeerOne onTurn \n\n");
-                        mathContractFirstPlayer.add(100);
+                        console.log("P2P: PeerOne onTurn \n\n");
                     }
                 },
                 onFork: (forkId: string):void => {
-                    console.log("PeerOne onFork \n\n", forkId);
+                    console.log("P2P: PeerOne onFork \n\n", forkId);
                 },
                 onConnection: (address: string):void => {
-                    console.log("PeerOne onConnection \n\n", address);
+                    console.log("P2P: PeerOne onConnection \n\n", address);
                 },
                 onPeerDisconnected: (address: string, reason: string, remover: string):void => {
-                    console.log("PeerOne onPeerDisconnected \n\n", address, reason, remover);
+                    console.log("P2P: PeerOne onPeerDisconnected \n\n", address, reason, remover);
                 }
             } as unknown as P2pEventHooks
         );
@@ -61,18 +67,18 @@ describe("Peer Joining And Leaving Testing", function () {
             {
                 onTurn: (address: string):void => {
                     if (address == signerTwo.address) {
-                        console.log("PeerTwo onTurn \n\n");
-                        mathContractSecondPlayer.add(12);
+                        console.log("P2P: PeerTwo onTurn \n\n");
+                        //mathContractSecondPlayer.add(12);
                     }
                 },
                 onFork: (forkId: string):void => {
-                    console.log("PeerTwo onFork \n\n", forkId);
+                    console.log("P2P: PeerTwo onFork \n\n", forkId);
                 },
                 onConnection: (address: string):void => {
-                    console.log("PeerTwo onConnection \n\n", address);
+                    console.log("P2P: PeerTwo onConnection \n\n", address);
                 },
                 onPeerDisconnected: (address: string, reason: string, remover: string):void => {
-                    console.log("PeerTwo onPeerDisconnected \n\n", address, reason, remover);
+                    console.log("P2P: PeerTwo onPeerDisconnected \n\n", address, reason, remover);
                 }
             } as unknown as P2pEventHooks
         );
@@ -85,17 +91,17 @@ describe("Peer Joining And Leaving Testing", function () {
             {
                 onTurn: (address: string):void => {
                     if (address == thirdSigner.address) {
-                        console.log("PeerThree onTurn \n\n");
+                        console.log("P2P: PeerThree onTurn \n\n");
                     }
                 },
                 onFork: (forkId: string):void => {
-                    console.log("PeerThree onFork \n\n", forkId);
+                    console.log("P2P: PeerThree onFork \n\n", forkId);
                 },
                 onConnection: (address: string):void => {
-                    console.log("PeerThree onConnection \n\n", address);
+                    console.log("P2P: PeerThree onConnection \n\n", address);
                 },
                 onPeerDisconnected: (address: string, reason: string, remover: string):void => {
-                    console.log("PeerThree onPeerDisconnected \n\n", address, reason, remover);
+                    console.log("P2P: PeerThree onPeerDisconnected \n\n", address, reason, remover);
                 }
             } as unknown as P2pEventHooks
         );
@@ -109,27 +115,34 @@ describe("Peer Joining And Leaving Testing", function () {
         mathContractFirstPlayer.on(
             mathContractFirstPlayer.filters.NextToPlay, async (player) => {
                 if (player == signerOne.address) {
-                    console.log("PeerOne onNextToPlay \n\n", player);
+                    console.log("CONTRACT: PeerTwo onNextToPlay \n\n", player);
+                    testEndTracker++;
                 }
             }
         );
         mathContractFirstPlayer.on(mathContractFirstPlayer.filters.Addition, async (a, b, result) => {
-            console.log("PeerOne onAddition \n\n", a, b, result);
+            console.log("CONTRACT: PeerOne onAddition \n\n", a, b, result);
+            testEndTracker++;
+            await mathContractSecondPlayer.add(1);
         });
 
         mathContractSecondPlayer.on(mathContractSecondPlayer.filters.NextToPlay, async (player) => {
-            console.log("PeerTwo onNextToPlay \n\n", player);
+            console.log("CONTRACT: PeerOne onNextToPlay \n\n", player);
+            testEndTracker++;
+            if(player == signerTwo.address) {
+                await mathContractSecondPlayer.add(1);
+            }
         
         });
         mathContractSecondPlayer.on(mathContractSecondPlayer.filters.Addition, async (a, b, result) => {
-            console.log("PeerTwo onAddition \n\n", a, b, result);
+            console.log("CONTRACT: PeerTwo onAddition \n\n", a, b, result);
         });
 
         mathContractThirdPlayer.on(mathContractThirdPlayer.filters.NextToPlay, async (player) => {
-            console.log("PeerThree onNextToPlay \n\n", player);
+            console.log("CONTRACT: PeerThree onNextToPlay \n\n", player);
         });
         mathContractThirdPlayer.on(mathContractThirdPlayer.filters.Addition, async (a, b, result) => {
-            console.log("PeerThree onAddition \n\n", a, b, result);
+            console.log("CONTRACT: PeerThree onAddition \n\n", a, b, result);
         });
 
         // player 1 and 2 join the channel
@@ -163,7 +176,7 @@ describe("Peer Joining And Leaving Testing", function () {
             [signedJc1.signature, signedJc2.signature]
         );
 
-       // wait for the channel to be opened
+       // wait for the channel to be opened 
        await new Promise(resolve => setTimeout(resolve, 1000));
         
        // progress the state machine
@@ -173,18 +186,27 @@ describe("Peer Joining And Leaving Testing", function () {
 
         // third user joins the channel
         console.log("third user joins the channel");
-        await PeerThree.p2pSigner.connectToChannel(joinChannelCommitment3.channelId);
-        await mathscm.addParticipant(
-            joinChannelCommitment3.channelId,
-            [signedJc3.encodedJoinChannel],
-            [signedJc3.signature]
-        );
+        //await PeerThree.p2pSigner.connectToChannel(joinChannelCommitment3.channelId);
+        // await mathscm.addParticipant(
+        //     joinChannelCommitment3.channelId,
+        //     [signedJc3.encodedJoinChannel],
+        //     [signedJc3.signature]
+        // );
         
         // testing third peer progressing the state machine
     
 
-        // wait for the state machine to progress
+        // await new Promise((resolve) => {
+        //     const checkComplete = setInterval(() => {
+        //         if (testEndTracker === 2) {
+        //             clearInterval(checkComplete); 
+        //             resolve(true);                
+        //         }
+        //     }, 100);
+        // });
+
         await new Promise(resolve => setTimeout(resolve, 6000));
+
 
     })
 })

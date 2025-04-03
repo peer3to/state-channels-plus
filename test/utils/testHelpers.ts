@@ -95,21 +95,21 @@ export async function deployMathChannelProxyFixture(
 
     //State machine logic
     let mathSmFactory = await _ethers.getContractFactory("MathStateMachine");
-    let mathContactInstance = await mathSmFactory.deploy();
+    let mathContractInstance = await mathSmFactory.deploy();
 
     //Deploy MathStateChannelManager
     let mathSmcFactory = await _ethers.getContractFactory(
         "MathStateChannelManagerProxy",
         { libraries: { StateChannelUtilLibrary: libraryAddress } }
     );
-    let mathStateChannelContactInstance = await mathSmcFactory.deploy(
-        await mathContactInstance.getAddress(),
+    let mathStateChannelContractInstance = await mathSmcFactory.deploy(
+        await mathContractInstance.getAddress(),
         disputeManagerFacetAddress
     );
 
     return {
-        mathChannelManager: mathStateChannelContactInstance,
-        mathInstance: mathContactInstance
+        mathChannelManager: mathStateChannelContractInstance,
+        mathInstance: mathContractInstance
     };
 }
 export async function getMathDeploymentTransaction(

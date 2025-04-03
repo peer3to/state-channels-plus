@@ -62,7 +62,7 @@ class StateChannelEventListener {
             await this.stateChannelManagerContract.off(
                 this.postedBlockCallDataFilter
             );
-        this.postedBlockCallDataFilter =
+        this.postedBlockCallDataFilter = 
             this.stateChannelManagerContract.filters.BlockCalldataPosted(
                 channelId
             );
