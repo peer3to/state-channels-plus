@@ -33,7 +33,7 @@ describe("EvmStateMachine", function () {
             mathscm,
             mathsm,
             {
-                ...getMathP2pEventHooks(() => { }, await signerOne.getAddress())
+                ...getMathP2pEventHooks(() => {}, await signerOne.getAddress())
             } as unknown as P2pEventHooks
         );
 
@@ -43,7 +43,7 @@ describe("EvmStateMachine", function () {
             mathscm,
             mathsm,
             {
-                ...getMathP2pEventHooks(() => { }, await signerTwo.getAddress())
+                ...getMathP2pEventHooks(() => {}, await signerTwo.getAddress())
             } as unknown as P2pEventHooks
         );
         mathContractFirstPlayer = p2pOne.p2pContractInstance;

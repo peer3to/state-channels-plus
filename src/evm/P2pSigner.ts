@@ -102,9 +102,8 @@ class P2pSigner implements Signer {
             }
         };
 
-        let signedBlock = await this.p2pManager.stateManager.playTransaction(
-            _tx
-        );
+        let signedBlock =
+            await this.p2pManager.stateManager.playTransaction(_tx);
         this.p2pManager.rpcProxy.onSignedBlock(signedBlock).broadcast();
         return "There is no TransactionResponse p2p - everything executed localy" as unknown as TransactionResponse; //TODO
     }

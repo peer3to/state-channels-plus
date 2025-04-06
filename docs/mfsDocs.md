@@ -21,10 +21,10 @@ The TypeScript part of the SDK implements all the functionality and makes it eas
 
 4.  Deploy contracts ([Example](../examples/TicTacToe/scripts/deployTicTacToeContractsProxy.ts)):
 
--   Deploy [StateChannelUtil](../contracts/V1/StateChannelDiamondProxy/StateChannelUtilLibrary.sol) or use an existing deployment ([Example](../examples/TicTacToe/scripts/deployTicTacToeContractsProxy.ts#L37));
--   Deploy [DisputeManagerFacet](../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol) or use an existing deployment ([Example](../examples/TicTacToe/scripts/deployTicTacToeContractsProxy.ts#L51));
--   Deploy the implemented StateMachine contract ([Example](../examples/TicTacToe/scripts/deployTicTacToeContractsProxy.ts#L64));
--   Deploy the implemented StateChannelManager contract ([Example](../examples/TicTacToe/scripts/deployTicTacToeContractsProxy.ts#L83));
+- Deploy [StateChannelUtil](../contracts/V1/StateChannelDiamondProxy/StateChannelUtilLibrary.sol) or use an existing deployment ([Example](../examples/TicTacToe/scripts/deployTicTacToeContractsProxy.ts#L37));
+- Deploy [DisputeManagerFacet](../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol) or use an existing deployment ([Example](../examples/TicTacToe/scripts/deployTicTacToeContractsProxy.ts#L51));
+- Deploy the implemented StateMachine contract ([Example](../examples/TicTacToe/scripts/deployTicTacToeContractsProxy.ts#L64));
+- Deploy the implemented StateChannelManager contract ([Example](../examples/TicTacToe/scripts/deployTicTacToeContractsProxy.ts#L83));
 
 5. Run [setup](../src/evm/EvmStateMachine.ts#L205) on ethers contract instances ([Example](../examples/TicTacToe/tic-tac-toe-vite/src/stateChannel/TicTacToeStateChannel.ts#L53));
 
@@ -88,11 +88,11 @@ function openChannel(
 
 Executed on-chain once for every unique channelId. Performs all the composable operations on the global (world) state (can interact with other contracts). Atomic success or failure.
 
--   channelId - unique identifier of the channel
+- channelId - unique identifier of the channel
 
--   openChannelData - array of bytes for every participant in the channel - bytes hold commitment data (eg. amount of tokens to deposit). - usually the bytes are interpreted as [JoinChannel](../contracts/V1/DataTypes.sol#L80), but you can use your own custom types and have a fully custom verification logic.
+- openChannelData - array of bytes for every participant in the channel - bytes hold commitment data (eg. amount of tokens to deposit). - usually the bytes are interpreted as [JoinChannel](../contracts/V1/DataTypes.sol#L80), but you can use your own custom types and have a fully custom verification logic.
 
--   signatures - array of sigantures - signed openChannelData by each participant in the channel.
+- signatures - array of sigantures - signed openChannelData by each participant in the channel.
 
 ([Example](../examples/TicTacToe/contracts/TicTacToe/TicTacToeStateChannelManagerProxy.sol#L23))
 
