@@ -7,10 +7,9 @@ import {
 } from "@test/utils/testHelpers";
 import EvmUtils from "@/utils/EvmUtils";
 import {
-    P2pInteraction
-} from "@/evm/P2pInteraction";
-import
-EvmStateMachine
+    StateChannelSession
+} from "@/evm/StateChannelSession";
+import EvmStateMachine
     from "@/evm/EvmStateMachine";
 import BarrierLocal from "@/utils/BarrierLocal";
 import {
@@ -37,8 +36,8 @@ describe("DisputeManagerProxy", function () {
     let mathInstance: MathStateMachine;
     let firstSigner: HardhatEthersSigner;
     let secondSigner: HardhatEthersSigner;
-    let p2p1: P2pInteraction<MathStateMachine>;
-    let p2p2: P2pInteraction<MathStateMachine>;
+    let p2p1: StateChannelSession<MathStateMachine>;
+    let p2p2: StateChannelSession<MathStateMachine>;
     beforeEach(async function () {
         snapshotId = await ethers.provider.send("evm_snapshot", []);
         barrier = BarrierLocal.createNewInstance();

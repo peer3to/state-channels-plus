@@ -11,7 +11,7 @@ import { TimeConfig } from "@/DataTypes";
 import DebugProxy from "@/utils/DebugProxy";
 import P2pEventHooks from "@/P2pEventHooks";
 import AStateMachine from "@/AStateMachine";
-import { P2pInteraction } from "./P2pInteraction";
+import { StateChannelSession } from "./StateChannelSession";
 import { ContractExecuter } from "./ContractExecuter";
 
 const DEBUG_CHANNEL_CONTRACT = true;
@@ -215,7 +215,7 @@ class EvmStateMachine extends AStateMachine {
         deployedStateChannelContractInstance: AStateChannelManagerProxy,
         stateMachineContractInstance: T,
         p2pEventHooks?: P2pEventHooks
-    ): Promise<P2pInteraction<T>> {
+    ): Promise<StateChannelSession<T>> {
         // Sync clock to DLT
         await Clock.init(signer.provider!);
 
@@ -270,7 +270,7 @@ class EvmStateMachine extends AStateMachine {
         // Set P2P contract instance on P2P manager
         evmStateMachine.setP2pContractInstance(p2pContractInstance);
 
-        return new P2pInteraction(
+        return new StateChannelSession(
             p2pContractInstance,
             stateManager.p2pManager.p2pSigner
         );
