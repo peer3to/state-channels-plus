@@ -13,3 +13,6 @@ hardhat.config.ts
 
 # Ignore all .tgz files
 *.tgz
+
+# Ignore test contracts
+contracts/test
