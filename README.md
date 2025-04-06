@@ -12,6 +12,7 @@ We recommend waiting for the Full Feature Set before using it in production.
 - [Getting Started](#getting-started)
 - [Examples](#examples)
 - [Run Tests](#run-tests)
+- [Code Formatting](#code-formatting)
 - [Get In Touch](#contact)
 - [Docs (MFS)](./docs/mfsDocs.md)
 - [License](#license)
@@ -64,6 +65,19 @@ Compile the contracts and run tests
 ```shell
 yarn testc
 ```
+
+## Code Formatting
+
+This repository uses [Prettier](https://prettier.io/) for code formatting with configuration in `.prettierrc`. Formatting is automatically enforced using [Husky](https://typicode.github.io/husky/) and [lint-staged](https://github.com/lint-staged/lint-staged) to ensure consistent code style across all contributions.
+
+### Available Commands
+
+- Format all files: `yarn format`
+- Check formatting without modifying files: `yarn format:check`
+
+### Automatic Formatting
+
+Files are automatically formatted when you commit changes. The pre-commit hook will run Prettier on staged files before they are committed, ensuring that all code in the repository follows the same formatting standards.
 
 ## Contact
 - contact@peer3.to
