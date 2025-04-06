@@ -62,7 +62,7 @@
     "build": "rimraf dist && tsc && npm pack && node rename-pack.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "husky"
+    "prepare": "husky install"
   },
   "lint-staged": {
     "**/*": "prettier --write --ignore-unknown"
