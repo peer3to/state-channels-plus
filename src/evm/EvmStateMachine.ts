@@ -14,6 +14,8 @@ import { StateMachine } from "./StateMachine";
 import AStateMachine from "@/AStateMachine";
 import { P2pInteraction } from "./P2pInteraction";
 
+const DEBUG_CHANNEL_CONTRACT = true;
+
 /**
  * Manages peer-to-peer communication and state machines
  * Also serves as the implementation of AStateMachine
@@ -156,7 +158,7 @@ class EvmStateMachine extends AStateMachine {
         deployedStateChannelContractInstance = deployedStateChannelContractInstance.connect(signer);
 
         // Apply debug proxy if enabled
-        const DEBUG_CHANNEL_CONTRACT = true;
+
         if (DEBUG_CHANNEL_CONTRACT) {
             deployedStateChannelContractInstance = DebugProxy.createProxy(
                 deployedStateChannelContractInstance
