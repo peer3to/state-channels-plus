@@ -1,5 +1,5 @@
 import { EVM } from "@ethereumjs/evm";
-import { BytesLike, ethers, Signer } from "ethers";
+import { BytesLike, ethers, Signer, hexlify } from "ethers";
 import {
     AStateChannelManagerProxy,
     AStateMachine as AStateMachineContract
@@ -10,9 +10,9 @@ import Clock from "@/Clock";
 import { TimeConfig } from "@/DataTypes";
 import DebugProxy from "@/utils/DebugProxy";
 import P2pEventHooks from "@/P2pEventHooks";
-import { StateMachine } from "./StateMachine";
 import AStateMachine from "@/AStateMachine";
 import { P2pInteraction } from "./P2pInteraction";
+import { ContractExecuter } from "./ContractExecuter";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 
@@ -21,18 +21,35 @@ const DEBUG_CHANNEL_CONTRACT = true;
  * Also serves as the implementation of AStateMachine
  */
 class EvmStateMachine extends AStateMachine {
-    readonly stateMachineInterface: StateMachine;
+    readonly contractExecuter: ContractExecuter;
     readonly contractInterface: ethers.Interface;
     private p2pContractInstance?: AStateMachineContract;
     public stateManager?: StateManager;
 
     constructor(
-        stateMachineInterface: StateMachine,
+        contractExecuter: ContractExecuter,
         contractInterface: ethers.Interface
     ) {
         super();
-        this.stateMachineInterface = stateMachineInterface;
+        this.contractExecuter = contractExecuter;
         this.contractInterface = contractInterface;
+    }
+
+    private getEncodedCalldata(
+        functionName: string,
+        args: any[] = []
+    ): Uint8Array {
+        return ethers.getBytes(
+            this.contractInterface.encodeFunctionData(functionName, args)
+        );
+    }
+
+    private createContextError(methodName: string, error: unknown): Error {
+        const errorMessage =
+            error instanceof Error ? error.message : String(error);
+        return new Error(
+            `StateMachineInterface.${methodName}: ${errorMessage}`
+        );
     }
 
     public setP2pContractInstance<T extends AStateMachineContract>(
@@ -65,35 +82,89 @@ class EvmStateMachine extends AStateMachine {
                         ...Object.values(event.args)
                     );
                 }
-            } catch (e) { }
+            } catch (e) {}
         }
     }
 
-    public async stateTransition(tx: TransactionStruct) {
-        const result = await this.stateMachineInterface.stateTransition(tx);
-        return {
-            success: result.success,
-            successCallback: result.success ? () => this.processLogs(result.logs) : () => { }
-        };
+    async stateTransition(tx: TransactionStruct) {
+        const encodedData = this.getEncodedCalldata("stateTransition", [tx]);
+
+        try {
+            const result = await this.contractExecuter.executeCall(encodedData);
+            return {
+                success: true,
+                successCallback: () => this.processLogs(result.logs)
+            };
+        } catch (error) {
+            return { success: false, successCallback: () => {} };
+        }
     }
 
-    public async runView(tx: ethers.TransactionRequest): Promise<string> {
-        return this.stateMachineInterface.runView(tx);
+    async runView(tx: ethers.TransactionRequest): Promise<string> {
+        try {
+            const result = await this.contractExecuter.executeCall(
+                tx.data as BytesLike
+            );
+            return hexlify(result.returnValue);
+        } catch (error) {
+            throw this.createContextError("runView", error);
+        }
     }
 
-    public async getParticipants(): Promise<string[]> {
-        return this.stateMachineInterface.getParticipants();
+    async getParticipants(): Promise<string[]> {
+        const callData = this.getEncodedCalldata("getParticipants");
+
+        let result = await this.contractExecuter.executeCall(callData);
+        const hexResult = ethers.hexlify(result.returnValue);
+        const [addresses] = ethers.AbiCoder.defaultAbiCoder().decode(
+            ["address[]"],
+            hexResult
+        );
+        return addresses.toArray();
     }
 
-    public async getNextToWrite(): Promise<string> {
-        return this.stateMachineInterface.getNextToWrite();
+    async getNextToWrite(): Promise<string> {
+        const callData = this.getEncodedCalldata("getNextToWrite");
+        try {
+            let result = await this.contractExecuter.executeCall(callData);
+            const hexResult = ethers.hexlify(result.returnValue);
+            const [address] = ethers.AbiCoder.defaultAbiCoder().decode(
+                ["address"],
+                hexResult
+            );
+            return address;
+        } catch (error) {
+            throw this.createContextError("getNextToWrite", error);
+        }
     }
 
-    public async setState(serializedState: BytesLike): Promise<boolean> {
-        return this.stateMachineInterface.setState(serializedState);
+    async setState(serializedState: BytesLike): Promise<boolean> {
+        const encodedData = this.getEncodedCalldata("setState", [
+            serializedState
+        ]);
+
+        try {
+            await this.contractExecuter.executeCall(encodedData);
+            return true;
+        } catch (error) {
+            throw this.createContextError("setState", error);
+        }
     }
-    public async getState(): Promise<string> {
-        return this.stateMachineInterface.getState();
+
+    async getState(): Promise<string> {
+        const callData = this.getEncodedCalldata("getState");
+
+        try {
+            let result = await this.contractExecuter.executeCall(callData);
+            const hexResult = ethers.hexlify(result.returnValue);
+            const [encodedBytes] = ethers.AbiCoder.defaultAbiCoder().decode(
+                ["bytes"],
+                hexResult
+            );
+            return encodedBytes;
+        } catch (error) {
+            throw this.createContextError("getState", error);
+        }
     }
 
     /**
@@ -118,19 +189,13 @@ class EvmStateMachine extends AStateMachine {
         }
 
         if (!deploymentResult.createdAddress) {
-            throw new Error("EvmStateMachine - create - deploymentTx didn't deploy a contract");
+            throw new Error(
+                "EvmStateMachine - create - deploymentTx didn't deploy a contract"
+            );
         }
 
-        // Create StateMachine with internal ContractExecuter
-        const stateMachine = StateMachine.create(
-            evm,
-            deploymentResult.createdAddress,
-            contractInterface
-        );
-
-
         return new EvmStateMachine(
-            stateMachine,
+            new ContractExecuter(evm, deploymentResult.createdAddress),
             contractInterface
         );
     }
@@ -155,7 +220,8 @@ class EvmStateMachine extends AStateMachine {
         await Clock.init(signer.provider!);
 
         // Connect signer to state channel contract
-        deployedStateChannelContractInstance = deployedStateChannelContractInstance.connect(signer);
+        deployedStateChannelContractInstance =
+            deployedStateChannelContractInstance.connect(signer);
 
         // Apply debug proxy if enabled
 
@@ -172,7 +238,8 @@ class EvmStateMachine extends AStateMachine {
         );
 
         // Get time configuration
-        const configTimes = await deployedStateChannelContractInstance.getAllTimes();
+        const configTimes =
+            await deployedStateChannelContractInstance.getAllTimes();
         const timeConfig: TimeConfig = {
             p2pTime: Number(configTimes[0]),
             agreementTime: Number(configTimes[1]),

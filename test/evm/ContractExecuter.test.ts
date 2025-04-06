@@ -8,7 +8,7 @@ import {
   getSimpleNumberStorageFactory
 } from "../fixtures/SimpleNumberStorage.fixture";
 
-describe("EvmExecutionEnvironment", function () {
+describe("ContractExecuter", function () {
   let evm: EVM;
   let contractAddress: Address;
   let contractExecuter: ContractExecuter;
