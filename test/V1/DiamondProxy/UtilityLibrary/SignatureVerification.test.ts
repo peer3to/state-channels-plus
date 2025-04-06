@@ -68,7 +68,7 @@ describe("StateChannelUtilLibrary", function () {
             );
             expect(
                 result[0] == false &&
-                result[1] == "Cryptography: Not enough valid signatures"
+                    result[1] == "Cryptography: Not enough valid signatures"
             ).to.be.true;
         });
         it("1 of 1 - No signature", async function () {
@@ -82,7 +82,7 @@ describe("StateChannelUtilLibrary", function () {
             );
             expect(
                 result[0] == false &&
-                result[1] == "Cryptography: Not enought signatures provided"
+                    result[1] == "Cryptography: Not enought signatures provided"
             ).to.be.true;
         });
         it("1 of 1 - Invalid signature length", async function () {
@@ -176,8 +176,8 @@ describe("StateChannelUtilLibrary", function () {
             );
             expect(
                 result[0] == false &&
-                result[1] ==
-                "Cryptography: Not enought signatures provided",
+                    result[1] ==
+                        "Cryptography: Not enought signatures provided",
                 "Threshold signature failed"
             ).to.be.true;
         });
@@ -197,7 +197,7 @@ describe("StateChannelUtilLibrary", function () {
             );
             expect(
                 result[0] == false &&
-                result[1] == "Cryptography: Not enough valid signatures",
+                    result[1] == "Cryptography: Not enough valid signatures",
                 "Threshold signature failed"
             ).to.be.true;
         });
@@ -217,7 +217,7 @@ describe("StateChannelUtilLibrary", function () {
             );
             expect(
                 result[0] == false &&
-                result[1] == "Cryptography: Not enough valid signatures",
+                    result[1] == "Cryptography: Not enough valid signatures",
                 "Threshold signature failed"
             ).to.be.true;
         });

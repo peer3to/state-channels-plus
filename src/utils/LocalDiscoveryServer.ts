@@ -64,7 +64,10 @@ class LocalDiscoveryServer {
             const [peerPort, peerChannelId] = JSON.parse(message.toString());
             if (duplicateSet.has(peerPort)) return;
             duplicateSet.add(peerPort);
-            if (peerPort > myPort && (!channelId || channelId === peerChannelId)) {
+            if (
+                peerPort > myPort &&
+                (!channelId || channelId === peerChannelId)
+            ) {
                 console.log(
                     `Connecting to peer on port %%%%%%%%%%%%%%%%%%%%%% ${peerPort} - my port ${myPort} - my channel ${channelId} - peer channel ${peerChannelId}`
                 );

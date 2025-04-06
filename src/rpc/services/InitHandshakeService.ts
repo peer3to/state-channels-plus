@@ -39,9 +39,11 @@ class InitHandshakeService extends ARpcService {
             //TODO!
             //Disconnect & resolve(false)
             console.log(
-                `onInitHandshakeRequest - time difference too big - time:${time} localTime:${localTime} diff:${time - localTime
-                } aggreeTime:${this.mainRpcService.p2pManager.stateManager.timeConfig
-                    .agreementTime
+                `onInitHandshakeRequest - time difference too big - time:${time} localTime:${localTime} diff:${
+                    time - localTime
+                } aggreeTime:${
+                    this.mainRpcService.p2pManager.stateManager.timeConfig
+                        .agreementTime
                 }`
             );
             return;
@@ -129,10 +131,10 @@ class InitHandshakeService extends ARpcService {
         if (
             (preferredTransport === TransportType.WEBRTC ||
                 this.mainRpcService.p2pManager.preferredTransport ===
-                TransportType.WEBRTC) &&
+                    TransportType.WEBRTC) &&
             senderTransport.transportType != TransportType.WEBRTC &&
             this.mainRpcService.p2pManager.p2pSigner.signerAddress <
-            signerAddress
+                signerAddress
         ) {
             this.mainRpcService.webRTCSetunService.initiateWebRTC();
         }

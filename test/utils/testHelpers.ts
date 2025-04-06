@@ -24,11 +24,11 @@ export const createJoinChannelTestObject = (
         participant: address,
         channelId: channelId
             ? ethers.keccak256(
-                ethers.AbiCoder.defaultAbiCoder().encode(
-                    ["string"],
-                    [channelId]
-                )
-            )
+                  ethers.AbiCoder.defaultAbiCoder().encode(
+                      ["string"],
+                      [channelId]
+                  )
+              )
             : ethers.keccak256("0x2371"),
         amount: 500,
         deadlineTimestamp: currentTime + 120, // 2 minutes from now
@@ -61,9 +61,8 @@ export async function deployLibraryTestContract(
     let libraryTestContractFactory = await _ethers.getContractFactory(
         "LibraryTestContract"
     );
-    let libraryTestContract = await libraryTestContractFactory.deploy(
-        libraryAddress
-    );
+    let libraryTestContract =
+        await libraryTestContractFactory.deploy(libraryAddress);
     let proxy = stateChannelUtilLibraryFactory.attach(
         await libraryTestContract.getAddress()
     );
@@ -114,9 +113,8 @@ export async function deployMathChannelProxyFixture(
 export async function getMathDeploymentTransaction(
     _ethers: typeof ethers & HardhatEthersHelpers
 ) {
-    const MathStateMachineFactory = await _ethers.getContractFactory(
-        "MathStateMachine"
-    );
+    const MathStateMachineFactory =
+        await _ethers.getContractFactory("MathStateMachine");
     return await MathStateMachineFactory.getDeployTransaction();
 }
 

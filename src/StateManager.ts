@@ -253,7 +253,7 @@ class StateManager {
             if (
                 Number(block.transaction.header.forkCnt) > this.getForkCnt() ||
                 Number(block.transaction.header.transactionCnt) >
-                this.getNextTransactionCnt()
+                    this.getNextTransactionCnt()
             ) {
                 //TODO! - fetch latest forkCnt from DLT to double check - this can be async since it's stored in the queue
                 executionFlag = ExecutionFlags.NOT_READY;
@@ -674,7 +674,7 @@ class StateManager {
                 Number(forkCnt),
                 Number(transactionCnt)
             ) +
-            this.getTimeoutWaitTimeSeconds()
+                this.getTimeoutWaitTimeSeconds()
         )
             return;
         let response = await this.stateChannelManagerContract.getBlockCallData(

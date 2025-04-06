@@ -150,9 +150,9 @@ class AgreementManager {
         if (!agreement) return undefined;
         if (
             EvmUtils.encodeBlock(agreement.block) !=
-            EvmUtils.encodeBlock(block) &&
+                EvmUtils.encodeBlock(block) &&
             agreement.block.transaction.header.participant ==
-            block.transaction.header.participant
+                block.transaction.header.participant
         ) {
             let { didSign, siganture } = this.didParticipantSign(
                 agreement.block,

@@ -6,9 +6,7 @@ import {
     getMathP2pEventHooks
 } from "@test/utils/testHelpers";
 import EvmUtils from "@/utils/EvmUtils";
-import EvmStateMachine, {
-    P2pInteraction
-} from "@/evm/EvmStateMachine";
+import EvmStateMachine, { P2pInteraction } from "@/evm/EvmStateMachine";
 import BarrierLocal from "@/utils/BarrierLocal";
 import {
     MathStateChannelManagerProxy,
@@ -67,16 +65,22 @@ describe("DisputeManagerProxy", function () {
     describe("Timeout", function () {
         it("Timeout - transaction 0", async function () {
             p2p1.setHooks(
-                getMathP2pEventHooks(() => {
-                    console.log("p2p 1 - BarrierLocal.allowOne()");
-                    barrier.allowOne();
-                }, await firstSigner.getAddress())
+                getMathP2pEventHooks(
+                    () => {
+                        console.log("p2p 1 - BarrierLocal.allowOne()");
+                        barrier.allowOne();
+                    },
+                    await firstSigner.getAddress()
+                )
             );
             p2p2.setHooks(
-                getMathP2pEventHooks(() => {
-                    console.log("p2p 2 - BarrierLocal.allowOne()");
-                    barrier.allowOne();
-                }, await secondSigner.getAddress())
+                getMathP2pEventHooks(
+                    () => {
+                        console.log("p2p 2 - BarrierLocal.allowOne()");
+                        barrier.allowOne();
+                    },
+                    await secondSigner.getAddress()
+                )
             );
 
             let channelId = Math.random().toString();

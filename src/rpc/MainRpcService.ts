@@ -1,4 +1,4 @@
-import { AddressLike, BytesLike, SignatureLike, } from "ethers";
+import { AddressLike, BytesLike, SignatureLike } from "ethers";
 import {
     SignedBlockStruct,
     SignedJoinChannelStruct
@@ -9,7 +9,14 @@ import RpcProxy from "./RpcProxy";
 import ATransport from "@/transport/ATransport";
 import DebugProxy from "@/utils/DebugProxy";
 import { TransportType } from "@/transport/TransportType";
-import { InitHandshakeService, StateTransitionService, TESTJoinChannelService, DHTDiscoveryService, JoinChannelService, WebRTCSetupService } from "./services";
+import {
+    InitHandshakeService,
+    StateTransitionService,
+    TESTJoinChannelService,
+    DHTDiscoveryService,
+    JoinChannelService,
+    WebRTCSetupService
+} from "./services";
 
 let DEBUG_RPC = false;
 // dotenv.config();
