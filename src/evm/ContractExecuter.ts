@@ -2,7 +2,6 @@ import { EVM, EVMResult, ExecResult } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
 import { BytesLike, ethers } from "ethers";
 
-
 export class ContractExecuter {
     private readonly evm: EVM;
     private readonly contractAddress: Address;
@@ -11,7 +10,6 @@ export class ContractExecuter {
         this.evm = evm;
         this.contractAddress = contractAddress;
     }
-
 
     async executeCall(data: BytesLike): Promise<ExecResult> {
         const result = await this.evm.runCall({
@@ -26,7 +24,6 @@ export class ContractExecuter {
         return result.execResult;
     }
 
- 
     private decodeError(result: EVMResult): Error {
         let hex = ethers.hexlify(result.execResult.returnValue);
         hex = "0x" + hex.slice(2 + 8);

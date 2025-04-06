@@ -23,8 +23,8 @@ contract SimpleNumberStorage {
     function getState() public view returns (bytes memory) {
         return abi.encode(value);
     }
-    
+
     function revertWithMessage(string calldata _errorMessage) public pure {
         revert(_errorMessage);
     }
-} 
+}
