@@ -19,8 +19,21 @@ contract StateChannelManagerStorage {
     mapping(bytes32 => uint) latestFork; // [channelId] -> latestFork
     //TODO* - this can map to a hash, but it also has to store keys[] and timestamp
     mapping(bytes32 => mapping(uint => ForkDataAvailability)) postedBlockCalldata; //[channelId][forkCnt].map[transactionCnt][address] -> BlockCalldata
-    //TODO* - enough only to store hash (commitiment)
-    mapping(bytes32 => Dispute) disputes; // disputes[channelId] => Dispute #only 1 dispute per fork and at a time
+    
+    // ================== Dispute on chain storage ==================
+
+    /// @dev disputes[channelId] => array of dispute commitments
+    /// @dev hash(Dspute Struct, timestamp)
+    mapping(bytes32 => bytes32[]) disputes;
+
+    /// @dev disputesData[channelId] => array of encoded dispute data
+    mapping(bytes32 => bytes32[]) dipsutesData;
+
+    /// @dev invalid committed disputes that onchain execution can be based on slashing participants
+    DisputePair[] onChainDisputePairs;
+
+    /// @dev slashed participants
+    address[] onChainSlashedParticipants;
 
     modifier onlySelf() {
         require(

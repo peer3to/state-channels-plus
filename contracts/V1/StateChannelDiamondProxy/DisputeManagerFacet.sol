@@ -105,6 +105,61 @@ contract DisputeManagerFacet is StateChannelCommon {
         return disputes[channelId];
     }
 
+    /// @dev create Block related Dispute
+    /// @param channelId - the channel id
+    /// @param proofs - fraud proof type (only block related fraud proofs are supported)
+
+    function createBlockDispute(
+        bytes32 channelId,
+        uint forkCnt,
+        Proof[] memory proofs,
+        ConfirmedBlock[] memory virtualVotingBlocks,
+        bytes memory encodedLatestFinalizedState,
+        bytes memory encodedLatestCorrectState
+    ) public {
+        require(!isDisputeInProgress(channelId), ErrorDisputeInProgrees());
+        require(getForkCnt(channelId) == forkCnt, ErrorDisputeForkMismatch());
+        address[] memory participants = getParticipants(channelId, forkCnt);
+
+        // state checks
+         require(
+            isFinalizedAndLatest(
+                channelId,
+                forkCnt,
+                encodedLatestFinalizedState,
+                encodedLatestCorrectState,
+                virtualVotingBlocks,
+                participants
+            ),
+            ErrorLatestFinalizedBlock()
+        );
+
+        // set dispute
+        Dispute storage dispute = disputes[channelId];
+        dispute.channelId = channelId;
+        dispute.forkCnt = forkCnt;
+        dispute.challengeCnt = 0; //this can be removed - default value
+        dispute.foldedTransactionCnt = 0;
+        dispute.participants = participants;
+        dispute.creationTimestamp = block.timestamp;
+        dispute.deadlineTimestamp = block.timestamp + getChallengeTime();
+
+    }
+
+    /// @dev create Dispute Fraud Proofs
+    function createDispute(
+
+    ) public {
+
+    }
+
+    /// @dev create Timeout related Dispute
+    function createTimeoutDispute(
+
+    ) public {
+
+    }
+
     function createDispute(
         bytes32 channelId,
         uint forkCnt,

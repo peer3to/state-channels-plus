@@ -17,23 +17,47 @@ contract DisputeTypes {
 }
 
 struct Dispute {
+    /// @notice Channel ID
     bytes32 channelId;
-    uint forkCnt;
-    uint challengeCnt; //challenges target a specific state of dispute (race condition)
-    bytes encodedLatestFinalizedState; //maps to latestFinalizedBlock
-    bytes encodedLatestCorrectState; //maps to virtualVotingBlocks[last]
-    ConfirmedBlock[] virtualVotingBlocks; // If len > 0 -> [0] is finalized BLOCK;
-    address timedoutParticipant;
-    uint foldedTransactionCnt;
-    address timeoutDisputer;
-    address postedStateDisputer;
-    JoinChannel[] joinChannelParticipants;
-    address[] leaveChannelParticipants;
-    address[] slashedParticipants;
-    address[] participants;
-    ProcessExit[] processExits; //Channel removals that will be processed once the dispute is finalized
-    uint creationTimestamp;
-    uint deadlineTimestamp;
+    /// @notice Hash of genesis state (previous dispute output or latest on-chain state)
+    /// @dev Used for state verification and fork creation
+    bytes32 genesisStateHash;
+    /// @notice encoded latest state (latest on-chain state)
+    bytes32 latestState;
+    /// @notice State proofs for the dispute
+    StateProof[] stateProofs;
+    /// @notice Fraud proofs for the dispute
+    Proof[] fraudProofs;
+    /// @notice participants that were slashed on chain
+    address[] onchainSlashes;
+    /// @notice Hash of output state (latest on-chain state)
+    /// @dev created after from dispute resolution
+    bytes32 outputStateHash;
+    /// @notice Address of the disputer, this can be anyone who have a stake in the dispute on chain
+    address disputer;
+    /// @notice Index of the dispute
+    uint disputeIndex;
+    /// @notice Deadline for the challenge
+    uint256 challengeDeadline;
+    /// @notice Stores all exits since genesis
+    /// @dev the time range of the exit is from genesis to the challenge deadline (new fork)
+    ExitChannelBlock[] exitChannelBlocks;
+    // ========================== optional ===============================
+    /// @notice Previous recursive dispute hash
+    bytes32 previousRecursiveDisputeHash;
+    /// @notice Timeout for the dispute
+    Timeout timeout;
+    /// @notice Self removal for the dispute
+    bool selfRemoval;
+}
+
+/// @notice Proof of state finality within a fork
+struct StateProof {
+    /// @notice The state being proven
+    bytes encodedState;
+    
+    /// @notice N/N signatures proving finality of the state
+    bytes[] Signatures;
 }
 
 //Fraud Proof Types:
@@ -44,11 +68,22 @@ struct Proof {
 }
 
 enum ProofType {
-    FoldRechallenge,
+    // Block releated fraud proofs
     DoubleSign,
-    IncorrectData,
-    NewerState,
-    FoldPriorBlock,
+    EmptyBlock,
+    InvalidStateTransition,
+    OutOfGas,
+
+    // Timeout related fraud proofs
+    TimeoutThreshold,
+    TimeoutPriorInvalid,
+    TimeoutParticipantNoNext,
+
+    // Dispute fraud proofs
+    FoldRechallenge,
+    IncorrectData, // InvalidOutputState
+    NewerState, // NotLatestState
+    FoldPriorBlock, // challenge a false timeout proof
     BlockTooFarInFuture,
     JoinChannel,
     LeaveChannelForce

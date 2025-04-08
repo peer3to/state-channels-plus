@@ -121,3 +121,34 @@ struct ProcessExit {
     uint amount;
     bytes data; //custom data
 }
+
+/// @dev It is produced as a byproduct of state transition or enforced onchain through dispute
+struct ExitChannel {
+    address participant;
+    uint amount;
+    bytes data;
+    bool isPartialExit;
+}
+
+struct ExitChannelBlock {
+    /// @dev no signature requirement for the exitChannel blocks
+    ExitChannel[] exitChannel;
+    /// @dev Hash of the previous exitChannelBlock
+    bytes32 previousBlockHash;
+}
+
+struct Timeout {
+    /// @dev the participant that is being timed out
+    address participant;
+    /// @dev the block height at which participant is removed from the channel (fork)
+    uint blockHeight;
+    uint minTimeStamp;
+    // ================== optional ==================
+    address previousBlockProducer;
+}
+
+/// @dev a pair consisting of first index (index of the malicious dispute) and last index (last index in the array)
+struct DisputePair {
+    uint firstIndex;
+    uint lastIndex;
+}
