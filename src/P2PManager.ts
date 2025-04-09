@@ -2,7 +2,7 @@ import IOnMessage from "@/IOnMessage";
 import StateManager from "@/StateManager";
 import { deserializeRpc } from "@/rpc/Rpc";
 import MainRpcService from "@/rpc/MainRpcService";
-import P2pSigner from "@/evm/P2pSigner";
+import { P2pSigner } from "@/evm";
 import { ATransport, TransportType } from "@/transport";
 import ProfileManager from "@/ProfileManager";
 import Holepunch from "@/Holepunch";

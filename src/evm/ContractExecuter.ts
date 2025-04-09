@@ -2,7 +2,7 @@ import { EVM, EVMResult, ExecResult } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
 import { BytesLike, ethers } from "ethers";
 
-export class ContractExecuter {
+export default class ContractExecuter {
     private readonly evm: EVM;
     private readonly contractAddress: Address;
 

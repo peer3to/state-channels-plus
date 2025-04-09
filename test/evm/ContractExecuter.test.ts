@@ -2,7 +2,7 @@ import { ethers } from "hardhat";
 import { expect } from "chai";
 import { EVM } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
-import { ContractExecuter } from "@/evm/ContractExecuter";
+import { ContractExecuter } from "@/evm";
 import {
     getSimpleNumberStorageDeploymentTransaction,
     getSimpleNumberStorageFactory

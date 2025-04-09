@@ -3,8 +3,7 @@ import { expect } from "chai";
 import { EVM } from "@ethereumjs/evm";
 import * as sinon from "sinon";
 
-import EvmStateMachine from "@/evm/EvmStateMachine";
-import { ContractExecuter } from "@/evm/ContractExecuter";
+import { ContractExecuter, EvmStateMachine } from "@/evm";
 
 import { getMathDeploymentTransaction } from "@test/utils/testHelpers";
 import { TransactionStruct } from "@typechain-types/contracts/V1/DataTypes";

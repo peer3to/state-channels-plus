@@ -11,8 +11,7 @@ import { TimeConfig } from "@/DataTypes";
 import DebugProxy from "@/utils/DebugProxy";
 import P2pEventHooks from "@/P2pEventHooks";
 import AStateMachine from "@/AStateMachine";
-import { P2pInstance } from "./P2pInstance";
-import { ContractExecuter } from "./ContractExecuter";
+import { P2pInstance, ContractExecuter } from "@/evm";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 
