@@ -2,7 +2,7 @@ import P2pSigner from "./P2pSigner";
 import { AStateMachine } from "@typechain-types";
 import P2pEventHooks from "@/P2pEventHooks";
 
-export class StateChannelSession<T extends AStateMachine> {
+export class P2pInstance<T extends AStateMachine> {
     p2pContractInstance: T;
     p2pSigner: P2pSigner;
 

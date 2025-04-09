@@ -6,11 +6,8 @@ import {
     getMathP2pEventHooks
 } from "@test/utils/testHelpers";
 import EvmUtils from "@/utils/EvmUtils";
-import {
-    StateChannelSession
-} from "@/evm/StateChannelSession";
-import EvmStateMachine
-    from "@/evm/EvmStateMachine";
+import { P2pInstance } from "@/evm/P2pInstance";
+import EvmStateMachine from "@/evm/EvmStateMachine";
 import BarrierLocal from "@/utils/BarrierLocal";
 import {
     MathStateChannelManagerProxy,
@@ -36,8 +33,8 @@ describe("DisputeManagerProxy", function () {
     let mathInstance: MathStateMachine;
     let firstSigner: HardhatEthersSigner;
     let secondSigner: HardhatEthersSigner;
-    let p2p1: StateChannelSession<MathStateMachine>;
-    let p2p2: StateChannelSession<MathStateMachine>;
+    let p2p1: P2pInstance<MathStateMachine>;
+    let p2p2: P2pInstance<MathStateMachine>;
     beforeEach(async function () {
         snapshotId = await ethers.provider.send("evm_snapshot", []);
         barrier = BarrierLocal.createNewInstance();
@@ -69,22 +66,16 @@ describe("DisputeManagerProxy", function () {
     describe("Timeout", function () {
         it("Timeout - transaction 0", async function () {
             p2p1.setHooks(
-                getMathP2pEventHooks(
-                    () => {
-                        console.log("p2p 1 - BarrierLocal.allowOne()");
-                        barrier.allowOne();
-                    },
-                    await firstSigner.getAddress()
-                )
+                getMathP2pEventHooks(() => {
+                    console.log("p2p 1 - BarrierLocal.allowOne()");
+                    barrier.allowOne();
+                }, await firstSigner.getAddress())
             );
             p2p2.setHooks(
-                getMathP2pEventHooks(
-                    () => {
-                        console.log("p2p 2 - BarrierLocal.allowOne()");
-                        barrier.allowOne();
-                    },
-                    await secondSigner.getAddress()
-                )
+                getMathP2pEventHooks(() => {
+                    console.log("p2p 2 - BarrierLocal.allowOne()");
+                    barrier.allowOne();
+                }, await secondSigner.getAddress())
             );
 
             let channelId = Math.random().toString();
