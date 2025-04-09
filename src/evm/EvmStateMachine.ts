@@ -1,243 +1,255 @@
-import AStateMachine from "@/AStateMachine";
 import { EVM } from "@ethereumjs/evm";
-import { Address } from "@ethereumjs/util";
-import { BytesLike, ethers, Signer } from "ethers";
+import { BytesLike, ethers, Signer, hexlify } from "ethers";
 import {
     AStateChannelManagerProxy,
     AStateMachine as AStateMachineContract
 } from "@typechain-types";
 import { TransactionStruct } from "@typechain-types/contracts/V1/DataTypes";
-import P2pSigner from "./P2pSigner";
 import StateManager from "@/StateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/DataTypes";
 import DebugProxy from "@/utils/DebugProxy";
 import P2pEventHooks from "@/P2pEventHooks";
+import AStateMachine from "@/AStateMachine";
+import { P2pInstance, ContractExecuter } from "@/evm";
 
-let DEBUG_CHANNEL_CONTRACT = true;
+const DEBUG_CHANNEL_CONTRACT = true;
 
-type ParsedLog = {
-    topics: string[];
-    data: string;
-};
-export class P2pInteraction<T extends AStateMachineContract> {
-    p2pContractInstance: T;
-    p2pSigner: P2pSigner;
-
-    constructor(p2pContractInstance: T, p2pSigner: P2pSigner) {
-        this.p2pContractInstance = p2pContractInstance;
-        this.p2pSigner = p2pSigner;
-    }
-
-    public async dispose() {
-        this.p2pContractInstance.removeAllListeners();
-        await this.p2pSigner.p2pManager.stateManager.dispose();
-    }
-
-    public setHooks(p2pEventHooks: P2pEventHooks) {
-        this.p2pSigner.p2pManager.stateManager.setP2pEventHooks(p2pEventHooks);
-    }
-}
-
+/**
+ * Manages peer-to-peer communication and state machines
+ * Also serves as the implementation of AStateMachine
+ */
 class EvmStateMachine extends AStateMachine {
-    evm: EVM;
-    stateMachineAddress: Address;
-    stateMachineInterface: ethers.Interface;
-    p2pContractInstance: AStateMachineContract | undefined;
-    private constructor(
-        evm: EVM,
-        stateMachineAddress: Address,
-        stateMachineInterface: ethers.Interface
+    readonly contractExecuter: ContractExecuter;
+    readonly contractInterface: ethers.Interface;
+    private p2pContractInstance?: AStateMachineContract;
+    public stateManager?: StateManager;
+
+    constructor(
+        contractExecuter: ContractExecuter,
+        contractInterface: ethers.Interface
     ) {
         super();
-        this.evm = evm;
-        this.stateMachineAddress = stateMachineAddress;
-        this.stateMachineInterface = stateMachineInterface;
+        this.contractExecuter = contractExecuter;
+        this.contractInterface = contractInterface;
     }
 
-    public async stateTransition(tx: TransactionStruct) {
-        let encodedData = this.stateMachineInterface.encodeFunctionData(
-            "stateTransition",
-            [tx]
+    private getEncodedCalldata(
+        functionName: string,
+        args: any[] = []
+    ): Uint8Array {
+        return ethers.getBytes(
+            this.contractInterface.encodeFunctionData(functionName, args)
         );
-        let result = await this.evm.runCall({
-            data: ethers.getBytes(encodedData),
-            to: this.stateMachineAddress
-        });
-        if (result.execResult.exceptionError) {
-            console.log(
-                "EvmStateMachine - stateTransition - exceptionError",
-                result
-            );
-            let hex = ethers.hexlify(result.execResult.returnValue);
-            hex = "0x" + hex.slice(2 + 8); //'0x' + 4bytes
-            console.log("Hex:", hex);
-            let decodedString = ethers.AbiCoder.defaultAbiCoder().decode(
-                ["string"],
-                hex
-            );
-            console.log("Decoded string:", decodedString);
-            return { success: false, successCallback: () => {} };
-        }
+    }
 
-        //Process logs
-        const processLogs = () => {
-            if (result.execResult.logs) {
-                for (let i = 0; i < result.execResult.logs.length; i++) {
-                    this.processEvmLog(result.execResult.logs[i]);
-                }
-            }
-        };
-        // setTimeout(processLogs, 0); // put it at the end of the event queue (loop) - allowing the logic context to finish - preventing race condition by updating the agreementManager before proceeding with subsequent triggers
-        return { success: true, successCallback: processLogs };
-    }
-    public async runView(tx: ethers.TransactionRequest): Promise<any> {
-        let result = await this.evm.runCall({
-            data: ethers.getBytes(tx.data as BytesLike),
-            to: this.stateMachineAddress
-        });
-        if (result.execResult.exceptionError)
-            throw new Error("EvmStateMachine - runCall - exceptionError");
-        return ethers.hexlify(result.execResult.returnValue);
-    }
-    public async getParticipants(): Promise<string[]> {
-        let result = await this.evm.runCall({
-            data: ethers.getBytes(
-                this.stateMachineInterface.encodeFunctionData("getParticipants")
-            ),
-            to: this.stateMachineAddress
-        });
-        if (result.execResult.exceptionError)
-            throw new Error(
-                "EvmStateMachine - getParticipants - exceptionError"
-            );
-        let hexResult = ethers.hexlify(result.execResult.returnValue);
-        let addresses = ethers.AbiCoder.defaultAbiCoder().decode(
-            ["address[]"],
-            hexResult
+    private createContextError(methodName: string, error: unknown): Error {
+        const errorMessage =
+            error instanceof Error ? error.message : String(error);
+        return new Error(
+            `StateMachineInterface.${methodName}: ${errorMessage}`
         );
-        return addresses[0].toArray();
     }
 
-    public async getNextToWrite(): Promise<string> {
-        let result = await this.evm.runCall({
-            data: ethers.getBytes(
-                this.stateMachineInterface.encodeFunctionData("getNextToWrite")
-            ),
-            to: this.stateMachineAddress
-        });
-        if (result.execResult.exceptionError)
-            throw new Error(
-                "EvmStateMachine - getNextToWrite - exceptionError"
-            );
-        let hexResult = ethers.hexlify(result.execResult.returnValue);
-        let address = ethers.AbiCoder.defaultAbiCoder().decode(
-            ["address"],
-            hexResult
-        );
-        return address[0];
-    }
-
-    public async setState(serializedState: any): Promise<void> {
-        let result = await this.evm.runCall({
-            data: ethers.getBytes(
-                this.stateMachineInterface.encodeFunctionData("setState", [
-                    serializedState
-                ])
-            ),
-            to: this.stateMachineAddress
-        });
-        if (result.execResult.exceptionError)
-            throw new Error("EvmStateMachine - setState - exceptionError");
-        //TODO!
-    }
-
-    public async getState(): Promise<string> {
-        let result = await this.evm.runCall({
-            data: ethers.getBytes(
-                this.stateMachineInterface.encodeFunctionData("getState")
-            ),
-            to: this.stateMachineAddress
-        });
-        if (result.execResult.exceptionError)
-            throw new Error("EvmStateMachine - getState - exceptionError");
-        let hexResult = ethers.hexlify(result.execResult.returnValue);
-        let encodedBytes = ethers.AbiCoder.defaultAbiCoder().decode(
-            ["bytes"],
-            hexResult
-        );
-        return encodedBytes[0];
-    }
     public setP2pContractInstance<T extends AStateMachineContract>(
         p2pContractInstance: T
     ) {
         this.p2pContractInstance = p2pContractInstance;
     }
-    private processEvmLog(evmLogOutput: any[]) {
-        let topics = evmLogOutput[1].map((topic: any) => ethers.hexlify(topic));
-        let data = ethers.hexlify(evmLogOutput[2]);
-        let parsedLog: ParsedLog = { topics, data };
-        let event = this.stateMachineInterface.parseLog(parsedLog);
-        try {
-            this.p2pContractInstance?.emit(
-                event!.name,
-                ...Object.values(event!.args)
-            );
-        } catch (e) {}
+
+    public setStateManager(stateManager: StateManager) {
+        this.stateManager = stateManager;
     }
 
+    /**
+     * Process logs from an EVM call and emit corresponding events
+     * @param logs The log output from the EVM
+     */
+    public processLogs(logs?: any[]): void {
+        if (!logs || logs.length === 0) return;
+
+        for (const log of logs) {
+            const topics = log[1].map((topic: any) => ethers.hexlify(topic));
+            const data = ethers.hexlify(log[2]);
+            const parsedLog = { topics, data };
+
+            try {
+                const event = this.contractInterface.parseLog(parsedLog);
+                if (event && this.p2pContractInstance) {
+                    this.p2pContractInstance.emit(
+                        event.name,
+                        ...Object.values(event.args)
+                    );
+                }
+            } catch (e) {}
+        }
+    }
+
+    async stateTransition(tx: TransactionStruct) {
+        const encodedData = this.getEncodedCalldata("stateTransition", [tx]);
+
+        try {
+            const result = await this.contractExecuter.executeCall(encodedData);
+            return {
+                success: true,
+                successCallback: () => this.processLogs(result.logs)
+            };
+        } catch (error) {
+            return { success: false, successCallback: () => {} };
+        }
+    }
+
+    async runView(tx: ethers.TransactionRequest): Promise<string> {
+        try {
+            const result = await this.contractExecuter.executeCall(
+                tx.data as BytesLike
+            );
+            return hexlify(result.returnValue);
+        } catch (error) {
+            throw this.createContextError("runView", error);
+        }
+    }
+
+    async getParticipants(): Promise<string[]> {
+        const callData = this.getEncodedCalldata("getParticipants");
+
+        let result = await this.contractExecuter.executeCall(callData);
+        const hexResult = ethers.hexlify(result.returnValue);
+        const [addresses] = ethers.AbiCoder.defaultAbiCoder().decode(
+            ["address[]"],
+            hexResult
+        );
+        return addresses.toArray();
+    }
+
+    async getNextToWrite(): Promise<string> {
+        const callData = this.getEncodedCalldata("getNextToWrite");
+        try {
+            let result = await this.contractExecuter.executeCall(callData);
+            const hexResult = ethers.hexlify(result.returnValue);
+            const [address] = ethers.AbiCoder.defaultAbiCoder().decode(
+                ["address"],
+                hexResult
+            );
+            return address;
+        } catch (error) {
+            throw this.createContextError("getNextToWrite", error);
+        }
+    }
+
+    async setState(serializedState: BytesLike): Promise<boolean> {
+        const encodedData = this.getEncodedCalldata("setState", [
+            serializedState
+        ]);
+
+        try {
+            await this.contractExecuter.executeCall(encodedData);
+            return true;
+        } catch (error) {
+            throw this.createContextError("setState", error);
+        }
+    }
+
+    async getState(): Promise<string> {
+        const callData = this.getEncodedCalldata("getState");
+
+        try {
+            let result = await this.contractExecuter.executeCall(callData);
+            const hexResult = ethers.hexlify(result.returnValue);
+            const [encodedBytes] = ethers.AbiCoder.defaultAbiCoder().decode(
+                ["bytes"],
+                hexResult
+            );
+            return encodedBytes;
+        } catch (error) {
+            throw this.createContextError("getState", error);
+        }
+    }
+
+    /**
+     * Creates a standalone EVM state machine
+     * @param deployStateMachineTx The transaction to deploy the state machine
+     * @param contractInterface The interface of the state machine contract
+     * @returns A new EvmStateMachine instance
+     */
     public static async createStandalone(
         deployStateMachineTx: any,
-        stateMachineInterface: ethers.Interface
+        contractInterface: ethers.Interface
     ): Promise<EvmStateMachine> {
-        let evm = await EVM.create();
+        const evm = await EVM.create();
+
+        // Deploy the state machine contract
         const deploymentResult = await evm.runCall({
             data: ethers.getBytes(deployStateMachineTx.data)
         });
-        if (!deploymentResult.createdAddress)
+
+        if (deploymentResult.execResult.exceptionError) {
+            throw new Error("EvmStateMachine - create - deploymentTx failed");
+        }
+
+        if (!deploymentResult.createdAddress) {
             throw new Error(
                 "EvmStateMachine - create - deploymentTx didn't deploy a contract"
             );
+        }
+
         return new EvmStateMachine(
-            evm,
-            deploymentResult.createdAddress,
-            stateMachineInterface
+            new ContractExecuter(evm, deploymentResult.createdAddress),
+            contractInterface
         );
     }
+
+    /**
+     * Sets up a P2P interaction environment with the state machine
+     * @param signer The signer to use for transactions
+     * @param deployStateMachineTx Transaction to deploy the state machine
+     * @param deployedStateChannelContractInstance The deployed state channel manager proxy
+     * @param stateMachineContractInstance The state machine contract instance
+     * @param p2pEventHooks Optional event hooks for P2P interactions
+     * @returns Promise with the created P2P interaction object
+     */
     public static async p2pSetup<T extends AStateMachineContract>(
         signer: Signer,
         deployStateMachineTx: any,
         deployedStateChannelContractInstance: AStateChannelManagerProxy,
         stateMachineContractInstance: T,
         p2pEventHooks?: P2pEventHooks
-    ): Promise<P2pInteraction<T>> {
-        //Sync clock to DLT
+    ): Promise<P2pInstance<T>> {
+        // Sync clock to DLT
         await Clock.init(signer.provider!);
 
+        // Connect signer to state channel contract
         deployedStateChannelContractInstance =
             deployedStateChannelContractInstance.connect(signer);
-        if (DEBUG_CHANNEL_CONTRACT)
+
+        // Apply debug proxy if enabled
+
+        if (DEBUG_CHANNEL_CONTRACT) {
             deployedStateChannelContractInstance = DebugProxy.createProxy(
                 deployedStateChannelContractInstance
             );
+        }
 
-        let evmStateMachine = await EvmStateMachine.createStandalone(
+        // Create the EvmStateMachine instance (which extends AStateMachine)
+        const evmStateMachine = await EvmStateMachine.createStandalone(
             deployStateMachineTx,
             stateMachineContractInstance.interface
         );
 
-        let configTimes =
+        // Get time configuration
+        const configTimes =
             await deployedStateChannelContractInstance.getAllTimes();
-        let timeConfig: TimeConfig = {
+        const timeConfig: TimeConfig = {
             p2pTime: Number(configTimes[0]),
             agreementTime: Number(configTimes[1]),
             chainFallbackTime: Number(configTimes[2]),
             challengeTime: Number(configTimes[3])
         };
 
-        let signerAddress = await signer.getAddress();
+        const signerAddress = await signer.getAddress();
 
-        let stateManager = new StateManager(
+        // Create state manager with EvmStateMachine (which is an AStateMachine)
+        const stateManager = new StateManager(
             signer,
             signerAddress,
             deployedStateChannelContractInstance,
@@ -245,11 +257,19 @@ class EvmStateMachine extends AStateMachine {
             timeConfig,
             p2pEventHooks || {}
         );
-        let p2pContractInstance = stateMachineContractInstance.connect(
+
+        // Set state manager on P2P communication manager
+        evmStateMachine.setStateManager(stateManager);
+
+        // Create P2P contract instance
+        const p2pContractInstance = stateMachineContractInstance.connect(
             stateManager.p2pManager.p2pSigner
         ) as T;
+
+        // Set P2P contract instance on P2P manager
         evmStateMachine.setP2pContractInstance(p2pContractInstance);
-        return new P2pInteraction(
+
+        return new P2pInstance(
             p2pContractInstance,
             stateManager.p2pManager.p2pSigner
         );
