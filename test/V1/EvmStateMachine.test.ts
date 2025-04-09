@@ -1,6 +1,6 @@
 import { ethers as hre } from "hardhat";
 import { BigNumberish } from "ethers";
-import EvmStateMachine from "@/evm/EvmStateMachine";
+import { EvmStateMachine } from "@/evm";
 import { MathStateMachine } from "@typechain-types";
 import {
     createJoinChannelTestObject,
