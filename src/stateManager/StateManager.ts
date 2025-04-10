@@ -27,7 +27,6 @@ import StateChannelEventListener from "@/StateChannelEventListener";
 import Mutex from "@/utils/Mutex";
 
 import DebugProxy from "@/utils/DebugProxy";
-// import dotenv from "dotenv";
 import P2pEventHooks from "@/P2pEventHooks";
 import {
     checkBlockForkStatus,
@@ -52,10 +51,16 @@ import {
     ValidationStep
 } from "./types";
 import { runPipeline } from "./BlockValidation";
+import {
+    DecisionContext,
+    processExecutionDecision
+} from "./processExecutionDecisionHandlers";
+import {
+    ConfirmationDecisionContext,
+    processConfirmationDecision
+} from "./processConfirmationDecisionHandlers";
 
 let DEBUG_STATE_MANAGER = false;
-// dotenv.config();
-// DEBUG_STATE_MANAGER = process.env.DEBUG_STATE_MANAGER === "true";
 class StateManager {
     stateMachine: AStateMachine;
     p2pEventHooks: P2pEventHooks;
@@ -186,7 +191,7 @@ class StateManager {
             }
         }
     }
-    private async tryConfirmFromQueue() {
+    private async tryConfirmFromQueue(): Promise<void> {
         //TODO! race condition and skipping a txCount
         let confirmations = this.agreementManager.tryDequeueConfirmations(
             Number(this.getForkCnt()),
@@ -366,78 +371,127 @@ class StateManager {
         };
     }
 
+    private ensureChannelIsOpen(): void {
+        if (this.getForkCnt() === -1) {
+            throw new Error("Channel not opened");
+        }
+    }
+
+    private async isMyTurn(): Promise<boolean> {
+        const nextToWrite = await this.stateMachine.getNextToWrite();
+        return this.signerAddress === nextToWrite;
+    }
+
+    private async ensureItIsMyTurn(): Promise<void> {
+        const nextToWrite = await this.stateMachine.getNextToWrite();
+        if (this.signerAddress !== nextToWrite) {
+            throw new Error(
+                `Not player turn - myAddress: ${this.signerAddress} - nextToWrite: ${nextToWrite}`
+            );
+        }
+    }
+
+    private adjustTimestampIfNeeded(tx: TransactionStruct): void {
+        const latestBlockTimestamp =
+            this.agreementManager.getLatestBlockTimestamp(this.getForkCnt());
+        if (Number(tx.header.timestamp) < latestBlockTimestamp) {
+            tx.header.timestamp = latestBlockTimestamp + 1;
+        }
+    }
+
+    private async applyTransactionOrThrow(tx: TransactionStruct): Promise<{
+        previousStateHash: string;
+        encodedState: string;
+        successCallback: () => void;
+    }> {
+        const previousStateHash = await this.getEncodedStateKecak256();
+        const { success, encodedState, successCallback } =
+            await this.applyTransaction(tx);
+
+        if (!success) {
+            throw new Error(
+                "CreateAndApplyTransaction - Internal error - Transaction not successful"
+            );
+        }
+
+        return { previousStateHash, encodedState, successCallback };
+    }
+
+    private async createBlock(
+        tx: TransactionStruct,
+        previousStateHash: string
+    ): Promise<BlockStruct> {
+        const currentStateHash = await this.getEncodedStateKecak256();
+
+        return {
+            transaction: tx,
+            stateHash: currentStateHash,
+            previousStateHash
+        };
+    }
+
+    private async signBlock(block: BlockStruct): Promise<SignedBlockStruct> {
+        return EvmUtils.signBlock(block, this.p2pManager.p2pSigner);
+    }
+
+    private scheduleSignatureCheck(
+        block: BlockStruct,
+        signedBlock: SignedBlockStruct
+    ): void {
+        setTimeout(async () => {
+            if (this.isDisposed) return;
+
+            // If not everyone has signed, do the on-chain post
+            if (!this.agreementManager.didEveryoneSignBlock(block)) {
+                console.log("Posting calldata on chain!");
+                this.p2pEventHooks.onPostingCalldata?.();
+                try {
+                    await this.stateChannelManagerContract
+                        .postBlockCalldata(signedBlock)
+                        .then((txResponse) => txResponse.wait());
+                } catch (error) {
+                    console.log("Error posting block on chain", error);
+                }
+            }
+        }, this.timeConfig.agreementTime * 1000);
+    }
     // Used when authoring a block - Ecxecutes the transaction and returns a signed block
     public async playTransaction(
         tx: TransactionStruct
     ): Promise<SignedBlockStruct> {
+        await this.mutex.lock();
+
         try {
-            await this.mutex.lock();
             console.log("Play Transaction", this.getForkCnt());
-            if (this.getForkCnt() == -1) throw new Error("Channel not opened");
-            let nextToWrite = await this.stateMachine.getNextToWrite();
-            if (this.signerAddress != nextToWrite) {
-                throw new Error(
-                    `Not player turn - myAddress: ${this.signerAddress} - nextToWrite: ${nextToWrite}`
-                );
-            }
+            this.ensureChannelIsOpen();
+            await this.ensureItIsMyTurn();
+            this.adjustTimestampIfNeeded(tx);
 
-            let timestamp = Number(tx.header.timestamp);
-            let latestBlockTimestamp =
-                this.agreementManager.getLatestBlockTimestamp(
-                    this.getForkCnt()
-                );
+            // 4. Apply the transaction to produce the updated state
+            const { previousStateHash, encodedState, successCallback } =
+                await this.applyTransactionOrThrow(tx);
 
-            if (timestamp < latestBlockTimestamp)
-                tx.header.timestamp = latestBlockTimestamp + 1;
+            // 5. Build and sign the block
+            const block = await this.createBlock(tx, previousStateHash);
+            const signedBlock = await this.signBlock(block);
 
-            //Apply transaction
-            let previousStateEncodedHash = await this.getEncodedStateKecak256();
-            let { success, encodedState, successCallback } =
-                await this.applyTransaction(tx);
-            if (!success)
-                throw new Error(
-                    "CreateAndApplyTransaction - Internal error - Transaction not successful"
-                );
-            let block: BlockStruct = {
-                transaction: tx,
-                stateHash: await this.getEncodedStateKecak256(),
-                previousStateHash: previousStateEncodedHash
-            };
-            let signedBlock = await EvmUtils.signBlock(
-                block,
-                this.p2pManager.p2pSigner
-            );
+            // 6. Add the block to the agreement manager
             this.agreementManager.addBlock(
                 block,
                 signedBlock.signature as SignatureLike,
                 encodedState
             );
+
+            // 7. Execute success callbacks
             successCallback();
             await this.onSuccessCommon();
-            //Set check if everyone signed my block
-            setTimeout(async () => {
-                if (this.isDisposed) return;
-                if (!this.agreementManager.didEveryoneSignBlock(block)) {
-                    //TODO! calculate who didn't sign so we stop signing their blocks
-                    console.log("Posting calldata on chain!");
-                    this.p2pEventHooks.onPostingCalldata?.();
-                    try {
-                        let txResponse =
-                            await this.stateChannelManagerContract.postBlockCalldata(
-                                signedBlock
-                            );
-                        let txReceipt = await txResponse.wait();
-                    } catch (e) {
-                        console.log("Error posting block on chain", e);
-                    }
-                    // console.log("Posted block on chain");
-                }
-                // console.log("Checking did others sign my block!");
-            }, this.timeConfig.agreementTime * 1000);
+
+            // 8. Schedule a check to see if everyone has signed our new block
+            this.scheduleSignatureCheck(block, signedBlock);
+
             return signedBlock;
-        } catch (e) {
-            throw e;
         } finally {
+            // Release the lock
             this.mutex.unlock();
         }
     }
@@ -446,11 +500,11 @@ class StateManager {
     public async getPlayersWhoHaventSignedBlock(
         block: BlockStruct
     ): Promise<AddressLike[]> {
-        let signatures = this.agreementManager.getSigantures(block);
-        let retrievedAddresses = signatures.map((signature) => {
-            return EvmUtils.retrieveSignerAddressBlock(block, signature);
-        });
-        let playerAddresses = await this.stateMachine.getParticipants();
+        const signatures = this.agreementManager.getSigantures(block);
+        const retrievedAddresses = signatures.map((signature) =>
+            EvmUtils.retrieveSignerAddressBlock(block, signature)
+        );
+        const playerAddresses = await this.stateMachine.getParticipants();
         return playerAddresses.filter(
             (address) => !retrievedAddresses.includes(address.toString())
         );
@@ -491,33 +545,44 @@ class StateManager {
         }
     }
 
+    private checkSubjectiveBlockTiming(block: BlockStruct): ExecutionFlags {
+        const myTime = BigInt(Clock.getTimeInSeconds());
+        const blockTimestamp = BigInt(block.transaction.header.timestamp);
+
+        // If the block is more than 5 seconds in the past (relative to local clock)
+        if (blockTimestamp + BigInt(5) < myTime) {
+            return ExecutionFlags.NOT_ENOUGH_TIME;
+        }
+
+        // If the block is more than 10 seconds in the future
+        if (blockTimestamp - BigInt(10) > myTime) {
+            // Create a dispute for a future timestamp
+            return ExecutionFlags.DISPUTE;
+        }
+
+        // Otherwise, all good
+        return ExecutionFlags.SUCCESS;
+    }
+
     // Doesn't have to take into account chain time - since this is subjective
     // If chain time is triggered -> it becomes objective and goes through a different execution path
     public async isEnoughTimeToPlayMyTransactionSubjective(
         signedBlock: SignedBlockStruct
     ): Promise<ExecutionFlags> {
         //Has to use SignedBlock instead of Block - since Block may not be in agreement to fetch signature
-        if (this.signerAddress != (await this.stateMachine.getNextToWrite()))
-            return ExecutionFlags.SUCCESS;
+        if (!(await this.isMyTurn())) return ExecutionFlags.SUCCESS;
+
         let block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
-        let myTime = BigInt(Clock.getTimeInSeconds());
-        let blockTimestamp = BigInt(block.transaction.header.timestamp);
-        //agreementTime
-        if (blockTimestamp + BigInt(5) < myTime)
-            return ExecutionFlags.NOT_ENOUGH_TIME;
-        //2*avgBlockTime
-        if (blockTimestamp - BigInt(10) > myTime) {
-            //TODO! - Dispute future timestamp
-            //TODO! - Change this to executionFlags?
-            let disputeProof =
+
+        const flag = this.checkSubjectiveBlockTiming(block);
+        if (flag == ExecutionFlags.DISPUTE) {
+            const disputeProof =
                 this.disputeHandler.createBlockTooFarInFutureProof(signedBlock);
             this.disputeHandler.createDispute(this.getForkCnt(), "0x00", 0, [
                 disputeProof
-                //TODO!!! - if this fails -> revert dispute side effects
             ]);
-            return ExecutionFlags.DISPUTE;
         }
-        return ExecutionFlags.SUCCESS;
+        return flag;
     }
     // Checks does the block timestamp satisfy the invariant by taking into account on-chain calldata posted. This is used for the grant, but we have a better solution for the full feature set.
     public async isGoodTimestampNonDeterministic(
@@ -533,7 +598,6 @@ class StateManager {
         );
         if (timestamp < lastTransactionTimestamp) {
             throw new Error("Not implemented");
-            return false; //Timestamp must be strictly increasing - Dispute BLOCK data not good
         }
         if (timestamp > referenceTime + this.timeConfig.p2pTime) {
             let chainTimestamp = Number(
@@ -650,95 +714,42 @@ class StateManager {
         executionFlag: ExecutionFlags,
         agreementFlag?: AgreementFlag
     ) {
-        let block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
-        switch (executionFlag) {
-            case ExecutionFlags.SUCCESS:
-                await this.p2pManager.p2pSigner.confirmBlock(signedBlock);
-                await this.onSuccessCommon();
-                break;
-            case ExecutionFlags.NOT_READY:
-                this.agreementManager.queueBlock(signedBlock);
-                break;
-            case ExecutionFlags.DUPLICATE:
-                //nothing
-                break;
-            case ExecutionFlags.DISCONNECT:
-                //TODO! - signal p2pManager (response)
-                break;
-            case ExecutionFlags.DISPUTE:
-                switch (agreementFlag) {
-                    case AgreementFlag.DOUBLE_SIGN:
-                        this.disputeHandler.disputeDoubleSign([signedBlock]);
-                        break;
-                    case AgreementFlag.INCORRECT_DATA:
-                        this.disputeHandler.disputeIncorrectData(signedBlock);
-                        break;
-                    default:
-                        //None of the other cases should happen in this case
-                        throw new Error(
-                            `StateManager - processDecision - AgreementFlag ${agreementFlag} - Internal Error`
-                        );
-                }
-                break;
-            case ExecutionFlags.TIMESTAMP_IN_FUTURE:
-                //TODO - try dispute?
-                break;
-            case ExecutionFlags.NOT_ENOUGH_TIME:
-                //nothing - success path of previous block already initiated tryTimeout for this block
-                break;
-            case ExecutionFlags.PAST_FORK:
-                //TODO - think about this - should this be a dispute or just ignore?
-                break;
-            default:
-                throw new Error(
-                    "StateManager - processDecision - Internal Error"
-                );
-        }
+        const context: DecisionContext = {
+            p2pManager: this.p2pManager,
+            agreementManager: this.agreementManager,
+            disputeHandler: this.disputeHandler,
+            onSuccessCb: this.onSuccessCommon.bind(this),
+            forkCount: this.getForkCnt()
+        };
+
+        return processExecutionDecision(
+            signedBlock,
+            executionFlag,
+            agreementFlag,
+            context
+        );
     }
-    // Helper function that takes appropriate action on the block condirmation based on the execution flag and agreement flag
+
+    // Helper function that takes appropriate action on the block confirmation based on the execution flag and agreement flag
     private async processConfirmationDecision(
         originalSignedBlock: SignedBlockStruct,
         confirmationSignature: SignatureLike,
-        executionFlag: ExecutionFlags,
-        agreementFlag?: AgreementFlag
+        executionFlag: ExecutionFlags
     ) {
-        let block = EvmUtils.decodeBlock(originalSignedBlock.encodedBlock);
-        switch (executionFlag) {
-            case ExecutionFlags.SUCCESS:
-                setTimeout(async () => {
-                    if (this.isDisposed) return;
-                    this.tryConfirmFromQueue();
-                }, 0);
-                break;
-            case ExecutionFlags.NOT_READY:
-                this.agreementManager.queueConfirmation({
-                    originalSignedBlock,
-                    confirmationSignature
-                });
-                break;
-            case ExecutionFlags.DUPLICATE:
-                //nothing
-                break;
-            case ExecutionFlags.DISCONNECT:
-                //TODO! - signal p2pManager (response)
-                break;
-            case ExecutionFlags.DISPUTE:
-                //Nothing - done on the onSignedBlock level - no need to dispute confirmations
-                break;
-            case ExecutionFlags.TIMESTAMP_IN_FUTURE:
-                //Nothing - done on the onSignedBlock level - no need to potentially dispute future timestamps here
-                break;
-            case ExecutionFlags.NOT_ENOUGH_TIME:
-                //Nothing - done on the onSignedBlock level - no need to take any action here
-                break;
-            case ExecutionFlags.PAST_FORK:
-                //TODO - think about this - should this be a dispute or just ignore?
-                break;
-            default:
-                throw new Error(
-                    "StateManager - processDecision - Internal Error"
-                );
-        }
+        // Build the context for the decision
+        const ctx: ConfirmationDecisionContext = {
+            isDisposed: this.isDisposed,
+            tryConfirmFromQueue: this.tryConfirmFromQueue.bind(this),
+            queueConfirmation:
+                this.agreementManager.queueConfirmation.bind(this)
+        };
+
+        await processConfirmationDecision(
+            originalSignedBlock,
+            confirmationSignature,
+            executionFlag,
+            ctx
+        );
     }
 }
 
