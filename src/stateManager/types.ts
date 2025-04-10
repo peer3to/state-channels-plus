@@ -5,11 +5,16 @@ import {
 import StateManager from "./StateManager";
 import { ExecutionFlags } from "@/DataTypes";
 import { AgreementFlag } from "@/AgreementManager";
+import { BytesLike } from "ethers";
 
 export interface ValidationContext {
     stateManager: StateManager;
     signedBlock: SignedBlockStruct;
     block: BlockStruct;
+}
+
+export interface ConfirmationContext extends ValidationContext {
+    confirmationSignature: BytesLike;
 }
 
 /**
@@ -24,6 +29,10 @@ export interface ValidationResult {
 /**
  * Signature for each validator function.
  */
-export type ValidationStep = (
-    context: ValidationContext
+export type ValidationStep<TContext extends ValidationContext> = (
+    context: TContext
+) => Promise<ValidationResult>;
+
+export type ConfirmationStep = (
+    context: ConfirmationContext
 ) => Promise<ValidationResult>;

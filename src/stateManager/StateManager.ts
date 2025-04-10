@@ -41,10 +41,17 @@ import {
     checkForkDisputeStatus,
     checkBlockValidity,
     checkDuplicateBlock,
-    checkManagerReadiness
+    checkManagerReadiness,
+    checkDuplicateConfirmationSignature,
+    ensureBlockInChainOrProcessIt,
+    checkConfirmerParticipantInFork
 } from "./validators";
-import { ValidationContext, ValidationStep } from "./types";
-import { runValidationPipeline } from "./BlockValidation";
+import {
+    ConfirmationContext,
+    ValidationContext,
+    ValidationStep
+} from "./types";
+import { runPipeline } from "./BlockValidation";
 
 let DEBUG_STATE_MANAGER = false;
 // dotenv.config();
@@ -223,7 +230,6 @@ class StateManager {
     }
 
     // Passes the signedBlock through a verification pipeline and returns an execution flag based on the outcome
-
     public async onSignedBlock(
         signedBlock: SignedBlockStruct
     ): Promise<ExecutionFlags> {
@@ -245,7 +251,7 @@ class StateManager {
             };
 
             // Configure the pipeline in the order of checks you prefer
-            const validators: ValidationStep[] = [
+            const validators: ValidationStep<ValidationContext>[] = [
                 checkManagerReadiness,
                 checkBlockValidity,
                 checkBlockForkStatus,
@@ -261,8 +267,10 @@ class StateManager {
             ];
 
             // Run the pipeline and break on first failure
-            const { executionFlag, agreementFlag } =
-                await runValidationPipeline(validators, context);
+            const { executionFlag, agreementFlag } = await runPipeline(
+                validators,
+                context
+            );
 
             // Record the result for our finally block
             finalExecutionFlag = executionFlag;
@@ -288,88 +296,61 @@ class StateManager {
         }
     }
 
-    // Passes the block confirmation through a verification pipeline and returns an execution flag based on the outcome
+    // Passes the block confirmation through a verification pipeline and returns an execution flag
     public async onBlockConfirmation(
-        originalSignedBlock: SignedBlockStruct,
+        signedBlock: SignedBlockStruct,
         confirmationSignature: BytesLike
     ): Promise<ExecutionFlags> {
-        let executionFlag: ExecutionFlags | undefined;
+        let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS; // Default to SUCCESS
+
         try {
-            if (this.getForkCnt() == -1) {
-                executionFlag = ExecutionFlags.NOT_READY;
-                return ExecutionFlags.NOT_READY;
-            }
+            // Build the context for validators
+            const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
 
-            //Is a valid block or duplicate
-            if (!(await this.isValidBlock(originalSignedBlock))) {
-                executionFlag = ExecutionFlags.DISCONNECT;
-                return executionFlag;
-            }
+            const context: ConfirmationContext = {
+                stateManager: this,
+                signedBlock,
+                confirmationSignature,
+                block
+            };
 
-            let block = EvmUtils.decodeBlock(originalSignedBlock.encodedBlock);
+            // Compose your steps in the order you want them executed
+            const steps: ValidationStep<ConfirmationContext>[] = [
+                checkManagerReadiness,
+                checkBlockValidity,
+                checkBlockForkStatus,
+                ensureBlockInChainOrProcessIt,
+                checkConfirmerParticipantInFork,
+                checkDuplicateConfirmationSignature
+            ];
 
-            //Is past fork
-            if (Number(block.transaction.header.forkCnt) < this.getForkCnt()) {
-                executionFlag = ExecutionFlags.PAST_FORK;
-                return executionFlag;
-            }
+            // Run the pipeline (similar to runValidationPipeline)
+            const { executionFlag } = await runPipeline(steps, context);
+            finalExecutionFlag = executionFlag; // Keep track of the final result
 
-            if (!this.agreementManager.isBlockInChain(block)) {
-                executionFlag = await this.onSignedBlock(originalSignedBlock);
-                if (executionFlag == ExecutionFlags.DUPLICATE) {
-                    if (this.agreementManager.isBlockInChain(block)) {
-                        executionFlag = ExecutionFlags.SUCCESS;
-                    } else {
-                        executionFlag = ExecutionFlags.NOT_READY;
-                    }
-                }
-                if (executionFlag != ExecutionFlags.SUCCESS)
-                    return executionFlag;
-            }
-            //Block exists in canonical chain
-
-            //Is confirmer part of the current fork
-            let retrievedAddress = EvmUtils.retrieveSignerAddressBlock(
-                block,
-                confirmationSignature as SignatureLike
-            );
-            if (
-                !this.agreementManager.isParticipantInLatestFork(
-                    retrievedAddress
-                )
-            ) {
-                executionFlag = ExecutionFlags.DISCONNECT;
-                return executionFlag;
-            }
-
-            //DUPLICATE signature - CHECK
-            if (
-                this.agreementManager.doesSignatureExist(
-                    block,
-                    confirmationSignature as SignatureLike
-                )
-            ) {
-                executionFlag = ExecutionFlags.DUPLICATE;
-                return executionFlag;
-            }
             this.agreementManager.confirmBlock(
                 block,
                 confirmationSignature as SignatureLike
             );
-            executionFlag = ExecutionFlags.SUCCESS;
-            return executionFlag;
+
+            return finalExecutionFlag;
         } finally {
-            if (executionFlag == undefined)
+            // Safety check
+            if (finalExecutionFlag === undefined) {
                 throw new Error(
                     "StateManager - onBlockConfirmation - Internal Error - flag undefined"
                 );
-            this.processConfirmationDecision(
-                originalSignedBlock,
+            }
+
+            // Process final decision
+            await this.processConfirmationDecision(
+                signedBlock,
                 confirmationSignature as SignatureLike,
-                executionFlag
+                finalExecutionFlag
             );
         }
     }
+
     //Aplies a transaction to the state machine and returns the encoded state with a success callback
     public async applyTransaction(transaction: TransactionStruct): Promise<{
         success: boolean;
