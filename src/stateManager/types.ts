@@ -19,7 +19,7 @@ export interface ConfirmationContext extends ValidationContext {
 
 /**
  * A validator can return either SUCCESS or a failure-type ExecutionFlag.
- * We also allow it to optionally specify an AgreementFlag (like INCORRECT_DATA, etc).
+ *  optionally specify an AgreementFlag (like INCORRECT_DATA, etc).
  */
 export interface ValidationResult {
     executionFlag: ExecutionFlags;
