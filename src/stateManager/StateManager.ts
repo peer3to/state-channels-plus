@@ -405,6 +405,7 @@ class StateManager {
 
             return signedBlock;
         } finally {
+            // Release the lock
             this.mutex.unlock();
         }
     }
