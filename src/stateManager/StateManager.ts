@@ -103,7 +103,6 @@ class StateManager {
             this.p2pEventHooks
         );
         this.p2pManager = new P2PManager(this.self, signer);
-        return this.self;
     }
     //Mark resources for garbage collection
     public async dispose() {
@@ -371,90 +370,6 @@ class StateManager {
         };
     }
 
-    private ensureChannelIsOpen(): void {
-        if (this.getForkCnt() === -1) {
-            throw new Error("Channel not opened");
-        }
-    }
-
-    private async isMyTurn(): Promise<boolean> {
-        const nextToWrite = await this.stateMachine.getNextToWrite();
-        return this.signerAddress === nextToWrite;
-    }
-
-    private async ensureItIsMyTurn(): Promise<void> {
-        const nextToWrite = await this.stateMachine.getNextToWrite();
-        if (this.signerAddress !== nextToWrite) {
-            throw new Error(
-                `Not player turn - myAddress: ${this.signerAddress} - nextToWrite: ${nextToWrite}`
-            );
-        }
-    }
-
-    private adjustTimestampIfNeeded(tx: TransactionStruct): void {
-        const latestBlockTimestamp =
-            this.agreementManager.getLatestBlockTimestamp(this.getForkCnt());
-        if (Number(tx.header.timestamp) < latestBlockTimestamp) {
-            tx.header.timestamp = latestBlockTimestamp + 1;
-        }
-    }
-
-    private async applyTransactionOrThrow(tx: TransactionStruct): Promise<{
-        previousStateHash: string;
-        encodedState: string;
-        successCallback: () => void;
-    }> {
-        const previousStateHash = await this.getEncodedStateKecak256();
-        const { success, encodedState, successCallback } =
-            await this.applyTransaction(tx);
-
-        if (!success) {
-            throw new Error(
-                "CreateAndApplyTransaction - Internal error - Transaction not successful"
-            );
-        }
-
-        return { previousStateHash, encodedState, successCallback };
-    }
-
-    private async createBlock(
-        tx: TransactionStruct,
-        previousStateHash: string
-    ): Promise<BlockStruct> {
-        const currentStateHash = await this.getEncodedStateKecak256();
-
-        return {
-            transaction: tx,
-            stateHash: currentStateHash,
-            previousStateHash
-        };
-    }
-
-    private async signBlock(block: BlockStruct): Promise<SignedBlockStruct> {
-        return EvmUtils.signBlock(block, this.p2pManager.p2pSigner);
-    }
-
-    private scheduleSignatureCheck(
-        block: BlockStruct,
-        signedBlock: SignedBlockStruct
-    ): void {
-        setTimeout(async () => {
-            if (this.isDisposed) return;
-
-            // If not everyone has signed, do the on-chain post
-            if (!this.agreementManager.didEveryoneSignBlock(block)) {
-                console.log("Posting calldata on chain!");
-                this.p2pEventHooks.onPostingCalldata?.();
-                try {
-                    await this.stateChannelManagerContract
-                        .postBlockCalldata(signedBlock)
-                        .then((txResponse) => txResponse.wait());
-                } catch (error) {
-                    console.log("Error posting block on chain", error);
-                }
-            }
-        }, this.timeConfig.agreementTime * 1000);
-    }
     // Used when authoring a block - Ecxecutes the transaction and returns a signed block
     public async playTransaction(
         tx: TransactionStruct
@@ -616,13 +531,7 @@ class StateManager {
         }
         return true;
     }
-    private getTimeoutWaitTimeSeconds() {
-        return (
-            this.timeConfig.p2pTime +
-            this.timeConfig.agreementTime +
-            this.timeConfig.chainFallbackTime
-        );
-    }
+
     // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute
     private async tryTimeoutParticipant(
         forkCnt: BigNumberish,
@@ -689,24 +598,23 @@ class StateManager {
     }
 
     private async onSuccessCommon() {
-        setTimeout(async () => {
-            if (this.isDisposed) return;
-            this.tryConfirmFromQueue();
-            this.tryExecuteFromQueue();
-        }, 0);
-        //Set try timeout next block
-        let forkCnt = this.getForkCnt();
-        let nextTransactionCnt = this.getNextTransactionCnt();
-        let nextToWrite = await this.stateMachine.getNextToWrite();
+        // Immediately schedule a confirm/execute check on next tick
+        this.scheduleImmediateQueueProcessing();
+
+        // Identify the fork/tx counts for the next participant
+        const forkCnt = this.getForkCnt();
+        const nextTransactionCnt = this.getNextTransactionCnt();
+        const nextToWrite = await this.stateMachine.getNextToWrite();
+
+        // Notify any event hooks
         this.p2pEventHooks.onTurn?.(nextToWrite);
-        setTimeout(async () => {
-            if (this.isDisposed) return;
-            this.tryTimeoutParticipant(
-                forkCnt,
-                nextTransactionCnt,
-                nextToWrite
-            );
-        }, this.getTimeoutWaitTimeSeconds() * 1000);
+
+        // Schedule a timeout check for the next participant
+        this.scheduleParticipantTimeout(
+            forkCnt,
+            nextTransactionCnt,
+            nextToWrite
+        );
     }
     // Helper function that takes appropriate action on the signed block based on the execution flag and agreement flag
     private async processExecutionDecision(
@@ -750,6 +658,125 @@ class StateManager {
             executionFlag,
             ctx
         );
+    }
+
+    private getTimeoutWaitTimeSeconds() {
+        return (
+            this.timeConfig.p2pTime +
+            this.timeConfig.agreementTime +
+            this.timeConfig.chainFallbackTime
+        );
+    }
+
+    /** Immediately (on next tick) tries to confirm and execute from the queue. */
+    private scheduleImmediateQueueProcessing(): void {
+        setTimeout(async () => {
+            if (this.isDisposed) return;
+            this.tryConfirmFromQueue();
+            this.tryExecuteFromQueue();
+        }, 0);
+    }
+
+    /** Schedules the participant timeout logic for a future time. */
+    private scheduleParticipantTimeout(
+        forkCnt: number,
+        transactionCnt: number,
+        participantAdr: AddressLike
+    ): void {
+        const delayMs = this.getTimeoutWaitTimeSeconds() * 1000;
+        setTimeout(async () => {
+            if (this.isDisposed) return;
+            await this.tryTimeoutParticipant(
+                forkCnt,
+                transactionCnt,
+                participantAdr
+            );
+        }, delayMs);
+    }
+
+    private ensureChannelIsOpen(): void {
+        if (this.getForkCnt() === -1) {
+            throw new Error("Channel not opened");
+        }
+    }
+
+    private async isMyTurn(): Promise<boolean> {
+        const nextToWrite = await this.stateMachine.getNextToWrite();
+        return this.signerAddress === nextToWrite;
+    }
+
+    private async ensureItIsMyTurn(): Promise<void> {
+        const nextToWrite = await this.stateMachine.getNextToWrite();
+        if (this.signerAddress !== nextToWrite) {
+            throw new Error(
+                `Not player turn - myAddress: ${this.signerAddress} - nextToWrite: ${nextToWrite}`
+            );
+        }
+    }
+
+    private adjustTimestampIfNeeded(tx: TransactionStruct): void {
+        const latestBlockTimestamp =
+            this.agreementManager.getLatestBlockTimestamp(this.getForkCnt());
+        if (Number(tx.header.timestamp) < latestBlockTimestamp) {
+            tx.header.timestamp = latestBlockTimestamp + 1;
+        }
+    }
+
+    private async applyTransactionOrThrow(tx: TransactionStruct): Promise<{
+        previousStateHash: string;
+        encodedState: string;
+        successCallback: () => void;
+    }> {
+        const previousStateHash = await this.getEncodedStateKecak256();
+        const { success, encodedState, successCallback } =
+            await this.applyTransaction(tx);
+
+        if (!success) {
+            throw new Error(
+                "CreateAndApplyTransaction - Internal error - Transaction not successful"
+            );
+        }
+
+        return { previousStateHash, encodedState, successCallback };
+    }
+
+    private async createBlock(
+        tx: TransactionStruct,
+        previousStateHash: string
+    ): Promise<BlockStruct> {
+        const currentStateHash = await this.getEncodedStateKecak256();
+
+        return {
+            transaction: tx,
+            stateHash: currentStateHash,
+            previousStateHash
+        };
+    }
+
+    private async signBlock(block: BlockStruct): Promise<SignedBlockStruct> {
+        return EvmUtils.signBlock(block, this.p2pManager.p2pSigner);
+    }
+
+    private scheduleSignatureCheck(
+        block: BlockStruct,
+        signedBlock: SignedBlockStruct
+    ): void {
+        setTimeout(async () => {
+            if (this.isDisposed) return;
+
+            // If not everyone has signed, do the on-chain post
+            if (!this.agreementManager.didEveryoneSignBlock(block)) {
+                console.log("Posting calldata on chain!");
+                this.p2pEventHooks.onPostingCalldata?.();
+                try {
+                    await this.stateChannelManagerContract
+                        .postBlockCalldata(signedBlock)
+                        .then((txResponse) => txResponse.wait());
+                } catch (error) {
+                    console.log("Error posting block on chain", error);
+                }
+            }
+        }, this.timeConfig.agreementTime * 1000);
     }
 }
 
