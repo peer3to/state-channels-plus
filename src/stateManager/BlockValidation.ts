@@ -11,5 +11,5 @@ export async function runPipeline<
             return result; // Stop on first non-SUCCESS
         }
     }
-    return { executionFlag: ExecutionFlags.SUCCESS }; // If all steps pass
+    return { executionFlag: ExecutionFlags.SUCCESS };
 }
