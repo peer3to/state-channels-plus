@@ -242,19 +242,16 @@ class StateManager {
         let finalAgreementFlag: AgreementFlag | undefined = undefined;
 
         try {
-            await this.mutex.lock(); // Acquire the lock
+            await this.mutex.lock();
 
-            // Decode the block up front (as we use `block` in multiple validators)
             const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
 
-            // Build a "validation context" that each validator can use
             const context: ValidationContext = {
                 stateManager: this,
                 signedBlock,
                 block
             };
 
-            // Configure the pipeline in the order of checks you prefer
             const validators: ValidationStep<ValidationContext>[] = [
                 checkManagerReadiness,
                 checkBlockValidity,
@@ -270,17 +267,14 @@ class StateManager {
                 verifyStateTransition
             ];
 
-            // Run the pipeline and break on first failure
             const { executionFlag, agreementFlag } = await runPipeline(
                 validators,
                 context
             );
 
-            // Record the result for our finally block
             finalExecutionFlag = executionFlag;
             finalAgreementFlag = agreementFlag;
 
-            // Return the final execution flag
             return finalExecutionFlag;
         } finally {
             // Safety check: must have an execution flag
@@ -308,7 +302,6 @@ class StateManager {
         let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS; // Default to SUCCESS
 
         try {
-            // Build the context for validators
             const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
 
             const context: ConfirmationContext = {
@@ -318,7 +311,6 @@ class StateManager {
                 block
             };
 
-            // Compose your steps in the order you want them executed
             const steps: ValidationStep<ConfirmationContext>[] = [
                 checkManagerReadiness,
                 checkBlockValidity,
@@ -328,9 +320,8 @@ class StateManager {
                 checkDuplicateConfirmationSignature
             ];
 
-            // Run the pipeline (similar to runValidationPipeline)
             const { executionFlag } = await runPipeline(steps, context);
-            finalExecutionFlag = executionFlag; // Keep track of the final result
+            finalExecutionFlag = executionFlag;
 
             this.agreementManager.confirmBlock(
                 block,
@@ -339,14 +330,12 @@ class StateManager {
 
             return finalExecutionFlag;
         } finally {
-            // Safety check
             if (finalExecutionFlag === undefined) {
                 throw new Error(
                     "StateManager - onBlockConfirmation - Internal Error - flag undefined"
                 );
             }
 
-            // Process final decision
             await this.processConfirmationDecision(
                 signedBlock,
                 confirmationSignature as SignatureLike,
@@ -382,31 +371,25 @@ class StateManager {
             await this.ensureItIsMyTurn();
             this.adjustTimestampIfNeeded(tx);
 
-            // 4. Apply the transaction to produce the updated state
             const { previousStateHash, encodedState, successCallback } =
                 await this.applyTransactionOrThrow(tx);
 
-            // 5. Build and sign the block
             const block = await this.createBlock(tx, previousStateHash);
             const signedBlock = await this.signBlock(block);
 
-            // 6. Add the block to the agreement manager
             this.agreementManager.addBlock(
                 block,
                 signedBlock.signature as SignatureLike,
                 encodedState
             );
 
-            // 7. Execute success callbacks
             successCallback();
             await this.onSuccessCommon();
 
-            // 8. Schedule a check to see if everyone has signed our new block
             this.scheduleSignatureCheck(block, signedBlock);
 
             return signedBlock;
         } finally {
-            // Release the lock
             this.mutex.unlock();
         }
     }
