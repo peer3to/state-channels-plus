@@ -10,7 +10,7 @@ import {
     SignatureLike,
     ethers
 } from "ethers";
-import AgreementManager, { AgreementFlag } from "./AgreementManager";
+import AgreementManager, { AgreementFlag } from "../AgreementManager";
 import { AStateChannelManagerProxy } from "@typechain-types";
 import {
     ProofStruct,
@@ -29,6 +29,22 @@ import Mutex from "@/utils/Mutex";
 import DebugProxy from "@/utils/DebugProxy";
 // import dotenv from "dotenv";
 import P2pEventHooks from "@/P2pEventHooks";
+import {
+    checkBlockForkStatus,
+    checkBlockTimestamp,
+    checkCorrectBlockProducer,
+    checkEnoughTimeSubjective,
+    verifyStateTransition,
+    checkBlockIsFuture,
+    checkParticipantInFork,
+    checkPastBlockCurrentFork,
+    checkForkDisputeStatus,
+    checkBlockValidity,
+    checkDuplicateBlock,
+    checkManagerReadiness
+} from "./validators";
+import { ValidationContext, ValidationStep } from "./types";
+import { runValidationPipeline } from "./BlockValidation";
 
 let DEBUG_STATE_MANAGER = false;
 // dotenv.config();
@@ -98,9 +114,9 @@ class StateManager {
     public getSignerAddress(): AddressLike {
         return this.signerAddress;
     }
-    public async getParticipantsCurrent(): Promise<AddressLike[]> {
+    public getParticipantsCurrent(): Promise<AddressLike[]> {
         //TODO? this can be done through the AgreementManager for the given fork or thought the stateMachine
-        return await this.stateMachine.getParticipants();
+        return this.stateMachine.getParticipants();
     }
     public getForkCnt(): number {
         return this.agreementManager.getLatestForkCnt();
@@ -109,13 +125,12 @@ class StateManager {
         return this.agreementManager.getNextTransactionCnt();
     }
     //Triggered by the On-chain Event Listener when a dispute is emitted on-chain
-    public async onDisputeUpdate(dispute: DisputeStruct) {
-        // console.log("StateManager - onDisputeUpdate", dispute);
+    public onDisputeUpdate(dispute: DisputeStruct) {
         this.disputeHandler.onDispute(dispute);
         this.p2pEventHooks.onDisputeUpdate?.(dispute);
     }
     //Triggered by the On-chain Event Listener when block calldata is posted on-chain
-    public async collectOnChainBlock(
+    public collectOnChainBlock(
         signedBlock: SignedBlockStruct,
         timestamp: BigNumberish
     ) {
@@ -156,11 +171,12 @@ class StateManager {
             Number(this.getForkCnt()),
             Number(this.getNextTransactionCnt())
         );
-        if (signedBlocks.length == 0) return;
-        for (let signedBlock of signedBlocks) {
+
+        for (const signedBlock of signedBlocks) {
             console.log("tryExecuteFromQueue - executing");
-            let flag = await this.onSignedBlock(signedBlock);
-            if (flag == ExecutionFlags.DISPUTE) break; //will create new fork
+            if (await this.onSignedBlock(signedBlock)) {
+                break;
+            }
         }
     }
     private async tryConfirmFromQueue() {
@@ -169,13 +185,16 @@ class StateManager {
             Number(this.getForkCnt()),
             Number(this.getNextTransactionCnt())
         );
-        if (confirmations.length == 0) return;
-        for (let confirmation of confirmations) {
-            let flag = await this.onBlockConfirmation(
-                confirmation.originalSignedBlock,
-                confirmation.confirmationSignature as string
-            );
-            if (flag == ExecutionFlags.DISPUTE) break; //TODO! - think about this
+
+        for (const confirmation of confirmations) {
+            if (
+                await this.onBlockConfirmation(
+                    confirmation.originalSignedBlock,
+                    confirmation.confirmationSignature as string
+                )
+            ) {
+                break;
+            }
         }
     }
     /**
@@ -188,7 +207,7 @@ class StateManager {
         encodedState: string,
         _forkCnt: BigNumberish,
         _timestamp: BigNumberish
-    ) {
+    ): Promise<void> {
         console.log("StateManager - SetState", _forkCnt, _timestamp);
         await this.stateMachine.setState(encodedState);
         this.agreementManager.newFork(
@@ -197,162 +216,78 @@ class StateManager {
             Number(_forkCnt),
             Number(_timestamp)
         );
-        // let d = await this.stateChannelManagerContract.getDispute(
-        //     this.channelId
-        // );
-        // console.log("SET STATE - Dispute:", d);
+
         //Try timeout next participant
         this.p2pEventHooks.onSetState?.();
-        await this.onSuccessCommon();
+        return this.onSuccessCommon();
     }
 
     // Passes the signedBlock through a verification pipeline and returns an execution flag based on the outcome
+
     public async onSignedBlock(
         signedBlock: SignedBlockStruct
     ): Promise<ExecutionFlags> {
-        let executionFlag: ExecutionFlags | undefined;
-        let agreementFlag: AgreementFlag | undefined;
+        // Default everything to SUCCESS + no AgreementFlag
+        let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS;
+        let finalAgreementFlag: AgreementFlag | undefined = undefined;
+
         try {
-            await this.mutex.lock();
+            await this.mutex.lock(); // Acquire the lock
 
-            //Try and go down the happy path, if anything fails, final decision executed in the 'finaly' block of the try-catch
+            // Decode the block up front (as we use `block` in multiple validators)
+            const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
 
-            if (this.getForkCnt() == -1) {
-                executionFlag = ExecutionFlags.NOT_READY;
-                return executionFlag;
-            }
-            //is a valid block
-            if (!(await this.isValidBlock(signedBlock))) {
-                executionFlag = ExecutionFlags.DISCONNECT;
-                return executionFlag;
-            }
+            // Build a "validation context" that each validator can use
+            const context: ValidationContext = {
+                stateManager: this,
+                signedBlock,
+                block
+            };
 
-            let block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
+            // Configure the pipeline in the order of checks you prefer
+            const validators: ValidationStep[] = [
+                checkManagerReadiness,
+                checkBlockValidity,
+                checkBlockForkStatus,
+                checkForkDisputeStatus,
+                checkDuplicateBlock,
+                checkBlockIsFuture,
+                checkParticipantInFork,
+                checkPastBlockCurrentFork,
+                checkBlockTimestamp,
+                checkEnoughTimeSubjective,
+                checkCorrectBlockProducer,
+                verifyStateTransition
+            ];
 
-            //Is past fork
-            if (Number(block.transaction.header.forkCnt) < this.getForkCnt()) {
-                executionFlag = ExecutionFlags.PAST_FORK;
-                return executionFlag;
-            }
-            if (
-                this.disputeHandler.isForkDisputed(
-                    Number(block.transaction.header.forkCnt)
-                )
-            ) {
-                executionFlag = ExecutionFlags.PAST_FORK; //Will be past fork -> no need to process it
-                return executionFlag;
-            }
+            // Run the pipeline and break on first failure
+            const { executionFlag, agreementFlag } =
+                await runValidationPipeline(validators, context);
 
-            if (this.agreementManager.isBlockDuplicate(block)) {
-                executionFlag = ExecutionFlags.DUPLICATE; //no error, just ignore
-                return executionFlag;
-            }
+            // Record the result for our finally block
+            finalExecutionFlag = executionFlag;
+            finalAgreementFlag = agreementFlag;
 
-            //APPLY TO CURRENT STATE - CHECK
-            //Is in the future
-            if (
-                Number(block.transaction.header.forkCnt) > this.getForkCnt() ||
-                Number(block.transaction.header.transactionCnt) >
-                    this.getNextTransactionCnt()
-            ) {
-                //TODO! - fetch latest forkCnt from DLT to double check - this can be async since it's stored in the queue
-                executionFlag = ExecutionFlags.NOT_READY;
-                return executionFlag;
-            }
-
-            //Is participant part of the current fork
-            if (
-                !this.agreementManager.isParticipantInLatestFork(
-                    block.transaction.header.participant
-                )
-            ) {
-                executionFlag = ExecutionFlags.DISCONNECT;
-                return executionFlag;
-            }
-
-            //Is in the past - current fork
-            if (
-                Number(block.transaction.header.transactionCnt) <
-                this.getNextTransactionCnt()
-            ) {
-                agreementFlag = this.agreementManager.checkBlock(signedBlock);
-                if (
-                    agreementFlag == AgreementFlag.DOUBLE_SIGN ||
-                    agreementFlag == AgreementFlag.INCORRECT_DATA
-                ) {
-                    executionFlag = ExecutionFlags.DISPUTE;
-                    return executionFlag;
-                }
-                throw new Error(
-                    "StateManager - OnSignedBlock - current fork in the past - INTERNAL ERROR"
-                );
-            }
-
-            //TIMESTAMP - CHECK
-            if (!this.isGoodTimestampNonDeterministic(block)) {
-                //TODO! - think - this dispute is non deterministic - race condition can happen on-chain
-                agreementFlag = AgreementFlag.INCORRECT_DATA; //timestamp
-                executionFlag = ExecutionFlags.DISPUTE;
-                return executionFlag;
-            }
-
-            executionFlag =
-                await this.isEnoughTimeToPlayMyTransactionSubjective(
-                    signedBlock
-                );
-            if (executionFlag != ExecutionFlags.SUCCESS) return executionFlag;
-
-            //Is correct block producer
-            if (
-                block.transaction.header.participant !=
-                (await this.stateMachine.getNextToWrite())
-            ) {
-                agreementFlag = AgreementFlag.INCORRECT_DATA;
-                return ExecutionFlags.DISPUTE;
-            }
-
-            //CORRECT STATE TRANISITON - CHECK
-            let previousStateHash = await this.getEncodedStateKecak256();
-            let { success, encodedState, successCallback } =
-                await this.applyTransaction(block.transaction);
-
-            //Check execution and virtual vote
-            if (
-                !success ||
-                ethers.keccak256(encodedState) != block.stateHash ||
-                previousStateHash != block.previousStateHash
-            ) {
-                agreementFlag = AgreementFlag.INCORRECT_DATA;
-                return ExecutionFlags.DISPUTE;
-            }
-            this.agreementManager.addBlock(
-                block,
-                signedBlock.signature as SignatureLike,
-                encodedState
-            );
-
-            //If here - the happy path (SUCCESS) will fully execute
-            setTimeout(async () => {
-                if (this.isDisposed) return;
-                successCallback();
-            }, 0);
-            return executionFlag;
-        } catch (e) {
-            throw e;
+            // Return the final execution flag
+            return finalExecutionFlag;
         } finally {
-            if (executionFlag == undefined)
+            // Safety check: must have an execution flag
+            if (finalExecutionFlag === undefined) {
                 throw new Error(
                     "StateManager - onSignedBlock - Internal Error - flag undefined"
                 );
-            // All execution paths eventually end up here for final processing on the action to take
+            }
+
+            // Process the final decision
             await this.processExecutionDecision(
                 signedBlock,
-                executionFlag,
-                agreementFlag
+                finalExecutionFlag,
+                finalAgreementFlag
             );
             this.mutex.unlock();
         }
     }
+
     // Passes the block confirmation through a verification pipeline and returns an execution flag based on the outcome
     public async onBlockConfirmation(
         originalSignedBlock: SignedBlockStruct,
@@ -423,8 +358,6 @@ class StateManager {
             );
             executionFlag = ExecutionFlags.SUCCESS;
             return executionFlag;
-        } catch (e) {
-            throw e;
         } finally {
             if (executionFlag == undefined)
                 throw new Error(
@@ -551,7 +484,7 @@ class StateManager {
         return ethers.keccak256(encodedState);
     }
 
-    private async isValidBlock(
+    public async isValidBlock(
         signedBlock: SignedBlockStruct
     ): Promise<boolean> {
         let block: BlockStruct;
@@ -579,7 +512,7 @@ class StateManager {
 
     // Doesn't have to take into account chain time - since this is subjective
     // If chain time is triggered -> it becomes objective and goes through a different execution path
-    private async isEnoughTimeToPlayMyTransactionSubjective(
+    public async isEnoughTimeToPlayMyTransactionSubjective(
         signedBlock: SignedBlockStruct
     ): Promise<ExecutionFlags> {
         //Has to use SignedBlock instead of Block - since Block may not be in agreement to fetch signature
@@ -606,7 +539,7 @@ class StateManager {
         return ExecutionFlags.SUCCESS;
     }
     // Checks does the block timestamp satisfy the invariant by taking into account on-chain calldata posted. This is used for the grant, but we have a better solution for the full feature set.
-    private async isGoodTimestampNonDeterministic(
+    public async isGoodTimestampNonDeterministic(
         block: BlockStruct
     ): Promise<boolean> {
         let timestamp = Number(block.transaction.header.timestamp);
