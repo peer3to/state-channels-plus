@@ -359,7 +359,7 @@ class StateManager {
         };
     }
 
-    // Used when authoring a block - Ecxecutes the transaction and returns a signed block
+    // Used when authoring a block - Executes the transaction and returns a signed block
     public async playTransaction(
         tx: TransactionStruct
     ): Promise<SignedBlockStruct> {
@@ -386,11 +386,32 @@ class StateManager {
             successCallback();
             await this.onSuccessCommon();
 
-            this.scheduleSignatureCheck(block, signedBlock);
+            this.scheduleTask(
+                () => this.maybePostBlockOnChain(block, signedBlock),
+                this.timeConfig.agreementTime * 1000,
+                "maybePostBlockOnChain"
+            );
 
             return signedBlock;
         } finally {
             this.mutex.unlock();
+        }
+    }
+
+    private async maybePostBlockOnChain(
+        block: BlockStruct,
+        signedBlock: SignedBlockStruct
+    ): Promise<void> {
+        // If not everyone has signed, do the on-chain post
+        if (!this.agreementManager.didEveryoneSignBlock(block)) {
+            console.log("Posting calldata on chain!");
+            this.p2pEventHooks.onPostingCalldata?.();
+            this.stateChannelManagerContract
+                .postBlockCalldata(signedBlock)
+                .then((txResponse) => txResponse.wait())
+                .catch((error) => {
+                    console.log("Error posting block on chain", error);
+                });
         }
     }
 
@@ -581,8 +602,15 @@ class StateManager {
     }
 
     private async onSuccessCommon() {
-        // Immediately schedule a confirm/execute check on next tick
-        this.scheduleImmediateQueueProcessing();
+        // Immediately schedule a confirm/execute from queue on next tick
+        this.scheduleTask(
+            () => {
+                this.tryConfirmFromQueue();
+                this.tryExecuteFromQueue();
+            },
+            0,
+            "queueProcessing"
+        );
 
         // Identify the fork/tx counts for the next participant
         const forkCnt = this.getForkCnt();
@@ -593,10 +621,15 @@ class StateManager {
         this.p2pEventHooks.onTurn?.(nextToWrite);
 
         // Schedule a timeout check for the next participant
-        this.scheduleParticipantTimeout(
-            forkCnt,
-            nextTransactionCnt,
-            nextToWrite
+        this.scheduleTask(
+            () =>
+                this.tryTimeoutParticipant(
+                    forkCnt,
+                    nextTransactionCnt,
+                    nextToWrite
+                ),
+            this.getTimeoutWaitTimeSeconds() * 1000,
+            "participantTimeout"
         );
     }
     // Helper function that takes appropriate action on the signed block based on the execution flag and agreement flag
@@ -649,32 +682,6 @@ class StateManager {
             this.timeConfig.agreementTime +
             this.timeConfig.chainFallbackTime
         );
-    }
-
-    /** Immediately (on next tick) tries to confirm and execute from the queue. */
-    private scheduleImmediateQueueProcessing(): void {
-        setTimeout(async () => {
-            if (this.isDisposed) return;
-            this.tryConfirmFromQueue();
-            this.tryExecuteFromQueue();
-        }, 0);
-    }
-
-    /** Schedules the participant timeout logic for a future time. */
-    private scheduleParticipantTimeout(
-        forkCnt: number,
-        transactionCnt: number,
-        participantAdr: AddressLike
-    ): void {
-        const delayMs = this.getTimeoutWaitTimeSeconds() * 1000;
-        setTimeout(async () => {
-            if (this.isDisposed) return;
-            await this.tryTimeoutParticipant(
-                forkCnt,
-                transactionCnt,
-                participantAdr
-            );
-        }, delayMs);
     }
 
     private ensureChannelIsOpen(): void {
@@ -740,26 +747,31 @@ class StateManager {
         return EvmUtils.signBlock(block, this.p2pManager.p2pSigner);
     }
 
-    private scheduleSignatureCheck(
-        block: BlockStruct,
-        signedBlock: SignedBlockStruct
+    private scheduleTask(
+        task: () => void | Promise<void>,
+        delayMs: number,
+        taskName: string = "unnamed"
     ): void {
         setTimeout(async () => {
-            if (this.isDisposed) return;
-
-            // If not everyone has signed, do the on-chain post
-            if (!this.agreementManager.didEveryoneSignBlock(block)) {
-                console.log("Posting calldata on chain!");
-                this.p2pEventHooks.onPostingCalldata?.();
-                try {
-                    await this.stateChannelManagerContract
-                        .postBlockCalldata(signedBlock)
-                        .then((txResponse) => txResponse.wait());
-                } catch (error) {
-                    console.log("Error posting block on chain", error);
-                }
+            if (this.isDisposed) {
+                console.log(
+                    `Skipping ${taskName} task because StateManager is disposed`
+                );
+                return;
             }
-        }, this.timeConfig.agreementTime * 1000);
+
+            try {
+                const result = task();
+                if (result instanceof Promise) {
+                    await result;
+                }
+            } catch (error) {
+                console.error(
+                    `Error executing scheduled task '${taskName}':`,
+                    error
+                );
+            }
+        }, delayMs);
     }
 }
 
