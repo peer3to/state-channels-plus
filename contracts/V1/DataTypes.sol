@@ -31,13 +31,13 @@ struct ForkDataAvailabilityKey {
 }
 
 struct SignedBlock {
-    bytes encodedBlock; //TODO! change this to bytes
-    bytes signature; //TODO! change this to bytes
+    bytes encodedBlock;
+    bytes[] signatures;
 }
 
 struct ConfirmedBlock {
     bytes encodedBlock;
-    bytes[] signatures; //TODO! change this to bytes
+    bytes[] signatures;
 }
 
 struct Block {
@@ -142,9 +142,13 @@ struct Timeout {
     address participant;
     /// @dev the block height at which participant is removed from the channel (fork)
     uint blockHeight;
+    /// @dev minimum timestamp where this timeout is valid
     uint minTimeStamp;
+    /// @dev the forkCnt at which the participant is timed out
+    uint forkCnt;
     // ================== optional ==================
     address previousBlockProducer;
+    bool previousBlockProducerPostedCalldata;
 }
 
 /// @dev a pair consisting of first index (index of the malicious dispute) and last index (last index in the array)

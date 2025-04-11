@@ -51,13 +51,25 @@ struct Dispute {
     bool selfRemoval;
 }
 
+struct BlockConfirmation {
+    bytes encodedBlock;
+    bytes[] signatures;
+}
+
+struct ForkMilestoneProof {
+    BlockConfirmation[] blockConfirmations;
+}
+
+struct ForkProof {
+    ForkMilestoneProof[] forkMilestoneProofs;
+}
+
 /// @notice Proof of state finality within a fork
 struct StateProof {
-    /// @notice The state being proven
-    bytes encodedState;
-    
-    /// @notice N/N signatures proving finality of the state
-    bytes[] Signatures;
+    /// @dev proves the last finalized block in the fork
+    ForkProof forkProof;
+    /// @dev a list of signed blocks that cryptographically connect the last milestone in the forkProof 
+    SignedBlock[] signedBlocks;
 }
 
 //Fraud Proof Types:
@@ -69,10 +81,10 @@ struct Proof {
 
 enum ProofType {
     // Block releated fraud proofs
-    DoubleSign,
-    EmptyBlock,
-    InvalidStateTransition,
-    OutOfGas,
+    BlockDoubleSign,
+    BlockEmptyBlock,
+    BlockInvalidStateTransition,
+    BlockOutOfGas,
 
     // Timeout related fraud proofs
     TimeoutThreshold,
@@ -80,14 +92,17 @@ enum ProofType {
     TimeoutParticipantNoNext,
 
     // Dispute fraud proofs
-    FoldRechallenge,
-    IncorrectData, // InvalidOutputState
-    NewerState, // NotLatestState
-    FoldPriorBlock, // challenge a false timeout proof
-    BlockTooFarInFuture,
-    JoinChannel,
-    LeaveChannelForce
+    DisputeNotLatestState,
+    DisputeInvalid,
+    DisputeInvalidRecursive,
+    DisputeOutOfGas,
+    DisputeInvalidOutputState,
+    DisputeInvalidStateProof,
+    DisputeInvalidPreeviousRecursive,
+    DisputeInvalidExitChannelBlocks
 }
+
+
 
 struct FoldRechallengeProof {
     bytes encodedBlock;

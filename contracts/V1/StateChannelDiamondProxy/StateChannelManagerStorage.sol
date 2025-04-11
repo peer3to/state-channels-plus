@@ -12,7 +12,7 @@ contract StateChannelManagerStorage {
     uint public challengeTime;
 
     AStateMachine stateMachineImplementation;
-    //TODO* - think do we need to store previous states
+    /// @dev the fork genesis state
     mapping(bytes32 => mapping(uint => bytes)) encodedStates; // [channelId][forkCnt] -> encodedState
     //TODO* - think do we need to store previous timestamps
     mapping(bytes32 => mapping(uint => uint)) genesisTimestamps; // [channelId][forkCnt] -> encodedState
@@ -26,13 +26,11 @@ contract StateChannelManagerStorage {
     /// @dev hash(Dspute Struct, timestamp)
     mapping(bytes32 => bytes32[]) disputes;
 
-    /// @dev disputesData[channelId] => array of encoded dispute data
-    mapping(bytes32 => bytes32[]) dipsutesData;
-
     /// @dev invalid committed disputes that onchain execution can be based on slashing participants
     DisputePair[] onChainDisputePairs;
 
     /// @dev slashed participants
+    /// @dev the last index stores the commitment of the addresses, this to make it gas efficient. So the true length is N-1
     address[] onChainSlashedParticipants;
 
     modifier onlySelf() {

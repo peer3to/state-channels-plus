@@ -99,176 +99,168 @@ contract DisputeManagerFacet is StateChannelCommon {
                 .executeStateTransitionOnState(channelId, encodedState, _tx);
     }
 
-    function getDispute(
-        bytes32 channelId
-    ) public view returns (Dispute memory) {
-        return disputes[channelId];
-    }
+    
 
-    /// @dev create Block related Dispute
-    /// @param channelId - the channel id
-    /// @param proofs - fraud proof type (only block related fraud proofs are supported)
-
-    function createBlockDispute(
-        bytes32 channelId,
-        uint forkCnt,
-        Proof[] memory proofs,
-        ConfirmedBlock[] memory virtualVotingBlocks,
-        bytes memory encodedLatestFinalizedState,
-        bytes memory encodedLatestCorrectState
-    ) public {
-        require(!isDisputeInProgress(channelId), ErrorDisputeInProgrees());
-        require(getForkCnt(channelId) == forkCnt, ErrorDisputeForkMismatch());
-        address[] memory participants = getParticipants(channelId, forkCnt);
-
-        // state checks
-         require(
-            isFinalizedAndLatest(
-                channelId,
-                forkCnt,
-                encodedLatestFinalizedState,
-                encodedLatestCorrectState,
-                virtualVotingBlocks,
-                participants
-            ),
-            ErrorLatestFinalizedBlock()
-        );
-
-        // set dispute
-        Dispute storage dispute = disputes[channelId];
-        dispute.channelId = channelId;
-        dispute.forkCnt = forkCnt;
-        dispute.challengeCnt = 0; //this can be removed - default value
-        dispute.foldedTransactionCnt = 0;
-        dispute.participants = participants;
-        dispute.creationTimestamp = block.timestamp;
-        dispute.deadlineTimestamp = block.timestamp + getChallengeTime();
+    function _handleBlockFraudProofs(
+       
+    ) internal {
+      
+       
 
     }
 
-    /// @dev create Dispute Fraud Proofs
-    function createDispute(
-
-    ) public {
+    function _handleDisputeFraudProofs(
+        // core specific checks
+        // apply proofs
+        // apply dispute to latest state
+        // set state
+    ) internal {
 
     }
 
-    /// @dev create Timeout related Dispute
-    function createTimeoutDispute(
+    function _handleTimeoutDispute(
 
-    ) public {
+    ) internal {
 
     }
 
     function createDispute(
         bytes32 channelId,
         uint forkCnt,
-        bytes memory encodedLatestFinalizedState,
-        bytes memory encodedLatestCorrectState,
-        ConfirmedBlock[] memory virtualVotingBlocks,
-        address timedoutParticipant,
-        uint foldedTransactionCnt,
-        Proof[] memory proofs
-    ) public {
-        require(!isDisputeInProgress(channelId), ErrorDisputeInProgrees());
-        require(getForkCnt(channelId) == forkCnt, ErrorDisputeForkMismatch());
-        address[] memory participants = getParticipants(channelId, forkCnt);
-        bool isParticipant = StateChannelUtilLibrary.isAddressInArray(
-            participants,
-            msg.sender
-        );
-        require(isParticipant, ErrorNotParticipant());
+        bytes calldata encodedLatestState,
+        StateProof[] calldata stateProofs,
+        address[] calldata onChainSlashes,
+        Proof[] calldata proofs
+    ) public { 
+        // sanity checks
+        if(onChainSlashes.length != onChainSlashedParticipants.length 
+        || onChainSlashes[onChainSlashes.length - 1] != onChainSlashedParticipants[onChainSlashedParticipants.length - 1]) {
+            revert("onChainSlashes does not match onChainSlashedParticipants");
+        }
+        if(proofs.length == 0) return;
 
-        require(
-            isFinalizedAndLatest(
-                channelId,
-                forkCnt,
-                encodedLatestFinalizedState,
-                encodedLatestCorrectState,
-                virtualVotingBlocks,
-                participants
-            ),
-            ErrorLatestFinalizedBlock()
-        );
-        if (timedoutParticipant != address(0)) {
-            //Check if participant posted BLOCK onChain as calldata
-            uint latestTimestamp = getGenesisTimestamp(channelId, forkCnt);
-            if (foldedTransactionCnt != 0) {
-                Block memory lastBlock = abi.decode(
-                    virtualVotingBlocks[virtualVotingBlocks.length - 1]
-                        .encodedBlock,
-                    (Block)
-                );
-                require(
-                    lastBlock.transaction.header.transactionCnt ==
-                        foldedTransactionCnt - 1,
-                    ErrorTimeoutNotLinkedToPreviousBlock()
-                );
-                latestTimestamp = lastBlock.transaction.header.timestamp;
+        // verify latest state
+        address[] memory participants = getParticipants(channelId, forkCnt);
+        // check if its genesis
+        if(stateProofs.length == 0) {
+           bool isGenesis = isGenesisState(channelId, forkCnt, encodedLatestState); 
+           if(!isGenesis) {
+            revert("latest state is not valid");
+           }
+        }else{
+            _verifyStateProof(encodedLatestState, stateProofs, participants);
+        }
+
+        //handle proof based on type
+        for(uint i = 0; i < proofs.length; i++) {
+            Proof memory proof = proofs[i];
+            
+            if (_isBlockFraudProof(proof.proofType)) {
+                _handleBlockFraudProofs();
+
+            } else if (_isTimeoutProof(proof.proofType)) {
+                _handleTimeoutDispute();
+
+            } else if (_isDisputeFraudProof(proof.proofType)) {
+                _handleDisputeFraudProofs();
+            }
+        }
+
+    }
+
+    function _verifyStateProof(bytes memory encodedLatesState, StateProof[] memory stateProofs, address[] memory participants) internal {
+        _verifySignedBlocks(stateProofs[0].signedBlocks, stateProofs[0].forkProof, encodedLatesState, participants);
+        for(uint i = 1; i < stateProofs.length; i++) {
+            _verifyForkProof(stateProofs[i].forkProof, participants);
+        }
+    }
+
+    function _verifySignedBlocks(SignedBlock[] memory signedBlocks, ForkProof memory forkProof, bytes memory encodedLatestState, address[] memory participants) internal {
+        for (uint i = signedBlocks.length - 1; i > 0; i--) {
+            // Get current and previous blocks
+            Block memory currentBlock = abi.decode(signedBlocks[i].encodedBlock, (Block));
+            Block memory previousBlock = abi.decode(signedBlocks[i-1].encodedBlock, (Block));
+            
+            if(i == signedBlocks.length - 1 && currentBlock.stateHash != keccak256(encodedLatestState)) {
+                revert("Latest state does not connect to last signed block");
             }
             require(
-                timedoutParticipant ==
-                    getNextToWrite(channelId, encodedLatestCorrectState),
-                ErrorTimeoutParticipantNotNextToWrite()
+                currentBlock.previousStateHash == previousBlock.stateHash,
+                "Parent hash mismatch"
             );
-            (bool found, ) = getBlockCallData(
-                channelId,
-                forkCnt,
-                foldedTransactionCnt,
-                timedoutParticipant
+            // check if the first state connects to milestone block       
+            Block memory lastMilestoneConfirmationBlock =
+            abi.decode(
+                forkProof.forkMilestoneProofs[forkProof.forkMilestoneProofs.length - 1]
+                .blockConfirmations[forkProof.forkMilestoneProofs[forkProof.forkMilestoneProofs.length - 1].blockConfirmations.length - 1].encodedBlock,
+                (Block)
             );
-            if (!found) {
-                //Check folding timestamp
-                uint lastBlockTimestamp = getChainLatestBlockTimestamp(
-                    channelId,
-                    forkCnt,
-                    foldedTransactionCnt
-                );
-                if (lastBlockTimestamp > latestTimestamp)
-                    latestTimestamp = lastBlockTimestamp;
-                if (
-                    block.timestamp <
-                    latestTimestamp +
-                        getP2pTime() +
-                        getAgreementTime() +
-                        getChainFallbackTime()
-                ) {
-                    timedoutParticipant = address(0);
-                }
-            } else {
-                timedoutParticipant = address(0);
+
+            if(i == 1 && previousBlock.previousStateHash != lastMilestoneConfirmationBlock.stateHash) {
+                revert("Latest state does not connect to milestone block");
             }
-            require(timedoutParticipant != address(0), ErrorTimeoutInvalid());
-            require(timedoutParticipant != msg.sender, ErrorTimeoutSelf());
         }
-        Dispute storage dispute = disputes[channelId];
-        dispute.channelId = channelId;
-        dispute.forkCnt = forkCnt;
-        dispute.challengeCnt = 0; //this can be removed - default value
-        dispute.foldedTransactionCnt = foldedTransactionCnt;
-        copyConfirmedBlockArrayIntoStorage(
-            dispute.virtualVotingBlocks,
-            virtualVotingBlocks
-        );
-        dispute.encodedLatestFinalizedState = encodedLatestFinalizedState;
-        dispute.encodedLatestCorrectState = encodedLatestCorrectState;
-        dispute.timedoutParticipant = timedoutParticipant;
-        if (dispute.timedoutParticipant != address(0))
-            dispute.timeoutDisputer = msg.sender;
-        dispute.postedStateDisputer = msg.sender;
-        // dispute.slashedParticipants = []; //default empty array
-        dispute.participants = participants;
-        dispute.creationTimestamp = block.timestamp;
-        dispute.deadlineTimestamp = block.timestamp + getChallengeTime();
-        //apply proofs
-        bool success = applyProofs(dispute, proofs);
-        require(
-            success || dispute.timedoutParticipant != address(0),
-            ErrorDisputeInvalid()
-        );
-        applyDisputeToLatestState(dispute);
-        setState(dispute.channelId, dispute.encodedLatestCorrectState);
-        emit DisputeUpdated(channelId, dispute);
+        
+    }
+
+    function _verifyForkProof(ForkProof memory forkProof, address[] memory expectedAddresses) internal {
+        // per each forkMilestoneProof we expect the signatures to reduce by 1
+        uint expectedSignatures = expectedAddresses.length;
+        // 1. verify forkMilestoneProofs
+        for (uint i = 0; i < forkProof.forkMilestoneProofs.length; i++) {
+        ForkMilestoneProof memory milestone = forkProof.forkMilestoneProofs[i];
+        
+            // Verify each block confirmation
+            for (uint j = 0; j < milestone.blockConfirmations.length; j++) {
+                BlockConfirmation memory confirmation = milestone.blockConfirmations[j];
+                
+                // Verify block signatures
+                if(confirmation.signatures.length != expectedSignatures) {
+                    revert("Invalid number of signatures");
+                }
+                // verify signatures are from peers in genesis state
+                _verifyBlockConfirmationSignatures(
+                    confirmation.encodedBlock,
+                    expectedAddresses,
+                    confirmation.signatures
+                );
+                expectedSignatures--;
+            }
+        }
+
+    }
+
+    function _verifyBlockConfirmationSignatures(bytes memory encodedBlock, address[] memory expectedAddresses, bytes[] memory signatures) internal {
+        for (uint i = 0; i < signatures.length; i++) {
+            address signer = StateChannelUtilLibrary.retriveSignerAddress(encodedBlock, signatures[i]);
+            if(!StateChannelUtilLibrary.isAddressInArray(expectedAddresses, signer)) {
+                revert("Invalid signature");
+            }
+        }
+    }
+
+    function _isBlockFraudProof(ProofType proofType) private pure returns (bool) {
+    return proofType == ProofType.BlockDoubleSign ||
+           proofType == ProofType.BlockEmptyBlock ||
+           proofType == ProofType.BlockInvalidStateTransition ||
+           proofType == ProofType.BlockOutOfGas;
+    }
+
+    function _isTimeoutProof(ProofType proofType) private pure returns (bool) {
+    return proofType == ProofType.TimeoutThreshold ||
+           proofType == ProofType.TimeoutPriorInvalid ||
+           proofType == ProofType.TimeoutParticipantNoNext;
+    }
+
+    function _isDisputeFraudProof(ProofType proofType) private pure returns (bool) {
+    return proofType == ProofType.DisputeNotLatestState ||
+           proofType == ProofType.DisputeInvalid ||
+           proofType == ProofType.DisputeInvalidRecursive ||
+           proofType == ProofType.DisputeOutOfGas ||
+           proofType == ProofType.DisputeInvalidOutputState ||
+           proofType == ProofType.DisputeInvalidStateProof ||
+           proofType == ProofType.DisputeInvalidPreeviousRecursive ||
+           proofType == ProofType.DisputeInvalidExitChannelBlocks;
     }
 
     function challengeDispute(
@@ -280,128 +272,11 @@ contract DisputeManagerFacet is StateChannelCommon {
         bytes memory encodedLatestFinalizedState,
         bytes memory encodedLatestCorrectState
     ) public {
-        Dispute storage dispute = disputes[channelId];
-        require(dispute.channelId != bytes32(0), ErrorDisputeDoesntExist());
-        require(dispute.forkCnt == forkCnt, ErrorDisputeForkMismatch());
-        require(
-            dispute.challengeCnt == challengeCnt,
-            ErrorDisputeChallengeMismatch()
-        );
-        require(
-            dispute.deadlineTimestamp > block.timestamp,
-            ErrorDisputeExpired()
-        );
-
-        bool isParticipant = StateChannelUtilLibrary.isAddressInArray(
-            dispute.participants,
-            msg.sender
-        );
-        require(isParticipant, ErrorNotParticipant());
-        bool notSlashed = true;
-        for (uint i = 0; i < dispute.slashedParticipants.length; i++) {
-            if (dispute.slashedParticipants[i] == msg.sender) {
-                notSlashed = false;
-                break;
-            }
-        }
-        require(notSlashed, ErrorParticipantAlredySlashed());
-        require(applyProofs(dispute, proofs), ErrorDisputeInvalid());
-
-        //Modify dispute with new data
-        require(
-            isFinalizedAndLatest(
-                dispute.channelId,
-                dispute.forkCnt,
-                encodedLatestFinalizedState,
-                encodedLatestCorrectState,
-                virtualVotingBlocks,
-                dispute.participants
-            ),
-            ErrorLatestFinalizedBlock()
-        );
-        Block memory oldBlock = abi.decode(
-            dispute.virtualVotingBlocks[0].encodedBlock,
-            (Block)
-        );
-        Block memory newBlock = abi.decode(
-            virtualVotingBlocks[0].encodedBlock,
-            (Block)
-        );
-        require(
-            newBlock.transaction.header.transactionCnt >=
-                oldBlock.transaction.header.transactionCnt,
-            ErrorChallengeNewFinalizedBeforeOldFinalized()
-        );
-        copyConfirmedBlockArrayIntoStorage(
-            dispute.virtualVotingBlocks,
-            virtualVotingBlocks
-        );
-        dispute.encodedLatestFinalizedState = encodedLatestFinalizedState;
-        dispute.encodedLatestCorrectState = encodedLatestCorrectState;
-        dispute.postedStateDisputer = msg.sender;
-        dispute.deadlineTimestamp = block.timestamp + getChallengeTime();
-        dispute.challengeCnt++;
-
-        applyDisputeToLatestState(dispute);
-        setState(dispute.channelId, dispute.encodedLatestCorrectState);
-        emit DisputeUpdated(channelId, dispute);
+      // todo
     }
 
     function applyDisputeToLatestState(Dispute storage dispute) internal {
-        bytes memory latestEncodedState = dispute.encodedLatestCorrectState;
-        uint successCnt = 0;
-        // 1) Expand the set of participants - apply JoinChannel
-        (latestEncodedState, successCnt) = applyJoinChannelToStateMachine(
-            dispute.encodedLatestCorrectState,
-            dispute.joinChannelParticipants
-        );
-        //This is required to undo joinChannelComposable that may have succeeded, but the state machine insertion failed
-        require(
-            successCnt == dispute.joinChannelParticipants.length,
-            ErrorJoinChannelFailed()
-        );
-
-        // Clear processExits
-        delete dispute.processExits;
-
-        // 2.1) Shrink the set of participants - apply slashes
-        ProcessExit[] memory processExits;
-        (
-            latestEncodedState,
-            processExits,
-            successCnt
-        ) = applySlashesToStateMachine(
-            latestEncodedState,
-            dispute.slashedParticipants
-        );
-        for (uint i = 0; i < successCnt; i++)
-            dispute.processExits.push(processExits[i]);
-
-        // 2.2) Shrink the set of participants - apply leaveChannelForce requests
-        (
-            latestEncodedState,
-            processExits,
-            successCnt
-        ) = removeParticipantsFromStateMachine(
-            latestEncodedState,
-            dispute.leaveChannelParticipants
-        );
-        for (uint i = 0; i < successCnt; i++)
-            dispute.processExits.push(processExits[i]);
-
-        // 2.3) Shrink the set of participants - apply timeout
-        if (dispute.timedoutParticipant != address(0)) {
-            address[] memory arr = new address[](1);
-            arr[0] = dispute.timedoutParticipant;
-            (
-                latestEncodedState,
-                processExits,
-                successCnt
-            ) = removeParticipantsFromStateMachine(latestEncodedState, arr);
-            for (uint i = 0; i < successCnt; i++)
-                dispute.processExits.push(processExits[i]);
-        }
-        dispute.encodedLatestCorrectState = latestEncodedState;
+      // todo
     }
 
     function applyProofs(

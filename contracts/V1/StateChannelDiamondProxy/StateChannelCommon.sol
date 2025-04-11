@@ -130,10 +130,7 @@ contract StateChannelCommon is
             keccak256(abi.encodePacked(new bytes(0)));
     }
 
-    //TODO* - just store the latestdispute hahs and this becomes a stateless operation
     function isDisputeInProgress(bytes32 channelId) public view returns (bool) {
-        return
-            !(disputes[channelId].channelId == bytes32(0) ||
-                disputes[channelId].deadlineTimestamp < block.timestamp);
+       //todo implement
     }
 }
