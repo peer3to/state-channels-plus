@@ -86,7 +86,7 @@ library StateChannelUtilLibrary {
         return false;
     }
 
-    //Return set length after tryIndesrt
+    //Return set length after tryInsert
     function tryInsertAddressInThresholdSet(
         address adr,
         address[] memory set,
