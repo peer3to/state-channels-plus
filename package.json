@@ -35,7 +35,8 @@
     "tsconfig-paths": "^4.2.0",
     "typechain": "^8.3.0",
     "typescript": "^5.3.3",
-    "web3": "4.5.0"
+    "web3": "4.5.0",
+    "nyc": "^15.1.0"
   },
   "dependencies": {
     "@ethereumjs/evm": "^3.1.0",
@@ -61,6 +62,7 @@
     "testts": "yarn hardhat test --no-compile",
     "testc": "yarn hardhat clean && yarn hardhat compile --force && yarn hardhat typechain && yarn hardhat test",
     "test": "yarn hardhat test",
+    "test:coverage": "nyc --reporter=html yarn testts",
     "build": "rimraf dist && tsc && npm pack && node rename-pack.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
