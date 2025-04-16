@@ -7,7 +7,7 @@ import {
     BlockStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import StateManager from "./StateManager";
+import StateManager from "../stateManager/StateManager";
 
 export interface ValidationResult {
     success: boolean;
