@@ -28,7 +28,7 @@ import Mutex from "@/utils/Mutex";
 
 import DebugProxy from "@/utils/DebugProxy";
 import P2pEventHooks from "@/P2pEventHooks";
-import * as validators from "./validators";
+import * as validators from "@/utils/validators";
 import {
     DecisionContext,
     processExecutionDecision
