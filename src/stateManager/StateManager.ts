@@ -28,29 +28,7 @@ import Mutex from "@/utils/Mutex";
 
 import DebugProxy from "@/utils/DebugProxy";
 import P2pEventHooks from "@/P2pEventHooks";
-import {
-    checkBlockForkStatus,
-    checkBlockTimestamp,
-    checkCorrectBlockProducer,
-    checkEnoughTimeSubjective,
-    verifyStateTransition,
-    checkBlockIsFuture,
-    checkParticipantInFork,
-    checkPastBlockCurrentFork,
-    checkForkDisputeStatus,
-    checkBlockValidity,
-    checkDuplicateBlock,
-    checkManagerReadiness,
-    checkDuplicateConfirmationSignature,
-    ensureBlockInChainOrProcessIt,
-    checkConfirmerParticipantInFork
-} from "./validators";
-import {
-    ConfirmationContext,
-    ValidationContext,
-    ValidationStep
-} from "./types";
-import { runPipeline } from "./BlockValidation";
+import * as validators from "./validators";
 import {
     DecisionContext,
     processExecutionDecision
@@ -243,37 +221,10 @@ class StateManager {
 
         try {
             await this.mutex.lock();
+            const result = await this.validateSignedBlock(signedBlock);
 
-            const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
-
-            const context: ValidationContext = {
-                stateManager: this,
-                signedBlock,
-                block
-            };
-
-            const validators: ValidationStep<ValidationContext>[] = [
-                checkManagerReadiness,
-                checkBlockValidity,
-                checkBlockForkStatus,
-                checkForkDisputeStatus,
-                checkDuplicateBlock,
-                checkBlockIsFuture,
-                checkParticipantInFork,
-                checkPastBlockCurrentFork,
-                checkBlockTimestamp,
-                checkEnoughTimeSubjective,
-                checkCorrectBlockProducer,
-                verifyStateTransition
-            ];
-
-            const { executionFlag, agreementFlag } = await runPipeline(
-                validators,
-                context
-            );
-
-            finalExecutionFlag = executionFlag;
-            finalAgreementFlag = agreementFlag;
+            finalExecutionFlag = result.flag;
+            finalAgreementFlag = result.agreementFlag;
 
             return finalExecutionFlag;
         } finally {
@@ -302,31 +253,19 @@ class StateManager {
         let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS; // Default to SUCCESS
 
         try {
-            const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
-
-            const context: ConfirmationContext = {
-                stateManager: this,
+            const result = await this.validateBlockConfirmation(
                 signedBlock,
-                confirmationSignature,
-                block
-            };
-
-            const steps: ValidationStep<ConfirmationContext>[] = [
-                checkManagerReadiness,
-                checkBlockValidity,
-                checkBlockForkStatus,
-                ensureBlockInChainOrProcessIt,
-                checkConfirmerParticipantInFork,
-                checkDuplicateConfirmationSignature
-            ];
-
-            const { executionFlag } = await runPipeline(steps, context);
-            finalExecutionFlag = executionFlag;
-
-            this.agreementManager.confirmBlock(
-                block,
-                confirmationSignature as SignatureLike
+                confirmationSignature
             );
+            finalExecutionFlag = result.flag;
+
+            if (result.success) {
+                const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
+                this.agreementManager.confirmBlock(
+                    block,
+                    confirmationSignature as SignatureLike
+                );
+            }
 
             return finalExecutionFlag;
         } finally {
@@ -772,6 +711,116 @@ class StateManager {
                 );
             }
         }, delayMs);
+    }
+
+    private async validateSignedBlock(
+        signedBlock: SignedBlockStruct
+    ): Promise<validators.ValidationResult> {
+        const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
+
+        const readinessResult = await validators.isManagerReady(this);
+        if (!readinessResult.success) return readinessResult;
+
+        const blockValidityResult = await validators.isBlockValid(
+            this,
+            signedBlock
+        );
+        if (!blockValidityResult.success) return blockValidityResult;
+
+        // Fork status checks
+        const forkStatusResult = await validators.isBlockInCurrentFork(
+            this,
+            block
+        );
+        if (!forkStatusResult.success) return forkStatusResult;
+
+        const forkDisputeResult = await validators.isForkDisputed(this, block);
+        if (!forkDisputeResult.success) return forkDisputeResult;
+
+        // Block checks
+        const duplicateResult = await validators.isDuplicateBlock(this, block);
+        if (!duplicateResult.success) return duplicateResult;
+
+        const futureBlockResult = await validators.isBlockFuture(this, block);
+        if (!futureBlockResult.success) return futureBlockResult;
+
+        const participantResult = await validators.isParticipantInFork(
+            this,
+            block
+        );
+        if (!participantResult.success) return participantResult;
+
+        const pastBlockResult = await validators.validatePastBlockInCurrentFork(
+            this,
+            signedBlock,
+            block
+        );
+        if (!pastBlockResult.success) return pastBlockResult;
+
+        // Timing and producer checks
+        const timestampResult = await validators.isTimestampValid(this, block);
+        if (!timestampResult.success) return timestampResult;
+
+        const timePassedResult = await validators.hasEnoughTimePassed(
+            this,
+            signedBlock
+        );
+        if (!timePassedResult.success) return timePassedResult;
+
+        const producerResult = await validators.isCorrectBlockProducer(
+            this,
+            block
+        );
+        if (!producerResult.success) return producerResult;
+
+        // Finally, process the state transition
+        return validators.processStateTransition(this, block, signedBlock);
+    }
+
+    private async validateBlockConfirmation(
+        signedBlock: SignedBlockStruct,
+        confirmationSignature: BytesLike
+    ): Promise<validators.ValidationResult> {
+        const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
+
+        const readinessResult = await validators.isManagerReady(this);
+        if (!readinessResult.success) return readinessResult;
+
+        const blockValidityResult = await validators.isBlockValid(
+            this,
+            signedBlock
+        );
+        if (!blockValidityResult.success) return blockValidityResult;
+
+        const forkStatusResult = await validators.isBlockInCurrentFork(
+            this,
+            block
+        );
+        if (!forkStatusResult.success) return forkStatusResult;
+
+        const blockInChainResult = await validators.ensureBlockInChain(
+            this,
+            signedBlock,
+            block
+        );
+        if (!blockInChainResult.success) return blockInChainResult;
+
+        const confirmerResult = await validators.isConfirmerInFork(
+            this,
+            block,
+            confirmationSignature
+        );
+        if (!confirmerResult.success) return confirmerResult;
+
+        const duplicateSignatureResult =
+            await validators.isDuplicateConfirmationSignature(
+                this,
+                block,
+                confirmationSignature
+            );
+        if (!duplicateSignatureResult.success) return duplicateSignatureResult;
+
+        return validators.success();
     }
 }
 
