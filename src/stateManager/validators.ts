@@ -1,235 +1,250 @@
 import { ExecutionFlags } from "@/DataTypes";
-import {
-    ConfirmationContext,
-    ConfirmationStep,
-    ValidationContext,
-    ValidationResult
-} from "./types";
 import { AgreementFlag } from "@/AgreementManager";
 import { ethers } from "hardhat";
-import { SignatureLike } from "ethers";
+import { SignatureLike, BytesLike } from "ethers";
 import EvmUtils from "@/utils/EvmUtils";
+import {
+    BlockStruct,
+    SignedBlockStruct
+} from "@typechain-types/contracts/V1/DataTypes";
+import StateManager from "./StateManager";
 
-//====================================================================
-// BASIC STATE VALIDATION FUNCTIONS
-//====================================================================
-
-/**
- * Validates if the state manager is ready for processing
- */
-export const checkManagerReadiness = async <
-    TContext extends ValidationContext
->({
-    stateManager
-}: TContext): Promise<ValidationResult> =>
-    stateManager.getForkCnt() === -1
-        ? { executionFlag: ExecutionFlags.NOT_READY }
-        : { executionFlag: ExecutionFlags.SUCCESS };
+export interface ValidationResult {
+    success: boolean;
+    flag: ExecutionFlags; // Standard flag used across codebase
+    agreementFlag?: AgreementFlag; // Optional agreement flag for disputes
+    message?: string; // Optional description for logging/debugging
+}
 
 /**
- * Validates the integrity of a signed block
+ * Creates a success result
  */
-export const checkBlockValidity = async <TContext extends ValidationContext>({
-    stateManager,
-    signedBlock
-}: TContext): Promise<ValidationResult> =>
-    (await stateManager.isValidBlock(signedBlock))
-        ? { executionFlag: ExecutionFlags.SUCCESS }
-        : { executionFlag: ExecutionFlags.DISCONNECT };
-
-//====================================================================
-// FORK-RELATED VALIDATION FUNCTIONS
-//====================================================================
+export function success(): ValidationResult {
+    return { success: true, flag: ExecutionFlags.SUCCESS };
+}
 
 /**
- * Checks if the fork associated with this block is under dispute
+ * Creates a failure result with the given flag
  */
-export const checkForkDisputeStatus = async <
-    TContext extends ValidationContext
->({
-    stateManager,
-    block
-}: TContext): Promise<ValidationResult> =>
-    stateManager.disputeHandler.isForkDisputed(
+export function failure(
+    flag: ExecutionFlags,
+    agreementFlag?: AgreementFlag,
+    message?: string
+): ValidationResult {
+    return { success: false, flag, agreementFlag, message };
+}
+
+export async function isManagerReady(
+    stateManager: StateManager
+): Promise<ValidationResult> {
+    return stateManager.getForkCnt() === -1
+        ? failure(
+              ExecutionFlags.NOT_READY,
+              undefined,
+              "Manager not ready (fork count is -1)"
+          )
+        : success();
+}
+
+export async function isBlockValid(
+    stateManager: StateManager,
+    signedBlock: SignedBlockStruct
+): Promise<ValidationResult> {
+    return (await stateManager.isValidBlock(signedBlock))
+        ? success()
+        : failure(
+              ExecutionFlags.DISCONNECT,
+              undefined,
+              "Invalid block signature or format"
+          );
+}
+
+export async function isForkDisputed(
+    stateManager: StateManager,
+    block: BlockStruct
+): Promise<ValidationResult> {
+    return stateManager.disputeHandler.isForkDisputed(
         Number(block.transaction.header.forkCnt)
     )
-        ? { executionFlag: ExecutionFlags.PAST_FORK }
-        : { executionFlag: ExecutionFlags.SUCCESS };
+        ? failure(ExecutionFlags.PAST_FORK, undefined, "Fork is under dispute")
+        : success();
+}
 
-/**
- * Ensures the block's fork count is current
- */
-export const checkBlockForkStatus = async <TContext extends ValidationContext>({
-    stateManager,
-    block
-}: TContext): Promise<ValidationResult> =>
-    Number(block.transaction.header.forkCnt) < stateManager.getForkCnt()
-        ? { executionFlag: ExecutionFlags.PAST_FORK }
-        : { executionFlag: ExecutionFlags.SUCCESS };
+export async function isBlockInCurrentFork(
+    stateManager: StateManager,
+    block: BlockStruct
+): Promise<ValidationResult> {
+    return Number(block.transaction.header.forkCnt) < stateManager.getForkCnt()
+        ? failure(
+              ExecutionFlags.PAST_FORK,
+              undefined,
+              "Block belongs to a past fork"
+          )
+        : success();
+}
 
-/**
- * Verifies the block's participant is part of the current fork
- */
-export const checkParticipantInFork = async <
-    TContext extends ValidationContext
->({
-    stateManager,
-    block
-}: TContext): Promise<ValidationResult> =>
-    stateManager.agreementManager.isParticipantInLatestFork(
+export async function isParticipantInFork(
+    stateManager: StateManager,
+    block: BlockStruct
+): Promise<ValidationResult> {
+    return stateManager.agreementManager.isParticipantInLatestFork(
         block.transaction.header.participant
     )
-        ? { executionFlag: ExecutionFlags.SUCCESS }
-        : { executionFlag: ExecutionFlags.DISCONNECT };
+        ? success()
+        : failure(
+              ExecutionFlags.DISCONNECT,
+              undefined,
+              "Participant not in current fork"
+          );
+}
 
-//====================================================================
-// BLOCK VALIDATION FUNCTIONS
-//====================================================================
+export async function isDuplicateBlock(
+    stateManager: StateManager,
+    block: BlockStruct
+): Promise<ValidationResult> {
+    return stateManager.agreementManager.isBlockDuplicate(block)
+        ? failure(
+              ExecutionFlags.DUPLICATE,
+              undefined,
+              "Block already processed"
+          )
+        : success();
+}
 
-/**
- * Checks if this block has already been processed
- */
-export const checkDuplicateBlock = async <TContext extends ValidationContext>({
-    stateManager,
-    block
-}: TContext): Promise<ValidationResult> =>
-    stateManager.agreementManager.isBlockDuplicate(block)
-        ? { executionFlag: ExecutionFlags.DUPLICATE }
-        : { executionFlag: ExecutionFlags.SUCCESS };
+export async function isBlockFuture(
+    stateManager: StateManager,
+    block: BlockStruct
+): Promise<ValidationResult> {
+    const isFutureFork =
+        Number(block.transaction.header.forkCnt) > stateManager.getForkCnt();
+    const isFutureTransaction =
+        Number(block.transaction.header.transactionCnt) >
+        stateManager.getNextTransactionCnt();
 
-/**
- * Validates if the block belongs to a future state
- */
-export const checkBlockIsFuture = async <TContext extends ValidationContext>({
-    stateManager,
-    block
-}: TContext): Promise<ValidationResult> =>
-    Number(block.transaction.header.forkCnt) > stateManager.getForkCnt() ||
-    Number(block.transaction.header.transactionCnt) >
-        stateManager.getNextTransactionCnt()
-        ? { executionFlag: ExecutionFlags.NOT_READY }
-        : { executionFlag: ExecutionFlags.SUCCESS };
+    return isFutureFork || isFutureTransaction
+        ? failure(
+              ExecutionFlags.NOT_READY,
+              undefined,
+              "Block is for a future state"
+          )
+        : success();
+}
 
-/**
- * Handle validation of blocks that belong to current fork but are for past transactions
- */
-export const checkPastBlockCurrentFork = async <
-    TContext extends ValidationContext
->({
-    stateManager,
-    signedBlock,
-    block
-}: TContext): Promise<ValidationResult> => {
+export async function validatePastBlockInCurrentFork(
+    stateManager: StateManager,
+    signedBlock: SignedBlockStruct,
+    block: BlockStruct
+): Promise<ValidationResult> {
+    // Only process if it's a past transaction
     if (
         Number(block.transaction.header.transactionCnt) <
         stateManager.getNextTransactionCnt()
     ) {
         const agreementFlag =
             stateManager.agreementManager.checkBlock(signedBlock);
+
         if (
             agreementFlag === AgreementFlag.DOUBLE_SIGN ||
             agreementFlag === AgreementFlag.INCORRECT_DATA
         ) {
-            return {
-                executionFlag: ExecutionFlags.DISPUTE,
-                agreementFlag
-            };
+            return failure(
+                ExecutionFlags.DISPUTE,
+                agreementFlag,
+                "Block for past transaction has issues"
+            );
         }
 
         throw new Error(
             "StateManager - OnSignedBlock - current fork in the past - INTERNAL ERROR"
         );
     }
-    return { executionFlag: ExecutionFlags.SUCCESS };
-};
 
-/**
- * Validates the timestamp of the block
- */
-export const checkBlockTimestamp = async <TContext extends ValidationContext>({
-    stateManager,
-    block
-}: TContext): Promise<ValidationResult> =>
-    (await stateManager.isGoodTimestampNonDeterministic(block))
-        ? { executionFlag: ExecutionFlags.SUCCESS }
-        : // This is a non-deterministic race – raise dispute
-          {
-              executionFlag: ExecutionFlags.DISPUTE,
-              agreementFlag: AgreementFlag.INCORRECT_DATA
-          };
+    return success();
+}
+
+export async function isTimestampValid(
+    stateManager: StateManager,
+    block: BlockStruct
+): Promise<ValidationResult> {
+    return (await stateManager.isGoodTimestampNonDeterministic(block))
+        ? success()
+        : failure(
+              ExecutionFlags.DISPUTE,
+              AgreementFlag.INCORRECT_DATA,
+              "Block timestamp is invalid"
+          );
+}
 
 /**
  * Checks if enough time has passed (subjectively) to process this transaction
- * Return SUCCESS if okay, or NOT_READY/DISPUTE/etc. if not.
  */
-export const checkEnoughTimeSubjective = async <
-    TContext extends ValidationContext
->({
-    stateManager,
-    signedBlock
-}: TContext): Promise<ValidationResult> => {
+export async function hasEnoughTimePassed(
+    stateManager: StateManager,
+    signedBlock: SignedBlockStruct
+): Promise<ValidationResult> {
     const flag =
         await stateManager.isEnoughTimeToPlayMyTransactionSubjective(
             signedBlock
         );
-    return { executionFlag: flag };
-};
 
-/**
- * Verifies that the block was produced by the correct participant
- */
-export const checkCorrectBlockProducer = async <
-    TContext extends ValidationContext
->({
-    stateManager,
-    block
-}: TContext): Promise<ValidationResult> => {
+    return flag === ExecutionFlags.SUCCESS
+        ? success()
+        : failure(
+              flag,
+              undefined,
+              "Not enough time has passed for transaction"
+          );
+}
+
+export async function isCorrectBlockProducer(
+    stateManager: StateManager,
+    block: BlockStruct
+): Promise<ValidationResult> {
     const nextToWrite = await stateManager.stateMachine.getNextToWrite();
-    if (block.transaction.header.participant !== nextToWrite) {
-        return {
-            executionFlag: ExecutionFlags.DISPUTE,
-            agreementFlag: AgreementFlag.INCORRECT_DATA
-        };
-    }
-    return { executionFlag: ExecutionFlags.SUCCESS };
-};
 
-//====================================================================
-// STATE TRANSITION VALIDATION
-//====================================================================
+    return block.transaction.header.participant !== nextToWrite
+        ? failure(
+              ExecutionFlags.DISPUTE,
+              AgreementFlag.INCORRECT_DATA,
+              "Incorrect block producer"
+          )
+        : success();
+}
 
 /**
- * Core function that verifies the transaction and updates state
+ * verifies the transaction and updates state
  * This function:
  * 1. Captures current state hash
  * 2. Applies the transaction
  * 3. Verifies resulting state hash matches the block's stateHash
  * 4. Adds the block to the manager if valid
  */
-export const verifyStateTransition = async <
-    TContext extends ValidationContext
->({
-    stateManager,
-    block,
-    signedBlock
-}: TContext): Promise<ValidationResult> => {
+export async function processStateTransition(
+    stateManager: StateManager,
+    block: BlockStruct,
+    signedBlock: SignedBlockStruct
+): Promise<ValidationResult> {
     // Capture current state hash
     const previousStateHash = await stateManager.getEncodedStateKecak256();
 
     // Apply the transaction
-    const { success, encodedState, successCallback } =
-        await stateManager.applyTransaction(block.transaction);
+    const {
+        success: txSuccess,
+        encodedState,
+        successCallback
+    } = await stateManager.applyTransaction(block.transaction);
 
     // Compare resulting state hash with block's stateHash
     const isStateHashValid =
         ethers.keccak256(encodedState) === block.stateHash &&
         previousStateHash === block.previousStateHash;
 
-    if (!success || !isStateHashValid) {
-        return {
-            executionFlag: ExecutionFlags.DISPUTE,
-            agreementFlag: AgreementFlag.INCORRECT_DATA
-        };
+    if (!txSuccess || !isStateHashValid) {
+        return failure(
+            ExecutionFlags.DISPUTE,
+            AgreementFlag.INCORRECT_DATA,
+            "Transaction failed or state hash mismatch"
+        );
     }
 
     // Add the block to the manager
@@ -246,83 +261,77 @@ export const verifyStateTransition = async <
         }
     }, 0);
 
-    return { executionFlag: ExecutionFlags.SUCCESS };
-};
+    return success();
+}
 
-//====================================================================
-// CONFIRMATION VALIDATION FUNCTIONS
-//====================================================================
+export async function isDuplicateConfirmationSignature(
+    stateManager: StateManager,
+    block: BlockStruct,
+    confirmationSignature: BytesLike
+): Promise<ValidationResult> {
+    return stateManager.agreementManager.doesSignatureExist(
+        block,
+        confirmationSignature as SignatureLike
+    )
+        ? failure(
+              ExecutionFlags.DUPLICATE,
+              undefined,
+              "Duplicate confirmation signature"
+          )
+        : success();
+}
 
-/**
- * Checks if we've already seen this confirmation signature
- */
-export const checkDuplicateConfirmationSignature: ConfirmationStep = async ({
-    stateManager,
-    block,
-    confirmationSignature
-}: ConfirmationContext): Promise<ValidationResult> => {
-    if (
-        stateManager.agreementManager.doesSignatureExist(
-            block,
-            confirmationSignature as SignatureLike
-        )
-    ) {
-        return { executionFlag: ExecutionFlags.DUPLICATE };
-    }
-    return { executionFlag: ExecutionFlags.SUCCESS };
-};
-
-/**
- * Ensures the block is part of the chain or attempts to process it
- */
-export const ensureBlockInChainOrProcessIt: ConfirmationStep = async ({
-    stateManager,
-    signedBlock,
-    block
-}: ConfirmationContext): Promise<ValidationResult> => {
+export async function ensureBlockInChain(
+    stateManager: StateManager,
+    signedBlock: SignedBlockStruct,
+    block: BlockStruct
+): Promise<ValidationResult> {
     // If block isn't yet in the chain...
     if (!stateManager.agreementManager.isBlockInChain(block)) {
         const flag = await stateManager.onSignedBlock(signedBlock);
 
         if (flag === ExecutionFlags.DUPLICATE) {
             // Possibly it has become part of the chain now
-            if (stateManager.agreementManager.isBlockInChain(block)) {
-                // Great, treat as success
-                return { executionFlag: ExecutionFlags.SUCCESS };
-            } else {
-                // Not in chain yet
-                return { executionFlag: ExecutionFlags.NOT_READY };
-            }
+            return stateManager.agreementManager.isBlockInChain(block)
+                ? success()
+                : failure(
+                      ExecutionFlags.NOT_READY,
+                      undefined,
+                      "Block not in chain yet"
+                  );
         }
 
         // If the processed result is anything else but SUCCESS, we must abort
         if (flag !== ExecutionFlags.SUCCESS) {
-            return { executionFlag: flag };
+            return failure(
+                flag,
+                undefined,
+                "Failed to process block for chain"
+            );
         }
     }
 
     // If we reach here, the block is definitely in the canonical chain
-    return { executionFlag: ExecutionFlags.SUCCESS };
-};
+    return success();
+}
 
-/**
- * Verifies the confirmer is a participant in the current fork
- */
-export const checkConfirmerParticipantInFork: ConfirmationStep = async ({
-    stateManager,
-    block,
-    confirmationSignature
-}: ConfirmationContext): Promise<ValidationResult> => {
-    const retrievedAddress = EvmUtils.retrieveSignerAddressBlock(
+export async function isConfirmerInFork(
+    stateManager: StateManager,
+    block: BlockStruct,
+    confirmationSignature: BytesLike
+): Promise<ValidationResult> {
+    const confirmer = EvmUtils.retrieveSignerAddressBlock(
         block,
         confirmationSignature as SignatureLike
     );
-    if (
-        !stateManager.agreementManager.isParticipantInLatestFork(
-            retrievedAddress
-        )
-    ) {
-        return { executionFlag: ExecutionFlags.DISCONNECT };
+
+    if (!stateManager.agreementManager.isParticipantInLatestFork(confirmer)) {
+        return failure(
+            ExecutionFlags.DISCONNECT,
+            undefined,
+            "Confirmation signer not in current fork"
+        );
     }
-    return { executionFlag: ExecutionFlags.SUCCESS };
-};
+
+    return success();
+}
