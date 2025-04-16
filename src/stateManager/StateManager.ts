@@ -355,7 +355,7 @@ class StateManager {
     }
 
     // returns participants who haven't signed the block
-    public async getPlayersWhoHaventSignedBlock(
+    public async getParticipantsWhoHaventSignedBlock(
         block: BlockStruct
     ): Promise<AddressLike[]> {
         const signatures = this.agreementManager.getSigantures(block);
