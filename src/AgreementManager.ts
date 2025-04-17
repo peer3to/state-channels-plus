@@ -488,11 +488,9 @@ class AgreementManager {
     //both canonical chain and future queue
     public isBlockInChain(block: BlockStruct): boolean {
         const agreement = this.getAgreementByBlock(block);
-
-        return agreement
-            ? EvmUtils.encodeBlock(agreement.block) ==
-                  EvmUtils.encodeBlock(block)
-            : false;
+        return (
+            (agreement || false) && this.areBlocksEqual(agreement.block, block)
+        );
     }
     public isBlockDuplicate(block: BlockStruct): boolean {
         if (this.isBlockInChain(block)) return true;
