@@ -11,32 +11,22 @@ contract DataTypes {
         JoinChannelAgreement memory f,
         ConfirmedJoinChannelAgreement memory g,
         LeaveChannel memory h,
-        LeaveChannelAgreement memory i,
-        ConfirmedBlock memory j
+        LeaveChannelAgreement memory i
+       
     ) {}
 }
-//TODO? - think should post state - everyone should be able to replicate the state since genesis (fork) and if a block is posted in the future and some are missing - someone will be folded before the posted BLOCK, as for posting too much in the future it can be challenged
 struct BlockCalldata {
     SignedBlock signedBlock;
     uint timestamp;
 }
-//TODO! - need to rename and refactor this
-struct ForkDataAvailability {
-    mapping(uint => mapping(address => BlockCalldata)) map; //map[transactionCnt][participant] = BlockCalldata
-    ForkDataAvailabilityKey[] keys;
-}
-struct ForkDataAvailabilityKey {
-    uint transactionCnt;
-    address participant;
-}
 
 struct SignedBlock {
     bytes encodedBlock;
-    bytes[] signatures;
+    bytes signature;
 }
 
-struct ConfirmedBlock {
-    bytes encodedBlock;
+struct BlockConfirmation {
+    SignedBlock signedBlock;
     bytes[] signatures;
 }
 
@@ -83,6 +73,11 @@ struct JoinChannel {
     uint amount;
     uint deadlineTimestamp;
     bytes data; //custom data
+}
+
+struct JoinChannelBlock {
+    bytes32 previousBlockHash;
+    JoinChannel[] joinChannels;
 }
 struct SignedJoinChannel {
     bytes encodedJoinChannel;
@@ -155,4 +150,12 @@ struct Timeout {
 struct DisputePair {
     uint firstIndex;
     uint lastIndex;
+}
+
+/// @dev data for dispute auditing
+struct DisputeAuditingData {
+    bytes genesisStateSnapshot;
+    bytes latestStateSnapshot;
+    bytes latestStateStateMachineState;
+    JoinChannelBlock[] joinChannelBlocks;
 }

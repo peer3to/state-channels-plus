@@ -17,9 +17,7 @@ contract StateChannelManagerStorage {
     //TODO* - think do we need to store previous timestamps
     mapping(bytes32 => mapping(uint => uint)) genesisTimestamps; // [channelId][forkCnt] -> encodedState
     mapping(bytes32 => uint) latestFork; // [channelId] -> latestFork
-    //TODO* - this can map to a hash, but it also has to store keys[] and timestamp
-    mapping(bytes32 => mapping(uint => ForkDataAvailability)) postedBlockCalldata; //[channelId][forkCnt].map[transactionCnt][address] -> BlockCalldata
-    
+   
     // ================== Dispute on chain storage ==================
 
     /// @dev disputes[channelId] => array of dispute commitments

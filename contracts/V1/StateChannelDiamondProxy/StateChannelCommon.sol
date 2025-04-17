@@ -130,7 +130,14 @@ contract StateChannelCommon is
             keccak256(abi.encodePacked(new bytes(0)));
     }
 
-    function isDisputeInProgress(bytes32 channelId) public view returns (bool) {
-       //todo implement
+    function isDisputeCommitmentAvailable(bytes32 channelId, bytes32 disputeCommitment) public view returns (bool, int) {
+        bytes32[] storage disputeHashes = disputes[channelId];
+        if (disputeHashes.length == 0) return (false, -1);
+        for(uint i = 0; i < disputeHashes.length; i++) {
+            if(disputeHashes[i] == disputeCommitment) {
+                return (true, int(i));
+            }
+        }
+        return (false, -1);
     }
 }
