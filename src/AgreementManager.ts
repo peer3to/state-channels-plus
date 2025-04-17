@@ -201,6 +201,9 @@ class AgreementManager {
         const set = new Set(fork.addressesInThreshold);
         for (const signature of agreement.blockSignatures) {
             set.delete(EvmUtils.retrieveSignerAddressBlock(block, signature));
+            if (set.size === 0) {
+                break;
+            }
         }
 
         return set.size === 0;

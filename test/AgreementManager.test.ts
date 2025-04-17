@@ -1315,4 +1315,150 @@ describe("AgreementManager", () => {
             expect(chainBlocks[0].timestamp).to.equal(timestamp); // Original timestamp
         });
     });
+
+    describe("getFinalizedAndLatestWithVotes performance", () => {
+        let testManager: AgreementManager;
+        let thresholdSigners: Signer[];
+        let extraSigners: Signer[];
+        let thresholdOnlyBlock: BlockStruct;
+        let manySignaturesBlock: BlockStruct;
+        const numberOfThresholdSigners = 3;
+        const numberOfExtraSigners = 12;
+
+        before(async () => {
+            // Use existing signers instead of creating random wallets
+            thresholdSigners = signers.slice(0, numberOfThresholdSigners);
+            extraSigners = signers.slice(
+                numberOfThresholdSigners,
+                numberOfThresholdSigners + numberOfExtraSigners
+            ); // Take additional signers for extras
+
+            // Get addresses for threshold signers
+            const thresholdAddresses = await Promise.all(
+                thresholdSigners.map((s) => s.getAddress())
+            );
+
+            // Create a single manager with two forks
+            testManager = new AgreementManager();
+
+            // FORK 0: Only threshold signatures
+            testManager.newFork(
+                commonGenesisState,
+                thresholdAddresses,
+                0,
+                nowTimestamp
+            );
+
+            // FORK 1: Threshold + extra signatures
+            testManager.newFork(
+                commonGenesisState,
+                thresholdAddresses,
+                1,
+                nowTimestamp
+            );
+
+            // Create block for fork 0
+            thresholdOnlyBlock = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkCnt: 0,
+                        transactionCnt: 0,
+                        participant: thresholdAddresses[0]
+                    })
+                }),
+                previousStateHash: ethers.keccak256(commonGenesisState)
+            });
+
+            // Create block for fork 1
+            manySignaturesBlock = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkCnt: 1,
+                        transactionCnt: 0,
+                        participant: thresholdAddresses[0]
+                    })
+                }),
+                previousStateHash: ethers.keccak256(commonGenesisState)
+            });
+
+            // Add first threshold signature to both blocks
+            const firstSignatureForFork0 = (
+                await EvmUtils.signBlock(
+                    thresholdOnlyBlock,
+                    thresholdSigners[0]
+                )
+            ).signature as SignatureLike;
+            testManager.addBlock(
+                thresholdOnlyBlock,
+                firstSignatureForFork0,
+                commonEncodedState
+            );
+
+            const firstSignatureForFork1 = (
+                await EvmUtils.signBlock(
+                    manySignaturesBlock,
+                    thresholdSigners[0]
+                )
+            ).signature as SignatureLike;
+            testManager.addBlock(
+                manySignaturesBlock,
+                firstSignatureForFork1,
+                commonEncodedState
+            );
+
+            // Add remaining threshold signatures to both forks
+            await Promise.all(
+                thresholdSigners.slice(1).map(async (signer) => {
+                    const sigFork0 = (
+                        await EvmUtils.signBlock(thresholdOnlyBlock, signer)
+                    ).signature as SignatureLike;
+                    testManager.confirmBlock(thresholdOnlyBlock, sigFork0);
+
+                    const sigFork1 = (
+                        await EvmUtils.signBlock(manySignaturesBlock, signer)
+                    ).signature as SignatureLike;
+                    testManager.confirmBlock(manySignaturesBlock, sigFork1);
+                })
+            );
+
+            // Add extra signatures to fork 1 only
+            await Promise.all(
+                extraSigners.map(async (signer) => {
+                    const sig = (
+                        await EvmUtils.signBlock(manySignaturesBlock, signer)
+                    ).signature as SignatureLike;
+                    testManager.confirmBlock(manySignaturesBlock, sig);
+                })
+            );
+        });
+
+        it("should have similar performance regardless of extra signatures beyond threshold", async () => {
+            const targetSigner = await thresholdSigners[0].getAddress();
+            const runs = 5; // Multiple runs for more reliable measurements
+
+            // Measure time for fork 0 (threshold only)
+            let thresholdDuration = 0;
+            for (let i = 0; i < runs; i++) {
+                const startTime = process.hrtime.bigint();
+                testManager.getFinalizedAndLatestWithVotes(0, targetSigner);
+                const endTime = process.hrtime.bigint();
+                thresholdDuration += Number(endTime - startTime);
+            }
+
+            // Measure time for fork 1 (threshold + extra signatures)
+            let extendedDuration = 0;
+            for (let i = 0; i < runs; i++) {
+                const startTime = process.hrtime.bigint();
+                testManager.getFinalizedAndLatestWithVotes(1, targetSigner);
+                const endTime = process.hrtime.bigint();
+                extendedDuration += Number(endTime - startTime);
+            }
+
+            const ratio = extendedDuration / thresholdDuration;
+
+            // 1.2 is chosen as a reasonable threshold for performance comparison
+            // this is a way to check that time ratio is ~ 1
+            expect(ratio).to.be.lessThan(1.2);
+        });
+    });
 });
