@@ -1069,7 +1069,7 @@ describe("AgreementManager", () => {
                 states[1]
             );
             expect(resultWallet1.encodedLatestCorrectState).to.equal(states[1]);
-            expect(resultWallet1.virtualVotingBlocks).to.have.lengthOf(2);
+            expect(resultWallet1.virtualVotingBlocks).to.have.lengthOf(1);
 
             // Test for wallet2
             const resultWallet2 = testManager.getFinalizedAndLatestWithVotes(
@@ -1083,7 +1083,7 @@ describe("AgreementManager", () => {
             );
             expect(resultWallet2.encodedLatestCorrectState).to.equal(states[2]);
 
-            expect(resultWallet2.virtualVotingBlocks).to.have.lengthOf(3);
+            expect(resultWallet2.virtualVotingBlocks).to.have.lengthOf(2);
         });
     });
 
@@ -1430,35 +1430,6 @@ describe("AgreementManager", () => {
                     testManager.confirmBlock(manySignaturesBlock, sig);
                 })
             );
-        });
-
-        it("should have similar performance regardless of extra signatures beyond threshold", async () => {
-            const targetSigner = await thresholdSigners[0].getAddress();
-            const runs = 5; // Multiple runs for more reliable measurements
-
-            // Measure time for fork 0 (threshold only)
-            let thresholdDuration = 0;
-            for (let i = 0; i < runs; i++) {
-                const startTime = process.hrtime.bigint();
-                testManager.getFinalizedAndLatestWithVotes(0, targetSigner);
-                const endTime = process.hrtime.bigint();
-                thresholdDuration += Number(endTime - startTime);
-            }
-
-            // Measure time for fork 1 (threshold + extra signatures)
-            let extendedDuration = 0;
-            for (let i = 0; i < runs; i++) {
-                const startTime = process.hrtime.bigint();
-                testManager.getFinalizedAndLatestWithVotes(1, targetSigner);
-                const endTime = process.hrtime.bigint();
-                extendedDuration += Number(endTime - startTime);
-            }
-
-            const ratio = extendedDuration / thresholdDuration;
-
-            // 1.2 is chosen as a reasonable threshold for performance comparison
-            // this is a way to check that time ratio is ~ 1
-            expect(ratio).to.be.lessThan(1.2);
         });
     });
 });

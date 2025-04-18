@@ -282,54 +282,78 @@ class AgreementManager {
         virtualVotingBlocks: ConfirmedBlockStruct[];
     } {
         const fork = this.forks[Number(forkCnt)];
+        let encodedLatestFinalizedState: string | undefined;
+        let encodedLatestCorrectState: string | undefined;
+        let virtualVotingBlocks: ConfirmedBlockStruct[] = [];
+        const requiredSignatures = new Set(fork.addressesInThreshold);
 
-        const result = fork.agreements.reduceRight(
-            (acc, agreement, index) => {
-                // Only update encodedLatestCorrectState if not found yet and this participant signed
-                if (
-                    !acc.foundSignerState &&
-                    this.didParticipantSign(agreement.block, signerAddress)
-                        .didSign
-                ) {
-                    acc.encodedLatestCorrectState = agreement.encodedState;
-                    acc.foundSignerState = true;
-                }
+        for (let i = fork.agreements.length - 1; i >= 0; i--) {
+            const agreement = fork.agreements[i];
+            const signersAddresses = this.extractSignerAddresses(agreement);
 
-                // Only update encodedLatestFinalizedState if not found yet and everyone signed
-                if (
-                    !acc.foundFinalizedState &&
-                    this.didEveryoneSignBlock(agreement.block)
-                ) {
-                    acc.encodedLatestFinalizedState = agreement.encodedState;
-                    acc.foundFinalizedState = true;
-                }
-
-                // Add to virtualVotingBlocks if the signer signed this or any later block
-                if (acc.foundSignerState) {
-                    acc.virtualVotingBlocks.unshift({
-                        encodedBlock: EvmUtils.encodeBlock(agreement.block),
-                        signatures: agreement.blockSignatures as string[]
-                    });
-                }
-
-                return acc;
-            },
-            {
-                // Default values from genesis
-                encodedLatestFinalizedState: fork.forkGenesisStateEncoded,
-                encodedLatestCorrectState: fork.forkGenesisStateEncoded,
-                virtualVotingBlocks: [] as ConfirmedBlockStruct[],
-                foundSignerState: false,
-                foundFinalizedState: false
+            // Check if this block is signed by our target signer
+            if (
+                !encodedLatestCorrectState &&
+                signersAddresses.has(signerAddress)
+            ) {
+                encodedLatestCorrectState = agreement.encodedState;
             }
-        );
 
-        // Return only the public properties
+            if (!encodedLatestCorrectState) continue;
+
+            virtualVotingBlocks.unshift({
+                encodedBlock: EvmUtils.encodeBlock(agreement.block),
+                signatures: agreement.blockSignatures as string[]
+            });
+
+            const isComplete = this.removeSignersFromRequired(
+                signersAddresses,
+                requiredSignatures
+            );
+
+            // Check if we found a finalized state
+            if (isComplete && !encodedLatestFinalizedState) {
+                encodedLatestFinalizedState = agreement.encodedState;
+                // found a finalized state - break the loop
+                break;
+            }
+        }
+
         return {
-            encodedLatestFinalizedState: result.encodedLatestFinalizedState,
-            encodedLatestCorrectState: result.encodedLatestCorrectState,
-            virtualVotingBlocks: result.virtualVotingBlocks
+            encodedLatestFinalizedState:
+                encodedLatestFinalizedState ?? fork.forkGenesisStateEncoded,
+            encodedLatestCorrectState:
+                encodedLatestCorrectState ?? fork.forkGenesisStateEncoded,
+            virtualVotingBlocks
         };
+    }
+
+    private extractSignerAddresses(agreement: Agreement): Set<AddressLike> {
+        return new Set(
+            agreement.blockSignatures.map(
+                (signature) =>
+                    EvmUtils.retrieveSignerAddressBlock(
+                        agreement.block,
+                        signature
+                    ) as AddressLike
+            )
+        );
+    }
+
+    /**
+     * Remove signers from the required set and return whether all required signatures are collected
+     */
+    private removeSignersFromRequired(
+        signersAddresses: Set<AddressLike>,
+        requiredSignatures: Set<AddressLike>
+    ): boolean {
+        for (const signerAddress of signersAddresses) {
+            requiredSignatures.delete(signerAddress);
+            if (requiredSignatures.size === 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // *************************************************
