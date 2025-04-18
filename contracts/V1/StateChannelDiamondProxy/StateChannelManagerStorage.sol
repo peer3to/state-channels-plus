@@ -10,6 +10,8 @@ contract StateChannelManagerStorage {
     uint public agreementTime;
     uint public chainFallbackTime;
     uint public challengeTime;
+    uint256 public gasLimit;
+
 
     AStateMachine stateMachineImplementation;
     /// @dev the fork genesis state

@@ -56,6 +56,10 @@ contract StateChannelCommon is
         return challengeTime;
     }
 
+    function getGasLimit() public view virtual returns (uint256) {
+        return gasLimit;
+    }
+
     function getAllTimes()
         public
         view

@@ -110,18 +110,15 @@ enum ProofType {
 // ========================== Block related fraud proofs ==========================
 struct BlockEmptyProof {
     SignedBlock emptyBlock;
-    bytes[] signatures;
 }
 
 struct BlockInvalidStateTransitionProof {
-    SignedBlock fraudBlock;
-    bytes[] signatures;
+    BlockConfirmation fraudBlockConfirmation;
     bytes encodedState;
 }
 
 struct BlockOutOfGasProof {
-    SignedBlock outOfGasBlock;
-    bytes[] signatures;
+    BlockConfirmation fraudBlockConfirmation;
     bytes encodedState;
 }
 
