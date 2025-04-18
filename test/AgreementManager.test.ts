@@ -1087,6 +1087,148 @@ describe("AgreementManager", () => {
         });
     });
 
+    describe("getFinalizedAndLatestWithVotes- virtual voting", () => {
+        let testManager: AgreementManager;
+        let blocks: BlockStruct[] = [];
+        let encodedStates: string[] = [];
+        let signatures: SignatureLike[][] = [];
+        let signers_3: Signer[];
+
+        let addresses: string[];
+
+        before(async () => {
+            // Get three signers
+            signers_3 = signers.slice(0, 3);
+            addresses = await Promise.all(signers_3.map((s) => s.getAddress()));
+
+            // Create sequential blocks
+            const block0 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        transactionCnt: 0,
+                        participant: addresses[0]
+                    })
+                }),
+                previousStateHash: ethers.keccak256(commonGenesisState)
+            });
+
+            const block1 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        transactionCnt: 1,
+                        participant: addresses[0]
+                    })
+                }),
+                previousStateHash: block0.stateHash
+            });
+
+            const block2 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        transactionCnt: 2,
+                        participant: addresses[0]
+                    })
+                }),
+                previousStateHash: block1.stateHash
+            });
+
+            blocks = [block0, block1, block2];
+
+            // Create distinct encoded states
+            encodedStates = [
+                ethers.hexlify(ethers.concat([commonGenesisState, "0x01"])),
+                ethers.hexlify(ethers.concat([commonGenesisState, "0x02"])),
+                ethers.hexlify(ethers.concat([commonGenesisState, "0x03"]))
+            ];
+
+            // Generate signatures for all blocks by all signers
+            signatures = Array(blocks.length)
+                .fill(0)
+                .map(() => []);
+
+            for (let blockIdx = 0; blockIdx < blocks.length; blockIdx++) {
+                for (
+                    let signerIdx = 0;
+                    signerIdx < signers.length;
+                    signerIdx++
+                ) {
+                    const signature = (
+                        await EvmUtils.signBlock(
+                            blocks[blockIdx],
+                            signers[signerIdx]
+                        )
+                    ).signature as SignatureLike;
+                    signatures[blockIdx][signerIdx] = signature;
+                }
+            }
+        });
+
+        it("should correctly identify finalized and latest states in scenario 1", async () => {
+            testManager = new AgreementManager();
+            testManager.newFork(commonGenesisState, addresses, 0, nowTimestamp);
+            // Scenario 1:
+            // Block 0 signed by all
+            testManager.addBlock(blocks[0], signatures[0][0], encodedStates[0]);
+            testManager.confirmBlock(blocks[0], signatures[0][1]);
+            testManager.confirmBlock(blocks[0], signatures[0][2]);
+
+            // Block 1 signed by all
+            testManager.addBlock(blocks[1], signatures[1][0], encodedStates[1]);
+            testManager.confirmBlock(blocks[1], signatures[1][1]);
+            testManager.confirmBlock(blocks[1], signatures[1][2]);
+
+            // Block 2 signed by participants 1 and 3 (not by participant 2)
+            testManager.addBlock(blocks[2], signatures[2][0], encodedStates[2]);
+            testManager.confirmBlock(blocks[2], signatures[2][2]);
+
+            // Check from perspective of participant 3
+            const result = testManager.getFinalizedAndLatestWithVotes(
+                0,
+                addresses[2]
+            );
+
+            // Latest correct state should be from Block 2 (since participant 3 signed it)
+            expect(result.encodedLatestCorrectState).to.equal(encodedStates[2]);
+
+            // Latest finalized state should be from Block 1 (last block signed by all participants)
+            expect(result.encodedLatestFinalizedState).to.equal(
+                encodedStates[1]
+            );
+        });
+
+        it("should correctly identify finalized and latest states in scenario 2", async () => {
+            testManager = new AgreementManager();
+            testManager.newFork(commonGenesisState, addresses, 0, nowTimestamp);
+
+            // Scenario 2:
+            // Block 0 signed by all
+            testManager.addBlock(blocks[0], signatures[0][0], encodedStates[0]);
+            testManager.confirmBlock(blocks[0], signatures[0][1]);
+            testManager.confirmBlock(blocks[0], signatures[0][2]);
+
+            // Block 1 signed by participants 1 and 2 (not by participant 3)
+            testManager.addBlock(blocks[1], signatures[1][0], encodedStates[1]);
+            testManager.confirmBlock(blocks[1], signatures[1][1]);
+
+            // Block 2 signed by participant 3 only
+            testManager.addBlock(blocks[2], signatures[2][2], encodedStates[2]);
+
+            // Check from perspective of participant 3
+            const result = testManager.getFinalizedAndLatestWithVotes(
+                0,
+                addresses[2]
+            );
+
+            // Latest correct state should be from Block 2 (since participant 3 signed it)
+            expect(result.encodedLatestCorrectState).to.equal(encodedStates[2]);
+
+            // Latest finalized state should be from Block 1 (Virtal voted by participant 3 on block 2)
+            expect(result.encodedLatestFinalizedState).to.equal(
+                encodedStates[1]
+            );
+        });
+    });
+
     describe("checkBlock", () => {
         let localManager: AgreementManager;
 
@@ -1313,123 +1455,6 @@ describe("AgreementManager", () => {
             const chainBlocks = manager.forks[0].chainBlocks;
             expect(chainBlocks).to.have.lengthOf(1);
             expect(chainBlocks[0].timestamp).to.equal(timestamp); // Original timestamp
-        });
-    });
-
-    describe("getFinalizedAndLatestWithVotes performance", () => {
-        let testManager: AgreementManager;
-        let thresholdSigners: Signer[];
-        let extraSigners: Signer[];
-        let thresholdOnlyBlock: BlockStruct;
-        let manySignaturesBlock: BlockStruct;
-        const numberOfThresholdSigners = 3;
-        const numberOfExtraSigners = 12;
-
-        before(async () => {
-            // Use existing signers instead of creating random wallets
-            thresholdSigners = signers.slice(0, numberOfThresholdSigners);
-            extraSigners = signers.slice(
-                numberOfThresholdSigners,
-                numberOfThresholdSigners + numberOfExtraSigners
-            ); // Take additional signers for extras
-
-            // Get addresses for threshold signers
-            const thresholdAddresses = await Promise.all(
-                thresholdSigners.map((s) => s.getAddress())
-            );
-
-            // Create a single manager with two forks
-            testManager = new AgreementManager();
-
-            // FORK 0: Only threshold signatures
-            testManager.newFork(
-                commonGenesisState,
-                thresholdAddresses,
-                0,
-                nowTimestamp
-            );
-
-            // FORK 1: Threshold + extra signatures
-            testManager.newFork(
-                commonGenesisState,
-                thresholdAddresses,
-                1,
-                nowTimestamp
-            );
-
-            // Create block for fork 0
-            thresholdOnlyBlock = factory.block({
-                transaction: factory.transaction({
-                    header: factory.transactionHeader({
-                        forkCnt: 0,
-                        transactionCnt: 0,
-                        participant: thresholdAddresses[0]
-                    })
-                }),
-                previousStateHash: ethers.keccak256(commonGenesisState)
-            });
-
-            // Create block for fork 1
-            manySignaturesBlock = factory.block({
-                transaction: factory.transaction({
-                    header: factory.transactionHeader({
-                        forkCnt: 1,
-                        transactionCnt: 0,
-                        participant: thresholdAddresses[0]
-                    })
-                }),
-                previousStateHash: ethers.keccak256(commonGenesisState)
-            });
-
-            // Add first threshold signature to both blocks
-            const firstSignatureForFork0 = (
-                await EvmUtils.signBlock(
-                    thresholdOnlyBlock,
-                    thresholdSigners[0]
-                )
-            ).signature as SignatureLike;
-            testManager.addBlock(
-                thresholdOnlyBlock,
-                firstSignatureForFork0,
-                commonEncodedState
-            );
-
-            const firstSignatureForFork1 = (
-                await EvmUtils.signBlock(
-                    manySignaturesBlock,
-                    thresholdSigners[0]
-                )
-            ).signature as SignatureLike;
-            testManager.addBlock(
-                manySignaturesBlock,
-                firstSignatureForFork1,
-                commonEncodedState
-            );
-
-            // Add remaining threshold signatures to both forks
-            await Promise.all(
-                thresholdSigners.slice(1).map(async (signer) => {
-                    const sigFork0 = (
-                        await EvmUtils.signBlock(thresholdOnlyBlock, signer)
-                    ).signature as SignatureLike;
-                    testManager.confirmBlock(thresholdOnlyBlock, sigFork0);
-
-                    const sigFork1 = (
-                        await EvmUtils.signBlock(manySignaturesBlock, signer)
-                    ).signature as SignatureLike;
-                    testManager.confirmBlock(manySignaturesBlock, sigFork1);
-                })
-            );
-
-            // Add extra signatures to fork 1 only
-            await Promise.all(
-                extraSigners.map(async (signer) => {
-                    const sig = (
-                        await EvmUtils.signBlock(manySignaturesBlock, signer)
-                    ).signature as SignatureLike;
-                    testManager.confirmBlock(manySignaturesBlock, sig);
-                })
-            );
         });
     });
 });
