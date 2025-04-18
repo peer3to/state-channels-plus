@@ -306,13 +306,15 @@ class AgreementManager {
                 signatures: agreement.blockSignatures as string[]
             });
 
-            const isComplete = this.removeSignersFromRequired(
-                signersAddresses,
-                requiredSignatures
-            );
+            for (const signerAddress of signersAddresses) {
+                requiredSignatures.delete(signerAddress);
+                if (requiredSignatures.size === 0) {
+                    break;
+                }
+            }
 
             // Check if we found a finalized state
-            if (isComplete && !encodedLatestFinalizedState) {
+            if (requiredSignatures.size === 0) {
                 encodedLatestFinalizedState = agreement.encodedState;
                 // found a finalized state - break the loop
                 break;
@@ -338,22 +340,6 @@ class AgreementManager {
                     ) as AddressLike
             )
         );
-    }
-
-    /**
-     * Remove signers from the required set and return whether all required signatures are collected
-     */
-    private removeSignersFromRequired(
-        signersAddresses: Set<AddressLike>,
-        requiredSignatures: Set<AddressLike>
-    ): boolean {
-        for (const signerAddress of signersAddresses) {
-            requiredSignatures.delete(signerAddress);
-            if (requiredSignatures.size === 0) {
-                return true;
-            }
-        }
-        return false;
     }
 
     // *************************************************
