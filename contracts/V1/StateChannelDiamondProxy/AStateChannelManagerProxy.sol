@@ -474,63 +474,53 @@ abstract contract AStateChannelManagerProxy is
         return disputes[channelId];
     }
 
-    //TODO! - temporary
     function createDispute(
-        bytes32 channelId,
-        uint forkCnt,
-        bytes memory encodedLatestFinalizedState,
-        bytes memory encodedLatestCorrectState,
-        ConfirmedBlock[] memory virtualVotingBlocks,
-        address timedoutParticipant,
-        uint foldedTransactionCnt,
-        Proof[] memory proofs
+        Dispute memory dispute
     ) public override {
         _delegatecall(
             address(disputeManagerFacet),
             abi.encodeCall(
                 disputeManagerFacet.createDispute,
                 (
-                    channelId,
-                    forkCnt,
-                    encodedLatestFinalizedState,
-                    encodedLatestCorrectState,
-                    virtualVotingBlocks,
-                    timedoutParticipant,
-                    foldedTransactionCnt,
-                    proofs
+                    dispute
+                )
+            )
+        );
+    }
+
+    function auditDispute(
+        Dispute memory dispute,
+        DisputeAuditingData memory disputeAuditingData
+    ) public override {
+        _delegatecall(
+            address(disputeManagerFacet),
+            abi.encodeCall(
+                disputeManagerFacet.auditDispute,
+                (
+                    dispute,
+                    disputeAuditingData
                 )
             )
         );
     }
 
     function challengeDispute(
-        bytes32 channelId,
-        uint forkCnt,
-        uint challengeCnt,
-        Proof[] memory proofs,
-        ConfirmedBlock[] memory virtualVotingBlocks,
-        bytes memory encodedLatestFinalizedState,
-        bytes memory encodedLatestCorrectState
+        Dispute memory dispute,
+        DisputeAuditingData memory disputeAuditingData
     ) public override {
         _delegatecall(
             address(disputeManagerFacet),
             abi.encodeCall(
                 disputeManagerFacet.challengeDispute,
                 (
-                    channelId,
-                    forkCnt,
-                    challengeCnt,
-                    proofs,
-                    virtualVotingBlocks,
-                    encodedLatestFinalizedState,
-                    encodedLatestCorrectState
+                    dispute, 
+                    disputeAuditingData
                 )
             )
         );
     }
 
     function getForkCnt(
-        bytes32 channelId
     )
         public
         view

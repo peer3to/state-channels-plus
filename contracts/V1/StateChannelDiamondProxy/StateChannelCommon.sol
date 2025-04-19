@@ -12,6 +12,20 @@ contract StateChannelCommon is
         return latestFork[channelId];
     }
 
+    function getOnChainSlashedParticipants() public view virtual returns (address[] memory) {
+        return onChainSlashedParticipants;
+    }
+
+    function addOnChainSlashedParticipants(address[] memory slashedParticipants) internal virtual {
+        for(uint i = 0; i < slashedParticipants.length; i++) {
+            onChainSlashedParticipants.push(slashedParticipants[i]);
+        }
+    }
+
+    function getDisputeLength(bytes32 channelId) public view virtual returns (uint) {
+        return disputes[channelId].length;
+    }
+
     function getParticipants(
         bytes32 channelId,
         uint forkCnt
@@ -54,6 +68,10 @@ contract StateChannelCommon is
 
     function getChallengeTime() public view virtual returns (uint) {
         return challengeTime;
+    }
+
+    function getGasLimit() public view virtual returns (uint256) {
+        return gasLimit;
     }
 
     function getAllTimes()
@@ -130,10 +148,14 @@ contract StateChannelCommon is
             keccak256(abi.encodePacked(new bytes(0)));
     }
 
-    //TODO* - just store the latestdispute hahs and this becomes a stateless operation
-    function isDisputeInProgress(bytes32 channelId) public view returns (bool) {
-        return
-            !(disputes[channelId].channelId == bytes32(0) ||
-                disputes[channelId].deadlineTimestamp < block.timestamp);
+    function isDisputeCommitmentAvailable(bytes32 channelId, bytes32 disputeCommitment) public view returns (bool, int) {
+        bytes32[] storage disputeHashes = disputes[channelId];
+        if (disputeHashes.length == 0) return (false, -1);
+        for(uint i = 0; i < disputeHashes.length; i++) {
+            if(disputeHashes[i] == disputeCommitment) {
+                return (true, int(i));
+            }
+        }
+        return (false, -1);
     }
 }

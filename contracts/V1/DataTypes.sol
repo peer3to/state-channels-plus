@@ -11,33 +11,23 @@ contract DataTypes {
         JoinChannelAgreement memory f,
         ConfirmedJoinChannelAgreement memory g,
         LeaveChannel memory h,
-        LeaveChannelAgreement memory i,
-        ConfirmedBlock memory j
+        LeaveChannelAgreement memory i
+       
     ) {}
 }
-//TODO? - think should post state - everyone should be able to replicate the state since genesis (fork) and if a block is posted in the future and some are missing - someone will be folded before the posted BLOCK, as for posting too much in the future it can be challenged
 struct BlockCalldata {
     SignedBlock signedBlock;
     uint timestamp;
 }
-//TODO! - need to rename and refactor this
-struct ForkDataAvailability {
-    mapping(uint => mapping(address => BlockCalldata)) map; //map[transactionCnt][participant] = BlockCalldata
-    ForkDataAvailabilityKey[] keys;
-}
-struct ForkDataAvailabilityKey {
-    uint transactionCnt;
-    address participant;
-}
 
 struct SignedBlock {
-    bytes encodedBlock; //TODO! change this to bytes
-    bytes signature; //TODO! change this to bytes
+    bytes encodedBlock;
+    bytes signature;
 }
 
-struct ConfirmedBlock {
-    bytes encodedBlock;
-    bytes[] signatures; //TODO! change this to bytes
+struct BlockConfirmation {
+    SignedBlock signedBlock;
+    bytes[] signatures;
 }
 
 struct Block {
@@ -84,6 +74,11 @@ struct JoinChannel {
     uint deadlineTimestamp;
     bytes data; //custom data
 }
+
+struct JoinChannelBlock {
+    bytes32 previousBlockHash;
+    JoinChannel[] joinChannels;
+}
 struct SignedJoinChannel {
     bytes encodedJoinChannel;
     bytes signature;
@@ -120,4 +115,47 @@ struct ProcessExit {
     address participant;
     uint amount;
     bytes data; //custom data
+}
+
+/// @dev It is produced as a byproduct of state transition or enforced onchain through dispute
+struct ExitChannel {
+    address participant;
+    uint amount;
+    bytes data;
+    bool isPartialExit;
+}
+
+struct ExitChannelBlock {
+    /// @dev no signature requirement for the exitChannel blocks
+    ExitChannel[] exitChannel;
+    /// @dev Hash of the previous exitChannelBlock
+    bytes32 previousBlockHash;
+}
+
+struct Timeout {
+    /// @dev the participant that is being timed out
+    address participant;
+    /// @dev the block height at which participant is removed from the channel (fork)
+    uint blockHeight;
+    /// @dev minimum timestamp where this timeout is valid
+    uint minTimeStamp;
+    /// @dev the forkCnt at which the participant is timed out
+    uint forkCnt;
+    // ================== optional ==================
+    address previousBlockProducer;
+    bool previousBlockProducerPostedCalldata;
+}
+
+/// @dev a pair consisting of first index (index of the malicious dispute) and last index (last index in the array)
+struct DisputePair {
+    uint firstIndex;
+    uint lastIndex;
+}
+
+/// @dev data for dispute auditing
+struct DisputeAuditingData {
+    bytes genesisStateSnapshot;
+    bytes latestStateSnapshot;
+    bytes latestStateStateMachineState;
+    JoinChannelBlock[] joinChannelBlocks;
 }

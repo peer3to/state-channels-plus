@@ -86,7 +86,7 @@ library StateChannelUtilLibrary {
         return false;
     }
 
-    //Return set length after tryIndesrt
+    //Return set length after tryInsert
     function tryInsertAddressInThresholdSet(
         address adr,
         address[] memory set,
@@ -108,5 +108,19 @@ library StateChannelUtilLibrary {
         }
         set[currentSetLength] = adr;
         return currentSetLength + 1;
+    }
+
+    /// @dev Concatenates two address arrays, but it does not add duplicates
+    function concatAddressArrays(address[] memory array1, address[] memory array2) internal pure returns (address[] memory) {
+        address[] memory result = new address[](array1.length + array2.length);
+        result = array1;
+        uint index = array1.length;
+       for(uint i = 0; i < array2.length; i++) {
+        if(!isAddressInArray(array1, array2[i])) {
+            result[index] = array2[i];
+            index++;
+        }
+       }
+       return result;
     }
 }
