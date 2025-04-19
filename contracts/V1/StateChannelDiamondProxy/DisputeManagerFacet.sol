@@ -96,12 +96,12 @@ contract DisputeManagerFacet is StateChannelCommon {
        
         address challenger = msg.sender; // I dont think we should slash the auditor as they are like Polkadot fisherman
 
-        (bool isAllAuditValid, address[] memory collectedSlashParticipants) = auditDispute(dispute, disputeAuditingData);
+        (bool isAllAuditValid, address[] memory collectedSlashParticipants, bytes memory fraudProofErrorResult) = auditDispute(dispute, disputeAuditingData);
 
         if(isAllAuditValid) {
             addOnChainSlashedParticipants(collectedSlashParticipants);
             address[] memory returnedSlashParticipants = getOnChainSlashedParticipants();
-            emit DisputeChallengeResult(dispute.channelId, isAllAuditValid, returnedSlashParticipants);
+            emit DisputeChallengeResultWithError(dispute.channelId, isAllAuditValid, returnedSlashParticipants, fraudProofErrorResult);
         }
         else {
             uint memory disputeLength = getDisputeLength(dispute.channelId);
