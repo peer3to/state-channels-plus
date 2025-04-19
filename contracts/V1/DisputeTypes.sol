@@ -34,8 +34,8 @@ struct Dispute {
     bytes32 genesisStateSnapshotHash;
     /// @notice encoded latest state (latest on-chain state)
     bytes32 latestStateSnapshotHash;
-    /// @notice State proofs for the dispute
-    StateProof[] stateProofs;
+    /// @notice State proof for the dispute
+    StateProof stateProof;
     /// @notice Fraud proofs for the dispute
     Proof[] fraudProofs;
     /// @notice participants that were slashed on chain

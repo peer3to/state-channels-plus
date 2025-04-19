@@ -12,6 +12,20 @@ contract StateChannelCommon is
         return latestFork[channelId];
     }
 
+    function getOnChainSlashedParticipants() public view virtual returns (address[] memory) {
+        return onChainSlashedParticipants;
+    }
+
+    function addOnChainSlashedParticipants(address[] memory slashedParticipants) internal virtual {
+        for(uint i = 0; i < slashedParticipants.length; i++) {
+            onChainSlashedParticipants.push(slashedParticipants[i]);
+        }
+    }
+
+    function getDisputeLength(bytes32 channelId) public view virtual returns (uint) {
+        return disputes[channelId].length;
+    }
+
     function getParticipants(
         bytes32 channelId,
         uint forkCnt

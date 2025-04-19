@@ -95,23 +95,16 @@ abstract contract StateChannelManagerInterface {
     ) public view virtual returns (Dispute memory);
 
     function createDispute(
-        bytes32 channelId,
-        uint forkCnt,
-        bytes memory encodedLatestFinalizedState,
-        bytes memory encodedLatestCorrectState,
-        ConfirmedBlock[] memory virtualVotingBlocks,
-        address timedoutParticipant,
-        uint foldedTransactionCnt,
-        Proof[] memory proofs
+        Dispute memory dispute
     ) public virtual;
 
+    function auditDispute(
+        Dispute memory dispute,
+        DisputeAuditingData memory disputeAuditingData
+    ) public virtual returns (bool isSuccess, address[] memory slashParticipants);
+
     function challengeDispute(
-        bytes32 channelId,
-        uint forkCnt,
-        uint challengeCnt,
-        Proof[] memory proofs,
-        ConfirmedBlock[] memory virtualVotingBlocks,
-        bytes memory encodedLatestFinalizedState,
-        bytes memory encodedLatestCorrectState
+        Dispute memory dispute,
+        DisputeAuditingData memory disputeAuditingData
     ) public virtual;
 }

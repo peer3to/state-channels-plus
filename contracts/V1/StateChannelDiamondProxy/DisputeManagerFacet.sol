@@ -35,7 +35,6 @@ contract DisputeManagerFacet is StateChannelCommon {
         ));
         disputes[channelIdHash].push(disputeCommitment);
         emit DisputeSubmitted(encodedDispute, signature);
-
     }
 
 
@@ -54,7 +53,6 @@ contract DisputeManagerFacet is StateChannelCommon {
         DisputeAuditingData memory disputeAudit
     ) public returns (bool isSuccess, address[] memory slashParticipants) {
 
-        address challenger = msg.sender;
         // check if the commitment of dispute is available
         bytes32 memory disputeCommitment = keccak256(abi.encodePacked(
             dispute,
@@ -62,12 +60,12 @@ contract DisputeManagerFacet is StateChannelCommon {
         ));
         (bool isAvailable, int index) = isDisputeCommitmentAvailable(disputeCommitment);
         if(!isAvailable) {
-            revert("Dispute commitment not available");
+            revert(abi.encode("AUDIT: DISPUTE COMMITMENT NOT AVAILABLE"));
         }
 
         // verify state proofs
         // see if it should return something
-        bool isStateProofValid = _verifyStateProof(disputeAuditingData.latestStateSnapshot, disputeData.stateProofs, participants);
+        bool isStateProofValid = _verifyStateProof(disputeAuditingData.latestStateSnapshot, dispute.stateProof, participants);
         if(!isStateProofValid) {
             return (false, [dispute.disputer]);
         }
@@ -93,7 +91,23 @@ contract DisputeManagerFacet is StateChannelCommon {
         DisputeAuditingData memory disputeAuditingData
     ) public {
        
-        (bool isSuccess, address[] memory slashParticipants) = auditDispute(dispute, disputeAuditingData);
+        address challenger = msg.sender; // I dont think we should slash the auditor as they are like Polkadot fisherman
+
+        (bool isAllAuditValid, address[] memory collectedSlashParticipants) = auditDispute(dispute, disputeAuditingData);
+
+        if(isAllAuditValid) {
+            addOnChainSlashedParticipants(collectedSlashParticipants);
+            address[] memory returnedSlashParticipants = getOnChainSlashedParticipants();
+            emit DisputeChallengeResult(dispute.channelId, isAllAuditValid, returnedSlashParticipants);
+        }
+        else {
+            uint memory disputeLength = getDisputeLength(dispute.channelId);
+            DisputePair memory disputePair = DisputePair(dispute.disputeIndex, disputeLength-1);
+            onChainDisputePairs.push(disputePair);
+            addOnChainSlashedParticipants(collectedSlashParticipants);
+            address[] memory returnedSlashParticipants = getOnChainSlashedParticipants();
+            emit DisputeChallengeResultWithDisputePair(dispute.channelId, disputePair, isAllAuditValid, returnedSlashParticipants);
+        }
         
     }
 
@@ -111,15 +125,15 @@ contract DisputeManagerFacet is StateChannelCommon {
             if(_isBlockFraudProof(dispute.fraudProofs[i].proofType)) {
                 (isValid, slashParticipants) = _handleBlockFraudProofs(dispute, dispute.fraudProofs[i]);
                 isSuccess = isSuccess && isValid;
-                accumulatedSlashParticipants = concatAddressArrays(accumulatedSlashParticipants, slashParticipants);
+                accumulatedSlashParticipants = StateChannelUtilLibrary.concatAddressArrays(accumulatedSlashParticipants, slashParticipants);
             }else if(_isDisputeFraudProof(dispute.fraudProofs[i].proofType)) {
                 (isValid, slashParticipants) = _handleDisputeFraudProofs(dispute, dispute.fraudProofs[i]);
                 isSuccess = isSuccess && isValid;
-                accumulatedSlashParticipants = concatAddressArrays(accumulatedSlashParticipants, slashParticipants);
+                accumulatedSlashParticipants = StateChannelUtilLibrary.concatAddressArrays(accumulatedSlashParticipants, slashParticipants);
             }else if(_isTimeoutFraudProof(dispute.fraudProofs[i].proofType)) {
                 (isValid, slashParticipants) = _handleTimeoutDispute(dispute, dispute.fraudProofs[i]);
                 isSuccess = isSuccess && isValid;
-                accumulatedSlashParticipants = concatAddressArrays(accumulatedSlashParticipants, slashParticipants);
+                accumulatedSlashParticipants = StateChannelUtilLibrary.concatAddressArrays(accumulatedSlashParticipants, slashParticipants);
             }
         }
         return (isSuccess, accumulatedSlashParticipants);
@@ -213,24 +227,18 @@ contract DisputeManagerFacet is StateChannelCommon {
             return (false, [dispute.disputer]);
         }
 
-        // if the state transition is invalid, slash the disputer
         (bool isTransitionValid, bytes memory encodedModifiedState) = executeStateTransitionOnState(
             fraudBlock.channelId,
             blockInvalidSTProof.encodedState,
             fraudBlock.transaction
         );
 
-         // If state transition is valid, return true and block confirmation signatures
         if (isTransitionValid) {
             return (true, blockInvalidSTProof.fraudBlockConfirmation.signatures);
-        }
-        
-        // If state hash matches, return true and block confirmation signatures
+        }        
         if (keccak256(encodedModifiedState) == dispute.latestStateSnapshotHash) {
             return (true, blockInvalidSTProof.fraudBlockConfirmation.signatures);
         }
-        
-        // If both checks fail, slash the disputer
         return (false, [dispute.disputer]);
     }
 
@@ -388,13 +396,34 @@ contract DisputeManagerFacet is StateChannelCommon {
 
     // =============================== State Proofs Verification  ===============================
 
-    function _verifyStateProof(bytes memory encodedLatestState, StateProof[] memory stateProofs, address[] memory participants) internal {
-        for(uint i = 0; i < stateProofs.length; i++) {
-            _verifySignedBlocks(stateProofs[i].signedBlocks, stateProofs[i].forkProof, encodedLatestState, participants);
+    function _verifyStateProof(bytes memory encodedLatestState, StateProof memory stateProof, address[] memory participants) internal returns (bool isValid) {
+        // ideal case , no signedBlocks, latestState = lastFinalizedState = MilestoneBlock
+        if(stateProofs.signedBlocks.length == 0) {
+            // check if the last finalized state is the milestone block (Block Confirmation)
+            // check if BlockConfirmation is only 1, if not then there should be signedBlocks as the latest state  is not the finalized state
+            BlockConfirmation[] memory blockConfirmations = stateProofs.forkProof.forkMilestoneProofs.blockConfirmations;
+            if (blockConfirmations.length != 1) {
+                revert(abi.encode("LATEST STATE IS NOT FINALIZED STATE"));
+            }else{
+                Block memory lastFinalizedState = abi.decode(blockConfirmations[0].encodedBlock, (Block));
+                // verify signatures
+                _verifyBlockConfirmationSignatures(
+                    blockConfirmations[0].encodedBlock,
+                    participants,
+                    blockConfirmations[0].signatures
+                );
+                if(lastFinalizedState.stateHash != encodedLatestState) {
+                    revert(abi.encode("LATEST STATE IS NOT FINALIZED STATE"));
+                }
+            }
+           
+            return true;
+        }else{
+            // worst case, there are signedBlocks, we need to verify the signedBlocks and the forkProofs
+            _verifySignedBlocks(stateProof.signedBlocks, stateProof.forkProof, encodedLatestState, participants);
+            
         }
-        for(uint i = 1; i < stateProofs.length; i++) {
-            _verifyForkProof(stateProofs[i].forkProof, participants);
-        }
+        _verifyForkProof(stateProof.forkProof, participants);
     }
 
     function _verifySignedBlocks(SignedBlock[] memory signedBlocks, ForkProof memory forkProof, bytes memory encodedLatestState, address[] memory participants) internal {
@@ -404,14 +433,14 @@ contract DisputeManagerFacet is StateChannelCommon {
             Block memory previousBlock = abi.decode(signedBlocks[i-1].encodedBlock, (Block));
             
             if(i == signedBlocks.length - 1 && currentBlock.stateHash != keccak256(encodedLatestState)) {
-                revert("Latest state does not connect to last signed block");
+                revert(abi.encode("SIGNED BLOCKS: LATEST STATE DOES NOT CONNECT TO LAST SIGNED BLOCK"));
             }
             require(
                 currentBlock.previousStateHash == previousBlock.stateHash,
-                "Parent hash mismatch"
+                abi.encode("SIGNED BLOCKS: PARENT HASH MISMATCH")
             );
 
-            if(forkProof.forkMilestoneProofs.length > 0){
+            if(i == 1 && forkProof.forkMilestoneProofs.length > 0){
                 // check if the first state connects to milestone block       
                 Block memory lastMilestoneConfirmationBlock =
                 abi.decode(
@@ -420,36 +449,54 @@ contract DisputeManagerFacet is StateChannelCommon {
                     (Block)
                 );
 
-                if(i == 1 && previousBlock.previousStateHash != lastMilestoneConfirmationBlock.stateHash) {
-                    revert("Latest state does not connect to milestone block");
+                if(previousBlock.previousStateHash != lastMilestoneConfirmationBlock.stateHash) {
+                    revert(abi.encode("SIGNED BLOCKS: LATEST STATE DOES NOT CONNECT TO MILESTONE BLOCK"));
                 }
-            }
-            
+            }else{
+                revert(abi.encode("SIGNED BLOCKS: NO MILESTONE BLOCK FOUND"));
+            }   
         }
-        
     }
 
-    function _verifyForkProof(ForkProof memory forkProof, address[] memory expectedAddresses) internal {
-        // per each forkMilestoneProof we expect the signatures to reduce by 1
+    /// @dev Verfies ForkMilestoneBlock along with BlockConfirmations and taking into accounts Virtual Voting
+    function _verifyForkProof(ForkProof memory forkProof, address[] memory expectedAddresses) internal {    
+        // per each forkMilestoneProof we expect the signatures to reduce by 1 until latest Finalized State
         uint expectedSignatures = expectedAddresses.length;
-        // 1. verify forkMilestoneProofs
-        for (uint i = 0; i < forkProof.forkMilestoneProofs.length; i++) {
-        ForkMilestoneProof memory milestone = forkProof.forkMilestoneProofs[i];
-        
-            // Verify each block confirmation
-            for (uint j = 0; j < milestone.blockConfirmations.length; j++) {
-                BlockConfirmation memory confirmation = milestone.blockConfirmations[j];
-                
-                // Verify block signatures
-                if(confirmation.signatures.length != expectedSignatures) {
-                    revert("Invalid number of signatures");
+        for(uint i = 0; i < forkProof.forkMilestoneProofs.length; i++) {
+            ForkMilestoneProof memory milestone = forkProof.forkMilestoneProofs[i];
+            // check BlockConfirmations and Virtual Voting per forkMilestoneBlock
+            if(milestone.blockConfirmations.length == 1){
+                if(milestone.blockConfirmations[0].signatures.length != expectedSignatures){
+                    revert(abi.encode("MILESTONE: INVALID NUMBER OF SIGNATURES"));
                 }
-                // verify signatures are from peers in genesis state
                 _verifyBlockConfirmationSignatures(
-                    confirmation.encodedBlock,
+                    milestone.blockConfirmations[0].encodedBlock,
                     expectedAddresses,
-                    confirmation.signatures
+                    milestone.blockConfirmations[0].signatures
                 );
+                expectedSignatures--;
+            }else{
+                // there is virtual vote
+                address[] memory VotingAddresses;
+                for(uint j = 0; j < milestone.blockConfirmations.length; j++) {
+                    BlockConfirmation memory confirmation = milestone.blockConfirmations[j];
+                    BlockConfirmation memory followingConfirmation = milestone.blockConfirmations[j+1];
+                    // verify state commitment
+                    Block memory signedBlock1 = abi.decode(confirmation.signedBlock.encodedBlock, (Block));
+                    Block memory signedBlock2 = abi.decode(followingConfirmation.signedBlock.encodedBlock, (Block));
+                    if(signedBlock2.stateHash != signedBlock1.previousStateHash){
+                        revert(abi.encode("MILESTONE: STATE COMMITMENT MISMATCH"));
+                    }
+                    // collect all the addresses
+                    address memory signedAddress = StateChannelUtilLibrary.retriveSignerAddress(confirmation.signedBlock.encodedBlock, confirmation.signedBlock.signature);
+                    VotingAddresses = StateChannelUtilLibrary.concatAddressArrays(VotingAddresses, signedAddress);
+                    if(confirmation.signatures.length > 0 ){
+                        VotingAddresses = StateChannelUtilLibrary.concatAddressArrays(VotingAddresses, confirmation.signatures);
+                    }
+                }
+                if(VotingAddresses.length != expectedSignatures){
+                    revert(abi.encode("MILESTONE: INVALID NUMBER OF SIGNATURES"));
+                }
                 expectedSignatures--;
             }
         }
@@ -462,7 +509,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         for (uint i = 0; i < signatures.length; i++) {
             address signer = StateChannelUtilLibrary.retriveSignerAddress(encodedBlock, signatures[i]);
             if(!StateChannelUtilLibrary.isAddressInArray(expectedAddresses, signer)) {
-                revert("Invalid signature");
+                revert(abi.encode("INVALID BLOCK CONFIRMATION SIGNATURE"));
             }
         }
     }
@@ -585,11 +632,5 @@ contract DisputeManagerFacet is StateChannelCommon {
            proofType == ProofType.DisputeInvalidPreeviousRecursive ||
            proofType == ProofType.DisputeInvalidExitChannelBlocks;
     }
-
-    function concatAddressArrays(address[] memory array1, address[] memory array2) internal pure returns (address[] memory) {
-       for (uint i = 0; i < array2.length; i++) {
-        array1.push(array2[i]);
-       }
-       return array1;
-    }
+ 
 }
