@@ -20,6 +20,11 @@ contract StateChannelManagerStorage {
     mapping(bytes32 => mapping(uint => uint)) genesisTimestamps; // [channelId][forkCnt] -> encodedState
     mapping(bytes32 => uint) latestFork; // [channelId] -> latestFork
    
+    // =================== Block on chain storage ==================
+    /// @notice BlockCallData Commitment
+    /// @dev blockCallDataCommitments[channelId][forkCnt][transactionCnt][signerAddress] => blockCallDataCommitment
+    mapping(bytes32 channelId => mapping(uint forkCnt => mapping(uint blockHeight => mapping(address signerAddress => bytes blockCallDataCommitment)))) blockCallDataCommitments;
+
     // ================== Dispute on chain storage ==================
 
     /// @dev disputes[channelId] => array of dispute commitments

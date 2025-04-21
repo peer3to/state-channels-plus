@@ -34,12 +34,14 @@ struct Dispute {
     bytes32 genesisStateSnapshotHash;
     /// @notice encoded latest state (latest on-chain state)
     bytes32 latestStateSnapshotHash;
+    /// @dev the blocknumber/height of the latest state
+    uint latestStateHeight;
     /// @notice State proof for the dispute
     StateProof stateProof;
     /// @notice Fraud proofs for the dispute
     Proof[] fraudProofs;
     /// @notice participants that were slashed on chain
-    address[] onchainSlashes;
+    address[] onChainSlashes;
     /// @dev Hash of the latest block (head) of the JoinChannel blockchain present on-chain in dispute on-chain storage.
     bytes32 onChainLatestJoinChannelBlockHash;
     /// @notice Hash of output state (latest on-chain state)
@@ -129,37 +131,53 @@ struct BlockDoubleSignProof {
 
 // ========================== Dispute related fraud proofs ==========================
 struct DisputeNotLatestStateProof {
-    SignedBlock newerBlock;
+    BlockConfirmation newerBlock;
+    Dispute originalDispute;
 }
 
 struct DisputeOutOfGasProof {
-    uint commitmentIndex;
+    Dispute dispute;
 }
 
 struct DisputeInvalidOutputStateProof {
-    uint commitmentIndex;
+
+    Dispute dispute;
 }
 
 struct DisputeInvalidStateProof {
-    uint commitmentIndex;
+    Dispute dispute;
 }
 
 struct DisputeInvalidPreviousRecursiveProof {
-    uint commitmentIndex;
+    Dispute dispute;
 }
 
 struct DisputeInvalidExitChannelBlocksProof {
-    uint commitmentIndex;
+    Dispute dispute;
 }
 
 // ========================== Timeout related fraud proofs ==========================
 
 struct TimeoutThresholdProof {
-    SignedBlock timedOutBlock;
-    bytes[] signatures;
+    BlockConfirmation thresholdBlock;
+    Dispute timedOutDispute;
 }
 
 struct TimeoutPriorInvalidProof {
     Dispute originalDispute;
 }
 
+/// @dev a pair consisting of first index (index of the malicious dispute) and last index (last index in the array)
+struct DisputePair {
+    uint firstIndex;
+    uint lastIndex;
+}
+
+/// @dev data for dispute auditing
+struct DisputeAuditingData {
+    bytes genesisStateSnapshot;
+    bytes latestStateSnapshot;
+    bytes latestStateStateMachineState;
+    uint disputeTimestamp;
+    JoinChannelBlock[] joinChannelBlocks;
+}

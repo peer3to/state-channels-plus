@@ -88,14 +88,13 @@ contract StateChannelCommon is
         uint forkCnt,
         uint transactionCnt,
         address participant
-    ) public view virtual returns (bool found, BlockCalldata memory) {
-        ForkDataAvailability storage forkDataAvailability = postedBlockCalldata[
-            channelId
-        ][forkCnt];
-        BlockCalldata memory blockCalldata = forkDataAvailability.map[
-            transactionCnt
-        ][participant];
-        return (blockCalldata.timestamp != 0, blockCalldata);
+    ) public view virtual returns (bool found, bytes32 blockCallDataCommitment) {
+        // fetch the blockCallDataCommitment from storage
+        blockCallDataCommitment = blockCallDataCommitments[channelId][forkCnt][transactionCnt][participant];
+        if(blockCallDataCommitment == bytes32(0)) {
+            return (false, new bytes(0));
+        }
+        return (true, blockCallDataCommitment);
     }
 
     function getChainLatestBlockTimestamp(
@@ -103,25 +102,7 @@ contract StateChannelCommon is
         uint forkCnt,
         uint maxTransactionCnt
     ) public view virtual returns (uint) {
-        ForkDataAvailability storage forkDataAvailability = postedBlockCalldata[
-            channelId
-        ][forkCnt];
-        //Easy in O(N) - withouth autodisputes on keys when not sorted not possible in O(logN)
-        uint latestTimestamp = 0;
-        for (uint i = 0; i < forkDataAvailability.keys.length; i++) {
-            ForkDataAvailabilityKey memory key = forkDataAvailability.keys[i];
-            if (
-                //forkDataAvailability.keys[i] > latesttransactionCnt &&
-                forkDataAvailability
-                .map[key.transactionCnt][key.participant].timestamp >
-                latestTimestamp &&
-                key.transactionCnt <= maxTransactionCnt
-            ) {
-                latestTimestamp = forkDataAvailability
-                .map[key.transactionCnt][key.participant].timestamp;
-            }
-        }
-        return latestTimestamp; //can be 0 - if no blockCallData posted
+        //TODO
     }
 
     function setState(bytes32 channelId, bytes memory encodedState) internal {

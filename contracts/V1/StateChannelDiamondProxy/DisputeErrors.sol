@@ -50,3 +50,29 @@ error ErrorJoinChannelNotMyTurn();
 error ErrorJoinChannelAlreadyInChannel();
 error ErrorJoinChannelExpired();
 error ErrorJoinChannelAlreadyAdded();
+
+
+// ========================== DisputeManagerFacet ==========================
+
+error CreateDisputeInvalidOnChainSlashedParticipants();
+error CreateDisputeInvalidSignature();
+
+error AuditMissingDisputeCommitment();
+error AuditInvalidStateProof();
+error AuditInvalidMilestone();
+error AuditInvalidFraudProof();
+error AuditInvalidOutputState();
+
+error BlockInvalidConfirmation();
+error BlockInvalidSignature();
+error BlockInvalidChannelId();
+error BlockInvalidTransactionCount();
+error BlockInvalidStateHash();
+error BlockInvalidLink();
+error BlockInvalidStateTransition();
+error BlockOutOfGas();
+error BlockNotLatestState();
+
+error DisputeInvalidRecursive();
+error DisputeInvalidPreviousRecursive();
+error DisputeInvalidExitChannelBlocks();

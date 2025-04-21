@@ -3,21 +3,20 @@ pragma solidity ^0.8.8;
 //Just so typechain generates types for the structs bellow
 contract DataTypes {
     constructor(
-        Transaction memory a,
-        Block memory b,
-        SignedBlock memory c,
-        JoinChannel memory d,
-        SignedJoinChannel memory e,
-        JoinChannelAgreement memory f,
-        ConfirmedJoinChannelAgreement memory g,
-        LeaveChannel memory h,
-        LeaveChannelAgreement memory i
+        Block memory a,
+        SignedBlock memory b,
+        BlockConfirmation memory c,
+        Transaction memory d,
+        TransactionHeader memory e,
+        TransactionBody memory f,
+        JoinChannel memory g,
+        JoinChannelBlock memory h,
+        SignedJoinChannel memory i,
+        ExitChannel memory j,
+        ExitChannelBlock memory k,
+        Timeout memory l
        
     ) {}
-}
-struct BlockCalldata {
-    SignedBlock signedBlock;
-    uint timestamp;
 }
 
 struct SignedBlock {
@@ -50,23 +49,9 @@ struct TransactionHeader {
 
 // do this polymorphically later with encoded functions and argument data
 struct TransactionBody {
-    TransactionType transactionType;
     bytes encodedData; //TODO! change this to bytes
     bytes data; //evm transaction data
 }
-enum TransactionType {
-    JoinGame,
-    KeyExchange,
-    Shuffle,
-    TimeLock,
-    RevealTokens,
-    Fold,
-    Check,
-    Bet,
-    Call,
-    AllIn
-}
-
 struct JoinChannel {
     bytes32 channelId;
     address participant;
@@ -82,39 +67,6 @@ struct JoinChannelBlock {
 struct SignedJoinChannel {
     bytes encodedJoinChannel;
     bytes signature;
-}
-struct JoinChannelAgreement {
-    SignedJoinChannel signedJoinChannel;
-    address submitter; //the state channel participant that submitted the agreement - responsible to initiate joinChannel
-    uint forkCnt; //redundant, but usefull for indexing and challenge in dispute
-    uint transactionCnt; //redundant, but usefull for indexing and challenge in dispute
-    bytes32 previousStateHash;
-}
-
-struct ConfirmedJoinChannelAgreement {
-    bytes encodedJoinChannelAgreement;
-    bytes[] signatures;
-}
-
-struct LeaveChannel {
-    bytes32 channelId;
-    address participant;
-    uint forkCnt; //redundant, but usefull for indexing and challenge in dispute
-    uint transactionCnt; //redundant, but usefull for indexing and challenge in dispute
-    bytes32 previousStateHash;
-    uint deadlineTimestamp;
-    bytes data; //custom data
-}
-
-struct LeaveChannelAgreement {
-    bytes encodedLeaveChannel;
-    bytes[] signatures;
-}
-
-struct ProcessExit {
-    address participant;
-    uint amount;
-    bytes data; //custom data
 }
 
 /// @dev It is produced as a byproduct of state transition or enforced onchain through dispute
@@ -146,16 +98,3 @@ struct Timeout {
     bool previousBlockProducerPostedCalldata;
 }
 
-/// @dev a pair consisting of first index (index of the malicious dispute) and last index (last index in the array)
-struct DisputePair {
-    uint firstIndex;
-    uint lastIndex;
-}
-
-/// @dev data for dispute auditing
-struct DisputeAuditingData {
-    bytes genesisStateSnapshot;
-    bytes latestStateSnapshot;
-    bytes latestStateStateMachineState;
-    JoinChannelBlock[] joinChannelBlocks;
-}
