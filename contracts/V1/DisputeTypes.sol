@@ -165,6 +165,7 @@ struct TimeoutThresholdProof {
 
 struct TimeoutPriorInvalidProof {
     Dispute originalDispute;
+    Dispute recursiveDispute;
 }
 
 /// @dev a pair consisting of first index (index of the malicious dispute) and last index (last index in the array)

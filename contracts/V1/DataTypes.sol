@@ -93,8 +93,15 @@ struct Timeout {
     uint minTimeStamp;
     /// @dev the forkCnt at which the participant is timed out
     uint forkCnt;
+    /// @dev the reason for the timeout
+    TimeoutReason reason;
     // ================== optional ==================
     address previousBlockProducer;
     bool previousBlockProducerPostedCalldata;
+}
+
+enum TimeoutReason {
+    TimeoutParticipantNoNext,
+    NotLinkedToLatestState
 }
 

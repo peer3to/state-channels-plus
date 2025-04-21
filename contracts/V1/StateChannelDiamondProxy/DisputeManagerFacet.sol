@@ -516,9 +516,55 @@ contract DisputeManagerFacet is StateChannelCommon {
     }
 
     function _verifyTimeoutPriorInvalidProof(
-        Proof memory proof
+        Dispute memory dispute,
+        Proof memory proof,
+        DisputeAuditingData memory disputeAuditingData
     ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
 
+        TimeoutPriorInvalidProof memory timeoutPriorInvalidProof = abi.decode(proof.encodedProof, (TimeoutPriorInvalidProof));
+        Dispute memory originalDispute = timeoutPriorInvalidProof.originalDispute;
+        Dispute memory recursiveDispute = timeoutPriorInvalidProof.recursiveDispute;
+
+        if(recursiveDispute.channelId != originalDispute.channelId && recursiveDispute.channelId != dispute.channelId) {
+            return (false, [dispute.disputer], abi.encode("TIMEOUT PRIOR INVALID: CHANNEL ID MISMATCH"));
+        }
+        // check if the recursive dispute is available
+        bytes32 recursiveDisputeCommitment = keccak256(abi.encodePacked(
+            recursiveDispute,
+            disputeAuditingData.disputeTimestamp
+        ));
+        (bool isAvailable, int index) = isDisputeCommitmentAvailable(recursiveDisputeCommitment);
+
+        if(!isAvailable) {
+            return (false, [dispute.disputer], abi.encode("TIMEOUT PRIOR INVALID: RECURSIVE DISPUTE NOT AVAILABLE"));
+        }
+        if(recursiveDispute.previousRecursiveDisputeHash != bytes32(0)) {
+            // check if the previous recursive dispute is available
+            (bool isOriginalDisputeAvailable, int index) = isDisputeCommitmentAvailable(recursiveDispute.previousRecursiveDisputeHash);
+            if(!isOriginalDisputeAvailable) {
+                return (false, [dispute.disputer], abi.encode("TIMEOUT PRIOR INVALID: PREVIOUS RECURSIVE DISPUTE NOT AVAILABLE"));
+            }
+        }
+        
+        (bool isOriginalTimeoutSet, bool isOriginalOptionalSet) = isTimeoutSetWithOptional(originalDispute.timeout, false);
+        if(!isOriginalTimeoutSet) {
+            return (false, [dispute.disputer], abi.encode("TIMEOUT PRIOR INVALID: ORIGINAL TIMEOUT NOT SET"));
+        }
+        (bool isRecursiveTimeoutSet, bool isRecursiveOptionalSet) = isTimeoutSetWithOptional(recursiveDispute.timeout, false);
+        if(!isRecursiveTimeoutSet) {
+            return (false, [dispute.disputer], abi.encode("TIMEOUT PRIOR INVALID: RECURSIVE TIMEOUT NOT SET"));
+        }
+        
+        // check if the original timeout is greater than the recursive timeout
+        if(originalDispute.timeout.timeout < recursiveDispute.timeout.timeout) {
+            return (false, [dispute.disputer], abi.encode("TIMEOUT PRIOR INVALID: RECURSIVE TIMEOUT IS NEW"));
+        }
+        // check if the timeout peeer in original dispute is the disputer in recursive dispute
+        if(originalDispute.timeout.participant != recursiveDispute.disputer) {
+            return (false, [dispute.disputer], abi.encode("TIMEOUT PRIOR INVALID: TIMEOUT PEER MISMATCH"));
+        }
+
+        return (true, [recursiveDispute.disputer], new bytes(0));
     }
 
     // ================================ Dispute Verification ================================
