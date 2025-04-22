@@ -14,18 +14,25 @@ contract StateChannelManagerStorage {
 
 
     AStateMachine stateMachineImplementation;
+
+    // =================== State on chain storage ==================
+
+    /// @dev stateSnapshot Data
+    mapping(bytes32 => StateSnapshot) stateSnapshots;
     /// @dev the fork genesis state
-    mapping(bytes32 => mapping(uint => bytes)) encodedStates; // [channelId][forkCnt] -> encodedState
-    //TODO* - think do we need to store previous timestamps
-    mapping(bytes32 => mapping(uint => uint)) genesisTimestamps; // [channelId][forkCnt] -> encodedState
-    mapping(bytes32 => uint) latestFork; // [channelId] -> latestFork
+    mapping(bytes32 => mapping(uint => bytes)) encodedStates;
+    
    
     // =================== Block on chain storage ==================
+
+
     /// @notice BlockCallData Commitment
     /// @dev blockCallDataCommitments[channelId][forkCnt][transactionCnt][signerAddress] => blockCallDataCommitment
     mapping(bytes32 channelId => mapping(uint forkCnt => mapping(uint blockHeight => mapping(address signerAddress => bytes blockCallDataCommitment)))) blockCallDataCommitments;
 
+
     // ================== Dispute on chain storage ==================
+
 
     /// @dev disputes[channelId] => array of dispute commitments
     /// @dev hash(Dspute Struct, timestamp)
@@ -36,6 +43,15 @@ contract StateChannelManagerStorage {
 
     /// @dev slashed participants
     address[] onChainSlashedParticipants;
+
+    /// @dev Participants that joined the state channel
+    mapping(bytes32 => address[]) participants;
+
+    /// @dev the hash of the latest block in the JoinChannel blockchain
+    mapping(bytes32 => bytes32) latestJoinChannelBlockHash;
+
+
+    // ================== Modifiers ==================
 
     modifier onlySelf() {
         require(

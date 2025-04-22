@@ -97,3 +97,18 @@ struct Timeout {
     address previousBlockProducer;
     bool previousBlockProducerPostedCalldata;
 }
+
+struct StateSnapshot {
+    /// @dev the state root of the channel state
+    bytes32 stateMachineStateHash
+    /// @dev the participants of the channel
+    address[] participants
+    /// @dev the hash of the lastBlock in the JoinChannel blockchain
+    bytes32 latestJoinChannelBlockHash
+    /// @dev the hash of the lastBlock in the ExitChannel blockchain
+    bytes32 latestExitChannelBlockHash
+    /// @dev sum of all the amounts in the joinChannel blockchain
+    uint totalDeposits
+    /// @dev sum of all the amounts in the exitChannel blockchain
+    uint totalWithdrawals
+}

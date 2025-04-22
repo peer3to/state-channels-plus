@@ -66,7 +66,7 @@ struct ForkMilestoneProof {
 }
 
 struct ForkProof {
-    ForkMilestoneProof[] forkMilestoneProofs;
+    ForkMilestoneProof[] forkMilestoneProofs; 
 }
 
 /// @notice Proof of state finality within a fork
