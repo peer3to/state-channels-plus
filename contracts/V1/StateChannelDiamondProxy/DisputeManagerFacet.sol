@@ -98,8 +98,10 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
        
         // validate output state
-        bool isOutputStateValid = _validateDisputeOutputState(dispute, disputeAuditData.latestStateSnapshot);
-       
+        bool isOutputStateValid = _validateDisputeOutputState(dispute, returnedSlashedParticipants,disputeAuditData.latestStateSnapshot);
+        if(!isOutputStateValid) {
+            return (false, returnedSlashedParticipants, abi.encode("AUDIT: OUTPUT STATE INVALID"));
+        }
         return (isValid, returnedSlashedParticipants, new bytes(0));
     }
 
@@ -424,13 +426,6 @@ contract DisputeManagerFacet is StateChannelCommon {
         // TODO: implement verifyDisputeOutOfGas
     }
 
-    function _verifyDisputeInvalidOutputState(
-        Proof memory proof
-    ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
-        DisputeInvalidOutputStateProof memory disputeInvalidOutputStateProof = abi.decode(proof.encodedProof, (DisputeInvalidOutputStateProof));
-        // TODO: implement computeOutputState
-    }
-
     function _verifyDisputeInvalidStateProof(
         Dispute memory dispute,
         Proof memory proof
@@ -588,8 +583,16 @@ contract DisputeManagerFacet is StateChannelCommon {
     }
 
     // ================================ Dispute Verification ================================
-    function _validateDisputeOutputState(Dispute memory dispute, bytes memory latestStateSnapshot) internal returns (bool isValid) {
-        // TODO: implement validateDisputeOutputState
+    function _validateDisputeOutputState(Dispute memory dispute,address[] memory slashParticipants, bytes memory latestStateSnapshot) internal returns (bool isValid) {
+        
+        (bytes memory encodedModifiedState, uint successCnt) = applySlashesToStateMachine(latestStateSnapshot, slashParticipants);
+        if(successCnt != slashParticipants.length) {
+            revert DisputeOutputStateValidationFailed();
+        }
+        if(keccak256(encodedModifiedState) != dispute.outputStateSnapshotHash) {
+            revert DisputeOutputStateValidationFailed();
+        }
+        return true;
     }
 
     // =============================== State Proofs Verification  ===============================

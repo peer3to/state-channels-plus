@@ -319,25 +319,25 @@ abstract contract AStateChannelManagerProxy is
         internal
         returns (
             bytes memory encodedModifiedState,
-            ProcessExit[] memory,
+            ExitChannel[] memory,
             uint successCnt
         )
     {
-        ProcessExit[] memory processExits = new ProcessExit[](
+        ExitChannel[] memory exitChannels = new ExitChannel[](
             slashedParticipants.length
         );
         uint successCnt = 0;
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < slashedParticipants.length; i++) {
             bool success;
-            (success, processExits[successCnt]) = stateMachineImplementation
+            (success, exitChannels[successCnt]) = stateMachineImplementation
                 .slashParticipant(slashedParticipants[i]);
             // require(success, "Slash failed");
             if (success) successCnt++;
         }
         return (
             stateMachineImplementation.getState(),
-            processExits,
+            exitChannels,
             successCnt
         );
     }
