@@ -17,18 +17,16 @@ contract DisputeManagerFacet is StateChannelCommon {
         require(msg.sender == dispute.disputer, "CREATE DISPUTE: INVALID DISPUTER");
         // race condition check
         address[] memory onChainSlashedParticipants = getOnChainSlashedParticipants();
-        if(dispute.onChainSlashes.length != onChainSlashedParticipants.length 
-        || dispute.onChainSlashes[dispute.onChainSlashes.length - 1] != onChainSlashedParticipants[onChainSlashedParticipants.length - 1]) {
+
+        if(keccak256(abi.encodePacked(dispute.onChainSlashes)) != keccak256(abi.encodePacked(onChainSlashedParticipants))) {
             revert CreateDisputeInvalidOnChainSlashedParticipants();
         }
-
+    
         address disputer = StateChannelUtilLibrary.retriveSignerAddress(abi.encode(dispute), signature);
         if(disputer != dispute.disputer) {
             revert CreateDisputeInvalidSignature();
         } 
-        // check if fraud proofs or TimoutStruct is provided to process the dispute
-        if(dispute.fraudProofs.length == 0 || isTimeoutSetWithOptional(dispute.timeout, false)) return;
-
+       
         // commit to dispute struct
         bytes memory encodedDispute = abi.encode(dispute);
         bytes32 memory disputeCommitment = keccak256(abi.encodePacked(
@@ -67,11 +65,32 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
 
         // verify state proofs
-        // see if it should return something
         (bool isStateProofValid, bytes memory stateProofErrorResult) = _verifyStateProof(disputeAuditData.latestStateSnapshot, dispute.stateProof, genesisParticipants);
         if(!isStateProofValid) {
             return (false, [dispute.disputer], stateProofErrorResult);
         }
+
+        // if timeout struct available checks
+        (bool isTimeoutSet, bool isOptionalSet) = isTimeoutSetWithOptional(dispute.timeout, true);
+        if(isTimeoutSet) {
+
+            (bool isCalldataPosted, bytes32 blockCallData) = getBlockCallData(dispute.channelId, dispute.forkCnt, dispute.transactionCnt, dispute.disputer);
+            if(isCalldataPosted) {
+                return (false, [dispute.disputer], abi.encode("AUDIT: CALLLDATA POSTED"));
+            }
+            if(dispute.timeout.minTimeStamp > block.timestamp) {
+                return (false, [dispute.disputer], abi.encode("AUDIT: MIN TIMESTAMP INVALID"));
+            }
+            if(getNextToWrite(dispute.channelId, disputeAuditData.latestStateSnapshot) != dispute.timeout.participant) {
+                return (false, [dispute.disputer], abi.encode("AUDIT: NEXT TO WRITE INVALID"));
+            }
+            uint latestStateHeight = _getLatestHeight(dispute.stateProof);
+            uint forkCnt = getForkCnt(dispute.channelId);
+            if(dispute.timeout.blockHeight != latestStateHeight && forkCnt != dispute.timeout.forkCnt ) {
+                return (false, [dispute.disputer], abi.encode("AUDIT: NOT LINKED TO LATEST STATE"));
+            }
+        }
+
         // verify fraud proofs
         (bool isValid, address[] memory returnedSlashedParticipants, bytes memory fraudProofErrorResult) = _verifyFraudProofs(dispute,disputeAuditData);
         if(!isValid) {
@@ -387,7 +406,8 @@ contract DisputeManagerFacet is StateChannelCommon {
         address[] memory signers = disputeNotLatestStateProof.newerBlock.signatures;
 
         // check block ordering
-        if(newerBlock.transaction.header.transactionCnt < disputeNotLatestStateProof.originalDispute.latestStateHeight) {
+        uint latestStateHeight = _getLatestHeight(disputeNotLatestStateProof.originalDispute.stateProof);
+        if(newerBlock.transaction.header.transactionCnt < latestStateHeight) {
             return (false, [dispute.disputer], abi.encode("DISPUTE NOT LATEST STATE: NEWER BLOCK HEIGHT IS LESS THAN LATEST STATE HEIGHT"));
         }
         if(signer != originalDisputer && !StateChannelUtilLibrary.isAddressInArray(signers, originalDisputer)) {
@@ -485,8 +505,8 @@ contract DisputeManagerFacet is StateChannelCommon {
             allThresholdChecksPass = false;
             errorMessage = abi.encode("TIMEOUT THRESHOLD: FORK CNT MISMATCH");
         }
-        
-        if(originalTimedOutDispute.latestStateHeight != thresholdBlock.transaction.header.transactionCnt) {
+        uint latestStateHeight = _getLatestHeight(originalTimedOutDispute.stateProof);
+        if(latestStateHeight != thresholdBlock.transaction.header.transactionCnt) {
             allThresholdChecksPass = false;
             errorMessage = abi.encode("TIMEOUT THRESHOLD: BLOCK HEIGHT MISMATCH");
         }
@@ -570,20 +590,6 @@ contract DisputeManagerFacet is StateChannelCommon {
     // ================================ Dispute Verification ================================
     function _validateDisputeOutputState(Dispute memory dispute, bytes memory latestStateSnapshot) internal returns (bool isValid) {
         // TODO: implement validateDisputeOutputState
-    }
-
-    // ================================ Timeout Dispute Verification ================================
-
-    function _verifyTimeoutParticipantNoNextDispute(
-        Proof memory proof
-    ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
-
-    }
-
-    function _verifyNotLinkedToLatestStateDispute(
-        Proof memory proof
-    ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
-
     }
 
     // =============================== State Proofs Verification  ===============================
@@ -828,6 +834,17 @@ contract DisputeManagerFacet is StateChannelCommon {
             return (timeout.participant != address(0), timeout.previousBlockProducer != address(0));
         }
         return (timeout.participant != address(0), false);
+    }
+
+    function _getLatestHeight(StateProof memory stateProof) internal view returns (uint) {
+
+        if(stateProof.signedBlocks.length == 0) {
+            uint lastMilestoneBlockConfirmationIndex = stateProof.forkProof.forkMilestoneProofs[stateProof.forkProof.forkMilestoneProofs.length - 1].blockConfirmations.length - 1; 
+            Block memory lastMilestoneBlockConfirmation = abi.decode(stateProof.forkProof.forkMilestoneProofs[stateProof.forkProof.forkMilestoneProofs.length - 1].blockConfirmations[lastMilestoneBlockConfirmationIndex].signedBlock.encodedBlock, (Block));
+            return lastMilestoneBlockConfirmation.transaction.header.transactionCnt;
+        }
+        Block memory lastSignedBlock = abi.decode(stateProof.signedBlocks[stateProof.signedBlocks.length - 1].encodedBlock, (Block));
+        return lastSignedBlock.transaction.header.transactionCnt;
     }
  
 }

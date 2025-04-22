@@ -34,8 +34,6 @@ struct Dispute {
     bytes32 genesisStateSnapshotHash;
     /// @notice encoded latest state (latest on-chain state)
     bytes32 latestStateSnapshotHash;
-    /// @dev the blocknumber/height of the latest state
-    uint latestStateHeight;
     /// @notice State proof for the dispute
     StateProof stateProof;
     /// @notice Fraud proofs for the dispute

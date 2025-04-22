@@ -35,7 +35,6 @@ contract StateChannelManagerStorage {
     DisputePair[] onChainDisputePairs;
 
     /// @dev slashed participants
-    /// @dev the last index stores the commitment of the addresses, this to make it gas efficient. So the true length is N-1
     address[] onChainSlashedParticipants;
 
     modifier onlySelf() {

@@ -624,7 +624,7 @@ abstract contract AStateChannelManagerProxy is
         public
         view
         override(StateChannelCommon, StateChannelManagerInterface)
-        returns (bool found, BlockCalldata memory)
+        returns (bool found, bytes32 blockCallData)
     {
         return
             StateChannelCommon.getBlockCallData(
