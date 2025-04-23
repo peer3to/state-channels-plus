@@ -60,7 +60,7 @@ abstract contract AStateMachine {
 
     function slashParticipant(
         address adr
-    ) external _nonReentrant returns (bool) {
+    ) external _nonReentrant returns (bool, ExitChannel memory exitChannel) {
         return _slashParticipant(adr);
     }
 

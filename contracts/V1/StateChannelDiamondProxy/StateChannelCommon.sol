@@ -8,10 +8,7 @@ contract StateChannelCommon is
     StateChannelManagerStorage,
     StateChannelManagerEvents
 {
-    function getForkCnt(bytes32 channelId) public view virtual returns (uint) {
-        return latestFork[channelId];
-    }
-
+    
     function getOnChainSlashedParticipants() public view virtual returns (address[] memory) {
         return onChainSlashedParticipants;
     }
@@ -106,19 +103,10 @@ contract StateChannelCommon is
     }
 
     function setState(bytes32 channelId, bytes memory encodedState) internal {
-        uint newForkCnt = latestFork[channelId] + 1; //only here is forkCnt incremented
-        latestFork[channelId] = newForkCnt;
-        encodedStates[channelId][newForkCnt] = encodedState;
-        genesisTimestamps[channelId][newForkCnt] = block.timestamp;
+        uint forkCnt = disputes[channelId].length;
+        encodedStates[channelId][forkCnt] = encodedState;
         //TODO check invariant (balances etc...) - or not do it here, but where threshold is submitted - think about this
-        emit SetState(channelId, encodedState, newForkCnt, block.timestamp);
-    }
-
-    function getGenesisTimestamp(
-        bytes32 channelId,
-        uint forkCnt
-    ) public view virtual returns (uint) {
-        return genesisTimestamps[channelId][forkCnt];
+        emit SetState(channelId, encodedState, forkCnt, block.timestamp);
     }
 
     function isChannelOpen(

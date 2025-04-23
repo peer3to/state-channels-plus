@@ -65,9 +65,9 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
 
         // verify state proofs
-        (bool isStateProofValid, bytes memory stateProofErrorResult) = _verifyStateProof(disputeAuditData.latestStateSnapshot, dispute.stateProof, genesisParticipants);
+        bool isStateProofValid = _verifyStateProof(disputeAuditData.latestStateSnapshot, dispute.stateProof, genesisParticipants);
         if(!isStateProofValid) {
-            return (false, [dispute.disputer], stateProofErrorResult);
+            return (false, [dispute.disputer], abi.encode("AUDIT: STATE PROOF INVALID"));
         }
 
         // if timeout struct available checks
@@ -85,7 +85,7 @@ contract DisputeManagerFacet is StateChannelCommon {
                 return (false, [dispute.disputer], abi.encode("AUDIT: NEXT TO WRITE INVALID"));
             }
             uint latestStateHeight = _getLatestHeight(dispute.stateProof);
-            uint forkCnt = getForkCnt(dispute.channelId);
+            uint forkCnt = disputes[dispute.channelId].length;
             if(dispute.timeout.blockHeight != latestStateHeight && forkCnt != dispute.timeout.forkCnt ) {
                 return (false, [dispute.disputer], abi.encode("AUDIT: NOT LINKED TO LATEST STATE"));
             }
@@ -101,7 +101,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         bool isOutputStateValid = _validateDisputeOutputState(dispute, returnedSlashedParticipants,disputeAuditData.latestStateSnapshot);
         if(!isOutputStateValid) {
             return (false, returnedSlashedParticipants, abi.encode("AUDIT: OUTPUT STATE INVALID"));
-        }
+            }
         return (isValid, returnedSlashedParticipants, new bytes(0));
     }
 
@@ -297,11 +297,11 @@ contract DisputeManagerFacet is StateChannelCommon {
             return (false, [dispute.disputer], abi.encode("BLOCK DOUBLE SIGN: STATE HASH MISMATCH"));
         }
         
-        address memory signer1 = StateChannelUtilLibrary.retriveSignerAddress(
+        address signer1 = StateChannelUtilLibrary.retriveSignerAddress(
             blockDoubleSignProof.block1.encodedBlock,
             blockDoubleSignProof.block1.signature
         );
-        address memory signer2 = StateChannelUtilLibrary.retriveSignerAddress(
+        address signer2 = StateChannelUtilLibrary.retriveSignerAddress(
             blockDoubleSignProof.block2.encodedBlock,
             blockDoubleSignProof.block2.signature
         );
@@ -349,7 +349,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         if(fraudBlock.transaction.header.transactionCnt != uint(0)) {
             return (false, [dispute.disputer], abi.encode("BLOCK EMPTY: TRANSACTION COUNT NOT ZERO"));
         }
-        address memory signer = StateChannelUtilLibrary.retriveSignerAddress(
+        address signer = StateChannelUtilLibrary.retriveSignerAddress(
             blockEmptyProof.emptyBlock.encodedBlock,
             blockEmptyProof.emptyBlock.signature
         );
@@ -368,7 +368,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             return (false, [dispute.disputer], abi.encode("DISPUTE NOT LATEST STATE: CHANNEL ID MISMATCH"));
         }
 
-        address memory originalDisputer = disputeNotLatestStateProof.originalDispute.disputer;
+        address originalDisputer = disputeNotLatestStateProof.originalDispute.disputer;
         
         bytes32 originalDisputeCommitment = keccak256(abi.encodePacked(
             disputeNotLatestStateProof.originalDispute,
@@ -380,7 +380,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
 
         Block memory newerBlock = abi.decode(disputeNotLatestStateProof.newerBlock.signedBlock.encodedBlock, (Block));
-        address memory signer = StateChannelUtilLibrary.retriveSignerAddress(
+        address signer = StateChannelUtilLibrary.retriveSignerAddress(
             disputeNotLatestStateProof.newerBlock.signedBlock.encodedBlock,
             disputeNotLatestStateProof.newerBlock.signedBlock.signature
         );
@@ -406,7 +406,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         if(dispute.channelId != disputeInvalidStateProof.dispute.channelId) {
             return (false, [dispute.disputer], abi.encode("DISPUTE NOT LATEST STATE: CHANNEL ID MISMATCH"));
         }
-        address memory originalDisputer = disputeInvalidStateProof.dispute.disputer;
+        address originalDisputer = disputeInvalidStateProof.dispute.disputer;
 
         (bool isStateProofValid, bytes memory stateProofErrorResult) = _verifyStateProof(
             disputeInvalidStateProof.dispute.latestStateSnapshotHash,
@@ -419,11 +419,11 @@ contract DisputeManagerFacet is StateChannelCommon {
         return (true, [dispute.disputer], new bytes(0));
     }
 
-
     function _verifyDisputeInvalidExitChannelBlocks(
         Proof memory proof
     ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
         // TODO: implement processExitChannelBlocks
+        revert("NOT IMPLEMENTED");
     }
     
     // =============================== Dispute Timeout Verification ===============================
@@ -473,7 +473,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
 
         // check signatures
-        address memory signer = StateChannelUtilLibrary.retriveSignerAddress(
+        address signer = StateChannelUtilLibrary.retriveSignerAddress(
             thresholdBlockConfirmation.signedBlock.encodedBlock,
             thresholdBlockConfirmation.signedBlock.signature
         );
@@ -544,22 +544,31 @@ contract DisputeManagerFacet is StateChannelCommon {
     }
 
     // ================================ Dispute Verification ================================
-    function _validateDisputeOutputState(Dispute memory dispute,address[] memory slashParticipants, bytes memory latestStateMachineState) internal returns (bool isValid) {
+    function _validateDisputeOutputState(DisputeAuditingData memory disputeAuditingData,Dispute memory dispute,address[] memory slashParticipants) internal returns (bool isValid) {
         
-        (bytes memory encodedModifiedState, uint successCnt) = applySlashesToStateMachine(latestStateMachineState, slashParticipants);
+        (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels, uint successCnt) = applySlashesToStateMachine(disputeAuditingData.latestStateStateMachineState, slashParticipants);
         if(successCnt != slashParticipants.length) {
-            revert DisputeOutputStateValidationFailed();
+            return false;
         }
+
+        uint totalDeposits = _calculateTotalDeposits(disputeAuditingData.joinChannelBlocks);
+        uint totalWithdrawals = _calculateTotalWithdrawals(exitChannels);
+
+
+
+        StateSnapshot memory latestStateSnapshot = abi.decode(disputeAuditingData.latestStateSnapshot, (StateSnapshot));
         // construct a snapshot from the modified state
         StateSnapshot memory outputStateSnapshot = StateSnapshot({
-            stateHash: keccak256(encodedModifiedState),
-            participants: dispute.participants,
-            latestStateSnapshotHash: dispute.latestStateSnapshotHash,
-            latestStateHeight: dispute.latestStateHeight,
-            latestStateTimestamp: dispute.latestStateTimestamp
+            stateMachineStateHash: keccak256(encodedModifiedState),
+            participants: latestStateSnapshot.participants,
+            latestJoinChannelBlockHash: latestStateSnapshot.latestJoinChannelBlockHash,
+            latestExitChannelBlockHash: latestStateSnapshot.latestExitChannelBlockHash,
+            totalDeposits: totalDeposits,
+            totalWithdrawals: totalWithdrawals
         });
-        if(keccak256(encodedModifiedState) != dispute.outputStateSnapshotHash) {
-            revert DisputeOutputStateValidationFailed();
+
+        if(keccak256(abi.encode(outputStateSnapshot)) != dispute.outputStateSnapshotHash) {
+            return false;
         }
         return true;
     }
@@ -568,8 +577,8 @@ contract DisputeManagerFacet is StateChannelCommon {
 
     function _verifyStateProof(DisputeAuditingData memory disputeAuditingData, bytes memory genesisStateSnapshotHash, StateProof memory stateProof, bytes memory latestStateSnapshotHash) internal returns (bool isValid) {
       
-        StateSnapshot memory latestStateSnapshot = abi.decode(disputingAuditingData.latestStateSnapshot, (StateSnapshot));
-        StateSnapshot memory genesisStateSnapshot = abi.decode(disputingAuditingData.genesisStateSnapshot, (StateSnapshot));
+        StateSnapshot memory latestStateSnapshot = abi.decode(disputeAuditingData.latestStateSnapshot, (StateSnapshot));
+        StateSnapshot memory genesisStateSnapshot = abi.decode(disputeAuditingData.genesisStateSnapshot, (StateSnapshot));
         address[] memory participants = latestStateSnapshot.participants;
 
         if(keccak256(disputeAuditingData.genesisStateSnapshot) != genesisStateSnapshotHash) {
@@ -582,23 +591,23 @@ contract DisputeManagerFacet is StateChannelCommon {
             return false;
         }
         // Signedblocks and latest state checking
-        isValid = _verifySignedBlocks(stateProof.signedBlocks, latestStateSnapshotHash);
+        isValid = _verifySignedBlocks(stateProof.forkProof, stateProof.signedBlocks, latestStateSnapshotHash);
         if(!isValid) {
             return false;
         }
         return true;
     }
 
-    function _verifySignedBlocks(SignedBlock[] memory signedBlocks, bytes memory latestStateSnapshotHash) internal returns (bool isValid) {
+    function _verifySignedBlocks(ForkProof memory forkProof, SignedBlock[] memory signedBlocks, bytes memory latestStateSnapshotHash) internal returns (bool isValid) {
        
-       BlockConfirmation memory LastConfirmation = abi.decode(
+       BlockConfirmation memory lastConfirmation = abi.decode(
         forkProof.forkMilestoneProofs[forkProof.forkMilestoneProofs.length - 1]
         .blockConfirmations[forkProof.forkMilestoneProofs[forkProof.forkMilestoneProofs.length - 1].blockConfirmations.length - 1],
         (BlockConfirmation)
        );
 
-       Block memory lastConfirmedBlock = abi.decode(LastConfirmation.signedBlock.encodedBlock, (Block));
-        
+       Block memory lastConfirmedBlock = abi.decode(lastConfirmation.signedBlock.encodedBlock, (Block));
+
        address signer = StateChannelUtilLibrary.retriveSignerAddress(lastConfirmedBlock.encodedBlock, lastConfirmedBlock.signature);
 
        for(uint i = 1; i < signedBlocks.length; i++) {
@@ -797,6 +806,24 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
         Block memory lastSignedBlock = abi.decode(stateProof.signedBlocks[stateProof.signedBlocks.length - 1].encodedBlock, (Block));
         return lastSignedBlock.transaction.header.transactionCnt;
+    }
+
+    function _calculateTotalDeposits(JoinChannelBlock[] memory joinChannelBlocks) internal view returns (uint) {
+        uint totalDeposits = 0;
+        for (uint i = 0; i < joinChannelBlocks.length; i++) {
+            for(uint j = 0; j < joinChannelBlocks[i].joinChannels.length; j++) {
+                totalDeposits += joinChannelBlocks[i].joinChannels[j].amount;
+            }
+        }
+        return totalDeposits;
+    }
+
+    function _calculateTotalWithdrawals(ExitChannel[] memory exitChannels) internal view returns (uint) {
+        uint totalWithdrawals = 0;
+        for(uint i = 0; i < exitChannels.length; i++) {
+            totalWithdrawals += exitChannels[i].amount;
+        }
+        return totalWithdrawals;
     }
  
 }

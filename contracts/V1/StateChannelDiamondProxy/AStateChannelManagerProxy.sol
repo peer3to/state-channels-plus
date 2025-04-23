@@ -29,213 +29,9 @@ abstract contract AStateChannelManagerProxy is
 
     function _removeParticipantComposable(
         bytes32 channelId,
-        ProcessExit memory processExit
+        ExitChannel memory exitChannel
     ) internal virtual returns (bool);
 
-    function joinChannelWithAgreement(
-        ConfirmedJoinChannelAgreement memory confirmedJoinChannelAgreement,
-        bytes memory encodedState
-    ) public {
-        JoinChannelAgreement memory joinChannelAgreement = abi.decode(
-            confirmedJoinChannelAgreement.encodedJoinChannelAgreement,
-            (JoinChannelAgreement)
-        );
-        SignedJoinChannel memory signedJoinChannel = joinChannelAgreement
-            .signedJoinChannel;
-
-        JoinChannel memory joinChannel = abi.decode(
-            signedJoinChannel.encodedJoinChannel,
-            (JoinChannel)
-        );
-
-        // Require no dispute in progress
-        require(
-            !isDisputeInProgress(joinChannel.channelId),
-            "AStateChannelManager: joinChannelWithAgreement - Dispute in progress"
-        );
-        tryProcessOldExits(joinChannel.channelId);
-
-        //require forkCnt to match
-        require(
-            latestFork[joinChannel.channelId] == joinChannelAgreement.forkCnt,
-            "AStateChannelManager: joinChannelWithAgreement - forkCnt mismatch"
-        );
-
-        //require hash(state) == previousStateHash
-        require(
-            keccak256(encodedState) == joinChannelAgreement.previousStateHash,
-            "AStateChannelManager: joinChannelWithAgreement - previousStateHash mismatch"
-        );
-
-        address[] memory participants = getParticipants(
-            joinChannel.channelId,
-            joinChannelAgreement.forkCnt
-        );
-
-        //require joiner not participant
-        bool isParticipant = StateChannelUtilLibrary.isAddressInArray(
-            participants,
-            joinChannel.participant
-        );
-        require(
-            !isParticipant,
-            "AStateChannelManager: joinChannelWithAgreement - joiner is participant"
-        );
-
-        //require msg.sender == submitter == participant
-        isParticipant = StateChannelUtilLibrary.isAddressInArray(
-            participants,
-            joinChannelAgreement.submitter
-        );
-        require(
-            isParticipant,
-            "AStateChannelManager: joinChannelWithAgreement - submitter not participant"
-        );
-        require(
-            msg.sender == joinChannelAgreement.submitter,
-            "AStateChannelManager: joinChannelWithAgreement - msg.sender != submitter"
-        ); //TODO? think about potential disputes - probably not needed
-
-        //check signatures
-        (bool success, ) = StateChannelUtilLibrary.verifyThresholdSigned(
-            participants,
-            confirmedJoinChannelAgreement.encodedJoinChannelAgreement,
-            confirmedJoinChannelAgreement.signatures
-        );
-        require(
-            success,
-            "AStateChannelManager: joinChannelWithAgreement - signatures invalid"
-        );
-
-        //check initial signature
-        address[] memory p = new address[](1);
-        p[0] = joinChannel.participant;
-        bytes[] memory signature = new bytes[](1);
-        signature[0] = signedJoinChannel.signature;
-        (success, ) = StateChannelUtilLibrary.verifyThresholdSigned(
-            p,
-            signedJoinChannel.encodedJoinChannel,
-            signature
-        );
-        require(
-            success,
-            "AStateChannelManager: joinChannelWithAgreement - initial signature invalid"
-        );
-
-        //apply joinChannelComposable
-        success = _addParticipantComposable(joinChannel);
-        require(
-            success,
-            "AStateChannelManager: joinChannelWithAgreement - addParticipantComposable failed"
-        );
-
-        //apply joinChannelToState
-        JoinChannel[] memory joinCahnnels = new JoinChannel[](1);
-        joinCahnnels[0] = joinChannel;
-        uint successCnt;
-        (encodedState, successCnt) = applyJoinChannelToStateMachine(
-            encodedState,
-            joinCahnnels
-        );
-        require(
-            successCnt == 1,
-            "AStateChannelManager: joinChannelWithAgreement - applyJoinChannelToStateMachine failed"
-        );
-
-        //setState
-        setState(joinChannel.channelId, encodedState);
-        //TODO? - what if somone lies and triggeres this later - should not be wated upon and should trigget dispute from others if they play a move -> they're not a particopant anymore
-    }
-
-    function leaveChannelWithAgreement(
-        LeaveChannelAgreement memory leaveChannelAgreement,
-        bytes memory encodedState
-    ) public {
-        LeaveChannel memory leaveChannel = abi.decode(
-            leaveChannelAgreement.encodedLeaveChannel,
-            (LeaveChannel)
-        );
-        // Require no dispute in progress
-        require(
-            !isDisputeInProgress(leaveChannel.channelId),
-            "AStateChannelManager: leaveChannelWithAgreement - Dispute in progress"
-        );
-        tryProcessOldExits(leaveChannel.channelId);
-
-        //require forkCnt to match
-        require(
-            latestFork[leaveChannel.channelId] == leaveChannel.forkCnt,
-            "AStateChannelManager: leaveChannelWithAgreement - forkCnt mismatch"
-        );
-
-        //require hash(state) == previousStateHash
-        require(
-            keccak256(encodedState) == leaveChannel.previousStateHash,
-            "AStateChannelManager: leaveChannelWithAgreement - previousStateHash mismatch"
-        );
-
-        address[] memory participants = getParticipants(
-            leaveChannel.channelId,
-            leaveChannel.forkCnt
-        );
-
-        //require isParticipant
-        bool isParticipant = StateChannelUtilLibrary.isAddressInArray(
-            participants,
-            leaveChannel.participant
-        );
-        require(
-            isParticipant,
-            "AStateChannelManager: leaveChannelWithAgreement - not participant"
-        );
-
-        //check signatures
-        (bool success, ) = StateChannelUtilLibrary.verifyThresholdSigned(
-            participants,
-            leaveChannelAgreement.encodedLeaveChannel,
-            leaveChannelAgreement.signatures
-        );
-        require(
-            success,
-            "AStateChannelManager: leaveChannelWithAgreement - signatures invalid"
-        );
-
-        address[] memory p = new address[](1);
-        p[0] = leaveChannel.participant;
-        (
-            bytes memory encodedState,
-            ProcessExit[] memory pe,
-            uint successCnt
-        ) = removeParticipantsFromStateMachine(encodedState, p);
-        require(
-            successCnt == 1,
-            "AStateChannelManager: leaveChannelWithAgreement - removeParticipantsFromStateMachine failed"
-        );
-        //apply leaveChannelComposable
-        success = _removeParticipantComposable(leaveChannel.channelId, pe[0]);
-        require(
-            success,
-            "AStateChannelManager: leaveChannelWithAgreement - removeParticipantComposable failed"
-        );
-
-        //setState
-        setState(leaveChannel.channelId, encodedState);
-        //TODO? - what if somone lies and triggeres this later - should not be wated upon and should trigget dispute from others if they play a move -> they're not a particopant anymore
-    }
-
-    function tryProcessOldExits(bytes32 channelId) internal {
-        Dispute storage dispute = disputes[channelId];
-        bool isExpired = dispute.deadlineTimestamp < block.timestamp;
-        if (isExpired) {
-            for (uint i = 0; i < dispute.processExits.length; i++) {
-                _removeParticipantComposable(
-                    channelId,
-                    dispute.processExits[i]
-                );
-            }
-            delete dispute.processExits; //clears the array
-        }
-    }
     function addParticipantComposable(
         JoinChannel memory joinChannel
     ) public onlySelf returns (bool) {
@@ -244,9 +40,9 @@ abstract contract AStateChannelManagerProxy is
 
     function removeParticipantComposable(
         bytes32 channelId,
-        ProcessExit memory processExit
+        ExitChannel memory exitChannel
     ) public onlySelf returns (bool) {
-        return _removeParticipantComposable(channelId, processExit);
+        return _removeParticipantComposable(channelId, exitChannel);
     }
 
     function applyJoinChannelToStateMachine(
@@ -268,7 +64,7 @@ abstract contract AStateChannelManagerProxy is
         onlySelf
         returns (
             bytes memory encodedModifiedState,
-            ProcessExit[] memory,
+            ExitChannel[] memory,
             uint successCnt
         )
     {
@@ -283,7 +79,7 @@ abstract contract AStateChannelManagerProxy is
         onlySelf
         returns (
             bytes memory encodedModifiedState,
-            ProcessExit[] memory,
+            ExitChannel[] memory,
             uint successCnt
         )
     {
@@ -293,7 +89,7 @@ abstract contract AStateChannelManagerProxy is
     function getLatestState(
         bytes32 channelId
     ) public view override returns (bytes memory) {
-        return encodedStates[channelId][latestFork[channelId]];
+        return encodedStates[channelId][disputes[channelId].length - 1];
     }
 
     function _applyJoinChannelToStateMachine(
@@ -349,25 +145,25 @@ abstract contract AStateChannelManagerProxy is
         internal
         returns (
             bytes memory encodedModifiedState,
-            ProcessExit[] memory,
+            ExitChannel[] memory,
             uint successCnt
         )
     {
-        ProcessExit[] memory processExits = new ProcessExit[](
+        ExitChannel[] memory exitChannels = new ExitChannel[](
             participants.length
         );
         uint successCnt = 0;
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < participants.length; i++) {
             bool success;
-            (success, processExits[successCnt]) = stateMachineImplementation
+            (success, exitChannels[successCnt]) = stateMachineImplementation
                 .removeParticipant(participants[i]);
             // require(success, "Remove failed");
             if (success) successCnt++;
         }
         return (
             stateMachineImplementation.getState(),
-            processExits,
+            exitChannels,
             successCnt
         );
     }
@@ -437,7 +233,7 @@ abstract contract AStateChannelManagerProxy is
         //Aslo could check if block producer part of state channel, but this too can be discarded on client - interacting on-chain has fees so no reason for someone to spam this
         //TODO? should potentially remove all checks and just have posting blocks? For honest participants it would be cheaper, and spaming would be disacrded regardless at a cost
 
-        ForkDataAvailability storage forkDataAvailability = postedBlockCalldata[
+        gForkDataAvailability storage forkDataAvailability = postedBlockCalldata[
             channelId
         ][forkCnt];
 

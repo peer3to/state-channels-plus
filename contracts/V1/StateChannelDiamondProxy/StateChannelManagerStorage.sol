@@ -19,7 +19,7 @@ contract StateChannelManagerStorage {
 
     /// @dev stateSnapshot Data
     mapping(bytes32 => StateSnapshot) stateSnapshots;
-    /// @dev the fork genesis state
+    /// @dev the fork genesis state. encodedState[channelId][forkCnt]
     mapping(bytes32 => mapping(uint => bytes)) encodedStates;
     
    
@@ -28,7 +28,7 @@ contract StateChannelManagerStorage {
 
     /// @notice BlockCallData Commitment
     /// @dev blockCallDataCommitments[channelId][forkCnt][transactionCnt][signerAddress] => blockCallDataCommitment
-    mapping(bytes32 channelId => mapping(uint forkCnt => mapping(uint blockHeight => mapping(address signerAddress => bytes blockCallDataCommitment)))) blockCallDataCommitments;
+    mapping(bytes32 channelId => mapping(uint forkCnt => mapping(uint blockHeight => mapping(address signerAddress => bytes32 blockCallDataCommitment)))) blockCallDataCommitments;
 
 
     // ================== Dispute on chain storage ==================

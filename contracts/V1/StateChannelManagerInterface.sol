@@ -88,7 +88,7 @@ abstract contract StateChannelManagerInterface {
         uint forkCnt,
         uint transactionCnt,
         address participant
-    ) public view virtual returns (bool found, BlockCalldata memory);
+    ) public view virtual returns (bool found, bytes32 memory);
 
     function getDispute(
         bytes32 channelId

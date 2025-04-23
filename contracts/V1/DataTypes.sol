@@ -64,6 +64,7 @@ struct JoinChannelBlock {
     bytes32 previousBlockHash;
     JoinChannel[] joinChannels;
 }
+
 struct SignedJoinChannel {
     bytes encodedJoinChannel;
     bytes signature;
@@ -100,15 +101,15 @@ struct Timeout {
 
 struct StateSnapshot {
     /// @dev the state root of the channel state
-    bytes32 stateMachineStateHash
+    bytes32 stateMachineStateHash;
     /// @dev the participants of the channel
-    address[] participants
+    address[] participants;
     /// @dev the hash of the lastBlock in the JoinChannel blockchain
-    bytes32 latestJoinChannelBlockHash
+    bytes32 latestJoinChannelBlockHash;
     /// @dev the hash of the lastBlock in the ExitChannel blockchain
-    bytes32 latestExitChannelBlockHash
+    bytes32 latestExitChannelBlockHash;
     /// @dev sum of all the amounts in the joinChannel blockchain
-    uint totalDeposits
+    uint totalDeposits;
     /// @dev sum of all the amounts in the exitChannel blockchain
-    uint totalWithdrawals
+    uint totalWithdrawals;
 }
