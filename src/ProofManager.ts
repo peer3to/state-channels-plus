@@ -1,14 +1,5 @@
 import { ethers, AddressLike, BigNumberish, BytesLike } from "ethers";
-import {
-    ProofStruct,
-    DisputeStruct,
-    DoubleSignProofStruct,
-    FoldRechallengeProofStruct,
-    IncorrectDataProofStruct,
-    NewerStateProofStruct,
-    FoldPriorBlockProofStruct,
-    BlockTooFarInFutureProofStruct
-} from "@typechain-types/contracts/V1/DisputeTypes";
+import * as dt from "@typechain-types/contracts/V1/DisputeTypes";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
 import { getEthersTypeForDisputeProof, ProofType } from "@/DisputeTypes";
 import EvmUtils from "@/utils/EvmUtils";
@@ -52,7 +43,7 @@ class ProofManager {
     public createFoldRechallengeProof(
         forkCnt: BigNumberish,
         transactionCnt: BigNumberish
-    ): ProofStruct | undefined {
+    ): dt.ProofStruct | undefined {
         const block = this.agreementManager.getBlock(
             Number(forkCnt),
             Number(transactionCnt)
@@ -61,7 +52,7 @@ class ProofManager {
         if (!this.agreementManager.didEveryoneSignBlock(block))
             return undefined;
 
-        const foldRechallengeProofStruct: FoldRechallengeProofStruct = {
+        const foldRechallengeProofStruct: dt.FoldRechallengeProofStruct = {
             encodedBlock: EvmUtils.encodeBlock(block),
             signatures: this.agreementManager.getSigantures(
                 block
@@ -83,7 +74,7 @@ class ProofManager {
      */
     public createDoubleSignProof(
         conflictingBlocks: SignedBlockStruct[]
-    ): ProofStruct {
+    ): dt.ProofStruct {
         const doubleSigns = conflictingBlocks.flatMap((signedBlock) => {
             const conflictingBlock =
                 this.agreementManager.getDoubleSignedBlock(signedBlock);
@@ -98,7 +89,7 @@ class ProofManager {
                 : [];
         });
 
-        const doubleSignProofStruct: DoubleSignProofStruct = {
+        const doubleSignProofStruct: dt.DoubleSignProofStruct = {
             doubleSigns
         };
 
@@ -113,7 +104,7 @@ class ProofManager {
 
     public createIncorrectDataProof(
         incorrectBlockSigned: SignedBlockStruct
-    ): ProofStruct {
+    ): dt.ProofStruct {
         const incorrectBlock = EvmUtils.decodeBlock(
             incorrectBlockSigned.encodedBlock
         );
@@ -148,7 +139,7 @@ class ProofManager {
         forkCnt: number,
         participantAdr: AddressLike,
         currentTransactionCnt: number
-    ): ProofStruct | undefined {
+    ): dt.ProofStruct | undefined {
         // Get the latest block signed by the participant
         const signedBlock =
             this.agreementManager.getLatestSignedBlockByParticipant(
@@ -167,7 +158,7 @@ class ProofManager {
         if (currentTransactionCnt >= blockTransactionCnt) return undefined;
 
         // Create the proof struct using the newer state
-        const newerStateProofStruct: NewerStateProofStruct = {
+        const newerStateProofStruct: dt.NewerStateProofStruct = {
             encodedBlock: EvmUtils.encodeBlock(signedBlock.block),
             confirmationSignature: signedBlock.signature as string
         };
@@ -185,7 +176,7 @@ class ProofManager {
     // TODO - think more about this
     public static createFoldPriorBlockProof(
         transactionCnt: number
-    ): ProofStruct {
+    ): dt.ProofStruct {
         return {
             proofType: ProofType.FoldPriorBlock,
             encodedProof: ProofManager.encodeProof(ProofType.FoldPriorBlock, {
@@ -197,10 +188,11 @@ class ProofManager {
     // TODO - think more about this
     public static createBlockTooFarInFutureProof(
         blockSigned: SignedBlockStruct
-    ): ProofStruct {
-        const blockTooFarInFutureProofStruct: BlockTooFarInFutureProofStruct = {
-            block1: blockSigned
-        };
+    ): dt.ProofStruct {
+        const blockTooFarInFutureProofStruct: dt.BlockTooFarInFutureProofStruct =
+            {
+                block1: blockSigned
+            };
 
         return {
             proofType: ProofType.BlockTooFarInFuture,
@@ -214,13 +206,13 @@ class ProofManager {
     // ===== Static Proof Validation Methods =====
 
     public static isFoldRechallengeValid(
-        proof: ProofStruct,
-        dispute: DisputeStruct
+        proof: dt.ProofStruct,
+        dispute: dt.DisputeStruct
     ): boolean {
         const foldRechallengeProof = ProofManager.decodeProof(
             ProofType.FoldRechallenge,
             proof.encodedProof
-        ) as FoldRechallengeProofStruct;
+        ) as dt.FoldRechallengeProofStruct;
 
         const block = EvmUtils.decodeBlock(foldRechallengeProof.encodedBlock);
         const sameTransactionCnt =
@@ -234,13 +226,13 @@ class ProofManager {
     }
 
     public static isDoubleSignValid(
-        proof: ProofStruct,
-        dispute: DisputeStruct
+        proof: dt.ProofStruct,
+        dispute: dt.DisputeStruct
     ): boolean {
         const doubleSignProof = ProofManager.decodeProof(
             ProofType.DoubleSign,
             proof.encodedProof
-        ) as DoubleSignProofStruct;
+        ) as dt.DoubleSignProofStruct;
 
         return doubleSignProof.doubleSigns.some((doubleSign) => {
             const block1 = EvmUtils.decodeBlock(doubleSign.block1.encodedBlock);
@@ -251,13 +243,13 @@ class ProofManager {
     }
 
     public static isIncorrectDataValid(
-        proof: ProofStruct,
-        dispute: DisputeStruct
+        proof: dt.ProofStruct,
+        dispute: dt.DisputeStruct
     ): boolean {
         const incorrectDataProof = ProofManager.decodeProof(
             ProofType.IncorrectData,
             proof.encodedProof
-        ) as IncorrectDataProofStruct;
+        ) as dt.IncorrectDataProofStruct;
 
         const block2 = EvmUtils.decodeBlock(
             incorrectDataProof.block2.encodedBlock
@@ -269,13 +261,13 @@ class ProofManager {
     }
 
     public static isNewerStateValid(
-        proof: ProofStruct,
-        dispute: DisputeStruct
+        proof: dt.ProofStruct,
+        dispute: dt.DisputeStruct
     ): boolean {
         const newerStateProof = ProofManager.decodeProof(
             ProofType.NewerState,
             proof.encodedProof
-        ) as NewerStateProofStruct;
+        ) as dt.NewerStateProofStruct;
 
         const block = EvmUtils.decodeBlock(newerStateProof.encodedBlock);
 
@@ -304,13 +296,13 @@ class ProofManager {
     }
 
     public static isFoldPriorBlockValid(
-        proof: ProofStruct,
-        dispute: DisputeStruct
+        proof: dt.ProofStruct,
+        dispute: dt.DisputeStruct
     ): boolean {
         const foldPriorBlockProof = ProofManager.decodeProof(
             ProofType.FoldPriorBlock,
             proof.encodedProof
-        ) as FoldPriorBlockProofStruct;
+        ) as dt.FoldPriorBlockProofStruct;
 
         return (
             foldPriorBlockProof.transactionCnt < dispute.foldedTransactionCnt &&
@@ -319,13 +311,13 @@ class ProofManager {
     }
 
     public static isBlockTooFarInFutureValid(
-        proof: ProofStruct,
-        dispute: DisputeStruct
+        proof: dt.ProofStruct,
+        dispute: dt.DisputeStruct
     ): boolean {
         const blockTooFarInFutureProof = ProofManager.decodeProof(
             ProofType.BlockTooFarInFuture,
             proof.encodedProof
-        ) as BlockTooFarInFutureProofStruct;
+        ) as dt.BlockTooFarInFutureProofStruct;
 
         const block = EvmUtils.decodeBlock(
             blockTooFarInFutureProof.block1.encodedBlock
@@ -346,9 +338,9 @@ class ProofManager {
      * Filters valid proofs from a list of proofs
      */
     public static filterValidProofs(
-        dispute: DisputeStruct,
-        proofs?: ProofStruct[]
-    ): ProofStruct[] {
+        dispute: dt.DisputeStruct,
+        proofs?: dt.ProofStruct[]
+    ): dt.ProofStruct[] {
         if (!proofs || proofs.length === 0) return [];
 
         const validatorMap = {
@@ -375,7 +367,7 @@ class ProofManager {
     private createGenesisBlockIncorrectDataProof(
         incorrectBlockSigned: SignedBlockStruct,
         forkCnt: number
-    ): IncorrectDataProofStruct {
+    ): dt.IncorrectDataProofStruct {
         // For genesis blocks, we use the genesis state
         //TODO! - this only checks current (disputed fork) - prior and future forks are ignored for now
 
@@ -392,7 +384,7 @@ class ProofManager {
         incorrectBlockSigned: SignedBlockStruct,
         forkCnt: number,
         transactionCnt: number
-    ): IncorrectDataProofStruct {
+    ): dt.IncorrectDataProofStruct {
         // For non-genesis blocks, we need to reference the prior block
         const priorBlock = this.agreementManager.getBlock(
             forkCnt,
