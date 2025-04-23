@@ -31,7 +31,7 @@ yarn add @peer3/state-channels-plus
 
 For usage in this repository, install local dependencies and build the SDK:
 ```shell
-yarn && yarn hardhat compile && yarn build
+yarn && yarn build
 ```
 
 
@@ -53,7 +53,7 @@ The SDK abstracts away most of the complexities of the system and is designed to
 <b style="color: yellow;">Note: The examples within this repository use the current version of the SDK(this repository) and not the remote package available on npm. This requires to install dependencies and build the SDK locally, before proceeding. </b>
 
 ```shell
-yarn && yarn hardhat compile && yarn build
+yarn && yarn build
 ```
 
 ## Run Tests
