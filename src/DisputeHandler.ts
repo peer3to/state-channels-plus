@@ -197,7 +197,6 @@ class DisputeHandler {
             this.signerAddress
         );
 
-        // Use retry utility instead of manual try-catch
         this.p2pEventHooks.onInitiatingDispute?.();
         await retry(
             async () => {

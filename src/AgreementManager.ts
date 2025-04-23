@@ -281,14 +281,7 @@ class AgreementManager {
         encodedLatestCorrectState: string;
         virtualVotingBlocks: ConfirmedBlockStruct[];
     } {
-        const log_prefix =
-            "[AgreementManager]-[getFinalizedAndLatestWithVotes]";
-        console.log(log_prefix, "Raw forkCnt:", forkCnt);
-        console.log(log_prefix, "Number(forkCnt):", Number(forkCnt));
-        console.log(log_prefix, "this.forks:", this.forks);
-
         const fork = this.forks[Number(forkCnt)];
-        console.log(log_prefix, "Selected fork:", fork);
 
         let encodedLatestFinalizedState: string | undefined;
         let encodedLatestCorrectState: string | undefined;
