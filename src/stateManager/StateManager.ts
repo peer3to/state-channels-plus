@@ -221,15 +221,21 @@ class StateManager {
 
     // Passes the signedBlock through a verification pipeline and returns an execution flag based on the outcome
     public async onSignedBlock(
-        signedBlock: SignedBlockStruct
+        signedBlock: SignedBlockStruct,
+        block?: BlockStruct
     ): Promise<ExecutionFlags> {
         // Default everything to SUCCESS + no AgreementFlag
         let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS;
         let finalAgreementFlag: AgreementFlag | undefined = undefined;
+        const decodedBlock =
+            block ?? EvmUtils.decodeBlock(signedBlock.encodedBlock);
 
         try {
             await this.mutex.lock();
-            const result = await this.validateSignedBlock(signedBlock);
+            const result = await this.validateSignedBlock(
+                signedBlock,
+                decodedBlock
+            );
 
             finalExecutionFlag = result.flag;
             finalAgreementFlag = result.agreementFlag;
@@ -256,21 +262,24 @@ class StateManager {
     // Passes the block confirmation through a verification pipeline and returns an execution flag
     public async onBlockConfirmation(
         signedBlock: SignedBlockStruct,
-        confirmationSignature: BytesLike
+        confirmationSignature: BytesLike,
+        block?: BlockStruct
     ): Promise<ExecutionFlags> {
         let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS; // Default to SUCCESS
+        const decodedBlock =
+            block ?? EvmUtils.decodeBlock(signedBlock.encodedBlock);
 
         try {
             const result = await this.validateBlockConfirmation(
                 signedBlock,
-                confirmationSignature
+                confirmationSignature,
+                decodedBlock
             );
             finalExecutionFlag = result.flag;
 
             if (result.success) {
-                const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
                 this.agreementManager.confirmBlock(
-                    block,
+                    decodedBlock,
                     confirmationSignature as SignatureLike
                 );
             }
@@ -386,12 +395,14 @@ class StateManager {
     }
 
     public async isValidBlock(
-        signedBlock: SignedBlockStruct
+        signedBlock: SignedBlockStruct,
+        decodedBlock?: BlockStruct
     ): Promise<boolean> {
         let block: BlockStruct;
         //DECODE - CHECK
         try {
-            block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
+            block =
+                decodedBlock || EvmUtils.decodeBlock(signedBlock.encodedBlock);
 
             if (block.transaction.header.channelId != this.getChannelId())
                 return false;
@@ -722,17 +733,16 @@ class StateManager {
     }
 
     private async validateSignedBlock(
-        signedBlock: SignedBlockStruct
+        signedBlock: SignedBlockStruct,
+        block: BlockStruct
     ): Promise<ValidationResult> {
-        const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
-
         // Check if manager is ready
         if (this.getForkCnt() === -1) {
             return { success: false, flag: ExecutionFlags.NOT_READY };
         }
 
         // Validate block
-        if (!(await this.isValidBlock(signedBlock))) {
+        if (!(await this.isValidBlock(signedBlock, block))) {
             return { success: false, flag: ExecutionFlags.DISCONNECT };
         }
 
@@ -829,17 +839,16 @@ class StateManager {
 
     private async validateBlockConfirmation(
         signedBlock: SignedBlockStruct,
-        confirmationSignature: BytesLike
+        confirmationSignature: BytesLike,
+        block: BlockStruct
     ): Promise<ValidationResult> {
-        const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
-
         // Check if manager is ready
         if (this.getForkCnt() === -1) {
             return { success: false, flag: ExecutionFlags.NOT_READY };
         }
 
         // Validate block
-        if (!(await this.isValidBlock(signedBlock))) {
+        if (!(await this.isValidBlock(signedBlock, block))) {
             return { success: false, flag: ExecutionFlags.DISCONNECT };
         }
 
@@ -850,7 +859,7 @@ class StateManager {
 
         // Ensure block in chain
         if (!this.agreementManager.isBlockInChain(block)) {
-            const flag = await this.onSignedBlock(signedBlock);
+            const flag = await this.onSignedBlock(signedBlock, block);
 
             if (flag === ExecutionFlags.DUPLICATE) {
                 // Possibly it has become part of the chain now
