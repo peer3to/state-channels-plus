@@ -47,6 +47,7 @@ class DisputeHandler {
         this.stateChannelManagerContract = stateChannelManagerContract;
         this.p2pEventHooks = p2pEventHooks;
         this.proofManager = new ProofManager(agreementManager);
+        return this.self;
     }
 
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks): void {
