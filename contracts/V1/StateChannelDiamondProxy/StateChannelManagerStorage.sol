@@ -27,8 +27,8 @@ contract StateChannelManagerStorage {
 
 
     /// @notice BlockCallData Commitment
-    /// @dev blockCallDataCommitments[channelId][forkCnt][transactionCnt][signerAddress] => blockCallDataCommitment
-    mapping(bytes32 channelId => mapping(uint forkCnt => mapping(uint blockHeight => mapping(address signerAddress => bytes32 blockCallDataCommitment)))) blockCallDataCommitments;
+    /// @dev blockCallDataCommitments[channelId][forkCnt][signerAddress] => blockCallDataCommitment
+    mapping(bytes32 channelId => mapping(uint forkCnt => mapping(address signerAddress => bytes32 blockCallDataCommitment))) blockCallDataCommitments;
 
 
     // ================== Dispute on chain storage ==================

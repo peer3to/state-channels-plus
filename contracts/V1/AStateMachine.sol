@@ -33,12 +33,12 @@ abstract contract AStateMachine {
     // define the logic that punishes a participant for misbehaving (can also remove the participant from the state channel)
     function _slashParticipant(
         address adr
-    ) internal virtual returns (bool);
+    ) internal virtual returns (bool,ExitChannel memory exitChannel);
 
     // similart to _slashParticipant, but doesn't have to punish the player - just removes them from the state channel
     function _removeParticipant(
         address adr
-    ) internal virtual returns (bool);
+    ) internal virtual returns (bool,ExitChannel memory exitChannel);
 
     modifier _nonReentrant() {
         require(!_nonreentrant, "ReentrancyGuard: reentrant call");
@@ -66,7 +66,7 @@ abstract contract AStateMachine {
 
     function removeParticipant(
         address adr
-    ) external virtual _nonReentrant returns (bool) {
+    ) external virtual _nonReentrant returns (bool, ExitChannel memory exitChannel) {
         return _removeParticipant(adr);
     }
 
@@ -81,7 +81,7 @@ abstract contract AStateMachine {
         if (!success) {
             if (result.length == 0)
                 revert("AStateMachine - Call failed - result lenght 0");
-            assembly {
+            assembly ("memory-safe") {
                 let returndata_size := mload(result)
                 revert(add(32, result), returndata_size)
             }

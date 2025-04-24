@@ -56,28 +56,29 @@ contract MathStateMachine is AStateMachine {
         return state.participants[state.number % state.participants.length];
     }
 
-    function _slashParticipant(
+     function _slashParticipant(
         address adr
-    ) internal virtual override returns (bool, ProcessExit memory) {
+    ) internal virtual override returns (bool, ExitChannel memory) {
         return _removeParticipant(adr);
     }
 
     function _removeParticipant(
         address adr
-    ) internal virtual override returns (bool, ProcessExit memory) {
+    ) internal virtual override returns (bool, ExitChannel memory) {
         uint256 length = state.participants.length;
-        ProcessExit memory processExit;
+        ExitChannel memory exitChannel;
         for (uint256 i = 0; i < length; i++) {
             if (state.participants[i] == adr) {
                 state.participants[i] = state.participants[length - 1];
                 state.participants.pop();
 
-                processExit.participant = adr;
-                processExit.amount = 0;
-                return (true, processExit);
+                ExitChannel memory exitChannel;
+                exitChannel.participant = adr;
+                exitChannel.amount = 0;
+                return (true, exitChannel);
             }
         }
-        return (false, processExit);
+        return (false, exitChannel);
     }
 
     function _joinChannel(

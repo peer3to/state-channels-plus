@@ -70,11 +70,6 @@ abstract contract StateChannelManagerInterface {
         uint maxTransactionCnt
     ) public view virtual returns (uint);
 
-    function getGenesisTimestamp(
-        bytes32 channelId,
-        uint forkCnt
-    ) public view virtual returns (uint);
-
     function executeStateTransitionOnState(
         bytes32 channelId,
         bytes memory encodedState,
@@ -86,13 +81,12 @@ abstract contract StateChannelManagerInterface {
     function getBlockCallData(
         bytes32 channelId,
         uint forkCnt,
-        uint transactionCnt,
         address participant
-    ) public view virtual returns (bool found, bytes32 memory);
+    ) public view virtual returns (bool found, bytes32 blockCallData);
 
     function getDispute(
         bytes32 channelId
-    ) public view virtual returns (Dispute memory);
+    ) public view virtual returns (bytes32[] memory);
 
     function createDispute(
         Dispute memory dispute
@@ -101,7 +95,7 @@ abstract contract StateChannelManagerInterface {
     function auditDispute(
         Dispute memory dispute,
         DisputeAuditingData memory disputeAuditingData
-    ) public virtual returns (bool isSuccess, address[] memory slashParticipants);
+    ) public virtual returns (bool isSuccess, address[] memory slashParticipants, bytes memory errorMessage);
 
     function challengeDispute(
         Dispute memory dispute,

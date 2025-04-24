@@ -95,7 +95,6 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
         }
         bytes memory genesisStateEcoded = abi.encode(genesisState);
         encodedStates[channelId][0] = genesisStateEcoded;
-        genesisTimestamps[channelId][0] = block.timestamp;
         emit SetState(channelId, genesisStateEcoded, 0, block.timestamp);
     }
 
@@ -123,6 +122,6 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
 
     function _removeParticipantComposable(
         bytes32 channelId,
-        ProcessExit memory processExit
+        ExitChannel memory exitChannel
     ) internal virtual override returns (bool) {}
 }

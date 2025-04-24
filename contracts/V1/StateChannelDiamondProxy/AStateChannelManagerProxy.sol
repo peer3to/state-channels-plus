@@ -183,69 +183,9 @@ abstract contract AStateChannelManagerProxy is
     }
 
 
-    /**
-     * This implementation covers a MFS (minimal feature set) funded by the Web3 Foundation.
-     * Posting calldata is currenlty unefficient since the dispute mechanism only has a minimal feature set (MFS)
-     * In the Full feature set (FFS) this will post the calldata and modify a single storage slot
-     */
+    
     function postBlockCalldata(SignedBlock memory signedBlock) public override {
-        //check siganture
-        address[] memory addressesInThreshold = new address[](1);
-        addressesInThreshold[0] = msg.sender;
-        bytes[] memory signatures = new bytes[](1);
-        signatures[0] = bytes(signedBlock.signature);
-        (bool succeeds, ) = StateChannelUtilLibrary.verifyThresholdSigned(
-            addressesInThreshold,
-            bytes(signedBlock.encodedBlock),
-            signatures
-        );
-
-        require(
-            succeeds,
-            "AStateChannelManager: postBlockCalldata signature invalid"
-        );
-
-        //Decode block;
-        Block memory _block = abi.decode(
-            bytes(signedBlock.encodedBlock),
-            (Block)
-        );
-        //Check if sender is participant - needed since chainTime will be used as block/tx time in disputes
-        require(
-            msg.sender == _block.transaction.header.participant,
-            "AStateChannelManager: postBlockCalldata sender must be participant"
-        );
-        //Check timestamp within range:
-        require(
-            _block.transaction.header.timestamp >=
-                block.timestamp - p2pTime - agreementTime - chainFallbackTime,
-            "AStateChannelManager: postBlockCalldata timestamp too old"
-        );
-        require(
-            _block.transaction.header.timestamp <= block.timestamp,
-            "AStateChannelManager: postBlockCalldata timestamp too new"
-        );
-        bytes32 channelId = _block.transaction.header.channelId;
-        uint forkCnt = _block.transaction.header.forkCnt;
-        uint transactionCnt = _block.transaction.header.transactionCnt;
-
-        //Could do aditional checks here like forkCnt < globalForkCnt, but not needed since it can be detected on-client and disputed
-        //Aslo could check if block producer part of state channel, but this too can be discarded on client - interacting on-chain has fees so no reason for someone to spam this
-        //TODO? should potentially remove all checks and just have posting blocks? For honest participants it would be cheaper, and spaming would be disacrded regardless at a cost
-
-        gForkDataAvailability storage forkDataAvailability = postedBlockCalldata[
-            channelId
-        ][forkCnt];
-
-        forkDataAvailability.map[transactionCnt][msg.sender] = BlockCalldata({
-            signedBlock: signedBlock,
-            timestamp: block.timestamp
-        });
-        forkDataAvailability.keys.push(
-            ForkDataAvailabilityKey(transactionCnt, msg.sender)
-        );
-
-        emit BlockCalldataPosted(channelId, signedBlock, block.timestamp);
+       revert("NOT IMPLEMENTED");
     }
 
     function _delegatecall(
@@ -256,7 +196,7 @@ abstract contract AStateChannelManagerProxy is
         if (!success) {
             if (result.length == 0)
                 revert("AStateChannelManagerProxy - Delegatecall failed");
-            assembly {
+            assembly ("memory-safe") {
                 let returndata_size := mload(result)
                 revert(add(32, result), returndata_size)
             }
@@ -266,7 +206,7 @@ abstract contract AStateChannelManagerProxy is
 
     function getDispute(
         bytes32 channelId
-    ) public view override returns (Dispute memory) {
+    ) public view override returns (bytes32[] memory) {
         return disputes[channelId];
     }
 
@@ -275,11 +215,9 @@ abstract contract AStateChannelManagerProxy is
     ) public override {
         _delegatecall(
             address(disputeManagerFacet),
-            abi.encodeCall(
-                disputeManagerFacet.createDispute,
-                (
-                    dispute
-                )
+            abi.encode(
+                disputeManagerFacet.createDispute.selector,
+                dispute
             )
         );
     }
@@ -287,7 +225,7 @@ abstract contract AStateChannelManagerProxy is
     function auditDispute(
         Dispute memory dispute,
         DisputeAuditingData memory disputeAuditingData
-    ) public override {
+    ) public override returns (bool isSuccess, address[] memory slashParticipants, bytes memory errorMessage) {
         _delegatecall(
             address(disputeManagerFacet),
             abi.encodeCall(
@@ -317,13 +255,14 @@ abstract contract AStateChannelManagerProxy is
     }
 
     function getForkCnt(
+        bytes32 channelId
     )
         public
         view
-        override(StateChannelCommon, StateChannelManagerInterface)
+        override(StateChannelManagerInterface)
         returns (uint)
     {
-        return StateChannelCommon.getForkCnt(channelId);
+        return disputes[channelId].length;
     }
 
     function getParticipants(
@@ -414,7 +353,6 @@ abstract contract AStateChannelManagerProxy is
     function getBlockCallData(
         bytes32 channelId,
         uint forkCnt,
-        uint transactionCnt,
         address participant
     )
         public
@@ -426,7 +364,6 @@ abstract contract AStateChannelManagerProxy is
             StateChannelCommon.getBlockCallData(
                 channelId,
                 forkCnt,
-                transactionCnt,
                 participant
             );
     }
@@ -447,18 +384,6 @@ abstract contract AStateChannelManagerProxy is
                 forkCnt,
                 maxTransactionCnt
             );
-    }
-
-    function getGenesisTimestamp(
-        bytes32 channelId,
-        uint forkCnt
-    )
-        public
-        view
-        override(StateChannelCommon, StateChannelManagerInterface)
-        returns (uint)
-    {
-        return StateChannelCommon.getGenesisTimestamp(channelId, forkCnt);
     }
 
     function isChannelOpen(

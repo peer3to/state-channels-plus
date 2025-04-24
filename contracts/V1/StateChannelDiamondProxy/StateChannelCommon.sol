@@ -83,13 +83,12 @@ contract StateChannelCommon is
     function getBlockCallData(
         bytes32 channelId,
         uint forkCnt,
-        uint transactionCnt,
         address participant
     ) public view virtual returns (bool found, bytes32 blockCallDataCommitment) {
         // fetch the blockCallDataCommitment from storage
-        blockCallDataCommitment = blockCallDataCommitments[channelId][forkCnt][transactionCnt][participant];
+        blockCallDataCommitment = blockCallDataCommitments[channelId][forkCnt][participant];
         if(blockCallDataCommitment == bytes32(0)) {
-            return (false, new bytes(0));
+            return (false, bytes32(0));
         }
         return (true, blockCallDataCommitment);
     }
