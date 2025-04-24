@@ -168,7 +168,10 @@ class StateManager {
 
         for (const signedBlock of signedBlocks) {
             console.log("tryExecuteFromQueue - executing");
-            if (await this.onSignedBlock(signedBlock)) {
+            if (
+                (await this.onSignedBlock(signedBlock)) ==
+                ExecutionFlags.DISPUTE
+            ) {
                 break;
             }
         }
@@ -182,10 +185,10 @@ class StateManager {
 
         for (const confirmation of confirmations) {
             if (
-                await this.onBlockConfirmation(
+                (await this.onBlockConfirmation(
                     confirmation.originalSignedBlock,
                     confirmation.confirmationSignature as string
-                )
+                )) == ExecutionFlags.DISPUTE
             ) {
                 break;
             }
