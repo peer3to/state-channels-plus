@@ -280,7 +280,7 @@ class DisputeHandler {
                 this.signerAddress
             );
             this.p2pEventHooks.onInitiatingDispute?.();
-            await this.stateChannelManagerContract
+            const _txReceipt = await this.stateChannelManagerContract
                 .challengeDispute(
                     this.channelId,
                     dispute.forkCnt,
