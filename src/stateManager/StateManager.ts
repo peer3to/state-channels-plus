@@ -310,13 +310,18 @@ class StateManager {
     public async applyTransaction(transaction: TransactionStruct): Promise<{
         success: boolean;
         encodedState: string;
+        previousStateHash: string;
         successCallback: () => void;
     }> {
+        const previousStateHash = await this.getEncodedStateKecak256();
         let { success, successCallback } =
             await this.stateMachine.stateTransition(transaction);
+        const encodedState = await this.stateMachine.getState();
+
         return {
             success,
-            encodedState: await this.stateMachine.getState(),
+            encodedState,
+            previousStateHash,
             successCallback
         };
     }
@@ -339,8 +344,18 @@ class StateManager {
             }
             this.adjustTimestampIfNeeded(tx);
 
-            const { previousStateHash, encodedState, successCallback } =
-                await this.applyTransactionOrThrow(tx);
+            const {
+                success,
+                encodedState,
+                previousStateHash,
+                successCallback
+            } = await this.applyTransaction(tx);
+
+            if (!success) {
+                throw new Error(
+                    "CreateAndApplyTransaction - Internal error - Transaction not successful"
+                );
+            }
 
             const block = await this.createBlock(tx, previousStateHash);
             const signedBlock = await this.signBlock(block);
@@ -680,24 +695,6 @@ class StateManager {
         }
     }
 
-    private async applyTransactionOrThrow(tx: TransactionStruct): Promise<{
-        previousStateHash: string;
-        encodedState: string;
-        successCallback: () => void;
-    }> {
-        const previousStateHash = await this.getEncodedStateKecak256();
-        const { success, encodedState, successCallback } =
-            await this.applyTransaction(tx);
-
-        if (!success) {
-            throw new Error(
-                "CreateAndApplyTransaction - Internal error - Transaction not successful"
-            );
-        }
-
-        return { previousStateHash, encodedState, successCallback };
-    }
-
     private async createBlock(
         tx: TransactionStruct,
         previousStateHash: string
@@ -901,13 +898,11 @@ class StateManager {
         block: BlockStruct,
         signedBlock: SignedBlockStruct
     ): Promise<ValidationResult> {
-        // Capture current state hash
-        const previousStateHash = await this.getEncodedStateKecak256();
-
         // Apply the transaction
         const {
             success: txSuccess,
             encodedState,
+            previousStateHash,
             successCallback
         } = await this.applyTransaction(block.transaction);
 
