@@ -329,7 +329,9 @@ class StateManager {
 
         try {
             console.log("Play Transaction", this.getForkCnt());
-            this.ensureChannelIsOpen();
+            if (!this.isChannelOpen()) {
+                throw new Error("Channel not open");
+            }
             await this.ensureItIsMyTurn();
             this.adjustTimestampIfNeeded(tx);
 
@@ -645,12 +647,6 @@ class StateManager {
         );
     }
 
-    private ensureChannelIsOpen(): void {
-        if (this.getForkCnt() === -1) {
-            throw new Error("Channel not opened");
-        }
-    }
-
     private async isMyTurn(): Promise<boolean> {
         const nextToWrite = await this.stateMachine.getNextToWrite();
         return this.signerAddress === nextToWrite;
@@ -740,7 +736,9 @@ class StateManager {
         block: BlockStruct
     ): Promise<ValidationResult> {
         // Check if manager is ready
-        if (this.getForkCnt() === -1) {
+        const forkCnt = forkOf(block);
+        const blockHeight = heightOf(block);
+        if (!this.isChannelOpen()) {
             return { success: false, flag: ExecutionFlags.NOT_READY };
         }
 
@@ -750,12 +748,12 @@ class StateManager {
         }
 
         // Check fork status
-        if (forkOf(block) < this.getForkCnt()) {
+        if (this.isPastFork(forkCnt)) {
             return { success: false, flag: ExecutionFlags.PAST_FORK };
         }
 
         // Check for fork disputes
-        if (this.disputeHandler.isForkDisputed(forkOf(block))) {
+        if (this.disputeHandler.isForkDisputed(forkCnt)) {
             return { success: false, flag: ExecutionFlags.PAST_FORK };
         }
 
@@ -765,9 +763,8 @@ class StateManager {
         }
 
         // Check for future blocks
-        const isFutureFork =
-            Number(block.transaction.header.forkCnt) > this.getForkCnt();
-        const isFutureTransaction = heightOf(block) > this.getNextBlockHeight();
+        const isFutureFork = forkCnt > this.getForkCnt();
+        const isFutureTransaction = blockHeight > this.getNextBlockHeight();
         if (isFutureFork || isFutureTransaction) {
             return { success: false, flag: ExecutionFlags.NOT_READY };
         }
@@ -782,7 +779,7 @@ class StateManager {
         }
 
         // Validate past block in current fork
-        if (heightOf(block) < this.getNextBlockHeight()) {
+        if (blockHeight < this.getNextBlockHeight()) {
             const agreementFlag = this.agreementManager.checkBlock(signedBlock);
 
             if (
@@ -837,7 +834,7 @@ class StateManager {
         block: BlockStruct
     ): Promise<ValidationResult> {
         // Check if manager is ready
-        if (this.getForkCnt() === -1) {
+        if (!this.isChannelOpen()) {
             return { success: false, flag: ExecutionFlags.NOT_READY };
         }
 
@@ -847,7 +844,7 @@ class StateManager {
         }
 
         // Check fork status
-        if (forkOf(block) < this.getForkCnt()) {
+        if (this.isPastFork(forkOf(block))) {
             return { success: false, flag: ExecutionFlags.PAST_FORK };
         }
 
@@ -931,6 +928,16 @@ class StateManager {
         }, 0);
 
         return { success: true, flag: ExecutionFlags.SUCCESS };
+    }
+
+    // ----- Private validation helper methods -----
+
+    private isChannelOpen(): boolean {
+        return this.getForkCnt() !== -1;
+    }
+
+    private isPastFork(forkCnt: number): boolean {
+        return forkCnt < this.getForkCnt();
     }
 }
 
