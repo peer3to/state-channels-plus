@@ -81,20 +81,22 @@ class AgreementManager {
         originalSignature: SignatureLike,
         encodedState: string
     ) {
-        if (Number(block.transaction.header.forkCnt) >= this.forks.length)
+        const { forkCnt, transactionCnt: _ } = this.numericFields(block);
+
+        if (!this.isValidForkCnt(forkCnt))
+            // this should never happen since checks are done before
             throw new Error(
                 "AgreementManager - addBlock - forkCnt is not correct"
-            ); // this should never happen since checks are done before
-        let agreement = this.getAgreement(
-            Number(block.transaction.header.forkCnt),
-            Number(block.transaction.header.transactionCnt)
-        );
+            );
+
+        const agreement = this.getAgreementByBlock(block);
         if (agreement)
+            // this should never happen since checks are done before
             throw new Error(
                 "AgreementManager - addBlock - double sign or incorrect data"
-            ); // this should never happen since checks are done before
+            );
 
-        this.forks[Number(block.transaction.header.forkCnt)].agreements.push({
+        this.forks[forkCnt].agreements.push({
             block: block,
             blockSignatures: [originalSignature],
             encodedState: encodedState
@@ -105,23 +107,21 @@ class AgreementManager {
         block: BlockStruct,
         confirmationSignature: SignatureLike
     ) {
-        let agreement = this.getAgreement(
-            Number(block.transaction.header.forkCnt),
-            Number(block.transaction.header.transactionCnt)
-        );
+        const agreement = this.getAgreementByBlock(block);
         if (!agreement)
+            //should never trigger because of checks before confirming
             throw new Error(
                 "AgreementManager - confirmBlock - block doesn't exist"
-            ); //should never trigger because of checks before confirming
-        if (
-            EvmUtils.encodeBlock(agreement.block) != EvmUtils.encodeBlock(block)
-        )
-            throw new Error("AgreementManager - confirmBlock - conflict"); //should never trigger because of checks before confirming
+            );
 
-        if (this.doesSignatureExist(block, confirmationSignature))
+        if (!this.areBlocksEqual(agreement.block, block))
+            throw new Error("AgreementManager - confirmBlock - conflict");
+
+        if (this.signatureExistsInAgreement(agreement, confirmationSignature))
             throw new Error(
                 "AgreementManager - confirmBlock - block already confirmed"
-            ); //should never trigger because of checks before confirming
+            );
+
         agreement.blockSignatures.push(confirmationSignature);
     }
     public getLatestForkCnt(): number {
@@ -135,150 +135,125 @@ class AgreementManager {
         forkCnt: number,
         transactionCnt: number
     ): BlockStruct | undefined {
-        let agreement = this.getAgreement(forkCnt, transactionCnt);
-        if (!agreement) return undefined;
-        return agreement.block;
+        return this.getAgreement(forkCnt, transactionCnt)?.block;
     }
     public getDoubleSignedBlock(
         signedBlock: SignedBlockStruct
     ): SignedBlockStruct | undefined {
-        let block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
-        let agreement = this.getAgreement(
-            Number(block.transaction.header.forkCnt),
-            Number(block.transaction.header.transactionCnt)
-        );
-        if (!agreement) return undefined;
+        const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
+        const participant = block.transaction.header.participant;
+
+        const agreement = this.getAgreementByBlock(block);
         if (
-            EvmUtils.encodeBlock(agreement.block) !=
-                EvmUtils.encodeBlock(block) &&
-            agreement.block.transaction.header.participant ==
-                block.transaction.header.participant
+            !agreement ||
+            this.areBlocksEqual(agreement.block, block) ||
+            agreement.block.transaction.header.participant !== participant
         ) {
-            let { didSign, siganture } = this.didParticipantSign(
-                agreement.block,
-                block.transaction.header.participant
-            );
-            if (didSign)
-                return {
-                    encodedBlock: EvmUtils.encodeBlock(agreement.block),
-                    signature: siganture!.toString()
-                };
+            return undefined;
         }
-        return undefined;
+
+        const { didSign, signature } = this.getParticipantSignature(
+            agreement,
+            participant
+        );
+
+        return didSign
+            ? {
+                  encodedBlock: EvmUtils.encodeBlock(agreement.block),
+                  signature: signature!.toString()
+              }
+            : undefined;
     }
+
     public getLatestSignedBlockByParticipant(
         forkCnt: number,
         participantAdr: AddressLike
     ): { block: BlockStruct; signature: SignatureLike } | undefined {
-        if (forkCnt >= this.forks.length) return undefined;
+        if (!this.isValidForkCnt(forkCnt)) return undefined;
+
         for (let i = this.forks[forkCnt].agreements.length - 1; i >= 0; i--) {
-            let agreement = this.forks[forkCnt].agreements[i];
-            let didSign = this.didParticipantSign(
-                agreement.block,
+            const agreement = this.forks[forkCnt].agreements[i];
+            const { didSign, signature } = this.getParticipantSignature(
+                agreement,
                 participantAdr
             );
-            if (didSign.didSign)
+
+            if (didSign)
                 return {
                     block: agreement.block,
-                    signature: didSign.siganture!
+                    signature: signature!
                 };
         }
         return undefined;
     }
     public didEveryoneSignBlock(block: BlockStruct): boolean {
-        let fork = this.forks[Number(block.transaction.header.forkCnt)];
-        let set = new Set(fork.addressesInThreshold);
-        let agreement = this.getAgreement(
-            Number(block.transaction.header.forkCnt),
-            Number(block.transaction.header.transactionCnt)
-        );
-        if (!agreement) return false;
-        if (
-            EvmUtils.encodeBlock(agreement.block) != EvmUtils.encodeBlock(block)
-        )
+        const { forkCnt, transactionCnt: _ } = this.numericFields(block);
+
+        if (!this.isValidForkCnt(forkCnt)) return false;
+
+        const fork = this.forks[forkCnt];
+        const agreement = this.getAgreementByBlock(block);
+
+        if (!agreement || !this.areBlocksEqual(agreement.block, block))
             return false;
-        for (let signature of agreement.blockSignatures) {
-            set.delete(
-                EvmUtils.retrieveSignerAddressBlock(agreement.block, signature)
-            );
+
+        // Check if all threshold addresses have signed
+        const set = new Set(fork.addressesInThreshold);
+        for (const signature of agreement.blockSignatures) {
+            set.delete(EvmUtils.retrieveSignerAddressBlock(block, signature));
+            if (set.size === 0) {
+                break;
+            }
         }
-        if (set.size == 0) return true;
-        return false;
+
+        return set.size === 0;
     }
     public getSigantures(block: BlockStruct): SignatureLike[] {
-        let agreement = this.getAgreement(
-            Number(block.transaction.header.forkCnt),
-            Number(block.transaction.header.transactionCnt)
-        );
-        if (!agreement) return [];
-        return agreement.blockSignatures;
+        return this.getAgreementByBlock(block)?.blockSignatures || [];
     }
     // Returns the signature of the block author
     public getOriginalSignature(block: BlockStruct): SignatureLike | undefined {
-        let agreement = this.getAgreement(
-            Number(block.transaction.header.forkCnt),
-            Number(block.transaction.header.transactionCnt)
-        );
+        const participant = block.transaction.header.participant;
+
+        const agreement = this.getAgreementByBlock(block);
         if (!agreement) return undefined;
-        for (let signature of agreement.blockSignatures) {
-            if (
-                EvmUtils.retrieveSignerAddressBlock(
-                    agreement.block,
-                    signature
-                ) == block.transaction.header.participant
-            ) {
-                return signature;
-            }
-        }
-        return undefined;
+
+        const { didSign: _, signature } = this.getParticipantSignature(
+            agreement,
+            participant
+        );
+
+        return signature;
     }
     //Probably return boolean, error flag -> dipute
     public doesSignatureExist(
         block: BlockStruct,
         signature: SignatureLike
     ): boolean {
-        let agreement = this.getAgreement(
-            Number(block.transaction.header.forkCnt),
-            Number(block.transaction.header.transactionCnt)
-        );
-        if (!agreement) return false;
-        if (
-            EvmUtils.encodeBlock(agreement.block) != EvmUtils.encodeBlock(block)
-        )
-            throw new Error("AgreementManager - doesSignatureExist - conflict"); //should never trigger because of checks before confirming
+        const agreement = this.getAgreementByBlock(block);
 
-        if (!agreement.blockSignatures.includes(signature)) return false;
-        return true;
+        if (!agreement) return false;
+
+        if (!this.areBlocksEqual(agreement.block, block))
+            throw new Error("AgreementManager - doesSignatureExist - conflict");
+
+        return this.signatureExistsInAgreement(agreement, signature);
     }
 
     public didParticipantSign(
         block: BlockStruct,
         participant: AddressLike
-    ): { didSign: boolean; siganture: SignatureLike | undefined } {
-        let agreement = this.getAgreement(
-            Number(block.transaction.header.forkCnt),
-            Number(block.transaction.header.transactionCnt)
-        );
-        if (!agreement) return { didSign: false, siganture: undefined };
-        if (
-            EvmUtils.encodeBlock(agreement.block) != EvmUtils.encodeBlock(block)
-        )
-            return { didSign: false, siganture: undefined };
-        for (let signature of agreement.blockSignatures) {
-            if (
-                EvmUtils.retrieveSignerAddressBlock(
-                    agreement.block,
-                    signature
-                ) == participant
-            ) {
-                return { didSign: true, siganture: signature };
-            }
-        }
-        return { didSign: false, siganture: undefined };
+    ): { didSign: boolean; signature: SignatureLike | undefined } {
+        const agreement = this.getAgreementByBlock(block);
+
+        if (!agreement || !this.areBlocksEqual(agreement.block, block))
+            return { didSign: false, signature: undefined };
+
+        return this.getParticipantSignature(agreement, participant);
     }
 
     public isParticipantInLatestFork(participant: AddressLike): boolean {
-        let fork = this.forks[this.forks.length - 1];
+        const fork = this.forks[this.forks.length - 1];
         return fork.addressesInThreshold.includes(participant);
     }
 
@@ -286,12 +261,10 @@ class AgreementManager {
         forkCnt: number,
         transactionCnt: number
     ): string | undefined {
-        let agreement = this.getAgreement(forkCnt, transactionCnt);
-        if (!agreement) return undefined;
-        return agreement.encodedState;
+        return this.getAgreement(forkCnt, transactionCnt)?.encodedState;
     }
     public getForkGenesisStateEncoded(forkCnt: number): string | undefined {
-        if (forkCnt >= this.forks.length) return undefined;
+        if (!this.isValidForkCnt(forkCnt)) return undefined;
         return this.forks[forkCnt].forkGenesisStateEncoded;
     }
     /**
@@ -308,50 +281,65 @@ class AgreementManager {
         encodedLatestCorrectState: string;
         virtualVotingBlocks: ConfirmedBlockStruct[];
     } {
-        let fork = this.forks[Number(forkCnt)];
+        const fork = this.forks[Number(forkCnt)];
         let encodedLatestFinalizedState: string | undefined;
         let encodedLatestCorrectState: string | undefined;
         let virtualVotingBlocks: ConfirmedBlockStruct[] = [];
-        let set = new Set(fork.addressesInThreshold);
+        const requiredSignatures = new Set(fork.addressesInThreshold);
+
         for (let i = fork.agreements.length - 1; i >= 0; i--) {
-            let agreement = fork.agreements[i];
-            let signerAddresses: AddressLike[] = [];
-            for (let signature of agreement.blockSignatures) {
-                let adr = EvmUtils.retrieveSignerAddressBlock(
-                    agreement.block,
-                    signature
-                );
-                if (!encodedLatestCorrectState && adr == signerAddress) {
-                    encodedLatestCorrectState = agreement.encodedState;
-                }
-                signerAddresses.push(adr);
+            const agreement = fork.agreements[i];
+            const signersAddresses = this.extractSignerAddresses(agreement);
+
+            // Check if this block is signed by our target signer
+            if (
+                !encodedLatestCorrectState &&
+                signersAddresses.has(signerAddress)
+            ) {
+                encodedLatestCorrectState = agreement.encodedState;
             }
-            if (encodedLatestCorrectState) {
-                virtualVotingBlocks.unshift({
-                    encodedBlock: EvmUtils.encodeBlock(agreement.block),
-                    signatures: agreement.blockSignatures as string[]
-                });
-                for (let signer of signerAddresses) {
-                    set.delete(signer);
+
+            if (!encodedLatestCorrectState) continue;
+
+            virtualVotingBlocks.unshift({
+                encodedBlock: EvmUtils.encodeBlock(agreement.block),
+                signatures: agreement.blockSignatures as string[]
+            });
+
+            for (const signerAddress of signersAddresses) {
+                requiredSignatures.delete(signerAddress);
+                if (requiredSignatures.size === 0) {
+                    break;
                 }
-                if (set.size == 0) {
-                    encodedLatestFinalizedState = agreement.encodedState;
-                    return {
-                        encodedLatestFinalizedState,
-                        encodedLatestCorrectState,
-                        virtualVotingBlocks: virtualVotingBlocks
-                    };
-                }
+            }
+
+            // Check if we found a finalized state
+            if (requiredSignatures.size === 0) {
+                encodedLatestFinalizedState = agreement.encodedState;
+                // found a finalized state - break the loop
+                break;
             }
         }
-        //If here => fork[0] is finalized
+
         return {
-            encodedLatestFinalizedState: fork.forkGenesisStateEncoded,
-            encodedLatestCorrectState: encodedLatestCorrectState
-                ? encodedLatestCorrectState
-                : fork.forkGenesisStateEncoded,
-            virtualVotingBlocks: virtualVotingBlocks
+            encodedLatestFinalizedState:
+                encodedLatestFinalizedState ?? fork.forkGenesisStateEncoded,
+            encodedLatestCorrectState:
+                encodedLatestCorrectState ?? fork.forkGenesisStateEncoded,
+            virtualVotingBlocks
         };
+    }
+
+    private extractSignerAddresses(agreement: Agreement): Set<AddressLike> {
+        return new Set(
+            agreement.blockSignatures.map(
+                (signature) =>
+                    EvmUtils.retrieveSignerAddressBlock(
+                        agreement.block,
+                        signature
+                    ) as AddressLike
+            )
+        );
     }
 
     // *************************************************
@@ -361,34 +349,38 @@ class AgreementManager {
         signedBlock: SignedBlockStruct,
         timestamp: number
     ): AgreementFlag {
-        let block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
+        const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
+        const { forkCnt, transactionCnt } = this.numericFields(block);
 
         //Resolved? -  also have to prevent duplicates in queue(map) - queue map can't have duplicates, it can only be overwritten wtih a different block for the same [forkCnt,transactionCnt,participantAdr] - in that case checkBlock returns a dispute flag
-        let flag = this.checkBlock(signedBlock);
+        const flag = this.checkBlock(signedBlock);
         if (
-            flag == AgreementFlag.INVALID_SIGNATURE ||
-            flag == AgreementFlag.INCORRECT_DATA ||
-            flag == AgreementFlag.DOUBLE_SIGN
+            flag === AgreementFlag.INVALID_SIGNATURE ||
+            flag === AgreementFlag.INCORRECT_DATA ||
+            flag === AgreementFlag.DOUBLE_SIGN
         )
             return flag;
-        if (flag == AgreementFlag.READY || flag == AgreementFlag.NOT_READY)
-            this.queueBlock(signedBlock); // if ready - will be consumed to tryDequeueBlocks
+
+        if (flag === AgreementFlag.READY || flag === AgreementFlag.NOT_READY)
+            this.queueBlock(signedBlock);
 
         //Resolved - duplicates can be added - can bloat state
         if (
             this.didParticipantPostOnChain(
-                Number(block.transaction.header.forkCnt),
-                Number(block.transaction.header.transactionCnt),
+                forkCnt,
+                transactionCnt,
                 block.transaction.header.participant
             )
         )
             return flag;
-        let fork = this.forks[Number(block.transaction.header.forkCnt)];
+
+        const fork = this.forks[forkCnt];
         fork.chainBlocks.push({
-            transactionCnt: Number(block.transaction.header.transactionCnt),
+            transactionCnt,
             participantAdr: block.transaction.header.participant,
             timestamp
         });
+
         return flag;
     }
     public getChainLatestBlockTimestamp(
@@ -503,27 +495,12 @@ class AgreementManager {
             this.forks[forkCnt].agreements.length - 1
         ];
     }
-    private getAgreement(
-        forkCnt: number,
-        transactionCnt: number
-    ): Agreement | undefined {
-        if (Number(forkCnt) >= this.forks.length) return undefined;
-        let fork = this.forks[forkCnt];
-        if (transactionCnt >= fork.agreements.length) return undefined;
-        return fork.agreements[transactionCnt];
-    }
     //both canonical chain and future queue
     public isBlockInChain(block: BlockStruct): boolean {
-        let agreement = this.getAgreement(
-            Number(block.transaction.header.forkCnt),
-            Number(block.transaction.header.transactionCnt)
+        const agreement = this.getAgreementByBlock(block);
+        return (
+            (agreement || false) && this.areBlocksEqual(agreement.block, block)
         );
-        if (
-            agreement &&
-            EvmUtils.encodeBlock(agreement.block) == EvmUtils.encodeBlock(block)
-        )
-            return true;
-        return false;
     }
     public isBlockDuplicate(block: BlockStruct): boolean {
         if (this.isBlockInChain(block)) return true;
@@ -551,49 +528,60 @@ class AgreementManager {
         return false;
     }
     public checkBlock(signedBlock: SignedBlockStruct): AgreementFlag {
-        let block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
-        let retrivedAddress = EvmUtils.retrieveSignerAddressBlock(
+        // Decode block and validate basic properties
+        const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
+        const retrievedAddress = EvmUtils.retrieveSignerAddressBlock(
             block,
             signedBlock.signature as SignatureLike
         );
-        if (retrivedAddress != block.transaction.header.participant)
+        const { forkCnt, transactionCnt } = this.numericFields(block);
+        const participantAdr = block.transaction.header.participant;
+
+        // Check if the signature is valid
+        if (retrievedAddress != participantAdr) {
             return AgreementFlag.INVALID_SIGNATURE;
+        }
 
-        if (this.isBlockDuplicate(block)) return AgreementFlag.DUPLICATE;
+        // Check if the block is a duplicate
+        if (this.isBlockDuplicate(block)) {
+            return AgreementFlag.DUPLICATE;
+        }
 
-        let forkCnt = Number(block.transaction.header.forkCnt);
-        if (Number(forkCnt) >= this.forks.length)
+        // Check if the fork count is valid
+        if (!this.isValidForkCnt(forkCnt)) {
             return AgreementFlag.NOT_READY;
-
-        let transactionCnt = Number(block.transaction.header.transactionCnt);
-        let participantAdr = block.transaction.header.participant;
-
-        //Check for conflict on existing block
-        let _block = this.getBlock(forkCnt, transactionCnt);
-        if (_block) {
-            if (_block.transaction.header.participant == participantAdr)
-                return AgreementFlag.DOUBLE_SIGN;
-            else return AgreementFlag.INCORRECT_DATA;
         }
 
-        //Check virtual vote
-        _block = this.getBlock(forkCnt, transactionCnt - 1);
-        if (_block) {
-            if (_block.stateHash != block.previousStateHash)
-                return AgreementFlag.INCORRECT_DATA;
-            return AgreementFlag.READY; // this is deducted since there is a previous block and there is no conflict
+        // Check if this block already exists
+        const existingBlock = this.getBlock(forkCnt, transactionCnt);
+        if (existingBlock) {
+            // Check for double signing or conflict with existing block
+            return existingBlock.transaction.header.participant ===
+                participantAdr
+                ? AgreementFlag.DOUBLE_SIGN
+                : AgreementFlag.INCORRECT_DATA;
         }
-        if (transactionCnt < 0) return AgreementFlag.INCORRECT_DATA; // TODO! DLT doesn't handle this
-        if (transactionCnt == 0) {
-            //first BLOCK in the fork
-            if (
-                block.previousStateHash !=
-                ethers.keccak256(this.forks[forkCnt].forkGenesisStateEncoded) //TODO! - link with SM and not use ethers here but call function from SM
-            )
-                return AgreementFlag.INCORRECT_DATA; // TODO! DLT doesn't handle this
-            return AgreementFlag.READY;
+
+        // Special case for the first block in a fork
+        if (transactionCnt === 0) {
+            const expectedPreviousHash = ethers.keccak256(
+                this.forks[forkCnt].forkGenesisStateEncoded
+            );
+            return block.previousStateHash === expectedPreviousHash
+                ? AgreementFlag.READY
+                : AgreementFlag.INCORRECT_DATA;
         }
-        return AgreementFlag.NOT_READY; //transactionCnt in the future
+
+        // For non-first blocks, check if the previous block exists and hash matches
+        const previousBlock = this.getBlock(forkCnt, transactionCnt - 1);
+        if (previousBlock) {
+            return previousBlock.stateHash === block.previousStateHash
+                ? AgreementFlag.READY
+                : AgreementFlag.INCORRECT_DATA;
+        }
+
+        // If no previous block exists but we expect one, the block is not ready
+        return AgreementFlag.NOT_READY;
     }
     public getLatestBlockTimestamp(forkCnt: number): number {
         let fork = this.forks[Number(forkCnt)];
@@ -611,6 +599,66 @@ class AgreementManager {
             maxTxCnt
         );
         return Math.max(latestBlockTimestamp, latestChainTimestamp);
+    }
+
+    // ************************************************
+    // ********** Private validation helpers **********
+    // ************************************************
+
+    private isValidForkCnt(forkCnt: number): boolean {
+        return forkCnt < this.forks.length;
+    }
+
+    private getAgreement(
+        forkCnt: number,
+        transactionCnt: number
+    ): Agreement | undefined {
+        if (!this.isValidForkCnt(forkCnt)) return undefined;
+
+        const fork = this.forks[forkCnt];
+        if (transactionCnt >= fork.agreements.length) return undefined;
+
+        return fork.agreements[transactionCnt];
+    }
+
+    private getAgreementByBlock(block: BlockStruct): Agreement | undefined {
+        const { forkCnt, transactionCnt } = this.numericFields(block);
+        return this.getAgreement(forkCnt, transactionCnt);
+    }
+
+    private areBlocksEqual(block1: BlockStruct, block2: BlockStruct): boolean {
+        return EvmUtils.encodeBlock(block1) === EvmUtils.encodeBlock(block2);
+    }
+
+    private signatureExistsInAgreement(
+        agreement: Agreement,
+        signature: SignatureLike
+    ): boolean {
+        return agreement.blockSignatures.includes(signature);
+    }
+
+    private getParticipantSignature(
+        agreement: Agreement,
+        participant: AddressLike
+    ): { didSign: boolean; signature: SignatureLike | undefined } {
+        for (const signature of agreement.blockSignatures) {
+            if (
+                EvmUtils.retrieveSignerAddressBlock(
+                    agreement.block,
+                    signature
+                ) == participant
+            ) {
+                return { didSign: true, signature };
+            }
+        }
+        return { didSign: false, signature: undefined };
+    }
+
+    private numericFields(block: BlockStruct) {
+        return {
+            forkCnt: Number(block.transaction.header.forkCnt),
+            transactionCnt: Number(block.transaction.header.transactionCnt)
+        };
     }
 }
 
