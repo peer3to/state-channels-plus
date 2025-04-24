@@ -18,8 +18,8 @@ contract DisputeManagerFacet is StateChannelCommon {
         // race condition check
         address[] memory onChainSlashedParticipants = getOnChainSlashedParticipants();
 
-        if (keccak256(abi.encodePacked(dispute.onChainSlashes)) != 
-            keccak256(abi.encodePacked(onChainSlashedParticipants))) {
+        if (keccak256(abi.encode(dispute.onChainSlashes)) != 
+            keccak256(abi.encode(onChainSlashedParticipants))) {
             revert("onChainSlashesMismatch");
         }
     

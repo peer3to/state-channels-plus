@@ -7,8 +7,6 @@ contract DataTypes {
         SignedBlock memory b,
         BlockConfirmation memory c,
         Transaction memory d,
-        TransactionHeader memory e,
-        TransactionBody memory f,
         JoinChannel memory g,
         JoinChannelBlock memory h,
         SignedJoinChannel memory i,
