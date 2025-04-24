@@ -1,4 +1,4 @@
-import { BytesLike, ethers } from "ethers";
+import { ethers } from "ethers";
 import {
     BlockStruct,
     TransactionStruct,
@@ -6,6 +6,7 @@ import {
     TransactionBodyStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import AgreementManager from "@/AgreementManager";
+import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 
 /**
  * Creates a default transaction header
@@ -106,4 +107,49 @@ export function block(overrides: Partial<BlockStruct> = {}): BlockStruct {
     }
 
     return { ...block, ...overrides };
+}
+
+/**
+ * Creates a mock signature for testing
+ * @returns A hex string representing a signature
+ */
+export function signature(): string {
+    return ethers.hexlify(ethers.randomBytes(65));
+}
+
+/**
+ * Creates a mock DisputeStruct for testing
+ * @param overrides Optional override values for the dispute fields
+ * @returns A DisputeStruct with default values and any provided overrides
+ */
+export function disputeStruct(
+    overrides: Partial<DisputeStruct> = {}
+): DisputeStruct {
+    return {
+        channelId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
+        virtualVotingBlocks: overrides.virtualVotingBlocks ?? [],
+        foldedTransactionCnt: overrides.foldedTransactionCnt ?? 0,
+        slashedParticipants: overrides.slashedParticipants ?? [],
+        timedoutParticipant:
+            overrides.timedoutParticipant ?? ethers.ZeroAddress,
+        postedStateDisputer:
+            overrides.postedStateDisputer ?? ethers.ZeroAddress,
+        forkCnt: overrides.forkCnt ?? 0,
+        challengeCnt: overrides.challengeCnt ?? 0,
+        encodedLatestFinalizedState:
+            overrides.encodedLatestFinalizedState ??
+            ethers.hexlify(ethers.randomBytes(32)),
+        encodedLatestCorrectState:
+            overrides.encodedLatestCorrectState ??
+            ethers.hexlify(ethers.randomBytes(32)),
+        deadlineTimestamp:
+            overrides.deadlineTimestamp ?? Math.floor(Date.now() / 1000) + 1000,
+        timeoutDisputer: overrides.timeoutDisputer ?? ethers.ZeroAddress,
+        joinChannelParticipants: overrides.joinChannelParticipants ?? [],
+        leaveChannelParticipants: overrides.leaveChannelParticipants ?? [],
+        participants: overrides.participants ?? [],
+        processExits: overrides.processExits ?? [],
+        creationTimestamp:
+            overrides.creationTimestamp ?? Math.floor(Date.now() / 1000)
+    };
 }
