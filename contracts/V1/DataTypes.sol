@@ -80,7 +80,7 @@ struct ExitChannel {
 
 struct ExitChannelBlock {
     /// @dev no signature requirement for the exitChannel blocks
-    ExitChannel[] exitChannel;
+    ExitChannel[] exitChannels;
     /// @dev Hash of the previous exitChannelBlock
     bytes32 previousBlockHash;
 }

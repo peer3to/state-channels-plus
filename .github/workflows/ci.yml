@@ -1,4 +1,4 @@
-name: CI - Run Tests & Compilation
+name: CI - Run Tests
 
 on:
   push:
@@ -9,80 +9,25 @@ on:
       - master
 
 jobs:
-  setup:
+  test:
     runs-on: ubuntu-latest
-    outputs:
-      node_modules: ${{ steps.setup.outputs.node_modules }}
-    
+
     steps:
+      # Step 1: Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Step 2: Set up Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 20
           cache: 'yarn'
 
-      - name: Install Yarn
-        run: |
-          corepack enable
-          yarn set version stable
-          yarn --version
-
+      # Step 3: Install dependencies
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: yarn
 
-      - name: Save node_modules
-        id: setup
-        run: echo "node_modules=$(pwd)/node_modules" >> $GITHUB_OUTPUT
-
-  test:
-    needs: setup
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install Yarn
-        run: |
-          corepack enable
-          yarn set version stable
-          yarn --version
-
-      - name: Restore node_modules
-        run: |
-          mkdir -p node_modules
-          cp -r ${{ needs.setup.outputs.node_modules }}/* node_modules/
-
-      - name: Run tests
+      # Step 4: Compile and run tests
+      - name: Compile and run tests
         run: yarn testc
-
-  compile:
-    needs: setup
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install Yarn
-        run: |
-          corepack enable
-          yarn set version stable
-          yarn --version
-
-      - name: Restore node_modules
-        run: |
-          mkdir -p node_modules
-          cp -r ${{ needs.setup.outputs.node_modules }}/* node_modules/
-
-      - name: Compile contracts
-        run: yarn hardhat compile
