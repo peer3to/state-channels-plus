@@ -552,15 +552,22 @@ class StateManager {
             );
             console.log("Timeout participant!");
         } else {
-            setTimeout(async () => {
-                this.disputeHandler.createDispute(
-                    forkCnt,
-                    participantAdr,
-                    transactionCnt,
-                    []
-                );
-                console.log("Timeout participant! - delayed", delayTimeSeconds);
-            }, delayTimeSeconds * 1000);
+            this.scheduleTask(
+                async () => {
+                    this.disputeHandler.createDispute(
+                        forkCnt,
+                        participantAdr,
+                        transactionCnt,
+                        []
+                    );
+                    console.log(
+                        "Timeout participant! - delayed",
+                        delayTimeSeconds
+                    );
+                },
+                delayTimeSeconds * 1000,
+                "timeoutParticipantDelayed"
+            );
         }
     }
 
@@ -921,11 +928,7 @@ class StateManager {
         );
 
         // Fire success callback asynchronously
-        setTimeout(() => {
-            if (!this.isDisposed) {
-                successCallback();
-            }
-        }, 0);
+        this.scheduleTask(successCallback, 0, "stateTransitionSuccessCallback");
 
         return { success: true, flag: ExecutionFlags.SUCCESS };
     }
