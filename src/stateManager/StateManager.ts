@@ -332,7 +332,11 @@ class StateManager {
             if (!this.isChannelOpen()) {
                 throw new Error("Channel not open");
             }
-            await this.ensureItIsMyTurn();
+            if (!(await this.isMyTurn())) {
+                throw new Error(
+                    `Not player turn - myAddress: ${String(this.signerAddress)} - nextToWrite: ${await this.stateMachine.getNextToWrite()}`
+                );
+            }
             this.adjustTimestampIfNeeded(tx);
 
             const { previousStateHash, encodedState, successCallback } =
@@ -659,14 +663,14 @@ class StateManager {
         return this.signerAddress === nextToWrite;
     }
 
-    private async ensureItIsMyTurn(): Promise<void> {
-        const nextToWrite = await this.stateMachine.getNextToWrite();
-        if (this.signerAddress !== nextToWrite) {
-            throw new Error(
-                `Not player turn - myAddress: ${this.signerAddress} - nextToWrite: ${nextToWrite}`
-            );
-        }
-    }
+    // private async ensureItIsMyTurn(): Promise<void> {
+    //     const nextToWrite = await this.stateMachine.getNextToWrite();
+    //     if (this.signerAddress !== nextToWrite) {
+    //         throw new Error(
+    //             `Not player turn - myAddress: ${this.signerAddress} - nextToWrite: ${nextToWrite}`
+    //         );
+    //     }
+    // }
 
     private adjustTimestampIfNeeded(tx: TransactionStruct): void {
         const latestBlockTimestamp =
