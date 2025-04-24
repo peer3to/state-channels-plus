@@ -92,7 +92,7 @@ class P2pSigner implements Signer {
                 participant: this.p2pManager.stateManager.getSignerAddress(),
                 forkCnt: this.p2pManager.stateManager.getForkCnt(),
                 transactionCnt:
-                    this.p2pManager.stateManager.getNextTransactionCnt(),
+                    this.p2pManager.stateManager.getNextBlockHeight(),
                 timestamp: BigInt(Clock.getTimeInSeconds())
             },
             body: {

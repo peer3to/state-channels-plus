@@ -435,19 +435,19 @@ describe("AgreementManager", () => {
     describe("getNextTransactionCnt", () => {
         it("should return 0 when there are no forks", () => {
             const emptyManager = new AgreementManager();
-            expect(emptyManager.getNextTransactionCnt()).to.equal(0);
+            expect(emptyManager.getNextBlockHeight()).to.equal(0);
         });
 
         it("should return 0 when the latest fork has no agreements", () => {
             const localManager = createInitializedManager();
-            expect(localManager.getNextTransactionCnt()).to.equal(0);
+            expect(localManager.getNextBlockHeight()).to.equal(0);
         });
 
         it("should return the correct next transaction count after adding blocks", async () => {
             const localManager = createInitializedManager();
 
             localManager.addBlock(block, signature, encodedState);
-            expect(localManager.getNextTransactionCnt()).to.equal(1);
+            expect(localManager.getNextBlockHeight()).to.equal(1);
 
             // Create and add another block with transaction count 1
             const block1 = factory.block({
@@ -462,7 +462,7 @@ describe("AgreementManager", () => {
             );
             localManager.addBlock(block1, signature1, encodedState);
 
-            expect(localManager.getNextTransactionCnt()).to.equal(2);
+            expect(localManager.getNextBlockHeight()).to.equal(2);
         });
     });
 

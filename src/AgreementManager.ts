@@ -5,6 +5,7 @@ import {
     ConfirmedBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import EvmUtils from "./utils/EvmUtils";
+import { coordinatesOf, forkOf } from "./utils/BlockUtils";
 // A fork is created by a DLT by disputing someone or asking the DLT to enforce a state.
 // The user initiating the process submits:
 // 1) Last known state with full threshold signatures
@@ -81,7 +82,7 @@ class AgreementManager {
         originalSignature: SignatureLike,
         encodedState: string
     ) {
-        const { forkCnt, transactionCnt: _ } = this.numericFields(block);
+        const forkCnt = forkOf(block);
 
         if (!this.isValidForkCnt(forkCnt))
             // this should never happen since checks are done before
@@ -127,7 +128,7 @@ class AgreementManager {
     public getLatestForkCnt(): number {
         return this.forks.length - 1;
     }
-    public getNextTransactionCnt(): number {
+    public getNextBlockHeight(): number {
         if (this.forks.length == 0) return 0;
         return this.forks[this.forks.length - 1].agreements.length;
     }
@@ -187,7 +188,7 @@ class AgreementManager {
         return undefined;
     }
     public didEveryoneSignBlock(block: BlockStruct): boolean {
-        const { forkCnt, transactionCnt: _ } = this.numericFields(block);
+        const forkCnt = forkOf(block);
 
         if (!this.isValidForkCnt(forkCnt)) return false;
 
@@ -351,7 +352,7 @@ class AgreementManager {
         timestamp: number
     ): AgreementFlag {
         const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
-        const { forkCnt, transactionCnt } = this.numericFields(block);
+        const { forkCnt, height } = coordinatesOf(block);
 
         //Resolved? -  also have to prevent duplicates in queue(map) - queue map can't have duplicates, it can only be overwritten wtih a different block for the same [forkCnt,transactionCnt,participantAdr] - in that case checkBlock returns a dispute flag
         const flag = this.checkBlock(signedBlock);
@@ -369,7 +370,7 @@ class AgreementManager {
         if (
             this.didParticipantPostOnChain(
                 forkCnt,
-                transactionCnt,
+                height,
                 block.transaction.header.participant
             )
         )
@@ -377,7 +378,7 @@ class AgreementManager {
 
         const fork = this.forks[forkCnt];
         fork.chainBlocks.push({
-            transactionCnt,
+            transactionCnt: height,
             participantAdr: block.transaction.header.participant,
             timestamp
         });
@@ -535,7 +536,7 @@ class AgreementManager {
             block,
             signedBlock.signature as SignatureLike
         );
-        const { forkCnt, transactionCnt } = this.numericFields(block);
+        const { forkCnt, height } = coordinatesOf(block);
         const participantAdr = block.transaction.header.participant;
 
         // Check if the signature is valid
@@ -554,7 +555,7 @@ class AgreementManager {
         }
 
         // Check if this block already exists
-        const existingBlock = this.getBlock(forkCnt, transactionCnt);
+        const existingBlock = this.getBlock(forkCnt, height);
         if (existingBlock) {
             // Check for double signing or conflict with existing block
             return existingBlock.transaction.header.participant ===
@@ -564,7 +565,7 @@ class AgreementManager {
         }
 
         // Special case for the first block in a fork
-        if (transactionCnt === 0) {
+        if (height === 0) {
             const expectedPreviousHash = ethers.keccak256(
                 this.forks[forkCnt].forkGenesisStateEncoded
             );
@@ -574,7 +575,7 @@ class AgreementManager {
         }
 
         // For non-first blocks, check if the previous block exists and hash matches
-        const previousBlock = this.getBlock(forkCnt, transactionCnt - 1);
+        const previousBlock = this.getBlock(forkCnt, height - 1);
         if (previousBlock) {
             return previousBlock.stateHash === block.previousStateHash
                 ? AgreementFlag.READY
@@ -589,7 +590,7 @@ class AgreementManager {
         let genesisTimestamp = fork.genesisTimestamp;
         let latestBlockTimestamp = Number(
             this.getLatestAgreement(forkCnt)?.block.transaction.header
-                .timestamp || 0
+                .timestamp ?? 0
         );
         return Math.max(genesisTimestamp, latestBlockTimestamp);
     }
@@ -623,8 +624,8 @@ class AgreementManager {
     }
 
     private getAgreementByBlock(block: BlockStruct): Agreement | undefined {
-        const { forkCnt, transactionCnt } = this.numericFields(block);
-        return this.getAgreement(forkCnt, transactionCnt);
+        const { forkCnt, height } = coordinatesOf(block);
+        return this.getAgreement(forkCnt, height);
     }
 
     private areBlocksEqual(block1: BlockStruct, block2: BlockStruct): boolean {
@@ -653,13 +654,6 @@ class AgreementManager {
             }
         }
         return { didSign: false, signature: undefined };
-    }
-
-    private numericFields(block: BlockStruct) {
-        return {
-            forkCnt: Number(block.transaction.header.forkCnt),
-            transactionCnt: Number(block.transaction.header.transactionCnt)
-        };
     }
 }
 

@@ -1,0 +1,53 @@
+import { BlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { AddressLike } from "ethers";
+
+/**
+ * Extract numeric fields from a block and convert them to regular number types
+ */
+export const coordinatesOf = (block: BlockStruct) => ({
+    forkCnt: Number(block.transaction.header.forkCnt),
+    height: Number(block.transaction.header.transactionCnt)
+});
+
+/**
+ * Get the block height (transaction count) from a block
+ */
+export const heightOf = (block: BlockStruct): number =>
+    Number(block.transaction.header.transactionCnt);
+
+/**
+ * Get the fork number from a block
+ */
+export const forkOf = (block: BlockStruct): number =>
+    Number(block.transaction.header.forkCnt);
+
+/**
+ * Get the timestamp from a block
+ */
+export const timestampOf = (block: BlockStruct): number =>
+    Number(block.transaction.header.timestamp);
+
+export const participantOf = (block: BlockStruct): AddressLike =>
+    block.transaction.header.participant;
+
+/**
+ * Convert all "Like" fields in a block to regular TypeScript types
+ */
+export const normalized = (block: BlockStruct) => ({
+    transaction: {
+        header: {
+            channelId: block.transaction.header.channelId as string,
+            participant: block.transaction.header.participant as string,
+            timestamp: Number(block.transaction.header.timestamp),
+            forkCnt: Number(block.transaction.header.forkCnt),
+            transactionCnt: Number(block.transaction.header.transactionCnt)
+        },
+        body: {
+            transactionType: Number(block.transaction.body.transactionType),
+            encodedData: block.transaction.body.encodedData as string,
+            data: block.transaction.body.data as string
+        }
+    },
+    stateHash: block.stateHash as string,
+    previousStateHash: block.previousStateHash as string
+});

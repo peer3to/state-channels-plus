@@ -36,6 +36,12 @@ import {
     ConfirmationDecisionContext,
     processConfirmationDecision
 } from "./processConfirmationDecisionHandlers";
+import {
+    heightOf,
+    forkOf,
+    timestampOf,
+    participantOf
+} from "@/utils/BlockUtils";
 
 interface ValidationResult {
     success: boolean;
@@ -115,8 +121,8 @@ class StateManager {
     public getForkCnt(): number {
         return this.agreementManager.getLatestForkCnt();
     }
-    public getNextTransactionCnt(): number {
-        return this.agreementManager.getNextTransactionCnt();
+    public getNextBlockHeight(): number {
+        return this.agreementManager.getNextBlockHeight();
     }
     //Triggered by the On-chain Event Listener when a dispute is emitted on-chain
     public onDisputeUpdate(dispute: DisputeStruct) {
@@ -162,8 +168,8 @@ class StateManager {
     }
     private async tryExecuteFromQueue() {
         let signedBlocks = this.agreementManager.tryDequeueBlocks(
-            Number(this.getForkCnt()),
-            Number(this.getNextTransactionCnt())
+            this.getForkCnt(),
+            this.getNextBlockHeight()
         );
 
         for (const signedBlock of signedBlocks) {
@@ -179,8 +185,8 @@ class StateManager {
     private async tryConfirmFromQueue(): Promise<void> {
         //TODO! race condition and skipping a txCount
         let confirmations = this.agreementManager.tryDequeueConfirmations(
-            Number(this.getForkCnt()),
-            Number(this.getNextTransactionCnt())
+            this.getForkCnt(),
+            this.getNextBlockHeight()
         );
 
         for (const confirmation of confirmations) {
@@ -385,13 +391,12 @@ class StateManager {
         );
     }
 
-    public async getEncodedState(): Promise<string> {
-        return await this.stateMachine.getState();
+    public getEncodedState(): Promise<string> {
+        return this.stateMachine.getState();
     }
 
-    public async getEncodedStateKecak256(): Promise<string> {
-        let encodedState = await this.getEncodedState();
-        return ethers.keccak256(encodedState);
+    public getEncodedStateKecak256(): Promise<string> {
+        return this.getEncodedState().then(ethers.keccak256);
     }
 
     public async isValidBlock(
@@ -465,13 +470,13 @@ class StateManager {
     public async isGoodTimestampNonDeterministic(
         block: BlockStruct
     ): Promise<boolean> {
-        let timestamp = Number(block.transaction.header.timestamp);
-        let lastTransactionTimestamp =
+        const timestamp = timestampOf(block);
+        const lastTransactionTimestamp =
             this.agreementManager.getLatestBlockTimestamp(this.getForkCnt());
 
         let referenceTime = this.agreementManager.getLatestTimestamp(
-            Number(block.transaction.header.forkCnt),
-            Number(block.transaction.header.transactionCnt)
+            forkOf(block),
+            heightOf(block)
         );
         if (timestamp < lastTransactionTimestamp) {
             throw new Error("Not implemented");
@@ -481,7 +486,7 @@ class StateManager {
                 await this.stateChannelManagerContract.getChainLatestBlockTimestamp(
                     this.channelId,
                     this.getForkCnt(),
-                    block.transaction.header.transactionCnt
+                    heightOf(block)
                 )
             );
             if (chainTimestamp > referenceTime) referenceTime = chainTimestamp;
@@ -496,23 +501,20 @@ class StateManager {
 
     // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute
     private async tryTimeoutParticipant(
-        forkCnt: BigNumberish,
-        transactionCnt: BigNumberish,
-        participantAdr: AddressLike
+        forkCnt: number,
+        transactionCnt: number,
+        participantAdr: string
     ) {
         if (participantAdr == this.signerAddress) return;
-        let block = this.agreementManager.getBlock(
-            Number(forkCnt),
-            Number(transactionCnt)
-        );
+        const block = this.agreementManager.getBlock(forkCnt, transactionCnt);
         if (block) {
             if (this.agreementManager.didEveryoneSignBlock(block)) return;
         }
         //if there is no block -> check if player posted on chain and try timeout
         if (
             this.agreementManager.didParticipantPostOnChain(
-                Number(forkCnt),
-                Number(transactionCnt),
+                forkCnt,
+                transactionCnt,
                 participantAdr
             )
         )
@@ -520,24 +522,25 @@ class StateManager {
         if (
             Clock.getTimeInSeconds() <
             this.agreementManager.getChainLatestBlockTimestamp(
-                Number(forkCnt),
-                Number(transactionCnt)
+                forkCnt,
+                transactionCnt
             ) +
                 this.getTimeoutWaitTimeSeconds()
         )
             return;
-        let response = await this.stateChannelManagerContract.getBlockCallData(
-            this.channelId,
-            forkCnt,
-            transactionCnt,
-            participantAdr
-        );
+        const response =
+            await this.stateChannelManagerContract.getBlockCallData(
+                this.channelId,
+                forkCnt,
+                transactionCnt,
+                participantAdr
+            );
         if (response.found) return;
         //This should be enough since Clock should always lag behind DLT clock
-        let delayTimeSeconds =
+        const delayTimeSeconds =
             this.getTimeoutWaitTimeSeconds() -
             (Clock.getTimeInSeconds() -
-                this.agreementManager.getLatestBlockTimestamp(Number(forkCnt)));
+                this.agreementManager.getLatestBlockTimestamp(forkCnt));
         if (delayTimeSeconds < 0) {
             this.disputeHandler.createDispute(
                 forkCnt,
@@ -572,7 +575,7 @@ class StateManager {
 
         // Identify the fork/tx counts for the next participant
         const forkCnt = this.getForkCnt();
-        const nextTransactionCnt = this.getNextTransactionCnt();
+        const nextTransactionCnt = this.getNextBlockHeight();
         const nextToWrite = await this.stateMachine.getNextToWrite();
 
         // Notify any event hooks
@@ -747,16 +750,12 @@ class StateManager {
         }
 
         // Check fork status
-        if (Number(block.transaction.header.forkCnt) < this.getForkCnt()) {
+        if (forkOf(block) < this.getForkCnt()) {
             return { success: false, flag: ExecutionFlags.PAST_FORK };
         }
 
         // Check for fork disputes
-        if (
-            this.disputeHandler.isForkDisputed(
-                Number(block.transaction.header.forkCnt)
-            )
-        ) {
+        if (this.disputeHandler.isForkDisputed(forkOf(block))) {
             return { success: false, flag: ExecutionFlags.PAST_FORK };
         }
 
@@ -768,9 +767,7 @@ class StateManager {
         // Check for future blocks
         const isFutureFork =
             Number(block.transaction.header.forkCnt) > this.getForkCnt();
-        const isFutureTransaction =
-            Number(block.transaction.header.transactionCnt) >
-            this.getNextTransactionCnt();
+        const isFutureTransaction = heightOf(block) > this.getNextBlockHeight();
         if (isFutureFork || isFutureTransaction) {
             return { success: false, flag: ExecutionFlags.NOT_READY };
         }
@@ -785,10 +782,7 @@ class StateManager {
         }
 
         // Validate past block in current fork
-        if (
-            Number(block.transaction.header.transactionCnt) <
-            this.getNextTransactionCnt()
-        ) {
+        if (heightOf(block) < this.getNextBlockHeight()) {
             const agreementFlag = this.agreementManager.checkBlock(signedBlock);
 
             if (
@@ -825,7 +819,7 @@ class StateManager {
 
         // Validate block producer
         const nextToWrite = await this.stateMachine.getNextToWrite();
-        if (block.transaction.header.participant !== nextToWrite) {
+        if (participantOf(block) !== nextToWrite) {
             return {
                 success: false,
                 flag: ExecutionFlags.DISPUTE,
@@ -853,7 +847,7 @@ class StateManager {
         }
 
         // Check fork status
-        if (Number(block.transaction.header.forkCnt) < this.getForkCnt()) {
+        if (forkOf(block) < this.getForkCnt()) {
             return { success: false, flag: ExecutionFlags.PAST_FORK };
         }
 
