@@ -36,14 +36,8 @@ import {
     ConfirmationDecisionContext,
     processConfirmationDecision
 } from "./processConfirmationDecisionHandlers";
-import { heightOf, forkOf, timestampOf } from "@/utils/BlockUtils";
+import { scheduleTask } from "@/utils";
 import ValidationService from "./ValidationService";
-
-interface ValidationResult {
-    success: boolean;
-    flag: ExecutionFlags;
-    agreementFlag?: AgreementFlag;
-}
 
 let DEBUG_STATE_MANAGER = false;
 class StateManager {
@@ -377,7 +371,7 @@ class StateManager {
             successCallback();
             await this.onSuccessCommon();
 
-            this.scheduleTask(
+            scheduleTask(
                 () => this.maybePostBlockOnChain(block, signedBlock),
                 this.timeConfig.agreementTime * 1000,
                 "maybePostBlockOnChain"
@@ -407,6 +401,8 @@ class StateManager {
     }
 
     // returns participants who haven't signed the block
+    // 1 is currently unused
+    // 2 belong in the AgreementManager
     public async getParticipantsWhoHaventSignedBlock(
         block: BlockStruct
     ): Promise<AddressLike[]> {
@@ -426,106 +422,6 @@ class StateManager {
 
     public getEncodedStateKecak256(): Promise<string> {
         return this.getEncodedState().then(ethers.keccak256);
-    }
-
-    public async isValidBlock(
-        signedBlock: SignedBlockStruct,
-        decodedBlock?: BlockStruct
-    ): Promise<boolean> {
-        let block: BlockStruct;
-        //DECODE - CHECK
-        try {
-            block =
-                decodedBlock || EvmUtils.decodeBlock(signedBlock.encodedBlock);
-
-            if (block.transaction.header.channelId != this.getChannelId())
-                return false;
-
-            //SIGNATURE - CHECK
-            let blockHash = ethers.keccak256(signedBlock.encodedBlock);
-            let retrievedAddress = ethers.verifyMessage(
-                ethers.getBytes(blockHash),
-                signedBlock.signature as SignatureLike
-            );
-            if (retrievedAddress != block.transaction.header.participant)
-                return false;
-
-            return true;
-        } catch (e) {
-            return false;
-        }
-    }
-
-    private checkSubjectiveBlockTiming(block: BlockStruct): ExecutionFlags {
-        const myTime = BigInt(Clock.getTimeInSeconds());
-        const blockTimestamp = BigInt(block.transaction.header.timestamp);
-
-        // If the block is more than 5 seconds in the past (relative to local clock)
-        if (blockTimestamp + BigInt(5) < myTime) {
-            return ExecutionFlags.NOT_ENOUGH_TIME;
-        }
-
-        // If the block is more than 10 seconds in the future
-        if (blockTimestamp - BigInt(10) > myTime) {
-            // Create a dispute for a future timestamp
-            return ExecutionFlags.DISPUTE;
-        }
-
-        // Otherwise, all good
-        return ExecutionFlags.SUCCESS;
-    }
-
-    // Doesn't have to take into account chain time - since this is subjective
-    // If chain time is triggered -> it becomes objective and goes through a different execution path
-    public async isEnoughTimeToPlayMyTransactionSubjective(
-        signedBlock: SignedBlockStruct
-    ): Promise<ExecutionFlags> {
-        //Has to use SignedBlock instead of Block - since Block may not be in agreement to fetch signature
-        if (!(await this.isMyTurn())) return ExecutionFlags.SUCCESS;
-
-        let block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
-
-        const flag = this.checkSubjectiveBlockTiming(block);
-        if (flag == ExecutionFlags.DISPUTE) {
-            const disputeProof =
-                this.disputeHandler.createBlockTooFarInFutureProof(signedBlock);
-            this.disputeHandler.createDispute(this.getForkCnt(), "0x00", 0, [
-                disputeProof
-            ]);
-        }
-        return flag;
-    }
-    // Checks does the block timestamp satisfy the invariant by taking into account on-chain calldata posted. This is used for the grant, but we have a better solution for the full feature set.
-    public async isGoodTimestampNonDeterministic(
-        block: BlockStruct
-    ): Promise<boolean> {
-        const timestamp = timestampOf(block);
-        const lastTransactionTimestamp =
-            this.agreementManager.getLatestBlockTimestamp(this.getForkCnt());
-
-        let referenceTime = this.agreementManager.getLatestTimestamp(
-            forkOf(block),
-            heightOf(block)
-        );
-        if (timestamp < lastTransactionTimestamp) {
-            throw new Error("Not implemented");
-        }
-        if (timestamp > referenceTime + this.timeConfig.p2pTime) {
-            let chainTimestamp = Number(
-                await this.stateChannelManagerContract.getChainLatestBlockTimestamp(
-                    this.channelId,
-                    this.getForkCnt(),
-                    heightOf(block)
-                )
-            );
-            if (chainTimestamp > referenceTime) referenceTime = chainTimestamp;
-
-            if (timestamp > referenceTime + this.timeConfig.p2pTime) {
-                return false; // Not Valid Timestamp - This subjective (non-deterministic) - may fail due to race condition on chain
-            }
-            return true;
-        }
-        return true;
     }
 
     // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute
@@ -579,7 +475,7 @@ class StateManager {
             );
             console.log("Timeout participant!");
         } else {
-            this.scheduleTask(
+            scheduleTask(
                 async () => {
                     this.disputeHandler.createDispute(
                         forkCnt,
@@ -600,7 +496,7 @@ class StateManager {
 
     private async onSuccessCommon() {
         // Immediately schedule a confirm/execute from queue on next tick
-        this.scheduleTask(
+        scheduleTask(
             () => {
                 this.tryConfirmFromQueue();
                 this.tryExecuteFromQueue();
@@ -618,7 +514,7 @@ class StateManager {
         this.p2pEventHooks.onTurn?.(nextToWrite);
 
         // Schedule a timeout check for the next participant
-        this.scheduleTask(
+        scheduleTask(
             () =>
                 this.tryTimeoutParticipant(
                     forkCnt,
@@ -686,15 +582,6 @@ class StateManager {
         return this.signerAddress === nextToWrite;
     }
 
-    // private async ensureItIsMyTurn(): Promise<void> {
-    //     const nextToWrite = await this.stateMachine.getNextToWrite();
-    //     if (this.signerAddress !== nextToWrite) {
-    //         throw new Error(
-    //             `Not player turn - myAddress: ${this.signerAddress} - nextToWrite: ${nextToWrite}`
-    //         );
-    //     }
-    // }
-
     private adjustTimestampIfNeeded(tx: TransactionStruct): void {
         const latestBlockTimestamp =
             this.agreementManager.getLatestBlockTimestamp(this.getForkCnt());
@@ -718,33 +605,6 @@ class StateManager {
 
     private async signBlock(block: BlockStruct): Promise<SignedBlockStruct> {
         return EvmUtils.signBlock(block, this.p2pManager.p2pSigner);
-    }
-
-    private scheduleTask(
-        task: () => void | Promise<void>,
-        delayMs: number,
-        taskName: string = "unnamed"
-    ): void {
-        setTimeout(async () => {
-            if (this.isDisposed) {
-                console.log(
-                    `Skipping ${taskName} task because StateManager is disposed`
-                );
-                return;
-            }
-
-            try {
-                const result = task();
-                if (result instanceof Promise) {
-                    await result;
-                }
-            } catch (error) {
-                console.error(
-                    `Error executing scheduled task '${taskName}':`,
-                    error
-                );
-            }
-        }, delayMs);
     }
 
     // ----- Private validation helper methods -----
