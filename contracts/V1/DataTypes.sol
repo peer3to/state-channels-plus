@@ -68,6 +68,11 @@ struct SignedJoinChannel {
     bytes signature;
 }
 
+struct JoinChannelConfirmation {
+    SignedJoinChannel signedJoinChannel;
+    bytes[] signatures;
+}
+
 /// @dev It is produced as a byproduct of state transition or enforced onchain through dispute
 struct ExitChannel {
     address participant;
