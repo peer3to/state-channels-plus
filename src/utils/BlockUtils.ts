@@ -27,8 +27,11 @@ export const forkOf = (block: BlockStruct): number =>
 export const timestampOf = (block: BlockStruct): number =>
     Number(block.transaction.header.timestamp);
 
-export const participantOf = (block: BlockStruct): AddressLike =>
-    block.transaction.header.participant;
+export const participantOf = (block: BlockStruct): string =>
+    block.transaction.header.participant as string;
+
+export const channelIdOf = (block: BlockStruct): string =>
+    block.transaction.header.channelId as string;
 
 /**
  * Convert all "Like" fields in a block to regular TypeScript types

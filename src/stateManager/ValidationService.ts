@@ -11,12 +11,14 @@ import {
     forkOf,
     heightOf,
     participantOf,
-    timestampOf
-} from "@/utils/BlockUtils";
+    timestampOf,
+    isSignedBlockAuthentic,
+    EvmUtils,
+    scheduleTask
+} from "@/utils";
 import AStateMachine from "@/AStateMachine";
-import EvmUtils from "@/utils/EvmUtils";
-import { scheduleTask } from "@/utils/scheduler";
 import { Clock } from "..";
+import { subjectiveTimingFlag } from "@/utils/timestamp";
 
 interface ValidationResult {
     success: boolean;
@@ -33,22 +35,27 @@ export default class ValidationService {
         private readonly timeCfg: TimeConfig,
         /** getter keeps channelId reactive if StateManager changes it later */
         private readonly getChannelId: () => BytesLike,
-        private readonly signerAddress: AddressLike
+        private readonly signerAddress: AddressLike,
+        private readonly onSignedBlock: (
+            signedBlock: SignedBlockStruct,
+            block?: BlockStruct
+        ) => Promise<ExecutionFlags>
     ) {}
 
     /*──────────────────────── PUBLIC API ────────────────────────*/
     public async validateSignedBlock(
         signedBlock: SignedBlockStruct,
-        sblock?: BlockStruct
+        block?: BlockStruct
     ): Promise<ValidationResult> {
-        const b = sblock ?? EvmUtils.decodeBlock(signedBlock.encodedBlock);
-        const forkCnt = forkOf(b);
-        const height = heightOf(b);
+        const blk = block ?? EvmUtils.decodeBlock(signedBlock.encodedBlock);
+        const forkCnt = forkOf(blk);
+        const height = heightOf(blk);
 
         if (!this.isChannelOpen()) return notReady();
 
         // Validate block
-        if (!(await this.isValidBlock(signedBlock, b))) return disconnect();
+        if (!isSignedBlockAuthentic(signedBlock, blk, this.getChannelId()))
+            return disconnect();
 
         // Check fork status
         if (
@@ -58,7 +65,7 @@ export default class ValidationService {
             return pastFork();
 
         // Check for duplicate blocks
-        if (this.agreementManager.isBlockDuplicate(b)) return duplicate();
+        if (this.agreementManager.isBlockDuplicate(blk)) return duplicate();
 
         // Check for future blocks
         const isFutureFork = forkCnt > this.getForkCnt();
@@ -66,7 +73,9 @@ export default class ValidationService {
         if (isFutureFork || isFutureTransaction) return notReady();
 
         // Check if participant is in the fork
-        if (!this.agreementManager.isParticipantInLatestFork(participantOf(b)))
+        if (
+            !this.agreementManager.isParticipantInLatestFork(participantOf(blk))
+        )
             return disconnect();
 
         // Validate past block in current fork
@@ -86,22 +95,22 @@ export default class ValidationService {
         }
 
         // Validate timestamp
-        if (!(await this.isGoodTimestamp(b)))
+        if (!(await this.isGoodTimestamp(blk)))
             return dispute(AgreementFlag.INCORRECT_DATA);
 
         // Check if enough time has passed
-        const timeFlag = await this.isEnoughTimeSubjective(signedBlock);
+        const timeFlag = await this.isEnoughTimeSubjective(signedBlock, blk);
         if (timeFlag !== ExecutionFlags.SUCCESS) {
             return { success: false, flag: timeFlag };
         }
 
         // Validate block producer
         const nextToWrite = await this.stateMachine.getNextToWrite();
-        if (participantOf(b) !== nextToWrite)
+        if (participantOf(blk) !== nextToWrite)
             return dispute(AgreementFlag.INCORRECT_DATA);
 
         // Process state transition
-        return this.processStateTransition(b, signedBlock);
+        return this.processStateTransition(blk, signedBlock);
     }
 
     public async validateBlockConfirmation(
@@ -112,18 +121,23 @@ export default class ValidationService {
         const blk = block ?? EvmUtils.decodeBlock(signed.encodedBlock);
 
         if (!this.isChannelOpen()) return notReady();
-        if (!(await this.isValidBlock(signed, blk))) return disconnect();
+        if (!isSignedBlockAuthentic(signed, blk, this.getChannelId()))
+            return disconnect();
         if (this.isPastFork(forkOf(blk))) return pastFork();
 
-        /* bring block into chain if needed */
+        // Ensure block in chain
         if (!this.agreementManager.isBlockInChain(blk)) {
-            const res = await this.validateSignedBlock(signed, blk);
-            if (
-                res.flag !== ExecutionFlags.SUCCESS &&
-                res.flag !== ExecutionFlags.DUPLICATE
-            )
-                return res;
-            if (!this.agreementManager.isBlockInChain(blk)) return notReady();
+            const flag = await this.onSignedBlock(signed, blk);
+
+            if (flag === ExecutionFlags.DUPLICATE) {
+                // Possibly it has become part of the chain now
+                if (!this.agreementManager.isBlockInChain(blk)) {
+                    return { success: false, flag: ExecutionFlags.NOT_READY };
+                }
+            } else if (flag !== ExecutionFlags.SUCCESS) {
+                // If the processed result is anything else but SUCCESS, we must abort
+                return { success: false, flag };
+            }
         }
 
         /* confirmer inside fork */
@@ -143,10 +157,6 @@ export default class ValidationService {
         )
             return duplicate();
 
-        this.agreementManager.confirmBlock(
-            blk,
-            confirmationSig as SignatureLike
-        );
         return success();
     }
 
@@ -180,30 +190,17 @@ export default class ValidationService {
         return success();
     }
 
-    private async isValidBlock(
-        signed: SignedBlockStruct,
-        blk: BlockStruct
-    ): Promise<boolean> {
-        if (blk.transaction.header.channelId !== this.getChannelId())
-            return false;
-
-        const blockHash = ethers.keccak256(signed.encodedBlock);
-        return (
-            ethers.verifyMessage(
-                ethers.getBytes(blockHash),
-                signed.signature as SignatureLike
-            ) === blk.transaction.header.participant
-        );
-    }
-
     /* subjective time window */
     private async isEnoughTimeSubjective(
-        signed: SignedBlockStruct
+        signed: SignedBlockStruct,
+        blk: BlockStruct
     ): Promise<ExecutionFlags> {
         if (!(await this.isMyTurn())) return ExecutionFlags.SUCCESS;
 
-        const blk = EvmUtils.decodeBlock(signed.encodedBlock);
-        const flag = this.checkSubjectiveTiming(blk);
+        const flag = subjectiveTimingFlag(
+            timestampOf(blk),
+            Clock.getTimeInSeconds()
+        );
         if (flag === ExecutionFlags.DISPUTE) {
             const proof =
                 this.disputeHandler.createBlockTooFarInFutureProof(signed);
@@ -213,37 +210,37 @@ export default class ValidationService {
         }
         return flag;
     }
-    private checkSubjectiveTiming(blk: BlockStruct): ExecutionFlags {
-        const now = BigInt(Clock.getTimeInSeconds());
-        const ts = BigInt(blk.transaction.header.timestamp);
-        if (ts + 5n < now) return ExecutionFlags.NOT_ENOUGH_TIME;
-        if (ts - 10n > now) return ExecutionFlags.DISPUTE;
-        return ExecutionFlags.SUCCESS;
-    }
 
     /* objective / chain timestamp */
     private async isGoodTimestamp(blk: BlockStruct): Promise<boolean> {
-        const ts = timestampOf(blk);
-        const latestTx = this.agreementManager.getLatestBlockTimestamp(
-            this.getForkCnt()
-        );
-        let referenceTime = this.agreementManager.getLatestTimestamp(
-            forkOf(blk),
-            heightOf(blk)
+        const forkCnt = forkOf(blk);
+        const blockHeight = heightOf(blk);
+        const blockTimestamp = timestampOf(blk);
+
+        const latestTxTs =
+            this.agreementManager.getLatestBlockTimestamp(forkCnt);
+        const initialReferenceTime = this.agreementManager.getLatestTimestamp(
+            forkCnt,
+            blockHeight
         );
 
-        if (ts < latestTx) throw new Error("Backwards timestamp");
+        if (blockTimestamp < latestTxTs) throw new Error("Not implemented");
 
-        if (ts > referenceTime + this.timeCfg.p2pTime) {
+        if (blockTimestamp > initialReferenceTime + this.timeCfg.p2pTime) {
             const chainTs = Number(
                 await this.scmContract.getChainLatestBlockTimestamp(
                     this.getChannelId(),
-                    forkOf(blk),
-                    heightOf(blk)
+                    forkCnt,
+                    blockHeight
                 )
             );
-            if (chainTs > referenceTime) referenceTime = chainTs;
-            if (ts > referenceTime + this.timeCfg.p2pTime) return false;
+            const updatedReferenceTime = Math.max(
+                initialReferenceTime,
+                chainTs
+            );
+
+            if (blockTimestamp > updatedReferenceTime + this.timeCfg.p2pTime)
+                return false;
         }
         return true;
     }

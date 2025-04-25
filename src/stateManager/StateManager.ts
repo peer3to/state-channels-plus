@@ -36,12 +36,8 @@ import {
     ConfirmationDecisionContext,
     processConfirmationDecision
 } from "./processConfirmationDecisionHandlers";
-import {
-    heightOf,
-    forkOf,
-    timestampOf,
-    participantOf
-} from "@/utils/BlockUtils";
+import { heightOf, forkOf, timestampOf } from "@/utils/BlockUtils";
+import ValidationService from "./ValidationService";
 
 interface ValidationResult {
     success: boolean;
@@ -64,6 +60,7 @@ class StateManager {
     mutex: Mutex = new Mutex();
     self = DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
     isDisposed: boolean = false;
+    validationService: ValidationService;
     constructor(
         signer: ethers.Signer,
         signerAddress: AddressLike,
@@ -92,6 +89,16 @@ class StateManager {
             this.p2pEventHooks
         );
         this.p2pManager = new P2PManager(this.self, signer);
+        this.validationService = new ValidationService(
+            this.agreementManager,
+            this.stateMachine,
+            this.disputeHandler,
+            this.stateChannelManagerContract,
+            this.timeConfig,
+            () => this.getChannelId(),
+            this.signerAddress,
+            this.onSignedBlock.bind(this)
+        );
     }
     //Mark resources for garbage collection
     public async dispose() {
@@ -238,7 +245,7 @@ class StateManager {
 
         try {
             await this.mutex.lock();
-            const result = await this.validateSignedBlock(
+            const result = await this.validationService.validateSignedBlock(
                 signedBlock,
                 decodedBlock
             );
@@ -276,11 +283,12 @@ class StateManager {
             block ?? EvmUtils.decodeBlock(signedBlock.encodedBlock);
 
         try {
-            const result = await this.validateBlockConfirmation(
-                signedBlock,
-                confirmationSignature,
-                decodedBlock
-            );
+            const result =
+                await this.validationService.validateBlockConfirmation(
+                    signedBlock,
+                    confirmationSignature,
+                    decodedBlock
+                );
             finalExecutionFlag = result.flag;
 
             if (result.success) {
@@ -739,207 +747,10 @@ class StateManager {
         }, delayMs);
     }
 
-    private async validateSignedBlock(
-        signedBlock: SignedBlockStruct,
-        block: BlockStruct
-    ): Promise<ValidationResult> {
-        // Check if manager is ready
-        const forkCnt = forkOf(block);
-        const blockHeight = heightOf(block);
-        if (!this.isChannelOpen()) {
-            return { success: false, flag: ExecutionFlags.NOT_READY };
-        }
-
-        // Validate block
-        if (!(await this.isValidBlock(signedBlock, block))) {
-            return { success: false, flag: ExecutionFlags.DISCONNECT };
-        }
-
-        // Check fork status
-        if (this.isPastFork(forkCnt)) {
-            return { success: false, flag: ExecutionFlags.PAST_FORK };
-        }
-
-        // Check for fork disputes
-        if (this.disputeHandler.isForkDisputed(forkCnt)) {
-            return { success: false, flag: ExecutionFlags.PAST_FORK };
-        }
-
-        // Check for duplicate blocks
-        if (this.agreementManager.isBlockDuplicate(block)) {
-            return { success: false, flag: ExecutionFlags.DUPLICATE };
-        }
-
-        // Check for future blocks
-        const isFutureFork = forkCnt > this.getForkCnt();
-        const isFutureTransaction = blockHeight > this.getNextBlockHeight();
-        if (isFutureFork || isFutureTransaction) {
-            return { success: false, flag: ExecutionFlags.NOT_READY };
-        }
-
-        // Check if participant is in the fork
-        if (
-            !this.agreementManager.isParticipantInLatestFork(
-                block.transaction.header.participant
-            )
-        ) {
-            return { success: false, flag: ExecutionFlags.DISCONNECT };
-        }
-
-        // Validate past block in current fork
-        if (blockHeight < this.getNextBlockHeight()) {
-            const agreementFlag = this.agreementManager.checkBlock(signedBlock);
-
-            if (
-                agreementFlag === AgreementFlag.DOUBLE_SIGN ||
-                agreementFlag === AgreementFlag.INCORRECT_DATA
-            ) {
-                return {
-                    success: false,
-                    flag: ExecutionFlags.DISPUTE,
-                    agreementFlag
-                };
-            }
-
-            throw new Error(
-                "StateManager - OnSignedBlock - current fork in the past - INTERNAL ERROR"
-            );
-        }
-
-        // Validate timestamp
-        if (!(await this.isGoodTimestampNonDeterministic(block))) {
-            return {
-                success: false,
-                flag: ExecutionFlags.DISPUTE,
-                agreementFlag: AgreementFlag.INCORRECT_DATA
-            };
-        }
-
-        // Check if enough time has passed
-        const timeFlag =
-            await this.isEnoughTimeToPlayMyTransactionSubjective(signedBlock);
-        if (timeFlag !== ExecutionFlags.SUCCESS) {
-            return { success: false, flag: timeFlag };
-        }
-
-        // Validate block producer
-        const nextToWrite = await this.stateMachine.getNextToWrite();
-        if (participantOf(block) !== nextToWrite) {
-            return {
-                success: false,
-                flag: ExecutionFlags.DISPUTE,
-                agreementFlag: AgreementFlag.INCORRECT_DATA
-            };
-        }
-
-        // Process state transition
-        return this.processStateTransition(block, signedBlock);
-    }
-
-    private async validateBlockConfirmation(
-        signedBlock: SignedBlockStruct,
-        confirmationSignature: BytesLike,
-        block: BlockStruct
-    ): Promise<ValidationResult> {
-        // Check if manager is ready
-        if (!this.isChannelOpen()) {
-            return { success: false, flag: ExecutionFlags.NOT_READY };
-        }
-
-        // Validate block
-        if (!(await this.isValidBlock(signedBlock, block))) {
-            return { success: false, flag: ExecutionFlags.DISCONNECT };
-        }
-
-        // Check fork status
-        if (this.isPastFork(forkOf(block))) {
-            return { success: false, flag: ExecutionFlags.PAST_FORK };
-        }
-
-        // Ensure block in chain
-        if (!this.agreementManager.isBlockInChain(block)) {
-            const flag = await this.onSignedBlock(signedBlock, block);
-
-            if (flag === ExecutionFlags.DUPLICATE) {
-                // Possibly it has become part of the chain now
-                if (!this.agreementManager.isBlockInChain(block)) {
-                    return { success: false, flag: ExecutionFlags.NOT_READY };
-                }
-            } else if (flag !== ExecutionFlags.SUCCESS) {
-                // If the processed result is anything else but SUCCESS, we must abort
-                return { success: false, flag };
-            }
-        }
-
-        // Check if confirmer is in the fork
-        const confirmer = EvmUtils.retrieveSignerAddressBlock(
-            block,
-            confirmationSignature as SignatureLike
-        );
-
-        if (!this.agreementManager.isParticipantInLatestFork(confirmer)) {
-            return { success: false, flag: ExecutionFlags.DISCONNECT };
-        }
-
-        // Check for duplicate confirmation signature
-        if (
-            this.agreementManager.doesSignatureExist(
-                block,
-                confirmationSignature as SignatureLike
-            )
-        ) {
-            return { success: false, flag: ExecutionFlags.DUPLICATE };
-        }
-
-        return { success: true, flag: ExecutionFlags.SUCCESS };
-    }
-
-    private async processStateTransition(
-        block: BlockStruct,
-        signedBlock: SignedBlockStruct
-    ): Promise<ValidationResult> {
-        // Apply the transaction
-        const {
-            success: txSuccess,
-            encodedState,
-            previousStateHash,
-            successCallback
-        } = await this.applyTransaction(block.transaction);
-
-        // Compare resulting state hash with block's stateHash
-        const isStateHashValid =
-            ethers.keccak256(encodedState) === block.stateHash &&
-            previousStateHash === block.previousStateHash;
-
-        if (!txSuccess || !isStateHashValid) {
-            return {
-                success: false,
-                flag: ExecutionFlags.DISPUTE,
-                agreementFlag: AgreementFlag.INCORRECT_DATA
-            };
-        }
-
-        // Add the block to the manager
-        this.agreementManager.addBlock(
-            block,
-            signedBlock.signature as SignatureLike,
-            encodedState
-        );
-
-        // Fire success callback asynchronously
-        this.scheduleTask(successCallback, 0, "stateTransitionSuccessCallback");
-
-        return { success: true, flag: ExecutionFlags.SUCCESS };
-    }
-
     // ----- Private validation helper methods -----
 
     private isChannelOpen(): boolean {
         return this.getForkCnt() !== -1;
-    }
-
-    private isPastFork(forkCnt: number): boolean {
-        return forkCnt < this.getForkCnt();
     }
 }
 
