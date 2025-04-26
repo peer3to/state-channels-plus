@@ -152,9 +152,8 @@ contract DisputeManagerFacet is StateChannelCommon {
         Dispute memory dispute,
         DisputeAuditingData memory disputeAuditingData
     ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
-        // only when all fraud proofs are verified successfully, return true
-        bool isSuccess;
-        address[] memory accumulatedSlashParticipants;
+        StateSnapshot memory latestStateSnapshot = abi.decode(disputeAuditingData.latestStateSnapshot, (StateSnapshot));
+        address[] memory accumulatedSlashParticipants = new address[](latestStateSnapshot.participants.length);
 
         for(uint i = 0; i < dispute.fraudProofs.length; i++) {
            
@@ -163,19 +162,19 @@ contract DisputeManagerFacet is StateChannelCommon {
                 if(!isValid) {
                     return (false, slashParticipants, fraudProofErrorResult);
                 }
-                accumulatedSlashParticipants = StateChannelUtilLibrary.concatAddressArrays(accumulatedSlashParticipants, slashParticipants);
+                accumulatedSlashParticipants = StateChannelUtilLibrary.concatAddressArrays(accumulatedSlashParticipants, slashParticipants, latestStateSnapshot.participants.length);
             }else if(_isDisputeFraudProof(dispute.fraudProofs[i].proofType)) {
                 (isValid, slashParticipants, fraudProofErrorResult) = _handleDisputeFraudProofs(dispute, dispute.fraudProofs[i],disputeAuditingData);
                 if(!isValid) {
                     return (false, slashParticipants, fraudProofErrorResult);
                 }
-                accumulatedSlashParticipants = StateChannelUtilLibrary.concatAddressArrays(accumulatedSlashParticipants, slashParticipants);
+                accumulatedSlashParticipants = StateChannelUtilLibrary.concatAddressArrays(accumulatedSlashParticipants, slashParticipants, latestStateSnapshot.participants.length);
             }else if(_isTimeoutFraudProof(dispute.fraudProofs[i].proofType)) {
                 (isValid, slashParticipants, fraudProofErrorResult) = _handleTimeoutDispute(dispute, dispute.fraudProofs[i],disputeAuditingData);
                 if(!isValid) {
                     return (false, slashParticipants, fraudProofErrorResult);
                 }
-                accumulatedSlashParticipants = StateChannelUtilLibrary.concatAddressArrays(accumulatedSlashParticipants, slashParticipants);
+                accumulatedSlashParticipants = StateChannelUtilLibrary.concatAddressArrays(accumulatedSlashParticipants, slashParticipants, latestStateSnapshot.participants.length);
             }
         }
         return (true, accumulatedSlashParticipants, new bytes(0));
@@ -221,7 +220,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         Dispute memory dispute,
         Proof memory proofs,
         DisputeAuditingData memory disputeAuditingData
-    ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
+    ) view internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
 
             if(proofs.proofType == ProofType.DisputeNotLatestState){
                 (isValid, slashParticipants, fraudProofErrorResult) = _verifyDisputeNotLatestState(dispute,proofs,disputeAuditingData);
@@ -250,7 +249,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         Dispute memory dispute,
         Proof memory proof,
         DisputeAuditingData memory disputeAuditingData
-    ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
+    ) view internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
 
             if(proof.proofType == ProofType.TimeoutThreshold){
                 (isValid, slashParticipants, fraudProofErrorResult) = _verifyTimeoutThreshold(dispute,proof,disputeAuditingData);
@@ -307,7 +306,7 @@ contract DisputeManagerFacet is StateChannelCommon {
     function _verifyBlockDoubleSign( 
         Dispute memory dispute,
         Proof memory proof
-    ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
+    ) pure internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
 
         BlockDoubleSignProof memory blockDoubleSignProof = abi.decode(proof.encodedProof, (BlockDoubleSignProof));
 
@@ -379,7 +378,7 @@ contract DisputeManagerFacet is StateChannelCommon {
     function _verifyBlockEmptyBlock(
         Dispute memory dispute,
         Proof memory proof
-    ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
+    ) pure internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
         BlockEmptyProof memory blockEmptyProof = abi.decode(proof.encodedProof, (BlockEmptyProof));
         Block memory fraudBlock = abi.decode(blockEmptyProof.emptyBlock.encodedBlock, (Block));
 
@@ -406,7 +405,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         Dispute memory dispute,
         Proof memory proof,
         DisputeAuditingData memory disputeAuditingData
-    ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
+    ) view internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
         DisputeNotLatestStateProof memory disputeNotLatestStateProof = abi.decode(proof.encodedProof, (DisputeNotLatestStateProof));
         address[] memory slashParticipants = new address[](1);
         
@@ -455,7 +454,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         Dispute memory dispute,
         Proof memory proof,
         DisputeAuditingData memory disputeAuditingData
-    ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
+    ) pure internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
         DisputeInvalidStateProof memory disputeInvalidStateProof = abi.decode(proof.encodedProof, (DisputeInvalidStateProof));
         address[] memory slashParticipants = new address[](1);
         if(dispute.channelId != disputeInvalidStateProof.dispute.channelId) {
@@ -481,7 +480,7 @@ contract DisputeManagerFacet is StateChannelCommon {
     function _verifyDisputeInvalidExitChannelBlocks(
         Dispute memory dispute,
         Proof memory proof
-    ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
+    ) pure internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
         // TODO: implement processExitChannelBlocks
         revert("NOT IMPLEMENTED");
     }
@@ -492,7 +491,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         Dispute memory dispute,
         Proof memory proof,
         DisputeAuditingData memory disputeAuditingData
-    ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
+    ) view internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
 
         TimeoutThresholdProof memory timeoutThresholdProof = abi.decode(proof.encodedProof, (TimeoutThresholdProof));
         BlockConfirmation memory thresholdBlockConfirmation = timeoutThresholdProof.thresholdBlock;
@@ -558,7 +557,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         Dispute memory dispute,
         Proof memory proof,
         DisputeAuditingData memory disputeAuditingData
-    ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
+    ) view internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
 
         TimeoutPriorInvalidProof memory timeoutPriorInvalidProof = abi.decode(proof.encodedProof, (TimeoutPriorInvalidProof));
         Dispute memory originalDispute = timeoutPriorInvalidProof.originalDispute;
@@ -647,7 +646,7 @@ contract DisputeManagerFacet is StateChannelCommon {
 
     // =============================== State Proofs Verification  ===============================
 
-    function _verifyStateProof(DisputeAuditingData memory disputeAuditingData, bytes32 genesisStateSnapshotHash, StateProof memory stateProof, bytes32 latestStateSnapshotHash) internal returns (bool isValid) {
+    function _verifyStateProof(DisputeAuditingData memory disputeAuditingData, bytes32 genesisStateSnapshotHash, StateProof memory stateProof, bytes32 latestStateSnapshotHash) pure internal returns (bool isValid) {
       
         StateSnapshot memory latestStateSnapshot = abi.decode(disputeAuditingData.latestStateSnapshot, (StateSnapshot));
         StateSnapshot memory genesisStateSnapshot = abi.decode(disputeAuditingData.genesisStateSnapshot, (StateSnapshot));
@@ -658,27 +657,60 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
 
         // Milestone checking
-        bool isValid = _verifyForkProof(stateProof.forkProof, genesisStateSnapshot, latestStateSnapshot);
+        bool isValid = _verifyForkProof(stateProof.forkProof, genesisStateSnapshot);
         if(!isValid) {
             return false;
         }
         // Signedblocks and latest state checking
-        isValid = _verifySignedBlocks(stateProof.forkProof, stateProof.signedBlocks, latestStateSnapshotHash);
+        isValid = _verifySignedBlocks(disputeAuditingData, stateProof.forkProof, stateProof.signedBlocks, latestStateSnapshotHash);
         if(!isValid) {
             return false;
         }
         return true;
     }
 
-    function _verifySignedBlocks(ForkProof memory forkProof, SignedBlock[] memory signedBlocks, bytes32 latestStateSnapshotHash) internal returns (bool isValid) {
-       
-       BlockConfirmation memory lastConfirmation = 
-        forkProof.forkMilestoneProofs[forkProof.forkMilestoneProofs.length - 1]
-        .blockConfirmations[forkProof.forkMilestoneProofs[forkProof.forkMilestoneProofs.length - 1].blockConfirmations.length - 1];
+    function _verifySignedBlocks(DisputeAuditingData memory disputeAuditingData,ForkProof memory forkProof, SignedBlock[] memory signedBlocks, bytes32 latestStateSnapshotHash) pure internal returns (bool isValid) {
 
+       ForkMilestoneProof memory lastMilestoneProof = forkProof.forkMilestoneProofs[forkProof.forkMilestoneProofs.length - 1];
+       
+       // --------------------- verify finality of last milestone ---------------------
+       StateSnapshot memory latestStateSnapshot = abi.decode(disputeAuditingData.latestStateSnapshot, (StateSnapshot));
+       address[] memory collectedSigners = new address[](latestStateSnapshot.participants.length);
+       BlockConfirmation memory currentConfirmation = lastMilestoneProof.blockConfirmations[0];
+    
+       // collect signatures addresses
+       address signer = StateChannelUtilLibrary.retriveSignerAddress(currentConfirmation.signedBlock.encodedBlock, currentConfirmation.signedBlock.signature);
+       address[] memory returnedCollectedSigners = _collectBlockConfirmationAddresses(currentConfirmation.signedBlock.encodedBlock, currentConfirmation.signatures);
+       collectedSigners = StateChannelUtilLibrary.concatAddressArrays(collectedSigners, returnedCollectedSigners, latestStateSnapshot.participants.length);
+       collectedSigners[collectedSigners.length - 1] = signer;
+       
+       for(uint i = 1; i < lastMilestoneProof.blockConfirmations.length; i++) {
+          BlockConfirmation memory confirmation = lastMilestoneProof.blockConfirmations[i];
+          Block memory nextBlock = abi.decode(confirmation.signedBlock.encodedBlock, (Block));
+          Block memory currentBlock = abi.decode(currentConfirmation.signedBlock.encodedBlock, (Block));
+
+          if(nextBlock.previousStateHash != currentBlock.stateHash) {
+            return false;
+          }
+          // collect signatures addresses
+          signer = StateChannelUtilLibrary.retriveSignerAddress(confirmation.signedBlock.encodedBlock, confirmation.signedBlock.signature);
+          returnedCollectedSigners = _collectBlockConfirmationAddresses(confirmation.signedBlock.encodedBlock, confirmation.signatures);
+          collectedSigners = StateChannelUtilLibrary.concatAddressArrays(collectedSigners, returnedCollectedSigners, latestStateSnapshot.participants.length);
+          collectedSigners[collectedSigners.length - 1] = signer;
+
+          currentConfirmation = confirmation;
+       }
+
+        if(keccak256(abi.encode(collectedSigners)) != keccak256(abi.encode(latestStateSnapshot.participants))) {
+            return false;
+        }
+
+        // --------------------- verify signed blocks ---------------------
+
+       BlockConfirmation memory lastConfirmation = lastMilestoneProof.blockConfirmations[0];
        Block memory lastConfirmedBlock = abi.decode(lastConfirmation.signedBlock.encodedBlock, (Block));
 
-       address signer = StateChannelUtilLibrary.retriveSignerAddress(lastConfirmation.signedBlock.encodedBlock, lastConfirmation.signedBlock.signature);
+       signer = StateChannelUtilLibrary.retriveSignerAddress(lastConfirmation.signedBlock.encodedBlock, lastConfirmation.signedBlock.signature);
 
        for(uint i = 1; i < signedBlocks.length; i++) {
         Block memory currentBlock = abi.decode(signedBlocks[i].encodedBlock, (Block));
@@ -696,22 +728,21 @@ contract DisputeManagerFacet is StateChannelCommon {
     }
 
     /// @dev Verfies ForkMilestoneBlock along with BlockConfirmations and taking into accounts Virtual Voting
-    function _verifyForkProof(ForkProof memory forkProof, StateSnapshot memory genesisStateSnapshot, StateSnapshot memory latestStateSnapshot) internal returns (bool isValid) {    
+    function _verifyForkProof(ForkProof memory forkProof, StateSnapshot memory genesisStateSnapshot) pure internal returns (bool isValid) {    
        
         for(uint i = 0; i < forkProof.forkMilestoneProofs.length; i++) {
        
             ForkMilestoneProof memory milestone = forkProof.forkMilestoneProofs[i];
-            // check if the milestone is finalized, include the virtual voting
-            address[] memory collectedSignedAddresses = new address[](genesisStateSnapshot.participants.length);
+            address[] memory collectedSignedAddresses = new address[](genesisStateSnapshot.participants.length - i);
 
             BlockConfirmation memory currentConfirmation = milestone.blockConfirmations[0];
             Block memory currentBlock = abi.decode(currentConfirmation.signedBlock.encodedBlock, (Block));
             // collect signatures
             address signer = StateChannelUtilLibrary.retriveSignerAddress(currentConfirmation.signedBlock.encodedBlock, currentConfirmation.signedBlock.signature);
             address[] memory collectedSigners = _collectBlockConfirmationAddresses(currentConfirmation.signedBlock.encodedBlock, currentConfirmation.signatures);
-            collectedSignedAddresses[i] = signer;
-            collectedSignedAddresses = StateChannelUtilLibrary.concatAddressArrays(collectedSignedAddresses, collectedSigners);
-            
+            collectedSignedAddresses = StateChannelUtilLibrary.concatAddressArrays(collectedSignedAddresses, collectedSigners, genesisStateSnapshot.participants.length - i);
+            collectedSignedAddresses[collectedSignedAddresses.length - 1] = signer;
+
             // first milestone N/N signatures
             if (i == 0) {
                 if (keccak256(abi.encode(collectedSignedAddresses)) != keccak256(abi.encode(genesisStateSnapshot.participants))) {
@@ -726,16 +757,26 @@ contract DisputeManagerFacet is StateChannelCommon {
                 if(nextBlock.previousStateHash != currentBlock.stateHash) {
                     return false;
                 }
+                // signature addresses collection
+                signer = StateChannelUtilLibrary.retriveSignerAddress(confirmation.signedBlock.encodedBlock, confirmation.signedBlock.signature);
+                collectedSigners = _collectBlockConfirmationAddresses(confirmation.signedBlock.encodedBlock, confirmation.signatures);
+                collectedSignedAddresses = StateChannelUtilLibrary.concatAddressArrays(collectedSignedAddresses, collectedSigners, genesisStateSnapshot.participants.length - i);
+                collectedSignedAddresses[collectedSignedAddresses.length - 1] = signer;
+                
                 currentConfirmation = confirmation;     
             }
-        }
+            if(keccak256(abi.encode(collectedSignedAddresses)) != keccak256(abi.encode(genesisStateSnapshot.participants))) {
+                return false;
+            }
 
+        }
+        return true;
     }
 
 
     // =============================== Helper Functions ===============================
 
-    function _collectBlockConfirmationAddresses(bytes memory encodedBlock, bytes[] memory signatures) internal returns (address[] memory collectedSigners) {
+    function _collectBlockConfirmationAddresses(bytes memory encodedBlock, bytes[] memory signatures) pure internal returns (address[] memory collectedSigners) {
         address[] memory collectedSigners = new address[](signatures.length);
         for (uint i = 0; i < signatures.length; i++) {
             address signer = StateChannelUtilLibrary.retriveSignerAddress(encodedBlock, signatures[i]);
