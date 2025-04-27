@@ -2,7 +2,6 @@ import {
     SignedBlockStruct,
     BlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import { AddressLike, BytesLike } from "ethers";
 import EvmUtils from "@/utils/EvmUtils";
 import { BlockConfirmation } from "./types";
 import { coordinatesOf, participantOf } from "@/utils";
