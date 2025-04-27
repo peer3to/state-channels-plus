@@ -1,5 +1,5 @@
-import AgreementManager, { AgreementFlag } from "@/AgreementManager";
-import { ExecutionFlags, TimeConfig } from "@/DataTypes";
+import AgreementManager from "@/AgreementManager";
+import { ExecutionFlags, TimeConfig, AgreementFlag } from "@/types";
 import {
     BlockStruct,
     SignedBlockStruct

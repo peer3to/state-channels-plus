@@ -1,4 +1,4 @@
-import { ExecutionFlags } from "@/DataTypes";
+import { ExecutionFlags } from "@/types";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
 import { SignatureLike } from "ethers";
 

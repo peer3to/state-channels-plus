@@ -41,20 +41,3 @@ export const JoinChannelAgreementEthersType = `tuple(
 export const ConfirmedJoinChannelAgreementEthersType = `tuple(
                     bytes encodedJoinChannelAgreement,
                     bytes[] signatures)`;
-export enum ExecutionFlags {
-    SUCCESS,
-    NOT_READY,
-    DUPLICATE,
-    DISCONNECT,
-    DISPUTE,
-    TIMESTAMP_IN_FUTURE,
-    NOT_ENOUGH_TIME,
-    PAST_FORK
-}
-
-export type TimeConfig = {
-    p2pTime: number;
-    agreementTime: number;
-    chainFallbackTime: number;
-    challengeTime: number;
-};

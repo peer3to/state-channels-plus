@@ -1,4 +1,4 @@
-import { SignedBlockEthersType } from "@/DataTypes";
+import { SignedBlockEthersType } from "./ethers";
 
 export const FoldRechallengeProofEthersType = `tuple(
     string encodedBlock,
@@ -9,7 +9,7 @@ export const DoubleSignEthersType = `tuple(
     ${SignedBlockEthersType} block2
     )`;
 export const DoubleSignProofEthersType = `tuple(
-    tuple(${SignedBlockEthersType} block1, ${SignedBlockEthersType} block2)[] doubleSigns
+    ${SignedBlockEthersType}[] doubleSigns
     )`;
 export const IncorrectDataProofEthersType = `tuple(
     ${SignedBlockEthersType} block1,
@@ -45,5 +45,6 @@ const DISPUTE_PROOF_ETHERS_TYPES: Record<ProofType, string> = {
     [ProofType.BlockTooFarInFuture]: BlockTooFarInFutureProofEthersType
 };
 
-export const getEthersTypeForDisputeProof = (proofType: ProofType) =>
-    DISPUTE_PROOF_ETHERS_TYPES[proofType];
+export const getEthersTypeForDisputeProof = (proofType: ProofType): string => {
+    return DISPUTE_PROOF_ETHERS_TYPES[proofType];
+};

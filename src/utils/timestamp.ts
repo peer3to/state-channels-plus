@@ -1,4 +1,4 @@
-import { ExecutionFlags } from "@/DataTypes";
+import { ExecutionFlags } from "@/types";
 
 /* subjective tolerances (BigInt seconds) */
 export const TOLERANCE_PAST = 5n;

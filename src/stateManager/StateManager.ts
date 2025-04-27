@@ -10,7 +10,8 @@ import {
     SignatureLike,
     ethers
 } from "ethers";
-import AgreementManager, { AgreementFlag } from "../AgreementManager";
+import AgreementManager from "../AgreementManager";
+import { AgreementFlag, ExecutionFlags, TimeConfig } from "@/types";
 import { AStateChannelManagerProxy } from "@typechain-types";
 import {
     ProofStruct,
@@ -22,7 +23,6 @@ import P2PManager from "@/P2PManager";
 
 import AStateMachine from "@/AStateMachine";
 import EvmUtils from "@/utils/EvmUtils";
-import { ExecutionFlags, TimeConfig } from "@/DataTypes";
 import StateChannelEventListener from "@/StateChannelEventListener";
 import Mutex from "@/utils/Mutex";
 

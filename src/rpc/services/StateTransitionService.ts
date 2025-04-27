@@ -1,6 +1,6 @@
 import { BytesLike } from "ethers";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
-import { ExecutionFlags } from "@/DataTypes";
+import { ExecutionFlags } from "@/types";
 import { ARpcService, MainRpcService } from "@/rpc";
 
 class StateTransitionService extends ARpcService {

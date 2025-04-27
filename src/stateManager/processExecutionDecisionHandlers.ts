@@ -1,5 +1,5 @@
-import { ExecutionFlags } from "@/DataTypes";
-import AgreementManager, { AgreementFlag } from "@/AgreementManager";
+import { ExecutionFlags, AgreementFlag } from "@/types";
+import AgreementManager from "@/AgreementManager";
 import P2PManager from "@/P2PManager";
 import DisputeHandler from "@/DisputeHandler";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";

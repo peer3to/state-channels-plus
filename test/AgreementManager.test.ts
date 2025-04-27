@@ -7,7 +7,8 @@ import {
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import sinon from "sinon";
-import AgreementManager, { AgreementFlag } from "@/AgreementManager";
+import AgreementManager from "@/AgreementManager";
+import { AgreementFlag } from "@/types";
 import { SignatureLike, Signer } from "ethers";
 
 describe("AgreementManager", () => {

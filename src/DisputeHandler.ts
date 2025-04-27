@@ -5,7 +5,11 @@ import {
     ProofStruct,
     DisputeStruct
 } from "@typechain-types/contracts/V1/DisputeTypes";
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+import {
+    BlockStruct,
+    SignedBlockStruct
+} from "@typechain-types/contracts/V1/DataTypes";
+import { ProofType, getEthersTypeForDisputeProof } from "@/types/disputes";
 import EvmUtils from "@/utils/EvmUtils";
 import DebugProxy from "@/utils/DebugProxy";
 import P2pEventHooks from "@/P2pEventHooks";

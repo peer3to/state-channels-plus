@@ -6,20 +6,12 @@ import {
 } from "@typechain-types/contracts/V1/DataTypes";
 import EvmUtils from "./utils/EvmUtils";
 import { coordinatesOf, forkOf } from "./utils/BlockUtils";
+import { AgreementFlag } from "./types/flags";
 // A fork is created by a DLT by disputing someone or asking the DLT to enforce a state.
 // The user initiating the process submits:
 // 1) Last known state with full threshold signatures
 // 2) The signed transactions starting from 1) up until the last known transaction which response the participant signed
 // 3) What they're disputing or enforcing
-
-export enum AgreementFlag {
-    INVALID_SIGNATURE,
-    READY,
-    DUPLICATE,
-    INCORRECT_DATA,
-    DOUBLE_SIGN,
-    NOT_READY
-}
 
 //The DLT can set any reality and those realites are forks - the users follow the state machine set by the latest fork
 type AgreementFork = {

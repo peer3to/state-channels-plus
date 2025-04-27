@@ -10,7 +10,7 @@ import {
     BlockEthersType,
     JoinChannelEthersType,
     TransactionEthersType
-} from "@/DataTypes";
+} from "@/types";
 
 class EvmUtils {
     public static encodeTransaction(transaction: TransactionStruct): string {
