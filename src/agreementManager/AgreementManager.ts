@@ -5,10 +5,12 @@ import {
     ConfirmedBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import EvmUtils from "../utils/EvmUtils";
-import { coordinatesOf, forkOf } from "../utils/BlockUtils";
+import { coordinatesOf, forkOf, participantOf } from "../utils/BlockUtils";
 import { AgreementFlag } from "@/types";
 import { AgreementFork, Agreement, BlockConfirmation } from "./types";
 import * as SetUtils from "@/utils/set";
+import { getParticipantSignature, getSignerAddresses } from "@/utils/signature";
+import SignatureService from "./SignatureService";
 
 type ForkCnt = number;
 type TransactionCnt = number;
@@ -84,7 +86,7 @@ class AgreementManager {
         if (!this.areBlocksEqual(agreement.block, block))
             throw new Error("AgreementManager - confirmBlock - conflict");
 
-        if (this.signatureExistsInAgreement(agreement, confirmationSignature))
+        if (SignatureService.signatureExists(agreement, confirmationSignature))
             throw new Error(
                 "AgreementManager - confirmBlock - block already confirmed"
             );
@@ -119,8 +121,9 @@ class AgreementManager {
             return undefined;
         }
 
-        const { didSign, signature } = this.getParticipantSignature(
-            agreement,
+        const { didSign, signature } = getParticipantSignature(
+            agreement.block,
+            agreement.blockSignatures,
             participant
         );
 
@@ -140,8 +143,9 @@ class AgreementManager {
 
         for (let i = this.forks[forkCnt].agreements.length - 1; i >= 0; i--) {
             const agreement = this.forks[forkCnt].agreements[i];
-            const { didSign, signature } = this.getParticipantSignature(
-                agreement,
+            const { didSign, signature } = getParticipantSignature(
+                agreement.block,
+                agreement.blockSignatures,
                 participantAdr
             );
 
@@ -165,10 +169,8 @@ class AgreementManager {
             return false;
 
         // Check if all threshold addresses have signed
-        const signerAddresses = agreement.blockSignatures.map((signature) =>
-            EvmUtils.retrieveSignerAddressBlock(block, signature).toString()
-        );
-        const signersSet = SetUtils.fromArray(signerAddresses);
+        const signersSet = getSignerAddresses(block, agreement.blockSignatures);
+
         const addressesSet = SetUtils.stringSetFromArray(
             fork.addressesInThreshold
         );
@@ -180,13 +182,14 @@ class AgreementManager {
     }
     // Returns the signature of the block author
     public getOriginalSignature(block: BlockStruct): SignatureLike | undefined {
-        const participant = block.transaction.header.participant;
+        const participant = participantOf(block);
 
         const agreement = this.getAgreementByBlock(block);
         if (!agreement) return undefined;
 
-        const { didSign: _, signature } = this.getParticipantSignature(
-            agreement,
+        const { didSign: _, signature } = getParticipantSignature(
+            agreement.block,
+            agreement.blockSignatures,
             participant
         );
 
@@ -204,7 +207,7 @@ class AgreementManager {
         if (!this.areBlocksEqual(agreement.block, block))
             throw new Error("AgreementManager - doesSignatureExist - conflict");
 
-        return this.signatureExistsInAgreement(agreement, signature);
+        return SignatureService.signatureExists(agreement, signature);
     }
 
     public didParticipantSign(
@@ -216,24 +219,24 @@ class AgreementManager {
         if (!agreement || !this.areBlocksEqual(agreement.block, block))
             return { didSign: false, signature: undefined };
 
-        return this.getParticipantSignature(agreement, participant);
+        return getParticipantSignature(
+            agreement.block,
+            agreement.blockSignatures,
+            participant
+        );
     }
 
     public getParticipantsWhoHaventSignedBlock(
         block: BlockStruct
     ): AddressLike[] {
         const forkCnt = forkOf(block);
-        if (!this.isValidForkCnt(forkCnt)) return [];
+        const agreement = this.getAgreementByBlock(block);
+        if (!this.isValidForkCnt(forkCnt) || !agreement) return [];
 
-        const signatures = this.getSigantures(block);
-        const signersSet = SetUtils.stringSetFromArray(
-            signatures.map((signature) =>
-                EvmUtils.retrieveSignerAddressBlock(block, signature)
-            )
+        return SignatureService.missingParticipants(
+            this.forks[forkCnt],
+            agreement
         );
-
-        const fork = this.forks[forkCnt];
-        return SetUtils.excludeFromArray(fork.addressesInThreshold, signersSet);
     }
 
     public isParticipantInLatestFork(participant: AddressLike): boolean {
@@ -274,7 +277,10 @@ class AgreementManager {
 
         for (let i = fork.agreements.length - 1; i >= 0; i--) {
             const agreement = fork.agreements[i];
-            const signersAddresses = this.extractSignerAddresses(agreement);
+            const signersAddresses = getSignerAddresses(
+                agreement.block,
+                agreement.blockSignatures
+            ) as Set<AddressLike>;
 
             // Check if this block is signed by our target signer
             if (
@@ -312,18 +318,6 @@ class AgreementManager {
                 encodedLatestCorrectState ?? fork.forkGenesisStateEncoded,
             virtualVotingBlocks
         };
-    }
-
-    private extractSignerAddresses(agreement: Agreement): Set<AddressLike> {
-        return new Set(
-            agreement.blockSignatures.map(
-                (signature) =>
-                    EvmUtils.retrieveSignerAddressBlock(
-                        agreement.block,
-                        signature
-                    ) as AddressLike
-            )
-        );
     }
 
     // *************************************************
@@ -612,30 +606,6 @@ class AgreementManager {
 
     private areBlocksEqual(block1: BlockStruct, block2: BlockStruct): boolean {
         return EvmUtils.encodeBlock(block1) === EvmUtils.encodeBlock(block2);
-    }
-
-    private signatureExistsInAgreement(
-        agreement: Agreement,
-        signature: SignatureLike
-    ): boolean {
-        return agreement.blockSignatures.includes(signature);
-    }
-
-    private getParticipantSignature(
-        agreement: Agreement,
-        participant: AddressLike
-    ): { didSign: boolean; signature: SignatureLike | undefined } {
-        for (const signature of agreement.blockSignatures) {
-            if (
-                EvmUtils.retrieveSignerAddressBlock(
-                    agreement.block,
-                    signature
-                ) == participant
-            ) {
-                return { didSign: true, signature };
-            }
-        }
-        return { didSign: false, signature: undefined };
     }
 }
 
