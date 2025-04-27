@@ -1,15 +1,11 @@
 import { AddressLike, BigNumberish, BytesLike, ethers } from "ethers";
-import AgreementManager from "./agreementManager/AgreementManager";
+import AgreementManager from "./agreementManager";
 import { AStateChannelManagerProxy } from "@typechain-types";
 import {
     ProofStruct,
     DisputeStruct
 } from "@typechain-types/contracts/V1/DisputeTypes";
-import {
-    BlockStruct,
-    SignedBlockStruct
-} from "@typechain-types/contracts/V1/DataTypes";
-import { ProofType, getEthersTypeForDisputeProof } from "@/types/disputes";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
 import EvmUtils from "@/utils/EvmUtils";
 import DebugProxy from "@/utils/DebugProxy";
 import P2pEventHooks from "@/P2pEventHooks";

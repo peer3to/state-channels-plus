@@ -1,5 +1,5 @@
 import IOnMessage from "@/IOnMessage";
-import StateManager from "@/stateManager/StateManager";
+import StateManager from "@/stateManager";
 import { deserializeRpc } from "@/rpc/Rpc";
 import MainRpcService from "@/rpc/MainRpcService";
 import { P2pSigner } from "@/evm";

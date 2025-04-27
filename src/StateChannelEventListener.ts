@@ -2,7 +2,7 @@ import { BigNumberish, BytesLike } from "ethers";
 import { AStateChannelManagerProxy } from "@typechain-types";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
-import StateManager from "@/stateManager/StateManager";
+import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
 
 //TODO - made a PR to ethers.js to fix Deferred Topic Filter
