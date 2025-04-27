@@ -33,27 +33,5 @@ export const participantOf = (block: BlockStruct): string =>
 export const channelIdOf = (block: BlockStruct): string =>
     block.transaction.header.channelId as string;
 
-/**
- * Convert all "Like" fields in a block to regular TypeScript types
- */
-export const normalized = (block: BlockStruct) => ({
-    transaction: {
-        header: {
-            channelId: block.transaction.header.channelId as string,
-            participant: block.transaction.header.participant as string,
-            timestamp: Number(block.transaction.header.timestamp),
-            forkCnt: Number(block.transaction.header.forkCnt),
-            transactionCnt: Number(block.transaction.header.transactionCnt)
-        },
-        body: {
-            transactionType: Number(block.transaction.body.transactionType),
-            encodedData: block.transaction.body.encodedData as string,
-            data: block.transaction.body.data as string
-        }
-    },
-    stateHash: block.stateHash as string,
-    previousStateHash: block.previousStateHash as string
-});
-
 export const isSameBlock = (b1: BlockStruct, b2: BlockStruct): boolean =>
     EvmUtils.encodeBlock(b1) === EvmUtils.encodeBlock(b2);

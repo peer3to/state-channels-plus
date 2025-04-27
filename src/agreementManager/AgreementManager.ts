@@ -27,7 +27,7 @@ class AgreementManager {
     chain = new OnChainTracker(
         this.forks,
         this.queues,
-        /* temp stub */ () => AgreementFlag.READY
+        /* temp stub - replaced in the constructor */ () => AgreementFlag.READY
     );
     validator = new BlockValidator(this.forks, this.queues, this.chain);
 

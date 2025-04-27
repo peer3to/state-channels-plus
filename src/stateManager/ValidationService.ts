@@ -12,9 +12,9 @@ import {
     heightOf,
     participantOf,
     timestampOf,
-    isSignedBlockAuthentic,
     EvmUtils,
-    scheduleTask
+    scheduleTask,
+    channelIdOf
 } from "@/utils";
 import AStateMachine from "@/AStateMachine";
 import { Clock } from "..";
@@ -54,7 +54,7 @@ export default class ValidationService {
         if (!this.isChannelOpen()) return notReady();
 
         // Validate block
-        if (!isSignedBlockAuthentic(signedBlock, blk, this.getChannelId()))
+        if (!this.isSignedBlockAuthentic(signedBlock, blk, this.getChannelId()))
             return disconnect();
 
         // Check fork status
@@ -121,7 +121,7 @@ export default class ValidationService {
         const blk = block ?? EvmUtils.decodeBlock(signed.encodedBlock);
 
         if (!this.isChannelOpen()) return notReady();
-        if (!isSignedBlockAuthentic(signed, blk, this.getChannelId()))
+        if (!this.isSignedBlockAuthentic(signed, blk, this.getChannelId()))
             return disconnect();
         if (this.isPastFork(forkOf(blk))) return pastFork();
 
@@ -263,6 +263,22 @@ export default class ValidationService {
         return (
             (await this.stateMachine.getNextToWrite()) === this.signerAddress
         );
+    }
+
+    private isSignedBlockAuthentic(
+        signed: SignedBlockStruct,
+        block: BlockStruct,
+        expectedChannelId: BytesLike
+    ): boolean {
+        if (channelIdOf(block) !== expectedChannelId) return false;
+
+        const h = ethers.keccak256(signed.encodedBlock);
+        const signer = ethers.verifyMessage(
+            ethers.getBytes(h),
+            signed.signature as SignatureLike
+        );
+
+        return signer === participantOf(block);
     }
 }
 
