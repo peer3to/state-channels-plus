@@ -9,28 +9,19 @@ import {
     coordinatesOf,
     forkOf,
     participantOf,
-    timestampOf
-} from "../utils/BlockUtils";
+    getParticipantSignature,
+    getSignerAddresses
+} from "@/utils";
 import { AgreementFlag } from "@/types";
-import { AgreementFork, Agreement, BlockConfirmation } from "./types";
+import { BlockConfirmation } from "./types";
 import * as SetUtils from "@/utils/set";
-import { getParticipantSignature, getSignerAddresses } from "@/utils/signature";
 import SignatureService from "./SignatureService";
 import ForkService, { Direction } from "./ForkService";
+import QueueService from "./QueueService";
 
-type ForkCnt = number;
-type TransactionCnt = number;
-type ParticipantAdr = string;
 class AgreementManager {
     forks = new ForkService();
-    blockNotReadyMap: Map<
-        ForkCnt,
-        Map<TransactionCnt, Map<ParticipantAdr, SignedBlockStruct>>
-    > = new Map(); //map[forkCnt][transactionCnt][participantAdr] = SignedBlockStruct
-    confirmationNotReadyMap: Map<
-        ForkCnt,
-        Map<TransactionCnt, Map<ParticipantAdr, BlockConfirmation>>
-    > = new Map(); //map[forkCnt][transactionCnt][confirmationSigner] = BlockConfirmation
+    queues = new QueueService();
 
     // ************************************************
     // ***** Canonical chain operations - public ******
@@ -380,72 +371,23 @@ class AgreementManager {
     // ************************************************
 
     public queueBlock(signedBlock: SignedBlockStruct) {
-        let block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
-        let forkCnt = Number(block.transaction.header.forkCnt);
-        let transactionCnt = Number(block.transaction.header.transactionCnt);
-        let participantAdr = block.transaction.header.participant;
-        if (!this.blockNotReadyMap.has(forkCnt))
-            this.blockNotReadyMap.set(forkCnt, new Map());
-        if (!this.blockNotReadyMap.get(forkCnt)!.has(transactionCnt))
-            this.blockNotReadyMap.get(forkCnt)!.set(transactionCnt, new Map());
-        this.blockNotReadyMap
-            .get(forkCnt)!
-            .get(transactionCnt)!
-            .set(participantAdr as string, signedBlock);
+        this.queues.queueBlock(signedBlock);
     }
     public tryDequeueBlocks(
         forkCnt: number,
         transactionCnt: number
     ): SignedBlockStruct[] {
-        if (!this.blockNotReadyMap.has(forkCnt)) return [];
-        if (!this.blockNotReadyMap.get(forkCnt)!.has(transactionCnt)) return [];
-        let blocks = this.blockNotReadyMap.get(forkCnt)!.get(transactionCnt)!;
-        let signedBlocks: SignedBlockStruct[] = [];
-        for (let block of blocks.values()) {
-            signedBlocks.push(block);
-        }
-        this.blockNotReadyMap.get(forkCnt)!.delete(transactionCnt);
-        return signedBlocks;
+        return this.queues.tryDequeueBlocks(forkCnt, transactionCnt);
     }
 
     public queueConfirmation(blockConfirmation: BlockConfirmation) {
-        let block = EvmUtils.decodeBlock(
-            blockConfirmation.originalSignedBlock.encodedBlock
-        );
-        let forkCnt = Number(block.transaction.header.forkCnt);
-        let transactionCnt = Number(block.transaction.header.transactionCnt);
-        let confirmationSigner = EvmUtils.retrieveSignerAddressBlock(
-            block,
-            blockConfirmation.confirmationSignature
-        );
-        //TODO!!! - since this is in the future, we can't know who's part of the channel - somone can bloat state, so spam has to be handeled in the p2pManager
-        if (!this.confirmationNotReadyMap.has(forkCnt))
-            this.confirmationNotReadyMap.set(forkCnt, new Map());
-        if (!this.confirmationNotReadyMap.get(forkCnt)!.has(transactionCnt))
-            this.confirmationNotReadyMap
-                .get(forkCnt)!
-                .set(transactionCnt, new Map());
-        this.confirmationNotReadyMap
-            .get(forkCnt)!
-            .get(transactionCnt)!
-            .set(confirmationSigner as string, blockConfirmation);
+        this.queues.queueConfirmation(blockConfirmation);
     }
     public tryDequeueConfirmations(
         forkCnt: number,
         transactionCnt: number
     ): BlockConfirmation[] {
-        if (!this.confirmationNotReadyMap.has(forkCnt)) return [];
-        if (!this.confirmationNotReadyMap.get(forkCnt)!.has(transactionCnt))
-            return [];
-        let confirmations = this.confirmationNotReadyMap
-            .get(forkCnt)!
-            .get(transactionCnt)!;
-        let blockConfirmations: BlockConfirmation[] = [];
-        for (let confirmation of confirmations.values()) {
-            blockConfirmations.push(confirmation);
-        }
-        this.confirmationNotReadyMap.get(forkCnt)!.delete(transactionCnt);
-        return blockConfirmations;
+        return this.queues.tryDequeueConfirmations(forkCnt, transactionCnt);
     }
 
     // ************************************************
@@ -460,29 +402,7 @@ class AgreementManager {
         );
     }
     public isBlockDuplicate(block: BlockStruct): boolean {
-        if (this.isBlockInChain(block)) return true;
-
-        let forkCnt = Number(block.transaction.header.forkCnt);
-        let transactionCnt = Number(block.transaction.header.transactionCnt);
-        let participantAdr = block.transaction.header.participant as string;
-        if (
-            this.blockNotReadyMap.has(forkCnt) &&
-            this.blockNotReadyMap.get(forkCnt)!.has(transactionCnt) &&
-            this.blockNotReadyMap
-                .get(forkCnt)!
-                .get(transactionCnt)!
-                .has(participantAdr)
-        ) {
-            if (
-                EvmUtils.encodeBlock(block) ==
-                this.blockNotReadyMap
-                    .get(forkCnt)!
-                    .get(transactionCnt)!
-                    .get(participantAdr)!.encodedBlock
-            )
-                return true;
-        }
-        return false;
+        return this.isBlockInChain(block) || this.queues.isBlockQueued(block);
     }
     public checkBlock(signedBlock: SignedBlockStruct): AgreementFlag {
         // Decode block and validate basic properties
@@ -492,10 +412,10 @@ class AgreementManager {
             signedBlock.signature as SignatureLike
         );
         const { forkCnt, height } = coordinatesOf(block);
-        const participantAdr = block.transaction.header.participant;
+        const participant = participantOf(block);
 
         // Check if the signature is valid
-        if (retrievedAddress != participantAdr) {
+        if (retrievedAddress != participant) {
             return AgreementFlag.INVALID_SIGNATURE;
         }
 
@@ -513,8 +433,7 @@ class AgreementManager {
         const existingBlock = this.getBlock(forkCnt, height);
         if (existingBlock) {
             // Check for double signing or conflict with existing block
-            return existingBlock.transaction.header.participant ===
-                participantAdr
+            return existingBlock.transaction.header.participant === participant
                 ? AgreementFlag.DOUBLE_SIGN
                 : AgreementFlag.INCORRECT_DATA;
         }
