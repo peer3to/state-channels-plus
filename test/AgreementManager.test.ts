@@ -231,7 +231,7 @@ describe("AgreementManager", () => {
         describe("When checking for duplicates in the canonical chain", () => {
             it("should return true if the block exists in the canonical chain", () => {
                 const isBlockInChainStub = sinon
-                    .stub(agreementManager, "isBlockInChain")
+                    .stub(agreementManager.validator, "isBlockInChain")
                     .returns(true);
 
                 expect(agreementManager.isBlockDuplicate(block)).to.be.true;

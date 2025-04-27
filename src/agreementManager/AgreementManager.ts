@@ -1,4 +1,4 @@
-import { AddressLike, BigNumberish, SignatureLike, ethers } from "ethers";
+import { AddressLike, BigNumberish, SignatureLike } from "ethers";
 import {
     SignedBlockStruct,
     BlockStruct,
@@ -6,11 +6,11 @@ import {
 } from "@typechain-types/contracts/V1/DataTypes";
 import EvmUtils from "../utils/EvmUtils";
 import {
-    coordinatesOf,
     forkOf,
     participantOf,
     getParticipantSignature,
-    getSignerAddresses
+    getSignerAddresses,
+    isSameBlock
 } from "@/utils";
 import { AgreementFlag } from "@/types";
 import { BlockConfirmation } from "./types";
@@ -18,10 +18,23 @@ import * as SetUtils from "@/utils/set";
 import SignatureService from "./SignatureService";
 import ForkService, { Direction } from "./ForkService";
 import QueueService from "./QueueService";
+import OnChainTracker from "./OnChainTracker";
+import BlockValidator from "./BlockValidator";
 
 class AgreementManager {
     forks = new ForkService();
     queues = new QueueService();
+    chain = new OnChainTracker(
+        this.forks,
+        this.queues,
+        /* temp stub */ () => AgreementFlag.READY
+    );
+    validator = new BlockValidator(this.forks, this.queues, this.chain);
+
+    constructor() {
+        const blockChecker = this.validator.check.bind(this.validator);
+        this.chain.setChecker(blockChecker);
+    }
 
     // ************************************************
     // ***** Canonical chain operations - public ******
@@ -59,7 +72,7 @@ class AgreementManager {
                 "AgreementManager - confirmBlock - block doesn't exist"
             );
 
-        if (!this.areBlocksEqual(agreement.block, block))
+        if (!isSameBlock(agreement.block, block))
             throw new Error("AgreementManager - confirmBlock - conflict");
 
         if (SignatureService.signatureExists(agreement, confirmationSignature))
@@ -89,7 +102,7 @@ class AgreementManager {
         const agreement = this.forks.agreementByBlock(block);
         if (
             !agreement ||
-            this.areBlocksEqual(agreement.block, block) ||
+            isSameBlock(agreement.block, block) ||
             participantOf(agreement.block) !== participantOf(block)
         ) {
             return undefined;
@@ -138,7 +151,7 @@ class AgreementManager {
         const fork = this.forks.forkAt(forkCnt);
         const agreement = this.forks.agreementByBlock(block);
 
-        if (!agreement || !fork || !this.areBlocksEqual(agreement.block, block))
+        if (!agreement || !fork || !isSameBlock(agreement.block, block))
             return false;
 
         // Check if all threshold addresses have signed
@@ -177,7 +190,7 @@ class AgreementManager {
 
         if (!agreement) return false;
 
-        if (!this.areBlocksEqual(agreement.block, block))
+        if (!isSameBlock(agreement.block, block))
             throw new Error("AgreementManager - doesSignatureExist - conflict");
 
         return SignatureService.signatureExists(agreement, signature);
@@ -189,7 +202,7 @@ class AgreementManager {
     ): { didSign: boolean; signature: SignatureLike | undefined } {
         const agreement = this.forks.agreementByBlock(block);
 
-        if (!agreement || !this.areBlocksEqual(agreement.block, block))
+        if (!agreement || !isSameBlock(agreement.block, block))
             return { didSign: false, signature: undefined };
 
         return getParticipantSignature(
@@ -305,70 +318,23 @@ class AgreementManager {
         signedBlock: SignedBlockStruct,
         timestamp: number
     ): AgreementFlag {
-        const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
-        const { forkCnt, height } = coordinatesOf(block);
-        const participant = participantOf(block);
-
-        //Resolved? -  also have to prevent duplicates in queue(map) - queue map can't have duplicates, it can only be overwritten wtih a different block for the same [forkCnt,transactionCnt,participantAdr] - in that case checkBlock returns a dispute flag
-        const flag = this.checkBlock(signedBlock);
-        if (
-            flag === AgreementFlag.INVALID_SIGNATURE ||
-            flag === AgreementFlag.INCORRECT_DATA ||
-            flag === AgreementFlag.DOUBLE_SIGN
-        )
-            return flag;
-
-        if (flag === AgreementFlag.READY || flag === AgreementFlag.NOT_READY)
-            this.queueBlock(signedBlock);
-
-        //Resolved - duplicates can be added - can bloat state
-        if (this.didParticipantPostOnChain(forkCnt, height, participant))
-            return flag;
-
-        this.forks.addChainBlock(forkCnt, height, participant, timestamp);
-
-        return flag;
+        return this.chain.collect(signedBlock, timestamp);
     }
+
     public getChainLatestBlockTimestamp(
         forkCnt: number,
         maxTransactionCnt: number
     ): number {
-        const fork = this.forks.forkAt(forkCnt);
-        if (!fork)
-            throw new Error(
-                "AgreementManager - getChainLatestBlockTimestamp - fork not found"
-            );
-        let latestTimestamp = 0;
-        for (let chainBlock of fork.chainBlocks) {
-            if (chainBlock.transactionCnt > maxTransactionCnt) continue;
-            if (chainBlock.timestamp > latestTimestamp)
-                latestTimestamp = chainBlock.timestamp;
-        }
-        return latestTimestamp;
+        return this.chain.latestTimestamp(forkCnt, maxTransactionCnt);
     }
+
     public didParticipantPostOnChain(
         forkCnt: number,
         transactionCnt: number,
         participantAddres: AddressLike
     ): boolean {
-        const fork = this.forks.forkAt(forkCnt);
-        if (!fork)
-            throw new Error(
-                "AgreementManager - didParticipantPostOnChain - fork not found"
-            );
-        for (let block of fork.chainBlocks) {
-            if (
-                block.transactionCnt == transactionCnt &&
-                block.participantAdr == participantAddres
-            )
-                return true;
-        }
-        return false;
+        return this.chain.hasPosted(forkCnt, transactionCnt, participantAddres);
     }
-
-    // ************************************************
-    // **** Future blocks queue (map) operations - ****
-    // ************************************************
 
     public queueBlock(signedBlock: SignedBlockStruct) {
         this.queues.queueBlock(signedBlock);
@@ -395,98 +361,21 @@ class AgreementManager {
     // ************************************************
 
     //both canonical chain and future queue
+    //both canonical chain and future queue
     public isBlockInChain(block: BlockStruct): boolean {
-        const agreement = this.forks.agreementByBlock(block);
-        return (
-            (agreement || false) && this.areBlocksEqual(agreement.block, block)
-        );
+        return this.validator.isBlockInChain(block);
     }
     public isBlockDuplicate(block: BlockStruct): boolean {
-        return this.isBlockInChain(block) || this.queues.isBlockQueued(block);
+        return this.validator.isBlockDuplicate(block);
     }
     public checkBlock(signedBlock: SignedBlockStruct): AgreementFlag {
-        // Decode block and validate basic properties
-        const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
-        const retrievedAddress = EvmUtils.retrieveSignerAddressBlock(
-            block,
-            signedBlock.signature as SignatureLike
-        );
-        const { forkCnt, height } = coordinatesOf(block);
-        const participant = participantOf(block);
-
-        // Check if the signature is valid
-        if (retrievedAddress != participant) {
-            return AgreementFlag.INVALID_SIGNATURE;
-        }
-
-        // Check if the block is a duplicate
-        if (this.isBlockDuplicate(block)) {
-            return AgreementFlag.DUPLICATE;
-        }
-
-        // Check if the fork count is valid
-        if (!this.forks.isValidForkCnt(forkCnt)) {
-            return AgreementFlag.NOT_READY;
-        }
-
-        // Check if this block already exists
-        const existingBlock = this.getBlock(forkCnt, height);
-        if (existingBlock) {
-            // Check for double signing or conflict with existing block
-            return existingBlock.transaction.header.participant === participant
-                ? AgreementFlag.DOUBLE_SIGN
-                : AgreementFlag.INCORRECT_DATA;
-        }
-
-        // Special case for the first block in a fork
-        if (height === 0) {
-            const expectedPreviousHash = ethers.keccak256(
-                this.forks.forkAt(forkCnt)?.forkGenesisStateEncoded ?? ""
-            );
-            return block.previousStateHash === expectedPreviousHash
-                ? AgreementFlag.READY
-                : AgreementFlag.INCORRECT_DATA;
-        }
-
-        // For non-first blocks, check if the previous block exists and hash matches
-        const previousBlock = this.getBlock(forkCnt, height - 1);
-        if (previousBlock) {
-            return previousBlock.stateHash === block.previousStateHash
-                ? AgreementFlag.READY
-                : AgreementFlag.INCORRECT_DATA;
-        }
-
-        // If no previous block exists but we expect one, the block is not ready
-        return AgreementFlag.NOT_READY;
+        return this.validator.check(signedBlock);
     }
     public getLatestBlockTimestamp(forkCnt: number): number {
-        const fork = this.forks.forkAt(forkCnt);
-        if (!fork)
-            throw new Error(
-                "AgreementManager - getLatestBlockTimestamp - fork not found"
-            );
-        let genesisTimestamp = fork.genesisTimestamp;
-        let latestBlockTimestamp = Number(
-            this.forks.latestAgreement(forkCnt)?.block.transaction.header
-                .timestamp ?? 0
-        );
-        return Math.max(genesisTimestamp, latestBlockTimestamp);
+        return this.validator.latestBlockTimestamp(forkCnt);
     }
     public getLatestTimestamp(forkCnt: number, maxTxCnt: number): number {
-        let latestBlockTimestamp = this.getLatestBlockTimestamp(forkCnt);
-        let latestChainTimestamp = this.getChainLatestBlockTimestamp(
-            forkCnt,
-            maxTxCnt
-        );
-        return Math.max(latestBlockTimestamp, latestChainTimestamp);
-    }
-
-    // ************************************************
-    // ********** Private validation helpers **********
-    // ************************************************
-
-    private areBlocksEqual(block1: BlockStruct, block2: BlockStruct): boolean {
-        return EvmUtils.encodeBlock(block1) === EvmUtils.encodeBlock(block2);
+        return this.validator.latestRelevantTimestamp(forkCnt, maxTxCnt);
     }
 }
 

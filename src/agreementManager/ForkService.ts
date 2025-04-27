@@ -115,6 +115,9 @@ export default class ForkService {
             ? this.forks[forkCnt].agreements[txCnt]
             : undefined;
     }
+    blockAt(forkCnt: number, txCnt: number): BlockStruct | undefined {
+        return this.agreement(forkCnt, txCnt)?.block;
+    }
 
     agreementByBlock(block: BlockStruct): Agreement | undefined {
         const { forkCnt, height } = coordinatesOf(block);

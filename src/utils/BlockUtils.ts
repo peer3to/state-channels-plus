@@ -1,5 +1,5 @@
 import { BlockStruct } from "@typechain-types/contracts/V1/DataTypes";
-import { AddressLike } from "ethers";
+import EvmUtils from "./EvmUtils";
 
 /**
  * Extract numeric fields from a block and convert them to regular number types
@@ -54,3 +54,6 @@ export const normalized = (block: BlockStruct) => ({
     stateHash: block.stateHash as string,
     previousStateHash: block.previousStateHash as string
 });
+
+export const isSameBlock = (b1: BlockStruct, b2: BlockStruct): boolean =>
+    EvmUtils.encodeBlock(b1) === EvmUtils.encodeBlock(b2);
