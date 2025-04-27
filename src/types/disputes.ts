@@ -4,13 +4,10 @@ export const FoldRechallengeProofEthersType = `tuple(
     string encodedBlock,
     bytes[] signatures
     )`;
-export const DoubleSignEthersType = `tuple(
-    ${SignedBlockEthersType} block1,
-    ${SignedBlockEthersType} block2
-    )`;
+
 export const DoubleSignProofEthersType = `tuple(
-    ${SignedBlockEthersType}[] doubleSigns
-    )`;
+        tuple(${SignedBlockEthersType} block1, ${SignedBlockEthersType} block2)[] doubleSigns
+        )`;
 export const IncorrectDataProofEthersType = `tuple(
     ${SignedBlockEthersType} block1,
     ${SignedBlockEthersType} block2,

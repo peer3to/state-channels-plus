@@ -144,9 +144,10 @@ class StateManager {
         let disputeProof: ProofStruct;
         if (flag == AgreementFlag.DOUBLE_SIGN) {
             console.log("StateManager - collectOnChainBlock - double sign");
-            disputeProof = this.disputeHandler.createDoubleSignProof([
-                signedBlock
-            ]);
+            disputeProof =
+                this.disputeHandler.proofManager.createDoubleSignProof([
+                    signedBlock
+                ]);
             this.disputeHandler.createDispute(
                 block.transaction.header.forkCnt,
                 "0x00",
@@ -156,7 +157,9 @@ class StateManager {
         } else if (flag == AgreementFlag.INCORRECT_DATA) {
             console.log("StateManager - collectOnChainBlock - incorrect data");
             disputeProof =
-                this.disputeHandler.createIncorrectDataProof(signedBlock);
+                this.disputeHandler.proofManager.createIncorrectDataProof(
+                    signedBlock
+                );
             this.disputeHandler.createDispute(
                 block.transaction.header.forkCnt,
                 "0x00",

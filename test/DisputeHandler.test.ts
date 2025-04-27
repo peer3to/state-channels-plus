@@ -4,7 +4,7 @@ import { ethers } from "hardhat";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
 
 import DisputeHandler from "@/DisputeHandler";
-import AgreementManager from "@/AgreementManager";
+import AgreementManager from "@/agreementManager";
 import P2pEventHooks from "@/P2pEventHooks";
 import EvmUtils from "@/utils/EvmUtils";
 import * as factory from "./factory";

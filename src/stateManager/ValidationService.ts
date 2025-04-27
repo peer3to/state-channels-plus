@@ -1,4 +1,4 @@
-import AgreementManager from "@/agreementManager/AgreementManager";
+import AgreementManager from "@/agreementManager";
 import { ExecutionFlags, TimeConfig, AgreementFlag } from "@/types";
 import {
     BlockStruct,
@@ -19,6 +19,7 @@ import {
 import AStateMachine from "@/AStateMachine";
 import { Clock } from "..";
 import { subjectiveTimingFlag } from "@/utils/timestamp";
+import ProofManager from "@/ProofManager";
 
 interface ValidationResult {
     success: boolean;
@@ -202,8 +203,7 @@ export default class ValidationService {
             Clock.getTimeInSeconds()
         );
         if (flag === ExecutionFlags.DISPUTE) {
-            const proof =
-                this.disputeHandler.createBlockTooFarInFutureProof(signed);
+            const proof = ProofManager.createBlockTooFarInFutureProof(signed);
             this.disputeHandler.createDispute(this.getForkCnt(), "0x00", 0, [
                 proof
             ]);
