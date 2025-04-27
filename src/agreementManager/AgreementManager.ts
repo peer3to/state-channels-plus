@@ -4,38 +4,12 @@ import {
     BlockStruct,
     ConfirmedBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import EvmUtils from "./utils/EvmUtils";
-import { coordinatesOf, forkOf } from "./utils/BlockUtils";
-import { AgreementFlag } from "./types/flags";
-// A fork is created by a DLT by disputing someone or asking the DLT to enforce a state.
-// The user initiating the process submits:
-// 1) Last known state with full threshold signatures
-// 2) The signed transactions starting from 1) up until the last known transaction which response the participant signed
-// 3) What they're disputing or enforcing
+import EvmUtils from "../utils/EvmUtils";
+import { coordinatesOf, forkOf } from "../utils/BlockUtils";
+import { AgreementFlag } from "@/types";
+import { AgreementFork, Agreement, BlockConfirmation } from "./types";
+import * as SetUtils from "@/utils/set";
 
-//The DLT can set any reality and those realites are forks - the users follow the state machine set by the latest fork
-type AgreementFork = {
-    forkGenesisStateEncoded: string; //genesis state (encoded) of the fork
-    addressesInThreshold: AddressLike[]; //The addresses that are in the threshold
-    genesisTimestamp: number; //timestamp of the first block in the fork
-    chainBlocks: ChainBlocks[]; //Blocks that are posted on chain for the fork
-    agreements: Agreement[]; //The agreements that are part of the fork - total order
-};
-
-type Agreement = {
-    block: BlockStruct;
-    blockSignatures: SignatureLike[];
-    encodedState: string;
-};
-type ChainBlocks = {
-    transactionCnt: number;
-    participantAdr: AddressLike;
-    timestamp: number;
-};
-type BlockConfirmation = {
-    originalSignedBlock: SignedBlockStruct;
-    confirmationSignature: SignatureLike;
-};
 type ForkCnt = number;
 type TransactionCnt = number;
 type ParticipantAdr = string;
@@ -191,15 +165,15 @@ class AgreementManager {
             return false;
 
         // Check if all threshold addresses have signed
-        const set = new Set(fork.addressesInThreshold);
-        for (const signature of agreement.blockSignatures) {
-            set.delete(EvmUtils.retrieveSignerAddressBlock(block, signature));
-            if (set.size === 0) {
-                break;
-            }
-        }
-
-        return set.size === 0;
+        const signerAddresses = agreement.blockSignatures.map((signature) =>
+            EvmUtils.retrieveSignerAddressBlock(block, signature).toString()
+        );
+        const signersSet = SetUtils.fromArray(signerAddresses);
+        const addressesSet = SetUtils.stringSetFromArray(
+            fork.addressesInThreshold
+        );
+        // All threshold addresses must be in the signers set
+        return SetUtils.isSubset(addressesSet, signersSet);
     }
     public getSigantures(block: BlockStruct): SignatureLike[] {
         return this.getAgreementByBlock(block)?.blockSignatures || [];
@@ -245,9 +219,26 @@ class AgreementManager {
         return this.getParticipantSignature(agreement, participant);
     }
 
+    public getParticipantsWhoHaventSignedBlock(
+        block: BlockStruct
+    ): AddressLike[] {
+        const forkCnt = forkOf(block);
+        if (!this.isValidForkCnt(forkCnt)) return [];
+
+        const signatures = this.getSigantures(block);
+        const signersSet = SetUtils.stringSetFromArray(
+            signatures.map((signature) =>
+                EvmUtils.retrieveSignerAddressBlock(block, signature)
+            )
+        );
+
+        const fork = this.forks[forkCnt];
+        return SetUtils.excludeFromArray(fork.addressesInThreshold, signersSet);
+    }
+
     public isParticipantInLatestFork(participant: AddressLike): boolean {
         const fork = this.forks[this.forks.length - 1];
-        return fork.addressesInThreshold.includes(participant);
+        return new Set(fork.addressesInThreshold).has(participant);
     }
 
     public getEncodedState(
@@ -279,7 +270,7 @@ class AgreementManager {
         let encodedLatestFinalizedState: string | undefined;
         let encodedLatestCorrectState: string | undefined;
         let virtualVotingBlocks: ConfirmedBlockStruct[] = [];
-        const requiredSignatures = new Set(fork.addressesInThreshold);
+        let requiredSignatures = SetUtils.fromArray(fork.addressesInThreshold);
 
         for (let i = fork.agreements.length - 1; i >= 0; i--) {
             const agreement = fork.agreements[i];
@@ -300,12 +291,11 @@ class AgreementManager {
                 signatures: agreement.blockSignatures as string[]
             });
 
-            for (const signerAddress of signersAddresses) {
-                requiredSignatures.delete(signerAddress);
-                if (requiredSignatures.size === 0) {
-                    break;
-                }
-            }
+            // Remove the signers we found from required signatures
+            requiredSignatures = SetUtils.difference(
+                requiredSignatures,
+                signersAddresses
+            );
 
             // Check if we found a finalized state
             if (requiredSignatures.size === 0) {

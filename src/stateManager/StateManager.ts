@@ -10,7 +10,7 @@ import {
     SignatureLike,
     ethers
 } from "ethers";
-import AgreementManager from "../AgreementManager";
+import AgreementManager from "../agreementManager/AgreementManager";
 import { AgreementFlag, ExecutionFlags, TimeConfig } from "@/types";
 import { AStateChannelManagerProxy } from "@typechain-types";
 import {
@@ -403,18 +403,6 @@ class StateManager {
     // returns participants who haven't signed the block
     // 1 is currently unused
     // 2 belong in the AgreementManager
-    public async getParticipantsWhoHaventSignedBlock(
-        block: BlockStruct
-    ): Promise<AddressLike[]> {
-        const signatures = this.agreementManager.getSigantures(block);
-        const retrievedAddresses = signatures.map((signature) =>
-            EvmUtils.retrieveSignerAddressBlock(block, signature)
-        );
-        const playerAddresses = await this.stateMachine.getParticipants();
-        return playerAddresses.filter(
-            (address) => !retrievedAddresses.includes(address.toString())
-        );
-    }
 
     public getEncodedState(): Promise<string> {
         return this.stateMachine.getState();

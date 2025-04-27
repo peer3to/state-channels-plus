@@ -1,5 +1,5 @@
 import { AddressLike, BigNumberish, BytesLike, ethers } from "ethers";
-import AgreementManager from "./AgreementManager";
+import AgreementManager from "./agreementManager/AgreementManager";
 import { AStateChannelManagerProxy } from "@typechain-types";
 import {
     ProofStruct,

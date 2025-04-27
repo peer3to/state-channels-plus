@@ -1,4 +1,4 @@
-import AgreementManager from "@/AgreementManager";
+import AgreementManager from "@/agreementManager/AgreementManager";
 import { ExecutionFlags, TimeConfig, AgreementFlag } from "@/types";
 import {
     BlockStruct,
