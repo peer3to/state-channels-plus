@@ -8,26 +8,31 @@ contract StateChannelCommon is
     StateChannelManagerStorage,
     StateChannelManagerEvents
 {
-    
-    function getOnChainSlashedParticipants() public view virtual returns (address[] memory) {
-        return onChainSlashedParticipants;
+
+    function getOnChainSlashedParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
+        return disputeData[channelId].onChainSlashedParticipants;
     }
 
-    function addOnChainSlashedParticipants(address[] memory slashedParticipants) internal virtual {
+    //This is executed only after sucessful auditing -> can safely add/insert participants without checking for duplicates (otherwise auditing would have failed)
+    function addOnChainSlashedParticipants(bytes32 channelId, address[] memory slashedParticipants) internal virtual {
         for(uint i = 0; i < slashedParticipants.length; i++) {
-            onChainSlashedParticipants.push(slashedParticipants[i]);
+            disputeData[channelId].onChainSlashedParticipants.push(slashedParticipants[i]);
         }
     }
 
     function getDisputeLength(bytes32 channelId) public view virtual returns (uint) {
-        return disputes[channelId].length;
+        return disputeData[channelId].disputeCommitments.length;
     }
 
-    function getParticipants(
-        bytes32 channelId,
-        uint forkCnt
+    function getSnapshotParticipants(
+        bytes32 channelId
+    ) public view virtual returns (address[] memory) {
+        return stateSnapshots[channelId].participants;
+    }
+
+    function getStatemachineParticipants(
+        bytes memory encodedState
     ) public virtual returns (address[] memory) {
-        bytes storage encodedState = encodedStates[channelId][forkCnt];
         stateMachineImplementation.setState(encodedState);
         return stateMachineImplementation.getParticipants();
     }
@@ -39,16 +44,6 @@ contract StateChannelCommon is
         //channelId not used currenlty since all channels have the same SM - later they can be mapped to different ones
         stateMachineImplementation.setState(encodedState);
         return stateMachineImplementation.getNextToWrite();
-    }
-
-    function isGenesisState(
-        bytes32 channelId,
-        uint forkCnt,
-        bytes memory encodedFinalizedState
-    ) public view virtual returns (bool) {
-        return
-            keccak256(abi.encodePacked(encodedFinalizedState)) ==
-            keccak256(abi.encodePacked(encodedStates[channelId][forkCnt]));
     }
 
     function getP2pTime() public view virtual returns (uint) {
@@ -80,17 +75,18 @@ contract StateChannelCommon is
         return (p2pTime, agreementTime, chainFallbackTime, challengeTime);
     }
 
-    function getBlockCallData(
+    function getBlockCallDataCommitment(
         bytes32 channelId,
         uint forkCnt,
+        uint blockHeight,
         address participant
-    ) public view virtual returns (bool found, bytes32 blockCallDataCommitment) {
+    ) public view virtual returns (bool found, bytes32 blockCalldataCommitment) {
         // fetch the blockCallDataCommitment from storage
-        blockCallDataCommitment = blockCallDataCommitments[channelId][forkCnt][participant];
-        if(blockCallDataCommitment == bytes32(0)) {
+        bytes32 commitment = blockCalldataCommitments[channelId][participant][forkCnt][blockHeight];
+        if(commitment == bytes32(0)) {
             return (false, bytes32(0));
         }
-        return (true, blockCallDataCommitment);
+        return (true, commitment);
     }
 
     function getChainLatestBlockTimestamp(
@@ -101,29 +97,17 @@ contract StateChannelCommon is
         //TODO
     }
 
-    function setState(bytes32 channelId, bytes memory encodedState) internal {
-        uint forkCnt = disputes[channelId].length;
-        encodedStates[channelId][forkCnt] = encodedState;
-        //TODO check invariant (balances etc...) - or not do it here, but where threshold is submitted - think about this
-        emit SetState(channelId, encodedState, forkCnt, block.timestamp);
-    }
-
     function isChannelOpen(
         bytes32 channelId
     ) public view virtual returns (bool) {
         return
-            keccak256(abi.encodePacked(encodedStates[channelId][0])) !=
-            keccak256(abi.encodePacked(new bytes(0)));
+            stateSnapshots[channelId].participants.length > 0;
     }
 
-    function isDisputeCommitmentAvailable(bytes32 channelId, bytes32 disputeCommitment) public view returns (bool, int) {
-        bytes32[] storage disputeHashes = disputes[channelId];
-        if (disputeHashes.length == 0) return (false, -1);
-        for(uint i = 0; i < disputeHashes.length; i++) {
-            if(disputeHashes[i] == disputeCommitment) {
-                return (true, int(i));
-            }
+    function getDisputeCommitment(bytes32 channelId, uint disputeIndex) public view returns (bool found, bytes32 disputeCommitment) {
+        if(disputeIndex >= disputeData[channelId].disputeCommitments.length) {
+            return (false, bytes32(0));
         }
-        return (false, -1);
+        return (true, disputeData[channelId].disputeCommitments[disputeIndex]);
     }
 }

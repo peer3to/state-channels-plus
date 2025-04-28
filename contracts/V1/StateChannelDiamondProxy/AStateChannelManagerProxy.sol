@@ -2,6 +2,8 @@ pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
 import "./DisputeManagerFacet.sol";
+import "./FraudProofFacet.sol";
+
 import "./StateChannelUtilLibrary.sol";
 import "../StateChannelManagerInterface.sol";
 
@@ -10,13 +12,16 @@ abstract contract AStateChannelManagerProxy is
     StateChannelCommon
 {
     DisputeManagerFacet disputeManagerFacet;
+    FraudProofFacet fraudProofFacet;
 
     constructor(
         address _stateMachineImplementation,
-        address _disputeManagerFacet
+        address _disputeManagerFacet,
+        address _fraudProofFacet
     ) {
         stateMachineImplementation = AStateMachine(_stateMachineImplementation);
         disputeManagerFacet = DisputeManagerFacet(_disputeManagerFacet);
+        fraudProofFacet = FraudProofFacet(_fraudProofFacet);
         p2pTime = 15;
         agreementTime = 5;
         chainFallbackTime = 30;
@@ -64,8 +69,7 @@ abstract contract AStateChannelManagerProxy is
         onlySelf
         returns (
             bytes memory encodedModifiedState,
-            ExitChannel[] memory,
-            uint successCnt
+            ExitChannel[] memory
         )
     {
         return _applySlashesToStateMachine(encodedState, slashedParticipants);
@@ -79,17 +83,10 @@ abstract contract AStateChannelManagerProxy is
         onlySelf
         returns (
             bytes memory encodedModifiedState,
-            ExitChannel[] memory,
-            uint successCnt
+            ExitChannel[] memory
         )
     {
         return _removeParticipantsFromStateMachine(encodedState, participants);
-    }
-
-    function getLatestState(
-        bytes32 channelId
-    ) public view override returns (bytes memory) {
-        return encodedStates[channelId][disputes[channelId].length - 1];
     }
 
     function _applyJoinChannelToStateMachine(
@@ -115,8 +112,7 @@ abstract contract AStateChannelManagerProxy is
         internal
         returns (
             bytes memory encodedModifiedState,
-            ExitChannel[] memory,
-            uint successCnt
+            ExitChannel[] memory exitChannels
         )
     {
         ExitChannel[] memory exitChannels = new ExitChannel[](
@@ -129,12 +125,12 @@ abstract contract AStateChannelManagerProxy is
             (success, exitChannels[successCnt]) = stateMachineImplementation
                 .slashParticipant(slashedParticipants[i]);
             // require(success, "Slash failed");
-            if (success) successCnt++;
+            require(success,ErrorDisputeStateMachineSlashingFailed());
+            successCnt++;
         }
         return (
             stateMachineImplementation.getState(),
-            exitChannels,
-            successCnt
+            exitChannels
         );
     }
 
@@ -145,8 +141,7 @@ abstract contract AStateChannelManagerProxy is
         internal
         returns (
             bytes memory encodedModifiedState,
-            ExitChannel[] memory,
-            uint successCnt
+            ExitChannel[] memory
         )
     {
         ExitChannel[] memory exitChannels = new ExitChannel[](
@@ -159,12 +154,12 @@ abstract contract AStateChannelManagerProxy is
             (success, exitChannels[successCnt]) = stateMachineImplementation
                 .removeParticipant(participants[i]);
             // require(success, "Remove failed");
-            if (success) successCnt++;
+            require(success,ErrorDisputeStateMachineRemovingFailed());
+            successCnt++;
         }
         return (
             stateMachineImplementation.getState(),
-            exitChannels,
-            successCnt
+            exitChannels
         );
     }
 
@@ -204,38 +199,47 @@ abstract contract AStateChannelManagerProxy is
         return result;
     }
 
-    function getDispute(
-        bytes32 channelId
-    ) public view override returns (bytes32[] memory) {
-        return disputes[channelId];
-    }
-
     function createDispute(
         Dispute memory dispute
     ) public override {
         _delegatecall(
             address(disputeManagerFacet),
-            abi.encode(
-                disputeManagerFacet.createDispute.selector,
-                dispute
+            abi.encodeCall(
+                disputeManagerFacet.createDispute,
+                (
+                    dispute
+                )
             )
         );
     }
 
     function auditDispute(
         Dispute memory dispute,
-        DisputeAuditingData memory disputeAuditingData
-    ) public override returns (bool isSuccess, address[] memory slashParticipants, bytes memory errorMessage) {
-        _delegatecall(
-            address(disputeManagerFacet),
-            abi.encodeCall(
-                disputeManagerFacet.auditDispute,
-                (
-                    dispute,
-                    disputeAuditingData
-                )
+        DisputeAuditingData memory disputeAuditingData,
+        uint timestamp
+    ) public override returns (bool success, bytes memory slashedParticipantsOrError) {
+       //This is done manually since the logic is different from other _delegatecalls
+       
+       // Encode the function selector and arguments
+        bytes memory data = abi.encodeCall(
+            DisputeManagerFacet.auditDispute,
+            (
+                dispute,
+                disputeAuditingData,
+                timestamp
             )
         );
+        // Perform the low-level call with a gas limit
+        (bool success, bytes memory returnData) = address(this).delegatecall{gas: getGasLimit()}(data);
+
+        // If the call was successful, decode the result
+        if (success) {
+            address[] memory slashedParticipants = abi.decode(returnData, (address[]));
+            //for sure no duplicates, otherwise auditing would fail -> just insert
+            addOnChainSlashedParticipants(dispute.channelId, slashedParticipants);
+        }
+        // if !success and returnData.length == 0 => Auditing ran out of gas
+        return (success, returnData);
     }
 
     function challengeDispute(
@@ -254,6 +258,24 @@ abstract contract AStateChannelManagerProxy is
         );
     }
 
+    function verifyFraudProofs(
+        Proof[] memory fraudProofs,
+        FraudProofVerificationContext memory fraudProofVerificationContext
+    ) public returns (address[] memory slashParticipants) {
+        bytes memory slashedParticipants = _delegatecall(
+            address(fraudProofFacet),
+            abi.encodeCall(
+                fraudProofFacet.verifyFraudProofs,
+                (
+                    fraudProofs,
+                    fraudProofVerificationContext
+                )
+            )
+        );
+
+        return abi.decode(slashedParticipants, (address[]));
+    }
+
     function getForkCnt(
         bytes32 channelId
     )
@@ -262,18 +284,17 @@ abstract contract AStateChannelManagerProxy is
         override(StateChannelManagerInterface)
         returns (uint)
     {
-        return disputes[channelId].length;
+        return disputeData[channelId].disputeCommitments.length;
     }
 
     function getParticipants(
-        bytes32 channelId,
-        uint forkCnt
+        bytes32 channelId
     )
         public
-        override(StateChannelCommon, StateChannelManagerInterface)
+        override(StateChannelManagerInterface)
         returns (address[] memory)
     {
-        return StateChannelCommon.getParticipants(channelId, forkCnt);
+        return getSnapshotParticipants(channelId);
     }
 
     function getNextToWrite(
@@ -285,24 +306,6 @@ abstract contract AStateChannelManagerProxy is
         returns (address)
     {
         return StateChannelCommon.getNextToWrite(channelId, encodedState);
-    }
-
-    function isGenesisState(
-        bytes32 channelId,
-        uint forkCnt,
-        bytes memory encodedFinalizedState
-    )
-        public
-        view
-        override(StateChannelCommon, StateChannelManagerInterface)
-        returns (bool)
-    {
-        return
-            StateChannelCommon.isGenesisState(
-                channelId,
-                forkCnt,
-                encodedFinalizedState
-            );
     }
 
     function getP2pTime()
@@ -350,9 +353,10 @@ abstract contract AStateChannelManagerProxy is
         return StateChannelCommon.getAllTimes();
     }
 
-    function getBlockCallData(
+    function getBlockCallDataCommitment(
         bytes32 channelId,
         uint forkCnt,
+        uint blockHeight,
         address participant
     )
         public
@@ -361,9 +365,10 @@ abstract contract AStateChannelManagerProxy is
         returns (bool found, bytes32 blockCallData)
     {
         return
-            StateChannelCommon.getBlockCallData(
+            StateChannelCommon.getBlockCallDataCommitment(
                 channelId,
                 forkCnt,
+                blockHeight,
                 participant
             );
     }

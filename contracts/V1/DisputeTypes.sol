@@ -52,9 +52,11 @@ struct Dispute {
     /// @notice Stores all exits since genesis
     /// @dev the time range of the exit is from genesis to the challenge deadline (new fork)
     ExitChannelBlock[] exitChannelBlocks;
+    /// @notice hash(DisputeAuditingData)
+    bytes32 disputeAuditingDataHash;
     // ========================== optional ===============================
-    /// @notice Previous recursive dispute hash
-    bytes32 previousRecursiveDisputeHash;
+    /// @notice Previous recursive dispute uint
+    uint previousRecursiveDisputeIndex; // default value type(uint).max
     /// @notice Timeout for the dispute
     Timeout timeout;
     /// @notice Self removal for the dispute
@@ -174,9 +176,25 @@ struct DisputePair {
 
 /// @dev data for dispute auditing
 struct DisputeAuditingData {
-    bytes genesisStateSnapshot;
-    bytes latestStateSnapshot;
+    StateSnapshot genesisStateSnapshot;
+    StateSnapshot latestStateSnapshot;
+    StateSnapshot outputStateSnapshot;
+    StateSnapshot[] milestoneSnapshots; //for K milestones there will be K-1 snapshots, since the first milestone is the genesisSnapshot
     bytes latestStateStateMachineState;
-    uint disputeTimestamp;
     JoinChannelBlock[] joinChannelBlocks;
+    Dispute previousDispute; // (optional) needed to verify 'this' dispute genesis against the previous dispute outputSnapshot or genesisSnapshot (in the case of a recursive dispute) - if not present, genesis is the latest on-chain Snapshot
+    uint previousDisputeTimestamp; // (optional) needed to verify the commitment of the previous dispute
+}
+
+struct DisputeData{
+    DisputePair[] disputePairs;
+    address[] onChainSlashedParticipants;
+    address[] pendingParticipants;
+    bytes32 latestJoinChannelBlockHash;
+    bytes32[] disputeCommitments; //hash(Dispute Struct, block.timestamp)
+}
+
+//Experimental - yet to be determined if needed and what should be the context
+struct FraudProofVerificationContext{
+    bytes32 channelId;
 }

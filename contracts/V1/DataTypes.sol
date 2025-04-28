@@ -29,8 +29,8 @@ struct BlockConfirmation {
 
 struct Block {
     Transaction transaction;
-    bytes32 stateHash;
-    bytes32 previousStateHash;
+    bytes32 stateSnapshotHash;
+    bytes32 previousBlockHash;
 }
 struct Transaction {
     TransactionHeader header;
@@ -115,4 +115,5 @@ struct StateSnapshot {
     uint totalDeposits;
     /// @dev sum of all the amounts in the exitChannel blockchain
     uint totalWithdrawals;
+    uint forkCnt;
 }
