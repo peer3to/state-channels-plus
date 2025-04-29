@@ -12,9 +12,8 @@ import "./MathStateMachine.sol";
 contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
     constructor(
         address aStateMaachineAddress,
-        address disputeManagerFacet,
-        address fraudProofFacet
-    ) AStateChannelManagerProxy(aStateMaachineAddress, disputeManagerFacet, fraudProofFacet) {
+        address disputeManagerFacet
+    ) AStateChannelManagerProxy(aStateMaachineAddress, disputeManagerFacet) {
         p2pTime = 5;
         agreementTime = 5;
         chainFallbackTime = 5;
@@ -95,8 +94,8 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
             genesisState.participants[i] = joinChannels[i].participant;
         }
         bytes memory genesisStateEcoded = abi.encode(genesisState);
-        // encodedStates[channelId][0] = genesisStateEcoded;
-        //TODO! Snapshot instead od encodedState -> think about this
+        encodedStates[channelId][0] = genesisStateEcoded;
+        genesisTimestamps[channelId][0] = block.timestamp;
         emit SetState(channelId, genesisStateEcoded, 0, block.timestamp);
     }
 
@@ -124,6 +123,6 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
 
     function _removeParticipantComposable(
         bytes32 channelId,
-        ExitChannel memory exitChannel
+        ProcessExit memory processExit
     ) internal virtual override returns (bool) {}
 }
