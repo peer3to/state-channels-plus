@@ -106,7 +106,6 @@ library StateChannelUtilLibrary {
         return currentThresholdCount;
     }
 
-    /// @dev Concatenates two address arrays, but it does not add duplicates
     function concatAddressArrays(address[] memory array1, address[] memory array2) internal pure returns (address[] memory) {
         address[] memory result = new address[](array1.length + array2.length);
         for (uint i = 0; i < array1.length; i++) {
