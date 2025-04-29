@@ -51,7 +51,6 @@ struct Dispute {
     /// @notice hash(DisputeAuditingData)
     bytes32 disputeAuditingDataHash;
     /// @notice Address of the disputer, this can be anyone who have a stake in the dispute on chain
-
     address disputer;
     /// @notice Index of the dispute
     uint disputeIndex;
@@ -180,6 +179,7 @@ struct DisputeAuditingData {
     StateSnapshot[] milestoneSnapshots; //for K milestones there will be K-1 snapshots, since the first milestone is the genesisSnapshot
     bytes latestStateStateMachineState;
     JoinChannelBlock[] joinChannelBlocks;
+    // ========================== optional ===============================
     Dispute previousDispute; // (optional) needed to verify 'this' dispute genesis against the previous dispute outputSnapshot or genesisSnapshot (in the case of a recursive dispute) - if not present, genesis is the latest on-chain Snapshot
     uint previousDisputeTimestamp; // (optional) needed to verify the commitment of the previous dispute
 }
