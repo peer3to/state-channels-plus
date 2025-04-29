@@ -188,7 +188,7 @@ struct DisputeAuditingData {
 
 struct DisputeData{
     DisputePair[] disputePairs;
-    address[] onChainSlashedParticipants;
+    address[] slashedParticipants;
     address[] pendingParticipants;
     bytes32 latestJoinChannelBlockHash;
     bytes32[] disputeCommitments; //hash(Dispute Struct, block.timestamp)

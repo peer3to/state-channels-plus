@@ -10,13 +10,13 @@ contract StateChannelCommon is
 {
 
     function getOnChainSlashedParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
-        return disputeData[channelId].onChainSlashedParticipants;
+        return disputeData[channelId].slashedParticipants;
     }
 
     //This is executed only after sucessful auditing -> can safely add/insert participants without checking for duplicates (otherwise auditing would have failed)
     function addOnChainSlashedParticipants(bytes32 channelId, address[] memory slashedParticipants) internal virtual {
         for(uint i = 0; i < slashedParticipants.length; i++) {
-            disputeData[channelId].onChainSlashedParticipants.push(slashedParticipants[i]);
+            disputeData[channelId].slashedParticipants.push(slashedParticipants[i]);
         }
     }
 

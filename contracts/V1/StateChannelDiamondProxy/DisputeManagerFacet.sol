@@ -579,8 +579,8 @@ contract DisputeManagerFacet is StateChannelCommon {
 
         DisputeData storage _disputeData = disputeData[channelId];
         //check if slashed on-chain -> slashed participants can't participate in disputes
-        for(uint i = 0; i < _disputeData.onChainSlashedParticipants.length; i++) {
-            if(_disputeData.onChainSlashedParticipants[i] == participant) {
+        for(uint i = 0; i < _disputeData.slashedParticipants.length; i++) {
+            if(_disputeData.slashedParticipants[i] == participant) {
                 return false; //is slashed -> can't participate
             }
         }
