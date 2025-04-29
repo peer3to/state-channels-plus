@@ -13,7 +13,6 @@ contract DataTypes {
         ExitChannel memory j,
         ExitChannelBlock memory k,
         Timeout memory l
-       
     ) {}
 }
 
@@ -29,8 +28,8 @@ struct BlockConfirmation {
 
 struct Block {
     Transaction transaction;
-    bytes32 stateHash;
-    bytes32 previousStateHash;
+    bytes32 stateSnapshotHash;
+    bytes32 previousBlockHash;
 }
 struct Transaction {
     TransactionHeader header;
@@ -47,7 +46,7 @@ struct TransactionHeader {
 
 // do this polymorphically later with encoded functions and argument data
 struct TransactionBody {
-    bytes encodedData; //TODO! change this to bytes
+    bytes encodedData;
     bytes data; //evm transaction data
 }
 struct JoinChannel {
@@ -66,6 +65,11 @@ struct JoinChannelBlock {
 struct SignedJoinChannel {
     bytes encodedJoinChannel;
     bytes signature;
+}
+
+struct JoinChannelConfirmation {
+    SignedJoinChannel signedJoinChannel;
+    bytes[] signatures;
 }
 
 /// @dev It is produced as a byproduct of state transition or enforced onchain through dispute
@@ -102,6 +106,8 @@ struct StateSnapshot {
     bytes32 stateMachineStateHash;
     /// @dev the participants of the channel
     address[] participants;
+    /// @dev The fork identifier (count) that the snapshot belongs to
+    uint forkCnt;
     /// @dev the hash of the lastBlock in the JoinChannel blockchain
     bytes32 latestJoinChannelBlockHash;
     /// @dev the hash of the lastBlock in the ExitChannel blockchain

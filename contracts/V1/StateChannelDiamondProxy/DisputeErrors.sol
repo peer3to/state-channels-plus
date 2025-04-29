@@ -1,6 +1,7 @@
 pragma solidity ^0.8.8;
 
 error ErrorDisputeInProgrees();
+error ErrorDisputerNotMsgSender();
 error ErrorDisputeForkMismatch();
 error ErrorNotParticipant();
 error ErrorLatestFinalizedBlock();
@@ -11,7 +12,7 @@ error ErrorTimeoutSelf();
 error ErrorDisputeInvalid();
 error ErrorDisputeDoesntExist();
 error ErrorDisputeChallengeMismatch();
-error ErrorDisputeExpired();
+// error ErrorDisputeExpired();
 error ErrorParticipantAlredySlashed();
 error ErrorChallengeNewFinalizedBeforeOldFinalized();
 error ErrorJoinChannelFailed();
@@ -19,6 +20,29 @@ error ErrorSlashedParticipantCantDispute();
 error ErrorChannelIdMismatch();
 error ErrorTransactionCountMismatch();
 error ErrorSignatureInvalid();
+
+//Can participate in dispute
+error ErrorCantParticipateInDispute();
+
+//Auditing errors
+error ErrorDisputeWrongCommitment();
+error ErrorDisputeWrongAuditingData();
+error ErrorDisputeExpired();
+error ErrorDisputeGenesisInvalid();
+error ErrorDisputeStateProofInvalid();
+error ErrorDisptuteFraudProofDidntSlash(uint proofIndex);
+error ErrorDisputeStateMachineSlashingFailed();
+error ErrorDisputeStateMachineRemovingFailed();
+error ErrorDisputeOutputStateSnapshotInvalid();
+
+
+//Race conditions
+error ErrorDisputeShouldUseSnapshotAsGenesisState();
+error ErrorDisputeOnChainSlashedParticipantsMismatch();
+error ErrorDisputeNotExpectedIndex();
+error ErrorDisputeTimeoutCalldataPosted();
+error ErrorDisputeTimeoutPreviousBlockProducerPostedCalldataMissmatch();
+error ErrorDisputeTimeoutNotMinTimestamp();
 
 //Finalized and latest
 error ErrorFinalizedAndLatestNotSignedByParticipant();
@@ -67,7 +91,7 @@ error BlockInvalidConfirmation();
 error BlockInvalidSignature();
 error BlockInvalidChannelId();
 error BlockInvalidTransactionCount();
-error BlockInvalidStateHash();
+error BlockInvalidStateSnapsotHash();
 error BlockInvalidLink();
 error BlockInvalidStateTransition();
 error BlockOutOfGas();

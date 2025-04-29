@@ -9,7 +9,7 @@ export const DoubleSignEthersType = `tuple(
     ${SignedBlockEthersType} block2
     )`;
 export const DoubleSignProofEthersType = `tuple(
-    ${SignedBlockEthersType}[] doubleSigns
+    tuple(${SignedBlockEthersType} block1, ${SignedBlockEthersType} block2)[] doubleSigns
     )`;
 export const IncorrectDataProofEthersType = `tuple(
     ${SignedBlockEthersType} block1,
@@ -36,19 +36,14 @@ export enum ProofType {
     BlockTooFarInFuture
 }
 
-export const getEthersTypeForDisputeProof = (proofType: ProofType) => {
-    switch (proofType) {
-        case ProofType.FoldRechallenge:
-            return FoldRechallengeProofEthersType;
-        case ProofType.DoubleSign:
-            return DoubleSignProofEthersType;
-        case ProofType.IncorrectData:
-            return IncorrectDataProofEthersType;
-        case ProofType.NewerState:
-            return NewerStateProofEthersType;
-        case ProofType.FoldPriorBlock:
-            return FoldPriorBlockProofEthersType;
-        case ProofType.BlockTooFarInFuture:
-            return BlockTooFarInFutureProofEthersType;
-    }
+const DISPUTE_PROOF_ETHERS_TYPES: Record<ProofType, string> = {
+    [ProofType.FoldRechallenge]: FoldRechallengeProofEthersType,
+    [ProofType.DoubleSign]: DoubleSignProofEthersType,
+    [ProofType.IncorrectData]: IncorrectDataProofEthersType,
+    [ProofType.NewerState]: NewerStateProofEthersType,
+    [ProofType.FoldPriorBlock]: FoldPriorBlockProofEthersType,
+    [ProofType.BlockTooFarInFuture]: BlockTooFarInFutureProofEthersType
 };
+
+export const getEthersTypeForDisputeProof = (proofType: ProofType) =>
+    DISPUTE_PROOF_ETHERS_TYPES[proofType];

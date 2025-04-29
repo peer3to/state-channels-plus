@@ -34,25 +34,14 @@ abstract contract StateChannelManagerInterface {
 
     function getForkCnt(bytes32 channelId) public view virtual returns (uint);
 
-    function getLatestState(
-        bytes32 channelId
-    ) public view virtual returns (bytes memory);
-
     function getParticipants(
-        bytes32 channelId,
-        uint forkCnt
+        bytes32 channelId
     ) public virtual returns (address[] memory);
 
     function getNextToWrite(
         bytes32 channelId,
         bytes memory encodedState
     ) public virtual returns (address);
-
-    function isGenesisState(
-        bytes32 channelId,
-        uint forkCnt,
-        bytes memory encodedFinalizedState
-    ) public view virtual returns (bool);
 
     function getP2pTime() public view virtual returns (uint);
 
@@ -78,15 +67,12 @@ abstract contract StateChannelManagerInterface {
 
     function postBlockCalldata(SignedBlock memory signedBlock) public virtual;
 
-    function getBlockCallData(
+    function getBlockCallDataCommitment(
         bytes32 channelId,
         uint forkCnt,
+        uint blockHeight,
         address participant
     ) public view virtual returns (bool found, bytes32 blockCallData);
-
-    function getDispute(
-        bytes32 channelId
-    ) public view virtual returns (bytes32[] memory);
 
     function createDispute(
         Dispute memory dispute
@@ -94,8 +80,9 @@ abstract contract StateChannelManagerInterface {
 
     function auditDispute(
         Dispute memory dispute,
-        DisputeAuditingData memory disputeAuditingData
-    ) public virtual returns (bool isSuccess, address[] memory slashParticipants, bytes memory errorMessage);
+        DisputeAuditingData memory disputeAuditingData,
+        uint timestamp
+    ) public virtual returns (bool success, bytes memory slashedParticipantsOrError);
 
     function challengeDispute(
         Dispute memory dispute,

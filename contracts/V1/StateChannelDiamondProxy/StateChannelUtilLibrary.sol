@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-
+import "../DataTypes.sol";
 library StateChannelUtilLibrary {
     /**
      * @param addressesInThreshold - The public EOA addresses of the signers in the threshold
@@ -90,33 +90,56 @@ library StateChannelUtilLibrary {
     function tryInsertAddressInThresholdSet(
         address adr,
         address[] memory set,
-        uint currentSetLength,
+        uint currentThresholdCount,
         address[] memory expectedAddresses
     ) internal pure returns (uint) {
-        bool found = false;
         //Check is address in expectedAddresses
         for (uint i = 0; i < expectedAddresses.length; i++) {
             if (expectedAddresses[i] == adr) {
-                found = true;
-                break;
+                if(set[i] != adr) {
+                    set[i] = adr;
+                    currentThresholdCount++;
+                    break;
+                }
             }
         }
-        if (!found) return currentSetLength;
-        //Try and insert
-        for (uint i = 0; i < currentSetLength; i++) {
-            if (set[i] == adr) return currentSetLength;
-        }
-        set[currentSetLength] = adr;
-        return currentSetLength + 1;
+        return currentThresholdCount;
     }
 
-    /// @dev Concatenates two address arrays, but it does not add duplicates
-    function concatAddressArrays(address[] memory array1, address[] memory array2, uint array1Length) internal pure returns (address[] memory) {
-       address[] memory result = new address[](array1Length);
-       
-       for(uint i = 0; i < array2.length; i++) {
-        result[i] = array2[i];
-       }
+    function concatAddressArrays(address[] memory array1, address[] memory array2) internal pure returns (address[] memory) {
+        address[] memory result = new address[](array1.length + array2.length);
+        for (uint i = 0; i < array1.length; i++) {
+            result[i] = array1[i];
+        }
+        for (uint i = 0; i < array2.length; i++) {
+            result[array1.length + i] = array2[i];
+        }
        return result;
+    }
+
+    function concatExitChannelArrays(ExitChannel[] memory array1, ExitChannel[] memory array2) internal pure returns (ExitChannel[] memory) {
+        ExitChannel[] memory result = new ExitChannel[](array1.length + array2.length);
+        for (uint i = 0; i < array1.length; i++) {
+            result[i] = array1[i];
+        }
+        for (uint i = 0; i < array2.length; i++) {
+            result[array1.length + i] = array2[i];
+        }
+       return result;
+    }
+
+    function areAddressArraysEqual(
+        address[] memory array1,
+        address[] memory array2
+    ) internal pure returns (bool) {
+        if (array1.length != array2.length) {
+            return false;
+        }
+        for (uint i = 0; i < array1.length; i++) {
+            if (array1[i] != array2[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 }
