@@ -45,15 +45,16 @@ struct Dispute {
     /// @notice Hash of output state (latest on-chain state)
     /// @dev created after from dispute resolution
     bytes32 outputStateSnapshotHash;
-    /// @notice Address of the disputer, this can be anyone who have a stake in the dispute on chain
-    address disputer;
-    /// @notice Index of the dispute
-    uint disputeIndex;
     /// @notice Stores all exits since genesis
     /// @dev the time range of the exit is from genesis to the challenge deadline (new fork)
     ExitChannelBlock[] exitChannelBlocks;
     /// @notice hash(DisputeAuditingData)
     bytes32 disputeAuditingDataHash;
+    /// @notice Address of the disputer, this can be anyone who have a stake in the dispute on chain
+
+    address disputer;
+    /// @notice Index of the dispute
+    uint disputeIndex;
     // ========================== optional ===============================
     /// @notice Previous recursive dispute uint
     uint previousRecursiveDisputeIndex; // default value type(uint).max
@@ -68,14 +69,14 @@ struct ForkMilestoneProof {
 }
 
 struct ForkProof {
-    ForkMilestoneProof[] forkMilestoneProofs; 
+    ForkMilestoneProof[] forkMilestoneProofs;
 }
 
 /// @notice Proof of state finality within a fork
 struct StateProof {
     /// @dev proves the last finalized block in the fork
     ForkProof forkProof;
-    /// @dev a list of signed blocks that cryptographically connect the last milestone in the forkProof 
+    /// @dev a list of signed blocks that cryptographically connect the last milestone in the forkProof
     SignedBlock[] signedBlocks;
 }
 
@@ -92,12 +93,10 @@ enum ProofType {
     BlockEmptyBlock,
     BlockInvalidStateTransition,
     BlockOutOfGas,
-
     // Timeout related fraud proofs
     TimeoutThreshold,
     TimeoutPriorInvalid,
     TimeoutParticipantNoNext,
-
     // Dispute fraud proofs
     DisputeNotLatestState,
     DisputeInvalid,
@@ -140,7 +139,6 @@ struct DisputeOutOfGasProof {
 }
 
 struct DisputeInvalidOutputStateProof {
-
     Dispute dispute;
 }
 
@@ -186,7 +184,7 @@ struct DisputeAuditingData {
     uint previousDisputeTimestamp; // (optional) needed to verify the commitment of the previous dispute
 }
 
-struct DisputeData{
+struct DisputeData {
     DisputePair[] disputePairs;
     address[] slashedParticipants;
     address[] pendingParticipants;
@@ -195,6 +193,6 @@ struct DisputeData{
 }
 
 //Experimental - yet to be determined if needed and what should be the context
-struct FraudProofVerificationContext{
+struct FraudProofVerificationContext {
     bytes32 channelId;
 }
