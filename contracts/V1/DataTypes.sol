@@ -13,7 +13,6 @@ contract DataTypes {
         ExitChannel memory j,
         ExitChannelBlock memory k,
         Timeout memory l
-       
     ) {}
 }
 
@@ -107,6 +106,8 @@ struct StateSnapshot {
     bytes32 stateMachineStateHash;
     /// @dev the participants of the channel
     address[] participants;
+    /// @dev The fork identifier (count) that the snapshot belongs to
+    uint forkCnt;
     /// @dev the hash of the lastBlock in the JoinChannel blockchain
     bytes32 latestJoinChannelBlockHash;
     /// @dev the hash of the lastBlock in the ExitChannel blockchain
@@ -115,5 +116,4 @@ struct StateSnapshot {
     uint totalDeposits;
     /// @dev sum of all the amounts in the exitChannel blockchain
     uint totalWithdrawals;
-    uint forkCnt;
 }
