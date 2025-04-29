@@ -46,7 +46,7 @@ struct TransactionHeader {
 
 // do this polymorphically later with encoded functions and argument data
 struct TransactionBody {
-    bytes encodedData; //TODO! change this to bytes
+    bytes encodedData;
     bytes data; //evm transaction data
 }
 struct JoinChannel {
