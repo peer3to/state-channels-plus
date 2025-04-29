@@ -3,33 +3,47 @@ pragma solidity ^0.8.8;
 //Just so typechain generates types for the structs bellow
 contract DataTypes {
     constructor(
-        Block memory a,
-        SignedBlock memory b,
-        BlockConfirmation memory c,
-        Transaction memory d,
-        JoinChannel memory g,
-        JoinChannelBlock memory h,
-        SignedJoinChannel memory i,
-        ExitChannel memory j,
-        ExitChannelBlock memory k,
-        Timeout memory l
+        Transaction memory a,
+        Block memory b,
+        SignedBlock memory c,
+        JoinChannel memory d,
+        SignedJoinChannel memory e,
+        JoinChannelAgreement memory f,
+        ConfirmedJoinChannelAgreement memory g,
+        LeaveChannel memory h,
+        LeaveChannelAgreement memory i,
+        ConfirmedBlock memory j
     ) {}
+}
+//TODO? - think should post state - everyone should be able to replicate the state since genesis (fork) and if a block is posted in the future and some are missing - someone will be folded before the posted BLOCK, as for posting too much in the future it can be challenged
+struct BlockCalldata {
+    SignedBlock signedBlock;
+    uint timestamp;
+}
+//TODO! - need to rename and refactor this
+struct ForkDataAvailability {
+    mapping(uint => mapping(address => BlockCalldata)) map; //map[transactionCnt][participant] = BlockCalldata
+    ForkDataAvailabilityKey[] keys;
+}
+struct ForkDataAvailabilityKey {
+    uint transactionCnt;
+    address participant;
 }
 
 struct SignedBlock {
-    bytes encodedBlock;
-    bytes signature;
+    bytes encodedBlock; //TODO! change this to bytes
+    bytes signature; //TODO! change this to bytes
 }
 
-struct BlockConfirmation {
-    SignedBlock signedBlock;
-    bytes[] signatures;
+struct ConfirmedBlock {
+    bytes encodedBlock;
+    bytes[] signatures; //TODO! change this to bytes
 }
 
 struct Block {
     Transaction transaction;
-    bytes32 stateSnapshotHash;
-    bytes32 previousBlockHash;
+    bytes32 stateHash;
+    bytes32 previousStateHash;
 }
 struct Transaction {
     TransactionHeader header;
@@ -46,9 +60,23 @@ struct TransactionHeader {
 
 // do this polymorphically later with encoded functions and argument data
 struct TransactionBody {
-    bytes encodedData;
+    TransactionType transactionType;
+    bytes encodedData; //TODO! change this to bytes
     bytes data; //evm transaction data
 }
+enum TransactionType {
+    JoinGame,
+    KeyExchange,
+    Shuffle,
+    TimeLock,
+    RevealTokens,
+    Fold,
+    Check,
+    Bet,
+    Call,
+    AllIn
+}
+
 struct JoinChannel {
     bytes32 channelId;
     address participant;
@@ -56,64 +84,40 @@ struct JoinChannel {
     uint deadlineTimestamp;
     bytes data; //custom data
 }
-
-struct JoinChannelBlock {
-    bytes32 previousBlockHash;
-    JoinChannel[] joinChannels;
-}
-
 struct SignedJoinChannel {
     bytes encodedJoinChannel;
     bytes signature;
 }
-
-struct JoinChannelConfirmation {
+struct JoinChannelAgreement {
     SignedJoinChannel signedJoinChannel;
+    address submitter; //the state channel participant that submitted the agreement - responsible to initiate joinChannel
+    uint forkCnt; //redundant, but usefull for indexing and challenge in dispute
+    uint transactionCnt; //redundant, but usefull for indexing and challenge in dispute
+    bytes32 previousStateHash;
+}
+
+struct ConfirmedJoinChannelAgreement {
+    bytes encodedJoinChannelAgreement;
     bytes[] signatures;
 }
 
-/// @dev It is produced as a byproduct of state transition or enforced onchain through dispute
-struct ExitChannel {
+struct LeaveChannel {
+    bytes32 channelId;
+    address participant;
+    uint forkCnt; //redundant, but usefull for indexing and challenge in dispute
+    uint transactionCnt; //redundant, but usefull for indexing and challenge in dispute
+    bytes32 previousStateHash;
+    uint deadlineTimestamp;
+    bytes data; //custom data
+}
+
+struct LeaveChannelAgreement {
+    bytes encodedLeaveChannel;
+    bytes[] signatures;
+}
+
+struct ProcessExit {
     address participant;
     uint amount;
-    bytes data;
-    bool isPartialExit;
-}
-
-struct ExitChannelBlock {
-    /// @dev no signature requirement for the exitChannel blocks
-    ExitChannel[] exitChannels;
-    /// @dev Hash of the previous exitChannelBlock
-    bytes32 previousBlockHash;
-}
-
-struct Timeout {
-    /// @dev the participant that is being timed out
-    address participant;
-    /// @dev the block height at which participant is removed from the channel (fork)
-    uint blockHeight;
-    /// @dev minimum timestamp where this timeout is valid
-    uint minTimeStamp;
-    /// @dev the forkCnt at which the participant is timed out
-    uint forkCnt;
-    // ================== optional ==================
-    address previousBlockProducer;
-    bool previousBlockProducerPostedCalldata;
-}
-
-struct StateSnapshot {
-    /// @dev the state root of the channel state
-    bytes32 stateMachineStateHash;
-    /// @dev the participants of the channel
-    address[] participants;
-    /// @dev The fork identifier (count) that the snapshot belongs to
-    uint forkCnt;
-    /// @dev the hash of the lastBlock in the JoinChannel blockchain
-    bytes32 latestJoinChannelBlockHash;
-    /// @dev the hash of the lastBlock in the ExitChannel blockchain
-    bytes32 latestExitChannelBlockHash;
-    /// @dev sum of all the amounts in the joinChannel blockchain
-    uint totalDeposits;
-    /// @dev sum of all the amounts in the exitChannel blockchain
-    uint totalWithdrawals;
+    bytes data; //custom data
 }
