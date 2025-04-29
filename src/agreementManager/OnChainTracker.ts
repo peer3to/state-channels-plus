@@ -3,8 +3,7 @@ import {
     SignedBlockStruct,
     BlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import EvmUtils from "@/utils/EvmUtils";
-import { coordinatesOf, participantOf } from "@/utils";
+import { BlockUtils, EvmUtils } from "@/utils";
 import { AgreementFlag } from "@/types";
 
 import ForkService from "./ForkService";
@@ -33,8 +32,8 @@ export default class OnChainTracker {
         }
 
         const blk: BlockStruct = EvmUtils.decodeBlock(signed.encodedBlock);
-        const { forkCnt, height } = coordinatesOf(blk);
-        const participant = participantOf(blk);
+        const { forkCnt, height } = BlockUtils.getCoordinates(blk);
+        const participant = BlockUtils.getBlockAuthor(blk);
 
         if (!this.hasPosted(forkCnt, height, participant)) {
             this.forks.addChainBlock(forkCnt, height, participant, timestamp);

@@ -11,7 +11,7 @@ import {
 import ProofManager from "@/ProofManager";
 import AgreementManager from "@/agreementManager";
 import { ProofType } from "@/types/disputes";
-import EvmUtils from "@/utils/EvmUtils";
+import { EvmUtils } from "@/utils";
 import * as factory from "./factory";
 import { AddressLike, Signer } from "ethers";
 

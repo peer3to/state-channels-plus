@@ -14,7 +14,7 @@ import {
 } from "@typechain-types/contracts/V1/DataTypes";
 import Clock from "@/Clock";
 import P2PManager from "@/P2PManager";
-import EvmUtils from "@/utils/EvmUtils";
+import { EvmUtils } from "@/utils";
 class P2pSigner implements Signer {
     signer: Signer;
     signerAddress: AddressLike;

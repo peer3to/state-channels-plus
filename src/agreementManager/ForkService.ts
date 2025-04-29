@@ -2,7 +2,7 @@
 // No knowledge about signatures, queues, or on-chain events.
 import { BlockStruct } from "@typechain-types/contracts/V1/DataTypes";
 import { AddressLike, SignatureLike } from "ethers";
-import { coordinatesOf, forkOf, timestampOf } from "@/utils/BlockUtils";
+import { BlockUtils } from "@/utils";
 import { Agreement, AgreementFork } from "./types";
 
 export enum Direction {
@@ -40,7 +40,7 @@ export default class ForkService {
         originalSignature: SignatureLike,
         encodedState: string
     ) {
-        const forkCnt = forkOf(block);
+        const forkCnt = BlockUtils.getFork(block);
 
         if (!this.isValidForkCnt(forkCnt))
             // this should never happen since checks are done before
@@ -120,7 +120,7 @@ export default class ForkService {
     }
 
     agreementByBlock(block: BlockStruct): Agreement | undefined {
-        const { forkCnt, height } = coordinatesOf(block);
+        const { forkCnt, height } = BlockUtils.getCoordinates(block);
         return this.agreement(forkCnt, height);
     }
 
@@ -151,7 +151,9 @@ export default class ForkService {
     latestBlockTimestamp(forkCnt: number): number {
         const fork = this.forks[forkCnt];
         const latestBlock = this.latestAgreement(forkCnt)?.block;
-        const latestTimestamp = latestBlock ? timestampOf(latestBlock) : 0;
+        const latestTimestamp = latestBlock
+            ? BlockUtils.getTimestamp(latestBlock)
+            : 0;
         return Math.max(fork.genesisTimestamp, latestTimestamp);
     }
 }

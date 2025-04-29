@@ -6,10 +6,8 @@ import {
     DisputeStruct
 } from "@typechain-types/contracts/V1/DisputeTypes";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
-import EvmUtils from "@/utils/EvmUtils";
-import DebugProxy from "@/utils/DebugProxy";
+import { EvmUtils, DebugProxy, retry } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
-import { retry } from "@/utils/retry";
 import ProofManager from "./ProofManager";
 
 let DEBUG_DISPUTE_HANDLER = true;

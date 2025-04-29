@@ -2,7 +2,7 @@ import { ethers, AddressLike, BigNumberish, BytesLike } from "ethers";
 import * as dt from "@typechain-types/contracts/V1/DisputeTypes";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
 import { getEthersTypeForDisputeProof, ProofType } from "@/types/disputes";
-import EvmUtils from "@/utils/EvmUtils";
+import { EvmUtils } from "@/utils";
 import Clock from "@/Clock";
 import AgreementManager from "@/agreementManager";
 

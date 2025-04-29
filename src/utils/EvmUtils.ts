@@ -12,7 +12,7 @@ import {
     TransactionEthersType
 } from "@/types";
 
-class EvmUtils {
+export class EvmUtils {
     public static encodeTransaction(transaction: TransactionStruct): string {
         let transactionEncoded = ethers.AbiCoder.defaultAbiCoder().encode(
             [TransactionEthersType],
@@ -143,5 +143,3 @@ class EvmUtils {
         return obj;
     }
 }
-
-export default EvmUtils;

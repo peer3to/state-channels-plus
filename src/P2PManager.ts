@@ -7,9 +7,8 @@ import { ATransport, TransportType } from "@/transport";
 import ProfileManager from "@/ProfileManager";
 import Holepunch from "@/Holepunch";
 import { ethers } from "ethers";
-import DebugProxy from "@/utils/DebugProxy";
+import { DebugProxy, LocalDiscoveryServer } from "@/utils";
 import { RpcHandleMethods } from "@/rpc/RpcProxy";
-import LocalDiscoveryServer from "@/utils/LocalDiscoveryServer";
 import { Buffer } from "buffer";
 
 let DEBUG_P2P_MANAGER = false;

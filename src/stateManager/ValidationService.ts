@@ -8,17 +8,13 @@ import DisputeHandler from "@/DisputeHandler";
 import { AddressLike, BytesLike, ethers, SignatureLike } from "ethers";
 import { AStateChannelManagerProxy } from "@typechain-types/contracts/V1/StateChannelDiamondProxy";
 import {
-    forkOf,
-    heightOf,
-    participantOf,
-    timestampOf,
+    BlockUtils,
     EvmUtils,
     scheduleTask,
-    channelIdOf
+    subjectiveTimingFlag
 } from "@/utils";
 import AStateMachine from "@/AStateMachine";
 import { Clock } from "..";
-import { subjectiveTimingFlag } from "@/utils/timestamp";
 import ProofManager from "@/ProofManager";
 
 interface ValidationResult {
@@ -49,8 +45,8 @@ export default class ValidationService {
         block?: BlockStruct
     ): Promise<ValidationResult> {
         const blk = block ?? EvmUtils.decodeBlock(signedBlock.encodedBlock);
-        const forkCnt = forkOf(blk);
-        const height = heightOf(blk);
+        const forkCnt = BlockUtils.getFork(blk);
+        const height = BlockUtils.getHeight(blk);
 
         if (!this.isChannelOpen()) return notReady();
 
@@ -75,7 +71,9 @@ export default class ValidationService {
 
         // Check if participant is in the fork
         if (
-            !this.agreementManager.isParticipantInLatestFork(participantOf(blk))
+            !this.agreementManager.isParticipantInLatestFork(
+                BlockUtils.getBlockAuthor(blk)
+            )
         )
             return disconnect();
 
@@ -107,7 +105,7 @@ export default class ValidationService {
 
         // Validate block producer
         const nextToWrite = await this.stateMachine.getNextToWrite();
-        if (participantOf(blk) !== nextToWrite)
+        if (BlockUtils.getBlockAuthor(blk) !== nextToWrite)
             return dispute(AgreementFlag.INCORRECT_DATA);
 
         // Process state transition
@@ -124,7 +122,7 @@ export default class ValidationService {
         if (!this.isChannelOpen()) return notReady();
         if (!this.isSignedBlockAuthentic(signed, blk, this.getChannelId()))
             return disconnect();
-        if (this.isPastFork(forkOf(blk))) return pastFork();
+        if (this.isPastFork(BlockUtils.getFork(blk))) return pastFork();
 
         // Ensure block in chain
         if (!this.agreementManager.isBlockInChain(blk)) {
@@ -199,7 +197,7 @@ export default class ValidationService {
         if (!(await this.isMyTurn())) return ExecutionFlags.SUCCESS;
 
         const flag = subjectiveTimingFlag(
-            timestampOf(blk),
+            BlockUtils.getTimestamp(blk),
             Clock.getTimeInSeconds()
         );
         if (flag === ExecutionFlags.DISPUTE) {
@@ -213,9 +211,9 @@ export default class ValidationService {
 
     /* objective / chain timestamp */
     private async isGoodTimestamp(blk: BlockStruct): Promise<boolean> {
-        const forkCnt = forkOf(blk);
-        const blockHeight = heightOf(blk);
-        const blockTimestamp = timestampOf(blk);
+        const forkCnt = BlockUtils.getFork(blk);
+        const blockHeight = BlockUtils.getHeight(blk);
+        const blockTimestamp = BlockUtils.getTimestamp(blk);
 
         const latestTxTs =
             this.agreementManager.getLatestBlockTimestamp(forkCnt);
@@ -270,7 +268,7 @@ export default class ValidationService {
         block: BlockStruct,
         expectedChannelId: BytesLike
     ): boolean {
-        if (channelIdOf(block) !== expectedChannelId) return false;
+        if (BlockUtils.getChannelId(block) !== expectedChannelId) return false;
 
         const h = ethers.keccak256(signed.encodedBlock);
         const signer = ethers.verifyMessage(
@@ -278,7 +276,7 @@ export default class ValidationService {
             signed.signature as SignatureLike
         );
 
-        return signer === participantOf(block);
+        return signer === BlockUtils.getBlockAuthor(block);
     }
 }
 

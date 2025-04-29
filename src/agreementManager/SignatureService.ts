@@ -1,13 +1,15 @@
 import { AddressLike, SignatureLike } from "ethers";
 
 import * as SetUtils from "@/utils/set";
-import EvmUtils from "@/utils/EvmUtils";
+import { EvmUtils, BlockUtils } from "@/utils";
 import { Agreement, AgreementFork } from "./types";
-import { getSignerAddresses } from "@/utils/signature";
 
 export default class SignatureService {
     static getSignerAddresses(agreement: Agreement): Set<string> {
-        return getSignerAddresses(agreement.block, agreement.blockSignatures);
+        return BlockUtils.getSignerAddresses(
+            agreement.block,
+            agreement.blockSignatures
+        );
     }
 
     static getParticipantSignature(
@@ -25,14 +27,14 @@ export default class SignatureService {
         return { didSign: false, signature: undefined };
     }
 
-    static signatureExists(
+    static doesSignatureExist(
         agreement: Agreement,
         target: SignatureLike
     ): boolean {
         return agreement.blockSignatures.includes(target);
     }
 
-    static missingParticipants(
+    static getParticipantsWhoDidntSign(
         fork: AgreementFork,
         agreement: Agreement
     ): AddressLike[] {

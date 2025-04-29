@@ -1,8 +1,7 @@
 import { SignatureLike } from "ethers";
 import { ARpcService, MainRpcService } from "@/rpc";
-import SignatureCollectionMap from "@/utils/SignatureCollectionMap";
 import { SignedJoinChannelStruct } from "@typechain-types/contracts/V1/DataTypes";
-import EvmUtils from "@/utils/EvmUtils";
+import { EvmUtils, SignatureCollectionMap } from "@/utils";
 import Clock from "@/Clock";
 
 type JoinChanenelConfirmation = {

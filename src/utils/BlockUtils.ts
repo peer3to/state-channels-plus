@@ -1,37 +1,75 @@
 import { BlockStruct } from "@typechain-types/contracts/V1/DataTypes";
-import EvmUtils from "./EvmUtils";
+import { EvmUtils } from "./EvmUtils";
+import exp from "constants";
+import { AddressLike, SignatureLike } from "ethers";
 
-/**
- * Extract numeric fields from a block and convert them to regular number types
- */
-export const coordinatesOf = (block: BlockStruct) => ({
-    forkCnt: Number(block.transaction.header.forkCnt),
-    height: Number(block.transaction.header.transactionCnt)
-});
+export class BlockUtils {
+    /**
+     * Extract numeric fields from a block and convert them to regular number types
+     */
+    public static getCoordinates(block: BlockStruct) {
+        return {
+            forkCnt: Number(block.transaction.header.forkCnt),
+            height: Number(block.transaction.header.transactionCnt)
+        };
+    }
 
-/**
- * Get the block height (transaction count) from a block
- */
-export const heightOf = (block: BlockStruct): number =>
-    Number(block.transaction.header.transactionCnt);
+    /**
+     * Get the block height (transaction count) from a block
+     */
+    public static getHeight(block: BlockStruct): number {
+        return Number(block.transaction.header.transactionCnt);
+    }
 
-/**
- * Get the fork number from a block
- */
-export const forkOf = (block: BlockStruct): number =>
-    Number(block.transaction.header.forkCnt);
+    /**
+     * Get the fork number from a block
+     */
+    public static getFork(block: BlockStruct): number {
+        return Number(block.transaction.header.forkCnt);
+    }
 
-/**
- * Get the timestamp from a block
- */
-export const timestampOf = (block: BlockStruct): number =>
-    Number(block.transaction.header.timestamp);
+    /**
+     * Get the timestamp from a block
+     */
+    public static getTimestamp(block: BlockStruct): number {
+        return Number(block.transaction.header.timestamp);
+    }
 
-export const participantOf = (block: BlockStruct): string =>
-    block.transaction.header.participant as string;
+    public static getBlockAuthor(block: BlockStruct): string {
+        return block.transaction.header.participant as string;
+    }
 
-export const channelIdOf = (block: BlockStruct): string =>
-    block.transaction.header.channelId as string;
+    public static getChannelId(block: BlockStruct): string {
+        return block.transaction.header.channelId as string;
+    }
 
-export const isSameBlock = (b1: BlockStruct, b2: BlockStruct): boolean =>
-    EvmUtils.encodeBlock(b1) === EvmUtils.encodeBlock(b2);
+    public static areBlocksEqual(b1: BlockStruct, b2: BlockStruct): boolean {
+        return EvmUtils.encodeBlock(b1) === EvmUtils.encodeBlock(b2);
+    }
+
+    public static getSignerAddresses(
+        block: BlockStruct,
+        signatures: SignatureLike[]
+    ): Set<string> {
+        return new Set(
+            signatures.map((sig) =>
+                EvmUtils.retrieveSignerAddressBlock(block, sig)
+            )
+        );
+    }
+
+    public static getParticipantSignature(
+        block: BlockStruct,
+        signatures: SignatureLike[],
+        participant: AddressLike
+    ): { didSign: boolean; signature: SignatureLike | undefined } {
+        for (const sig of signatures) {
+            if (
+                EvmUtils.retrieveSignerAddressBlock(block, sig) === participant
+            ) {
+                return { didSign: true, signature: sig };
+            }
+        }
+        return { didSign: false, signature: undefined };
+    }
+}

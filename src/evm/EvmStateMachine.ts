@@ -8,7 +8,7 @@ import { TransactionStruct } from "@typechain-types/contracts/V1/DataTypes";
 import StateManager from "@/stateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
-import DebugProxy from "@/utils/DebugProxy";
+import { DebugProxy } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import AStateMachine from "@/AStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";

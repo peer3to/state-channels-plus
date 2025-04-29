@@ -2,9 +2,8 @@ import {
     SignedBlockStruct,
     BlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import EvmUtils from "@/utils/EvmUtils";
 import { BlockConfirmation } from "./types";
-import { coordinatesOf, participantOf } from "@/utils";
+import { BlockUtils, EvmUtils } from "@/utils";
 
 type ForkCnt = number;
 type Height = number;
@@ -12,11 +11,23 @@ type Adr = string;
 
 export type Queue<T> = Map<ForkCnt, Map<Height, Map<Adr, T>>>;
 
-function ensure<K, V>(map: Map<K, V>, key: K, defaultFactory: () => V): V {
-    if (!map.has(key)) {
-        map.set(key, defaultFactory());
+function insertNestedMapWithOverwrite<T>(
+    forkMap: Queue<T>,
+    forkCnt: ForkCnt,
+    height: Height,
+    address: Adr,
+    element: T
+) {
+    if (!forkMap.has(forkCnt)) {
+        forkMap.set(forkCnt, new Map());
     }
-    return map.get(key)!;
+    const heightMap = forkMap.get(forkCnt)!;
+    if (!heightMap.has(height)) {
+        heightMap.set(height, new Map());
+    }
+    const addressMap = heightMap.get(height)!;
+
+    addressMap.set(address, element);
 }
 
 export default class QueueService {
@@ -27,12 +38,15 @@ export default class QueueService {
 
     queueBlock(sb: SignedBlockStruct): void {
         const block = EvmUtils.decodeBlock(sb.encodedBlock);
-        const { forkCnt, height } = coordinatesOf(block);
-        const participant = participantOf(block);
-
-        const heightMap = ensure(this.blockQ, forkCnt, () => new Map());
-        const txMap = ensure(heightMap, height, () => new Map());
-        txMap.set(participant, sb);
+        const { forkCnt, height } = BlockUtils.getCoordinates(block);
+        const participant = BlockUtils.getBlockAuthor(block);
+        insertNestedMapWithOverwrite(
+            this.blockQ,
+            forkCnt,
+            height,
+            participant,
+            sb
+        );
     }
 
     tryDequeueBlocks(forkCnt: ForkCnt, height: Height): SignedBlockStruct[] {
@@ -50,23 +64,25 @@ export default class QueueService {
 
     /*──────── Confirmation queue ────────*/
 
-    public queueConfirmation(blockConfirmation: BlockConfirmation) {
+    queueConfirmation(blockConfirmation: BlockConfirmation): void {
         const block = EvmUtils.decodeBlock(
             blockConfirmation.originalSignedBlock.encodedBlock
         );
-        const { forkCnt, height } = coordinatesOf(block);
-
+        const { forkCnt, height } = BlockUtils.getCoordinates(block);
         const confirmationSigner = EvmUtils.retrieveSignerAddressBlock(
             block,
             blockConfirmation.confirmationSignature
         );
-        //TODO!!! - since this is in the future, we can't know who's part of the channel - somone can bloat state, so spam has to be handeled in the p2pManager
-        const heightMap = ensure(this.confQ, forkCnt, () => new Map());
-        const txMap = ensure(heightMap, height, () => new Map());
-        txMap.set(confirmationSigner, blockConfirmation);
+        insertNestedMapWithOverwrite(
+            this.confQ,
+            forkCnt,
+            height,
+            confirmationSigner,
+            blockConfirmation
+        );
     }
 
-    public tryDequeueConfirmations(
+    tryDequeueConfirmations(
         forkCnt: ForkCnt,
         height: Height
     ): BlockConfirmation[] {
@@ -83,8 +99,8 @@ export default class QueueService {
     }
 
     isBlockQueued(block: BlockStruct): boolean {
-        const { forkCnt, height } = coordinatesOf(block);
-        const participant = participantOf(block);
+        const { forkCnt, height } = BlockUtils.getCoordinates(block);
+        const participant = BlockUtils.getBlockAuthor(block);
 
         const stored = this.blockQ.get(forkCnt)?.get(height)?.get(participant);
         return stored

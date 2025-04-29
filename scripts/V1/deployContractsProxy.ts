@@ -1,6 +1,6 @@
 import { ethers } from "hardhat";
 import { Wallet, NonceManager, Signer } from "ethers";
-import DeployUtils from "../../src/utils/DeployUtils";
+import { DeployUtils } from "@/utils";
 import dotenv from "dotenv";
 
 dotenv.config();

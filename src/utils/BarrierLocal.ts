@@ -1,4 +1,4 @@
-class BarrierLocal {
+export class BarrierLocal {
     private static instance: BarrierLocal;
     private count: number;
     private queue: (() => void)[];
@@ -35,5 +35,3 @@ class BarrierLocal {
         } else this.count++;
     }
 }
-
-export default BarrierLocal;

@@ -4,8 +4,7 @@ import {
     BlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 
-import EvmUtils from "@/utils/EvmUtils";
-import { coordinatesOf, isSameBlock, participantOf } from "@/utils";
+import { BlockUtils, EvmUtils } from "@/utils";
 import { AgreementFlag } from "@/types";
 
 import ForkService from "./ForkService";
@@ -21,7 +20,7 @@ export default class BlockValidator {
 
     isBlockInChain(block: BlockStruct): boolean {
         const ag = this.forks.agreementByBlock(block);
-        return ag !== undefined && isSameBlock(ag.block, block);
+        return ag !== undefined && BlockUtils.areBlocksEqual(ag.block, block);
     }
 
     /** In chain OR parked in the “future queue” */
@@ -49,8 +48,8 @@ export default class BlockValidator {
 
     check(signed: SignedBlockStruct): AgreementFlag {
         const block = EvmUtils.decodeBlock(signed.encodedBlock);
-        const { forkCnt, height } = coordinatesOf(block);
-        const participant = participantOf(block);
+        const { forkCnt, height } = BlockUtils.getCoordinates(block);
+        const participant = BlockUtils.getBlockAuthor(block);
 
         /* 1 – valid signature? */
         const signer = EvmUtils.retrieveSignerAddressBlock(
@@ -68,7 +67,7 @@ export default class BlockValidator {
         /* 4 – double sign / incorrect data vs existing agmt */
         const existing = this.forks.blockAt(forkCnt, height);
         if (existing) {
-            return participantOf(existing) === participant
+            return BlockUtils.getBlockAuthor(existing) === participant
                 ? AgreementFlag.DOUBLE_SIGN
                 : AgreementFlag.INCORRECT_DATA;
         }

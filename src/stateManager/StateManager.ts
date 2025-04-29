@@ -22,11 +22,9 @@ import DisputeHandler from "@/DisputeHandler";
 import P2PManager from "@/P2PManager";
 
 import AStateMachine from "@/AStateMachine";
-import EvmUtils from "@/utils/EvmUtils";
+import { EvmUtils, DebugProxy, Mutex, scheduleTask } from "@/utils";
 import StateChannelEventListener from "@/StateChannelEventListener";
-import Mutex from "@/utils/Mutex";
 
-import DebugProxy from "@/utils/DebugProxy";
 import P2pEventHooks from "@/P2pEventHooks";
 import {
     DecisionContext,
@@ -36,7 +34,6 @@ import {
     ConfirmationDecisionContext,
     processConfirmationDecision
 } from "./processConfirmationDecisionHandlers";
-import { scheduleTask } from "@/utils";
 import ValidationService from "./ValidationService";
 
 let DEBUG_STATE_MANAGER = false;

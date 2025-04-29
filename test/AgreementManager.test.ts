@@ -1,7 +1,7 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import * as factory from "./factory";
-import EvmUtils from "@/utils/EvmUtils";
+import { EvmUtils } from "@/utils/EvmUtils";
 import {
     BlockStruct,
     SignedBlockStruct
