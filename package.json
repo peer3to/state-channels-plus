@@ -63,7 +63,7 @@
     "testc": "yarn hardhat clean && yarn hardhat compile --force && yarn hardhat typechain && yarn hardhat test",
     "test": "yarn hardhat test",
     "test:coverage": "nyc --reporter=html yarn testts",
-    "build": "hardhat compile && rimraf dist && tsc && npm pack && node rename-pack.js",
+    "build": "yarn hardhat clean && yarn hardhat compile --force && yarn hardhat typechain && rimraf dist && tsc && npm pack && node rename-pack.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky install"
