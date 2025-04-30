@@ -15,18 +15,24 @@ import OnChainTracker from "./OnChainTracker";
 import BlockValidator from "./BlockValidator";
 
 class AgreementManager {
-    forks = new ForkService();
-    queues = new QueueService();
-    chain = new OnChainTracker(
-        this.forks,
-        this.queues,
+    forkService = new ForkService();
+    queueService = new QueueService();
+    chainTracker = new OnChainTracker(
+        this.forkService,
+        this.queueService,
         /* temp stub - replaced in the constructor */ () => AgreementFlag.READY
     );
-    validator = new BlockValidator(this.forks, this.queues, this.chain);
+    blockValidator = new BlockValidator(
+        this.forkService,
+        this.queueService,
+        this.chainTracker
+    );
 
     constructor() {
-        const blockChecker = this.validator.check.bind(this.validator);
-        this.chain.setChecker(blockChecker);
+        const blockChecker = this.blockValidator.check.bind(
+            this.blockValidator
+        );
+        this.chainTracker.setChecker(blockChecker);
     }
 
     // ************************************************
@@ -38,7 +44,7 @@ class AgreementManager {
         forkCnt: number,
         genesisTimestamp: number
     ) {
-        this.forks.newFork(
+        this.forkService.newFork(
             forkGenesisStateEncoded,
             addressesInThreshold,
             forkCnt,
@@ -51,14 +57,14 @@ class AgreementManager {
         originalSignature: SignatureLike,
         encodedState: string
     ) {
-        this.forks.addBlock(block, originalSignature, encodedState);
+        this.forkService.addBlock(block, originalSignature, encodedState);
     }
     //Doesn't check signature - just stores it
     public confirmBlock(
         block: BlockStruct,
         confirmationSignature: SignatureLike
     ) {
-        const agreement = this.forks.agreementByBlock(block);
+        const agreement = this.forkService.getAgreementByBlock(block);
         if (!agreement)
             //should never trigger because of checks before confirming
             throw new Error(
@@ -81,23 +87,23 @@ class AgreementManager {
         agreement.blockSignatures.push(confirmationSignature);
     }
     public getLatestForkCnt(): number {
-        return this.forks.latestForkCnt();
+        return this.forkService.getLatestForkCnt();
     }
     public getNextBlockHeight(): number {
-        return this.forks.nextBlockHeight();
+        return this.forkService.getNextBlockHeight();
     }
     public getBlock(
         forkCnt: number,
         transactionCnt: number
     ): BlockStruct | undefined {
-        return this.forks.agreement(forkCnt, transactionCnt)?.block;
+        return this.forkService.getAgreement(forkCnt, transactionCnt)?.block;
     }
     public getDoubleSignedBlock(
         signedBlock: SignedBlockStruct
     ): SignedBlockStruct | undefined {
         const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
 
-        const agreement = this.forks.agreementByBlock(block);
+        const agreement = this.forkService.getAgreementByBlock(block);
         if (
             !agreement ||
             BlockUtils.areBlocksEqual(agreement.block, block) ||
@@ -125,9 +131,9 @@ class AgreementManager {
         forkCnt: number,
         participantAdr: AddressLike
     ): { block: BlockStruct; signature: SignatureLike } | undefined {
-        if (!this.forks.isValidForkCnt(forkCnt)) return undefined;
+        if (!this.forkService.isValidForkCnt(forkCnt)) return undefined;
 
-        for (const agreement of this.forks.agreementsIterator(
+        for (const agreement of this.forkService.agreementsIterator(
             forkCnt,
             Direction.BACKWARD
         )) {
@@ -147,8 +153,8 @@ class AgreementManager {
     }
     public didEveryoneSignBlock(block: BlockStruct): boolean {
         const forkCnt = BlockUtils.getFork(block);
-        const fork = this.forks.forkAt(forkCnt);
-        const agreement = this.forks.agreementByBlock(block);
+        const fork = this.forkService.getFork(forkCnt);
+        const agreement = this.forkService.getAgreementByBlock(block);
 
         if (
             !agreement ||
@@ -170,13 +176,15 @@ class AgreementManager {
         return SetUtils.isSubset(addressesSet, signersSet);
     }
     public getSigantures(block: BlockStruct): SignatureLike[] {
-        return this.forks.agreementByBlock(block)?.blockSignatures || [];
+        return (
+            this.forkService.getAgreementByBlock(block)?.blockSignatures || []
+        );
     }
     // Returns the signature of the block author
     public getOriginalSignature(block: BlockStruct): SignatureLike | undefined {
         const participant = BlockUtils.getBlockAuthor(block);
 
-        const agreement = this.forks.agreementByBlock(block);
+        const agreement = this.forkService.getAgreementByBlock(block);
         if (!agreement) return undefined;
 
         const { didSign: _, signature } = BlockUtils.getParticipantSignature(
@@ -192,7 +200,7 @@ class AgreementManager {
         block: BlockStruct,
         signature: SignatureLike
     ): boolean {
-        const agreement = this.forks.agreementByBlock(block);
+        const agreement = this.forkService.getAgreementByBlock(block);
 
         if (!agreement) return false;
 
@@ -206,7 +214,7 @@ class AgreementManager {
         block: BlockStruct,
         participant: AddressLike
     ): { didSign: boolean; signature: SignatureLike | undefined } {
-        const agreement = this.forks.agreementByBlock(block);
+        const agreement = this.forkService.getAgreementByBlock(block);
 
         if (!agreement || !BlockUtils.areBlocksEqual(agreement.block, block))
             return { didSign: false, signature: undefined };
@@ -222,15 +230,15 @@ class AgreementManager {
         block: BlockStruct
     ): AddressLike[] {
         const forkCnt = BlockUtils.getFork(block);
-        const agreement = this.forks.agreementByBlock(block);
-        const fork = this.forks.forkAt(forkCnt);
+        const agreement = this.forkService.getAgreementByBlock(block);
+        const fork = this.forkService.getFork(forkCnt);
         if (!fork || !agreement) return [];
 
         return SignatureService.getParticipantsWhoDidntSign(fork, agreement);
     }
 
     public isParticipantInLatestFork(participant: AddressLike): boolean {
-        const fork = this.forks.latestFork();
+        const fork = this.forkService.getLatestFork();
         if (!fork) return false;
         return new Set(fork.addressesInThreshold).has(participant);
     }
@@ -239,11 +247,14 @@ class AgreementManager {
         forkCnt: number,
         transactionCnt: number
     ): string | undefined {
-        const agreement = this.forks.agreement(forkCnt, transactionCnt);
+        const agreement = this.forkService.getAgreement(
+            forkCnt,
+            transactionCnt
+        );
         return agreement?.encodedState;
     }
     public getForkGenesisStateEncoded(forkCnt: number): string | undefined {
-        const fork = this.forks.forkAt(forkCnt);
+        const fork = this.forkService.getFork(forkCnt);
         return fork?.forkGenesisStateEncoded;
     }
     /**
@@ -260,7 +271,7 @@ class AgreementManager {
         encodedLatestCorrectState: string;
         virtualVotingBlocks: ConfirmedBlockStruct[];
     } {
-        const fork = this.forks.forkAt(Number(forkCnt));
+        const fork = this.forkService.getFork(Number(forkCnt));
         if (!fork)
             throw new Error(
                 "AgreementManager - getFinalizedAndLatestWithVotes - fork not found"
@@ -270,7 +281,7 @@ class AgreementManager {
         let virtualVotingBlocks: ConfirmedBlockStruct[] = [];
         let requiredSignatures = SetUtils.fromArray(fork.addressesInThreshold);
 
-        for (const agreement of this.forks.agreementsIterator(
+        for (const agreement of this.forkService.agreementsIterator(
             forkCnt as number,
             Direction.BACKWARD
         )) {
@@ -324,14 +335,14 @@ class AgreementManager {
         signedBlock: SignedBlockStruct,
         timestamp: number
     ): AgreementFlag {
-        return this.chain.collect(signedBlock, timestamp);
+        return this.chainTracker.collect(signedBlock, timestamp);
     }
 
     public getChainLatestBlockTimestamp(
         forkCnt: number,
         maxTransactionCnt: number
     ): number {
-        return this.chain.latestTimestamp(forkCnt, maxTransactionCnt);
+        return this.chainTracker.latestTimestamp(forkCnt, maxTransactionCnt);
     }
 
     public didParticipantPostOnChain(
@@ -339,27 +350,34 @@ class AgreementManager {
         transactionCnt: number,
         participantAddres: AddressLike
     ): boolean {
-        return this.chain.hasPosted(forkCnt, transactionCnt, participantAddres);
+        return this.chainTracker.hasPosted(
+            forkCnt,
+            transactionCnt,
+            participantAddres
+        );
     }
 
     public queueBlock(signedBlock: SignedBlockStruct) {
-        this.queues.queueBlock(signedBlock);
+        this.queueService.queueBlock(signedBlock);
     }
     public tryDequeueBlocks(
         forkCnt: number,
         transactionCnt: number
     ): SignedBlockStruct[] {
-        return this.queues.tryDequeueBlocks(forkCnt, transactionCnt);
+        return this.queueService.tryDequeueBlocks(forkCnt, transactionCnt);
     }
 
     public queueConfirmation(blockConfirmation: BlockConfirmation) {
-        this.queues.queueConfirmation(blockConfirmation);
+        this.queueService.queueConfirmation(blockConfirmation);
     }
     public tryDequeueConfirmations(
         forkCnt: number,
         transactionCnt: number
     ): BlockConfirmation[] {
-        return this.queues.tryDequeueConfirmations(forkCnt, transactionCnt);
+        return this.queueService.tryDequeueConfirmations(
+            forkCnt,
+            transactionCnt
+        );
     }
 
     // ************************************************
@@ -369,19 +387,19 @@ class AgreementManager {
     //both canonical chain and future queue
     //both canonical chain and future queue
     public isBlockInChain(block: BlockStruct): boolean {
-        return this.validator.isBlockInChain(block);
+        return this.blockValidator.isBlockInChain(block);
     }
     public isBlockDuplicate(block: BlockStruct): boolean {
-        return this.validator.isBlockDuplicate(block);
+        return this.blockValidator.isBlockDuplicate(block);
     }
     public checkBlock(signedBlock: SignedBlockStruct): AgreementFlag {
-        return this.validator.check(signedBlock);
+        return this.blockValidator.check(signedBlock);
     }
     public getLatestBlockTimestamp(forkCnt: number): number {
-        return this.validator.latestBlockTimestamp(forkCnt);
+        return this.blockValidator.latestBlockTimestamp(forkCnt);
     }
     public getLatestTimestamp(forkCnt: number, maxTxCnt: number): number {
-        return this.validator.latestRelevantTimestamp(forkCnt, maxTxCnt);
+        return this.blockValidator.latestRelevantTimestamp(forkCnt, maxTxCnt);
     }
 }
 

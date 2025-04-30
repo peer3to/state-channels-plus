@@ -43,7 +43,7 @@ export default class OnChainTracker {
 
     /** Highest timestamp recorded for fork ≤ maxTxCnt */
     latestTimestamp(forkCnt: number, maxHeight: number): number {
-        const fork = this.forks.forkAt(forkCnt);
+        const fork = this.forks.getFork(forkCnt);
         if (!fork) throw new Error("OnChainTracker - fork not found");
 
         let latest = 0;
@@ -55,7 +55,7 @@ export default class OnChainTracker {
     }
 
     hasPosted(forkCnt: number, height: number, address: AddressLike): boolean {
-        const fork = this.forks.forkAt(forkCnt);
+        const fork = this.forks.getFork(forkCnt);
         return (
             !!fork &&
             fork.chainBlocks.some(
