@@ -19,7 +19,7 @@ export default class BlockValidator {
     ) {}
 
     isBlockInChain(block: BlockStruct): boolean {
-        const ag = this.forks.agreementByBlock(block);
+        const ag = this.forks.getAgreementByBlock(block);
         return ag !== undefined && BlockUtils.areBlocksEqual(ag.block, block);
     }
 
@@ -30,10 +30,10 @@ export default class BlockValidator {
 
     /** Canonical chain: latest timestamp in this fork           */
     latestBlockTimestamp(forkCnt: number): number {
-        const fork = this.forks.forkAt(forkCnt);
+        const fork = this.forks.getFork(forkCnt);
         if (!fork) throw new Error("BlockValidator - fork not found");
         const genesis = fork.genesisTimestamp;
-        const lastAg = this.forks.latestAgreement(forkCnt);
+        const lastAg = this.forks.getLatestAgreement(forkCnt);
         const lastTs = Number(lastAg?.block.transaction.header.timestamp ?? 0);
         return Math.max(genesis, lastTs);
     }
@@ -65,7 +65,7 @@ export default class BlockValidator {
         if (!this.forks.isValidForkCnt(forkCnt)) return AgreementFlag.NOT_READY;
 
         /* 4 – double sign / incorrect data vs existing agmt */
-        const existing = this.forks.blockAt(forkCnt, height);
+        const existing = this.forks.getBlock(forkCnt, height);
         if (existing) {
             return BlockUtils.getBlockAuthor(existing) === participant
                 ? AgreementFlag.DOUBLE_SIGN
@@ -75,7 +75,7 @@ export default class BlockValidator {
         /* 5 – first block of fork genesis? */
         if (height === 0) {
             const expectedPrev = ethers.keccak256(
-                this.forks.forkAt(forkCnt)!.forkGenesisStateEncoded
+                this.forks.getFork(forkCnt)!.forkGenesisStateEncoded
             );
             return block.previousStateHash === expectedPrev
                 ? AgreementFlag.READY
@@ -83,7 +83,7 @@ export default class BlockValidator {
         }
 
         /* 6 – compare with previous block in chain */
-        const prev = this.forks.blockAt(forkCnt, height - 1);
+        const prev = this.forks.getBlock(forkCnt, height - 1);
         if (!prev) return AgreementFlag.NOT_READY;
 
         return prev.stateHash === block.previousStateHash

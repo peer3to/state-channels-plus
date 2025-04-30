@@ -48,7 +48,7 @@ export default class ForkService {
                 "AgreementManager - addBlock - forkCnt is not correct"
             );
 
-        const agreement = this.agreementByBlock(block);
+        const agreement = this.getAgreementByBlock(block);
         if (agreement)
             // this should never happen since checks are done before
             throw new Error(
@@ -83,23 +83,22 @@ export default class ForkService {
     }
 
     /*────────── getters ──────────*/
-    latestForkCnt(): number {
+    getLatestForkCnt(): number {
         return Math.max(0, this.forks.length - 1);
     }
-    nextForkIndex(): number {
+    getNextForkIndex(): number {
         return this.forks.length;
     }
-    nextBlockHeight(): number {
+    getNextBlockHeight(): number {
         return this.forks.at(-1)?.agreements.length ?? 0;
     }
-    forkGenesis(forkCnt: number): string {
+    getForkGenesis(forkCnt: number): string {
         return this.forks[forkCnt].forkGenesisStateEncoded;
     }
-    forkAt(forkCnt: number) {
+    getFork(forkCnt: number) {
         return this.isValidForkCnt(forkCnt) ? this.forks[forkCnt] : undefined;
     }
-
-    latestFork() {
+    getLatestFork() {
         return this.forks.at(-1);
     }
     isValidForkCnt(forkCnt: number) {
@@ -110,21 +109,21 @@ export default class ForkService {
         return new Set(this.forks.at(-1)!.addressesInThreshold).has(p);
     }
 
-    agreement(forkCnt: number, txCnt: number): Agreement | undefined {
+    getAgreement(forkCnt: number, txCnt: number): Agreement | undefined {
         return this.isValidForkCnt(forkCnt)
             ? this.forks[forkCnt].agreements[txCnt]
             : undefined;
     }
-    blockAt(forkCnt: number, txCnt: number): BlockStruct | undefined {
-        return this.agreement(forkCnt, txCnt)?.block;
+    getBlock(forkCnt: number, txCnt: number): BlockStruct | undefined {
+        return this.getAgreement(forkCnt, txCnt)?.block;
     }
 
-    agreementByBlock(block: BlockStruct): Agreement | undefined {
+    getAgreementByBlock(block: BlockStruct): Agreement | undefined {
         const { forkCnt, height } = BlockUtils.getCoordinates(block);
-        return this.agreement(forkCnt, height);
+        return this.getAgreement(forkCnt, height);
     }
 
-    latestAgreement(forkCnt: number): Agreement | undefined {
+    getLatestAgreement(forkCnt: number): Agreement | undefined {
         return this.forks[forkCnt]?.agreements.at(-1);
     }
 
@@ -148,9 +147,9 @@ export default class ForkService {
     }
 
     /*────────── timestamp helpers ─────────*/
-    latestBlockTimestamp(forkCnt: number): number {
+    getLatestBlockTimestamp(forkCnt: number): number {
         const fork = this.forks[forkCnt];
-        const latestBlock = this.latestAgreement(forkCnt)?.block;
+        const latestBlock = this.getLatestAgreement(forkCnt)?.block;
         const latestTimestamp = latestBlock
             ? BlockUtils.getTimestamp(latestBlock)
             : 0;
