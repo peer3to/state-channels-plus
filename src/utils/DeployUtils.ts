@@ -7,7 +7,7 @@ type ReturnTypeOfT<T extends ContractFactory> = T extends {
 }
     ? U
     : never;
-class DeployUtils {
+export class DeployUtils {
     contractsPath: string;
     contractsJSON: any;
 
@@ -42,5 +42,3 @@ class DeployUtils {
         return instance as ReturnTypeOfT<T>;
     }
 }
-
-export default DeployUtils;

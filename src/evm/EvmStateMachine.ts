@@ -5,10 +5,10 @@ import {
     AStateMachine as AStateMachineContract
 } from "@typechain-types";
 import { TransactionStruct } from "@typechain-types/contracts/V1/DataTypes";
-import StateManager from "@/StateManager";
+import StateManager from "@/stateManager";
 import Clock from "@/Clock";
-import { TimeConfig } from "@/DataTypes";
-import DebugProxy from "@/utils/DebugProxy";
+import { TimeConfig } from "@/types";
+import { DebugProxy } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import AStateMachine from "@/AStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";

@@ -5,9 +5,8 @@ import {
     getMathDeploymentTransaction,
     getMathP2pEventHooks
 } from "@test/utils/testHelpers";
-import EvmUtils from "@/utils/EvmUtils";
+import { EvmUtils, BarrierLocal } from "@/utils";
 import { P2pInstance, EvmStateMachine } from "@/evm";
-import BarrierLocal from "@/utils/BarrierLocal";
 import {
     MathStateChannelManagerProxy,
     MathStateMachine

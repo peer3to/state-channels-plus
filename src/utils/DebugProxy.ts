@@ -1,4 +1,4 @@
-class DebugProxy {
+export class DebugProxy {
     public static createProxy<T extends Object>(original: T) {
         return new Proxy(original, {
             get(target, prop, receiver) {
@@ -23,7 +23,6 @@ class DebugProxy {
         });
     }
 }
-export default DebugProxy;
 
 class A {
     a = 2;
