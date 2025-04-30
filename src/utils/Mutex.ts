@@ -1,4 +1,4 @@
-class Mutex {
+export class Mutex {
     private isLocked: boolean;
     private queue: (() => void)[];
 
@@ -29,5 +29,3 @@ class Mutex {
         }
     }
 }
-
-export default Mutex;

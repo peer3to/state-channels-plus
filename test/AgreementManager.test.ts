@@ -1,13 +1,14 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import * as factory from "./factory";
-import EvmUtils from "@/utils/EvmUtils";
+import { EvmUtils } from "@/utils/EvmUtils";
 import {
     BlockStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import sinon from "sinon";
-import AgreementManager, { AgreementFlag } from "@/AgreementManager";
+import AgreementManager from "@/agreementManager";
+import { AgreementFlag } from "@/types";
 import { SignatureLike, Signer } from "ethers";
 
 describe("AgreementManager", () => {
@@ -120,15 +121,15 @@ describe("AgreementManager", () => {
                 nowTimestamp
             );
 
-            expect(localAgreementManager.forks.length).to.equal(1);
+            expect(localAgreementManager.forks.nextForkIndex()).to.equal(1);
             expect(
-                localAgreementManager.forks[0].forkGenesisStateEncoded
+                localAgreementManager.forks.forkAt(0)?.forkGenesisStateEncoded
             ).to.equal(commonGenesisState);
-            const fork = localAgreementManager.forks[0];
-            expect(fork.addressesInThreshold).to.deep.equal(addresses);
-            expect(fork.genesisTimestamp).to.equal(nowTimestamp);
-            expect(fork.chainBlocks).to.deep.equal([]);
-            expect(fork.agreements).to.deep.equal([]);
+            const fork = localAgreementManager.forks.forkAt(0);
+            expect(fork?.addressesInThreshold).to.deep.equal(addresses);
+            expect(fork?.genesisTimestamp).to.equal(nowTimestamp);
+            expect(fork?.chainBlocks).to.deep.equal([]);
+            expect(fork?.agreements).to.deep.equal([]);
         });
 
         it("should not create a new fork when forkCnt doesn't match current length", () => {
@@ -142,7 +143,7 @@ describe("AgreementManager", () => {
                 nowTimestamp
             );
 
-            expect(freshManager.forks.length).to.equal(0);
+            expect(freshManager.forks.latestForkCnt()).to.equal(0);
         });
 
         it("should allow multiple forks to be created sequentially", () => {
@@ -161,13 +162,13 @@ describe("AgreementManager", () => {
                 nowTimestamp + 100
             );
 
-            expect(freshManager.forks.length).to.equal(2);
-            expect(freshManager.forks[0].forkGenesisStateEncoded).to.equal(
-                commonGenesisState
-            );
-            expect(freshManager.forks[1].forkGenesisStateEncoded).to.equal(
-                commonGenesisState2
-            );
+            expect(freshManager.forks.nextForkIndex()).to.equal(2);
+            expect(
+                freshManager.forks.forkAt(0)?.forkGenesisStateEncoded
+            ).to.equal(commonGenesisState);
+            expect(
+                freshManager.forks.forkAt(1)?.forkGenesisStateEncoded
+            ).to.equal(commonGenesisState2);
         });
     });
 
@@ -230,7 +231,7 @@ describe("AgreementManager", () => {
         describe("When checking for duplicates in the canonical chain", () => {
             it("should return true if the block exists in the canonical chain", () => {
                 const isBlockInChainStub = sinon
-                    .stub(agreementManager, "isBlockInChain")
+                    .stub(agreementManager.validator, "isBlockInChain")
                     .returns(true);
 
                 expect(agreementManager.isBlockDuplicate(block)).to.be.true;
@@ -346,12 +347,12 @@ describe("AgreementManager", () => {
 
             const forkCnt = Number(block.transaction.header.forkCnt);
             const txCnt = Number(block.transaction.header.transactionCnt);
-            const agreement = freshManager.forks[forkCnt].agreements[txCnt];
+            const agreement = freshManager.forks.agreement(forkCnt, txCnt);
 
             expect(agreement).to.not.be.undefined;
-            expect(agreement.block).to.deep.equal(block);
-            expect(agreement.blockSignatures).to.include(signature);
-            expect(agreement.encodedState).to.equal(encodedState);
+            expect(agreement!.block).to.deep.equal(block);
+            expect(agreement!.blockSignatures).to.include(signature);
+            expect(agreement!.encodedState).to.equal(encodedState);
         });
     });
 
@@ -402,18 +403,18 @@ describe("AgreementManager", () => {
 
             const forkCnt = Number(block.transaction.header.forkCnt);
             const txCnt = Number(block.transaction.header.transactionCnt);
-            const agreement = freshManager.forks[forkCnt].agreements[txCnt];
+            const agreement = freshManager.forks.agreement(forkCnt, txCnt);
 
-            expect(agreement.blockSignatures).to.have.lengthOf(2);
-            expect(agreement.blockSignatures).to.include(signature);
-            expect(agreement.blockSignatures).to.include(wallet2Signature);
+            expect(agreement!.blockSignatures).to.have.lengthOf(2);
+            expect(agreement!.blockSignatures).to.include(signature);
+            expect(agreement!.blockSignatures).to.include(wallet2Signature);
         });
     });
 
     describe("getLatestForkCnt", () => {
         it("should return -1 when there are no forks", () => {
             const emptyManager = new AgreementManager();
-            expect(emptyManager.getLatestForkCnt()).to.equal(-1);
+            expect(emptyManager.getLatestForkCnt()).to.equal(0);
         });
 
         it("should return the correct index of the latest fork", () => {
@@ -428,26 +429,26 @@ describe("AgreementManager", () => {
                 nowTimestamp
             );
 
-            expect(localManager.getLatestForkCnt()).to.equal(1);
+            expect(localManager.forks.latestForkCnt()).to.equal(1);
         });
     });
 
     describe("getNextTransactionCnt", () => {
         it("should return 0 when there are no forks", () => {
             const emptyManager = new AgreementManager();
-            expect(emptyManager.getNextTransactionCnt()).to.equal(0);
+            expect(emptyManager.getNextBlockHeight()).to.equal(0);
         });
 
         it("should return 0 when the latest fork has no agreements", () => {
             const localManager = createInitializedManager();
-            expect(localManager.getNextTransactionCnt()).to.equal(0);
+            expect(localManager.getNextBlockHeight()).to.equal(0);
         });
 
         it("should return the correct next transaction count after adding blocks", async () => {
             const localManager = createInitializedManager();
 
             localManager.addBlock(block, signature, encodedState);
-            expect(localManager.getNextTransactionCnt()).to.equal(1);
+            expect(localManager.getNextBlockHeight()).to.equal(1);
 
             // Create and add another block with transaction count 1
             const block1 = factory.block({
@@ -462,7 +463,7 @@ describe("AgreementManager", () => {
             );
             localManager.addBlock(block1, signature1, encodedState);
 
-            expect(localManager.getNextTransactionCnt()).to.equal(2);
+            expect(localManager.getNextBlockHeight()).to.equal(2);
         });
     });
 
@@ -1405,7 +1406,7 @@ describe("AgreementManager", () => {
                     })
                 }),
                 previousStateHash: ethers.keccak256(
-                    manager.forks[0].forkGenesisStateEncoded
+                    manager.forks.forkAt(0)?.forkGenesisStateEncoded ?? ""
                 )
             });
 
@@ -1419,11 +1420,11 @@ describe("AgreementManager", () => {
             expect(manager.didParticipantPostOnChain(0, 0, address1)).to.be
                 .true;
 
-            const chainBlocks = manager.forks[0].chainBlocks;
+            const chainBlocks = manager.forks.forkAt(0)?.chainBlocks;
             expect(chainBlocks).to.have.lengthOf(1);
-            expect(chainBlocks[0].transactionCnt).to.equal(0);
-            expect(chainBlocks[0].participantAdr).to.equal(address1);
-            expect(chainBlocks[0].timestamp).to.equal(timestamp);
+            expect(chainBlocks![0].transactionCnt).to.equal(0);
+            expect(chainBlocks![0].participantAdr).to.equal(address1);
+            expect(chainBlocks![0].timestamp).to.equal(timestamp);
         });
 
         it("should not add to chain blocks when signature is invalid but should return appropriate flag", async () => {
@@ -1438,7 +1439,7 @@ describe("AgreementManager", () => {
                 manager.collectOnChainBlock(invalidSignedBlock, timestamp)
             ).to.equal(AgreementFlag.INVALID_SIGNATURE);
 
-            const chainBlocks = manager.forks[0].chainBlocks;
+            const chainBlocks = manager.forks.forkAt(0)?.chainBlocks;
             expect(chainBlocks).to.have.lengthOf(0);
         });
 
@@ -1452,9 +1453,9 @@ describe("AgreementManager", () => {
 
             expect(result).to.equal(AgreementFlag.DUPLICATE);
 
-            const chainBlocks = manager.forks[0].chainBlocks;
+            const chainBlocks = manager.forks.forkAt(0)?.chainBlocks;
             expect(chainBlocks).to.have.lengthOf(1);
-            expect(chainBlocks[0].timestamp).to.equal(timestamp); // Original timestamp
+            expect(chainBlocks![0].timestamp).to.equal(timestamp); // Original timestamp
         });
     });
 });

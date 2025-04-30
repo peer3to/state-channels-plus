@@ -7,7 +7,7 @@ import {
     getSigners,
     createJoinChannelTestObject
 } from "@test/utils/testHelpers";
-import EvmUtils from "@/utils/EvmUtils";
+import { EvmUtils } from "@/utils";
 import {
     MathStateChannelManagerProxy,
     MathStateMachine

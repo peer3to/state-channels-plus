@@ -1,10 +1,10 @@
 import { ethers, AddressLike, BigNumberish, BytesLike } from "ethers";
 import * as dt from "@typechain-types/contracts/V1/DisputeTypes";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
-import { getEthersTypeForDisputeProof, ProofType } from "@/DisputeTypes";
-import EvmUtils from "@/utils/EvmUtils";
+import { getEthersTypeForDisputeProof, ProofType } from "@/types/disputes";
+import { EvmUtils } from "@/utils";
 import Clock from "@/Clock";
-import AgreementManager from "./AgreementManager";
+import AgreementManager from "@/agreementManager";
 
 class ProofManager {
     readonly agreementManager: AgreementManager;

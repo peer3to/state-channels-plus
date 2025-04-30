@@ -6,7 +6,7 @@ type SignerAndSignature = {
     signature: SignatureLike;
 };
 
-class SignatureCollectionMap {
+export class SignatureCollectionMap {
     private map: Map<string, SignerAndSignature[]> = new Map<
         string,
         SignerAndSignature[]
@@ -82,5 +82,3 @@ class SignatureCollectionMap {
         this.map.forEach(callback);
     }
 }
-
-export default SignatureCollectionMap;

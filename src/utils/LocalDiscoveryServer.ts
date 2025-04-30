@@ -6,7 +6,7 @@ const PORT = 2001;
 
 type DiscoveryInfo = [number, string];
 //This is used just for express testing
-class LocalDiscoveryServer {
+export class LocalDiscoveryServer {
     private constructor() {}
 
     public static tryStart() {
@@ -86,5 +86,3 @@ class LocalDiscoveryServer {
         });
     }
 }
-
-export default LocalDiscoveryServer;
