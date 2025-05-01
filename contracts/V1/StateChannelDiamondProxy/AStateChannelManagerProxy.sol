@@ -177,10 +177,31 @@ abstract contract AStateChannelManagerProxy is
         // return (success, abi.decode(encodedReturnValue, (bytes)));
     }
 
+    /**
+        Posting calldata is lightweight, since it persists a signle hash/commitment. 
+        It's enough to check just the maxTimestamp safety guard that protects against race conditions, since everything else is committed in the block.
+        We also don't allow overwriting the blockCalldataCommitment if it already exists. 
+        We don't even have to check the siganture of the signedBlock, since the msg.sender takes the responsibility of provifing correct data.
+        If the msg.sender provides junk(an invalid SignedBlock), a fraud proof can slash the msg.sender, by verifying the junk data against the committment.
+        If msg.sender is not part of the channel, other peers will ignore emited events and commitments. The sender will still pay tx fees on-chain.
+     */
+    function postBlockCalldata(SignedBlock memory signedBlock, uint maxTimestamp) public override {
+        //Time is the only race condition we need to take into account
+        require(block.timestamp <= maxTimestamp, ErrorBlockCalldataTimestampTooLate());
+        bytes32 commitment = keccak256(abi.encode(signedBlock,block.timestamp));
+        Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
+        blockCalldataCommitments
+        [_block.transaction.header.channelId]
+        [msg.sender]
+        [_block.transaction.header.forkCnt]
+        [_block.transaction.header.transactionCnt] = commitment;
 
-    
-    function postBlockCalldata(SignedBlock memory signedBlock) public override {
-       revert("NOT IMPLEMENTED");
+        emit BlockCalldataPosted(
+            _block.transaction.header.channelId,
+            msg.sender,
+            signedBlock,
+            block.timestamp
+        );
     }
 
     function _delegatecall(
@@ -362,7 +383,7 @@ abstract contract AStateChannelManagerProxy is
         public
         view
         override(StateChannelCommon, StateChannelManagerInterface)
-        returns (bool found, bytes32 blockCallData)
+        returns (bool found, bytes32 blockCalldataCommitment)
     {
         return
             StateChannelCommon.getBlockCallDataCommitment(

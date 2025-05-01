@@ -65,14 +65,14 @@ abstract contract StateChannelManagerInterface {
         Transaction memory _tx
     ) public virtual returns (bool, bytes memory);
 
-    function postBlockCalldata(SignedBlock memory signedBlock) public virtual;
+    function postBlockCalldata(SignedBlock memory signedBlock, uint maxTimestamp) public virtual;
 
     function getBlockCallDataCommitment(
         bytes32 channelId,
         uint forkCnt,
         uint blockHeight,
         address participant
-    ) public view virtual returns (bool found, bytes32 blockCallData);
+    ) public view virtual returns (bool found, bytes32 blockCalldataCommitment);
 
     function createDispute(
         Dispute memory dispute

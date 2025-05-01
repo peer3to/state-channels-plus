@@ -6,6 +6,7 @@ import "./DataTypes.sol";
 interface StateChannelManagerEvents {
     event BlockCalldataPosted(
         bytes32 indexed channelId,
+        address sender,
         SignedBlock signedBlock,
         uint timestamp
     );
