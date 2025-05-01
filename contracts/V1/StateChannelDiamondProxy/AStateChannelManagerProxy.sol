@@ -190,6 +190,13 @@ abstract contract AStateChannelManagerProxy is
         require(block.timestamp <= maxTimestamp, ErrorBlockCalldataTimestampTooLate());
         bytes32 commitment = keccak256(abi.encode(signedBlock,block.timestamp));
         Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
+        
+        //Don't allow overwriting the blockCalldataCommitment if it already exists
+        require(blockCalldataCommitments[_block.transaction.header.channelId]
+        [msg.sender]
+        [_block.transaction.header.forkCnt]
+        [_block.transaction.header.transactionCnt] == bytes32(0), ErrorBlockCalldataAlreadyPosted());
+
         blockCalldataCommitments
         [_block.transaction.header.channelId]
         [msg.sender]

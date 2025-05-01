@@ -103,3 +103,4 @@ error DisputeInvalidExitChannelBlocks();
 
 //Posting block calldata
 error ErrorBlockCalldataTimestampTooLate();
+error ErrorBlockCalldataAlreadyPosted();
