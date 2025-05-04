@@ -56,9 +56,9 @@ abstract contract AStateChannelManagerProxy is
     )
         public
         onlySelf
-        returns (bytes memory encodedModifiedState, uint successCnt)
+        returns (bytes memory encodedModifiedState)
     {
-        return _applyJoinChannelToStateMachine(encodedState, joinCahnnels);
+        return _applyJoinChannelToStateMachine(encodedState,joinCahnnels);
     }
 
     function applySlashesToStateMachine(
@@ -92,17 +92,18 @@ abstract contract AStateChannelManagerProxy is
     function _applyJoinChannelToStateMachine(
         bytes memory encodedState,
         JoinChannel[] memory joinCahnnels
-    ) internal returns (bytes memory encodedModifiedState, uint successCnt) {
+    ) internal returns (bytes memory encodedModifiedState) {
         uint successCnt = 0;
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < joinCahnnels.length; i++) {
             bool success = stateMachineImplementation.joinChannel(
                 joinCahnnels[i]
             );
-            // require(success, "JoinChannel failed");
-            if (success) successCnt++;
+            // require(success, "Slash failed");
+            require(success,ErrorDisputeStateMachineJoiningFailed());
+            successCnt++;
         }
-        return (stateMachineImplementation.getState(), successCnt);
+        return (stateMachineImplementation.getState());
     }
 
     function _applySlashesToStateMachine(

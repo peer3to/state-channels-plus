@@ -31,10 +31,13 @@ error ErrorDisputeExpired();
 error ErrorDisputeGenesisInvalid();
 error ErrorDisputeStateProofInvalid();
 error ErrorDisptuteFraudProofDidntSlash(uint proofIndex);
+error ErrorDisputeStateMachineJoiningFailed();
 error ErrorDisputeStateMachineSlashingFailed();
 error ErrorDisputeStateMachineRemovingFailed();
 error ErrorDisputeOutputStateSnapshotInvalid();
-
+error ErrorDisputeJoinChannelBlocksInvalid();
+error ErrorDisputeExitChannelBlocksInvalid();
+error ErrorDisputeBalanceInvariantInvalid();
 
 //Race conditions
 error ErrorDisputeShouldUseSnapshotAsGenesisState();
@@ -43,6 +46,7 @@ error ErrorDisputeNotExpectedIndex();
 error ErrorDisputeTimeoutCalldataPosted();
 error ErrorDisputeTimeoutPreviousBlockProducerPostedCalldataMissmatch();
 error ErrorDisputeTimeoutNotMinTimestamp();
+error ErrorDisputeOnChainLatestJoinChannelBlockHashMismatch();
 
 //Finalized and latest
 error ErrorFinalizedAndLatestNotSignedByParticipant();
