@@ -103,7 +103,7 @@ enum ProofType {
     DisputeOutOfGas,
     DisputeInvalidOutputState,
     DisputeInvalidStateProof,
-    DisputeInvalidPreeviousRecursive,
+    DisputeInvalidPreviousRecursive,
     DisputeInvalidExitChannelBlocks
 }
 
@@ -113,8 +113,9 @@ struct BlockEmptyProof {
 }
 
 struct BlockInvalidStateTransitionProof {
-    BlockConfirmation fraudBlockConfirmation;
-    bytes encodedState;
+    SignedBlock invalidBlock;
+    /// @notice the latest state being transitioned
+    bytes encodedLatestState;
 }
 
 struct BlockOutOfGasProof {
@@ -131,6 +132,7 @@ struct BlockDoubleSignProof {
 struct DisputeNotLatestStateProof {
     BlockConfirmation newerBlock;
     Dispute originalDispute;
+    uint originalDisputeTimestamp;
 }
 
 struct DisputeOutOfGasProof {
@@ -158,11 +160,14 @@ struct DisputeInvalidExitChannelBlocksProof {
 struct TimeoutThresholdProof {
     BlockConfirmation thresholdBlock;
     Dispute timedOutDispute;
+    uint timedOutDisputeTimestamp;
 }
 
 struct TimeoutPriorInvalidProof {
     Dispute originalDispute;
     Dispute recursiveDispute;
+    uint originalDisputeTimestamp;
+    uint recursiveDisputeTimestamp;
 }
 
 /// @dev a pair consisting of first index (index of the malicious dispute) and last index (last index in the array)
