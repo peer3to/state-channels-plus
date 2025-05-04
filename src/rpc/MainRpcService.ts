@@ -7,7 +7,7 @@ import {
 import P2PManager from "@/P2PManager";
 import RpcProxy from "./RpcProxy";
 import ATransport from "@/transport/ATransport";
-import DebugProxy from "@/utils/DebugProxy";
+import { DebugProxy } from "@/utils";
 import { TransportType } from "@/transport/TransportType";
 import {
     InitHandshakeService,

@@ -8,7 +8,7 @@ import {
     getMathP2pEventHooks
 } from "@test/utils/testHelpers";
 import P2pEventHooks from "@/P2pEventHooks";
-import EvmUtils from "@/utils/EvmUtils";
+import { EvmUtils } from "@/utils";
 
 describe("EvmStateMachine", function () {
     it("EvmStateMachine - P2P simulation - success", async function () {

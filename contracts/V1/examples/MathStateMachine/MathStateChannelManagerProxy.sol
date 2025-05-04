@@ -77,7 +77,7 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
             );
 
             require(
-                joinChannels[i].amount > 0,
+                joinChannels[i].balance.amount > 0,
                 "MathStateChannelManager: openChannel amount must be greater than 0"
             );
             //TODO process deposits (this is composable with the global state (other contracts))

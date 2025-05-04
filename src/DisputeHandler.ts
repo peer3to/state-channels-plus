@@ -1,15 +1,13 @@
 import { AddressLike, BigNumberish, BytesLike, ethers } from "ethers";
-import AgreementManager from "./AgreementManager";
+import AgreementManager from "./agreementManager";
 import { AStateChannelManagerProxy } from "@typechain-types";
 import {
     ProofStruct,
     DisputeStruct
 } from "@typechain-types/contracts/V1/DisputeTypes";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
-import EvmUtils from "@/utils/EvmUtils";
-import DebugProxy from "@/utils/DebugProxy";
+import { EvmUtils, DebugProxy, retry } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
-import { retry } from "@/utils/retry";
 import ProofManager from "./ProofManager";
 
 let DEBUG_DISPUTE_HANDLER = true;
@@ -197,7 +195,6 @@ class DisputeHandler {
             this.signerAddress
         );
 
-        // Use retry utility instead of manual try-catch
         this.p2pEventHooks.onInitiatingDispute?.();
         await retry(
             async () => {

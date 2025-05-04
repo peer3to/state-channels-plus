@@ -74,7 +74,7 @@ contract MathStateMachine is AStateMachine {
 
                 ExitChannel memory exitChannel;
                 exitChannel.participant = adr;
-                exitChannel.amount = 0;
+                exitChannel.balance.amount = 0;
                 return (true, exitChannel);
             }
         }
@@ -84,4 +84,24 @@ contract MathStateMachine is AStateMachine {
     function _joinChannel(
         JoinChannel memory joinChannel
     ) internal virtual override returns (bool) {}
+
+    function addBalance(Balance memory balance1, Balance memory balance2) public pure override returns (Balance memory sum) {
+        sum.amount = balance1.amount + balance2.amount;
+        return sum;
+    }
+    function subtractBalance(Balance memory balance1, Balance memory balance2) public pure override returns (Balance memory diff) {
+        require(balance1.amount >= balance2.amount, "MathStateMachine: balance1 < balance2");
+        diff.amount = balance1.amount - balance2.amount;
+        return diff;
+    }
+    function areBalancesEqual(Balance memory balance1, Balance memory balance2) public pure override returns (bool) {
+        return balance1.amount == balance2.amount;
+    }
+    function isBalanceLesserThan(Balance memory balance1, Balance memory balance2) public pure override returns (bool) {
+        return balance1.amount < balance2.amount;
+    }
+    function getTotalStateBalance() public view override returns (Balance memory totalBalance) {
+        totalBalance.amount = state.number;
+        return totalBalance;
+    }
 }

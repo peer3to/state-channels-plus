@@ -88,15 +88,9 @@ export async function deployMathChannelProxyFixture(
         "DisputeManagerFacet",
         { libraries: { StateChannelUtilLibrary: libraryAddress } }
     );
-    // Deploy FraudProofVerification facet
-    let fraudProofFacetFactory =
-        await _ethers.getContractFactory("FraudProofFacet");
-
     let disputeManagerFacet = await disputeManagerFacetFactory.deploy();
     let disputeManagerFacetAddress = await disputeManagerFacet.getAddress();
 
-    let fraudProofFacet = await fraudProofFacetFactory.deploy();
-    let fraudProofFacetAddress = await fraudProofFacet.getAddress();
     //State machine logic
     let mathSmFactory = await _ethers.getContractFactory("MathStateMachine");
     let mathContactInstance = await mathSmFactory.deploy();
@@ -108,8 +102,7 @@ export async function deployMathChannelProxyFixture(
     );
     let mathStateChannelContactInstance = await mathSmcFactory.deploy(
         await mathContactInstance.getAddress(),
-        disputeManagerFacetAddress,
-        fraudProofFacetAddress
+        disputeManagerFacetAddress
     );
 
     return {

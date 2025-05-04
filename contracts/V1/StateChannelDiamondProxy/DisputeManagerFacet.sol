@@ -3,7 +3,7 @@ pragma solidity ^0.8.8;
 import "./StateChannelCommon.sol";
 import "./AStateChannelManagerProxy.sol";
 import "./StateChannelUtilLibrary.sol";
-import "./DisputeErrors.sol";
+import "./Errors.sol";
 
 contract DisputeManagerFacet is StateChannelCommon {
 

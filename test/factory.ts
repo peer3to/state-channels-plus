@@ -5,7 +5,7 @@ import {
     TransactionHeaderStruct,
     TransactionBodyStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import AgreementManager from "@/AgreementManager";
+import AgreementManager from "@/agreementManager";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 
 /**

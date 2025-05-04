@@ -104,3 +104,7 @@ error BlockNotLatestState();
 error DisputeInvalidRecursive();
 error DisputeInvalidPreviousRecursive();
 error DisputeInvalidExitChannelBlocks();
+
+//Posting block calldata
+error ErrorBlockCalldataTimestampTooLate();
+error ErrorBlockCalldataAlreadyPosted();

@@ -14,7 +14,7 @@ import {
 } from "@typechain-types/contracts/V1/DataTypes";
 import Clock from "@/Clock";
 import P2PManager from "@/P2PManager";
-import EvmUtils from "@/utils/EvmUtils";
+import { EvmUtils } from "@/utils";
 class P2pSigner implements Signer {
     signer: Signer;
     signerAddress: AddressLike;
@@ -92,7 +92,7 @@ class P2pSigner implements Signer {
                 participant: this.p2pManager.stateManager.getSignerAddress(),
                 forkCnt: this.p2pManager.stateManager.getForkCnt(),
                 transactionCnt:
-                    this.p2pManager.stateManager.getNextTransactionCnt(),
+                    this.p2pManager.stateManager.getNextBlockHeight(),
                 timestamp: BigInt(Clock.getTimeInSeconds())
             },
             body: {
