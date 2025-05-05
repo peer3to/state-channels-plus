@@ -99,6 +99,8 @@ struct Timeout {
     uint minTimeStamp;
     /// @dev the forkCnt at which the participant is timed out
     uint forkCnt;
+    /// @dev True if timeout checks should ignore race condition checks on-chain - usefull when the participant being tiemdout committed to a wrong block (is not linked to the latestState), but we can't prove deviation - explained more in the docs
+    bool isForced;
     // ================== optional ==================
     address previousBlockProducer;
     bool previousBlockProducerPostedCalldata;

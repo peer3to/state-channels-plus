@@ -658,7 +658,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
 
         // *********** 4. Timeout *************
-        if(dispute.timeout.participant != address(0)) {
+        if(dispute.timeout.participant != address(0) && !dispute.timeout.isForced) {
             //check if participant posted calldata commitment
             (bool found, bytes32 blockCalldataCommitment) = getBlockCallDataCommitment(dispute.channelId, dispute.timeout.forkCnt, dispute.timeout.blockHeight, dispute.timeout.participant);
             if(found) {
