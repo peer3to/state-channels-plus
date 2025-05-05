@@ -55,8 +55,8 @@ contract DisputeManagerFacet is StateChannelCommon {
         FraudProofVerificationContext memory poofContext = FraudProofVerificationContext({
             channelId: dispute.channelId
         }); 
-        (bytes memory encodedModifiedState, ExitChannelBlock memory eBlock, 
-        Balance memory totalDeposits, Balance memory totalWithdrawals) = playDisputeOutputGeneration(
+        (bytes memory encodedModifiedState, ExitChannelBlock memory exitBlock, 
+        Balance memory totalDeposits, Balance memory totalWithdrawals) = generateDisputeOutputState(
             disputeAuditingData.latestStateStateMachineState,
             dispute.fraudProofs,
             poofContext,
@@ -73,10 +73,10 @@ contract DisputeManagerFacet is StateChannelCommon {
             stateMachineStateHash: keccak256(encodedModifiedState),
             participants: getStatemachineParticipants(encodedModifiedState),
             latestJoinChannelBlockHash: disputeAuditingData.outputStateSnapshot.latestExitChannelBlockHash, // This has been verified in _verifyJoinChannelBlocks
-            latestExitChannelBlockHash: keccak256(abi.encode(eBlock)),
+            latestExitChannelBlockHash: keccak256(abi.encode(exitBlock)),
             totalDeposits: totalDeposits, 
             totalWithdrawals: totalWithdrawals,
-            forkCnt: disputeAuditingData.latestStateSnapshot.forkCnt + 1
+            forkCnt: disputeData[dispute.channelId].disputeCommitments.length
         });
 
         //verify outputStateSnapshot commitment
@@ -120,7 +120,7 @@ contract DisputeManagerFacet is StateChannelCommon {
     }
 
     // Doesn't do any checks and just applies all slashes, removals and joins to a specific stateMachineState and generates the outputStateMachineState - similar logic to playTransaction in the typescript code - this is done to help the backer generate a correct output state while forging the dispute
-    function playDisputeOutputGeneration(
+    function generateDisputeOutputState(
         bytes memory encodedStateMachineState,
         Proof[] memory fraudProofs,
         FraudProofVerificationContext memory poofContext,
@@ -129,7 +129,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         address timeoutRemoval,
         JoinChannelBlock[] memory joinChannelBlocks,
         StateSnapshot memory latestStateSnapshot
-    ) public returns (bytes memory encodedModifiedState, ExitChannelBlock memory eBlock, Balance memory totalDeposits, Balance memory totalWithdrawals) {
+    ) public returns (bytes memory encodedModifiedState, ExitChannelBlock memory exitBlock, Balance memory totalDeposits, Balance memory totalWithdrawals) {
         ExitChannel[] memory exitChannels;
         totalDeposits = latestStateSnapshot.totalDeposits;
         totalWithdrawals = latestStateSnapshot.totalWithdrawals;
@@ -532,7 +532,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             }
             previousJoinChannelBlockHash = keccak256(abi.encode(disputeAuditingData.joinChannelBlocks[i]));
         }
-        return previousJoinChannelBlockHash == disputeAuditingData.outputStateSnapshot.latestExitChannelBlockHash;
+        return previousJoinChannelBlockHash == disputeAuditingData.outputStateSnapshot.latestJoinChannelBlockHash;
     }
 
     function _verifyExitChannelBlocks(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) internal pure returns (bool) {
