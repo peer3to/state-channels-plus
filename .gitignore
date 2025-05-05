@@ -14,5 +14,7 @@ typechain-types
 
 # Ignore all .tgz files
 *.tgz
+./wake
 
 .nyc_output
+
