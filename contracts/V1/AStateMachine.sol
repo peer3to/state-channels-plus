@@ -25,6 +25,21 @@ abstract contract AStateMachine {
     // return the next participant which should produce a transaction based on the current state (eg. in the game of poker, the next player to play a move)
     function getNextToWrite() public view virtual returns (address);
 
+    // return the balance1 + balance2
+    function addBalance(Balance memory balance1, Balance memory balance2) public pure virtual returns (Balance memory sum);
+    
+    // return the balance1 - balance2 OR throw an error if balance1 < balance2
+    function subtractBalance(Balance memory balance1, Balance memory balance2) public pure virtual returns (Balance memory diff);
+    
+    // return true if balance1 == balance2, false otherwise
+    function areBalancesEqual(Balance memory balance1, Balance memory balance2) public pure virtual returns (bool);
+
+    // return true if balance1 < balance2, false otherwise
+    function isBalanceLesserThan(Balance memory balance1, Balance memory balance2) public pure virtual returns (bool);
+
+    // return the total balance of the current state (e.g. sum up all participants balances)
+    function getTotalStateBalance() public view virtual returns (Balance memory totalBalance);
+
     // modifies the state to add a new participant to the channel
     function _joinChannel(
         JoinChannel memory joinChannel

@@ -16,9 +16,13 @@ contract StateChannelManagerStorage {
     AStateMachine stateMachineImplementation;
 
     // =================== State on chain storage ==================
+    /// @dev Total on-chain processed deposits
+    mapping(bytes32 channelId => Balance) totalOnChainProcessedDeposits;
+    /// @dev Total on-chain processed withdraws
+    mapping(bytes32 channelId => Balance) totalOnChainProcessedWithdrawals;
 
     /// @dev stateSnapshot Data
-    mapping(bytes32 => StateSnapshot) stateSnapshots;
+    mapping(bytes32 channelId => StateSnapshot) stateSnapshots;
    
     // =================== Block on chain storage ==================
 

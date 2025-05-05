@@ -49,12 +49,16 @@ struct TransactionBody {
     bytes encodedData;
     bytes data; //evm transaction data
 }
+
+struct Balance{
+    uint amount;
+    bytes data; //custom data
+}
 struct JoinChannel {
     bytes32 channelId;
     address participant;
-    uint amount;
     uint deadlineTimestamp;
-    bytes data; //custom data
+    Balance balance;
 }
 
 struct JoinChannelBlock {
@@ -75,8 +79,7 @@ struct JoinChannelConfirmation {
 /// @dev It is produced as a byproduct of state transition or enforced onchain through dispute
 struct ExitChannel {
     address participant;
-    uint amount;
-    bytes data;
+    Balance balance;
     bool isPartialExit;
 }
 
@@ -96,6 +99,8 @@ struct Timeout {
     uint minTimeStamp;
     /// @dev the forkCnt at which the participant is timed out
     uint forkCnt;
+    /// @dev True if timeout checks should ignore race condition checks on-chain - usefull when the participant being tiemdout committed to a wrong block (is not linked to the latestState), but we can't prove deviation - explained more in the docs
+    bool isForced;
     // ================== optional ==================
     address previousBlockProducer;
     bool previousBlockProducerPostedCalldata;
@@ -113,7 +118,7 @@ struct StateSnapshot {
     /// @dev the hash of the lastBlock in the ExitChannel blockchain
     bytes32 latestExitChannelBlockHash;
     /// @dev sum of all the amounts in the joinChannel blockchain
-    uint totalDeposits;
+    Balance totalDeposits;
     /// @dev sum of all the amounts in the exitChannel blockchain
-    uint totalWithdrawals;
+    Balance totalWithdrawals;
 }
