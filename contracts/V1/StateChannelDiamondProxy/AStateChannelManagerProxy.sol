@@ -93,7 +93,6 @@ abstract contract AStateChannelManagerProxy is
         bytes memory encodedState,
         JoinChannel[] memory joinCahnnels
     ) internal returns (bytes memory encodedModifiedState) {
-        uint successCnt = 0;
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < joinCahnnels.length; i++) {
             bool success = stateMachineImplementation.joinChannel(
@@ -101,7 +100,6 @@ abstract contract AStateChannelManagerProxy is
             );
             // require(success, "Slash failed");
             require(success,ErrorDisputeStateMachineJoiningFailed());
-            successCnt++;
         }
         return (stateMachineImplementation.getState());
     }
@@ -119,15 +117,13 @@ abstract contract AStateChannelManagerProxy is
         ExitChannel[] memory exitChannels = new ExitChannel[](
             slashedParticipants.length
         );
-        uint successCnt = 0;
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < slashedParticipants.length; i++) {
             bool success;
-            (success, exitChannels[successCnt]) = stateMachineImplementation
+            (success, exitChannels[i]) = stateMachineImplementation
                 .slashParticipant(slashedParticipants[i]);
             // require(success, "Slash failed");
             require(success,ErrorDisputeStateMachineSlashingFailed());
-            successCnt++;
         }
         return (
             stateMachineImplementation.getState(),
@@ -148,15 +144,13 @@ abstract contract AStateChannelManagerProxy is
         ExitChannel[] memory exitChannels = new ExitChannel[](
             participants.length
         );
-        uint successCnt = 0;
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < participants.length; i++) {
             bool success;
-            (success, exitChannels[successCnt]) = stateMachineImplementation
+            (success, exitChannels[i]) = stateMachineImplementation
                 .removeParticipant(participants[i]);
             // require(success, "Remove failed");
             require(success,ErrorDisputeStateMachineRemovingFailed());
-            successCnt++;
         }
         return (
             stateMachineImplementation.getState(),
