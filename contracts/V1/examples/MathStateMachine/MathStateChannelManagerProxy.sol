@@ -13,8 +13,9 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
     constructor(
         address aStateMaachineAddress,
         address disputeManagerFacet,
-        address fraudProofFacet
-    ) AStateChannelManagerProxy(aStateMaachineAddress, disputeManagerFacet, fraudProofFacet) {
+        address fraudProofFacet,
+        address stateSnapshotFacet
+    ) AStateChannelManagerProxy(aStateMaachineAddress, disputeManagerFacet, fraudProofFacet, stateSnapshotFacet) {
         p2pTime = 5;
         agreementTime = 5;
         chainFallbackTime = 5;

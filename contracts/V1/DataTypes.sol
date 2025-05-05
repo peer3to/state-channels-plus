@@ -1,5 +1,7 @@
 pragma solidity ^0.8.8;
 
+import "./DisputeTypes.sol";
+
 //Just so typechain generates types for the structs bellow
 contract DataTypes {
     constructor(
@@ -121,4 +123,12 @@ struct StateSnapshot {
     Balance totalDeposits;
     /// @dev sum of all the amounts in the exitChannel blockchain
     Balance totalWithdrawals;
+}
+
+struct UpdateStateSnapshotStruct  {
+    StateSnapshot stateSnapshot;
+    ExitChannel[] exitChannelBlocks;
+    // ========================== optional ===============================
+    ForkProof forkFinalityProof;
+    ForkMilestoneProof forkMilestoneProof;
 }

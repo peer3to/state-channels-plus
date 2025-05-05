@@ -5,6 +5,7 @@ import "./DisputeManagerFacet.sol";
 import "./FraudProofFacet.sol";
 
 import "./StateChannelUtilLibrary.sol";
+import "./StateSnapshotFacet.sol";
 import "../StateChannelManagerInterface.sol";
 
 abstract contract AStateChannelManagerProxy is
@@ -13,15 +14,18 @@ abstract contract AStateChannelManagerProxy is
 {
     DisputeManagerFacet disputeManagerFacet;
     FraudProofFacet fraudProofFacet;
+    StateSnapshotFacet stateSnapshotFacet;
 
     constructor(
         address _stateMachineImplementation,
         address _disputeManagerFacet,
-        address _fraudProofFacet
+        address _fraudProofFacet,
+        address _stateSnapshotFacet
     ) {
         stateMachineImplementation = AStateMachine(_stateMachineImplementation);
         disputeManagerFacet = DisputeManagerFacet(_disputeManagerFacet);
         fraudProofFacet = FraudProofFacet(_fraudProofFacet);
+        stateSnapshotFacet = StateSnapshotFacet(_stateSnapshotFacet);
         p2pTime = 15;
         agreementTime = 5;
         chainFallbackTime = 30;
@@ -423,5 +427,20 @@ abstract contract AStateChannelManagerProxy is
         returns (bool)
     {
         return StateChannelCommon.isChannelOpen(channelId);
+    }
+
+    function isMilestoneFinal(
+        ForkMilestoneProof memory milestone,
+        address[] memory expectedParticipants,
+        bytes32 genesisSnapshotHash
+    ) public returns (bool isFinal, bytes32 finalizedSnapshotHash) {
+        bytes memory result = _delegatecall(
+            address(disputeManagerFacet),
+            abi.encodeCall(
+                disputeManagerFacet.isMilestoneFinal,
+                (milestone, expectedParticipants, genesisSnapshotHash)
+            )
+        );
+        return abi.decode(result, (bool, bytes32));
     }
 }

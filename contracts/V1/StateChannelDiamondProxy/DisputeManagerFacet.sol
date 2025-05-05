@@ -678,4 +678,12 @@ contract DisputeManagerFacet is StateChannelCommon {
         // *********** 5. onChainLatestJoinChannelBlockHash should match *************
         require(dispute.onChainLatestJoinChannelBlockHash == _disputeData.latestJoinChannelBlockHash, ErrorDisputeOnChainLatestJoinChannelBlockHashMismatch());
     }
+
+    function isMilestoneFinal(
+        ForkMilestoneProof memory milestone, 
+        address[] memory expectedParticipants, 
+        bytes32 genesisSnapshotHash
+    ) external returns (bool isFinal, bytes32 finalizedSnapshotHash) {
+        return _isMilestoneFinal(milestone, expectedParticipants, genesisSnapshotHash);
+    }
 }
