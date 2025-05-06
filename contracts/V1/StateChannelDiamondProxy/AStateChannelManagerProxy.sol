@@ -56,9 +56,9 @@ abstract contract AStateChannelManagerProxy is
     )
         public
         onlySelf
-        returns (bytes memory encodedModifiedState, uint successCnt)
+        returns (bytes memory encodedModifiedState)
     {
-        return _applyJoinChannelToStateMachine(encodedState, joinCahnnels);
+        return _applyJoinChannelToStateMachine(encodedState,joinCahnnels);
     }
 
     function applySlashesToStateMachine(
@@ -92,17 +92,16 @@ abstract contract AStateChannelManagerProxy is
     function _applyJoinChannelToStateMachine(
         bytes memory encodedState,
         JoinChannel[] memory joinCahnnels
-    ) internal returns (bytes memory encodedModifiedState, uint successCnt) {
-        uint successCnt = 0;
+    ) internal returns (bytes memory encodedModifiedState) {
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < joinCahnnels.length; i++) {
             bool success = stateMachineImplementation.joinChannel(
                 joinCahnnels[i]
             );
-            // require(success, "JoinChannel failed");
-            if (success) successCnt++;
+            // require(success, "Slash failed");
+            require(success,ErrorDisputeStateMachineJoiningFailed());
         }
-        return (stateMachineImplementation.getState(), successCnt);
+        return (stateMachineImplementation.getState());
     }
 
     function _applySlashesToStateMachine(
@@ -118,17 +117,13 @@ abstract contract AStateChannelManagerProxy is
         ExitChannel[] memory exitChannels = new ExitChannel[](
             slashedParticipants.length
         );
-        uint successCnt = 0;
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < slashedParticipants.length; i++) {
             bool success;
-            (success, exitChannels[successCnt]) = stateMachineImplementation
+            (success, exitChannels[i]) = stateMachineImplementation
                 .slashParticipant(slashedParticipants[i]);
             // require(success, "Slash failed");
-            if(!success){
-                revert ErrorDisputeStateMachineSlashingFailed();
-            }
-            successCnt++;
+            require(success,ErrorDisputeStateMachineSlashingFailed());
         }
         return (
             stateMachineImplementation.getState(),
@@ -149,17 +144,13 @@ abstract contract AStateChannelManagerProxy is
         ExitChannel[] memory exitChannels = new ExitChannel[](
             participants.length
         );
-        uint successCnt = 0;
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < participants.length; i++) {
             bool success;
-            (success, exitChannels[successCnt]) = stateMachineImplementation
+            (success, exitChannels[i]) = stateMachineImplementation
                 .removeParticipant(participants[i]);
             // require(success, "Remove failed");
-            if(!success){
-                revert ErrorDisputeStateMachineRemovingFailed();
-            }
-            successCnt++;
+            require(success,ErrorDisputeStateMachineRemovingFailed());
         }
         return (
             stateMachineImplementation.getState(),
