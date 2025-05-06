@@ -51,8 +51,10 @@ error ErrorFinalizedAndLatestSecondBlocksNotLinked();
 error ErrorFinalizedAndLatestLastBlockNotVoringForLatestState();
 
 //Double sign
-error ErrorDoubleSignBlocksAreSame();
-error ErrorDoubleSignSignersNotTheSame();
+error ErrorDoubleSignBlocksNotSame();
+error ErrorDoubleSignSignersNotSame();
+
+error ErrorNotSameChannelId();
 
 //Incorrect data
 error ErrorIncorrectDataStateHashNotLinkedToBlock(uint blockNumber);

@@ -125,7 +125,9 @@ abstract contract AStateChannelManagerProxy is
             (success, exitChannels[successCnt]) = stateMachineImplementation
                 .slashParticipant(slashedParticipants[i]);
             // require(success, "Slash failed");
-            require(success,ErrorDisputeStateMachineSlashingFailed());
+            if(!success){
+                revert ErrorDisputeStateMachineSlashingFailed();
+            }
             successCnt++;
         }
         return (
@@ -154,7 +156,9 @@ abstract contract AStateChannelManagerProxy is
             (success, exitChannels[successCnt]) = stateMachineImplementation
                 .removeParticipant(participants[i]);
             // require(success, "Remove failed");
-            require(success,ErrorDisputeStateMachineRemovingFailed());
+            if(!success){
+                revert ErrorDisputeStateMachineRemovingFailed();
+            }
             successCnt++;
         }
         return (
@@ -187,15 +191,22 @@ abstract contract AStateChannelManagerProxy is
      */
     function postBlockCalldata(SignedBlock memory signedBlock, uint maxTimestamp) public override {
         //Time is the only race condition we need to take into account
-        require(block.timestamp <= maxTimestamp, ErrorBlockCalldataTimestampTooLate());
+        
+        if (block.timestamp > maxTimestamp) {
+           revert ErrorBlockCalldataTimestampTooLate();
+        }
         bytes32 commitment = keccak256(abi.encode(signedBlock,block.timestamp));
         Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
         
         //Don't allow overwriting the blockCalldataCommitment if it already exists
-        require(blockCalldataCommitments[_block.transaction.header.channelId]
-        [msg.sender]
-        [_block.transaction.header.forkCnt]
-        [_block.transaction.header.transactionCnt] == bytes32(0), ErrorBlockCalldataAlreadyPosted());
+        if (
+        blockCalldataCommitments[_block.transaction.header.channelId]
+                            [msg.sender]
+                            [_block.transaction.header.forkCnt]
+                            [_block.transaction.header.transactionCnt] != bytes32(0)
+        ) {
+            revert ErrorBlockCalldataAlreadyPosted();
+        }
 
         blockCalldataCommitments
         [_block.transaction.header.channelId]

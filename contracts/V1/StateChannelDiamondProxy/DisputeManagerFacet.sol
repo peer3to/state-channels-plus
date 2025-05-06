@@ -10,9 +10,12 @@ contract DisputeManagerFacet is StateChannelCommon {
     function createDispute(
         Dispute memory dispute
     ) public { 
-        require(msg.sender == dispute.disputer, ErrorDisputerNotMsgSender());
-        require(_canParticipateInDisputes(dispute.channelId, msg.sender), ErrorCantParticipateInDispute());
-
+        if(msg.sender != dispute.disputer){
+            revert ErrorDisputerNotMsgSender();
+        }
+        if(!_canParticipateInDisputes(dispute.channelId, msg.sender)){
+            revert ErrorCantParticipateInDispute();
+        }
         // race condition checks
         _disputeRaceConditionCheck(dispute);
 
@@ -44,11 +47,25 @@ contract DisputeManagerFacet is StateChannelCommon {
         uint timestamp
     ) external onlySelf returns (address[] memory slashParticipants) {
         
-        require(_isCorrectDisputeCommitment(dispute, timestamp),ErrorDisputeWrongCommitment());
-        require(_isCorrectAuditingData(dispute,disputeAuditingData),ErrorDisputeWrongAuditingData());
-        require(!_isExpired(timestamp), ErrorDisputeExpired());
-        require(_isCorrectGenesis(dispute,disputeAuditingData), ErrorDisputeGenesisInvalid());
-        require(_verifyStateProof(dispute, disputeAuditingData), ErrorDisputeStateProofInvalid());
+       if (!_isCorrectDisputeCommitment(dispute, timestamp)) {
+            revert ErrorDisputeWrongCommitment();
+        }
+
+        if (!_isCorrectAuditingData(dispute, disputeAuditingData)) {
+            revert ErrorDisputeWrongAuditingData();
+        }
+
+        if (_isExpired(timestamp)) {
+            revert ErrorDisputeExpired();
+        }
+
+        if (!_isCorrectGenesis(dispute, disputeAuditingData)) {
+            revert ErrorDisputeGenesisInvalid();
+        }
+
+        if (!_verifyStateProof(dispute, disputeAuditingData)) {
+            revert ErrorDisputeStateProofInvalid();
+        }
         //TODO! Verify exitChannelBlocks
 
         FraudProofVerificationContext memory poofContext = FraudProofVerificationContext({
@@ -619,7 +636,7 @@ contract DisputeManagerFacet is StateChannelCommon {
     }
     function _disputeRaceConditionCheck(
         Dispute memory dispute
-    ) internal {
+    ) view internal {
         StateSnapshot storage stateSnapshot = stateSnapshots[dispute.channelId];
         DisputeData storage _disputeData = disputeData[dispute.channelId];
         // *********** 1. should on-chain snapshot be genesis for dispute *************
@@ -656,7 +673,9 @@ contract DisputeManagerFacet is StateChannelCommon {
                     revert ErrorDisputeTimeoutPreviousBlockProducerPostedCalldataMissmatch();
                 }
             }
-            require(block.timestamp <= dispute.timeout.minTimeStamp, ErrorDisputeTimeoutNotMinTimestamp());
+            if(block.timestamp > dispute.timeout.minTimeStamp){
+                revert ErrorDisputeTimeoutNotMinTimestamp(); 
+            }
         }
     }
 }

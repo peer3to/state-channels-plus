@@ -53,11 +53,11 @@ contract FraudProofFacet is StateChannelCommon {
         Block memory block2 = abi.decode(blockDoubleSignProof.block2.encodedBlock, (Block));
 
         if(fraudProofVerificationContext.channelId != block1.transaction.header.channelId || fraudProofVerificationContext.channelId != block2.transaction.header.channelId) {
-            return address(0);
+            revert ErrorNotSameChannelId();
         }
 
-        if(block1.stateSnapshotHash != block2.stateSnapshotHash && block1.previousBlockHash != block2.previousBlockHash) {
-            return address(0);
+        if (block1.transaction.header.forkCnt != block2.transaction.header.forkCnt && block1.transaction.header.transactionCnt != block2.transaction.header.transactionCnt && keccak256(abi.encode(block1)) != keccak256(abi.encode(block2))){
+            revert ErrorDoubleSignBlocksNotSame();
         }
         
         address signer1 = StateChannelUtilLibrary.retriveSignerAddress(
@@ -79,8 +79,9 @@ contract FraudProofFacet is StateChannelCommon {
         Block memory fraudBlock = abi.decode(blockEmptyProof.emptyBlock.encodedBlock, (Block));
 
         if(fraudProofVerificationContext.channelId != fraudBlock.transaction.header.channelId) {
-            return address(0);
+            revert ErrorNotSameChannelId();
         }
+        
         if(fraudBlock.transaction.header.transactionCnt != uint(0)) {
             return address(0);
         }
