@@ -125,10 +125,25 @@ struct StateSnapshot {
     Balance totalWithdrawals;
 }
 
-struct UpdateStateSnapshotStruct  {
+struct LatestDisputeProof {
+    Dispute dispute;
+    uint timestamp;
+}
+
+struct OptionalMilestoneProofs {
+    bool hasValue;
+    ForkMilestoneProof[] value;
+}
+
+struct OptionalDisputeProof {
+    bool hasValue;
+    LatestDisputeProof value;
+}
+
+struct UpdateStateSnapshotStruct {
     StateSnapshot stateSnapshot;
-    ExitChannel[] exitChannelBlocks;
+    ExitChannelBlock[] exitChannelBlocks;
     // ========================== optional ===============================
-    ForkProof forkFinalityProof;
-    ForkMilestoneProof forkMilestoneProof;
+    OptionalMilestoneProofs milestoneProofs;
+    OptionalDisputeProof latestDisputeProof;
 }
