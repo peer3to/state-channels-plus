@@ -34,8 +34,6 @@ contract StateSnapshotFacet is StateChannelCommon {
             ) {
                 revert("StateSnapshot is not valid");
             }
-
-            return;
         }
 
         // Only teleport to latest fork, no progress within fork
@@ -45,7 +43,7 @@ contract StateSnapshotFacet is StateChannelCommon {
                 updateStateSnapshotStruct,
                 newStateSnapshot
             );
-            return;
+            _updateStateSnapshot(channelId, newStateSnapshot);
         }
 
         //Already on latest fork, progress state within it
@@ -56,7 +54,7 @@ contract StateSnapshotFacet is StateChannelCommon {
                 updateStateSnapshotStruct.exitChannelBlocks,
                 updateStateSnapshotStruct.milestoneProofs.value
             );
-            return;
+            _updateStateSnapshot(channelId, newStateSnapshot);
         }
 
         //Teleport to latest fork and then progress state within it
@@ -72,7 +70,7 @@ contract StateSnapshotFacet is StateChannelCommon {
                 updateStateSnapshotStruct.exitChannelBlocks,
                 updateStateSnapshotStruct.milestoneProofs.value
             );
-            return;
+            _updateStateSnapshot(channelId, newStateSnapshot);
         }
     }
 
@@ -81,11 +79,8 @@ contract StateSnapshotFacet is StateChannelCommon {
         UpdateStateSnapshotStruct memory updateStateSnapshotStruct,
         StateSnapshot memory newStateSnapshot
     ) internal {
-        // TODO: Implement teleportation to latest fork using forkFinalityProof
-        // This should verify the fork proof and update the state snapshot to the new fork
-
-        // For now, just update the state snapshot
-        _updateStateSnapshot(channelId, newStateSnapshot);
+        // TODO: Implement teleportation to latest fork using dispute proof
+        // This should verify the dispute proof and update the state snapshot to the new fork
     }
 
     function _handleForkProgress(
@@ -104,10 +99,26 @@ contract StateSnapshotFacet is StateChannelCommon {
             "StateSnapshot is not valid"
         );
 
+        // for each exit channel block, there must be a milestone proof
         require(
             milestoneProofs.length == exitChannelBlocks.length,
             "Milestone proofs length must match exit channel blocks length"
         );
+
+        require(
+            exitChannelBlocks[0].previousBlockHash ==
+                currentStateSnapshot.latestExitChannelBlockHash,
+            "First Exit block not linked to previous block"
+        );
+
+        require(
+            newStateSnapshot.latestExitChannelBlockHash ==
+                keccak256(
+                    abi.encode(exitChannelBlocks[exitChannelBlocks.length - 1])
+                ),
+            "Last Exit block not linked to new state snapshot"
+        );
+
         // Get current participants from state snapshot
         address[] memory currentParticipants = getSnapshotParticipants(
             channelId
