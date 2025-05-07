@@ -56,31 +56,52 @@ contract MathStateMachine is AStateMachine {
         return state.participants[state.number % state.participants.length];
     }
 
-    function _slashParticipant(
+     function _slashParticipant(
         address adr
-    ) internal virtual override returns (bool, ProcessExit memory) {
+    ) internal virtual override returns (bool, ExitChannel memory) {
         return _removeParticipant(adr);
     }
 
     function _removeParticipant(
         address adr
-    ) internal virtual override returns (bool, ProcessExit memory) {
+    ) internal virtual override returns (bool, ExitChannel memory) {
         uint256 length = state.participants.length;
-        ProcessExit memory processExit;
+        ExitChannel memory exitChannel;
         for (uint256 i = 0; i < length; i++) {
             if (state.participants[i] == adr) {
                 state.participants[i] = state.participants[length - 1];
                 state.participants.pop();
 
-                processExit.participant = adr;
-                processExit.amount = 0;
-                return (true, processExit);
+                ExitChannel memory exitChannel;
+                exitChannel.participant = adr;
+                exitChannel.balance.amount = 0;
+                return (true, exitChannel);
             }
         }
-        return (false, processExit);
+        return (false, exitChannel);
     }
 
     function _joinChannel(
         JoinChannel memory joinChannel
     ) internal virtual override returns (bool) {}
+
+    function addBalance(Balance memory balance1, Balance memory balance2) public pure override returns (Balance memory sum) {
+        sum.amount = balance1.amount + balance2.amount;
+        return sum;
+    }
+    function subtractBalance(Balance memory balance1, Balance memory balance2) public pure override returns (Balance memory diff) {
+        require(balance1.amount >= balance2.amount, "MathStateMachine: balance1 < balance2");
+        diff.amount = balance1.amount - balance2.amount;
+        return diff;
+    }
+    function areBalancesEqual(Balance memory balance1, Balance memory balance2) public pure override returns (bool) {
+        return balance1.amount == balance2.amount;
+    }
+    function isBalanceLesserThan(Balance memory balance1, Balance memory balance2) public pure override returns (bool) {
+        return balance1.amount < balance2.amount;
+    }
+    function getTotalStateBalance() public view override returns (Balance memory totalBalance) {
+        totalBalance.amount = state.number;
+        return totalBalance;
+    }
 }
