@@ -110,17 +110,22 @@ enum ProofType {
 // ========================== Block related fraud proofs ==========================
 struct BlockEmptyProof {
     SignedBlock emptyBlock;
+    StateSnapshot latestStateSnapshot;
+    bytes32 previousStateSnapshotHash;
+    bytes previousStateMachineState;
 }
 
 struct BlockInvalidStateTransitionProof {
     SignedBlock invalidBlock;
     /// @notice the latest state being transitioned
-    bytes encodedLatestState;
+    DisputeAuditingData disputeFraudData;
+    Dispute dispute;
 }
 
 struct BlockOutOfGasProof {
-    BlockConfirmation fraudBlockConfirmation;
-    bytes encodedState;
+    SignedBlock invalidBlock;
+    bytes latestStateStateMachineState;
+
 }
 
 struct BlockDoubleSignProof {
@@ -161,6 +166,7 @@ struct TimeoutThresholdProof {
     BlockConfirmation thresholdBlock;
     Dispute timedOutDispute;
     uint timedOutDisputeTimestamp;
+    bytes latestStateSnapshot;
 }
 
 struct TimeoutPriorInvalidProof {

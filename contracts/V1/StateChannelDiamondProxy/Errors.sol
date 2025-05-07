@@ -27,6 +27,7 @@ error ErrorCantParticipateInDispute();
 //Auditing errors
 error ErrorDisputeWrongCommitment();
 error ErrorDisputeWrongAuditingData();
+error ErrorDisputeCommitmentNotAvailable();
 error ErrorDisputeExpired();
 error ErrorDisputeGenesisInvalid();
 error ErrorDisputeStateProofInvalid();
@@ -59,10 +60,15 @@ error ErrorDoubleSignBlocksNotSame();
 error ErrorDoubleSignSignersNotSame();
 
 error ErrorNotSameChannelId();
-
+error ErrorInvalidBlockStateTransition();
+error ErrorValidBlockStateTransition();
+error ErrorInvalidBlockState();
+error ErrorInvalidStateSnapshot();
+error ErrorInvalidBlock();
 //Incorrect data
 error ErrorIncorrectDataStateHashNotLinkedToBlock(uint blockNumber);
 error ErrorIncorrectDataBlocksNotLinked();
+error ErrorIncorrectLatestStateSnapshot();
 
 //Newer state
 error ErrorNewerStateConfirmationInvalid();
@@ -71,6 +77,7 @@ error ErrorNewerStateConfirmationInvalid();
 error ErrorTimeoutPriorBlockNotInVirtualVotes();
 error ErrorTimeoutPriorBlockNotPrior();
 error ErrorTimeoutPriorCalldataExists();
+error ErrorInvalidTimeoutParticipant();
 
 //Block to far in the future
 error ErrorBlockToFarInTheFutureActuallyNotInTheFuture();

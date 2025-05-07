@@ -55,6 +55,7 @@ abstract contract AStateChannelManagerProxy is
         JoinChannel[] memory joinCahnnels
     )
         public
+        override
         onlySelf
         returns (bytes memory encodedModifiedState)
     {
@@ -109,6 +110,7 @@ abstract contract AStateChannelManagerProxy is
         address[] memory slashedParticipants
     )
         internal
+        override
         returns (
             bytes memory encodedModifiedState,
             ExitChannel[] memory exitChannels
@@ -136,6 +138,7 @@ abstract contract AStateChannelManagerProxy is
         address[] memory participants
     )
         internal
+        override
         returns (
             bytes memory encodedModifiedState,
             ExitChannel[] memory
