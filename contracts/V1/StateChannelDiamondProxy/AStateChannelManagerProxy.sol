@@ -189,18 +189,19 @@ abstract contract AStateChannelManagerProxy is
         require(block.timestamp <= maxTimestamp, ErrorBlockCalldataTimestampTooLate());
         bytes32 commitment = keccak256(abi.encode(signedBlock,block.timestamp));
         Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
-        
-        //Don't allow overwriting the blockCalldataCommitment if it already exists
-        require(blockCalldataCommitments[_block.transaction.header.channelId]
-        [msg.sender]
-        [_block.transaction.header.forkCnt]
-        [_block.transaction.header.transactionCnt] == bytes32(0), ErrorBlockCalldataAlreadyPosted());
 
-        blockCalldataCommitments
-        [_block.transaction.header.channelId]
-        [msg.sender]
-        [_block.transaction.header.forkCnt]
-        [_block.transaction.header.transactionCnt] = commitment;
+        // Extract values for better readability
+        bytes32 channelId = _block.transaction.header.channelId;
+        uint forkCnt = _block.transaction.header.forkCnt;
+        uint transactionCnt = _block.transaction.header.transactionCnt;
+
+        //Don't allow overwriting the blockCalldataCommitment if it already exists
+        require(
+            blockCalldataCommitments[channelId][msg.sender][forkCnt][transactionCnt] == bytes32(0),
+            ErrorBlockCalldataAlreadyPosted()
+        );
+
+        blockCalldataCommitments[channelId][msg.sender][forkCnt][transactionCnt] = commitment;
 
         emit BlockCalldataPosted(
             _block.transaction.header.channelId,
@@ -429,18 +430,18 @@ abstract contract AStateChannelManagerProxy is
         return StateChannelCommon.isChannelOpen(channelId);
     }
 
-    function isMilestoneFinal(
-        ForkMilestoneProof memory milestone,
-        address[] memory expectedParticipants,
-        bytes32 genesisSnapshotHash
-    ) public returns (bool isFinal, bytes32 finalizedSnapshotHash) {
+    function verifyForkProof(
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        StateSnapshot memory genesisSnapshot
+    ) public returns (bool isValid, bytes memory lastBlockEncoded) {
         bytes memory result = _delegatecall(
             address(disputeManagerFacet),
             abi.encodeCall(
-                disputeManagerFacet.isMilestoneFinal,
-                (milestone, expectedParticipants, genesisSnapshotHash)
+                disputeManagerFacet.verifyForkProof,
+                (milestoneProofs, milestoneSnapshots, genesisSnapshot)
             )
         );
-        return abi.decode(result, (bool, bytes32));
+        return abi.decode(result, (bool, bytes));
     }
 }
