@@ -3,7 +3,8 @@ import {
     SignedBlockStruct,
     BlockStruct,
     JoinChannelBlockStruct,
-    ExitChannelBlockStruct
+    ExitChannelBlockStruct,
+    StateSnapshotStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 // A fork is created by a DLT by disputing someone or asking the DLT to enforce a state.
 // The user initiating the process submits:
@@ -15,18 +16,18 @@ import {
 
 export type AgreementFork = {
     forkGenesisStateEncoded: string; //genesis state (encoded) of the fork
-    addressesInThreshold: AddressLike[]; //The addresses that are in the threshold
+    genesisParticipants: AddressLike[];
     genesisTimestamp: number; //timestamp of the first block in the fork
     chainBlocks: ChainBlocks[]; //Blocks that are posted on chain for the fork
     agreements: Agreement[]; //The agreements that are part of the fork - total order
-    joinChannelChain: JoinChannelBlockStruct[];
-    exitChannelChain: ExitChannelBlockStruct[];
 };
 
 export type Agreement = {
     block: BlockStruct;
     blockSignatures: SignatureLike[];
     encodedState: string;
+    addressesInThreshold: AddressLike[]; //The addresses that are in the threshold
+    snapShot: StateSnapshotStruct;
 };
 export type ChainBlocks = {
     transactionCnt: number;

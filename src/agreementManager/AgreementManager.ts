@@ -1,10 +1,12 @@
-import { AddressLike, BigNumberish, SignatureLike } from "ethers";
+import { AddressLike, BigNumberish, SignatureLike, BytesLike } from "ethers";
 import {
     SignedBlockStruct,
     BlockStruct,
     BlockConfirmationStruct,
     StateSnapshotStruct,
-    BalanceStruct
+    BalanceStruct,
+    JoinChannelBlockStruct,
+    ExitChannelBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import { BlockUtils, EvmUtils } from "@/utils";
 import { AgreementFlag } from "@/types";
@@ -18,6 +20,8 @@ import BlockValidator from "./BlockValidator";
 import { ethers } from "hardhat";
 
 class AgreementManager {
+    joinChannelChain: Map<BytesLike, JoinChannelBlockStruct> = new Map();
+    exitChannelChain: Map<BytesLike, ExitChannelBlockStruct> = new Map();
     forkService = new ForkService();
     queueService = new QueueService();
     chainTracker = new OnChainTracker(

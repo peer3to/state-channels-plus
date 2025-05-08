@@ -16,19 +16,17 @@ export default class ForkService {
     /*────────── mutators ──────────*/
     newFork(
         forkGenesisStateEncoded: string,
-        addressesInThreshold: AddressLike[],
+        genesisParticipants: AddressLike[],
         forkCnt: number,
         genesisTimestamp: number
     ): void {
         if (this.forks.length !== forkCnt) return;
         this.forks.push({
             forkGenesisStateEncoded,
-            addressesInThreshold,
+            genesisParticipants,
             genesisTimestamp,
             chainBlocks: [],
-            agreements: [],
-            joinChannelChain: [],
-            exitChannelChain: []
+            agreements: []
         });
     }
 

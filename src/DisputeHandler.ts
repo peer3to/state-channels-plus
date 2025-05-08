@@ -55,23 +55,7 @@ class DisputeHandler {
     public setChannelId(channelId: BytesLike): void {
         this.channelId = channelId;
     }
-    public async disputeFoldRechallenge(
-        forkCnt: BigNumberish,
-        transactionCnt: BigNumberish
-    ): Promise<void> {
-        const proof = this.proofManager.createFoldRechallengeProof(
-            forkCnt,
-            transactionCnt
-        );
-        return proof
-            ? this.createDispute(
-                  forkCnt,
-                  NO_PARTICIPANT_TO_FOLD,
-                  INITIAL_TRANSACTION_COUNT,
-                  [proof]
-              )
-            : undefined;
-    }
+
     public async disputeDoubleSign(
         conflictingBlocks: SignedBlockStruct[]
     ): Promise<void> {
@@ -82,56 +66,6 @@ class DisputeHandler {
         );
         return this.createDispute(
             _firstBlock.transaction.header.forkCnt,
-            NO_PARTICIPANT_TO_FOLD,
-            INITIAL_TRANSACTION_COUNT,
-            [proof]
-        );
-    }
-
-    public async disputeIncorrectData(
-        incorrectBlockSigned: SignedBlockStruct
-    ): Promise<void> {
-        const proof =
-            this.proofManager.createIncorrectDataProof(incorrectBlockSigned);
-        const _block = EvmUtils.decodeBlock(incorrectBlockSigned.encodedBlock);
-        return this.createDispute(
-            _block.transaction.header.forkCnt,
-            NO_PARTICIPANT_TO_FOLD,
-            INITIAL_TRANSACTION_COUNT,
-            [proof]
-        );
-    }
-
-    // Not needed publicly - just internaly
-    // public async disputeNewerState(
-    //     forkCnt: number,
-    //     participantAdr: AddressLike
-    // ): Promise<void> {
-    //     let proof = this.createNewerStateProof(forkCnt, participantAdr, );
-    //     if (!proof) return;
-    //     await this.createDispute(forkCnt, participantAdr, 0, [proof]);
-    // }
-
-    public async disputeFoldPriorBlock(
-        forkCnt: BigNumberish,
-        transactionCnt: number
-    ): Promise<void> {
-        const proof = ProofManager.createFoldPriorBlockProof(transactionCnt);
-        return this.createDispute(
-            forkCnt,
-            NO_PARTICIPANT_TO_FOLD,
-            INITIAL_TRANSACTION_COUNT,
-            [proof]
-        );
-    }
-
-    public async disputeBlockTooFarInFuture(
-        BlockSigned: SignedBlockStruct
-    ): Promise<void> {
-        const proof = ProofManager.createBlockTooFarInFutureProof(BlockSigned);
-        const block = EvmUtils.decodeBlock(BlockSigned.encodedBlock);
-        return this.createDispute(
-            block.transaction.header.forkCnt,
             NO_PARTICIPANT_TO_FOLD,
             INITIAL_TRANSACTION_COUNT,
             [proof]
@@ -340,14 +274,6 @@ class DisputeHandler {
             dispute.virtualVotingBlocks.at(-1)!.encodedBlock
         );
         return Number(lastBlock.transaction.header.transactionCnt);
-    }
-
-    // Filters valid proofs
-    private filterProofs(dispute: DisputeStruct): ProofStruct[] {
-        return ProofManager.filterValidProofs(
-            dispute,
-            this.localProofs.get(Number(dispute.forkCnt))
-        );
     }
 }
 
