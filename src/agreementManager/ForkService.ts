@@ -26,7 +26,9 @@ export default class ForkService {
             addressesInThreshold,
             genesisTimestamp,
             chainBlocks: [],
-            agreements: []
+            agreements: [],
+            joinChannelChain: [],
+            exitChannelChain: []
         });
     }
 

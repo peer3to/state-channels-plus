@@ -2,7 +2,9 @@ import { AddressLike, BigNumberish, SignatureLike } from "ethers";
 import {
     SignedBlockStruct,
     BlockStruct,
-    ConfirmedBlockStruct
+    BlockConfirmationStruct,
+    StateSnapshotStruct,
+    BalanceStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import { BlockUtils, EvmUtils } from "@/utils";
 import { AgreementFlag } from "@/types";
@@ -13,6 +15,7 @@ import ForkService, { Direction } from "./ForkService";
 import QueueService from "./QueueService";
 import OnChainTracker from "./OnChainTracker";
 import BlockValidator from "./BlockValidator";
+import { ethers } from "hardhat";
 
 class AgreementManager {
     forkService = new ForkService();
@@ -269,7 +272,7 @@ class AgreementManager {
     ): {
         encodedLatestFinalizedState: string;
         encodedLatestCorrectState: string;
-        virtualVotingBlocks: ConfirmedBlockStruct[];
+        virtualVotingBlocks: BlockConfirmationStruct[];
     } {
         const fork = this.forkService.getFork(Number(forkCnt));
         if (!fork)
@@ -278,7 +281,7 @@ class AgreementManager {
             );
         let encodedLatestFinalizedState: string | undefined;
         let encodedLatestCorrectState: string | undefined;
-        let virtualVotingBlocks: ConfirmedBlockStruct[] = [];
+        let virtualVotingBlocks: BlockConfirmationStruct[] = [];
         let requiredSignatures = SetUtils.fromArray(fork.addressesInThreshold);
 
         for (const agreement of this.forkService.agreementsIterator(
@@ -301,7 +304,13 @@ class AgreementManager {
             if (!encodedLatestCorrectState) continue;
 
             virtualVotingBlocks.unshift({
-                encodedBlock: EvmUtils.encodeBlock(agreement.block),
+                signedBlock: {
+                    encodedBlock: ethers.AbiCoder.defaultAbiCoder().encode(
+                        ["bytes"],
+                        [agreement.block]
+                    ),
+                    signature: agreement.blockSignatures[0]
+                },
                 signatures: agreement.blockSignatures as string[]
             });
 
@@ -326,6 +335,80 @@ class AgreementManager {
                 encodedLatestCorrectState ?? fork.forkGenesisStateEncoded,
             virtualVotingBlocks
         };
+    }
+
+    public buildStateSnapshot(
+        forkCnt: number,
+        transactionCnt: number
+    ): StateSnapshotStruct {
+        const agreement = this.forkService.getAgreement(
+            forkCnt,
+            transactionCnt
+        );
+        const stateSnapshot: StateSnapshotStruct = {
+            stateMachineStateHash: ethers.keccak256(
+                ethers.toUtf8Bytes(agreement?.encodedState!)
+            ),
+            participants:
+                this.forkService.getFork(forkCnt)?.addressesInThreshold!,
+            forkCnt,
+            latestJoinChannelBlockHash: ethers.keccak256(
+                ethers.AbiCoder.defaultAbiCoder().encode(
+                    ["bytes32"],
+                    [this.forkService.getFork(forkCnt)?.joinChannelChain.at(-1)]
+                )
+            ),
+            latestExitChannelBlockHash: ethers.keccak256(
+                ethers.AbiCoder.defaultAbiCoder().encode(
+                    ["bytes32"],
+                    [this.forkService.getFork(forkCnt)?.exitChannelChain.at(-1)]
+                )
+            ),
+            totalDeposits: this.calculateTotalDeposits(forkCnt),
+            totalWithdrawals: this.calculateTotalWithdrawals(forkCnt)
+        };
+        return stateSnapshot;
+    }
+
+    public calculateTotalDeposits(forkCnt: number): BalanceStruct {
+        const joinChannelChain =
+            this.forkService.getFork(forkCnt)?.joinChannelChain;
+        if (!joinChannelChain)
+            throw new Error(
+                "AgreementManager - calculateTotalDeposits - joinChannelChain not found"
+            );
+        let totalDeposits: BalanceStruct = {
+            amount: 0,
+            data: ethers.toUtf8Bytes("")
+        };
+        for (const joinChannelBlock of joinChannelChain) {
+            for (const joinChannel of joinChannelBlock.joinChannels) {
+                totalDeposits.amount =
+                    ethers.toBigInt(totalDeposits.amount) +
+                    ethers.toBigInt(joinChannel.balance.amount);
+            }
+        }
+        return totalDeposits;
+    }
+    public calculateTotalWithdrawals(forkCnt: number): BalanceStruct {
+        const exitChannelChain =
+            this.forkService.getFork(forkCnt)?.exitChannelChain;
+        if (!exitChannelChain)
+            throw new Error(
+                "AgreementManager - calculateTotalWithdrawals - exitChannelChain not found"
+            );
+        let totalWithdrawals: BalanceStruct = {
+            amount: 0,
+            data: ethers.toUtf8Bytes("")
+        };
+        for (const exitChannelBlock of exitChannelChain) {
+            for (const exitChannel of exitChannelBlock.exitChannels) {
+                totalWithdrawals.amount =
+                    ethers.toBigInt(totalWithdrawals.amount) +
+                    ethers.toBigInt(exitChannel.balance.amount);
+            }
+        }
+        return totalWithdrawals;
     }
 
     // *************************************************

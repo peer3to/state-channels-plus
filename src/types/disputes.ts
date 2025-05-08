@@ -1,8 +1,7 @@
 import { SignedBlockEthersType } from "./ethers";
 
-export const FoldRechallengeProofEthersType = `tuple(
-    string encodedBlock,
-    bytes[] signatures
+export const BlockEmptyProofEthersType = `tuple(
+    
     )`;
 
 export const DoubleSignProofEthersType = `tuple(
@@ -25,21 +24,22 @@ export const BlockTooFarInFutureProofEthersType = `tuple(
     )`;
 
 export enum ProofType {
-    FoldRechallenge,
-    DoubleSign,
-    IncorrectData,
-    NewerState,
-    FoldPriorBlock,
-    BlockTooFarInFuture
+    BlockEmpty,
+    BlockDoubleSign,
+    BlockInvalidStateTransition,
+    BlockOutOfGas,
+    TimeoutThreshold,
+    TimeoutPriorInvalid
 }
 
 const DISPUTE_PROOF_ETHERS_TYPES: Record<ProofType, string> = {
-    [ProofType.FoldRechallenge]: FoldRechallengeProofEthersType,
-    [ProofType.DoubleSign]: DoubleSignProofEthersType,
-    [ProofType.IncorrectData]: IncorrectDataProofEthersType,
-    [ProofType.NewerState]: NewerStateProofEthersType,
-    [ProofType.FoldPriorBlock]: FoldPriorBlockProofEthersType,
-    [ProofType.BlockTooFarInFuture]: BlockTooFarInFutureProofEthersType
+    [ProofType.BlockEmpty]: BlockEmptyProofEthersType,
+    [ProofType.BlockDoubleSign]: BlockDoubleSignProofEthersType,
+    [ProofType.BlockInvalidStateTransition]:
+        BlockInvalidStateTransitionProofEthersType,
+    [ProofType.BlockOutOfGas]: BlockOutOfGasProofEthersType,
+    [ProofType.TimeoutThreshold]: TimeoutThresholdProofEthersType,
+    [ProofType.TimeoutPriorInvalid]: TimeoutPriorInvalidProofEthersType
 };
 
 export const getEthersTypeForDisputeProof = (proofType: ProofType): string => {
