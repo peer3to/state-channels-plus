@@ -14,165 +14,15 @@ contract StateSnapshotFacet is StateChannelCommon {
         bytes32 channelId,
         UpdateStateSnapshotStruct memory updateStateSnapshotStruct
     ) external onlySelf {
+        StateSnapshot memory genesisStateSnapshot = _getGenesisStateSnapshot(
+            channelId,
+            updateStateSnapshotStruct
+        );
+
         ExitChannelBlock[] memory exitChannelBlocks = updateStateSnapshotStruct
             .exitChannelBlocks;
         StateSnapshot memory newStateSnapshot = updateStateSnapshotStruct
             .stateSnapshot;
-
-        bool hasLatestDisputeProof = updateStateSnapshotStruct
-            .latestDisputeProof
-            .hasValue;
-        bool hasMilestoneProof = updateStateSnapshotStruct
-            .milestoneProofs
-            .hasValue;
-
-        // No teleport, no progress - useless case, just validate snapshot
-        if (!hasLatestDisputeProof && !hasMilestoneProof) {
-            if (
-                keccak256(abi.encode(newStateSnapshot)) !=
-                keccak256(abi.encode(stateSnapshots[channelId]))
-            ) {
-                revert("StateSnapshot is not valid");
-            }
-        }
-
-        // Only teleport to latest fork, no progress within fork
-        if (hasLatestDisputeProof && !hasMilestoneProof) {
-            _handleForkTeleport(
-                channelId,
-                updateStateSnapshotStruct,
-                newStateSnapshot
-            );
-            _updateStateSnapshot(channelId, newStateSnapshot);
-        }
-
-        //Already on latest fork, progress state within it
-        if (!hasLatestDisputeProof && hasMilestoneProof) {
-            _handleForkProgress(
-                channelId,
-                updateStateSnapshotStruct.stateSnapshot,
-                updateStateSnapshotStruct.exitChannelBlocks,
-                updateStateSnapshotStruct.milestoneProofs.value
-            );
-            _updateStateSnapshot(channelId, newStateSnapshot);
-        }
-
-        //Teleport to latest fork and then progress state within it
-        if (hasLatestDisputeProof && hasMilestoneProof) {
-            _handleForkTeleport(
-                channelId,
-                updateStateSnapshotStruct,
-                newStateSnapshot
-            );
-            _handleForkProgress(
-                channelId,
-                updateStateSnapshotStruct.stateSnapshot,
-                updateStateSnapshotStruct.exitChannelBlocks,
-                updateStateSnapshotStruct.milestoneProofs.value
-            );
-            _updateStateSnapshot(channelId, newStateSnapshot);
-        }
-    }
-
-    function _handleForkTeleport(
-        bytes32 channelId,
-        UpdateStateSnapshotStruct memory updateStateSnapshotStruct,
-        StateSnapshot memory newStateSnapshot
-    ) internal {
-        // TODO: Implement teleportation to latest fork using dispute proof
-        // This should verify the dispute proof and update the state snapshot to the new fork
-    }
-
-    function _handleForkProgress(
-        bytes32 channelId,
-        StateSnapshot memory newStateSnapshot,
-        ExitChannelBlock[] memory exitChannelBlocks,
-        ForkMilestoneProof[] memory milestoneProofs
-    ) internal {
-        StateSnapshot memory currentStateSnapshot = stateSnapshots[channelId];
-
-        // Only process if both snapshots are for the latest fork
-        require(
-            newStateSnapshot.forkCnt == getDisputeLength(channelId) &&
-                stateSnapshots[channelId].forkCnt ==
-                getDisputeLength(channelId),
-            "StateSnapshot is not valid"
-        );
-
-        // for each exit channel block, there must be a milestone proof
-        require(
-            milestoneProofs.length == exitChannelBlocks.length,
-            "Milestone proofs length must match exit channel blocks length"
-        );
-
-        require(
-            exitChannelBlocks[0].previousBlockHash ==
-                currentStateSnapshot.latestExitChannelBlockHash,
-            "First Exit block not linked to previous block"
-        );
-
-        require(
-            newStateSnapshot.latestExitChannelBlockHash ==
-                keccak256(
-                    abi.encode(exitChannelBlocks[exitChannelBlocks.length - 1])
-                ),
-            "Last Exit block not linked to new state snapshot"
-        );
-
-        // Get current participants from state snapshot
-        address[] memory currentParticipants = getSnapshotParticipants(
-            channelId
-        );
-        bytes32 previousExitChannelBlockHash = currentStateSnapshot
-            .latestExitChannelBlockHash;
-        bytes32 genesisSnapshotHash = keccak256(
-            abi.encode(currentStateSnapshot)
-        );
-
-        // Loop through all exit channel blocks and validate them
-        for (uint i = 0; i < exitChannelBlocks.length; i++) {
-            ExitChannelBlock memory exitBlock = exitChannelBlocks[i];
-
-            // Verify connection to previous block hash
-            // For first block, it must connect to the stateSnapshot's latestExitChannelBlockHash
-            require(
-                exitBlock.previousBlockHash == previousExitChannelBlockHash,
-                "Exit block not connected to chain"
-            );
-
-            // Check corresponding milestone proof is finalized
-            ForkMilestoneProof memory milestone = milestoneProofs[i];
-            (bool isFinal, bytes32 finalizedSnapshotHash) = _isMilestoneFinal(
-                milestone,
-                currentParticipants,
-                genesisSnapshotHash
-            );
-            require(isFinal, "Milestone not finalized");
-
-            // Process each exit in the block and update participant set
-            for (uint j = 0; j < exitBlock.exitChannels.length; j++) {
-                ExitChannel memory exit = exitBlock.exitChannels[j];
-
-                // If not a partial exit, remove participant from the set
-                if (!exit.isPartialExit) {
-                    currentParticipants = removeParticipant(
-                        currentParticipants,
-                        exit.participant
-                    );
-                }
-            }
-
-            // Update previous hash for next iteration
-            previousExitChannelBlockHash = keccak256(abi.encode(exitBlock));
-        }
-    }
-
-    function _updateStateSnapshot(
-        bytes32 channelId,
-        StateSnapshot memory newStateSnapshot
-    ) internal {
-        stateSnapshots[channelId] = newStateSnapshot;
-        emit StateSnapshotUpdated(channelId, newStateSnapshot);
     }
 
     function _isMilestoneFinal(
@@ -188,30 +38,77 @@ contract StateSnapshotFacet is StateChannelCommon {
             );
     }
 
-    function removeParticipant(
-        address[] memory participants,
-        address participantToRemove
-    ) internal pure returns (address[] memory) {
-        // Count how many participants will remain after removal
-        uint count = 0;
-        for (uint i = 0; i < participants.length; i++) {
-            if (participants[i] != participantToRemove) {
-                count++;
-            }
+    function _isDisputeProofProvided(
+        uint disputeTimestamp
+    ) internal pure returns (bool) {
+        return disputeTimestamp != 0;
+    }
+
+    function _isDisputeCommitmentValid(
+        Dispute memory dispute,
+        uint disputeTimestamp,
+        bytes32 channelId
+    ) internal view returns (bool) {
+        bytes32 onChainDisputeCommitment = getLatestDisputeCommitment(
+            channelId
+        );
+        bytes32 providedDisputeCommitment = keccak256(
+            abi.encode(abi.encode(dispute), disputeTimestamp)
+        );
+        return providedDisputeCommitment == onChainDisputeCommitment;
+    }
+
+    function _isDisputeFinalized(
+        uint disputeTimestamp
+    ) internal view returns (bool) {
+        return block.timestamp >= disputeTimestamp + getChallengeTime();
+    }
+
+    function _isStateSnapshotValid(
+        StateSnapshot memory outputStateSnapshot,
+        Dispute memory dispute
+    ) internal pure returns (bool) {
+        return
+            keccak256(abi.encode(outputStateSnapshot)) ==
+            dispute.outputStateSnapshotHash;
+    }
+
+    function _getGenesisStateSnapshot(
+        bytes32 channelId,
+        UpdateStateSnapshotStruct memory updateStateSnapshotStruct
+    ) internal view returns (StateSnapshot memory) {
+        if (getDisputeLength(channelId) != getSnapshotForkCnt(channelId)) {
+            // dispute proof is required
+            Dispute memory dispute = updateStateSnapshotStruct
+                .disputeProof
+                .dispute;
+            uint disputeTimestamp = updateStateSnapshotStruct
+                .disputeProof
+                .timestamp;
+
+            require(
+                _isDisputeProofProvided(disputeTimestamp),
+                "Dispute proof is required"
+            );
+            require(
+                _isDisputeCommitmentValid(dispute, disputeTimestamp, channelId),
+                "Dispute proof is not valid"
+            );
+            require(
+                _isDisputeFinalized(disputeTimestamp),
+                "Dispute is not finalized"
+            );
+            require(
+                _isStateSnapshotValid(
+                    updateStateSnapshotStruct.disputeProof.outputStateSnapshot,
+                    dispute
+                ),
+                "State snapshot is not valid"
+            );
+
+            return updateStateSnapshotStruct.disputeProof.outputStateSnapshot;
+        } else {
+            return stateSnapshots[channelId];
         }
-
-        // Create new array with reduced size
-        address[] memory newParticipants = new address[](count);
-
-        // Fill new array with remaining participants
-        uint index = 0;
-        for (uint i = 0; i < participants.length; i++) {
-            if (participants[i] != participantToRemove) {
-                newParticipants[index] = participants[i];
-                index++;
-            }
-        }
-
-        return newParticipants;
     }
 }
