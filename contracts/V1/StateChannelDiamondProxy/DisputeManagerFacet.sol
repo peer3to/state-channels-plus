@@ -187,7 +187,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         //This runs after verifying auditingData and genesisStateSnapshot => we can skip those checks here
         
         // Milestone checking
-        (bool isValid, bytes memory lastBlockEncoded) = _verifyForkProof(dispute, disputeAuditingData);
+        (bool isValid, bytes memory lastBlockEncoded) = _verifyForkProof(dispute.stateProof.forkProof.forkMilestoneProofs, disputeAuditingData.milestoneSnapshots, disputeAuditingData.genesisStateSnapshot);
         if(!isValid) {
             return false;
         }
@@ -286,11 +286,13 @@ contract DisputeManagerFacet is StateChannelCommon {
         return (thresholdCount == expectedParticipants.length, finalizedSnapshotHash);
     }
     /// @dev Verfies ForkMilestoneBlock along with BlockConfirmations and taking into account Virtual Voting
-    function _verifyForkProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) internal returns (bool isValid, bytes memory lastBlockEncoded) {    
-        ForkMilestoneProof[] memory milestoneProofs = dispute.stateProof.forkProof.forkMilestoneProofs;
-        StateSnapshot[] memory milestoneSnapshots = disputeAuditingData.milestoneSnapshots;
-        StateSnapshot memory snapshot = disputeAuditingData.genesisStateSnapshot;
-        address[] memory participants = snapshot.participants;
+    function _verifyForkProof(
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        StateSnapshot memory genesisSnapshot
+    ) internal returns (bool isValid, bytes memory lastBlockEncoded) {    
+        address[] memory participants = genesisSnapshot.participants;
+        StateSnapshot memory snapshot = genesisSnapshot;
         lastBlockEncoded = "";
         // Every milestone (the final block) commits to a snapshot, that's needed to prove the next milestone => for K milestones K-1 snapshots are needed
         if(milestoneProofs.length != milestoneSnapshots.length + 1)
@@ -305,10 +307,9 @@ contract DisputeManagerFacet is StateChannelCommon {
             if(keccak256(abi.encode(milestoneSnapshots[i])) != finalizedSnapshotHash) {
                 return (false, "");
             }
-            if(i < milestoneSnapshots.length) {
                 snapshot = milestoneSnapshots[i];
                 participants = milestoneSnapshots[i].participants;
-            }
+            
             if(i == milestoneProofs.length - 1 && milestone.blockConfirmations.length > 0) {
                 lastBlockEncoded = milestone.blockConfirmations[milestone.blockConfirmations.length - 1].signedBlock.encodedBlock;
             }
