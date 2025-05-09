@@ -55,6 +55,7 @@ abstract contract AStateChannelManagerProxy is
         JoinChannel[] memory joinCahnnels
     )
         public
+        override
         onlySelf
         returns (bytes memory encodedModifiedState)
     {
@@ -109,6 +110,7 @@ abstract contract AStateChannelManagerProxy is
         address[] memory slashedParticipants
     )
         internal
+        override
         returns (
             bytes memory encodedModifiedState,
             ExitChannel[] memory exitChannels
@@ -136,6 +138,7 @@ abstract contract AStateChannelManagerProxy is
         address[] memory participants
     )
         internal
+        override
         returns (
             bytes memory encodedModifiedState,
             ExitChannel[] memory
@@ -187,10 +190,13 @@ abstract contract AStateChannelManagerProxy is
         Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
         
         //Don't allow overwriting the blockCalldataCommitment if it already exists
-        require(blockCalldataCommitments[_block.transaction.header.channelId]
-        [msg.sender]
-        [_block.transaction.header.forkCnt]
-        [_block.transaction.header.transactionCnt] == bytes32(0), ErrorBlockCalldataAlreadyPosted());
+        require(
+            blockCalldataCommitments[_block.transaction.header.channelId]
+                                [msg.sender]
+                                [_block.transaction.header.forkCnt]
+                                [_block.transaction.header.transactionCnt] == bytes32(0),
+            ErrorBlockCalldataAlreadyPosted()
+        );
 
         blockCalldataCommitments
         [_block.transaction.header.channelId]
@@ -314,6 +320,7 @@ abstract contract AStateChannelManagerProxy is
         bytes32 channelId
     )
         public
+        view
         override(StateChannelManagerInterface)
         returns (address[] memory)
     {

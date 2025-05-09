@@ -6,7 +6,11 @@ abstract contract AStateMachine {
     Transaction _tx; // This should be used instead of msg.sender at least for now
     address _stateChannelManager;
     bool _nonreentrant;
+    uint gasLimit;
 
+    constructor(uint256 _gasLimit) {
+        gasLimit = _gasLimit;
+    }
     // ***** DEBUG *****
     // event SetStateA(bytes encodedState);
     // event TxExecutedA(bool success, bytes encodedState);
@@ -89,7 +93,7 @@ abstract contract AStateMachine {
         Transaction calldata transaction
     ) external _nonReentrant returns (bool) {
         _tx = transaction;
-        (bool success, bytes memory result) = address(this).call(
+        (bool success, bytes memory result) = address(this).call{gas: gasLimit}(
             transaction.body.data
         );
         // emit TxExecutedA(success, getState());

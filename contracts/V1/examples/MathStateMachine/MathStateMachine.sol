@@ -13,6 +13,10 @@ struct MathState {
 contract MathStateMachine is AStateMachine {
     MathState state;
 
+    constructor(uint _gasLimit) AStateMachine(_gasLimit) {
+        gasLimit = _gasLimit;
+    }
+
     event Addition(uint a, uint b, uint result);
     event NextToPlay(address player);
 

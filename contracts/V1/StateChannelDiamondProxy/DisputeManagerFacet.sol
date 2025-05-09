@@ -98,92 +98,34 @@ contract DisputeManagerFacet is StateChannelCommon {
         Dispute memory dispute,
         DisputeAuditingData memory disputeAuditingData
     ) public {
-       
-        // address challenger = msg.sender; // I dont think we should slash the auditor as they are like Polkadot fisherman
-
-        // (bool isAllAuditValid, address[] memory collectedSlashParticipants, bytes memory fraudProofErrorResult) = auditDispute(dispute, disputeAuditingData);
-
-        // if(isAllAuditValid) {
-        //     addOnChainSlashedParticipants(collectedSlashParticipants);
-        //     address[] memory returnedSlashParticipants = getOnChainSlashedParticipants();
-        //     emit DisputeChallengeResultWithError(dispute.channelId, isAllAuditValid, returnedSlashParticipants, fraudProofErrorResult);
-        // }
-        // else {
-        //     uint disputeLength = getDisputeLength(dispute.channelId);
-        //     DisputePair memory disputePair = DisputePair(dispute.disputeIndex, disputeLength-1);
-        //     onChainDisputePairs.push(disputePair);
-        //     addOnChainSlashedParticipants(collectedSlashParticipants);
-        //     address[] memory returnedSlashParticipants = getOnChainSlashedParticipants();
-        //     emit DisputeChallengeResultWithDisputePair(dispute.channelId, disputePair, isAllAuditValid, returnedSlashParticipants);
-        // }
-        
-    }
-
-    // Doesn't do any checks and just applies all slashes, removals and joins to a specific stateMachineState and generates the outputStateMachineState - similar logic to playTransaction in the typescript code - this is done to help the backer generate a correct output state while forging the dispute
-    function generateDisputeOutputState(
-        bytes memory encodedStateMachineState,
-        Proof[] memory fraudProofs,
-        FraudProofVerificationContext memory poofContext,
-        address[] memory onChainSlashes,
-        address selfRemoval,
-        address timeoutRemoval,
-        JoinChannelBlock[] memory joinChannelBlocks,
-        StateSnapshot memory latestStateSnapshot
-    ) public returns (bytes memory encodedModifiedState, ExitChannelBlock memory exitBlock, Balance memory totalDeposits, Balance memory totalWithdrawals) {
-        ExitChannel[] memory exitChannels;
-        totalDeposits = latestStateSnapshot.totalDeposits;
-        totalWithdrawals = latestStateSnapshot.totalWithdrawals;
-        // *************** Apply joins ***************
-        for(uint i = 0; i < joinChannelBlocks.length; i++) {
-            JoinChannelBlock memory joinChannelBlock = joinChannelBlocks[i];
-            // apply the joins to the state machine
-            encodedModifiedState = applyJoinChannelToStateMachine(encodedStateMachineState, joinChannelBlock.joinChannels);
-            for(uint j = 0; j < joinChannelBlock.joinChannels.length; j++) {
-                totalDeposits = stateMachineImplementation.addBalance(
-                    totalDeposits,
-                    joinChannelBlock.joinChannels[j].balance
-                );
-            }
-        }
-
-        // *************** Apply slashes ***************
-        //if contains duplicates or not participants SHOULD fail applying to the stateMachine, so no need for aditional checks
-        address[] memory slashes = StateChannelUtilLibrary.concatAddressArrays(_verifyFraudProofs(fraudProofs,poofContext), onChainSlashes);
-        // apply the slashes to the state machine
-    
-        (encodedModifiedState, exitChannels) = _applySlashesToStateMachine(encodedStateMachineState, slashes);
-
-        // *************** Apply removals ***************
-        ExitChannel[] memory selfExitChannel;
-        if(selfRemoval != address(0)){
-            // apply the removals to the state machine
-            address[] memory array = new address[](1);
-            array[0] = selfRemoval;    
-            (encodedModifiedState, selfExitChannel) = _removeParticipantsFromStateMachine(encodedModifiedState, array);
-            
-        }
-        ExitChannel[] memory timeoutExitChannel;
-        if(timeoutRemoval != address(0) && slashes.length == 0) {
-            // apply the removals to the state machine
-            address[] memory array = new address[](1);
-            array[0] = timeoutRemoval;    
-            (encodedModifiedState, timeoutExitChannel) = _removeParticipantsFromStateMachine(encodedModifiedState, array);
-
-        exitChannels = StateChannelUtilLibrary.concatExitChannelArrays(selfExitChannel, timeoutExitChannel);
+        uint256 gasLimit = getGasLimit();
+        bytes memory data = abi.encodeCall(
+            DisputeManagerFacet.auditDispute,
+            (dispute, disputeAuditingData, block.timestamp)
+        );
+        (bool success, bytes memory returnData) = address(this).call{gas: gasLimit}(data);
+        if(!success) {
+            // slash the disputer
+            address[] memory slashParticipants = new address[](1);
+            slashParticipants[0] = dispute.disputer;
+            addOnChainSlashedParticipants(dispute.channelId, slashParticipants);
+            address[] memory returnedSlashParticipants = getOnChainSlashedParticipants(dispute.channelId);
+            emit DisputeChallengeResult(dispute.channelId, success, returnedSlashParticipants);
         }else{
-            exitChannels = StateChannelUtilLibrary.concatExitChannelArrays(exitChannels,selfExitChannel);
-        }
-        for(uint i = 0; i < exitChannels.length; i++) {
-            totalWithdrawals = stateMachineImplementation.addBalance(
-                totalWithdrawals,
-                exitChannels[i].balance
-            );
-        }
-        return (encodedModifiedState, _formExitChannelBlock(latestStateSnapshot.latestExitChannelBlockHash, exitChannels), totalDeposits, totalWithdrawals);
+            // slash the challenger
+            address[] memory slashParticipants = abi.decode(returnData,(address[]));
+            addOnChainSlashedParticipants(dispute.channelId, slashParticipants);
+            uint disputeLength = getDisputeLength(dispute.channelId);
+            DisputePair memory disputePair = DisputePair(dispute.disputeIndex, disputeLength-1);
+            disputeData[dispute.channelId].disputePairs.push(disputePair);
+            address[] memory returnedSlashParticipants = getOnChainSlashedParticipants(dispute.channelId);
+            emit DisputeChallengeResultWithDisputePair(dispute.channelId, disputePair, success, returnedSlashParticipants);            
+        }        
     }
 
+   
     // =============================== State Proofs Verification  ===============================
-    function _verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) internal returns (bool isValid) {
+    function _verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) internal pure returns (bool isValid) {
         //This runs after verifying auditingData and genesisStateSnapshot => we can skip those checks here
         
         // Milestone checking
@@ -216,7 +158,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             //check if lastBlock commits to the latestStateSnapshot
             if(dispute.stateProof.signedBlocks.length != 0)
                 lastBlockEncoded = dispute.stateProof.signedBlocks[dispute.stateProof.signedBlocks.length - 1].encodedBlock;
-            Block memory lastBlock = abi.decode(lastBlockEncoded, (Block));
+            Block memory lastBlock = abi.decode(lastBlockEncoded, (Block)); 
             //check if lastBlock commits to the latestStateSnapshot
             if(lastBlock.stateSnapshotHash != dispute.latestStateSnapshotHash)
                 return false;
@@ -230,27 +172,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             return true;
     }
 
-    function _areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks, bytes32 optionalPreviousHash) internal returns (bool isLinked) {
-        bytes32 previousBlockHash = optionalPreviousHash;
-        for(uint i = 0; i < signedBlocks.length; i++) {
-            bytes memory currentBlockEncoded = signedBlocks[i].encodedBlock;
-            Block memory currentBlock = abi.decode(currentBlockEncoded, (Block));
-            //check is linked
-            if(previousBlockHash!=bytes32(0) && previousBlockHash != currentBlock.previousBlockHash) {
-                return false;
-            }
-            previousBlockHash = keccak256(currentBlockEncoded);
-            //verify original siganture
-            address signer = StateChannelUtilLibrary.retriveSignerAddress(currentBlockEncoded, signedBlocks[i].signature);
-            if(signer != currentBlock.transaction.header.participant) {
-                return false;
-            }
-            
-        }
-        return true;
-    }
-
-    function _isMilestoneFinal(ForkMilestoneProof memory milestone, address[] memory expectedParticipants, bytes32 genesisSnapshotHash) internal returns (bool isFinal,bytes32 finalizedSnapshotHash) {
+    function _isMilestoneFinal(ForkMilestoneProof memory milestone, address[] memory expectedParticipants, bytes32 genesisSnapshotHash) internal pure returns (bool isFinal,bytes32 finalizedSnapshotHash) {
         address[] memory thresholdSet = new address[](expectedParticipants.length);
         uint thresholdCount = 0;
         bytes memory previousEncodedBlock;
@@ -286,7 +208,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         return (thresholdCount == expectedParticipants.length, finalizedSnapshotHash);
     }
     /// @dev Verfies ForkMilestoneBlock along with BlockConfirmations and taking into account Virtual Voting
-    function _verifyForkProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) internal returns (bool isValid, bytes memory lastBlockEncoded) {    
+    function _verifyForkProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) internal pure returns (bool isValid, bytes memory lastBlockEncoded) {    
         ForkMilestoneProof[] memory milestoneProofs = dispute.stateProof.forkProof.forkMilestoneProofs;
         StateSnapshot[] memory milestoneSnapshots = disputeAuditingData.milestoneSnapshots;
         StateSnapshot memory snapshot = disputeAuditingData.genesisStateSnapshot;
@@ -348,54 +270,10 @@ contract DisputeManagerFacet is StateChannelCommon {
 
     // function getNext
     //stateless
-    function applyJoinChannelToStateMachine(
-        bytes memory encodedState,
-        JoinChannel[] memory joinCahnnels
-    )
-        internal
-        virtual
-        returns (bytes memory encodedModifiedState)
-    {
-        return
-            AStateChannelManagerProxy(address(this))
-                .applyJoinChannelToStateMachine(encodedState, joinCahnnels);
-    }
+    
 
     //stateless
-    function _applySlashesToStateMachine(
-        bytes memory encodedState,
-        address[] memory slashedParticipants
-    )
-        internal
-        virtual
-        returns (
-            bytes memory encodedModifiedState,
-            ExitChannel[] memory exitChannels
-        )
-    {
-        return
-            AStateChannelManagerProxy(address(this)).applySlashesToStateMachine(
-                encodedState,
-                slashedParticipants
-            );
-    }
-
-    //stateless
-    function _removeParticipantsFromStateMachine(
-        bytes memory encodedState,
-        address[] memory participants
-    )
-        internal
-        virtual
-        returns (
-            bytes memory encodedModifiedState,
-            ExitChannel[] memory exitChannels
-        )
-    {
-        return
-            AStateChannelManagerProxy(address(this))
-                .removeParticipantsFromStateMachine(encodedState, participants);
-    }
+   
 
     function _executeStateTransitionOnState(
         bytes32 channelId,
@@ -406,15 +284,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             AStateChannelManagerProxy(address(this))
                 .executeStateTransitionOnState(channelId, encodedState, _tx);
     }
-
-    function _verifyFraudProofs(
-        Proof[] memory fraudProofs,
-        FraudProofVerificationContext memory poofContext
-    ) public returns (address[] memory slashParticipants) {
-        return AStateChannelManagerProxy(address(this))
-                .verifyFraudProofs(fraudProofs, poofContext);
-    }
-    
+     
 
     function isTimeoutSetWithOptional(Timeout memory timeout, bool checkOptional) internal pure returns (bool isSet, bool optionalSet) {
         if(checkOptional) {
@@ -423,7 +293,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         return (timeout.participant != address(0), false);
     }
 
-    function _getLatestHeight(StateProof memory stateProof) internal view returns (uint) {
+    function _getLatestHeight(StateProof memory stateProof) internal pure returns (uint) {
 
         if(stateProof.signedBlocks.length == 0) {
             uint lastMilestoneBlockConfirmationIndex = stateProof.forkProof.forkMilestoneProofs[stateProof.forkProof.forkMilestoneProofs.length - 1].blockConfirmations.length - 1; 
@@ -469,59 +339,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         return true;
         
     }
-    function _isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) internal view returns (bool) {
-        //check dispute commits to disputeData
-        if(dispute.disputeAuditingDataHash != keccak256(abi.encode(disputeAuditingData))) {
-            return false;
-        }
-        //check dispute commits to genesisStateSnapshot
-        if(dispute.genesisStateSnapshotHash != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshot))) {
-            return false;
-        }
-        //check latestStateSnapshot
-        if(dispute.latestStateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))) {
-            return false;
-        }
-        //check latestStateStateMachineState
-        if(disputeAuditingData.latestStateSnapshot.stateMachineStateHash != keccak256(disputeAuditingData.latestStateStateMachineState)) {
-            return false;
-        }
-        // *************** check previous dispute ***************
-        // 1) should it be used or snapshot should be used as genesis
-        // 2) if true (should be used) => is set correctly and commitment exists
-        if(_shouldUseSnapshotAsGenesis(dispute)) {
-            //Should be unset -> won't be used either way -> timestamp will have default value 0
-            //This check is not needed, since _shouldUseGenesis will again return true when actually checking the genesis commitment later - for now leaving it like this since easier to understand mentally
-            if(disputeAuditingData.previousDisputeTimestamp != 0) {
-                return false;
-            }
-        } else {
-            // Previous dispute should be set and will be used to check genesis
-            if(!_isCorrectDisputeCommitment(disputeAuditingData.previousDispute, disputeAuditingData.previousDisputeTimestamp)){
-                return false;
-            }
-            //Commitment exists - check if it's the right one
-            //if disputing latest fork -> should be previous (this -1) dispute
-            if(dispute.previousRecursiveDisputeIndex == type(uint).max && (dispute.disputeIndex-1) != disputeAuditingData.previousDispute.disputeIndex) {
-                return false;
-            }
-            //if disputing recursive dispute - should be linked
-            if(dispute.previousRecursiveDisputeIndex != disputeAuditingData.previousDispute.disputeIndex) {
-                return false;
-            }
-        }
-
-        //check joinChannelBlocks (linked to latestSateSnapshot, chained internally and outputStateSnapshot commits to the head)
-        bytes32 previousJoinChannelBlockHash = disputeAuditingData.latestStateSnapshot.latestJoinChannelBlockHash;
-        for(uint i = 0; i < disputeAuditingData.joinChannelBlocks.length; i++) {
-            if(previousJoinChannelBlockHash != disputeAuditingData.joinChannelBlocks[i].previousBlockHash) {
-                return false;
-            }
-            previousJoinChannelBlockHash = keccak256(abi.encode(disputeAuditingData.joinChannelBlocks[i]));
-        }
-        return previousJoinChannelBlockHash == disputeAuditingData.outputStateSnapshot.latestExitChannelBlockHash;
-
-    }   
+     
     
     function _verifyJoinChannelBlocks(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) internal pure returns (bool) {
         //check joinChannelBlocks (linked to latestSateSnapshot, chained internally and outputStateSnapshot commits to the head)
@@ -562,15 +380,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         return true;
 
     }
-    function _formExitChannelBlock(
-        bytes32 previousBlockHash,
-        ExitChannel[] memory exitChannels
-    ) internal view returns (ExitChannelBlock memory _block) {
-        return ExitChannelBlock({
-            exitChannels: exitChannels,
-            previousBlockHash: previousBlockHash
-        });
-    }
+   
     function _canParticipateInDisputes(bytes32 channelId, address participant) internal view returns (bool) {
         StateSnapshot storage stateSnapshot = stateSnapshots[channelId];
         bool isParticipant = false;
@@ -608,34 +418,11 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
         return false;
     }
-    function _isCorrectDisputeCommitment(
-        Dispute memory dispute,
-        uint timestamp
-    ) internal view returns (bool) {
-        bytes32 channelId = dispute.channelId;
-        bytes32 commitment = keccak256(abi.encode(
-            dispute,
-            timestamp
-        ));
-        DisputeData storage _disputeData = disputeData[channelId];
-        if(dispute.disputeIndex >= _disputeData.disputeCommitments.length) {
-            return false;
-        }
-        if(commitment != _disputeData.disputeCommitments[dispute.disputeIndex]) {
-            return false;
-        }
-        return true;
-    }
-    function _shouldUseSnapshotAsGenesis(
-        Dispute memory dispute
-    ) internal view returns (bool) {
-        StateSnapshot storage stateSnapshot = stateSnapshots[dispute.channelId];
-        //Use snapshot as genesis if NOT recursive dispute && on-chain snapshot is from the same fork
-        return dispute.previousRecursiveDisputeIndex == type(uint).max && stateSnapshot.forkCnt == dispute.disputeIndex;
-    }
+   
+    
     function _disputeRaceConditionCheck(
         Dispute memory dispute
-    ) internal {
+    ) view internal {
         StateSnapshot storage stateSnapshot = stateSnapshots[dispute.channelId];
         DisputeData storage _disputeData = disputeData[dispute.channelId];
         // *********** 1. should on-chain snapshot be genesis for dispute *************
@@ -672,7 +459,9 @@ contract DisputeManagerFacet is StateChannelCommon {
                     revert ErrorDisputeTimeoutPreviousBlockProducerPostedCalldataMissmatch();
                 }
             }
-            require(block.timestamp <= dispute.timeout.minTimeStamp, ErrorDisputeTimeoutNotMinTimestamp());
+            if(block.timestamp > dispute.timeout.minTimeStamp){
+                revert ErrorDisputeTimeoutNotMinTimestamp(); 
+            }
         }
 
         // *********** 5. onChainLatestJoinChannelBlockHash should match *************

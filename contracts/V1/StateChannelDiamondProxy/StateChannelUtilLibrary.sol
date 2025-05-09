@@ -117,6 +117,17 @@ library StateChannelUtilLibrary {
        return result;
     }
 
+    function concatBytesArrays(bytes[] memory array1, bytes[] memory array2) internal pure returns (bytes[] memory) {
+        bytes[] memory result = new bytes[](array1.length + array2.length);
+        for (uint i = 0; i < array1.length; i++) {
+            result[i] = array1[i];
+        }
+        for (uint i = 0; i < array2.length; i++) {
+            result[array1.length + i] = array2[i];
+        }
+       return result;
+    }
+
     function concatExitChannelArrays(ExitChannel[] memory array1, ExitChannel[] memory array2) internal pure returns (ExitChannel[] memory) {
         ExitChannel[] memory result = new ExitChannel[](array1.length + array2.length);
         for (uint i = 0; i < array1.length; i++) {
