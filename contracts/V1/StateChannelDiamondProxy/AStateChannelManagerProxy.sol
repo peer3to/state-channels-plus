@@ -185,22 +185,18 @@ abstract contract AStateChannelManagerProxy is
      */
     function postBlockCalldata(SignedBlock memory signedBlock, uint maxTimestamp) public override {
         //Time is the only race condition we need to take into account
-        
-        if (block.timestamp > maxTimestamp) {
-           revert ErrorBlockCalldataTimestampTooLate();
-        }
+        require(block.timestamp <= maxTimestamp, ErrorBlockCalldataTimestampTooLate());
         bytes32 commitment = keccak256(abi.encode(signedBlock,block.timestamp));
         Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
         
         //Don't allow overwriting the blockCalldataCommitment if it already exists
-        if (
-        blockCalldataCommitments[_block.transaction.header.channelId]
-                            [msg.sender]
-                            [_block.transaction.header.forkCnt]
-                            [_block.transaction.header.transactionCnt] != bytes32(0)
-        ) {
-            revert ErrorBlockCalldataAlreadyPosted();
-        }
+        require(
+            blockCalldataCommitments[_block.transaction.header.channelId]
+                                [msg.sender]
+                                [_block.transaction.header.forkCnt]
+                                [_block.transaction.header.transactionCnt] == bytes32(0),
+            ErrorBlockCalldataAlreadyPosted()
+        );
 
         blockCalldataCommitments
         [_block.transaction.header.channelId]
@@ -324,6 +320,7 @@ abstract contract AStateChannelManagerProxy is
         bytes32 channelId
     )
         public
+        view
         override(StateChannelManagerInterface)
         returns (address[] memory)
     {

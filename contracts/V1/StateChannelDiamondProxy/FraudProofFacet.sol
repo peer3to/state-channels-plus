@@ -15,9 +15,9 @@ contract FraudProofFacet is StateChannelCommon {
         proofHandlers[ProofType.BlockDoubleSign] = _handleBlockDoubleSign;
         proofHandlers[ProofType.BlockEmptyBlock] = _handleBlockEmptyBlock;
         proofHandlers[ProofType.BlockInvalidStateTransition] = _handleBlockInvalidStateTransition;
-        proofHandlers[ProofType.BlockOutOfGas] = _handleBlockOutOfGas;
         proofHandlers[ProofType.TimeoutThreshold] = _handleTimeoutThreshold;
         proofHandlers[ProofType.TimeoutPriorInvalid] = _handleTimeoutPriorInvalid;
+        proofHandlers[ProofType.DisputeInvalidPreviousRecursive] = _handleDisputeInvalidPreviousRecursive;
     }
 
     //This is a bit inefficient, since public/external functions always do a deep copy unline internal/private that pas by reference, but this shares the context
@@ -53,7 +53,11 @@ contract FraudProofFacet is StateChannelCommon {
             revert ErrorNotSameChannelId();
         }
 
-        if (block1.transaction.header.forkCnt != block2.transaction.header.forkCnt && block1.transaction.header.transactionCnt != block2.transaction.header.transactionCnt && keccak256(abi.encode(block1)) != keccak256(abi.encode(block2))){
+        if (
+            !(block1.transaction.header.forkCnt == block2.transaction.header.forkCnt
+            && block1.transaction.header.transactionCnt == block2.transaction.header.transactionCnt
+            && keccak256(abi.encode(block1)) != keccak256(abi.encode(block2)))
+        ){
             revert ErrorDoubleSignBlocksNotSame();
         }
         
@@ -71,37 +75,27 @@ contract FraudProofFacet is StateChannelCommon {
         return signer1; 
     }
 
-    function _handleBlockEmptyBlock(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
+    function _handleBlockEmptyBlock(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal pure returns (address) {
         BlockEmptyProof memory blockEmptyProof = abi.decode(encodedProof, (BlockEmptyProof));
-        StateSnapshot memory latestStateSnapshot = blockEmptyProof.latestStateSnapshot;
-        bytes32 previousStateSnapshotHash = blockEmptyProof.previousStateSnapshotHash;
-        bytes memory previousStateMachineState = blockEmptyProof.previousStateMachineState;
         Block memory fraudBlock = abi.decode(blockEmptyProof.emptyBlock.encodedBlock, (Block));
+        Block memory previousBlock = abi.decode(blockEmptyProof.previousBlock.encodedBlock, (Block));
 
         if(fraudProofVerificationContext.channelId != fraudBlock.transaction.header.channelId) {
             revert ErrorNotSameChannelId();
         }
 
+        if(fraudBlock.previousBlockHash != keccak256(abi.encode(previousBlock))){
+            revert ErrorLinkingPreviousBlock();
+        }
+
         if(fraudBlock.transaction.header.transactionCnt == 0){
-            if(previousStateSnapshotHash != keccak256(abi.encode(latestStateSnapshot))){
-                revert ErrorInvalidBlock();
+            if(fraudBlock.stateSnapshotHash != fraudBlock.previousBlockHash){
+                revert ErrorNotEmptyBlockFraud();
             }
         }else{
-            // transition the state from previousStateSnapshot to latestStateSnapshot
-            (bool isTransitionValid, bytes memory blockTransitionEncodedModifiedState) = AStateChannelManagerProxy(address(this)).executeStateTransitionOnState(
-                fraudProofVerificationContext.channelId,
-                previousStateMachineState,
-                fraudBlock.transaction
-            );
-            if(!isTransitionValid){
-                revert ErrorInvalidBlockStateTransition();
-            }
-            if(latestStateSnapshot.stateMachineStateHash != keccak256(blockTransitionEncodedModifiedState)){
-                revert ErrorInvalidBlockState();
-            }
-            if(previousStateSnapshotHash != keccak256(abi.encode(latestStateSnapshot))){
-                revert ErrorInvalidStateSnapshot();
-            }
+           if(fraudBlock.stateSnapshotHash != previousBlock.stateSnapshotHash){
+            revert ErrorNotEmptyBlockFraud();
+           }
         }
         address signer = StateChannelUtilLibrary.retriveSignerAddress(
             blockEmptyProof.emptyBlock.encodedBlock,
@@ -113,86 +107,48 @@ contract FraudProofFacet is StateChannelCommon {
     function _handleBlockInvalidStateTransition(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
         BlockInvalidStateTransitionProof memory blockInvalidSTProof = abi.decode(encodedProof, (BlockInvalidStateTransitionProof));
         Block memory fraudBlock = abi.decode(blockInvalidSTProof.invalidBlock.encodedBlock, (Block));
-        DisputeAuditingData memory disputeAuditingData = blockInvalidSTProof.disputeFraudData;
-        Dispute memory dispute = blockInvalidSTProof.dispute;
+        Block memory previousBlock = abi.decode(blockInvalidSTProof.previousBlock.encodedBlock, (Block));
+        StateSnapshot memory previousBlockStateSnapshot = blockInvalidSTProof.previousBlockStateSnapshot;
+        bytes memory previousStateStateMachineState = blockInvalidSTProof.previousStateStateMachineState;
 
-        if(fraudProofVerificationContext.channelId != fraudBlock.transaction.header.channelId) {
-            revert ErrorNotSameChannelId();
-        }
-        require(_isCorrectAuditingData(dispute,disputeAuditingData),ErrorDisputeWrongAuditingData());
-
-        (bytes memory encodedModifiedState, ExitChannelBlock memory exitBlock, 
-        Balance memory totalDeposits, Balance memory totalWithdrawals) = generateDisputeOutputState(
-            disputeAuditingData.latestStateStateMachineState,
-            dispute.fraudProofs,
-            fraudProofVerificationContext,
-            dispute.onChainSlashes,
-            dispute.selfRemoval ? dispute.disputer : address(0),
-            dispute.timeout.participant,
-            disputeAuditingData.joinChannelBlocks,
-            disputeAuditingData.latestStateSnapshot
-        );
-
-        (bool isTransitionValid, bytes memory blockTransitionEncodedModifiedState) = AStateChannelManagerProxy(address(this)).executeStateTransitionOnState(
-            fraudProofVerificationContext.channelId,
-            blockInvalidSTProof.disputeFraudData.latestStateStateMachineState,
-            fraudBlock.transaction
-        );
-
-        if (isTransitionValid) {
-            revert ErrorValidBlockStateTransition();
-        } 
-
-        StateSnapshot memory outputStateSnapshot = StateSnapshot({
-            stateMachineStateHash: keccak256(blockTransitionEncodedModifiedState),
-            participants: getStatemachineParticipants(blockTransitionEncodedModifiedState),
-            latestJoinChannelBlockHash: disputeAuditingData.outputStateSnapshot.latestExitChannelBlockHash, // This has been verified in _verifyJoinChannelBlocks
-            latestExitChannelBlockHash: keccak256(abi.encode(exitBlock)),
-            totalDeposits: totalDeposits, 
-            totalWithdrawals: totalWithdrawals,
-            forkCnt: disputeData[dispute.channelId].disputeCommitments.length
-        }); 
-
-        if(fraudBlock.stateSnapshotHash == keccak256(abi.encode(outputStateSnapshot))){
-            revert ErrorValidBlockStateTransition();
-        }       
         address signer = StateChannelUtilLibrary.retriveSignerAddress(
             blockInvalidSTProof.invalidBlock.encodedBlock,
             blockInvalidSTProof.invalidBlock.signature
         );
-        return signer;
-    }
 
-    function _handleBlockOutOfGas(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
-        BlockOutOfGasProof memory blockOutOfGasProof = abi.decode(encodedProof, (BlockOutOfGasProof));
-        bytes memory latestStateStateMachineState = blockOutOfGasProof.latestStateStateMachineState;
-        Block memory fraudBlock = abi.decode(blockOutOfGasProof.invalidBlock.encodedBlock, (Block));
-        
         if(fraudProofVerificationContext.channelId != fraudBlock.transaction.header.channelId) {
             revert ErrorNotSameChannelId();
         }
 
-        bytes memory data = abi.encodeCall(
-            AStateChannelManagerProxy.executeStateTransitionOnState,
-            (
-                fraudProofVerificationContext.channelId,
-                latestStateStateMachineState,
-                fraudBlock.transaction
-            )
-        );
-
-        (bool success, bytes memory returnData) = address(this).delegatecall{gas: getGasLimit()}(data);
-
-        if (success) {
-            revert ErrorValidBlockStateTransition();
+        if(fraudBlock.previousBlockHash != keccak256(abi.encode(previousBlock))){
+            revert ErrorLinkingPreviousBlock();
         }
-        address signer = StateChannelUtilLibrary.retriveSignerAddress(
-            blockOutOfGasProof.invalidBlock.encodedBlock,
-            blockOutOfGasProof.invalidBlock.signature
+        if(previousBlockStateSnapshot.stateMachineStateHash != keccak256(previousStateStateMachineState) && previousBlock.stateSnapshotHash != keccak256(abi.encode(previousBlockStateSnapshot))){
+            revert ErrorInvalidStateSnapshotHash();
+        }
+        (bool isSuccess, bytes memory encodedModifiedState) = AStateChannelManagerProxy(address(this)).executeStateTransitionOnState(
+            fraudProofVerificationContext.channelId,
+            previousStateStateMachineState,
+            fraudBlock.transaction
         );
+        if(!isSuccess){
+            return signer;
+        }
+        StateSnapshot memory newStateSnapshot = StateSnapshot({
+            stateMachineStateHash: keccak256(encodedModifiedState),
+            participants: getStatemachineParticipants(encodedModifiedState),
+            forkCnt: previousBlockStateSnapshot.forkCnt,
+            latestJoinChannelBlockHash: previousBlockStateSnapshot.latestJoinChannelBlockHash,
+            latestExitChannelBlockHash: previousBlockStateSnapshot.latestExitChannelBlockHash,
+            totalDeposits: previousBlockStateSnapshot.totalDeposits,
+            totalWithdrawals: previousBlockStateSnapshot.totalWithdrawals
+        });
+        if(fraudBlock.stateSnapshotHash == keccak256(abi.encode(newStateSnapshot))){
+            revert ErrorValidStateTransition();
+        }
+        
         return signer;
     }
-
     // ----------------------------------- Timeout Fraud Proofs -----------------------------------
     function _handleTimeoutThreshold(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal view returns (address) {
         
@@ -281,6 +237,71 @@ contract FraudProofFacet is StateChannelCommon {
     
     // ------------------------------------ Dispute Fraud Proofs ------------------------------------
     
+    function _handleDisputeInvalidPreviousRecursive(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
+        DisputeInvalidPreviousRecursiveProof memory disputeInvalidPreviousRecursiveProof = abi.decode(encodedProof, (DisputeInvalidPreviousRecursiveProof));
+        Dispute memory originalDispute = disputeInvalidPreviousRecursiveProof.originalDispute;
+        Dispute memory invalidRecursiveDispute = disputeInvalidPreviousRecursiveProof.invalidRecursiveDispute;
+        uint originalDisputeTimestamp = disputeInvalidPreviousRecursiveProof.originalDisputeTimestamp;
+        uint invalidRecursiveDisputeTimestamp = disputeInvalidPreviousRecursiveProof.invalidRecursiveDisputeTimestamp;
+        SignedBlock[] memory latestStateSignedBlocks = disputeInvalidPreviousRecursiveProof.latestStateSignedBlocks;
+        bytes memory latestStateSnapshot = disputeInvalidPreviousRecursiveProof.latestStateSnapshot;
+        bytes memory invalidRecursiveDisputeOutputState = disputeInvalidPreviousRecursiveProof.invalidRecursiveDisputeOutputState;
+
+        // check if the recursive was done during the desired challenge period of the original dispute
+        bytes32 recursiveDisputeCommitment = keccak256(abi.encode(
+            invalidRecursiveDispute,
+            invalidRecursiveDisputeTimestamp
+        ));
+        bytes32 originalDisputeCommitment = keccak256(abi.encode(
+            originalDispute,
+            originalDisputeTimestamp
+        ));
+
+        (bool isAvailable, bytes32 commitment) = getDisputeCommitment(fraudProofVerificationContext.channelId, invalidRecursiveDispute.disputeIndex);
+        if(!isAvailable && commitment != recursiveDisputeCommitment) {
+            revert ErrorDisputeCommitmentNotAvailable();
+        }
+
+        if(invalidRecursiveDispute.previousRecursiveDisputeIndex == type(uint256).max || invalidRecursiveDispute.previousRecursiveDisputeIndex != originalDispute.disputeIndex){
+            revert ErrorDisputeCommitmentNotAvailable();
+        }
+        (bool isOriginalDisputeAvailable, bytes32 originalCommitment) = getDisputeCommitment(fraudProofVerificationContext.channelId, originalDispute.disputeIndex);
+        if(!isOriginalDisputeAvailable && originalCommitment != originalDisputeCommitment) {
+            revert ErrorDisputeCommitmentNotAvailable();
+        }
+        if(invalidRecursiveDisputeTimestamp <= originalDisputeTimestamp + getChallengeTime()) {
+            revert ErrorWithinChallengePeriod();
+        }
+
+        // check if the disputer used the latest state in recursive dispute
+        
+        if(!_areSignedBlocksLinkedAndVerified(latestStateSignedBlocks, invalidRecursiveDispute.latestStateSnapshotHash) && invalidRecursiveDispute.latestStateSnapshotHash != keccak256(latestStateSnapshot)) {
+            revert ErrorInvalidSignedBlocks();
+        }
+        Block memory lastSignedBlock = abi.decode(latestStateSignedBlocks[latestStateSignedBlocks.length - 1].encodedBlock, (Block));
+        if(lastSignedBlock.stateSnapshotHash != keccak256(latestStateSnapshot)) {
+            revert ErrorInvalidSignedBlocks();
+        }
+        
+        address signer = StateChannelUtilLibrary.retriveSignerAddress(
+            latestStateSignedBlocks[latestStateSignedBlocks.length - 1].encodedBlock,
+            latestStateSignedBlocks[latestStateSignedBlocks.length - 1].signature
+        );
+        (bool found, bytes32 blockCalldataCommitment) = getBlockCallDataCommitment(fraudProofVerificationContext.channelId, lastSignedBlock.transaction.header.forkCnt, lastSignedBlock.transaction.header.transactionCnt, signer);
+        require(signer == invalidRecursiveDispute.disputer || found, ErrorInvalidLatestState());
+
+        // check if the recursive dispute extend the lashes
+        if(invalidRecursiveDispute.outputStateSnapshotHash != keccak256(invalidRecursiveDisputeOutputState)) {
+            revert ErrorInvalidDisputeOutputState();
+        }
+        address[] memory initialParticipants = getSnapshotParticipants(fraudProofVerificationContext.channelId);
+        address[] memory afterDisputeParticipants = getStatemachineParticipants(invalidRecursiveDisputeOutputState);
+        if(afterDisputeParticipants.length > initialParticipants.length) {
+            revert ErrorRecursiveDisputeNotExtendingSlashes();
+        }
+        return invalidRecursiveDispute.disputer;
+    }
+
     function _getLatestHeight(StateProof memory stateProof) internal pure returns (uint) {
 
         if(stateProof.signedBlocks.length == 0) {

@@ -281,10 +281,31 @@ contract StateChannelCommon is
                 .removeParticipantsFromStateMachine(encodedState, participants);
     }
 
+
+    function _areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks, bytes32 optionalPreviousHash) internal pure returns (bool isLinked) {
+        bytes32 previousBlockHash = optionalPreviousHash;
+        for(uint i = 0; i < signedBlocks.length; i++) {
+            bytes memory currentBlockEncoded = signedBlocks[i].encodedBlock;
+            Block memory currentBlock = abi.decode(currentBlockEncoded, (Block));
+            //check is linked
+            if(previousBlockHash!=bytes32(0) && previousBlockHash != currentBlock.previousBlockHash) {
+                return false;
+            }
+            previousBlockHash = keccak256(currentBlockEncoded);
+            //verify original siganture
+            address signer = StateChannelUtilLibrary.retriveSignerAddress(currentBlockEncoded, signedBlocks[i].signature);
+            if(signer != currentBlock.transaction.header.participant) {
+                return false;
+            }
+            
+        }
+        return true;
+    }
+
     function _formExitChannelBlock(
         bytes32 previousBlockHash,
         ExitChannel[] memory exitChannels
-    ) internal view returns (ExitChannelBlock memory _block) {
+    ) internal pure returns (ExitChannelBlock memory _block) {
         return ExitChannelBlock({
             exitChannels: exitChannels,
             previousBlockHash: previousBlockHash
