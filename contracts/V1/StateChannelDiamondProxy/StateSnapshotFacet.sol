@@ -17,10 +17,14 @@ contract StateSnapshotFacet is StateChannelCommon {
         DisputeProof memory disputeProof,
         ExitChannelBlock[] memory exitChannelBlocks
     ) external onlySelf {
-        StateSnapshot memory genesisStateSnapshot = _getGenesisStateSnapshot(
-            channelId,
-            disputeProof
-        );
+        // resolve genesis state snapshot source
+        // - if stateSnapshot(on-chain).forkCnt == disputeProof.forkCnt, then the genesis state snapshot is the on-chain stateSnapshot
+        // - otherwise, the genesis state snapshot is disputeProof.outputStateSnapshot
+        StateSnapshot
+            memory genesisStateSnapshot = _resolveGenesisSnapshot(
+                channelId,
+                disputeProof
+            );
 
         // verify state proof within the fork
         bool isStateValid = _verifyForkProof(
@@ -40,8 +44,59 @@ contract StateSnapshotFacet is StateChannelCommon {
             lastProovenSnapshot
         );
 
+        _applyExitChannelBlocks(channelId, exitChannelBlocks);
+
         stateSnapshots[channelId] = lastProovenSnapshot;
         emit StateSnapshotUpdated(channelId, lastProovenSnapshot);
+    }
+
+    function _resolveGenesisSnapshot(
+        bytes32 channelId,
+        DisputeProof memory disputeProof
+    ) internal view returns (StateSnapshot memory) {
+        if (getDisputeLength(channelId) != getSnapshotForkCnt(channelId)) {
+            // dispute proof is required
+            Dispute memory dispute = disputeProof.dispute;
+            uint disputeTimestamp = disputeProof.timestamp;
+
+            require(
+                _isDisputeProofProvided(disputeTimestamp),
+                "Dispute proof is required"
+            );
+            require(
+                _isDisputeCommitmentValid(dispute, disputeTimestamp, channelId),
+                "Dispute proof is not valid"
+            );
+            require(
+                _isDisputeFinalized(disputeTimestamp),
+                "Dispute is not finalized"
+            );
+            require(
+                _isStateSnapshotValid(
+                    disputeProof.outputStateSnapshot,
+                    dispute
+                ),
+                "State snapshot is not valid"
+            );
+
+            return disputeProof.outputStateSnapshot;
+        } else {
+            return stateSnapshots[channelId];
+        }
+    }
+
+    function _verifyForkProof(
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        StateSnapshot memory genesisSnapshot
+    ) internal returns (bool) {
+        (bool isValid, ) = AStateChannelManagerProxy(address(this))
+            .verifyForkProof(
+                milestoneProofs,
+                milestoneSnapshots,
+                genesisSnapshot
+            );
+        return isValid;
     }
 
     function _validateExitChannelBlocks(
@@ -87,18 +142,22 @@ contract StateSnapshotFacet is StateChannelCommon {
         }
     }
 
-    function _verifyForkProof(
-        ForkMilestoneProof[] memory milestoneProofs,
-        StateSnapshot[] memory milestoneSnapshots,
-        StateSnapshot memory genesisSnapshot
-    ) internal returns (bool) {
-        (bool isValid, ) = AStateChannelManagerProxy(address(this))
-            .verifyForkProof(
-                milestoneProofs,
-                milestoneSnapshots,
-                genesisSnapshot
-            );
-        return isValid;
+    function _applyExitChannelBlocks(
+        bytes32 channelId,
+        ExitChannelBlock[] memory exitChannelBlocks
+    ) internal {
+        for (uint i = 0; i < exitChannelBlocks.length; i++) {
+            for (
+                uint j = 0;
+                j < exitChannelBlocks[i].exitChannels.length;
+                j++
+            ) {
+                AStateChannelManagerProxy(address(this)).processExitChannel(
+                    channelId,
+                    exitChannelBlocks[i].exitChannels[j]
+                );
+            }
+        }
     }
 
     function _isDisputeProofProvided(
@@ -134,40 +193,5 @@ contract StateSnapshotFacet is StateChannelCommon {
         return
             keccak256(abi.encode(outputStateSnapshot)) ==
             dispute.outputStateSnapshotHash;
-    }
-
-    function _getGenesisStateSnapshot(
-        bytes32 channelId,
-        DisputeProof memory disputeProof
-    ) internal view returns (StateSnapshot memory) {
-        if (getDisputeLength(channelId) != getSnapshotForkCnt(channelId)) {
-            // dispute proof is required
-            Dispute memory dispute = disputeProof.dispute;
-            uint disputeTimestamp = disputeProof.timestamp;
-
-            require(
-                _isDisputeProofProvided(disputeTimestamp),
-                "Dispute proof is required"
-            );
-            require(
-                _isDisputeCommitmentValid(dispute, disputeTimestamp, channelId),
-                "Dispute proof is not valid"
-            );
-            require(
-                _isDisputeFinalized(disputeTimestamp),
-                "Dispute is not finalized"
-            );
-            require(
-                _isStateSnapshotValid(
-                    disputeProof.outputStateSnapshot,
-                    dispute
-                ),
-                "State snapshot is not valid"
-            );
-
-            return disputeProof.outputStateSnapshot;
-        } else {
-            return stateSnapshots[channelId];
-        }
     }
 }

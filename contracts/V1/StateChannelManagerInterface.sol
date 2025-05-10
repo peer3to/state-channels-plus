@@ -22,6 +22,11 @@ abstract contract StateChannelManagerInterface {
         bytes[] calldata signatures
     ) public virtual;
 
+    function processExitChannel(
+        bytes32 channelId,
+        ExitChannel calldata exitChannel
+    ) public virtual;
+
     function addParticipant(
         bytes32 channelId,
         bytes[] calldata removeParticipantData,
