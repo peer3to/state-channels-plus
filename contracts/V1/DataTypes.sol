@@ -14,7 +14,10 @@ contract DataTypes {
         SignedJoinChannel memory i,
         ExitChannel memory j,
         ExitChannelBlock memory k,
-        Timeout memory l
+        Timeout memory l,
+        StateSnapshot memory m,
+        DisputeProof memory n,
+        UpdateStateSnapshotStruct memory o
     ) {}
 }
 

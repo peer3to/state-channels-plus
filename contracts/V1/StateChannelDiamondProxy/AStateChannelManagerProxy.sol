@@ -118,9 +118,7 @@ abstract contract AStateChannelManagerProxy is
             ExitChannel[] memory exitChannels
         )
     {
-        ExitChannel[] memory exitChannels = new ExitChannel[](
-            slashedParticipants.length
-        );
+        exitChannels = new ExitChannel[](slashedParticipants.length);
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < slashedParticipants.length; i++) {
             bool success;
@@ -169,7 +167,7 @@ abstract contract AStateChannelManagerProxy is
     ) public override returns (bool, bytes memory) {
         //channelId not used currenlty since all channels have the same SM - later they can be mapped to different ones
         stateMachineImplementation.setState(encodedState);
-        (bool success, bytes memory encodedReturnValue) = address(
+        (bool success, ) = address(
             stateMachineImplementation
         ).call(abi.encodeCall(stateMachineImplementation.stateTransition, _tx));
         return (success, stateMachineImplementation.getState());
@@ -318,7 +316,7 @@ abstract contract AStateChannelManagerProxy is
     function getParticipants(
         bytes32 channelId
     )
-        public
+        public view
         override(StateChannelManagerInterface)
         returns (address[] memory)
     {
@@ -430,6 +428,20 @@ abstract contract AStateChannelManagerProxy is
         return StateChannelCommon.isChannelOpen(channelId);
     }
 
+    function updateStateSnapshot(
+        bytes32 channelId,
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        DisputeProof memory disputeProof,
+        ExitChannelBlock[] memory exitChannelBlocks) public override {
+        _delegatecall(
+            address(stateSnapshotFacet),
+            abi.encodeCall(
+                stateSnapshotFacet.updateStateSnapshot,
+                (channelId, milestoneProofs, milestoneSnapshots, disputeProof, exitChannelBlocks)
+            )
+        );
+    }
     function verifyForkProof(
         ForkMilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,

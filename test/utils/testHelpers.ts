@@ -101,6 +101,12 @@ export async function deployMathChannelProxyFixture(
     let mathSmFactory = await _ethers.getContractFactory("MathStateMachine");
     let mathContactInstance = await mathSmFactory.deploy();
 
+    //Deploy StateSnapshotFacet
+    let stateSnapshotFacetFactory =
+        await _ethers.getContractFactory("StateSnapshotFacet");
+    let stateSnapshotFacet = await stateSnapshotFacetFactory.deploy();
+    let stateSnapshotFacetAddress = await stateSnapshotFacet.getAddress();
+
     //Deploy MathStateChannelManager
     let mathSmcFactory = await _ethers.getContractFactory(
         "MathStateChannelManagerProxy",
@@ -109,7 +115,8 @@ export async function deployMathChannelProxyFixture(
     let mathStateChannelContactInstance = await mathSmcFactory.deploy(
         await mathContactInstance.getAddress(),
         disputeManagerFacetAddress,
-        fraudProofFacetAddress
+        fraudProofFacetAddress,
+        stateSnapshotFacetAddress
     );
 
     return {
