@@ -108,10 +108,10 @@ contract FraudProofFacet is StateChannelCommon {
         BlockInvalidStateTransitionProof memory blockInvalidSTProof = abi.decode(encodedProof, (BlockInvalidStateTransitionProof));
         Block memory fraudBlock = abi.decode(blockInvalidSTProof.invalidBlock.encodedBlock, (Block));
         Block memory previousBlock = abi.decode(blockInvalidSTProof.previousBlock.encodedBlock, (Block));
-        StateSnapshot memory previousBlockStateSnapshot = blockInvalidSTProof.previousBlockStateSnapshot;
+        StateSnapshot memory previousStateSnapshot = blockInvalidSTProof.previousBlockStateSnapshot;
         bytes memory previousStateStateMachineState = blockInvalidSTProof.previousStateStateMachineState;
 
-        address signer = StateChannelUtilLibrary.retriveSignerAddress(
+        address signer = StateChannelUtilLibrary.retriveSignerAddress( 
             blockInvalidSTProof.invalidBlock.encodedBlock,
             blockInvalidSTProof.invalidBlock.signature
         );
@@ -123,7 +123,7 @@ contract FraudProofFacet is StateChannelCommon {
         if(fraudBlock.previousBlockHash != keccak256(abi.encode(previousBlock))){
             revert ErrorLinkingPreviousBlock();
         }
-        if(previousBlockStateSnapshot.stateMachineStateHash != keccak256(previousStateStateMachineState) && previousBlock.stateSnapshotHash != keccak256(abi.encode(previousBlockStateSnapshot))){
+        if(previousStateSnapshot.stateMachineStateHash != keccak256(previousStateStateMachineState) && previousBlock.stateSnapshotHash != keccak256(abi.encode(previousStateSnapshot))){
             revert ErrorInvalidStateSnapshotHash();
         }
         (bool isSuccess, bytes memory encodedModifiedState) = AStateChannelManagerProxy(address(this)).executeStateTransitionOnState(
@@ -137,11 +137,11 @@ contract FraudProofFacet is StateChannelCommon {
         StateSnapshot memory newStateSnapshot = StateSnapshot({
             stateMachineStateHash: keccak256(encodedModifiedState),
             participants: getStatemachineParticipants(encodedModifiedState),
-            forkCnt: previousBlockStateSnapshot.forkCnt,
-            latestJoinChannelBlockHash: previousBlockStateSnapshot.latestJoinChannelBlockHash,
-            latestExitChannelBlockHash: previousBlockStateSnapshot.latestExitChannelBlockHash,
-            totalDeposits: previousBlockStateSnapshot.totalDeposits,
-            totalWithdrawals: previousBlockStateSnapshot.totalWithdrawals
+            forkCnt: previousStateSnapshot.forkCnt,
+            latestJoinChannelBlockHash: previousStateSnapshot.latestJoinChannelBlockHash,
+            latestExitChannelBlockHash: previousStateSnapshot.latestExitChannelBlockHash,
+            totalDeposits: previousStateSnapshot.totalDeposits,
+            totalWithdrawals: previousStateSnapshot.totalWithdrawals
         });
         if(fraudBlock.stateSnapshotHash == keccak256(abi.encode(newStateSnapshot))){
             revert ErrorValidStateTransition();
