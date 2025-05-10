@@ -5,10 +5,7 @@ import "../DataTypes.sol";
 import "./AStateChannelManagerProxy.sol";
 
 contract StateSnapshotFacet is StateChannelCommon {
-    event StateSnapshotUpdated(
-        bytes32 indexed channelId,
-        StateSnapshot stateSnapshot
-    );
+
 
     function updateStateSnapshotWithDispute(
         bytes32 channelId,
@@ -118,7 +115,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         _applyExitChannelBlocks(channelId, exitChannelBlocks);
 
         stateSnapshots[channelId] = lastProovenSnapshot;
-        emit StateSnapshotUpdated(channelId, lastProovenSnapshot);
+        emit StateSnapshotUpdated(channelId, lastProovenSnapshot, block.timestamp);
     }
 
     function _verifyForkProof(

@@ -1,4 +1,45 @@
-import { SignedBlockEthersType } from "./ethers";
+import {
+    BlockConfirmationEthersType,
+    ExitChannelBlockEthersType,
+    SignedBlockEthersType,
+    TimeoutEthersType
+} from "./ethers";
+
+export const ForkMilestoneProofEthersType = `tuple(
+    ${BlockConfirmationEthersType}[] blockConfirmations
+)`;
+
+export const ForkProofEthersType = `tuple(
+    ${ForkMilestoneProofEthersType}[] forkMilestoneProofs
+)`;
+
+export const StateProofEthersType = `tuple(
+    ${ForkProofEthersType} forkProof,
+    ${SignedBlockEthersType}[] signedBlocks
+)`;
+
+export const ProofEthersType = `tuple(
+    uint8 proofType,
+    bytes encodedProof
+)`;
+
+export const DisputeEthersType = `tuple(
+    bytes32 channelId,
+    bytes32 genesisStateSnapshotHash,
+    bytes32 latestStateSnapshotHash,
+    ${StateProofEthersType} stateProof,
+    ${ProofEthersType}[] fraudProofs,
+    address[] onChainSlashes,
+    bytes32 onChainLatestJoinChannelBlockHash,
+    bytes32 outputStateSnapshotHash,
+    ${ExitChannelBlockEthersType}[] exitChannelBlocks,
+    bytes32 disputeAuditingDataHash,
+    address disputer,
+    uint256 disputeIndex,
+    uint256 previousRecursiveDisputeIndex,
+    ${TimeoutEthersType} timeout,
+    bool selfRemoval
+)`;
 
 export const FoldRechallengeProofEthersType = `tuple(
     string encodedBlock,

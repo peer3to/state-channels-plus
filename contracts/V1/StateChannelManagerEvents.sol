@@ -36,4 +36,10 @@ interface StateChannelManagerEvents {
     address[] slashParticipants,
     bytes fraudProofErrorResult
     );
+
+    event StateSnapshotUpdated(
+        bytes32 indexed channelId,
+        StateSnapshot stateSnapshot,
+        uint timestamp
+    );
 }

@@ -14,6 +14,8 @@ class StateChannelEventListener {
     setStateFilter: any;
     postedBlockCallDataFilter: any;
     disputeUpdateFilter: any;
+    disputeCommittedFilter: any;
+
     constructor(
         stateManager: StateManager,
         stateChannelManagerContract: AStateChannelManagerProxy,
@@ -36,6 +38,8 @@ class StateChannelEventListener {
             );
         if (this.disputeUpdateFilter)
             this.stateChannelManagerContract.off(this.disputeUpdateFilter);
+        if (this.disputeCommittedFilter)
+            this.stateChannelManagerContract.off(this.disputeCommittedFilter);
     }
     public async setChannelId(channelId: BytesLike) {
         // --------- SetState event -------------
@@ -93,9 +97,36 @@ class StateChannelEventListener {
             this.disputeUpdateFilter,
             async (logObj) => {
                 let dispute = logObj.args.dispute as DisputeStruct;
-                await this.stateManager.onDisputeUpdate(dispute);
+                this.stateManager.onDisputeUpdate(dispute);
             }
         );
+        // --------- DisputeCommited event -------------
+        if (this.disputeCommittedFilter)
+            await this.stateChannelManagerContract.off(
+                this.disputeCommittedFilter
+            );
+        this.disputeCommittedFilter =
+            this.stateChannelManagerContract.filters.DisputeCommited(channelId);
+
+        await this.stateChannelManagerContract.on(
+            this.disputeCommittedFilter,
+            async (logObj: any) => {
+                console.log("DisputeCommited EVENT !!!!!!!!!!!");
+                const encodedDispute = logObj.args.encodedDispute;
+                const timestamp = Number(logObj.args.timestamp);
+
+                // Pass raw data to StateManager
+                await this.stateManager.onDisputeCommitted(
+                    encodedDispute,
+                    timestamp
+                );
+            }
+        );
+    }
+
+    // Getter for latest dispute data
+    public getLatestDisputeData() {
+        return this.latestDisputeData;
     }
 }
 
