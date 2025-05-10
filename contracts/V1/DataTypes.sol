@@ -16,8 +16,7 @@ contract DataTypes {
         ExitChannelBlock memory k,
         Timeout memory l,
         StateSnapshot memory m,
-        DisputeProof memory n,
-        UpdateStateSnapshotStruct memory o
+        DisputeProof memory n
     ) {}
 }
 
@@ -55,7 +54,7 @@ struct TransactionBody {
     bytes data; //evm transaction data
 }
 
-struct Balance{
+struct Balance {
     uint amount;
     bytes data; //custom data
 }
@@ -132,14 +131,4 @@ struct DisputeProof {
     Dispute dispute;
     StateSnapshot outputStateSnapshot;
     uint timestamp;
-}
-
-
-
-struct UpdateStateSnapshotStruct {
-    StateSnapshot stateSnapshot;
-    ExitChannelBlock[] exitChannelBlocks;
-    // ========================== optional ===============================
-    // OptionalMilestoneProofs milestoneProofs;
-    DisputeProof disputeProof ;
 }
