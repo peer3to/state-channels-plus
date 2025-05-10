@@ -10,12 +10,9 @@ contract DisputeManagerFacet is StateChannelCommon {
     function createDispute(
         Dispute memory dispute
     ) public { 
-        if(msg.sender != dispute.disputer){
-            revert ErrorDisputerNotMsgSender();
-        }
-        if(!_canParticipateInDisputes(dispute.channelId, msg.sender)){
-            revert ErrorCantParticipateInDispute();
-        }
+        require(msg.sender == dispute.disputer, ErrorDisputerNotMsgSender());
+        require(_canParticipateInDisputes(dispute.channelId, msg.sender), ErrorCantParticipateInDispute());
+
         // race condition checks
         _disputeRaceConditionCheck(dispute);
 
@@ -101,30 +98,34 @@ contract DisputeManagerFacet is StateChannelCommon {
         Dispute memory dispute,
         DisputeAuditingData memory disputeAuditingData
     ) public {
-       
-        // address challenger = msg.sender; // I dont think we should slash the auditor as they are like Polkadot fisherman
-
-        // (bool isAllAuditValid, address[] memory collectedSlashParticipants, bytes memory fraudProofErrorResult) = auditDispute(dispute, disputeAuditingData);
-
-        // if(isAllAuditValid) {
-        //     addOnChainSlashedParticipants(collectedSlashParticipants);
-        //     address[] memory returnedSlashParticipants = getOnChainSlashedParticipants();
-        //     emit DisputeChallengeResultWithError(dispute.channelId, isAllAuditValid, returnedSlashParticipants, fraudProofErrorResult);
-        // }
-        // else {
-        //     uint disputeLength = getDisputeLength(dispute.channelId);
-        //     DisputePair memory disputePair = DisputePair(dispute.disputeIndex, disputeLength-1);
-        //     onChainDisputePairs.push(disputePair);
-        //     addOnChainSlashedParticipants(collectedSlashParticipants);
-        //     address[] memory returnedSlashParticipants = getOnChainSlashedParticipants();
-        //     emit DisputeChallengeResultWithDisputePair(dispute.channelId, disputePair, isAllAuditValid, returnedSlashParticipants);
-        // }
-        
+        uint256 gasLimit = getGasLimit();
+        bytes memory data = abi.encodeCall(
+            DisputeManagerFacet.auditDispute,
+            (dispute, disputeAuditingData, block.timestamp)
+        );
+        (bool success, bytes memory returnData) = address(this).call{gas: gasLimit}(data);
+        if(!success) {
+            // slash the disputer
+            address[] memory slashParticipants = new address[](1);
+            slashParticipants[0] = dispute.disputer;
+            addOnChainSlashedParticipants(dispute.channelId, slashParticipants);
+            address[] memory returnedSlashParticipants = getOnChainSlashedParticipants(dispute.channelId);
+            emit DisputeChallengeResult(dispute.channelId, success, returnedSlashParticipants);
+        }else{
+            // slash the challenger
+            address[] memory slashParticipants = abi.decode(returnData,(address[]));
+            addOnChainSlashedParticipants(dispute.channelId, slashParticipants);
+            uint disputeLength = getDisputeLength(dispute.channelId);
+            DisputePair memory disputePair = DisputePair(dispute.disputeIndex, disputeLength-1);
+            disputeData[dispute.channelId].disputePairs.push(disputePair);
+            address[] memory returnedSlashParticipants = getOnChainSlashedParticipants(dispute.channelId);
+            emit DisputeChallengeResultWithDisputePair(dispute.channelId, disputePair, success, returnedSlashParticipants);            
+        }        
     }
 
    
     // =============================== State Proofs Verification  ===============================
-    function _verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) internal returns (bool isValid) {
+    function _verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) internal pure returns (bool isValid) {
         //This runs after verifying auditingData and genesisStateSnapshot => we can skip those checks here
         
         // Milestone checking
@@ -157,7 +158,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             //check if lastBlock commits to the latestStateSnapshot
             if(dispute.stateProof.signedBlocks.length != 0)
                 lastBlockEncoded = dispute.stateProof.signedBlocks[dispute.stateProof.signedBlocks.length - 1].encodedBlock;
-            Block memory lastBlock = abi.decode(lastBlockEncoded, (Block));
+            Block memory lastBlock = abi.decode(lastBlockEncoded, (Block)); 
             //check if lastBlock commits to the latestStateSnapshot
             if(lastBlock.stateSnapshotHash != dispute.latestStateSnapshotHash)
                 return false;
@@ -169,26 +170,6 @@ contract DisputeManagerFacet is StateChannelCommon {
             if(disputeAuditingData.latestStateSnapshot.stateMachineStateHash != keccak256(disputeAuditingData.latestStateStateMachineState))
                 return false;
             return true;
-    }
-
-    function _areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks, bytes32 optionalPreviousHash) internal pure returns (bool isLinked) {
-        bytes32 previousBlockHash = optionalPreviousHash;
-        for(uint i = 0; i < signedBlocks.length; i++) {
-            bytes memory currentBlockEncoded = signedBlocks[i].encodedBlock;
-            Block memory currentBlock = abi.decode(currentBlockEncoded, (Block));
-            //check is linked
-            if(previousBlockHash!=bytes32(0) && previousBlockHash != currentBlock.previousBlockHash) {
-                return false;
-            }
-            previousBlockHash = keccak256(currentBlockEncoded);
-            //verify original siganture
-            address signer = StateChannelUtilLibrary.retriveSignerAddress(currentBlockEncoded, signedBlocks[i].signature);
-            if(signer != currentBlock.transaction.header.participant) {
-                return false;
-            }
-            
-        }
-        return true;
     }
 
     function _isMilestoneFinal(ForkMilestoneProof memory milestone, address[] memory expectedParticipants, bytes32 genesisSnapshotHash) internal pure returns (bool isFinal,bytes32 finalizedSnapshotHash) {

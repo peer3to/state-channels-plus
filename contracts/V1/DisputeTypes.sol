@@ -9,20 +9,19 @@ contract DisputeTypes {
         BlockDoubleSignProof memory b,
         BlockEmptyProof memory c,
         BlockInvalidStateTransitionProof memory d,
-        BlockOutOfGasProof memory e,
-        TimeoutThresholdProof memory f,
-        TimeoutPriorInvalidProof memory g,
-        DisputeNotLatestStateProof memory h,
-        DisputeOutOfGasProof memory i,
-        DisputeInvalidOutputStateProof memory j,
-        DisputeInvalidStateProof memory k,
-        DisputeInvalidPreviousRecursiveProof memory l,
-        DisputeInvalidExitChannelBlocksProof memory m,
-        ForkMilestoneProof memory n,
-        ForkProof memory o,
-        StateProof memory p,
-        Proof memory q,
-        ProofType r
+        TimeoutThresholdProof memory e,
+        TimeoutPriorInvalidProof memory f,
+        DisputeNotLatestStateProof memory g,
+        DisputeOutOfGasProof memory h,
+        DisputeInvalidOutputStateProof memory i,
+        DisputeInvalidStateProof memory j,
+        DisputeInvalidPreviousRecursiveProof memory k,
+        DisputeInvalidExitChannelBlocksProof memory l,
+        ForkMilestoneProof memory m,
+        ForkProof memory n,
+        StateProof memory o,
+        Proof memory p,
+        ProofType q
     ) {}
 }
 
@@ -110,23 +109,16 @@ enum ProofType {
 // ========================== Block related fraud proofs ==========================
 struct BlockEmptyProof {
     SignedBlock emptyBlock;
-    StateSnapshot latestStateSnapshot;
-    bytes32 previousStateSnapshotHash;
-    bytes previousStateMachineState;
+    SignedBlock previousBlock;
 }
 
 struct BlockInvalidStateTransitionProof {
     SignedBlock invalidBlock;
-    /// @notice the latest state being transitioned
-    DisputeAuditingData disputeFraudData;
-    Dispute dispute;
+    SignedBlock previousBlock;
+    StateSnapshot previousBlockStateSnapshot;
+    bytes previousStateStateMachineState;
 }
 
-struct BlockOutOfGasProof {
-    SignedBlock invalidBlock;
-    bytes latestStateStateMachineState;
-
-}
 
 struct BlockDoubleSignProof {
     SignedBlock block1;
@@ -153,7 +145,13 @@ struct DisputeInvalidStateProof {
 }
 
 struct DisputeInvalidPreviousRecursiveProof {
-    Dispute dispute;
+    Dispute invalidRecursiveDispute;
+    Dispute originalDispute;
+    uint originalDisputeTimestamp;
+    uint invalidRecursiveDisputeTimestamp;
+    SignedBlock[] latestStateSignedBlocks;
+    bytes latestStateSnapshot;
+    bytes invalidRecursiveDisputeOutputState;
 }
 
 struct DisputeInvalidExitChannelBlocksProof {

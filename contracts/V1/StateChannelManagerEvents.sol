@@ -30,10 +30,9 @@ interface StateChannelManagerEvents {
     address[] slashParticipants
     );
 
-    event DisputeChallengeResultWithError(
+    event DisputeChallengeResult(
     bytes32 channelId,
     bool isSuccess,
-    address[] slashParticipants,
-    bytes fraudProofErrorResult
+    address[] slashParticipants
     );
 }
