@@ -5,6 +5,7 @@ import "./DisputeManagerFacet.sol";
 import "./FraudProofFacet.sol";
 
 import "./StateChannelUtilLibrary.sol";
+import "./StateSnapshotFacet.sol";
 import "../StateChannelManagerInterface.sol";
 
 abstract contract AStateChannelManagerProxy is
@@ -13,15 +14,18 @@ abstract contract AStateChannelManagerProxy is
 {
     DisputeManagerFacet disputeManagerFacet;
     FraudProofFacet fraudProofFacet;
+    StateSnapshotFacet stateSnapshotFacet;
 
     constructor(
         address _stateMachineImplementation,
         address _disputeManagerFacet,
-        address _fraudProofFacet
+        address _fraudProofFacet,
+        address _stateSnapshotFacet
     ) {
         stateMachineImplementation = AStateMachine(_stateMachineImplementation);
         disputeManagerFacet = DisputeManagerFacet(_disputeManagerFacet);
         fraudProofFacet = FraudProofFacet(_fraudProofFacet);
+        stateSnapshotFacet = StateSnapshotFacet(_stateSnapshotFacet);
         p2pTime = 15;
         agreementTime = 5;
         chainFallbackTime = 30;
@@ -114,9 +118,7 @@ abstract contract AStateChannelManagerProxy is
             ExitChannel[] memory exitChannels
         )
     {
-        ExitChannel[] memory exitChannels = new ExitChannel[](
-            slashedParticipants.length
-        );
+        exitChannels = new ExitChannel[](slashedParticipants.length);
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < slashedParticipants.length; i++) {
             bool success;
@@ -165,7 +167,7 @@ abstract contract AStateChannelManagerProxy is
     ) public override returns (bool, bytes memory) {
         //channelId not used currenlty since all channels have the same SM - later they can be mapped to different ones
         stateMachineImplementation.setState(encodedState);
-        (bool success, bytes memory encodedReturnValue) = address(
+        (bool success, ) = address(
             stateMachineImplementation
         ).call(abi.encodeCall(stateMachineImplementation.stateTransition, _tx));
         return (success, stateMachineImplementation.getState());
@@ -185,18 +187,19 @@ abstract contract AStateChannelManagerProxy is
         require(block.timestamp <= maxTimestamp, ErrorBlockCalldataTimestampTooLate());
         bytes32 commitment = keccak256(abi.encode(signedBlock,block.timestamp));
         Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
-        
-        //Don't allow overwriting the blockCalldataCommitment if it already exists
-        require(blockCalldataCommitments[_block.transaction.header.channelId]
-        [msg.sender]
-        [_block.transaction.header.forkCnt]
-        [_block.transaction.header.transactionCnt] == bytes32(0), ErrorBlockCalldataAlreadyPosted());
 
-        blockCalldataCommitments
-        [_block.transaction.header.channelId]
-        [msg.sender]
-        [_block.transaction.header.forkCnt]
-        [_block.transaction.header.transactionCnt] = commitment;
+        // Extract values for better readability
+        bytes32 channelId = _block.transaction.header.channelId;
+        uint forkCnt = _block.transaction.header.forkCnt;
+        uint transactionCnt = _block.transaction.header.transactionCnt;
+
+        //Don't allow overwriting the blockCalldataCommitment if it already exists
+        require(
+            blockCalldataCommitments[channelId][msg.sender][forkCnt][transactionCnt] == bytes32(0),
+            ErrorBlockCalldataAlreadyPosted()
+        );
+
+        blockCalldataCommitments[channelId][msg.sender][forkCnt][transactionCnt] = commitment;
 
         emit BlockCalldataPosted(
             _block.transaction.header.channelId,
@@ -313,7 +316,7 @@ abstract contract AStateChannelManagerProxy is
     function getParticipants(
         bytes32 channelId
     )
-        public
+        public view
         override(StateChannelManagerInterface)
         returns (address[] memory)
     {
@@ -423,5 +426,62 @@ abstract contract AStateChannelManagerProxy is
         returns (bool)
     {
         return StateChannelCommon.isChannelOpen(channelId);
+    }
+
+    function updateStateSnapshotWithDispute(
+        bytes32 channelId,
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        DisputeProof memory disputeProof,
+        ExitChannelBlock[] memory exitChannelBlocks
+    ) public override {
+        _delegatecall(
+            address(stateSnapshotFacet),
+            abi.encodeCall(
+                stateSnapshotFacet.updateStateSnapshotWithDispute,
+                (
+                    channelId,
+                    milestoneProofs,
+                    milestoneSnapshots,
+                    disputeProof,
+                    exitChannelBlocks
+                )
+            )
+        );
+    }
+
+    function updateStateSnapshotWithoutDispute(
+        bytes32 channelId,
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        ExitChannelBlock[] memory exitChannelBlocks
+    ) public override {
+        _delegatecall(
+            address(stateSnapshotFacet),
+            abi.encodeCall(
+                stateSnapshotFacet.updateStateSnapshotWithoutDispute,
+                (
+                    channelId,
+                    milestoneProofs,
+                    milestoneSnapshots,
+                    exitChannelBlocks
+                )
+            )
+        );
+    }
+
+    function verifyForkProof(
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        StateSnapshot memory genesisSnapshot
+    ) public returns (bool isValid, bytes memory lastBlockEncoded) {
+        bytes memory result = _delegatecall(
+            address(disputeManagerFacet),
+            abi.encodeCall(
+                disputeManagerFacet.verifyForkProof,
+                (milestoneProofs, milestoneSnapshots, genesisSnapshot)
+            )
+        );
+        return abi.decode(result, (bool, bytes));
     }
 }

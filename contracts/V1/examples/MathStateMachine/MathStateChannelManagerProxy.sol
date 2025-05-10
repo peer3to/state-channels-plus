@@ -13,8 +13,9 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
     constructor(
         address aStateMaachineAddress,
         address disputeManagerFacet,
-        address fraudProofFacet
-    ) AStateChannelManagerProxy(aStateMaachineAddress, disputeManagerFacet, fraudProofFacet) {
+        address fraudProofFacet,
+        address stateSnapshotFacet
+    ) AStateChannelManagerProxy(aStateMaachineAddress, disputeManagerFacet, fraudProofFacet, stateSnapshotFacet) {
         p2pTime = 5;
         agreementTime = 5;
         chainFallbackTime = 5;
@@ -110,6 +111,11 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
         bytes32 channelId,
         bytes[] calldata removeParticipantData,
         bytes[] calldata signatures
+    ) public virtual override {}
+
+    function processExitChannel(
+        bytes32 channelId,
+        ExitChannel calldata exitChannel
     ) public virtual override {}
 
     function addParticipant(
