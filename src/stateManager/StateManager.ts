@@ -1,7 +1,11 @@
 import {
     TransactionStruct,
     SignedBlockStruct,
-    BlockStruct
+    BlockStruct,
+    StateSnapshotStruct,
+    ForkMilestoneProofStruct,
+    ExitChannelBlockStruct,
+    DisputeProofStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import {
     AddressLike,
@@ -397,6 +401,30 @@ class StateManager {
                 .catch((error) => {
                     console.log("Error posting block on chain", error);
                 });
+        }
+    }
+
+    public async postStateSnapshot(
+        milestoneProofs: ForkMilestoneProofStruct[],
+        milestoneSnapshots: StateSnapshotStruct[],
+        disputeProof?: DisputeProofStruct,
+        exitChannelBlocks: ExitChannelBlockStruct[] = []
+    ) {
+        if (disputeProof) {
+            await this.stateChannelManagerContract.updateStateSnapshotWithDispute(
+                this.channelId,
+                milestoneProofs,
+                milestoneSnapshots,
+                disputeProof,
+                exitChannelBlocks
+            );
+        } else {
+            await this.stateChannelManagerContract.updateStateSnapshotWithoutDispute(
+                this.channelId,
+                milestoneProofs,
+                milestoneSnapshots,
+                exitChannelBlocks
+            );
         }
     }
 

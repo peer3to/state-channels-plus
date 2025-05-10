@@ -94,12 +94,18 @@ abstract contract StateChannelManagerInterface {
         DisputeAuditingData memory disputeAuditingData
     ) public virtual;
 
-    function updateStateSnapshot(
+    function updateStateSnapshotWithDispute(
         bytes32 channelId,
         ForkMilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         DisputeProof memory disputeProof,
         ExitChannelBlock[] memory exitChannelBlocks
     ) public virtual;
-    
+
+    function updateStateSnapshotWithoutDispute(
+        bytes32 channelId,
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        ExitChannelBlock[] memory exitChannelBlocks
+    ) public virtual;
 }

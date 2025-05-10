@@ -428,20 +428,48 @@ abstract contract AStateChannelManagerProxy is
         return StateChannelCommon.isChannelOpen(channelId);
     }
 
-    function updateStateSnapshot(
+    function updateStateSnapshotWithDispute(
         bytes32 channelId,
         ForkMilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         DisputeProof memory disputeProof,
-        ExitChannelBlock[] memory exitChannelBlocks) public override {
+        ExitChannelBlock[] memory exitChannelBlocks
+    ) public override {
         _delegatecall(
             address(stateSnapshotFacet),
             abi.encodeCall(
-                stateSnapshotFacet.updateStateSnapshot,
-                (channelId, milestoneProofs, milestoneSnapshots, disputeProof, exitChannelBlocks)
+                stateSnapshotFacet.updateStateSnapshotWithDispute,
+                (
+                    channelId,
+                    milestoneProofs,
+                    milestoneSnapshots,
+                    disputeProof,
+                    exitChannelBlocks
+                )
             )
         );
     }
+
+    function updateStateSnapshotWithoutDispute(
+        bytes32 channelId,
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        ExitChannelBlock[] memory exitChannelBlocks
+    ) public override {
+        _delegatecall(
+            address(stateSnapshotFacet),
+            abi.encodeCall(
+                stateSnapshotFacet.updateStateSnapshotWithoutDispute,
+                (
+                    channelId,
+                    milestoneProofs,
+                    milestoneSnapshots,
+                    exitChannelBlocks
+                )
+            )
+        );
+    }
+
     function verifyForkProof(
         ForkMilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,

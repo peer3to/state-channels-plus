@@ -10,7 +10,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot stateSnapshot
     );
 
-    function updateStateSnapshot(
+    function updateStateSnapshotWithDispute(
         bytes32 channelId,
         ForkMilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
@@ -19,35 +19,40 @@ contract StateSnapshotFacet is StateChannelCommon {
     ) external onlySelf {
         // resolve genesis state snapshot source
         // - if stateSnapshot(on-chain).forkCnt == disputeProof.forkCnt, then the genesis state snapshot is the on-chain stateSnapshot
-        // - otherwise, the genesis state snapshot is disputeProof.outputStateSnapshot
-        StateSnapshot
-            memory genesisStateSnapshot = _resolveGenesisSnapshot(
-                channelId,
-                disputeProof
-            );
+        // - otherwise, the dispute is validated and the genesis state snapshot is disputeProof.outputStateSnapshot
+        StateSnapshot memory genesisStateSnapshot = _resolveGenesisSnapshot(
+            channelId,
+            disputeProof
+        );
 
-        // verify state proof within the fork
-        bool isStateValid = _verifyForkProof(
+        _updateStateSnapshot(
+            channelId,
             milestoneProofs,
             milestoneSnapshots,
+            exitChannelBlocks,
             genesisStateSnapshot
         );
-        require(isStateValid, "Invalid State Proof");
+    }
 
-        StateSnapshot memory lastProovenSnapshot = milestoneSnapshots[
-            milestoneSnapshots.length - 1
-        ];
-
-        _validateExitChannelBlocks(
-            exitChannelBlocks,
-            genesisStateSnapshot,
-            lastProovenSnapshot
+    function updateStateSnapshotWithoutDispute(
+        bytes32 channelId,
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        ExitChannelBlock[] memory exitChannelBlocks
+    ) external onlySelf {
+        require(
+            getDisputeLength(channelId) == getSnapshotForkCnt(channelId),
+            "Dispute proof is required"
         );
+        StateSnapshot memory genesisStateSnapshot = stateSnapshots[channelId];
 
-        _applyExitChannelBlocks(channelId, exitChannelBlocks);
-
-        stateSnapshots[channelId] = lastProovenSnapshot;
-        emit StateSnapshotUpdated(channelId, lastProovenSnapshot);
+        _updateStateSnapshot(
+            channelId,
+            milestoneProofs,
+            milestoneSnapshots,
+            exitChannelBlocks,
+            genesisStateSnapshot
+        );
     }
 
     function _resolveGenesisSnapshot(
@@ -83,6 +88,37 @@ contract StateSnapshotFacet is StateChannelCommon {
         } else {
             return stateSnapshots[channelId];
         }
+    }
+
+    function _updateStateSnapshot(
+        bytes32 channelId,
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        ExitChannelBlock[] memory exitChannelBlocks,
+        StateSnapshot memory genesisStateSnapshot
+    ) internal {
+        // verify state proof within the fork
+        bool isStateValid = _verifyForkProof(
+            milestoneProofs,
+            milestoneSnapshots,
+            genesisStateSnapshot
+        );
+        require(isStateValid, "Invalid State Proof");
+
+        StateSnapshot memory lastProovenSnapshot = milestoneSnapshots[
+            milestoneSnapshots.length - 1
+        ];
+
+        _validateExitChannelBlocks(
+            exitChannelBlocks,
+            genesisStateSnapshot,
+            lastProovenSnapshot
+        );
+
+        _applyExitChannelBlocks(channelId, exitChannelBlocks);
+
+        stateSnapshots[channelId] = lastProovenSnapshot;
+        emit StateSnapshotUpdated(channelId, lastProovenSnapshot);
     }
 
     function _verifyForkProof(
