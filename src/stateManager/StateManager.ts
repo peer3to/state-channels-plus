@@ -61,7 +61,13 @@ class StateManager {
     private latestDisputeData: {
         dispute: DisputeStruct;
         timestamp: number;
+        commitment: string;
     } | null = null;
+
+    // Store output state snapshots data
+    private readonly outputStateSnapshotData: Map<string, StateSnapshotStruct> =
+        new Map();
+
     constructor(
         signer: ethers.Signer,
         signerAddress: AddressLike,
@@ -427,18 +433,26 @@ class StateManager {
         // If we need to include a dispute
         if (onChainDisputeLength > onChainForkCnt) {
             // Get latest dispute data
-            const latestDisputeData = this.getLatestDisputeData();
+            const latestDisputeData = this.latestDisputeData;
             if (!latestDisputeData) {
                 throw new Error(
                     "No dispute data available but dispute length > fork count"
                 );
             }
 
+            // Get output state snapshot data
+            const outputStateSnapshot = this.outputStateSnapshotData.get(
+                latestDisputeData.commitment
+            );
+            if (!outputStateSnapshot) {
+                throw new Error("No output state snapshot data available");
+            }
+
             // Create dispute proof from the latest dispute
             const disputeProof: DisputeProofStruct = {
-                ...latestDisputeData,
-                outputStateSnapshot:
-                    milestoneSnapshots[milestoneSnapshots.length - 1]
+                dispute: latestDisputeData.dispute,
+                outputStateSnapshot: outputStateSnapshot,
+                timestamp: latestDisputeData.timestamp
             };
 
             // Call contract with dispute
@@ -662,7 +676,11 @@ class StateManager {
     }
 
     // Handle new dispute committed on chain
-    public async onDisputeCommitted(encodedDispute: string, timestamp: number) {
+    public async onDisputeCommitted(
+        encodedDispute: string,
+        timestamp: number,
+        commitment: string
+    ) {
         const dispute = ethers.AbiCoder.defaultAbiCoder().decode(
             [DisputeEthersType],
             encodedDispute
@@ -670,13 +688,16 @@ class StateManager {
 
         this.latestDisputeData = {
             dispute,
-            timestamp
+            timestamp,
+            commitment
         };
     }
 
-    // Get latest dispute data
-    public getLatestDisputeData() {
-        return this.latestDisputeData;
+    public async onOutputStateSnapshotVerified(
+        outputStateSnapshot: StateSnapshotStruct,
+        commitment: string
+    ) {
+        this.outputStateSnapshotData.set(commitment, outputStateSnapshot);
     }
 }
 

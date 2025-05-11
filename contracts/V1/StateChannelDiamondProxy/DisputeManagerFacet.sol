@@ -23,7 +23,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             block.timestamp
         ));
         disputeData[dispute.channelId].disputeCommitments.push(disputeCommitment);
-        emit DisputeCommited(encodedDispute,block.timestamp);
+        emit DisputeCommited(encodedDispute,block.timestamp, disputeCommitment);
     }
     
     
@@ -83,6 +83,14 @@ contract DisputeManagerFacet is StateChannelCommon {
         if(keccak256(abi.encode(outputStateSnapshot)) != dispute.outputStateSnapshotHash) {
             revert ErrorDisputeOutputStateSnapshotInvalid();
         }
+
+        // Emit event for verified output state snapshot
+        bytes32 disputeCommitment = keccak256(abi.encode(dispute, timestamp));
+        emit OutputStateSnapshotVerified(
+            dispute.channelId,
+            outputStateSnapshot,
+            disputeCommitment
+        );
     }
 
 
