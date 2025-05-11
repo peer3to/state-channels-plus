@@ -11,10 +11,7 @@ class StateChannelEventListener {
     stateManager: StateManager;
     stateChannelManagerContract: AStateChannelManagerProxy;
     p2pEventHooks: P2pEventHooks;
-    setStateFilter: any;
-    postedBlockCallDataFilter: any;
-    disputeUpdateFilter: any;
-    disputeCommittedFilter: any;
+    filters: Record<string, any> = {};
 
     constructor(
         stateManager: StateManager,
@@ -24,109 +21,110 @@ class StateChannelEventListener {
         this.stateManager = stateManager;
         this.stateChannelManagerContract = stateChannelManagerContract;
         this.p2pEventHooks = p2pEventHooks;
+    }
 
-        // stateChannelManagerContract.off(stateChannelManagerContract.getEvent("GameCreated"));
+    private async setListener(
+        key: string,
+        filterFactory: () => any,
+        handler: (logObj: any) => Promise<void> | void
+    ) {
+        if (this.filters[key]) {
+            await this.stateChannelManagerContract.off(this.filters[key]);
+        }
+        this.filters[key] = filterFactory();
+        await this.stateChannelManagerContract.on(this.filters[key], handler);
     }
     //Mark resources for garbage collection
     public dispose() {
-        // this.stateChannelManagerContract.removeAllListeners();
-        if (this.setStateFilter)
-            this.stateChannelManagerContract.off(this.setStateFilter);
-        if (this.postedBlockCallDataFilter)
-            this.stateChannelManagerContract.off(
-                this.postedBlockCallDataFilter
-            );
-        if (this.disputeUpdateFilter)
-            this.stateChannelManagerContract.off(this.disputeUpdateFilter);
-        if (this.disputeCommittedFilter)
-            this.stateChannelManagerContract.off(this.disputeCommittedFilter);
+        Object.values(this.filters).forEach((filter) => {
+            if (filter) {
+                this.stateChannelManagerContract.off(filter);
+            }
+        });
+        this.filters = {};
     }
-    public async setChannelId(channelId: BytesLike) {
-        // --------- SetState event -------------
-        if (this.setStateFilter)
-            await this.stateChannelManagerContract.off(this.setStateFilter);
-        this.setStateFilter =
-            this.stateChannelManagerContract.filters.SetState(channelId);
-        //TODO - this will change if ethers.js accepts my PR
-        await this.stateChannelManagerContract.on(
-            this.setStateFilter,
-            async (logObj: any) => {
-                let encodedState = logObj.args.encodedState;
-                let forkCnt = logObj.args.forkCnt;
-                let timestamp = logObj.args.timestamp; //TODO? - potentially sync clock to this too
-                // console.log("Game created event");
-                await this.stateManager.setState(
+
+    private readonly eventHandlers = {
+        SetState: {
+            filterFactory: (channelId: BytesLike) =>
+                this.stateChannelManagerContract.filters.SetState(channelId),
+            handler: (logObj: any) => {
+                const { encodedState, forkCnt, timestamp } = logObj.args;
+                return this.stateManager.setState(
                     encodedState,
                     forkCnt,
                     timestamp
                 );
             }
-        );
-        // --------- PostedBlockCalldata event -------------
-        if (this.postedBlockCallDataFilter)
-            await this.stateChannelManagerContract.off(
-                this.postedBlockCallDataFilter
-            );
-        this.postedBlockCallDataFilter =
-            this.stateChannelManagerContract.filters.BlockCalldataPosted(
-                channelId
-            );
-        //TODO - this will change if ethers.js accepts my PR
-        await this.stateChannelManagerContract.on(
-            this.postedBlockCallDataFilter,
-            async (logObj: any) => {
+        },
+        BlockCalldataPosted: {
+            filterFactory: (channelId: BytesLike) =>
+                this.stateChannelManagerContract.filters.BlockCalldataPosted(
+                    channelId
+                ),
+            handler: (logObj: any) => {
                 console.log("BlockCalldataPosted EVENT !!!!!!!!!!!");
                 this.p2pEventHooks.onPostedCalldata?.();
-                let signedBlock = logObj.args.signedBlock as SignedBlockStruct;
-                let timestamp = logObj.args.timestamp as BigNumberish;
-                await this.stateManager.collectOnChainBlock(
-                    signedBlock,
-                    timestamp
+                const signedBlock = logObj.args
+                    .signedBlock as SignedBlockStruct;
+                const timestamp = logObj.args.timestamp as BigNumberish;
+                this.stateManager.collectOnChainBlock(signedBlock, timestamp);
+            }
+        },
+        DisputeUpdate: {
+            filterFactory: (channelId: BytesLike) =>
+                this.stateChannelManagerContract.filters.DisputeUpdated(
+                    channelId
+                ),
+            handler: (logObj: any) => {
+                this.stateManager.onDisputeUpdate(
+                    logObj.args.dispute as DisputeStruct
                 );
             }
-        );
-        // --------- DisputeUpdate event -------------
-        if (this.disputeUpdateFilter)
-            await this.stateChannelManagerContract.off(
-                this.disputeUpdateFilter
-            );
-        this.disputeUpdateFilter =
-            this.stateChannelManagerContract.filters.DisputeUpdated(channelId);
-        //TODO - this will change if ethers.js accepts my PR
-        await this.stateChannelManagerContract.on(
-            this.disputeUpdateFilter,
-            async (logObj) => {
-                let dispute = logObj.args.dispute as DisputeStruct;
-                this.stateManager.onDisputeUpdate(dispute);
-            }
-        );
-        // --------- DisputeCommited event -------------
-        if (this.disputeCommittedFilter)
-            await this.stateChannelManagerContract.off(
-                this.disputeCommittedFilter
-            );
-        this.disputeCommittedFilter =
-            this.stateChannelManagerContract.filters.DisputeCommited(channelId);
-
-        await this.stateChannelManagerContract.on(
-            this.disputeCommittedFilter,
-            async (logObj: any) => {
-                console.log("DisputeCommited EVENT !!!!!!!!!!!");
+        },
+        DisputeCommited: {
+            filterFactory: (channelId: BytesLike) =>
+                this.stateChannelManagerContract.filters.DisputeCommited(
+                    channelId
+                ),
+            handler: (logObj: any) => {
                 const encodedDispute = logObj.args.encodedDispute;
                 const timestamp = Number(logObj.args.timestamp);
-
-                // Pass raw data to StateManager
-                await this.stateManager.onDisputeCommitted(
+                const commitment = logObj.args.disputeCommitment;
+                return this.stateManager.onDisputeCommitted(
                     encodedDispute,
-                    timestamp
+                    timestamp,
+                    commitment
                 );
             }
-        );
-    }
+        },
+        OutputStateSnapshotVerified: {
+            filterFactory: (channelId: BytesLike) =>
+                this.stateChannelManagerContract.filters.OutputStateSnapshotVerified(
+                    channelId
+                ),
+            handler: (logObj: any) => {
+                const { outputStateSnapshot, disputeCommitment } = logObj.args;
+                console.log("OutputStateSnapshotVerified EVENT ");
+                this.stateManager.onOutputStateSnapshotVerified(
+                    outputStateSnapshot,
+                    disputeCommitment
+                );
+            }
+        }
+    };
 
-    // Getter for latest dispute data
-    public getLatestDisputeData() {
-        return this.latestDisputeData;
+    public async setChannelId(channelId: BytesLike) {
+        await Promise.all(
+            Object.entries(this.eventHandlers).map(
+                ([key, { filterFactory, handler }]) =>
+                    this.setListener(
+                        key,
+                        () => filterFactory(channelId),
+                        handler
+                    )
+            )
+        );
     }
 }
 
