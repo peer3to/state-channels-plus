@@ -419,7 +419,6 @@ class StateManager {
     public async postStateSnapshot(
         milestoneProofs: ForkMilestoneProofStruct[],
         milestoneSnapshots: StateSnapshotStruct[],
-        disputeProof?: DisputeProofStruct,
         exitChannelBlocks: ExitChannelBlockStruct[] = []
     ) {
         // Get on-chain state
@@ -675,7 +674,7 @@ class StateManager {
         return this.getForkCnt() !== -1;
     }
 
-    // Handle new dispute committed on chain
+    // ----- Event handlers -----
     public async onDisputeCommitted(
         encodedDispute: string,
         timestamp: number,
@@ -693,7 +692,7 @@ class StateManager {
         };
     }
 
-    public async onOutputStateSnapshotVerified(
+    public onOutputStateSnapshotVerified(
         outputStateSnapshot: StateSnapshotStruct,
         commitment: string
     ) {
