@@ -3,6 +3,7 @@ pragma solidity ^0.8.8;
 import "./StateChannelCommon.sol";
 import "../DataTypes.sol";
 import "./AStateChannelManagerProxy.sol";
+import "./Errors.sol";
 
 contract StateSnapshotFacet is StateChannelCommon {
 
@@ -39,7 +40,7 @@ contract StateSnapshotFacet is StateChannelCommon {
     ) external onlySelf {
         require(
             getDisputeLength(channelId) == getSnapshotForkCnt(channelId),
-            "Dispute proof is required"
+            ErrorDisputeProofRequired()
         );
         StateSnapshot memory genesisStateSnapshot = stateSnapshots[channelId];
 
@@ -63,22 +64,22 @@ contract StateSnapshotFacet is StateChannelCommon {
 
             require(
                 _isDisputeProofProvided(disputeTimestamp),
-                "Dispute proof is required"
+                ErrorDisputeProofRequired()
             );
             require(
                 _isDisputeCommitmentValid(dispute, disputeTimestamp, channelId),
-                "Dispute proof is not valid"
+                ErrorDisputeProofNotValid()
             );
             require(
                 _isDisputeFinalized(disputeTimestamp),
-                "Dispute is not finalized"
+                ErrorDisputeNotFinalized()
             );
             require(
                 _isStateSnapshotValid(
                     disputeProof.outputStateSnapshot,
                     dispute
                 ),
-                "State snapshot is not valid"
+                ErrorStateSnapshotNotValid()
             );
 
             return disputeProof.outputStateSnapshot;
@@ -100,7 +101,7 @@ contract StateSnapshotFacet is StateChannelCommon {
             milestoneSnapshots,
             genesisStateSnapshot
         );
-        require(isStateValid, "Invalid State Proof");
+        require(isStateValid, ErrorInvalidStateProof());
 
         StateSnapshot memory lastProovenSnapshot = milestoneSnapshots[
             milestoneSnapshots.length - 1
@@ -143,7 +144,7 @@ contract StateSnapshotFacet is StateChannelCommon {
             require(
                 exitChannelBlocks[0].previousBlockHash ==
                     genesisStateSnapshot.latestExitChannelBlockHash,
-                "First ExitChannelBlock must point to genesis state"
+                ErrorFirstExitChannelBlockInvalid()
             );
 
             // Verify all blocks are cryptographically linked if there's more than one block
@@ -151,7 +152,7 @@ contract StateSnapshotFacet is StateChannelCommon {
                 require(
                     exitChannelBlocks[i].previousBlockHash ==
                         keccak256(abi.encode(exitChannelBlocks[i - 1])),
-                    "ExitChannelBlocks must be cryptographically linked"
+                    ErrorExitChannelBlocksNotLinked()
                 );
             }
 
@@ -163,14 +164,14 @@ contract StateSnapshotFacet is StateChannelCommon {
                             exitChannelBlocks[exitChannelBlocks.length - 1]
                         )
                     ),
-                "Last snapshot must point to last ExitChannelBlock"
+                ErrorLastSnapshotInvalid()
             );
         } else {
             // If no exit blocks, verify the snapshot points to the genesis state's latest block hash
             require(
                 lastProovenSnapshot.latestExitChannelBlockHash ==
                     genesisStateSnapshot.latestExitChannelBlockHash,
-                "Last snapshot must point to genesis state's latest block hash when no exits"
+                ErrorLastSnapshotDoesNotMatchGenesis()
             );
         }
     }

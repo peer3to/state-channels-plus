@@ -108,3 +108,14 @@ error DisputeInvalidExitChannelBlocks();
 //Posting block calldata
 error ErrorBlockCalldataTimestampTooLate();
 error ErrorBlockCalldataAlreadyPosted();
+
+//StateSnapshot errors
+error ErrorDisputeProofRequired();
+error ErrorDisputeProofNotValid();
+error ErrorDisputeNotFinalized();
+error ErrorStateSnapshotNotValid();
+error ErrorInvalidStateProof();
+error ErrorFirstExitChannelBlockInvalid();
+error ErrorExitChannelBlocksNotLinked();
+error ErrorLastSnapshotInvalid();
+error ErrorLastSnapshotDoesNotMatchGenesis();
