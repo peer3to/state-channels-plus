@@ -429,48 +429,47 @@ class StateManager {
                 this.channelId
             );
 
-        // If we need to include a dispute
-        if (onChainDisputeLength > onChainForkCnt) {
-            // Get latest dispute data
-            const latestDisputeData = this.latestDisputeData;
-            if (!latestDisputeData) {
-                throw new Error(
-                    "No dispute data available but dispute length > fork count"
-                );
-            }
-
-            // Get output state snapshot data
-            const outputStateSnapshot = this.outputStateSnapshotData.get(
-                latestDisputeData.commitment
-            );
-            if (!outputStateSnapshot) {
-                throw new Error("No output state snapshot data available");
-            }
-
-            // Create dispute proof from the latest dispute
-            const disputeProof: DisputeProofStruct = {
-                dispute: latestDisputeData.dispute,
-                outputStateSnapshot: outputStateSnapshot,
-                timestamp: latestDisputeData.timestamp
-            };
-
-            // Call contract with dispute
-            await this.stateChannelManagerContract.updateStateSnapshotWithDispute(
-                this.channelId,
-                milestoneProofs,
-                milestoneSnapshots,
-                disputeProof,
-                exitChannelBlocks
-            );
-        } else {
+        if (onChainDisputeLength == onChainForkCnt) {
             // Call contract without dispute
-            await this.stateChannelManagerContract.updateStateSnapshotWithoutDispute(
+            return this.stateChannelManagerContract.updateStateSnapshotWithoutDispute(
                 this.channelId,
                 milestoneProofs,
                 milestoneSnapshots,
                 exitChannelBlocks
             );
         }
+        //  Need to include a dispute
+
+        // check latest dispute data
+        if (!this.latestDisputeData) {
+            throw new Error(
+                "No dispute data available but dispute length > fork count"
+            );
+        }
+
+        // Get output state snapshot data
+        const outputStateSnapshot = this.outputStateSnapshotData.get(
+            this.latestDisputeData.commitment
+        );
+        if (!outputStateSnapshot) {
+            throw new Error("No output state snapshot data available");
+        }
+
+        // Create dispute proof from the latest dispute
+        const disputeProof: DisputeProofStruct = {
+            dispute: this.latestDisputeData.dispute,
+            outputStateSnapshot: outputStateSnapshot,
+            timestamp: this.latestDisputeData.timestamp
+        };
+
+        // Call contract with dispute
+        return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
+            this.channelId,
+            milestoneProofs,
+            milestoneSnapshots,
+            disputeProof,
+            exitChannelBlocks
+        );
     }
 
     // returns participants who haven't signed the block
