@@ -11,11 +11,11 @@ import "./MathStateMachine.sol";
 
 contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
     constructor(
-        address aStateMaachineAddress,
+        address aStateMachineAddress,
         address disputeManagerFacet,
         address fraudProofFacet,
         address stateSnapshotFacet
-    ) AStateChannelManagerProxy(aStateMaachineAddress, disputeManagerFacet, fraudProofFacet, stateSnapshotFacet) {
+    ) AStateChannelManagerProxy(aStateMachineAddress, disputeManagerFacet, fraudProofFacet, stateSnapshotFacet) {
         p2pTime = 5;
         agreementTime = 5;
         chainFallbackTime = 5;
