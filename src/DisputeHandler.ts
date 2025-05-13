@@ -310,6 +310,8 @@ class DisputeHandler {
         );
     }
 
+    public async auditDispute(dispute: DisputeStruct): Promise<AddressLike[]> {}
+
     public setForkDisputed(forkCnt: number): void {
         this.disputedForks.set(forkCnt, true);
     }
@@ -322,115 +324,9 @@ class DisputeHandler {
         this.localProofs.set(forkCnt, proofs);
     }
 
-    private shouldUpdateDispute(dispute: DisputeStruct): boolean {
-        const forkCnt = Number(dispute.forkCnt);
-        const existingDispute = this.disputes.get(forkCnt);
-
-        return (
-            !existingDispute ||
-            dispute.challengeCnt > existingDispute.challengeCnt
-        );
-    }
-
-    private updateDisputeIfNewer(dispute: DisputeStruct): boolean {
-        if (this.shouldUpdateDispute(dispute)) {
-            const forkCnt = Number(dispute.forkCnt);
-            this.disputes.set(forkCnt, dispute);
-            return true;
-        }
-
-        return false;
-    }
-
-    private async rechallengeRecursive(dispute: DisputeStruct): Promise<void> {
-        if (!this.updateDisputeIfNewer(dispute)) {
-            return; // Early return if we already have a newer dispute
-        }
-
-        //proofs
-        const proofs = this.extractProofs(dispute);
-        if (proofs.length == 0) return; //no proofs - no need to rechallenge
-        try {
-            const {
-                encodedLatestFinalizedState,
-                encodedLatestCorrectState,
-                virtualVotingBlocks
-            } = this.agreementManager.getFinalizedAndLatestWithVotes(
-                dispute.forkCnt,
-                this.signerAddress
-            );
-            this.p2pEventHooks.onInitiatingDispute?.();
-            const _txReceipt = await this.stateChannelManagerContract
-                .challengeDispute(
-                    this.channelId,
-                    dispute.forkCnt,
-                    Number(dispute.challengeCnt) + 1,
-                    proofs,
-                    virtualVotingBlocks,
-                    encodedLatestFinalizedState,
-                    encodedLatestCorrectState,
-                    { gasLimit: 2000000 } //TODO! - gas limit
-                )
-                .then((txResponse) => txResponse.wait());
-        } catch (e) {
-            // TODO! - in hardhat test network (unlike production networks) - on revert - there is no txReceipt -> it will throw and be caught here
-        }
-        const newDispute = await this.stateChannelManagerContract.getDispute(
-            dispute.channelId
-        );
-        if (newDispute.challengeCnt == dispute.challengeCnt) {
-            throw new Error(
-                "DisputeHandler - rechallengeRecursive - challenge failed"
-            );
-        }
-        return this.rechallengeRecursive(newDispute);
-    }
-
-    // Extracts dispute proofs to be tracked locally
-    private extractProofs(dispute: DisputeStruct): ProofStruct[] {
-        const forkCnt = Number(dispute.forkCnt);
-        const transactionCnt = Number(dispute.foldedTransactionCnt);
-
-        // Can challenge timeout?
-        if (dispute.timedoutParticipant !== ethers.ZeroAddress) {
-            const timeoutProof = this.proofManager.createFoldRechallengeProof(
-                forkCnt,
-                transactionCnt
-            );
-            if (timeoutProof) {
-                this.addProof(forkCnt, timeoutProof);
-            }
-        }
-        // Handle newer state proof
-        const lastTransactionCnt = this.getLastTransactionCount(dispute);
-        const newerStateProof = this.proofManager.createNewerStateProof(
-            forkCnt,
-            dispute.postedStateDisputer,
-            lastTransactionCnt
-        );
-
-        if (newerStateProof) this.addProof(forkCnt, newerStateProof);
-
-        // Return filtered proofs
-        return this.filterProofs(dispute);
-    }
-
-    private getLastTransactionCount(dispute: DisputeStruct): number {
-        if (dispute.virtualVotingBlocks.length === 0) return 0;
-
-        // Extract from the last block
-        const lastBlock = EvmUtils.decodeBlock(
-            dispute.virtualVotingBlocks.at(-1)!.encodedBlock
-        );
-        return Number(lastBlock.transaction.header.transactionCnt);
-    }
-
     // listen to new dispoute and do audit after receciving the dispute
     // TODO!!
-    public onDisputeCreated(dispute: DisputeStruct): Promise<void> {
-        this.setForkDisputed(Number(dispute.forkCnt));
-        return this.rechallengeRecursive(dispute);
-    }
+    public onDisputeCreated(dispute: DisputeStruct): Promise<void> {}
 }
 
 export default DisputeHandler;
