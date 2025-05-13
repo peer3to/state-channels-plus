@@ -1,14 +1,22 @@
 import { BytesLike, ethers, SignatureLike } from "ethers";
 import {
     BlockStruct,
+    ExitChannelBlockStruct,
+    ExitChannelStruct,
+    JoinChannelBlockStruct,
     JoinChannelStruct,
     SignedBlockStruct,
     SignedJoinChannelStruct,
+    StateSnapshotStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import {
     BlockEthersType,
+    ExitChannelBlockEthersType,
+    ExitChannelEthersType,
+    JoinChannelBlockEthersType,
     JoinChannelEthersType,
+    StateSnapshotEthersType,
     TransactionEthersType
 } from "@/types";
 
@@ -62,6 +70,16 @@ export class EvmUtils {
         ) as BlockStruct;
     }
 
+    public static encodeStateSnapshot(
+        stateSnapshot: StateSnapshotStruct
+    ): string {
+        let stateSnapshotEncoded = ethers.AbiCoder.defaultAbiCoder().encode(
+            [StateSnapshotEthersType],
+            [stateSnapshot]
+        );
+        return stateSnapshotEncoded;
+    }
+
     public static async signBlock(
         block: BlockStruct,
         signer: ethers.Signer
@@ -89,6 +107,27 @@ export class EvmUtils {
             [jc]
         );
         return joinChannelEncoded;
+    }
+    public static encodeJoinChannelBlock(jc: JoinChannelBlockStruct): string {
+        let joinChannelEncoded = ethers.AbiCoder.defaultAbiCoder().encode(
+            [JoinChannelBlockEthersType],
+            [jc]
+        );
+        return joinChannelEncoded;
+    }
+    public static encodeExitChannel(ec: ExitChannelStruct): string {
+        let exitChannelEncoded = ethers.AbiCoder.defaultAbiCoder().encode(
+            [ExitChannelEthersType],
+            [ec]
+        );
+        return exitChannelEncoded;
+    }
+    public static encodeExitChannelBlock(ec: ExitChannelBlockStruct): string {
+        let exitChannelEncoded = ethers.AbiCoder.defaultAbiCoder().encode(
+            [ExitChannelBlockEthersType],
+            [ec]
+        );
+        return exitChannelEncoded;
     }
     public static decodeJoinChannel(jcEncoded: BytesLike): JoinChannelStruct {
         let jcDecoded = ethers.AbiCoder.defaultAbiCoder().decode(

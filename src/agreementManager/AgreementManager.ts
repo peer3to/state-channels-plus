@@ -10,7 +10,6 @@ import {
 } from "@typechain-types/contracts/V1/DataTypes";
 import { BlockUtils, EvmUtils } from "@/utils";
 import { AgreementFlag } from "@/types";
-import { BlockConfirmation } from "./types";
 import * as SetUtils from "@/utils/set";
 import SignatureService from "./SignatureService";
 import ForkService, { Direction } from "./ForkService";
@@ -20,8 +19,18 @@ import BlockValidator from "./BlockValidator";
 import { ethers } from "hardhat";
 
 class AgreementManager {
-    joinChannelChain: Map<BytesLike, JoinChannelBlockStruct> = new Map();
-    exitChannelChain: Map<BytesLike, ExitChannelBlockStruct> = new Map();
+    // channelId -> blockHash -> JoinChannelBlock
+    joinChannelBlocks: Map<BytesLike, Map<BytesLike, JoinChannelBlockStruct>> =
+        new Map();
+    exitChannelBlocks: Map<BytesLike, Map<BytesLike, ExitChannelBlockStruct>> =
+        new Map();
+
+    // channelId -> latestBlockHash
+    latestJoinChannelBlockHash: Map<BytesLike, BytesLike> = new Map();
+    latestExitChannelBlockHash: Map<BytesLike, BytesLike> = new Map();
+
+    // snapShotCommitment -> stateSnapshot
+    stateSnapshots: Map<BytesLike, StateSnapshotStruct> = new Map();
     forkService = new ForkService();
     queueService = new QueueService();
     chainTracker = new OnChainTracker(
@@ -58,6 +67,7 @@ class AgreementManager {
             genesisTimestamp
         );
     }
+
     //After succesfull verification and execution
     public addBlock(
         block: BlockStruct,
@@ -93,6 +103,135 @@ class AgreementManager {
 
         agreement.blockSignatures.push(confirmationSignature);
     }
+
+    public getJoinChannelChain(channelId: BytesLike): JoinChannelBlockStruct[] {
+        const blocks: JoinChannelBlockStruct[] = [];
+        const channelBlocks = this.joinChannelBlocks.get(channelId);
+
+        if (!channelBlocks) return blocks;
+
+        let currentHash = this.latestJoinChannelBlockHash.get(channelId);
+        if (!currentHash) return blocks;
+
+        while (true) {
+            const block = channelBlocks.get(currentHash);
+            if (!block) {
+                throw new Error(`Chain is broken at hash ${currentHash}`);
+            }
+
+            blocks.unshift(block);
+
+            // Check if this is the genesis block (block's hash equals its previousBlockHash)
+            const blockHash = ethers.keccak256(
+                EvmUtils.encodeJoinChannelBlock(block)
+            );
+
+            if (blockHash === block.previousBlockHash) {
+                // We've reached the genesis block
+                break;
+            }
+
+            currentHash = block.previousBlockHash;
+        }
+
+        return blocks;
+    }
+
+    public getLatestJoinChannelBlockHash(channelId: BytesLike): BytesLike {
+        return (
+            this.latestJoinChannelBlockHash.get(channelId) ?? ethers.ZeroHash
+        );
+    }
+
+    public getExitChannelChain(channelId: BytesLike): ExitChannelBlockStruct[] {
+        const blocks: ExitChannelBlockStruct[] = [];
+        const channelBlocks = this.exitChannelBlocks.get(channelId);
+
+        if (!channelBlocks) return blocks;
+
+        let currentHash = this.latestExitChannelBlockHash.get(channelId);
+        if (!currentHash) return blocks;
+
+        while (true) {
+            const block = channelBlocks.get(currentHash);
+            if (!block) {
+                throw new Error(`Chain is broken at hash ${currentHash}`);
+            }
+
+            blocks.unshift(block);
+
+            // Check if this is the genesis block (block's hash equals its previousBlockHash)
+            const blockHash = ethers.keccak256(
+                EvmUtils.encodeExitChannelBlock(block)
+            );
+
+            if (blockHash === block.previousBlockHash) {
+                // We've reached the genesis block
+                break;
+            }
+
+            currentHash = block.previousBlockHash;
+        }
+
+        return blocks;
+    }
+
+    public getLatestExitChannelBlockHash(channelId: BytesLike): BytesLike {
+        return (
+            this.latestExitChannelBlockHash.get(channelId) ?? ethers.ZeroHash
+        );
+    }
+
+    public getStateMachineState(
+        forkCnt: number,
+        transactionCnt: number
+    ): BytesLike | undefined {
+        return this.forkService.getAgreement(forkCnt, transactionCnt)
+            ?.encodedState;
+    }
+
+    public getMilestoneSnapshots(forkCnt: number): StateSnapshotStruct[] {
+        const snapShotCommitments =
+            this.forkService.collectMilestoneSnapshots(forkCnt);
+        const snapShots: StateSnapshotStruct[] = [];
+        for (const snapShotCommitment of snapShotCommitments) {
+            const snapShot = this.stateSnapshots.get(snapShotCommitment);
+            if (!snapShot) {
+                throw new Error(
+                    `AgreementManager - getMilestoneSnapshots - snapShot not found: ${snapShotCommitment}`
+                );
+            }
+            snapShots.push(snapShot);
+        }
+        return snapShots;
+    }
+
+    public getForkProofSignedBlocks(forkCnt: number): SignedBlockStruct[] {
+        const lastMilestoneBlock = EvmUtils.decodeBlock(
+            this.forkService.getForkProof(forkCnt)!.forkMilestoneProofs[-1]
+                .blockConfirmations[-1].signedBlock.encodedBlock
+        );
+        const lastMilestoneBlockHeight = lastMilestoneBlock.transaction.header
+            .transactionCnt as number;
+        let signedBlocks: SignedBlockStruct[] = [];
+        for (
+            let i = lastMilestoneBlockHeight + 1;
+            i < this.forkService.getFork(forkCnt)!.agreements.length;
+            i++
+        ) {
+            const signedBlock = this.forkService.getAgreement(forkCnt, i)
+                ?.blockConfirmation.signedBlock;
+            if (!signedBlock) {
+                throw new Error(
+                    `AgreementManager - getForkProofSignedBlocks - signedBlock not found: ${i}`
+                );
+            }
+            signedBlocks.push(signedBlock);
+        }
+
+        return signedBlocks;
+    }
+
     public getLatestForkCnt(): number {
         return this.forkService.getLatestForkCnt();
     }
@@ -177,7 +316,7 @@ class AgreementManager {
         );
 
         const addressesSet = SetUtils.stringSetFromArray(
-            fork.addressesInThreshold
+            fork.genesisParticipants
         );
         // All threshold addresses must be in the signers set
         return SetUtils.isSubset(addressesSet, signersSet);
@@ -247,7 +386,7 @@ class AgreementManager {
     public isParticipantInLatestFork(participant: AddressLike): boolean {
         const fork = this.forkService.getLatestFork();
         if (!fork) return false;
-        return new Set(fork.addressesInThreshold).has(participant);
+        return new Set(fork.genesisParticipants).has(participant);
     }
 
     public getEncodedState(
@@ -263,6 +402,25 @@ class AgreementManager {
     public getForkGenesisStateEncoded(forkCnt: number): string | undefined {
         const fork = this.forkService.getFork(forkCnt);
         return fork?.forkGenesisStateEncoded;
+    }
+
+    public getForkGenesisStateSnapshot(
+        forkCnt: number
+    ): StateSnapshotStruct | undefined {
+        const fork = this.forkService.getFork(forkCnt);
+        return this.stateSnapshots.get(
+            fork?.agreements[0]?.snapShotCommitment!
+        );
+    }
+    public getSnapShot(
+        forkCnt: number,
+        transactionCnt: number
+    ): StateSnapshotStruct | undefined {
+        const agreement = this.forkService.getAgreement(
+            forkCnt,
+            transactionCnt
+        );
+        return this.stateSnapshots.get(agreement?.snapShotCommitment!);
     }
     /**
      * Gets the latest finalized state (ecnoded) and the latest signed/confirmed state (encoded) from the signer with virtual votes proving it
@@ -339,39 +497,6 @@ class AgreementManager {
                 encodedLatestCorrectState ?? fork.forkGenesisStateEncoded,
             virtualVotingBlocks
         };
-    }
-
-    public buildStateSnapshot(
-        forkCnt: number,
-        transactionCnt: number
-    ): StateSnapshotStruct {
-        const agreement = this.forkService.getAgreement(
-            forkCnt,
-            transactionCnt
-        );
-        const stateSnapshot: StateSnapshotStruct = {
-            stateMachineStateHash: ethers.keccak256(
-                ethers.toUtf8Bytes(agreement?.encodedState!)
-            ),
-            participants:
-                this.forkService.getFork(forkCnt)?.addressesInThreshold!,
-            forkCnt,
-            latestJoinChannelBlockHash: ethers.keccak256(
-                ethers.AbiCoder.defaultAbiCoder().encode(
-                    ["bytes32"],
-                    [this.forkService.getFork(forkCnt)?.joinChannelChain.at(-1)]
-                )
-            ),
-            latestExitChannelBlockHash: ethers.keccak256(
-                ethers.AbiCoder.defaultAbiCoder().encode(
-                    ["bytes32"],
-                    [this.forkService.getFork(forkCnt)?.exitChannelChain.at(-1)]
-                )
-            ),
-            totalDeposits: this.calculateTotalDeposits(forkCnt),
-            totalWithdrawals: this.calculateTotalWithdrawals(forkCnt)
-        };
-        return stateSnapshot;
     }
 
     public calculateTotalDeposits(forkCnt: number): BalanceStruct {

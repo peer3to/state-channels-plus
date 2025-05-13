@@ -67,49 +67,74 @@ class ProofManager {
         forkCnt: number,
         transactionCnt: number
     ): dt.BlockEmptyProofStruct {
+        const previousBlock = this.agreementManager.getBlock(
+            forkCnt,
+            transactionCnt - 1
+        );
+        let signedPreviousBlock: SignedBlockStruct;
+        if (previousBlock) {
+            const prevBlockSignature =
+                this.agreementManager.getOriginalSignature(previousBlock);
+            signedPreviousBlock = {
+                encodedBlock: EvmUtils.encodeBlock(previousBlock),
+                signature: prevBlockSignature as BytesLike
+            };
+        } else {
+            signedPreviousBlock = emptyBlock;
+        }
         const emptyBlockProofStruct: dt.BlockEmptyProofStruct = {
             emptyBlock,
-            latestStateSnapshot: this.agreementManager.buildStateSnapshot(
-                forkCnt,
-                transactionCnt
-            ),
-            previousStateSnapshotHash: ethers.keccak256(
-                ethers.AbiCoder.defaultAbiCoder().encode(
-                    ["bytes32"],
-                    [
-                        this.agreementManager.buildStateSnapshot(
-                            forkCnt,
-                            transactionCnt - 1
-                        )
-                    ]
-                )
-            ),
-            previousStateMachineState: ethers.toUtf8Bytes(
-                this.agreementManager.getEncodedState(
-                    forkCnt,
-                    transactionCnt - 1
-                ) ?? ""
-            )
+            previousBlock: signedPreviousBlock
         };
+
         return emptyBlockProofStruct;
     }
 
-    public createBlockOutOfGasProof(
-        block: SignedBlockStruct,
+    public createBlockInvalidStateTransitionProof(
+        invalidBlock: SignedBlockStruct,
         forkCnt: number,
         transactionCnt: number
-    ): dt.BlockOutOfGasProofStruct {
-        const blockOutOfGasProofStruct: dt.BlockOutOfGasProofStruct = {
-            invalidBlock: block,
-            latestStateStateMachineState: ethers.toUtf8Bytes(
-                this.agreementManager.getEncodedState(
-                    forkCnt,
-                    transactionCnt
-                ) ?? ""
-            )
+    ): dt.BlockInvalidStateTransitionProofStruct {
+        const previousBlock = this.agreementManager.getBlock(
+            forkCnt,
+            transactionCnt - 1
+        );
+        let signedPreviousBlock: SignedBlockStruct;
+        if (previousBlock) {
+            const prevBlockSignature =
+                this.agreementManager.getOriginalSignature(previousBlock)!;
+            signedPreviousBlock = {
+                encodedBlock: EvmUtils.encodeBlock(previousBlock),
+                signature: prevBlockSignature as BytesLike
+            };
+        } else {
+            signedPreviousBlock = invalidBlock;
+        }
+        const previousBlockStateSnapshot = this.agreementManager.getSnapShot(
+            forkCnt,
+            transactionCnt - 1
+        )!;
+        const previousStateStateMachineState =
+            this.agreementManager.getEncodedState(forkCnt, transactionCnt - 1);
+        const proof: dt.BlockInvalidStateTransitionProofStruct = {
+            invalidBlock,
+            previousBlock: signedPreviousBlock,
+            previousBlockStateSnapshot,
+            previousStateStateMachineState:
+                previousStateStateMachineState as BytesLike
         };
-        return blockOutOfGasProofStruct;
+        return proof;
     }
+
+    // public createDisputeInvalidPreviousRecursiveProof(
+    //     invalidRecursiveDispute: dt.DisputeStruct,
+    //     originalDispute: dt.DisputeStruct,
+    //     originalDisputeTimestamp: number,
+    //     invalidRecursiveDisputeTimestamp: number,
+    //     invalidRecursiveDisputeOutputState: BytesLike
+    // ): dt.DisputeInvalidPreviousRecursiveProofStruct {
+
+    // }
 
     // public createTimeoutThresholdProof(timeoutThreshold: dt.TimeoutThresholdProofStruct): dt.TimeoutThresholdProofStruct {
 
@@ -117,6 +142,9 @@ class ProofManager {
 
     // public createTimeoutPriorInvalidProof(timeoutPriorInvalid: dt.TimeoutPriorInvalidProofStruct): dt.TimeoutPriorInvalidProofStruct {
     // }
+
+    // -------------------------------- Helper Methods --------------------------------
+    public collectStateProof(): dt.StateProofStruct[] {}
 }
 
 export default ProofManager;

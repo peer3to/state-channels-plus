@@ -3,12 +3,20 @@ import AgreementManager from "./agreementManager";
 import { AStateChannelManagerProxy } from "@typechain-types";
 import {
     ProofStruct,
-    DisputeStruct
+    DisputeStruct,
+    TimeoutStruct,
+    StateProofStruct
 } from "@typechain-types/contracts/V1/DisputeTypes";
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+import {
+    BalanceStruct,
+    ExitChannelBlockStruct,
+    SignedBlockStruct,
+    StateSnapshotStruct
+} from "@typechain-types/contracts/V1/DataTypes";
 import { EvmUtils, DebugProxy, retry } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ProofManager from "./ProofManager";
+import { DisputeAuditingDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 let DEBUG_DISPUTE_HANDLER = true;
 
@@ -17,6 +25,13 @@ const NO_PARTICIPANT_TO_FOLD = "0x00";
 const INITIAL_TRANSACTION_COUNT = 0;
 
 type ForkCnt = number;
+
+interface DisputeOutputState {
+    encodedModifiedState: string;
+    exitBlock: ExitChannelBlockStruct;
+    totalDeposits: BalanceStruct;
+    totalWithdrawals: BalanceStruct;
+}
 class DisputeHandler {
     signer: ethers.Signer;
     signerAddress: AddressLike;
@@ -56,94 +71,187 @@ class DisputeHandler {
         this.channelId = channelId;
     }
 
-    public async disputeDoubleSign(
-        conflictingBlocks: SignedBlockStruct[]
-    ): Promise<void> {
-        const proof =
-            this.proofManager.createDoubleSignProof(conflictingBlocks);
-        const _firstBlock = EvmUtils.decodeBlock(
-            conflictingBlocks[0].encodedBlock
-        );
-        return this.createDispute(
-            _firstBlock.transaction.header.forkCnt,
-            NO_PARTICIPANT_TO_FOLD,
-            INITIAL_TRANSACTION_COUNT,
-            [proof]
-        );
-    }
-
-    public onDispute(dispute: DisputeStruct): Promise<void> {
-        this.setForkDisputed(Number(dispute.forkCnt));
-        return this.rechallengeRecursive(dispute);
-    }
-
-    //Creates a dispute based on the generated proofs or optimistically timeouts (folds) the provided participant
-    public async createDispute(
-        forkCnt: BigNumberish,
-        foldedParticipant: AddressLike,
-        foldedTransactionCnt: BigNumberish,
-        proofs: ProofStruct[]
-    ): Promise<void> {
-        if (foldedParticipant != NO_PARTICIPANT_TO_FOLD) {
-            console.log("DisputeHandler - createDispute - Timeout");
-        }
-
-        const forkCntNumber = Number(forkCnt);
-        //TODO! stop signing for the current fork
-        this.setForkDisputed(forkCntNumber);
-        proofs.forEach((proof) => this.addProof(forkCntNumber, proof));
-        const _dispute = this.disputes.get(forkCntNumber);
-        if (!_dispute) {
-            await this.createNewDispute(
-                forkCnt,
-                foldedParticipant,
-                foldedTransactionCnt,
-                proofs
+    // creating a dispute auditing data struct
+    public createDisputeAuditingData(
+        forkCnt: number,
+        transactionCnt: number,
+        outputStateSnapshot: StateSnapshotStruct,
+        prevDispute: DisputeStruct,
+        prevDisputeTimestamp: BigNumberish
+    ): DisputeAuditingDataStruct {
+        const genesisStateSnapshot =
+            this.agreementManager.getForkGenesisStateSnapshot(forkCnt);
+        if (!genesisStateSnapshot) {
+            throw new Error(
+                `DisputeHandler - createDisputeAuditingData - no genesis state snapshot for fork: ${forkCnt}`
             );
         }
-
-        const newDispute = await this.stateChannelManagerContract.getDispute(
+        const latestStateSnapshot = this.agreementManager.getSnapShot(
+            forkCnt,
+            transactionCnt
+        );
+        if (!latestStateSnapshot) {
+            throw new Error(
+                `DisputeHandler - createDisputeAuditingData - no latest state snapshot for fork: ${forkCnt}`
+            );
+        }
+        const milestoneSnapshots =
+            this.agreementManager.getMilestoneSnapshots(forkCnt);
+        const latestStateStateMachineState =
+            this.agreementManager.getStateMachineState(forkCnt, transactionCnt);
+        if (!latestStateStateMachineState) {
+            throw new Error(
+                `DisputeHandler - createDisputeAuditingData - no latest state state machine state for fork: ${forkCnt}`
+            );
+        }
+        const joinChannelBlocks = this.agreementManager.getJoinChannelChain(
             this.channelId
         );
-        //TODO! check newDispute 0000 bytes
-        if (newDispute.channelId == ethers.ZeroHash) {
-            throw new Error(
-                "DisputeHandler - createDispute - no dispute created"
-            );
-        }
-        await this.rechallengeRecursive(newDispute);
+
+        const disputeAuditingData: DisputeAuditingDataStruct = {
+            genesisStateSnapshot: genesisStateSnapshot,
+            latestStateSnapshot: latestStateSnapshot,
+            outputStateSnapshot: outputStateSnapshot,
+            milestoneSnapshots: milestoneSnapshots,
+            latestStateStateMachineState: latestStateStateMachineState,
+            joinChannelBlocks: joinChannelBlocks,
+            previousDispute: prevDispute,
+            previousDisputeTimestamp: prevDisputeTimestamp
+        };
+        return disputeAuditingData;
     }
 
-    private async createNewDispute(
-        forkCnt: BigNumberish,
-        foldedParticipant: AddressLike,
-        foldedTransactionCnt: BigNumberish,
+    private collectStateProof(forkCnt: number): StateProofStruct {
+        const forkProof =
+            this.agreementManager.forkService.getForkProof(forkCnt)!;
+        const signedBlocks =
+            this.agreementManager.getForkProofSignedBlocks(forkCnt);
+        const stateProof: StateProofStruct = {
+            forkProof: forkProof,
+            signedBlocks: signedBlocks
+        };
+        return stateProof;
+    }
+
+    private async createDisputeStruct(
+        forkCnt: number,
+        transactionCnt: number,
         proofs: ProofStruct[]
-    ): Promise<void> {
-        const {
-            encodedLatestFinalizedState,
-            encodedLatestCorrectState,
-            virtualVotingBlocks
-        } = this.agreementManager.getFinalizedAndLatestWithVotes(
+    ): DisputeStruct {
+        const disputeIndex =
+            await this.stateChannelManagerContract.getDisputeLength(
+                this.channelId
+            );
+        const genesisStateSnapshotHash =
+            this.agreementManager.getForkGenesisStateSnapshot(
+                forkCnt
+            )!.stateMachineStateHash;
+        const latestStateSnapshotHash = this.agreementManager.getSnapShot(
             forkCnt,
-            this.signerAddress
+            transactionCnt
+        )!.stateMachineStateHash;
+        const stateProof = this.collectStateProof(forkCnt);
+        const onChainSlashes =
+            await this.stateChannelManagerContract.getOnChainSlashedParticipants(
+                this.channelId
+            );
+        const onChainLatestJoinChannelBlockHash =
+            this.agreementManager.getLatestJoinChannelBlockHash(this.channelId);
+        const latestExitChannelBlockHash =
+            this.agreementManager.getLatestJoinChannelBlockHash(this.channelId);
+        const exitChannelBlocks = this.agreementManager.getExitChannelChain(
+            this.channelId
         );
 
-        this.p2pEventHooks.onInitiatingDispute?.();
+        const {
+            encodedModifiedState,
+            exitBlock,
+            totalDeposits,
+            totalWithdrawals
+        } = (await this.stateChannelManagerContract.generateDisputeOutputState(
+            this.agreementManager.getStateMachineState(
+                forkCnt,
+                transactionCnt
+            )!,
+            proofs,
+            { channelId: this.channelId },
+            onChainSlashes,
+            ethers.ZeroAddress,
+            ethers.ZeroAddress,
+            this.agreementManager.getJoinChannelChain(this.channelId),
+            this.agreementManager.getSnapShot(forkCnt, transactionCnt)!
+        )) as unknown as DisputeOutputState;
+
+        const participants =
+            (await this.stateChannelManagerContract.getStatemachineParticipants(
+                encodedModifiedState
+            )) as unknown as AddressLike[];
+        const disputeOutputStateSnapshot: StateSnapshotStruct = {
+            stateMachineStateHash: ethers.keccak256(
+                ethers.toUtf8Bytes(encodedModifiedState)
+            ),
+            participants,
+            forkCnt: forkCnt + 1,
+            latestExitChannelBlockHash,
+            latestJoinChannelBlockHash: onChainLatestJoinChannelBlockHash,
+            totalDeposits,
+            totalWithdrawals
+        };
+        const disputeOutputStateSnapshotHash = ethers.keccak256(
+            EvmUtils.encodeStateSnapshot(disputeOutputStateSnapshot)
+        );
+        const disputeAuditingData = this.createDisputeAuditingData(
+            forkCnt,
+            transactionCnt,
+            disputeOutputStateSnapshot,
+            prevDispute,
+            ethers.MaxInt256
+        );
+
+        const timeout: TimeoutStruct = {
+            participant: ethers.ZeroAddress,
+            blockHeight: ethers.MaxUint256,
+            minTimeStamp: ethers.MaxUint256,
+            forkCnt: forkCnt,
+            isForced: false,
+            previousBlockProducer: ethers.ZeroAddress,
+            previousBlockProducerPostedCalldata: false
+        };
+
+        let dispute: DisputeStruct = {
+            channelId: this.channelId,
+            genesisStateSnapshotHash: genesisStateSnapshotHash,
+            latestStateSnapshotHash: latestStateSnapshotHash,
+            stateProof: stateProof,
+            fraudProofs: proofs,
+            onChainSlashes,
+            onChainLatestJoinChannelBlockHash,
+            outputStateSnapshotHash: disputeOutputStateSnapshotHash,
+            exitChannelBlocks,
+            disputeAuditingDataHash: "",
+            disputer: this.signerAddress,
+            disputeIndex: disputeIndex,
+            previousRecursiveDisputeIndex: ethers.MaxUint256,
+            timeout,
+            selfRemoval: false
+        };
+    }
+
+    public async createNewDispute(
+        forkCnt: number,
+        transactionCnt: number,
+        proofs: ProofStruct[]
+    ): Promise<void> {
+        const dispute = await this.createDisputeStruct(
+            forkCnt,
+            transactionCnt,
+            proofs
+        );
+
         await retry(
             async () => {
                 const txResponse =
-                    await this.stateChannelManagerContract.createDispute(
-                        this.channelId,
-                        forkCnt,
-                        encodedLatestFinalizedState,
-                        encodedLatestCorrectState,
-                        virtualVotingBlocks,
-                        foldedParticipant,
-                        foldedTransactionCnt,
-                        proofs,
-                        { gasLimit: 4000000 } //TODO! - gas limit
-                    );
+                    await this.stateChannelManagerContract.createDispute();
                 console.log("TX HASH ##", txResponse.hash);
                 const txReceipt = await txResponse.wait();
                 console.log("DISPUTE CREATED ##", txReceipt);
@@ -274,6 +382,13 @@ class DisputeHandler {
             dispute.virtualVotingBlocks.at(-1)!.encodedBlock
         );
         return Number(lastBlock.transaction.header.transactionCnt);
+    }
+
+    // listen to new dispoute and do audit after receciving the dispute
+    // TODO!!
+    public onDisputeCreated(dispute: DisputeStruct): Promise<void> {
+        this.setForkDisputed(Number(dispute.forkCnt));
+        return this.rechallengeRecursive(dispute);
     }
 }
 

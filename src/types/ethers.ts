@@ -7,7 +7,6 @@ export const TransactionEthersType = `tuple(
       uint timestamp
     ) header,
     tuple(
-      uint8 transactionType,
       bytes encodedData,
       bytes data
     ) body
@@ -15,8 +14,16 @@ export const TransactionEthersType = `tuple(
 
 export const BlockEthersType = `tuple(
         ${TransactionEthersType} transaction,
-        bytes32 stateHash,
+        bytes32 stateSnapshotHash,
         bytes32 previousStateHash)`;
+
+export const StateSnapshotEthersType = `tuple(
+        bytes32 stateMachineStateHash,
+        address[] participants,
+        uint256 forkCnt,
+        bytes32 latestJoinChannelBlockHash,
+        bytes32 latestExitChannelBlockHash,
+        tuple(uint256 amount, bytes data) totalDeposits, tuple(uint256 amount, bytesß data) totalWithdrawals)`;
 
 export const SignedBlockEthersType = `tuple(
             bytes encodedBlock,
@@ -28,6 +35,20 @@ export const JoinChannelEthersType = `tuple(
               uint amount,
               uint deadlineTimestamp,
               bytes data)`;
+
+export const JoinChannelBlockEthersType = `tuple(
+              bytes32 previousBlockHash,
+              ${JoinChannelEthersType}[] joinChannels)`;
+
+export const ExitChannelEthersType = `tuple(
+              address participant,
+              bool isPartialExit,
+              uint amount,
+              bytes data)`;
+
+export const ExitChannelBlockEthersType = `tuple(
+              bytes32 previousBlockHash,
+              ${ExitChannelEthersType}[] exitChannels)`;
 
 export const SignedJoinChannelEthersType = `tuple(
                 bytes encodedJoinChannel,
