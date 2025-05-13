@@ -175,8 +175,9 @@ class DisputeHandler {
     private async createDisputeStruct(
         forkCnt: number,
         transactionCnt: number,
-        proofs: ProofStruct[]
-    ): DisputeStruct {
+        proofs: ProofStruct[],
+        timeout?: TimeoutStruct
+    ): Promise<DisputeStruct> {
         const disputeIndex =
             await this.stateChannelManagerContract.getDisputeLength(
                 this.channelId
@@ -242,6 +243,7 @@ class DisputeHandler {
 
         const { dispute: defaultDispute, timeout: defaultTimeout } =
             this.createDefaultDisputeStruct();
+
         const disputeAuditingDataHash = ethers.keccak256(
             EvmUtils.encodeDisputeAuditingData(
                 this.createDisputeAuditingData(
@@ -253,7 +255,7 @@ class DisputeHandler {
                 )
             )
         );
-
+        let timeoutDispute = timeout ?? defaultTimeout;
         let dispute: DisputeStruct = {
             channelId: this.channelId,
             genesisStateSnapshotHash: genesisStateSnapshotHash,
@@ -268,9 +270,10 @@ class DisputeHandler {
             disputer: this.signerAddress,
             disputeIndex: disputeIndex,
             previousRecursiveDisputeIndex: ethers.MaxUint256,
-            timeout: defaultTimeout,
+            timeout: timeoutDispute,
             selfRemoval: false
         };
+        return dispute;
     }
 
     public async createNewDispute(
