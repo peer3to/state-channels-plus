@@ -12,6 +12,17 @@ export const TransactionEthersType = `tuple(
     ) body
     )`;
 
+export const DisputeAuditingDataEthersType = `tuple(
+    StateSnapshot genesisStateSnapshot,
+    StateSnapshot latestStateSnapshot,
+    StateSnapshot outputStateSnapshot,
+    StateSnapshot[] milestoneSnapshots,
+    StateMachineState latestStateStateMachineState,
+    JoinChannelBlock[] joinChannelBlocks,
+    Dispute previousDispute,
+    uint previousDisputeTimestamp
+)`;
+
 export const BlockEthersType = `tuple(
         ${TransactionEthersType} transaction,
         bytes32 stateSnapshotHash,

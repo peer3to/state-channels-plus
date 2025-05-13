@@ -133,6 +133,45 @@ class DisputeHandler {
         return stateProof;
     }
 
+    private createDefaultDisputeStruct(): {
+        dispute: DisputeStruct;
+        timeout: TimeoutStruct;
+    } {
+        const timeout: TimeoutStruct = {
+            participant: ethers.ZeroAddress,
+            blockHeight: ethers.MaxUint256,
+            minTimeStamp: ethers.MaxUint256,
+            forkCnt: 0,
+            isForced: false,
+            previousBlockProducer: ethers.ZeroAddress,
+            previousBlockProducerPostedCalldata: false
+        };
+
+        let dispute: DisputeStruct = {
+            channelId: this.channelId,
+            genesisStateSnapshotHash: "",
+            latestStateSnapshotHash: "",
+            stateProof: {
+                forkProof: {
+                    forkMilestoneProofs: []
+                },
+                signedBlocks: []
+            },
+            fraudProofs: [],
+            onChainSlashes: [],
+            onChainLatestJoinChannelBlockHash: "",
+            outputStateSnapshotHash: "",
+            exitChannelBlocks: [],
+            disputeAuditingDataHash: "",
+            disputer: this.signerAddress,
+            disputeIndex: 0,
+            previousRecursiveDisputeIndex: ethers.MaxUint256,
+            timeout,
+            selfRemoval: false
+        };
+        return { dispute, timeout };
+    }
+
     private async createDisputeStruct(
         forkCnt: number,
         transactionCnt: number,
@@ -200,23 +239,20 @@ class DisputeHandler {
         const disputeOutputStateSnapshotHash = ethers.keccak256(
             EvmUtils.encodeStateSnapshot(disputeOutputStateSnapshot)
         );
-        const disputeAuditingData = this.createDisputeAuditingData(
-            forkCnt,
-            transactionCnt,
-            disputeOutputStateSnapshot,
-            prevDispute,
-            ethers.MaxInt256
-        );
 
-        const timeout: TimeoutStruct = {
-            participant: ethers.ZeroAddress,
-            blockHeight: ethers.MaxUint256,
-            minTimeStamp: ethers.MaxUint256,
-            forkCnt: forkCnt,
-            isForced: false,
-            previousBlockProducer: ethers.ZeroAddress,
-            previousBlockProducerPostedCalldata: false
-        };
+        const { dispute: defaultDispute, timeout: defaultTimeout } =
+            this.createDefaultDisputeStruct();
+        const disputeAuditingDataHash = ethers.keccak256(
+            EvmUtils.encodeDisputeAuditingData(
+                this.createDisputeAuditingData(
+                    forkCnt,
+                    transactionCnt,
+                    disputeOutputStateSnapshot,
+                    defaultDispute,
+                    ethers.MaxInt256
+                )
+            )
+        );
 
         let dispute: DisputeStruct = {
             channelId: this.channelId,
@@ -228,11 +264,11 @@ class DisputeHandler {
             onChainLatestJoinChannelBlockHash,
             outputStateSnapshotHash: disputeOutputStateSnapshotHash,
             exitChannelBlocks,
-            disputeAuditingDataHash: "",
+            disputeAuditingDataHash,
             disputer: this.signerAddress,
             disputeIndex: disputeIndex,
             previousRecursiveDisputeIndex: ethers.MaxUint256,
-            timeout,
+            timeout: defaultTimeout,
             selfRemoval: false
         };
     }
@@ -251,7 +287,9 @@ class DisputeHandler {
         await retry(
             async () => {
                 const txResponse =
-                    await this.stateChannelManagerContract.createDispute();
+                    await this.stateChannelManagerContract.createDispute(
+                        dispute
+                    );
                 console.log("TX HASH ##", txResponse.hash);
                 const txReceipt = await txResponse.wait();
                 console.log("DISPUTE CREATED ##", txReceipt);

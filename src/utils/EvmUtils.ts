@@ -12,6 +12,7 @@ import {
 } from "@typechain-types/contracts/V1/DataTypes";
 import {
     BlockEthersType,
+    DisputeAuditingDataEthersType,
     ExitChannelBlockEthersType,
     ExitChannelEthersType,
     JoinChannelBlockEthersType,
@@ -19,6 +20,7 @@ import {
     StateSnapshotEthersType,
     TransactionEthersType
 } from "@/types";
+import { DisputeAuditingDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 export class EvmUtils {
     public static encodeTransaction(transaction: TransactionStruct): string {
@@ -39,6 +41,17 @@ export class EvmUtils {
         return EvmUtils.ethersResultToObjectRecursive(
             transactionDecoded[0]
         ) as TransactionStruct;
+    }
+
+    public static encodeDisputeAuditingData(
+        disputeAuditingData: DisputeAuditingDataStruct
+    ): string {
+        let disputeAuditingDataEncoded =
+            ethers.AbiCoder.defaultAbiCoder().encode(
+                [DisputeAuditingDataEthersType],
+                [disputeAuditingData]
+            );
+        return disputeAuditingDataEncoded;
     }
 
     public static async signTransaction(
