@@ -1,5 +1,7 @@
 pragma solidity ^0.8.8;
 
+import "./DisputeTypes.sol";
+
 //Just so typechain generates types for the structs bellow
 contract DataTypes {
     constructor(
@@ -12,7 +14,9 @@ contract DataTypes {
         SignedJoinChannel memory i,
         ExitChannel memory j,
         ExitChannelBlock memory k,
-        Timeout memory l
+        Timeout memory l,
+        StateSnapshot memory m,
+        DisputeProof memory n
     ) {}
 }
 
@@ -50,7 +54,7 @@ struct TransactionBody {
     bytes data; //evm transaction data
 }
 
-struct Balance{
+struct Balance {
     uint amount;
     bytes data; //custom data
 }
@@ -121,4 +125,10 @@ struct StateSnapshot {
     Balance totalDeposits;
     /// @dev sum of all the amounts in the exitChannel blockchain
     Balance totalWithdrawals;
+}
+
+struct DisputeProof {
+    Dispute dispute;
+    StateSnapshot outputStateSnapshot;
+    uint timestamp;
 }
