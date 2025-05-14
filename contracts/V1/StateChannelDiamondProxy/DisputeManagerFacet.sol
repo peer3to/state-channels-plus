@@ -84,7 +84,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
 
         // Emit event for verified output state snapshot
-        bytes32 disputeCommitment = keccak256(abi.encode(dispute, timestamp));
+        bytes32 disputeCommitment = keccak256(abi.encode(dispute, disputeAuditingData.timestamp));
         emit OutputStateSnapshotVerified(
             dispute.channelId,
             outputStateSnapshot,
@@ -136,7 +136,7 @@ contract DisputeManagerFacet is StateChannelCommon {
 
    
     // =============================== State Proofs Verification  ===============================
-    function _verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) internal pure returns (bool isValid) {
+    function _verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) internal returns (bool isValid) {
         //This runs after verifying auditingData and genesisStateSnapshot => we can skip those checks here
         
         // Milestone checking
