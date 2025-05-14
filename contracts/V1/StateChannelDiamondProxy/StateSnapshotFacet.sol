@@ -109,7 +109,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         stateSnapshots[channelId] = lastProovenSnapshot;
 
         // clear onChainSlashedParticipants
-        disputeData[channelId].onChainSlashedParticipants = new address[](0);
+        delete disputeData[channelId].onChainSlashedParticipants;
 
         emit StateSnapshotUpdated(
             channelId,
