@@ -1,9 +1,9 @@
 import { AddressLike, BigNumberish, SignatureLike } from "ethers";
 import {
     SignedBlockStruct,
-    BlockStruct,
-    ConfirmedBlockStruct
+    BlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 import { BlockUtils, EvmUtils } from "@/utils";
 import { AgreementFlag } from "@/types";
 import { BlockConfirmation } from "./types";
@@ -13,6 +13,7 @@ import ForkService, { Direction } from "./ForkService";
 import QueueService from "./QueueService";
 import OnChainTracker from "./OnChainTracker";
 import BlockValidator from "./BlockValidator";
+import SignatureUtils from "@/utils/signature";
 
 class AgreementManager {
     forks = new ForkService();
@@ -382,6 +383,32 @@ class AgreementManager {
     }
     public getLatestTimestamp(forkCnt: number, maxTxCnt: number): number {
         return this.validator.latestRelevantTimestamp(forkCnt, maxTxCnt);
+    }
+
+    public addDispute(dispute: DisputeStruct, timestamp: number): void {
+        this.forks.addDispute(dispute, timestamp);
+    }
+
+    public confirmDispute(
+        dispute: DisputeStruct,
+        confirmationSignature: SignatureLike
+    ): void {
+        this.forks.addDisputeSignature(dispute, confirmationSignature);
+    }
+
+    public isDisputeKnown(dispute: DisputeStruct): boolean {
+        return this.forks.isDisputeKnown(dispute);
+    }
+
+    public getDisputeSignatures(dispute: DisputeStruct): SignatureLike[] {
+        return this.forks.getDisputeSignatures(dispute);
+    }
+
+    public hasParticipantSignedDispute(
+        dispute: DisputeStruct,
+        participant: AddressLike
+    ): boolean {
+        return this.forks.hasParticipantSignedDispute(dispute, participant);
     }
 }
 
