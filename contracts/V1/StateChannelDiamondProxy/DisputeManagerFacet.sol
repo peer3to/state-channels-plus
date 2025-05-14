@@ -8,7 +8,8 @@ import "./Errors.sol";
 contract DisputeManagerFacet is StateChannelCommon {
 
     function createDispute(
-        Dispute memory dispute
+        Dispute memory dispute,
+        bytes calldata disputerSignature
     ) public { 
         require(msg.sender == dispute.disputer, ErrorDisputerNotMsgSender());
         require(_canParticipateInDisputes(dispute.channelId, msg.sender), ErrorCantParticipateInDispute());
@@ -23,7 +24,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             block.timestamp
         ));
         disputeData[dispute.channelId].disputeCommitments.push(disputeCommitment);
-        emit DisputeCommited(encodedDispute,block.timestamp, disputeCommitment);
+        emit DisputeCommited(encodedDispute,block.timestamp, disputerSignature);
     }
     
     
