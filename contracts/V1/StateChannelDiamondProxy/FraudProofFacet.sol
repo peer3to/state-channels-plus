@@ -117,7 +117,7 @@ contract FraudProofFacet is StateChannelCommon {
         }
         
         if(fraudBlock.transaction.header.transactionCnt == 0){
-            require(fraudBlock.previousBlockHash == keccak256(abi.encode(fraudBlock))); 
+            require(fraudBlock.previousBlockHash == keccak256(abi.encode(previousStateSnapshot))); 
             require(previousStateSnapshot.stateMachineStateHash == keccak256(previousStateStateMachineState),ErrorInvalidStateSnapshot());
         }else{
             Block memory previousBlock = abi.decode(blockInvalidSTProof.previousBlock.encodedBlock, (Block));
