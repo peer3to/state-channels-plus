@@ -76,6 +76,7 @@ class DisputeHandler {
         forkCnt: number,
         transactionCnt: number,
         outputStateSnapshot: StateSnapshotStruct,
+        timestamp: BigNumberish,
         prevDispute: DisputeStruct,
         prevDisputeTimestamp: BigNumberish
     ): DisputeAuditingDataStruct {
@@ -115,6 +116,7 @@ class DisputeHandler {
             milestoneSnapshots: milestoneSnapshots,
             latestStateStateMachineState: latestStateStateMachineState,
             joinChannelBlocks: joinChannelBlocks,
+            timestamp,
             previousDispute: prevDispute,
             previousDisputeTimestamp: prevDisputeTimestamp
         };
@@ -176,8 +178,12 @@ class DisputeHandler {
         forkCnt: number,
         transactionCnt: number,
         proofs: ProofStruct[],
+        timestamp: BigNumberish,
         timeout?: TimeoutStruct
-    ): Promise<DisputeStruct> {
+    ): Promise<{
+        dispute: DisputeStruct;
+        disputeAuditingData: DisputeAuditingDataStruct;
+    }> {
         const disputeIndex =
             await this.stateChannelManagerContract.getDisputeLength(
                 this.channelId
@@ -226,6 +232,7 @@ class DisputeHandler {
             (await this.stateChannelManagerContract.getStatemachineParticipants(
                 encodedModifiedState
             )) as unknown as AddressLike[];
+
         const disputeOutputStateSnapshot: StateSnapshotStruct = {
             stateMachineStateHash: ethers.keccak256(
                 ethers.toUtf8Bytes(encodedModifiedState)
@@ -244,16 +251,16 @@ class DisputeHandler {
         const { dispute: defaultDispute, timeout: defaultTimeout } =
             this.createDefaultDisputeStruct();
 
+        const disputeAuditingData = this.createDisputeAuditingData(
+            forkCnt,
+            transactionCnt,
+            disputeOutputStateSnapshot,
+            timestamp,
+            defaultDispute,
+            ethers.MaxInt256
+        );
         const disputeAuditingDataHash = ethers.keccak256(
-            EvmUtils.encodeDisputeAuditingData(
-                this.createDisputeAuditingData(
-                    forkCnt,
-                    transactionCnt,
-                    disputeOutputStateSnapshot,
-                    defaultDispute,
-                    ethers.MaxInt256
-                )
-            )
+            EvmUtils.encodeDisputeAuditingData(disputeAuditingData)
         );
         let timeoutDispute = timeout ?? defaultTimeout;
         let dispute: DisputeStruct = {
@@ -273,29 +280,29 @@ class DisputeHandler {
             timeout: timeoutDispute,
             selfRemoval: false
         };
-        return dispute;
+        return { dispute, disputeAuditingData };
     }
 
     public async createNewDispute(
         forkCnt: number,
         transactionCnt: number,
-        proofs: ProofStruct[]
+        proofs: ProofStruct[],
+        timestamp: BigNumberish
     ): Promise<void> {
         const dispute = await this.createDisputeStruct(
             forkCnt,
             transactionCnt,
-            proofs
+            proofs,
+            timestamp
         );
 
         await retry(
             async () => {
                 const txResponse =
                     await this.stateChannelManagerContract.createDispute(
-                        dispute
+                        dispute.dispute
                     );
-                console.log("TX HASH ##", txResponse.hash);
                 const txReceipt = await txResponse.wait();
-                console.log("DISPUTE CREATED ##", txReceipt);
                 return txReceipt;
             },
             {
@@ -310,7 +317,60 @@ class DisputeHandler {
         );
     }
 
-    public async auditDispute(dispute: DisputeStruct): Promise<AddressLike[]> {}
+    public async auditDispute(
+        dispute: DisputeStruct,
+        disputeAuditingData: DisputeAuditingDataStruct
+    ): Promise<AddressLike[]> {
+        let slashParticipants: AddressLike[] = [];
+        await retry(
+            async () => {
+                slashParticipants =
+                    (await this.stateChannelManagerContract.auditDispute(
+                        dispute,
+                        disputeAuditingData
+                    )) as unknown as AddressLike[];
+                return slashParticipants;
+            },
+            {
+                maxRetries: 1, // Current implementation retries once
+                onRetry: (attempt, error) => {
+                    console.log("ERROR - DISPUTE CATCH ##", error);
+                    console.log(
+                        `Retrying dispute creation, attempt ${attempt}`
+                    );
+                }
+            }
+        );
+        return slashParticipants;
+    }
+
+    public async challengeDispute(
+        dispute: DisputeStruct,
+        newDispute: DisputeStruct,
+        disputeAuditingData: DisputeAuditingDataStruct
+    ): Promise<void> {
+        await retry(
+            async () => {
+                const txResponse =
+                    await this.stateChannelManagerContract.challengeDispute(
+                        dispute,
+                        newDispute,
+                        disputeAuditingData
+                    );
+                const txReceipt = await txResponse.wait();
+                return txReceipt;
+            },
+            {
+                maxRetries: 1, // Current implementation retries once
+                onRetry: (attempt, error) => {
+                    console.log("ERROR - DISPUTE CATCH ##", error);
+                    console.log(
+                        `Retrying dispute creation, attempt ${attempt}`
+                    );
+                }
+            }
+        );
+    }
 
     public setForkDisputed(forkCnt: number): void {
         this.disputedForks.set(forkCnt, true);
@@ -324,9 +384,10 @@ class DisputeHandler {
         this.localProofs.set(forkCnt, proofs);
     }
 
-    // listen to new dispoute and do audit after receciving the dispute
+    // listen to new dispoute and do audit after receciving the dispute and also do extra checks
+    // like did the dispute return slashes, and does it use the latest state snapshot
     // TODO!!
-    public onDisputeCreated(dispute: DisputeStruct): Promise<void> {}
+    //public onDisputeCreated(dispute: DisputeStruct): Promise<void> {}
 }
 
 export default DisputeHandler;

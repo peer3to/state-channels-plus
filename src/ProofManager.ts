@@ -126,15 +126,13 @@ class ProofManager {
         return proof;
     }
 
-    // public createDisputeInvalidPreviousRecursiveProof(
-    //     invalidRecursiveDispute: dt.DisputeStruct,
-    //     originalDispute: dt.DisputeStruct,
-    //     originalDisputeTimestamp: number,
-    //     invalidRecursiveDisputeTimestamp: number,
-    //     invalidRecursiveDisputeOutputState: BytesLike
-    // ): dt.DisputeInvalidPreviousRecursiveProofStruct {
-
-    // }
+    public createDisputeInvalidPreviousRecursiveProof(
+        invalidRecursiveDispute: dt.DisputeStruct,
+        originalDispute: dt.DisputeStruct,
+        originalDisputeTimestamp: number,
+        invalidRecursiveDisputeTimestamp: number,
+        invalidRecursiveDisputeOutputState: BytesLike
+    ): dt.DisputeInvalidPreviousRecursiveProofStruct {}
 
     // public createTimeoutThresholdProof(timeoutThreshold: dt.TimeoutThresholdProofStruct): dt.TimeoutThresholdProofStruct {
 
@@ -142,9 +140,6 @@ class ProofManager {
 
     // public createTimeoutPriorInvalidProof(timeoutPriorInvalid: dt.TimeoutPriorInvalidProofStruct): dt.TimeoutPriorInvalidProofStruct {
     // }
-
-    // -------------------------------- Helper Methods --------------------------------
-    public collectStateProof(): dt.StateProofStruct[] {}
 }
 
 export default ProofManager;
