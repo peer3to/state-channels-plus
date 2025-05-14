@@ -105,7 +105,12 @@ contract StateSnapshotFacet is StateChannelCommon {
 
         _applyExitChannelBlocks(channelId, exitChannelBlocks);
 
+        // Update the state snapshot
         stateSnapshots[channelId] = lastProovenSnapshot;
+
+        // clear onChainSlashedParticipants
+        disputeData[channelId].onChainSlashedParticipants = new address[](0);
+
         emit StateSnapshotUpdated(
             channelId,
             lastProovenSnapshot,
