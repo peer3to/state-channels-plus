@@ -40,8 +40,9 @@ import {
     processConfirmationDecision
 } from "./processConfirmationDecisionHandlers";
 import ValidationService from "./ValidationService";
-import { DisputeEthersType } from "@/types/disputes";
 import { Codec } from "@/utils/Codec";
+import { SignatureUtils } from "@/utils/SignatureUtils";
+import * as SetUtils from "@/utils/set";
 
 let DEBUG_STATE_MANAGER = false;
 class StateManager {
@@ -410,7 +411,7 @@ class StateManager {
             console.log("Posting calldata on chain!");
             this.p2pEventHooks.onPostingCalldata?.();
             this.stateChannelManagerContract
-                .postBlockCalldata(signedBlock)
+                .postBlockCalldata(signedBlock, Clock.getTimeInSeconds())
                 .then((txResponse) => txResponse.wait())
                 .catch((error) => {
                     console.log("Error posting block on chain", error);
@@ -450,27 +451,80 @@ class StateManager {
         }
 
         // Get output state snapshot data
-        const outputStateSnapshot = this.outputStateSnapshotData.get(
-            disputeData.commitment
+        const encodedDispute = Codec.encode(disputeData.dispute);
+        const commitment = ethers.keccak256(
+            ethers.AbiCoder.defaultAbiCoder().encode(
+                ["bytes", "uint256"],
+                [encodedDispute, disputeData.timestamp]
+            )
         );
+        const outputStateSnapshot =
+            this.outputStateSnapshotData.get(commitment);
         if (!outputStateSnapshot) {
             throw new Error("No output state snapshot data available");
         }
 
-        // Create dispute proof from the latest dispute
         const disputeProof: DisputeProofStruct = {
             dispute: disputeData.dispute,
             outputStateSnapshot: outputStateSnapshot,
             timestamp: disputeData.timestamp
         };
 
-        // Call contract with dispute
-        return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
-            this.channelId,
-            milestoneProofs,
-            milestoneSnapshots,
-            disputeProof,
-            exitChannelBlocks
+        // Check if dispute is within agreement time
+        const currentTime = Clock.getTimeInSeconds();
+        const timeSinceDispute = currentTime - disputeData.timestamp;
+
+        if (timeSinceDispute > this.timeConfig.agreementTime) {
+            // dispute is already finalized, no need for threshold finaliztion
+            return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
+                this.channelId,
+                milestoneProofs,
+                milestoneSnapshots,
+                disputeProof,
+                exitChannelBlocks
+            );
+        }
+
+        // Check if we have threshold signatures on the dispute
+        const fork = this.agreementManager.forks.latestFork();
+        if (!fork) {
+            throw new Error("No latest fork found");
+        }
+        const requiredAddressesSet = SetUtils.stringSetFromArray(
+            fork.addressesInThreshold
+        );
+
+        // Get all participants who have signed the dispute
+        const disputeSignatures = this.agreementManager.getDisputeSignatures(
+            disputeData.dispute
+        );
+        const disputeSigners = disputeSignatures.map((sig) =>
+            SignatureUtils.getSignerAddress(disputeData.dispute, sig)
+        );
+        const signersSet = SetUtils.stringSetFromArray(disputeSigners);
+
+        // Check if we have threshold signatures
+        const hasThreshold = SetUtils.isSubset(
+            requiredAddressesSet,
+            signersSet
+        );
+
+        if (hasThreshold) {
+            // Create dispute proof from the latest dispute
+            // Call contract with dispute and signatures
+            return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
+                this.channelId,
+                milestoneProofs,
+                milestoneSnapshots,
+                disputeProof,
+                disputeSignatures,
+                exitChannelBlocks
+            );
+        }
+
+        // Dispute is not finalized
+        console.log(
+            "Dispute is not finalized, state snapshot was not submitted"
         );
     }
 

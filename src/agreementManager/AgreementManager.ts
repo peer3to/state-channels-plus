@@ -13,7 +13,6 @@ import ForkService, { Direction } from "./ForkService";
 import QueueService from "./QueueService";
 import OnChainTracker from "./OnChainTracker";
 import BlockValidator from "./BlockValidator";
-import SignatureUtils from "@/utils/signature";
 
 class AgreementManager {
     forks = new ForkService();
