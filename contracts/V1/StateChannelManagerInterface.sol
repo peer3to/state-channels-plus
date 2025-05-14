@@ -22,6 +22,11 @@ abstract contract StateChannelManagerInterface {
         bytes[] calldata signatures
     ) public virtual;
 
+    function processExitChannel(
+        bytes32 channelId,
+        ExitChannel calldata exitChannel
+    ) public virtual;
+
     function addParticipant(
         bytes32 channelId,
         bytes[] calldata removeParticipantData,
@@ -87,5 +92,20 @@ abstract contract StateChannelManagerInterface {
         Dispute memory dispute,
         Dispute memory newDispute,
         DisputeAuditingData memory disputeAuditingData
+    ) public virtual;
+
+    function updateStateSnapshotWithDispute(
+        bytes32 channelId,
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        DisputeProof memory disputeProof,
+        ExitChannelBlock[] memory exitChannelBlocks
+    ) public virtual;
+
+    function updateStateSnapshotWithoutDispute(
+        bytes32 channelId,
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        ExitChannelBlock[] memory exitChannelBlocks
     ) public virtual;
 }

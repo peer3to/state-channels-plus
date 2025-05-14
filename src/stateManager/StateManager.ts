@@ -1,7 +1,11 @@
 import {
     TransactionStruct,
     SignedBlockStruct,
-    BlockStruct
+    BlockStruct,
+    StateSnapshotStruct,
+    ForkMilestoneProofStruct,
+    ExitChannelBlockStruct,
+    DisputeProofStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import {
     AddressLike,
@@ -35,6 +39,7 @@ import {
     processConfirmationDecision
 } from "./processConfirmationDecisionHandlers";
 import ValidationService from "./ValidationService";
+import { DisputeEthersType } from "@/types/disputes";
 
 let DEBUG_STATE_MANAGER = false;
 class StateManager {
@@ -52,6 +57,17 @@ class StateManager {
     self = DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
     isDisposed: boolean = false;
     validationService: ValidationService;
+    // Store latest dispute data
+    private latestDisputeData: {
+        dispute: DisputeStruct;
+        timestamp: number;
+        commitment: string;
+    } | null = null;
+
+    // Store output state snapshots data
+    private readonly outputStateSnapshotData: Map<string, StateSnapshotStruct> =
+        new Map();
+
     constructor(
         signer: ethers.Signer,
         signerAddress: AddressLike,
@@ -400,6 +416,62 @@ class StateManager {
         }
     }
 
+    public async postStateSnapshot(
+        milestoneProofs: ForkMilestoneProofStruct[],
+        milestoneSnapshots: StateSnapshotStruct[],
+        exitChannelBlocks: ExitChannelBlockStruct[] = []
+    ) {
+        // Get on-chain state
+        const onChainForkCnt =
+            await this.stateChannelManagerContract.getForkCnt(this.channelId);
+        const onChainDisputeLength =
+            await this.stateChannelManagerContract.getDisputeLength(
+                this.channelId
+            );
+
+        if (onChainDisputeLength == onChainForkCnt) {
+            // Call contract without dispute
+            return this.stateChannelManagerContract.updateStateSnapshotWithoutDispute(
+                this.channelId,
+                milestoneProofs,
+                milestoneSnapshots,
+                exitChannelBlocks
+            );
+        }
+        //  Need to include a dispute
+
+        // check latest dispute data
+        if (!this.latestDisputeData) {
+            throw new Error(
+                "No dispute data available but dispute length > fork count"
+            );
+        }
+
+        // Get output state snapshot data
+        const outputStateSnapshot = this.outputStateSnapshotData.get(
+            this.latestDisputeData.commitment
+        );
+        if (!outputStateSnapshot) {
+            throw new Error("No output state snapshot data available");
+        }
+
+        // Create dispute proof from the latest dispute
+        const disputeProof: DisputeProofStruct = {
+            dispute: this.latestDisputeData.dispute,
+            outputStateSnapshot: outputStateSnapshot,
+            timestamp: this.latestDisputeData.timestamp
+        };
+
+        // Call contract with dispute
+        return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
+            this.channelId,
+            milestoneProofs,
+            milestoneSnapshots,
+            disputeProof,
+            exitChannelBlocks
+        );
+    }
+
     // returns participants who haven't signed the block
     // 1 is currently unused
     // 2 belong in the AgreementManager
@@ -599,6 +671,31 @@ class StateManager {
 
     private isChannelOpen(): boolean {
         return this.getForkCnt() !== -1;
+    }
+
+    // ----- Event handlers -----
+    public async onDisputeCommitted(
+        encodedDispute: string,
+        timestamp: number,
+        commitment: string
+    ) {
+        const dispute = ethers.AbiCoder.defaultAbiCoder().decode(
+            [DisputeEthersType],
+            encodedDispute
+        )[0] as DisputeStruct;
+
+        this.latestDisputeData = {
+            dispute,
+            timestamp,
+            commitment
+        };
+    }
+
+    public onOutputStateSnapshotVerified(
+        outputStateSnapshot: StateSnapshotStruct,
+        commitment: string
+    ) {
+        this.outputStateSnapshotData.set(commitment, outputStateSnapshot);
     }
 }
 
