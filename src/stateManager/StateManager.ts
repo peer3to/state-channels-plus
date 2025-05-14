@@ -19,7 +19,8 @@ import { AgreementFlag, ExecutionFlags, TimeConfig } from "@/types";
 import { AStateChannelManagerProxy } from "@typechain-types";
 import {
     ProofStruct,
-    DisputeStruct
+    DisputeStruct,
+    SignedDisputeStruct
 } from "@typechain-types/contracts/V1/DisputeTypes";
 import Clock from "@/Clock";
 import DisputeHandler from "@/DisputeHandler";
@@ -40,6 +41,7 @@ import {
 } from "./processConfirmationDecisionHandlers";
 import ValidationService from "./ValidationService";
 import { DisputeEthersType } from "@/types/disputes";
+import { Codec } from "@/utils/Codec";
 
 let DEBUG_STATE_MANAGER = false;
 class StateManager {
@@ -438,10 +440,10 @@ class StateManager {
                 exitChannelBlocks
             );
         }
-        //  Need to include a dispute
 
-        // check latest dispute data
-        if (!this.latestDisputeData) {
+        // Need to include a dispute
+        const disputeData = this.agreementManager.forks.getLatestDispute();
+        if (!disputeData) {
             throw new Error(
                 "No dispute data available but dispute length > fork count"
             );
@@ -449,7 +451,7 @@ class StateManager {
 
         // Get output state snapshot data
         const outputStateSnapshot = this.outputStateSnapshotData.get(
-            this.latestDisputeData.commitment
+            disputeData.commitment
         );
         if (!outputStateSnapshot) {
             throw new Error("No output state snapshot data available");
@@ -457,9 +459,9 @@ class StateManager {
 
         // Create dispute proof from the latest dispute
         const disputeProof: DisputeProofStruct = {
-            dispute: this.latestDisputeData.dispute,
+            dispute: disputeData.dispute,
             outputStateSnapshot: outputStateSnapshot,
-            timestamp: this.latestDisputeData.timestamp
+            timestamp: disputeData.timestamp
         };
 
         // Call contract with dispute
@@ -677,18 +679,42 @@ class StateManager {
     public async onDisputeCommitted(
         encodedDispute: string,
         timestamp: number,
-        commitment: string
+        originalSignature: BytesLike
     ) {
-        const dispute = ethers.AbiCoder.defaultAbiCoder().decode(
-            [DisputeEthersType],
-            encodedDispute
-        )[0] as DisputeStruct;
+        const dispute = Codec.decodeDispute(encodedDispute);
 
-        this.latestDisputeData = {
+        // Validate dispute
+        const valid = this.validationService.validateDispute(
             dispute,
             timestamp,
-            commitment
+            originalSignature
+        );
+
+        if (!valid) {
+            return;
+        }
+        // Add dispute to ForkService
+        this.agreementManager.addDispute(dispute, timestamp);
+        // If we are the disputer, ignore the event
+
+        // Create signed dispute with original signature
+        const signedDispute: SignedDisputeStruct = {
+            encodedDispute,
+            signature: originalSignature
         };
+        // add the disputer's signature to the AgreementManager
+        this.agreementManager.confirmDispute(
+            dispute,
+            originalSignature as SignatureLike
+        );
+
+        if (dispute.disputer !== this.signerAddress) {
+            // this signs the dispute, adds the signature to the AgreementManager and broadcasts
+            //  the dispute with the additional signature
+            // the disputer should not broadcast the dispute, since all peers will receive the dsiputer's signature
+            // on the dispute event
+            this.p2pManager.p2pSigner.confirmDispute(signedDispute);
+        }
     }
 
     public onOutputStateSnapshotVerified(
@@ -696,6 +722,29 @@ class StateManager {
         commitment: string
     ) {
         this.outputStateSnapshotData.set(commitment, outputStateSnapshot);
+    }
+    public onDisputeConfirmation(
+        originalSignedDispute: SignedDisputeStruct,
+        confirmationSignature: BytesLike
+    ): ExecutionFlags {
+        const dispute = Codec.decodeDispute(
+            originalSignedDispute.encodedDispute
+        );
+
+        const { success, flag } =
+            this.validationService.validateDisputeConfirmation(
+                dispute,
+                confirmationSignature
+            );
+
+        if (success) {
+            this.agreementManager.confirmDispute(
+                dispute,
+                confirmationSignature as SignatureLike
+            );
+        }
+
+        return flag;
     }
 }
 
