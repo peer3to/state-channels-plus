@@ -258,7 +258,11 @@ abstract contract AStateChannelManagerProxy is
         );
         // Perform the low-level call with a gas limit
         (bool success, bytes memory returnData) = address(this).delegatecall{gas: getGasLimit()}(data);
-
+        if(!success) {
+           assembly {
+                revert(add(returnData, 0x20), mload(returnData))
+            }
+        }
         address[] memory slashedParticipants = abi.decode(returnData, (address[]));
         return  slashedParticipants;
     }
