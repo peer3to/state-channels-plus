@@ -23,7 +23,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             block.timestamp
         ));
         disputeData[dispute.channelId].disputeCommitments.push(disputeCommitment);
-        emit DisputeCommited(encodedDispute,block.timestamp);
+        emit DisputeCommited(encodedDispute,block.timestamp, disputeCommitment);
     }
     
     
@@ -82,6 +82,15 @@ contract DisputeManagerFacet is StateChannelCommon {
         if(keccak256(abi.encode(outputStateSnapshot)) != dispute.outputStateSnapshotHash) {
             revert ErrorDisputeOutputStateSnapshotInvalid();
         }
+
+        // Emit event for verified output state snapshot
+        bytes32 disputeCommitment = keccak256(abi.encode(dispute, timestamp));
+        emit OutputStateSnapshotVerified(
+            dispute.channelId,
+            outputStateSnapshot,
+            disputeCommitment
+        );
+        
         return slashes;
     }
 
@@ -131,7 +140,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         //This runs after verifying auditingData and genesisStateSnapshot => we can skip those checks here
         
         // Milestone checking
-        (bool isValid, bytes memory lastBlockEncoded) = _verifyForkProof(dispute, disputeAuditingData);
+        (bool isValid, bytes memory lastBlockEncoded) = verifyForkProof(dispute.stateProof.forkProof.forkMilestoneProofs, disputeAuditingData.milestoneSnapshots, disputeAuditingData.genesisStateSnapshot);
         if(!isValid) {
             return false;
         }
@@ -209,32 +218,47 @@ contract DisputeManagerFacet is StateChannelCommon {
         
         return (thresholdCount == expectedParticipants.length, finalizedSnapshotHash);
     }
+
     /// @dev Verfies ForkMilestoneBlock along with BlockConfirmations and taking into account Virtual Voting
-    function _verifyForkProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) internal pure returns (bool isValid, bytes memory lastBlockEncoded) {    
-        ForkMilestoneProof[] memory milestoneProofs = dispute.stateProof.forkProof.forkMilestoneProofs;
-        StateSnapshot[] memory milestoneSnapshots = disputeAuditingData.milestoneSnapshots;
-        StateSnapshot memory snapshot = disputeAuditingData.genesisStateSnapshot;
-        address[] memory participants = snapshot.participants;
+    function verifyForkProof(
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        StateSnapshot memory genesisSnapshot
+    ) public returns (bool isValid, bytes memory lastBlockEncoded) {
+        address[] memory participants = genesisSnapshot.participants;
+        StateSnapshot memory snapshot = genesisSnapshot;
         lastBlockEncoded = "";
         // Every milestone (the final block) commits to a snapshot, that's needed to prove the next milestone => for K milestones K-1 snapshots are needed
-        if(milestoneProofs.length != milestoneSnapshots.length + 1)
+        if (milestoneProofs.length != milestoneSnapshots.length + 1)
             return (false, "");
-        
-        for(uint i = 0; i < milestoneProofs.length; i++) {
+
+        for (uint i = 0; i < milestoneProofs.length; i++) {
             ForkMilestoneProof memory milestone = milestoneProofs[i];
-            (bool isFinal, bytes32 finalizedSnapshotHash) = _isMilestoneFinal(milestone, participants, snapshot.stateMachineStateHash);
-            if(!isFinal) {
+            (bool isFinal, bytes32 finalizedSnapshotHash) = _isMilestoneFinal(
+                milestone,
+                participants,
+                snapshot.stateMachineStateHash
+            );
+            if (!isFinal) {
                 return (false, "");
             }
-            if(keccak256(abi.encode(milestoneSnapshots[i])) != finalizedSnapshotHash) {
+            if (
+                keccak256(abi.encode(milestoneSnapshots[i])) !=
+                finalizedSnapshotHash
+            ) {
                 return (false, "");
             }
-            if(i < milestoneSnapshots.length) {
-                snapshot = milestoneSnapshots[i];
-                participants = milestoneSnapshots[i].participants;
-            }
-            if(i == milestoneProofs.length - 1 && milestone.blockConfirmations.length > 0) {
-                lastBlockEncoded = milestone.blockConfirmations[milestone.blockConfirmations.length - 1].signedBlock.encodedBlock;
+            snapshot = milestoneSnapshots[i];
+            participants = milestoneSnapshots[i].participants;
+
+            if (
+                i == milestoneProofs.length - 1 &&
+                milestone.blockConfirmations.length > 0
+            ) {
+                lastBlockEncoded = milestone
+                    .blockConfirmations[milestone.blockConfirmations.length - 1]
+                    .signedBlock
+                    .encodedBlock;
             }
         }
         return (true, lastBlockEncoded);
@@ -469,4 +493,5 @@ contract DisputeManagerFacet is StateChannelCommon {
         // *********** 5. onChainLatestJoinChannelBlockHash should match *************
         require(dispute.onChainLatestJoinChannelBlockHash == _disputeData.latestJoinChannelBlockHash, ErrorDisputeOnChainLatestJoinChannelBlockHashMismatch());
     }
+
 }
