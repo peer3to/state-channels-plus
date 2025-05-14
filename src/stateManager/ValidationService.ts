@@ -4,6 +4,7 @@ import {
     BlockStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 import DisputeHandler from "@/DisputeHandler";
 import { AddressLike, BytesLike, ethers, SignatureLike } from "ethers";
 import { AStateChannelManagerProxy } from "@typechain-types/contracts/V1/StateChannelDiamondProxy";
@@ -11,7 +12,8 @@ import {
     BlockUtils,
     EvmUtils,
     scheduleTask,
-    subjectiveTimingFlag
+    subjectiveTimingFlag,
+    SignatureUtils
 } from "@/utils";
 import AStateMachine from "@/AStateMachine";
 import { Clock } from "..";
@@ -155,6 +157,84 @@ export default class ValidationService {
             )
         )
             return duplicate();
+
+        return success();
+    }
+
+    public validateDispute(
+        disputeStruct: DisputeStruct,
+        timestamp: number,
+        disputerSignature: BytesLike
+    ): boolean {
+        // triggered by StateManager.onDisputeCommitted, which is triggered by chain event 'DisputeCommitted'
+        // therefore it is assumed that validation has already happened on
+
+        // this is the place to add any validation that should run on a new dispute
+
+        if (
+            disputeStruct.disputeIndex !==
+            this.agreementManager.forks.getDisputesCount()
+        ) {
+            return false;
+        }
+        try {
+            const disputer = SignatureUtils.getSignerAddress(
+                disputeStruct,
+                disputerSignature as SignatureLike
+            );
+            if (!this.agreementManager.isParticipantInLatestFork(disputer))
+                return false;
+        } catch (error) {
+            console.error("ValidationService - validateDispute - error", error);
+            return false;
+        }
+
+        return true;
+    }
+
+    public validateDisputeConfirmation(
+        dispute: DisputeStruct,
+        confirmationSignature: BytesLike
+    ): ValidationResult {
+        if (!this.isChannelOpen()) return notReady();
+
+        // Check if dispute exists
+        if (!this.agreementManager.isDisputeKnown(dispute)) {
+            // Dispute not found - could be gossip arrived before event
+            // Return NOT_READY to allow retry
+            return notReady();
+        }
+
+        // Validate signature
+        const confirmer = SignatureUtils.getSignerAddress(
+            dispute,
+            confirmationSignature as SignatureLike
+        );
+        if (!this.agreementManager.isParticipantInLatestFork(confirmer))
+            return disconnect();
+
+        // Check for duplicate signature
+        if (
+            this.agreementManager.getDisputeSignatures(dispute).some((sig) => {
+                const signer = SignatureUtils.getSignerAddress(dispute, sig);
+                return signer === confirmer;
+            })
+        ) {
+            return duplicate();
+        }
+
+        // Check if participant already signed with a different signature
+        // This could be a double sign attempt
+        const hasParticipantSigned =
+            this.agreementManager.hasParticipantSignedDispute(
+                dispute,
+                confirmer
+            );
+
+        if (hasParticipantSigned) {
+            // TODO: This could be used as proof of double signing
+            return disconnect();
+        }
 
         return success();
     }
