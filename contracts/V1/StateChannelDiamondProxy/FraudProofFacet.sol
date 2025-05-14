@@ -78,14 +78,9 @@ contract FraudProofFacet is StateChannelCommon {
     function _handleBlockEmptyBlock(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal pure returns (address) {
         BlockEmptyProof memory blockEmptyProof = abi.decode(encodedProof, (BlockEmptyProof));
         Block memory fraudBlock = abi.decode(blockEmptyProof.emptyBlock.encodedBlock, (Block));
-        Block memory previousBlock = abi.decode(blockEmptyProof.previousBlock.encodedBlock, (Block));
 
         if(fraudProofVerificationContext.channelId != fraudBlock.transaction.header.channelId) {
             revert ErrorNotSameChannelId();
-        }
-
-        if(fraudBlock.previousBlockHash != keccak256(abi.encode(previousBlock))){
-            revert ErrorLinkingPreviousBlock();
         }
 
         if(fraudBlock.transaction.header.transactionCnt == 0){
@@ -93,6 +88,8 @@ contract FraudProofFacet is StateChannelCommon {
                 revert ErrorNotEmptyBlockFraud();
             }
         }else{
+           Block memory previousBlock = abi.decode(blockEmptyProof.previousBlock.encodedBlock, (Block));
+
            if(fraudBlock.stateSnapshotHash != previousBlock.stateSnapshotHash){
             revert ErrorNotEmptyBlockFraud();
            }
@@ -107,7 +104,6 @@ contract FraudProofFacet is StateChannelCommon {
     function _handleBlockInvalidStateTransition(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
         BlockInvalidStateTransitionProof memory blockInvalidSTProof = abi.decode(encodedProof, (BlockInvalidStateTransitionProof));
         Block memory fraudBlock = abi.decode(blockInvalidSTProof.invalidBlock.encodedBlock, (Block));
-        Block memory previousBlock = abi.decode(blockInvalidSTProof.previousBlock.encodedBlock, (Block));
         StateSnapshot memory previousStateSnapshot = blockInvalidSTProof.previousBlockStateSnapshot;
         bytes memory previousStateStateMachineState = blockInvalidSTProof.previousStateStateMachineState;
 
@@ -119,13 +115,21 @@ contract FraudProofFacet is StateChannelCommon {
         if(fraudProofVerificationContext.channelId != fraudBlock.transaction.header.channelId) {
             revert ErrorNotSameChannelId();
         }
-
-        if(fraudBlock.previousBlockHash != keccak256(abi.encode(previousBlock))){
-            revert ErrorLinkingPreviousBlock();
+        
+        if(fraudBlock.transaction.header.transactionCnt == 0){
+            require(fraudBlock.previousBlockHash == keccak256(abi.encode(fraudBlock))); 
+            require(previousStateSnapshot.stateMachineStateHash == keccak256(previousStateStateMachineState),ErrorInvalidStateSnapshot());
+        }else{
+            Block memory previousBlock = abi.decode(blockInvalidSTProof.previousBlock.encodedBlock, (Block));
+            require(fraudBlock.previousBlockHash == keccak256(abi.encode(previousBlock)), ErrorLinkingPreviousBlock());
+        
+            require(
+                previousStateSnapshot.stateMachineStateHash == keccak256(previousStateStateMachineState) 
+                && previousBlock.stateSnapshotHash == keccak256(abi.encode(previousStateSnapshot)),
+                ErrorInvalidStateSnapshotHash()
+            );
         }
-        if(previousStateSnapshot.stateMachineStateHash != keccak256(previousStateStateMachineState) && previousBlock.stateSnapshotHash != keccak256(abi.encode(previousStateSnapshot))){
-            revert ErrorInvalidStateSnapshotHash();
-        }
+        
         (bool isSuccess, bytes memory encodedModifiedState) = AStateChannelManagerProxy(address(this)).executeStateTransitionOnState(
             fraudProofVerificationContext.channelId,
             previousStateStateMachineState,
@@ -143,9 +147,7 @@ contract FraudProofFacet is StateChannelCommon {
             totalDeposits: previousStateSnapshot.totalDeposits,
             totalWithdrawals: previousStateSnapshot.totalWithdrawals
         });
-        if(fraudBlock.stateSnapshotHash == keccak256(abi.encode(newStateSnapshot))){
-            revert ErrorValidStateTransition();
-        }
+        require(fraudBlock.stateSnapshotHash == keccak256(abi.encode(newStateSnapshot)), ErrorValidStateTransition());
         
         return signer;
     }
@@ -243,10 +245,11 @@ contract FraudProofFacet is StateChannelCommon {
         Dispute memory invalidRecursiveDispute = disputeInvalidPreviousRecursiveProof.invalidRecursiveDispute;
         uint originalDisputeTimestamp = disputeInvalidPreviousRecursiveProof.originalDisputeTimestamp;
         uint invalidRecursiveDisputeTimestamp = disputeInvalidPreviousRecursiveProof.invalidRecursiveDisputeTimestamp;
-        SignedBlock[] memory latestStateSignedBlocks = disputeInvalidPreviousRecursiveProof.latestStateSignedBlocks;
         bytes memory latestStateSnapshot = disputeInvalidPreviousRecursiveProof.latestStateSnapshot;
         bytes memory invalidRecursiveDisputeOutputState = disputeInvalidPreviousRecursiveProof.invalidRecursiveDisputeOutputState;
-
+        Block memory originalDisputeLastBlock = abi.decode(originalDispute.stateProof.signedBlocks[originalDispute.stateProof.signedBlocks.length - 1].encodedBlock, (Block));
+        Block memory invalidRecursiveDisputeLastBlock = abi.decode(invalidRecursiveDispute.stateProof.signedBlocks[invalidRecursiveDispute.stateProof.signedBlocks.length - 1].encodedBlock, (Block));
+        
         // check if the recursive was done during the desired challenge period of the original dispute
         bytes32 recursiveDisputeCommitment = keccak256(abi.encode(
             invalidRecursiveDispute,
@@ -258,47 +261,32 @@ contract FraudProofFacet is StateChannelCommon {
         ));
 
         (bool isAvailable, bytes32 commitment) = getDisputeCommitment(fraudProofVerificationContext.channelId, invalidRecursiveDispute.disputeIndex);
-        if(!isAvailable && commitment != recursiveDisputeCommitment) {
-            revert ErrorDisputeCommitmentNotAvailable();
-        }
+        require(!isAvailable && commitment != recursiveDisputeCommitment, ErrorDisputeCommitmentNotAvailable());
 
-        if(invalidRecursiveDispute.previousRecursiveDisputeIndex == type(uint256).max || invalidRecursiveDispute.previousRecursiveDisputeIndex != originalDispute.disputeIndex){
-            revert ErrorDisputeCommitmentNotAvailable();
-        }
+        require(invalidRecursiveDispute.previousRecursiveDisputeIndex == type(uint256).max || invalidRecursiveDispute.previousRecursiveDisputeIndex != originalDispute.disputeIndex, ErrorDisputeCommitmentNotAvailable());
         (bool isOriginalDisputeAvailable, bytes32 originalCommitment) = getDisputeCommitment(fraudProofVerificationContext.channelId, originalDispute.disputeIndex);
-        if(!isOriginalDisputeAvailable && originalCommitment != originalDisputeCommitment) {
-            revert ErrorDisputeCommitmentNotAvailable();
-        }
-        if(invalidRecursiveDisputeTimestamp <= originalDisputeTimestamp + getChallengeTime()) {
-            revert ErrorWithinChallengePeriod();
-        }
-
-        // check if the disputer used the latest state in recursive dispute
         
-        if(!_areSignedBlocksLinkedAndVerified(latestStateSignedBlocks, invalidRecursiveDispute.latestStateSnapshotHash) && invalidRecursiveDispute.latestStateSnapshotHash != keccak256(latestStateSnapshot)) {
-            revert ErrorInvalidSignedBlocks();
-        }
-        Block memory lastSignedBlock = abi.decode(latestStateSignedBlocks[latestStateSignedBlocks.length - 1].encodedBlock, (Block));
-        if(lastSignedBlock.stateSnapshotHash != keccak256(latestStateSnapshot)) {
-            revert ErrorInvalidSignedBlocks();
-        }
+        require(!isOriginalDisputeAvailable && originalCommitment != originalDisputeCommitment, ErrorDisputeCommitmentNotAvailable());
+        require(invalidRecursiveDisputeTimestamp > originalDisputeTimestamp + getChallengeTime(), ErrorWithinChallengePeriod());
+
+        // check if the disputer used the latest state in recursive dispute       
+        require(invalidRecursiveDisputeLastBlock.transaction.header.transactionCnt > originalDisputeLastBlock.transaction.header.transactionCnt, ErrorInvalidLatestState());
         
         address signer = StateChannelUtilLibrary.retriveSignerAddress(
-            latestStateSignedBlocks[latestStateSignedBlocks.length - 1].encodedBlock,
-            latestStateSignedBlocks[latestStateSignedBlocks.length - 1].signature
+            invalidRecursiveDispute.stateProof.signedBlocks[invalidRecursiveDispute.stateProof.signedBlocks.length - 1].encodedBlock,
+            invalidRecursiveDispute.stateProof.signedBlocks[invalidRecursiveDispute.stateProof.signedBlocks.length - 1].signature
         );
-        (bool found, bytes32 blockCalldataCommitment) = getBlockCallDataCommitment(fraudProofVerificationContext.channelId, lastSignedBlock.transaction.header.forkCnt, lastSignedBlock.transaction.header.transactionCnt, signer);
+
+        (bool found, bytes32 blockCalldataCommitment) = getBlockCallDataCommitment(fraudProofVerificationContext.channelId, invalidRecursiveDisputeLastBlock.transaction.header.forkCnt, invalidRecursiveDisputeLastBlock.transaction.header.transactionCnt, signer);
         require(signer == invalidRecursiveDispute.disputer || found, ErrorInvalidLatestState());
 
         // check if the recursive dispute extend the lashes
-        if(invalidRecursiveDispute.outputStateSnapshotHash != keccak256(invalidRecursiveDisputeOutputState)) {
-            revert ErrorInvalidDisputeOutputState();
-        }
+        require(invalidRecursiveDispute.outputStateSnapshotHash == keccak256(invalidRecursiveDisputeOutputState), ErrorInvalidDisputeOutputState());
+        
         address[] memory initialParticipants = getSnapshotParticipants(fraudProofVerificationContext.channelId);
         address[] memory afterDisputeParticipants = getStatemachineParticipants(invalidRecursiveDisputeOutputState);
-        if(afterDisputeParticipants.length > initialParticipants.length) {
-            revert ErrorRecursiveDisputeNotExtendingSlashes();
-        }
+        require(afterDisputeParticipants.length < initialParticipants.length, ErrorRecursiveDisputeNotExtendingSlashes());
+        
         return invalidRecursiveDispute.disputer;
     }
 

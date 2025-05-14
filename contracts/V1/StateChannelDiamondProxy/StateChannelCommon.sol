@@ -204,7 +204,7 @@ contract StateChannelCommon is
         address timeoutRemoval,
         JoinChannelBlock[] memory joinChannelBlocks,
         StateSnapshot memory latestStateSnapshot
-    ) public returns (bytes memory encodedModifiedState, ExitChannelBlock memory exitBlock, Balance memory totalDeposits, Balance memory totalWithdrawals) {
+    ) public returns (bytes memory encodedModifiedState, ExitChannelBlock memory exitBlock, Balance memory totalDeposits, Balance memory totalWithdrawals, address[] memory slashParticipants) {
         ExitChannel[] memory exitChannels;
         totalDeposits = latestStateSnapshot.totalDeposits;
         totalWithdrawals = latestStateSnapshot.totalWithdrawals;
@@ -254,7 +254,7 @@ contract StateChannelCommon is
                 exitChannels[i].balance
             );
         }
-        return (encodedModifiedState, _formExitChannelBlock(latestStateSnapshot.latestExitChannelBlockHash, exitChannels), totalDeposits, totalWithdrawals);
+        return (encodedModifiedState, _formExitChannelBlock(latestStateSnapshot.latestExitChannelBlockHash, exitChannels), totalDeposits, totalWithdrawals,slashes);
     }
     
     function _verifyFraudProofs(

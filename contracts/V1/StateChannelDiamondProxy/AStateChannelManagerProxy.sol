@@ -244,9 +244,8 @@ abstract contract AStateChannelManagerProxy is
 
     function auditDispute(
         Dispute memory dispute,
-        DisputeAuditingData memory disputeAuditingData,
-        uint timestamp
-    ) public override returns (bool success, bytes memory slashedParticipantsOrError) {
+        DisputeAuditingData memory disputeAuditingData 
+    ) public override returns (address[] memory slashParticipants) {
        //This is done manually since the logic is different from other _delegatecalls
        
        // Encode the function selector and arguments
@@ -254,25 +253,19 @@ abstract contract AStateChannelManagerProxy is
             DisputeManagerFacet.auditDispute,
             (
                 dispute,
-                disputeAuditingData,
-                timestamp
+                disputeAuditingData
             )
         );
         // Perform the low-level call with a gas limit
         (bool success, bytes memory returnData) = address(this).delegatecall{gas: getGasLimit()}(data);
 
-        // If the call was successful, decode the result
-        if (success) {
-            address[] memory slashedParticipants = abi.decode(returnData, (address[]));
-            //for sure no duplicates, otherwise auditing would fail -> just insert
-            addOnChainSlashedParticipants(dispute.channelId, slashedParticipants);
-        }
-        // if !success and returnData.length == 0 => Auditing ran out of gas
-        return (success, returnData);
+        address[] memory slashedParticipants = abi.decode(returnData, (address[]));
+        return  slashedParticipants;
     }
 
     function challengeDispute(
         Dispute memory dispute,
+        Dispute memory newDispute,
         DisputeAuditingData memory disputeAuditingData
     ) public override {
         _delegatecall(
@@ -281,6 +274,7 @@ abstract contract AStateChannelManagerProxy is
                 disputeManagerFacet.challengeDispute,
                 (
                     dispute, 
+                    newDispute,
                     disputeAuditingData
                 )
             )

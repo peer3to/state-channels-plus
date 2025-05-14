@@ -40,13 +40,12 @@ contract DisputeManagerFacet is StateChannelCommon {
     /// - address[]: slashed participants if successful
     function auditDispute(
         Dispute memory dispute,
-        DisputeAuditingData memory disputeAuditingData,
-        uint timestamp
+        DisputeAuditingData memory disputeAuditingData
     ) external onlySelf returns (address[] memory slashParticipants) {
         
-        require(_isCorrectDisputeCommitment(dispute, timestamp),ErrorDisputeWrongCommitment());
+        require(_isCorrectDisputeCommitment(dispute, disputeAuditingData.timestamp),ErrorDisputeWrongCommitment());
         require(_isCorrectAuditingData(dispute,disputeAuditingData),ErrorDisputeWrongAuditingData());
-        require(!_isExpired(timestamp), ErrorDisputeExpired());
+        require(!_isExpired(disputeAuditingData.timestamp), ErrorDisputeExpired());
         require(_isCorrectGenesis(dispute,disputeAuditingData), ErrorDisputeGenesisInvalid());
         require(_verifyStateProof(dispute, disputeAuditingData), ErrorDisputeStateProofInvalid());
         require(_verifyJoinChannelBlocks(dispute, disputeAuditingData), ErrorDisputeJoinChannelBlocksInvalid());
@@ -56,7 +55,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             channelId: dispute.channelId
         }); 
         (bytes memory encodedModifiedState, ExitChannelBlock memory exitBlock, 
-        Balance memory totalDeposits, Balance memory totalWithdrawals) = generateDisputeOutputState(
+        Balance memory totalDeposits, Balance memory totalWithdrawals, address[] memory slashes) = generateDisputeOutputState(
             disputeAuditingData.latestStateStateMachineState,
             dispute.fraudProofs,
             poofContext,
@@ -83,6 +82,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         if(keccak256(abi.encode(outputStateSnapshot)) != dispute.outputStateSnapshotHash) {
             revert ErrorDisputeOutputStateSnapshotInvalid();
         }
+        return slashes;
     }
 
 
@@ -96,12 +96,13 @@ contract DisputeManagerFacet is StateChannelCommon {
     //    - New dispute is ignored
     function challengeDispute(
         Dispute memory dispute,
+        Dispute memory newDispute,
         DisputeAuditingData memory disputeAuditingData
     ) public {
         uint256 gasLimit = getGasLimit();
         bytes memory data = abi.encodeCall(
             DisputeManagerFacet.auditDispute,
-            (dispute, disputeAuditingData, block.timestamp)
+            (dispute, disputeAuditingData)
         );
         (bool success, bytes memory returnData) = address(this).call{gas: gasLimit}(data);
         if(!success) {
@@ -110,6 +111,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             slashParticipants[0] = dispute.disputer;
             addOnChainSlashedParticipants(dispute.channelId, slashParticipants);
             address[] memory returnedSlashParticipants = getOnChainSlashedParticipants(dispute.channelId);
+            createDispute(newDispute);
             emit DisputeChallengeResult(dispute.channelId, success, returnedSlashParticipants);
         }else{
             // slash the challenger
