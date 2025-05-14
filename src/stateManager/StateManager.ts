@@ -474,7 +474,7 @@ class StateManager {
         const currentTime = Clock.getTimeInSeconds();
         const timeSinceDispute = currentTime - disputeData.timestamp;
 
-        if (timeSinceDispute > this.timeConfig.agreementTime) {
+        if (timeSinceDispute > this.timeConfig.challengeTime) {
             // dispute is already finalized, no need for threshold finaliztion
             return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
                 this.channelId,
