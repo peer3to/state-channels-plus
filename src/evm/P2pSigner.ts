@@ -12,9 +12,11 @@ import {
     SignedBlockStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/DataTypes";
+import { SignedDisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 import Clock from "@/Clock";
 import P2PManager from "@/P2PManager";
-import { EvmUtils } from "@/utils";
+import { EvmUtils, Codec, SignatureUtils } from "@/utils";
+
 class P2pSigner implements Signer {
     signer: Signer;
     signerAddress: AddressLike;
@@ -125,13 +127,16 @@ class P2pSigner implements Signer {
     }
     public async confirmBlock(signedBlock: SignedBlockStruct) {
         let block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
-        let confirmedBlock = await EvmUtils.signBlock(block, this.signer);
+        let signature = await SignatureUtils.signMsg(
+            signedBlock.encodedBlock,
+            this.signer
+        );
         this.p2pManager.stateManager.agreementManager.confirmBlock(
             block,
-            confirmedBlock.signature as SignatureLike
+            signature as SignatureLike
         );
         this.p2pManager.rpcProxy
-            .onBlockConfirmation(signedBlock, confirmedBlock.signature)
+            .onBlockConfirmation(signedBlock, signature)
             .broadcast();
     }
 
@@ -150,6 +155,27 @@ class P2pSigner implements Signer {
 
     public disconnectFromPeers() {
         this.p2pManager.disconnectAll();
+    }
+
+    public async confirmDispute(signedDispute: SignedDisputeStruct) {
+        const dispute = Codec.decodeDispute(signedDispute.encodedDispute);
+
+        // Add our signature
+        const signature = await SignatureUtils.signMsg(
+            signedDispute.encodedDispute,
+            this.signer
+        );
+
+        // Store signature in AgreementManager
+        this.p2pManager.stateManager.agreementManager.confirmDispute(
+            dispute,
+            signature as SignatureLike
+        );
+
+        // Broadcast confirmation with our signature
+        this.p2pManager.rpcProxy
+            .onDisputeConfirmation(signedDispute, signature)
+            .broadcast();
     }
 }
 
