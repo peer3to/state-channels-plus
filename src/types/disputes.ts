@@ -1,35 +1,55 @@
-import { SignedBlockEthersType } from "./ethers";
+import {
+    DisputeEthersType,
+    SignedBlockEthersType,
+    StateSnapshotEthersType
+} from "./ethers";
 
 export const BlockEmptyProofEthersType = `tuple(
-    
-    )`;
+    ${SignedBlockEthersType} emptyBlock,
+    ${SignedBlockEthersType} previousBlock,
+)`;
 
-export const DoubleSignProofEthersType = `tuple(
-        tuple(${SignedBlockEthersType} block1, ${SignedBlockEthersType} block2)[] doubleSigns
-        )`;
-export const IncorrectDataProofEthersType = `tuple(
+export const BlockInvalidStateTransitionProofEthersType = `tuple(
+    ${SignedBlockEthersType} invalidBlock,
+    ${SignedBlockEthersType} previousBlock,
+    ${StateSnapshotEthersType} previousBlockStateSnapshot,
+    bytes previousStateStateMachineState
+)`;
+
+export const BlockDoubleSignProofEthersType = `tuple(
     ${SignedBlockEthersType} block1,
-    ${SignedBlockEthersType} block2,
-    string encodedState
-    )`;
-export const NewerStateProofEthersType = `tuple(
-    string encodedBlock,
-    string confirmationSignature
-    )`;
-export const FoldPriorBlockProofEthersType = `tuple(
-    uint moveCnt
-    )`;
-export const BlockTooFarInFutureProofEthersType = `tuple(
-    ${SignedBlockEthersType} block1
-    )`;
+    ${SignedBlockEthersType} block2
+)`;
+
+export const TimeoutPriorInvalidProofEthersType = `tuple(
+    ${DisputeEthersType} originalDispute,
+    ${DisputeEthersType} recursiveDispute,
+    uint256 originalDisputeTimestamp,
+    uint256 recursiveDisputeTimestamp
+)`;
+
+export const TimeoutThresholdProofEthersType = `tuple(
+    ${DisputeEthersType} originalDispute,
+    ${DisputeEthersType} recursiveDispute,
+    uint256 originalDisputeTimestamp,
+    uint256 recursiveDisputeTimestamp
+)`;
+
+export const DisputeInvalidPreviousRecursiveProofEthersType = `tuple(
+    ${DisputeEthersType} invalidRecursiveDispute,
+    ${DisputeEthersType} originalDispute,
+    uint256 originalDisputeTimestamp,
+    uint256 invalidRecursiveDisputeTimestamp,
+    bytes invalidRecursiveDisputeOutputState
+)`;
 
 export enum ProofType {
     BlockEmpty,
     BlockDoubleSign,
     BlockInvalidStateTransition,
-    BlockOutOfGas,
     TimeoutThreshold,
-    TimeoutPriorInvalid
+    TimeoutPriorInvalid,
+    DisputeInvalidPreviousRecursive
 }
 
 const DISPUTE_PROOF_ETHERS_TYPES: Record<ProofType, string> = {
@@ -37,9 +57,10 @@ const DISPUTE_PROOF_ETHERS_TYPES: Record<ProofType, string> = {
     [ProofType.BlockDoubleSign]: BlockDoubleSignProofEthersType,
     [ProofType.BlockInvalidStateTransition]:
         BlockInvalidStateTransitionProofEthersType,
-    [ProofType.BlockOutOfGas]: BlockOutOfGasProofEthersType,
     [ProofType.TimeoutThreshold]: TimeoutThresholdProofEthersType,
-    [ProofType.TimeoutPriorInvalid]: TimeoutPriorInvalidProofEthersType
+    [ProofType.TimeoutPriorInvalid]: TimeoutPriorInvalidProofEthersType,
+    [ProofType.DisputeInvalidPreviousRecursive]:
+        DisputeInvalidPreviousRecursiveProofEthersType
 };
 
 export const getEthersTypeForDisputeProof = (proofType: ProofType): string => {

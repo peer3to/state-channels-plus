@@ -12,16 +12,14 @@ contract DisputeTypes {
         TimeoutThresholdProof memory e,
         TimeoutPriorInvalidProof memory f,
         DisputeNotLatestStateProof memory g,
-        DisputeOutOfGasProof memory h,
-        DisputeInvalidOutputStateProof memory i,
-        DisputeInvalidStateProof memory j,
-        DisputeInvalidPreviousRecursiveProof memory k,
-        DisputeInvalidExitChannelBlocksProof memory l,
-        ForkMilestoneProof memory m,
-        ForkProof memory n,
-        StateProof memory o,
-        Proof memory p,
-        ProofType q
+        DisputeInvalidStateProof memory h,
+        DisputeInvalidPreviousRecursiveProof memory i,
+        DisputeInvalidExitChannelBlocksProof memory j,
+        ForkMilestoneProof memory k,
+        ForkProof memory l,
+        StateProof memory m,
+        Proof memory n,
+        ProofType o
     ) {}
 }
 
@@ -132,14 +130,6 @@ struct DisputeNotLatestStateProof {
     uint originalDisputeTimestamp;
 }
 
-struct DisputeOutOfGasProof {
-    Dispute dispute;
-}
-
-struct DisputeInvalidOutputStateProof {
-    Dispute dispute;
-}
-
 struct DisputeInvalidStateProof {
     Dispute dispute;
 }
@@ -149,7 +139,6 @@ struct DisputeInvalidPreviousRecursiveProof {
     Dispute originalDispute;
     uint originalDisputeTimestamp;
     uint invalidRecursiveDisputeTimestamp;
-    bytes latestStateSnapshot;
     bytes invalidRecursiveDisputeOutputState;
 }
 

@@ -46,7 +46,7 @@ class ProofManager {
      */
     public createDoubleSignProof(
         conflictingBlock: SignedBlockStruct
-    ): dt.BlockDoubleSignProofStruct {
+    ): dt.ProofStruct {
         const secondConflictingBlock =
             this.agreementManager.getDoubleSignedBlock(conflictingBlock);
 
@@ -59,14 +59,23 @@ class ProofManager {
             block2: secondConflictingBlock
         };
 
-        return doubleSignProofStruct;
+        return {
+            proofType: ProofType.BlockDoubleSign,
+            encodedProof: ProofManager.encodeProof(
+                ProofType.BlockDoubleSign,
+                doubleSignProofStruct
+            )!
+        };
     }
 
     public createEmptyBlockProof(
-        emptyBlock: SignedBlockStruct,
-        forkCnt: number,
-        transactionCnt: number
-    ): dt.BlockEmptyProofStruct {
+        emptyBlock: SignedBlockStruct
+    ): dt.ProofStruct {
+        const forkCnt = EvmUtils.decodeBlock(emptyBlock.encodedBlock)
+            .transaction.header.forkCnt as number;
+        const transactionCnt = EvmUtils.decodeBlock(emptyBlock.encodedBlock)
+            .transaction.header.transactionCnt as number;
+
         const previousBlock = this.agreementManager.getBlock(
             forkCnt,
             transactionCnt - 1
@@ -87,14 +96,22 @@ class ProofManager {
             previousBlock: signedPreviousBlock
         };
 
-        return emptyBlockProofStruct;
+        return {
+            proofType: ProofType.BlockEmpty,
+            encodedProof: ProofManager.encodeProof(
+                ProofType.BlockEmpty,
+                emptyBlockProofStruct
+            )!
+        };
     }
 
     public createBlockInvalidStateTransitionProof(
-        invalidBlock: SignedBlockStruct,
-        forkCnt: number,
-        transactionCnt: number
-    ): dt.BlockInvalidStateTransitionProofStruct {
+        invalidBlock: SignedBlockStruct
+    ): dt.ProofStruct {
+        const forkCnt = EvmUtils.decodeBlock(invalidBlock.encodedBlock)
+            .transaction.header.forkCnt as number;
+        const transactionCnt = EvmUtils.decodeBlock(invalidBlock.encodedBlock)
+            .transaction.header.transactionCnt as number;
         const previousBlock = this.agreementManager.getBlock(
             forkCnt,
             transactionCnt - 1
@@ -123,7 +140,13 @@ class ProofManager {
             previousStateStateMachineState:
                 previousStateStateMachineState as BytesLike
         };
-        return proof;
+        return {
+            proofType: ProofType.BlockInvalidStateTransition,
+            encodedProof: ProofManager.encodeProof(
+                ProofType.BlockInvalidStateTransition,
+                proof
+            )!
+        };
     }
 
     public createDisputeInvalidPreviousRecursiveProof(
@@ -132,14 +155,75 @@ class ProofManager {
         originalDisputeTimestamp: number,
         invalidRecursiveDisputeTimestamp: number,
         invalidRecursiveDisputeOutputState: BytesLike
-    ): dt.DisputeInvalidPreviousRecursiveProofStruct {}
+    ): dt.ProofStruct {
+        const proof: dt.DisputeInvalidPreviousRecursiveProofStruct = {
+            invalidRecursiveDispute,
+            originalDispute,
+            originalDisputeTimestamp,
+            invalidRecursiveDisputeTimestamp,
+            invalidRecursiveDisputeOutputState
+        };
+        return {
+            proofType: ProofType.DisputeInvalidPreviousRecursive,
+            encodedProof: ProofManager.encodeProof(
+                ProofType.DisputeInvalidPreviousRecursive,
+                proof
+            )!
+        };
+    }
 
-    // public createTimeoutThresholdProof(timeoutThreshold: dt.TimeoutThresholdProofStruct): dt.TimeoutThresholdProofStruct {
+    public createTimeoutThresholdProof(
+        transactionCnt: number,
+        timedOutDispute: dt.DisputeStruct,
+        timedOutDisputeTimestamp: number
+    ): dt.ProofStruct {
+        const forkCnt = timedOutDispute.timeout.forkCnt as number;
+        const height = timedOutDispute.timeout.blockHeight as number;
+        const latestStateSnapshot = this.agreementManager.getSnapShot(
+            forkCnt,
+            transactionCnt
+        )!;
+        const thresholdBlock = this.agreementManager.getBlockConfirmation(
+            forkCnt,
+            height
+        )!;
+        const proof: dt.TimeoutThresholdProofStruct = {
+            thresholdBlock,
+            timedOutDispute,
+            timedOutDisputeTimestamp,
+            latestStateSnapshot:
+                EvmUtils.encodeStateSnapshot(latestStateSnapshot)
+        };
 
-    // }
+        return {
+            proofType: ProofType.TimeoutThreshold,
+            encodedProof: ProofManager.encodeProof(
+                ProofType.TimeoutThreshold,
+                proof
+            )!
+        };
+    }
 
-    // public createTimeoutPriorInvalidProof(timeoutPriorInvalid: dt.TimeoutPriorInvalidProofStruct): dt.TimeoutPriorInvalidProofStruct {
-    // }
+    public createTimeoutPriorInvalidProof(
+        originalDispute: dt.DisputeStruct,
+        recursiveDispute: dt.DisputeStruct,
+        originalDisputeTimestamp: number,
+        recursiveDisputeTimestamp: number
+    ): dt.ProofStruct {
+        const proof: dt.TimeoutPriorInvalidProofStruct = {
+            originalDispute,
+            recursiveDispute,
+            originalDisputeTimestamp,
+            recursiveDisputeTimestamp
+        };
+        return {
+            proofType: ProofType.TimeoutPriorInvalid,
+            encodedProof: ProofManager.encodeProof(
+                ProofType.TimeoutPriorInvalid,
+                proof
+            )!
+        };
+    }
 }
 
 export default ProofManager;
