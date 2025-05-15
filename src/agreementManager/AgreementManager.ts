@@ -244,6 +244,13 @@ class AgreementManager {
     ): BlockStruct | undefined {
         return this.forkService.getAgreement(forkCnt, transactionCnt)?.block;
     }
+    public getBlockConfirmation(
+        forkCnt: number,
+        transactionCnt: number
+    ): BlockConfirmationStruct | undefined {
+        return this.forkService.getAgreement(forkCnt, transactionCnt)
+            ?.blockConfirmation;
+    }
     public getDoubleSignedBlock(
         signedBlock: SignedBlockStruct
     ): SignedBlockStruct | undefined {
@@ -420,6 +427,13 @@ class AgreementManager {
             forkCnt,
             transactionCnt
         );
+        return this.stateSnapshots.get(agreement?.snapShotCommitment!);
+    }
+
+    public getLatestStateSnapshot(
+        forkCnt: number
+    ): StateSnapshotStruct | undefined {
+        const agreement = this.forkService.getLatestAgreement(forkCnt);
         return this.stateSnapshots.get(agreement?.snapShotCommitment!);
     }
     /**
