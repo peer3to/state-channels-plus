@@ -85,12 +85,12 @@ abstract contract StateChannelManagerInterface {
 
     function auditDispute(
         Dispute memory dispute,
-        DisputeAuditingData memory disputeAuditingData,
-        uint timestamp
-    ) public virtual returns (bool success, bytes memory slashedParticipantsOrError);
+        DisputeAuditingData memory disputeAuditingData 
+    ) public virtual returns (address[] memory slashParticipants);
 
     function challengeDispute(
         Dispute memory dispute,
+        Dispute memory newDispute,
         DisputeAuditingData memory disputeAuditingData
     ) public virtual;
 

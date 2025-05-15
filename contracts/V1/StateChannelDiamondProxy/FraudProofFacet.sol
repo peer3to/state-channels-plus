@@ -15,16 +15,9 @@ contract FraudProofFacet is StateChannelCommon {
         proofHandlers[ProofType.BlockDoubleSign] = _handleBlockDoubleSign;
         proofHandlers[ProofType.BlockEmptyBlock] = _handleBlockEmptyBlock;
         proofHandlers[ProofType.BlockInvalidStateTransition] = _handleBlockInvalidStateTransition;
-        proofHandlers[ProofType.BlockOutOfGas] = _handleBlockOutOfGas;
         proofHandlers[ProofType.TimeoutThreshold] = _handleTimeoutThreshold;
         proofHandlers[ProofType.TimeoutPriorInvalid] = _handleTimeoutPriorInvalid;
-        proofHandlers[ProofType.TimeoutParticipantNoNext] = _handleTimeoutParticipantNoNext;
-        proofHandlers[ProofType.DisputeNotLatestState] = _handleDisputeNotLatestState;
-        proofHandlers[ProofType.DisputeInvalid] = _handleDisputeInvalid;
-        proofHandlers[ProofType.DisputeInvalidRecursive] = _handleDisputeInvalidRecursive;
-        proofHandlers[ProofType.DisputeInvalidStateProof] = _handleDisputeInvalidStateProof;
-        proofHandlers[ProofType.DisputeInvalidPreeviousRecursive] = _handleDisputeInvalidPreeviousRecursive;
-        proofHandlers[ProofType.DisputeInvalidExitChannelBlocks] = _handleDisputeInvalidExitChannelBlocks;
+        proofHandlers[ProofType.DisputeInvalidPreviousRecursive] = _handleDisputeInvalidPreviousRecursive;
     }
 
     //This is a bit inefficient, since public/external functions always do a deep copy unline internal/private that pas by reference, but this shares the context
@@ -37,7 +30,7 @@ contract FraudProofFacet is StateChannelCommon {
         uint slashCount = 0;
         for (uint i = 0; i < proofs.length; i++) {
             address slashedParticipant = proofHandlers[proofs[i].proofType](proofs[i].encodedProof, fraudProofVerificationContext);
-            if (slashedParticipant == address(0)) 
+            if (slashedParticipant == address(0))  
                 revert ErrorDisptuteFraudProofDidntSlash(i);
             slashParticipants[slashCount] = slashedParticipant;
             slashCount++;
@@ -47,448 +40,274 @@ contract FraudProofFacet is StateChannelCommon {
     }
 
     // ******************************* FRAUD PROOF IMPLEMENTATION *******************************
-    
-    function _handleBlockDoubleSign(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
-        // Implementation for handling BlockDoubleSign proof
-        return address(0); // Replace with actual logic
+
+
+    // ------------------------------- Block Fraud Proofs --------------------------------------- 
+    function _handleBlockDoubleSign(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) pure internal returns (address) {
+        BlockDoubleSignProof memory blockDoubleSignProof = abi.decode(encodedProof, (BlockDoubleSignProof));
+
+        Block memory block1 = abi.decode(blockDoubleSignProof.block1.encodedBlock, (Block));
+        Block memory block2 = abi.decode(blockDoubleSignProof.block2.encodedBlock, (Block));
+
+        if(fraudProofVerificationContext.channelId != block1.transaction.header.channelId || fraudProofVerificationContext.channelId != block2.transaction.header.channelId) {
+            revert ErrorNotSameChannelId();
+        }
+
+        if (
+            !(block1.transaction.header.forkCnt == block2.transaction.header.forkCnt
+            && block1.transaction.header.transactionCnt == block2.transaction.header.transactionCnt
+            && keccak256(abi.encode(block1)) != keccak256(abi.encode(block2)))
+        ){
+            revert ErrorDoubleSignBlocksNotSame();
+        }
+        
+        address signer1 = StateChannelUtilLibrary.retriveSignerAddress(
+            blockDoubleSignProof.block1.encodedBlock,
+            blockDoubleSignProof.block1.signature
+        );
+        address signer2 = StateChannelUtilLibrary.retriveSignerAddress(
+            blockDoubleSignProof.block2.encodedBlock,
+            blockDoubleSignProof.block2.signature
+        );
+        if(signer1 != signer2) {
+            return address(0);
+        }
+        return signer1; 
     }
 
-    function _handleBlockEmptyBlock(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
-        // Implementation for handling BlockEmptyBlock proof
-        return address(0); // Replace with actual logic
+    function _handleBlockEmptyBlock(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal pure returns (address) {
+        BlockEmptyProof memory blockEmptyProof = abi.decode(encodedProof, (BlockEmptyProof));
+        Block memory fraudBlock = abi.decode(blockEmptyProof.emptyBlock.encodedBlock, (Block));
+
+        if(fraudProofVerificationContext.channelId != fraudBlock.transaction.header.channelId) {
+            revert ErrorNotSameChannelId();
+        }
+
+        if(fraudBlock.transaction.header.transactionCnt == 0){
+            if(fraudBlock.stateSnapshotHash != fraudBlock.previousBlockHash){
+                revert ErrorNotEmptyBlockFraud();
+            }
+        }else{
+           Block memory previousBlock = abi.decode(blockEmptyProof.previousBlock.encodedBlock, (Block));
+
+           if(fraudBlock.stateSnapshotHash != previousBlock.stateSnapshotHash){
+            revert ErrorNotEmptyBlockFraud();
+           }
+        }
+        address signer = StateChannelUtilLibrary.retriveSignerAddress(
+            blockEmptyProof.emptyBlock.encodedBlock,
+            blockEmptyProof.emptyBlock.signature
+        );
+        return signer;
     }
 
     function _handleBlockInvalidStateTransition(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
-        // Implementation for handling BlockInvalidStateTransition proof
-        return address(0); // Replace with actual logic
-    }
+        BlockInvalidStateTransitionProof memory blockInvalidSTProof = abi.decode(encodedProof, (BlockInvalidStateTransitionProof));
+        Block memory fraudBlock = abi.decode(blockInvalidSTProof.invalidBlock.encodedBlock, (Block));
+        StateSnapshot memory previousStateSnapshot = blockInvalidSTProof.previousBlockStateSnapshot;
+        bytes memory previousStateStateMachineState = blockInvalidSTProof.previousStateStateMachineState;
 
-    function _handleBlockOutOfGas(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
-        // Implementation for handling BlockOutOfGas proof
-        return address(0); // Replace with actual logic
-    }
+        address signer = StateChannelUtilLibrary.retriveSignerAddress( 
+            blockInvalidSTProof.invalidBlock.encodedBlock,
+            blockInvalidSTProof.invalidBlock.signature
+        );
 
-    function _handleTimeoutThreshold(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
-        // Implementation for handling TimeoutThreshold proof
-        return address(0); // Replace with actual logic
-    }
-
-    function _handleTimeoutPriorInvalid(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
-        // Implementation for handling TimeoutPriorInvalid proof
-        return address(0); // Replace with actual logic
-    }
-
-    function _handleTimeoutParticipantNoNext(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
-        // Implementation for handling TimeoutParticipantNoNext proof
-        return address(0); // Replace with actual logic
-    }
-    
-    function _handleDisputeNotLatestState(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
-        // Implementation for handling DisputeNotLatestState proof
-        return address(0); // Replace with actual logic
-    }
-
-    function _handleDisputeInvalid(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
-        // Implementation for handling DisputeInvalid proof
-        return address(0); // Replace with actual logic
-    }
-
-    function _handleDisputeInvalidRecursive(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
-        // Implementation for handling DisputeInvalidRecursive proof
-        return address(0); // Replace with actual logic
-    }
-
-    function _handleDisputeInvalidStateProof(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
-        // Implementation for handling DisputeInvalidStateProof proof
-        return address(0); // Replace with actual logic
-    }
-
-    function _handleDisputeInvalidPreeviousRecursive(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
-        // Implementation for handling DisputeInvalidPreeviousRecursive proof
-        return address(0); // Replace with actual logic
-    }
-
-    function _handleDisputeInvalidExitChannelBlocks(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
-        // Implementation for handling DisputeInvalidExitChannelBlocks proof
-        return address(0); // Replace with actual logic
-    }
-
-
-    // =============================== Block Dispute Fraud Proofs Verification ===============================
-
-    // function _verifyBlockInvalidStateTransition(
-    //     Dispute memory dispute,
-    //     Proof memory proof
-    // ) internal returns (bool isValid, address[] memory slashedParticipants, bytes memory fraudProofErrorResult) {
-
-    //     BlockInvalidStateTransitionProof memory blockInvalidSTProof = abi.decode(proof.encodedProof, (BlockInvalidStateTransitionProof));
-    //     Block memory fraudBlock = abi.decode(blockInvalidSTProof.fraudBlockConfirmation.signedBlock.encodedBlock, (Block));
-    //     address[] memory slashParticipants = new address[](1);
+        if(fraudProofVerificationContext.channelId != fraudBlock.transaction.header.channelId) {
+            revert ErrorNotSameChannelId();
+        }
         
-    //     if(dispute.channelId != fraudBlock.transaction.header.channelId) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("BLOCK INVALID STATE TRANSITION: CHANNEL ID MISMATCH"));
-    //     }
-
-    //     (bool isTransitionValid, bytes memory encodedModifiedState) = executeStateTransitionOnState(
-    //         fraudBlock.transaction.header.channelId,
-    //         blockInvalidSTProof.encodedState,
-    //         fraudBlock.transaction
-    //     );
-
-    //     if (!isTransitionValid) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, new bytes(0));
-    //     }        
-    //     if (keccak256(encodedModifiedState) != dispute.latestStateSnapshotHash) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("BLOCK INVALID STATE TRANSITION: STATE HASH MISMATCH"));
-    //     }
-    //     address[] memory returnedSlashParticipants = _collectBlockConfirmationAddresses(
-    //         blockInvalidSTProof.fraudBlockConfirmation.signedBlock.encodedBlock,
-    //         blockInvalidSTProof.fraudBlockConfirmation.signatures
-    //     );
-    //     return (true, returnedSlashParticipants, new bytes(0));
-    // }
-
-    // function _verifyBlockDoubleSign( 
-    //     Dispute memory dispute,
-    //     Proof memory proof
-    // ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
-
-    //     BlockDoubleSignProof memory blockDoubleSignProof = abi.decode(proof.encodedProof, (BlockDoubleSignProof));
-
-    //     Block memory block1 = abi.decode(blockDoubleSignProof.block1.encodedBlock, (Block));
-    //     Block memory block2 = abi.decode(blockDoubleSignProof.block2.encodedBlock, (Block));
-
-    //     address[] memory slashParticipants = new address[](1);
-    //     if(dispute.channelId != block1.transaction.header.channelId || dispute.channelId != block2.transaction.header.channelId) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("BLOCK DOUBLE SIGN: CHANNEL ID MISMATCH"));
-    //     }
-
-    //     if(block1.stateSnapshotHash != block2.stateSnapshotHash && block1.previousBlockHash != block2.previousBlockHash) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("BLOCK DOUBLE SIGN: STATE HASH MISMATCH"));
-    //     }
+        if(fraudBlock.transaction.header.transactionCnt == 0){
+            require(fraudBlock.previousBlockHash == keccak256(abi.encode(previousStateSnapshot))); 
+            require(previousStateSnapshot.stateMachineStateHash == keccak256(previousStateStateMachineState),ErrorInvalidStateSnapshot());
+        }else{
+            Block memory previousBlock = abi.decode(blockInvalidSTProof.previousBlock.encodedBlock, (Block));
+            require(fraudBlock.previousBlockHash == keccak256(abi.encode(previousBlock)), ErrorLinkingPreviousBlock());
         
-    //     address signer1 = StateChannelUtilLibrary.retriveSignerAddress(
-    //         blockDoubleSignProof.block1.encodedBlock,
-    //         blockDoubleSignProof.block1.signature
-    //     );
-    //     address signer2 = StateChannelUtilLibrary.retriveSignerAddress(
-    //         blockDoubleSignProof.block2.encodedBlock,
-    //         blockDoubleSignProof.block2.signature
-    //     );
-    //     if(signer1 != signer2) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("BLOCK DOUBLE SIGN: SIGNER MISMATCH"));
-    //     }
-    //     slashParticipants[0] = signer1;
-    //     return (true, slashParticipants, new bytes(0));
-    // }
-    
-    // function _verifyBlockStateTransitionOutOfGas(
-    //     Dispute memory dispute,
-    //     Proof memory proof
-    // ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
-    //     BlockOutOfGasProof memory blockOutOfGasProof = abi.decode(proof.encodedProof, (BlockOutOfGasProof));
-    //     Block memory fraudBlock = abi.decode(blockOutOfGasProof.fraudBlockConfirmation.signedBlock.encodedBlock, (Block));
-    //     address[] memory slashParticipants = new address[](1);  
+            require(
+                previousStateSnapshot.stateMachineStateHash == keccak256(previousStateStateMachineState) 
+                && previousBlock.stateSnapshotHash == keccak256(abi.encode(previousStateSnapshot)),
+                ErrorInvalidStateSnapshotHash()
+            );
+        }
         
-    //     if(dispute.channelId != fraudBlock.transaction.header.channelId) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("BLOCK OUT OF GAS: CHANNEL ID MISMATCH"));
-    //     }
+        (bool isSuccess, bytes memory encodedModifiedState) = AStateChannelManagerProxy(address(this)).executeStateTransitionOnState(
+            fraudProofVerificationContext.channelId,
+            previousStateStateMachineState,
+            fraudBlock.transaction
+        );
+        if(!isSuccess){
+            return signer;
+        }
+        StateSnapshot memory newStateSnapshot = StateSnapshot({
+            stateMachineStateHash: keccak256(encodedModifiedState),
+            participants: getStatemachineParticipants(encodedModifiedState),
+            forkCnt: previousStateSnapshot.forkCnt,
+            latestJoinChannelBlockHash: previousStateSnapshot.latestJoinChannelBlockHash,
+            latestExitChannelBlockHash: previousStateSnapshot.latestExitChannelBlockHash,
+            totalDeposits: previousStateSnapshot.totalDeposits,
+            totalWithdrawals: previousStateSnapshot.totalWithdrawals
+        });
+        require(fraudBlock.stateSnapshotHash == keccak256(abi.encode(newStateSnapshot)), ErrorValidStateTransition());
         
-    //     (bool isSuccess, bytes memory encodedModifiedState) = executeStateTransitionOnState(
-    //         fraudBlock.transaction.header.channelId,
-    //         blockOutOfGasProof.encodedState,
-    //         fraudBlock.transaction
-    //     );
-    //     if(isSuccess){
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("BLOCK OUT OF GAS: STATE TRANSITION SUCCESSFUL"));
-    //     }
-    //     address[] memory returnedSlashParticipants = _collectBlockConfirmationAddresses(
-    //         blockOutOfGasProof.fraudBlockConfirmation.signedBlock.encodedBlock,
-    //         blockOutOfGasProof.fraudBlockConfirmation.signatures
-    //     );
-    //     address signer = StateChannelUtilLibrary.retriveSignerAddress(
-    //         blockOutOfGasProof.fraudBlockConfirmation.signedBlock.encodedBlock,
-    //         blockOutOfGasProof.fraudBlockConfirmation.signedBlock.signature
-    //     );
-    //     returnedSlashParticipants[returnedSlashParticipants.length] = signer;
-    //     return (true, returnedSlashParticipants, new bytes(0));
+        return signer;
+    }
+    // ----------------------------------- Timeout Fraud Proofs -----------------------------------
+    function _handleTimeoutThreshold(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal view returns (address) {
         
-    // }
-    
-    // function _verifyBlockEmptyBlock(
-    //     Dispute memory dispute,
-    //     Proof memory proof
-    // ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
-    //     BlockEmptyProof memory blockEmptyProof = abi.decode(proof.encodedProof, (BlockEmptyProof));
-    //     Block memory fraudBlock = abi.decode(blockEmptyProof.emptyBlock.encodedBlock, (Block));
-
-    //     address[] memory slashParticipants = new address[](1);
-    //     if(dispute.channelId != fraudBlock.transaction.header.channelId) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("BLOCK EMPTY: CHANNEL ID MISMATCH"));
-    //     }
-    //     if(fraudBlock.transaction.header.transactionCnt != uint(0)) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("BLOCK EMPTY: TRANSACTION COUNT NOT ZERO"));
-    //     }
-    //     address signer = StateChannelUtilLibrary.retriveSignerAddress(
-    //         blockEmptyProof.emptyBlock.encodedBlock,
-    //         blockEmptyProof.emptyBlock.signature
-    //     );
-    //     slashParticipants[0] = signer;
-    //     return (true, slashParticipants, new bytes(0));
-    // }
-    
-    // // =============================== Dispute Fraud proof Verification ===============================
-
-    // function _verifyDisputeNotLatestState(
-    //     Dispute memory dispute,
-    //     Proof memory proof,
-    //     DisputeAuditingData memory disputeAuditingData
-    // ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
-    //     DisputeNotLatestStateProof memory disputeNotLatestStateProof = abi.decode(proof.encodedProof, (DisputeNotLatestStateProof));
-    //     address[] memory slashParticipants = new address[](1);
+        TimeoutThresholdProof memory timeoutThresholdProof = abi.decode(encodedProof, (TimeoutThresholdProof));
+        BlockConfirmation memory thresholdBlockConfirmation = timeoutThresholdProof.thresholdBlock;
+        Block memory thresholdBlock = abi.decode(thresholdBlockConfirmation.signedBlock.encodedBlock, (Block));
+        Dispute memory originalTimedOutDispute = timeoutThresholdProof.timedOutDispute;
         
-    //     Block memory newerBlock = abi.decode(disputeNotLatestStateProof.newerBlock.signedBlock.encodedBlock, (Block));
-    //     if(dispute.channelId != newerBlock.transaction.header.channelId) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("DISPUTE NOT LATEST STATE: CHANNEL ID MISMATCH"));
-    //     }
+        bytes32 originalDisputeCommitment = keccak256(abi.encode(
+            originalTimedOutDispute,
+            timeoutThresholdProof.timedOutDisputeTimestamp
+        ));
 
-    //     address originalDisputer = disputeNotLatestStateProof.originalDispute.disputer;
+        (bool isAvailable, bytes32 commitment) = getDisputeCommitment(fraudProofVerificationContext.channelId, originalTimedOutDispute.disputeIndex);
+        if(!isAvailable && commitment != originalDisputeCommitment){
+            return address(0);
+        }
+        if(originalTimedOutDispute.latestStateSnapshotHash != keccak256(timeoutThresholdProof.latestStateSnapshot)) {
+            revert ErrorIncorrectLatestStateSnapshot();
+        }
+        address[] memory participants = abi.decode(timeoutThresholdProof.latestStateSnapshot, (StateSnapshot)).participants;
         
-    //     bytes32 originalDisputeCommitment = keccak256(abi.encode(
-    //         disputeNotLatestStateProof.originalDispute,
-    //         disputeAuditingData.disputeTimestamp
-    //     ));
-    //     (bool isAvailable, int index) = isDisputeCommitmentAvailable(dispute.channelId, originalDisputeCommitment);
-    //     if(!isAvailable) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("DISPUTE NOT LATEST STATE: ORIGINAL DISPUTE NOT AVAILABLE"));
-    //     }
+        if(thresholdBlock.transaction.header.forkCnt != originalTimedOutDispute.timeout.forkCnt && thresholdBlock.transaction.header.transactionCnt != originalTimedOutDispute.timeout.blockHeight){
+            revert ErrorInvalidBlock();
+        }
+        // check signatures
+        bytes[] memory singleSignerArray = new bytes[](1);
+        singleSignerArray[0] = thresholdBlockConfirmation.signedBlock.signature;
+        bytes[] memory signatures = StateChannelUtilLibrary.concatBytesArrays(thresholdBlockConfirmation.signatures, singleSignerArray);
+        address[] memory signers = StateChannelUtilLibrary.concatAddressArrays(participants, _collectBlockConfirmationAddresses(
+            thresholdBlockConfirmation.signedBlock.encodedBlock,
+            signatures
+        ));
 
-    //     address signer = StateChannelUtilLibrary.retriveSignerAddress(
-    //         disputeNotLatestStateProof.newerBlock.signedBlock.encodedBlock,
-    //         disputeNotLatestStateProof.newerBlock.signedBlock.signature
-    //     );
-    //     address[] memory signers = _collectBlockConfirmationAddresses(
-    //         disputeNotLatestStateProof.newerBlock.signedBlock.encodedBlock,
-    //         disputeNotLatestStateProof.newerBlock.signatures
-    //     );
+        (bool isVerified, string memory errorMessage) = StateChannelUtilLibrary.verifyThresholdSigned(signers, thresholdBlockConfirmation.signedBlock.encodedBlock, signatures);
+        if(!isVerified){
+            revert ErrorInvalidBlock();
+        }
+        if(keccak256(abi.encode(participants))!= keccak256(abi.encode(signers))){
+            revert ErrorInvalidBlock();
+        }
+        // If calldata check also fails, return false with the last error message
+        return originalTimedOutDispute.disputer;
+    }
 
-    //     // check block ordering
-    //     uint latestStateHeight = _getLatestHeight(disputeNotLatestStateProof.originalDispute.stateProof);
-    //     if(newerBlock.transaction.header.transactionCnt < latestStateHeight) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("DISPUTE NOT LATEST STATE: NEWER BLOCK HEIGHT IS LESS THAN LATEST STATE HEIGHT"));
-    //     }
-    //     if(signer != originalDisputer && !StateChannelUtilLibrary.isAddressInArray(signers, originalDisputer)) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("DISPUTE NOT LATEST STATE: SIGNER MISMATCH"));
-    //     }
-    //     slashParticipants[0] = originalDisputer;
-    //     return (true, slashParticipants, new bytes(0));
-    // }
+    function _handleTimeoutPriorInvalid(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) view internal returns (address) {
+        TimeoutPriorInvalidProof memory timeoutPriorInvalidProof = abi.decode(encodedProof, (TimeoutPriorInvalidProof));
+        Dispute memory originalDispute = timeoutPriorInvalidProof.originalDispute;
+        Dispute memory recursiveDispute = timeoutPriorInvalidProof.recursiveDispute;
 
-    // function _verifyDisputeInvalidStateProof(
-    //     Dispute memory dispute,
-    //     Proof memory proof,
-    //     DisputeAuditingData memory disputeAuditingData
-    // ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
-    //     DisputeInvalidStateProof memory disputeInvalidStateProof = abi.decode(proof.encodedProof, (DisputeInvalidStateProof));
-    //     address[] memory slashParticipants = new address[](1);
-    //     if(dispute.channelId != disputeInvalidStateProof.dispute.channelId) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("DISPUTE NOT LATEST STATE: CHANNEL ID MISMATCH"));
-    //     }
-    //     address originalDisputer = disputeInvalidStateProof.dispute.disputer;
-        
-    //     bool isStateProofValid = _verifyStateProof(
-    //         disputeAuditingData,
-    //         disputeInvalidStateProof.dispute.genesisStateSnapshotHash,
-    //         disputeInvalidStateProof.dispute.stateProof,
-    //         disputeInvalidStateProof.dispute.latestStateSnapshotHash
-    //     );
-    //     if(!isStateProofValid) {
-    //         slashParticipants[0] = originalDisputer;
-    //         return (false, slashParticipants, abi.encode("DISPUTE INVALID STATE PROOF: STATE PROOF INVALID"));
-    //     }
-    //     slashParticipants[0] = originalDisputer;
-    //     return (true, slashParticipants, new bytes(0));
-    // }
+        if(recursiveDispute.channelId != originalDispute.channelId && recursiveDispute.channelId != fraudProofVerificationContext.channelId) {
+            revert ErrorNotSameChannelId();
+        }
+        // check if the recursive dispute is available
+        bytes32 recursiveDisputeCommitment = keccak256(abi.encode(
+            recursiveDispute,
+            timeoutPriorInvalidProof.recursiveDisputeTimestamp
+        ));
+        bytes32 originalDisputeCommitment = keccak256(abi.encode(
+            originalDispute,
+            timeoutPriorInvalidProof.originalDisputeTimestamp
+        ));
 
-    // function _verifyDisputeInvalidExitChannelBlocks(
-    //     Dispute memory dispute,
-    //     Proof memory proof
-    // ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
-    //     // TODO: implement processExitChannelBlocks
-    //     revert("NOT IMPLEMENTED");
-    // }
-    
-    // // =============================== Dispute Timeout Verification ===============================
+        (bool isAvailable, bytes32 commitment) = getDisputeCommitment(fraudProofVerificationContext.channelId, recursiveDispute.disputeIndex);
 
-    // function _verifyTimeoutThreshold(
-    //     Dispute memory dispute,
-    //     Proof memory proof,
-    //     DisputeAuditingData memory disputeAuditingData
-    // ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
-
-    //     TimeoutThresholdProof memory timeoutThresholdProof = abi.decode(proof.encodedProof, (TimeoutThresholdProof));
-    //     BlockConfirmation memory thresholdBlockConfirmation = timeoutThresholdProof.thresholdBlock;
-    //     Block memory thresholdBlock = abi.decode(thresholdBlockConfirmation.signedBlock.encodedBlock, (Block));
-    //     Dispute memory originalTimedOutDispute = timeoutThresholdProof.timedOutDispute;
-        
-    //     address[] memory slashParticipants = new address[](1);
-    //     bool allThresholdChecksPass = true;
-    //     bytes memory errorMessage;
-
-    //     bytes32 originalDisputeCommitment = keccak256(abi.encode(
-    //         originalTimedOutDispute,
-    //         disputeAuditingData.disputeTimestamp
-    //     ));
-    //     (bool isAvailable, int index) = isDisputeCommitmentAvailable(dispute.channelId, originalDisputeCommitment);
-    //     if(!isAvailable) {
-    //         allThresholdChecksPass = false;
-    //         errorMessage = abi.encode("TIMEOUT THRESHOLD: ORIGINAL DISPUTE NOT AVAILABLE");
-    //     }
-
-    //     if(thresholdBlock.transaction.header.channelId != originalTimedOutDispute.channelId) {
-    //         allThresholdChecksPass = false;
-    //         errorMessage = abi.encode("TIMEOUT THRESHOLD: BLOCK CHANNEL ID MISMATCH");
-    //     }
-
-    //     uint latestStateHeight = _getLatestHeight(originalTimedOutDispute.stateProof);
-    //     if(latestStateHeight != thresholdBlock.transaction.header.transactionCnt) {
-    //         allThresholdChecksPass = false;
-    //         errorMessage = abi.encode("TIMEOUT THRESHOLD: BLOCK HEIGHT MISMATCH");
-    //     }
+        if(!isAvailable && commitment != recursiveDisputeCommitment) {
+            revert ErrorDisputeCommitmentNotAvailable();
+        }
+        if(recursiveDispute.previousRecursiveDisputeIndex == type(uint256).max || recursiveDispute.previousRecursiveDisputeIndex == originalDispute.disputeIndex){
+            revert ErrorDisputeCommitmentNotAvailable();
+        }
        
-    //     if(thresholdBlock.stateSnapshotHash != originalTimedOutDispute.latestStateSnapshotHash) {
-    //         allThresholdChecksPass = false;
-    //         errorMessage = abi.encode("TIMEOUT THRESHOLD: BLOCK STATE HASH MISMATCH");
-    //     }
-
-    //     // check signatures
-    //     address signer = StateChannelUtilLibrary.retriveSignerAddress(
-    //         thresholdBlockConfirmation.signedBlock.encodedBlock,
-    //         thresholdBlockConfirmation.signedBlock.signature
-    //     );
-    //     address[] memory signers = _collectBlockConfirmationAddresses(
-    //         thresholdBlockConfirmation.signedBlock.encodedBlock,
-    //         thresholdBlockConfirmation.signatures
-    //     );
-
-    //     if(signer != dispute.disputer || !StateChannelUtilLibrary.isAddressInArray(signers, dispute.disputer)) {
-    //         allThresholdChecksPass = false;
-    //         errorMessage = abi.encode("TIMEOUT THRESHOLD: SIGNER NOT AVAILABLE");
-    //     }
-
-    //     if (!allThresholdChecksPass) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, errorMessage);
-    //     }
-
-    //     // If calldata check also fails, return false with the last error message
-    //     slashParticipants[0] = originalTimedOutDispute.disputer;
-    //     return (true, slashParticipants, new bytes(0));
-    // }
-
-    // function _verifyTimeoutPriorInvalidProof(
-    //     Dispute memory dispute,
-    //     Proof memory proof,
-    //     DisputeAuditingData memory disputeAuditingData
-    // ) internal returns (bool isValid, address[] memory slashParticipants, bytes memory fraudProofErrorResult) {
-
-    //     TimeoutPriorInvalidProof memory timeoutPriorInvalidProof = abi.decode(proof.encodedProof, (TimeoutPriorInvalidProof));
-    //     Dispute memory originalDispute = timeoutPriorInvalidProof.originalDispute;
-    //     Dispute memory recursiveDispute = timeoutPriorInvalidProof.recursiveDispute;
-    //     address[] memory slashParticipants = new address[](1);
-
-    //     if(recursiveDispute.channelId != originalDispute.channelId && recursiveDispute.channelId != dispute.channelId) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("TIMEOUT PRIOR INVALID: CHANNEL ID MISMATCH"));
-    //     }
-    //     // check if the recursive dispute is available
-    //     bytes32 recursiveDisputeCommitment = keccak256(abi.encode(
-    //         recursiveDispute,
-    //         disputeAuditingData.disputeTimestamp
-    //     ));
-    //     (bool isAvailable, int index) = isDisputeCommitmentAvailable(recursiveDispute.channelId, recursiveDisputeCommitment);
-
-    //     if(!isAvailable) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("TIMEOUT PRIOR INVALID: RECURSIVE DISPUTE NOT AVAILABLE"));
-    //     }
-    //     if(recursiveDispute.previousRecursiveDisputeHash != bytes32(0)) {
-    //         // check if the previous recursive dispute is available
-    //         (bool isOriginalDisputeAvailable, int index) = isDisputeCommitmentAvailable(recursiveDispute.channelId,recursiveDispute.previousRecursiveDisputeHash);
-    //         if(!isOriginalDisputeAvailable) {
-    //             slashParticipants[0] = dispute.disputer;
-    //             return (false, slashParticipants, abi.encode("TIMEOUT PRIOR INVALID: PREVIOUS RECURSIVE DISPUTE NOT AVAILABLE"));
-    //         }
-    //     }
+        // check if the previous recursive dispute is available
+        (bool isOriginalDisputeAvailable, bytes32 originalCommitment) = getDisputeCommitment(fraudProofVerificationContext.channelId, originalDispute.disputeIndex);
+        if(!isOriginalDisputeAvailable && originalCommitment != originalDisputeCommitment) {
+            revert ErrorDisputeCommitmentNotAvailable();
+        }
+            
+        // check if the original timeout is greater than the recursive timeout
+        if(originalDispute.timeout.blockHeight <= recursiveDispute.timeout.blockHeight) {
+            revert ErrorInvalidBlock();
+        }
         
-    //     (bool isOriginalTimeoutSet, bool isOriginalOptionalSet) = isTimeoutSetWithOptional(originalDispute.timeout, false);
-    //     if(!isOriginalTimeoutSet) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("TIMEOUT PRIOR INVALID: ORIGINAL TIMEOUT NOT SET"));
-    //     }
-    //     (bool isRecursiveTimeoutSet, bool isRecursiveOptionalSet) = isTimeoutSetWithOptional(recursiveDispute.timeout, false);
-    //     if(!isRecursiveTimeoutSet) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("TIMEOUT PRIOR INVALID: RECURSIVE TIMEOUT NOT SET"));
-    //     }
+        return recursiveDispute.disputer;
+    }
+    
+    // ------------------------------------ Dispute Fraud Proofs ------------------------------------
+    
+    function _handleDisputeInvalidPreviousRecursive(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address) {
+        DisputeInvalidPreviousRecursiveProof memory disputeInvalidPreviousRecursiveProof = abi.decode(encodedProof, (DisputeInvalidPreviousRecursiveProof));
+        Dispute memory originalDispute = disputeInvalidPreviousRecursiveProof.originalDispute;
+        Dispute memory invalidRecursiveDispute = disputeInvalidPreviousRecursiveProof.invalidRecursiveDispute;
+        uint originalDisputeTimestamp = disputeInvalidPreviousRecursiveProof.originalDisputeTimestamp;
+        uint invalidRecursiveDisputeTimestamp = disputeInvalidPreviousRecursiveProof.invalidRecursiveDisputeTimestamp;
+        bytes memory latestStateSnapshot = disputeInvalidPreviousRecursiveProof.latestStateSnapshot;
+        bytes memory invalidRecursiveDisputeOutputState = disputeInvalidPreviousRecursiveProof.invalidRecursiveDisputeOutputState;
+        Block memory originalDisputeLastBlock = abi.decode(originalDispute.stateProof.signedBlocks[originalDispute.stateProof.signedBlocks.length - 1].encodedBlock, (Block));
+        Block memory invalidRecursiveDisputeLastBlock = abi.decode(invalidRecursiveDispute.stateProof.signedBlocks[invalidRecursiveDispute.stateProof.signedBlocks.length - 1].encodedBlock, (Block));
         
-    //     // check if the original timeout is greater than the recursive timeout
-    //     if(originalDispute.timeout.blockHeight < recursiveDispute.timeout.blockHeight) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("TIMEOUT PRIOR INVALID: RECURSIVE TIMEOUT IS NEW"));
-    //     }
-    //     // check if the timeout peeer in original dispute is the disputer in recursive dispute
-    //     if(originalDispute.timeout.participant != recursiveDispute.disputer) {
-    //         slashParticipants[0] = dispute.disputer;
-    //         return (false, slashParticipants, abi.encode("TIMEOUT PRIOR INVALID: TIMEOUT PEER MISMATCH"));
-    //     }
+        // check if the recursive was done during the desired challenge period of the original dispute
+        bytes32 recursiveDisputeCommitment = keccak256(abi.encode(
+            invalidRecursiveDispute,
+            invalidRecursiveDisputeTimestamp
+        ));
+        bytes32 originalDisputeCommitment = keccak256(abi.encode(
+            originalDispute,
+            originalDisputeTimestamp
+        ));
 
-    //     slashParticipants[0] = recursiveDispute.disputer;
-    //     return (true, slashParticipants, new bytes(0));
-    // }
+        (bool isAvailable, bytes32 commitment) = getDisputeCommitment(fraudProofVerificationContext.channelId, invalidRecursiveDispute.disputeIndex);
+        require(!isAvailable && commitment != recursiveDisputeCommitment, ErrorDisputeCommitmentNotAvailable());
 
+        require(invalidRecursiveDispute.previousRecursiveDisputeIndex == type(uint256).max || invalidRecursiveDispute.previousRecursiveDisputeIndex != originalDispute.disputeIndex, ErrorDisputeCommitmentNotAvailable());
+        (bool isOriginalDisputeAvailable, bytes32 originalCommitment) = getDisputeCommitment(fraudProofVerificationContext.channelId, originalDispute.disputeIndex);
+        
+        require(!isOriginalDisputeAvailable && originalCommitment != originalDisputeCommitment, ErrorDisputeCommitmentNotAvailable());
+        require(invalidRecursiveDisputeTimestamp > originalDisputeTimestamp + getChallengeTime(), ErrorWithinChallengePeriod());
 
-    // function isTimeoutSetWithOptional(Timeout memory timeout, bool checkOptional) internal pure returns (bool isSet, bool optionalSet) {
-    //     if(checkOptional) {
-    //         return (timeout.participant != address(0), timeout.previousBlockProducer != address(0));
-    //     }
-    //     return (timeout.participant != address(0), false);
-    // }
+        // check if the disputer used the latest state in recursive dispute       
+        require(invalidRecursiveDisputeLastBlock.transaction.header.transactionCnt > originalDisputeLastBlock.transaction.header.transactionCnt, ErrorInvalidLatestState());
+        
+        address signer = StateChannelUtilLibrary.retriveSignerAddress(
+            invalidRecursiveDispute.stateProof.signedBlocks[invalidRecursiveDispute.stateProof.signedBlocks.length - 1].encodedBlock,
+            invalidRecursiveDispute.stateProof.signedBlocks[invalidRecursiveDispute.stateProof.signedBlocks.length - 1].signature
+        );
 
-    // function _getLatestHeight(StateProof memory stateProof) internal view returns (uint) {
+        (bool found, bytes32 blockCalldataCommitment) = getBlockCallDataCommitment(fraudProofVerificationContext.channelId, invalidRecursiveDisputeLastBlock.transaction.header.forkCnt, invalidRecursiveDisputeLastBlock.transaction.header.transactionCnt, signer);
+        require(signer == invalidRecursiveDispute.disputer || found, ErrorInvalidLatestState());
 
-    //     if(stateProof.signedBlocks.length == 0) {
-    //         uint lastMilestoneBlockConfirmationIndex = stateProof.forkProof.forkMilestoneProofs[stateProof.forkProof.forkMilestoneProofs.length - 1].blockConfirmations.length - 1; 
-    //         Block memory lastMilestoneBlockConfirmation = abi.decode(stateProof.forkProof.forkMilestoneProofs[stateProof.forkProof.forkMilestoneProofs.length - 1].blockConfirmations[lastMilestoneBlockConfirmationIndex].signedBlock.encodedBlock, (Block));
-    //         return lastMilestoneBlockConfirmation.transaction.header.transactionCnt;
-    //     }
-    //     Block memory lastSignedBlock = abi.decode(stateProof.signedBlocks[stateProof.signedBlocks.length - 1].encodedBlock, (Block));
-    //     return lastSignedBlock.transaction.header.transactionCnt;
-    // }
+        // check if the recursive dispute extend the lashes
+        require(invalidRecursiveDispute.outputStateSnapshotHash == keccak256(invalidRecursiveDisputeOutputState), ErrorInvalidDisputeOutputState());
+        
+        address[] memory initialParticipants = getSnapshotParticipants(fraudProofVerificationContext.channelId);
+        address[] memory afterDisputeParticipants = getStatemachineParticipants(invalidRecursiveDisputeOutputState);
+        require(afterDisputeParticipants.length < initialParticipants.length, ErrorRecursiveDisputeNotExtendingSlashes());
+        
+        return invalidRecursiveDispute.disputer;
+    }
 
-    // function _calculateTotalDeposits(JoinChannelBlock[] memory joinChannelBlocks) internal view returns (uint) {
-    //     uint totalDeposits = 0;
-    //     for (uint i = 0; i < joinChannelBlocks.length; i++) {
-    //         for(uint j = 0; j < joinChannelBlocks[i].joinChannels.length; j++) {
-    //             totalDeposits += joinChannelBlocks[i].joinChannels[j].amount;
-    //         }
-    //     }
-    //     return totalDeposits;
-    // }
+    function _getLatestHeight(StateProof memory stateProof) internal pure returns (uint) {
+
+        if(stateProof.signedBlocks.length == 0) {
+            uint lastMilestoneBlockConfirmationIndex = stateProof.forkProof.forkMilestoneProofs[stateProof.forkProof.forkMilestoneProofs.length - 1].blockConfirmations.length - 1; 
+            Block memory lastMilestoneBlockConfirmation = abi.decode(stateProof.forkProof.forkMilestoneProofs[stateProof.forkProof.forkMilestoneProofs.length - 1].blockConfirmations[lastMilestoneBlockConfirmationIndex].signedBlock.encodedBlock, (Block));
+            return lastMilestoneBlockConfirmation.transaction.header.transactionCnt;
+        }
+        Block memory lastSignedBlock = abi.decode(stateProof.signedBlocks[stateProof.signedBlocks.length - 1].encodedBlock, (Block));
+        return lastSignedBlock.transaction.header.transactionCnt;
+    }
+
+    function _collectBlockConfirmationAddresses(bytes memory encodedBlock, bytes[] memory signatures) pure internal returns (address[] memory confirmationAddress){
+        address[] memory collectedAddresses = new address[](signatures.length); 
+        for(uint i = 0; i < signatures.length; i++){
+            address signer = StateChannelUtilLibrary.retriveSignerAddress(encodedBlock, signatures[i]);
+            collectedAddresses[i] = signer;
+        }
+        return collectedAddresses;
+    }
 
 }

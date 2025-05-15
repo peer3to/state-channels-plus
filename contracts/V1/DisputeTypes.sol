@@ -9,20 +9,19 @@ contract DisputeTypes {
         BlockDoubleSignProof memory b,
         BlockEmptyProof memory c,
         BlockInvalidStateTransitionProof memory d,
-        BlockOutOfGasProof memory e,
-        TimeoutThresholdProof memory f,
-        TimeoutPriorInvalidProof memory g,
-        DisputeNotLatestStateProof memory h,
-        DisputeOutOfGasProof memory i,
-        DisputeInvalidOutputStateProof memory j,
-        DisputeInvalidStateProof memory k,
-        DisputeInvalidPreviousRecursiveProof memory l,
-        DisputeInvalidExitChannelBlocksProof memory m,
-        ForkMilestoneProof memory n,
-        ForkProof memory o,
-        StateProof memory p,
-        Proof memory q,
-        ProofType r
+        TimeoutThresholdProof memory e,
+        TimeoutPriorInvalidProof memory f,
+        DisputeNotLatestStateProof memory g,
+        DisputeOutOfGasProof memory h,
+        DisputeInvalidOutputStateProof memory i,
+        DisputeInvalidStateProof memory j,
+        DisputeInvalidPreviousRecursiveProof memory k,
+        DisputeInvalidExitChannelBlocksProof memory l,
+        ForkMilestoneProof memory m,
+        ForkProof memory n,
+        StateProof memory o,
+        Proof memory p,
+        ProofType q
     ) {}
 }
 
@@ -103,24 +102,23 @@ enum ProofType {
     DisputeOutOfGas,
     DisputeInvalidOutputState,
     DisputeInvalidStateProof,
-    DisputeInvalidPreeviousRecursive,
+    DisputeInvalidPreviousRecursive,
     DisputeInvalidExitChannelBlocks
 }
 
 // ========================== Block related fraud proofs ==========================
 struct BlockEmptyProof {
     SignedBlock emptyBlock;
+    SignedBlock previousBlock;
 }
 
 struct BlockInvalidStateTransitionProof {
-    BlockConfirmation fraudBlockConfirmation;
-    bytes encodedState;
+    SignedBlock invalidBlock;
+    SignedBlock previousBlock;
+    StateSnapshot previousBlockStateSnapshot;
+    bytes previousStateStateMachineState;
 }
 
-struct BlockOutOfGasProof {
-    BlockConfirmation fraudBlockConfirmation;
-    bytes encodedState;
-}
 
 struct BlockDoubleSignProof {
     SignedBlock block1;
@@ -131,6 +129,7 @@ struct BlockDoubleSignProof {
 struct DisputeNotLatestStateProof {
     BlockConfirmation newerBlock;
     Dispute originalDispute;
+    uint originalDisputeTimestamp;
 }
 
 struct DisputeOutOfGasProof {
@@ -146,7 +145,12 @@ struct DisputeInvalidStateProof {
 }
 
 struct DisputeInvalidPreviousRecursiveProof {
-    Dispute dispute;
+    Dispute invalidRecursiveDispute;
+    Dispute originalDispute;
+    uint originalDisputeTimestamp;
+    uint invalidRecursiveDisputeTimestamp;
+    bytes latestStateSnapshot;
+    bytes invalidRecursiveDisputeOutputState;
 }
 
 struct DisputeInvalidExitChannelBlocksProof {
@@ -158,11 +162,15 @@ struct DisputeInvalidExitChannelBlocksProof {
 struct TimeoutThresholdProof {
     BlockConfirmation thresholdBlock;
     Dispute timedOutDispute;
+    uint timedOutDisputeTimestamp;
+    bytes latestStateSnapshot;
 }
 
 struct TimeoutPriorInvalidProof {
     Dispute originalDispute;
     Dispute recursiveDispute;
+    uint originalDisputeTimestamp;
+    uint recursiveDisputeTimestamp;
 }
 
 /// @dev a pair consisting of first index (index of the malicious dispute) and last index (last index in the array)
@@ -179,6 +187,7 @@ struct DisputeAuditingData {
     StateSnapshot[] milestoneSnapshots; //for K milestones there will be K-1 snapshots, since the first milestone is the genesisSnapshot
     bytes latestStateStateMachineState;
     JoinChannelBlock[] joinChannelBlocks;
+    uint timestamp;
     // ========================== optional ===============================
     Dispute previousDispute; // (optional) needed to verify 'this' dispute genesis against the previous dispute outputSnapshot or genesisSnapshot (in the case of a recursive dispute) - if not present, genesis is the latest on-chain Snapshot
     uint previousDisputeTimestamp; // (optional) needed to verify the commitment of the previous dispute
