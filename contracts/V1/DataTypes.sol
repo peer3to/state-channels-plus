@@ -137,4 +137,5 @@ struct DisputeProof {
     Dispute dispute;
     StateSnapshot outputStateSnapshot;
     uint timestamp;
+    bytes[] signatures;
 }

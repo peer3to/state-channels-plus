@@ -4,6 +4,7 @@ import "./StateChannelCommon.sol";
 import "../DataTypes.sol";
 import "./AStateChannelManagerProxy.sol";
 import "./Errors.sol";
+import "./StateChannelUtilLibrary.sol";
 
 contract StateSnapshotFacet is StateChannelCommon {
     function updateStateSnapshotWithDispute(
@@ -65,8 +66,10 @@ contract StateSnapshotFacet is StateChannelCommon {
             _isDisputeCommitmentValid(dispute, disputeTimestamp, channelId),
             ErrorDisputeProofNotValid()
         );
+        // TODO: add addressesInThreshold
+        // addressesInThreshold are? snapshot.participents - onchainSlasshes?
         require(
-            _isDisputeFinalized(disputeTimestamp),
+            _isDisputeFinalized(disputeProof, ),
             ErrorDisputeNotFinalized()
         );
         require(
@@ -203,9 +206,18 @@ contract StateSnapshotFacet is StateChannelCommon {
     }
 
     function _isDisputeFinalized(
-        uint disputeTimestamp
+        DisputeProof memory disputeProof,
+        address[] memory addressesInThreshold
     ) internal view returns (bool) {
-        return block.timestamp >= disputeTimestamp + getChallengeTime();
+        if (block.timestamp >= disputeProof.timestamp + getChallengeTime()) {
+            return true;
+        }
+        bytes memory encodedDispute = Codec.encode(disputeProof.dispute);
+        return StateChannelUtilLibrary.verifyThresholdSigned(
+            addressesInThreshold,
+            encodedDispute,
+            disputeProof.signatures
+        );
     }
 
     function _isStateSnapshotValid(

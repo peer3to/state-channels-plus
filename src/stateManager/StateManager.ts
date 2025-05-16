@@ -467,7 +467,8 @@ class StateManager {
         const disputeProof: DisputeProofStruct = {
             dispute: disputeData.dispute,
             outputStateSnapshot: outputStateSnapshot,
-            timestamp: disputeData.timestamp
+            timestamp: disputeData.timestamp,
+            signatures: []
         };
 
         // Check if dispute is within agreement time
@@ -498,26 +499,25 @@ class StateManager {
         const disputeSignatures = this.agreementManager.getDisputeSignatures(
             disputeData.dispute
         );
-        const disputeSigners = disputeSignatures.map((sig) =>
-            SignatureUtils.getSignerAddress(disputeData.dispute, sig)
-        );
-        const signersSet = SetUtils.stringSetFromArray(disputeSigners);
 
-        // Check if we have threshold signatures
-        const hasThreshold = SetUtils.isSubset(
-            requiredAddressesSet,
-            signersSet
+        const hasThreshold = SignatureUtils.hasSignatureThreshold(
+            fork.addressesInThreshold,
+            Codec.encode(disputeData.dispute),
+            disputeSignatures,
+            {
+                addressesToIgnore: [disputeData.dispute.disputer]
+            }
         );
 
         if (hasThreshold) {
             // Create dispute proof from the latest dispute
             // Call contract with dispute and signatures
+            disputeProof.signatures = disputeSignatures as BytesLike[];
             return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
                 this.channelId,
                 milestoneProofs,
                 milestoneSnapshots,
                 disputeProof,
-                disputeSignatures,
                 exitChannelBlocks
             );
         }
