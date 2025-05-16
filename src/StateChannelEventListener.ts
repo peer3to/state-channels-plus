@@ -90,11 +90,9 @@ class StateChannelEventListener {
             handler: (logObj: any) => {
                 const encodedDispute = logObj.args.encodedDispute;
                 const timestamp = Number(logObj.args.timestamp);
-                const commitment = logObj.args.disputeCommitment;
                 return this.stateManager.onDisputeCommitted(
                     encodedDispute,
-                    timestamp,
-                    commitment
+                    timestamp
                 );
             }
         },

@@ -12,7 +12,7 @@ import {
     SignedBlockStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import { SignedDisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/DataTypes";
 import Clock from "@/Clock";
 import P2PManager from "@/P2PManager";
 import { EvmUtils, Codec, SignatureUtils } from "@/utils";
@@ -157,24 +157,19 @@ class P2pSigner implements Signer {
         this.p2pManager.disconnectAll();
     }
 
-    public async confirmDispute(signedDispute: SignedDisputeStruct) {
-        const dispute = Codec.decodeDispute(signedDispute.encodedDispute);
-
+    public async confirmDispute(dispute: DisputeStruct) {
         // Add our signature
-        const signature = await SignatureUtils.signMsg(
-            signedDispute.encodedDispute,
-            this.signer
-        );
+        const signedDispute = await EvmUtils.signDispute(dispute, this.signer);
 
         // Store signature in AgreementManager
         this.p2pManager.stateManager.agreementManager.confirmDispute(
             dispute,
-            signature as SignatureLike
+            signedDispute.signature as SignatureLike
         );
 
         // Broadcast confirmation with our signature
         this.p2pManager.rpcProxy
-            .onDisputeConfirmation(signedDispute, signature)
+            .onDisputeConfirmation(signedDispute)
             .broadcast();
     }
 }

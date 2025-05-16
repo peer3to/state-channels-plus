@@ -1,6 +1,8 @@
 import { BytesLike } from "ethers";
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
-import { SignedDisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import {
+    SignedBlockStruct,
+    SignedDisputeStruct
+} from "@typechain-types/contracts/V1/DataTypes";
 import { ExecutionFlags } from "@/types";
 import { ARpcService, MainRpcService } from "@/rpc";
 import { retry } from "@/utils/retry";
@@ -49,14 +51,10 @@ class StateTransitionService extends ARpcService {
                 .broadcast();
     }
 
-    public async onDisputeConfirmation(
-        originalSignedDispute: SignedDisputeStruct,
-        confirmationSignature: BytesLike
-    ) {
+    public async onDisputeConfirmation(signedDispute: SignedDisputeStruct) {
         const flag =
             this.mainRpcService.p2pManager.stateManager.onDisputeConfirmation(
-                originalSignedDispute,
-                confirmationSignature
+                signedDispute
             );
         if (
             flag == ExecutionFlags.DISCONNECT ||
@@ -83,8 +81,7 @@ class StateTransitionService extends ARpcService {
                 await retry(async () => {
                     const retryFlag =
                         this.mainRpcService.p2pManager.stateManager.onDisputeConfirmation(
-                            originalSignedDispute,
-                            confirmationSignature
+                            signedDispute
                         );
                     if (retryFlag !== ExecutionFlags.SUCCESS) {
                         throw new Error(
@@ -101,10 +98,7 @@ class StateTransitionService extends ARpcService {
         // re-broadcast
         if (flag == ExecutionFlags.SUCCESS)
             this.mainRpcService.rpcProxy
-                .onDisputeConfirmation(
-                    originalSignedDispute,
-                    confirmationSignature
-                )
+                .onDisputeConfirmation(signedDispute)
                 .broadcast();
     }
 }

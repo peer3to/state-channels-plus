@@ -163,8 +163,7 @@ export default class ValidationService {
 
     public validateDispute(
         disputeStruct: DisputeStruct,
-        timestamp: number,
-        disputerSignature: BytesLike
+        timestamp: number
     ): boolean {
         // triggered by StateManager.onDisputeCommitted, which is triggered by chain event 'DisputeCommitted'
         // therefore it is assumed that validation has already happened on
@@ -177,18 +176,12 @@ export default class ValidationService {
         ) {
             return false;
         }
-        try {
-            const disputer = SignatureUtils.getSignerAddress(
-                disputeStruct,
-                disputerSignature as SignatureLike
-            );
-            if (!this.agreementManager.isParticipantInLatestFork(disputer))
-                return false;
-        } catch (error) {
-            console.error("ValidationService - validateDispute - error", error);
+        if (
+            !this.agreementManager.isParticipantInLatestFork(
+                disputeStruct.disputer
+            )
+        )
             return false;
-        }
-
         return true;
     }
 

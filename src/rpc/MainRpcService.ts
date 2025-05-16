@@ -3,7 +3,7 @@ import {
     SignedBlockStruct,
     SignedJoinChannelStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import { SignedDisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import { SignedDisputeStruct } from "@typechain-types/contracts/V1/DataTypes";
 
 import P2PManager from "@/P2PManager";
 import RpcProxy from "./RpcProxy";
@@ -126,14 +126,8 @@ class MainRpcService {
         );
     }
 
-    public async onDisputeConfirmation(
-        originalSignedDispute: SignedDisputeStruct,
-        confirmationSignature: BytesLike
-    ) {
-        this.stateTransitionService.onDisputeConfirmation(
-            originalSignedDispute,
-            confirmationSignature
-        );
+    public async onDisputeConfirmation(signedDispute: SignedDisputeStruct) {
+        this.stateTransitionService.onDisputeConfirmation(signedDispute);
     }
 }
 export default MainRpcService;

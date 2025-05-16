@@ -5,7 +5,8 @@ import {
     StateSnapshotStruct,
     ForkMilestoneProofStruct,
     ExitChannelBlockStruct,
-    DisputeProofStruct
+    DisputeProofStruct,
+    SignedDisputeStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import {
     AddressLike,
@@ -19,8 +20,7 @@ import { AgreementFlag, ExecutionFlags, TimeConfig } from "@/types";
 import { AStateChannelManagerProxy } from "@typechain-types";
 import {
     ProofStruct,
-    DisputeStruct,
-    SignedDisputeStruct
+    DisputeStruct
 } from "@typechain-types/contracts/V1/DisputeTypes";
 import Clock from "@/Clock";
 import DisputeHandler from "@/DisputeHandler";
@@ -730,18 +730,13 @@ class StateManager {
     }
 
     // ----- Event handlers -----
-    public async onDisputeCommitted(
-        encodedDispute: string,
-        timestamp: number,
-        originalSignature: BytesLike
-    ) {
+    public async onDisputeCommitted(encodedDispute: string, timestamp: number) {
         const dispute = Codec.decodeDispute(encodedDispute);
 
         // Validate dispute
         const valid = this.validationService.validateDispute(
             dispute,
-            timestamp,
-            originalSignature
+            timestamp
         );
 
         if (!valid) {
@@ -749,25 +744,13 @@ class StateManager {
         }
         // Add dispute to ForkService
         this.agreementManager.addDispute(dispute, timestamp);
-        // If we are the disputer, ignore the event
-
-        // Create signed dispute with original signature
-        const signedDispute: SignedDisputeStruct = {
-            encodedDispute,
-            signature: originalSignature
-        };
-        // add the disputer's signature to the AgreementManager
-        this.agreementManager.confirmDispute(
-            dispute,
-            originalSignature as SignatureLike
-        );
 
         if (dispute.disputer !== this.signerAddress) {
             // this signs the dispute, adds the signature to the AgreementManager and broadcasts
             //  the dispute with the additional signature
             // the disputer should not broadcast the dispute, since all peers will receive the dsiputer's signature
             // on the dispute event
-            this.p2pManager.p2pSigner.confirmDispute(signedDispute);
+            this.p2pManager.p2pSigner.confirmDispute(dispute);
         }
     }
 
@@ -778,23 +761,20 @@ class StateManager {
         this.outputStateSnapshotData.set(commitment, outputStateSnapshot);
     }
     public onDisputeConfirmation(
-        originalSignedDispute: SignedDisputeStruct,
-        confirmationSignature: BytesLike
+        signedDispute: SignedDisputeStruct
     ): ExecutionFlags {
-        const dispute = Codec.decodeDispute(
-            originalSignedDispute.encodedDispute
-        );
+        const dispute = Codec.decodeDispute(signedDispute.encodedDispute);
 
         const { success, flag } =
             this.validationService.validateDisputeConfirmation(
                 dispute,
-                confirmationSignature
+                signedDispute.signature
             );
 
         if (success) {
             this.agreementManager.confirmDispute(
                 dispute,
-                confirmationSignature as SignatureLike
+                signedDispute.signature as SignatureLike
             );
         }
 
