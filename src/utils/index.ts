@@ -11,3 +11,6 @@ export * from "./scheduler";
 export * from "./set";
 export * from "./SignatureCollectionMap";
 export * from "./timestamp";
+export * from "./Codec";
+export * from "./SignatureUtils";
+export * from "./participantUtils";

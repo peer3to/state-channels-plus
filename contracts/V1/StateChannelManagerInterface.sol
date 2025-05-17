@@ -22,6 +22,11 @@ abstract contract StateChannelManagerInterface {
         bytes[] calldata signatures
     ) public virtual;
 
+    function processExitChannel(
+        bytes32 channelId,
+        ExitChannel calldata exitChannel
+    ) public virtual;
+
     function addParticipant(
         bytes32 channelId,
         bytes[] calldata removeParticipantData,
@@ -34,25 +39,14 @@ abstract contract StateChannelManagerInterface {
 
     function getForkCnt(bytes32 channelId) public view virtual returns (uint);
 
-    function getLatestState(
-        bytes32 channelId
-    ) public view virtual returns (bytes memory);
-
     function getParticipants(
-        bytes32 channelId,
-        uint forkCnt
+        bytes32 channelId
     ) public virtual returns (address[] memory);
 
     function getNextToWrite(
         bytes32 channelId,
         bytes memory encodedState
     ) public virtual returns (address);
-
-    function isGenesisState(
-        bytes32 channelId,
-        uint forkCnt,
-        bytes memory encodedFinalizedState
-    ) public view virtual returns (bool);
 
     function getP2pTime() public view virtual returns (uint);
 
@@ -70,48 +64,48 @@ abstract contract StateChannelManagerInterface {
         uint maxTransactionCnt
     ) public view virtual returns (uint);
 
-    function getGenesisTimestamp(
-        bytes32 channelId,
-        uint forkCnt
-    ) public view virtual returns (uint);
-
     function executeStateTransitionOnState(
         bytes32 channelId,
         bytes memory encodedState,
         Transaction memory _tx
     ) public virtual returns (bool, bytes memory);
 
-    function postBlockCalldata(SignedBlock memory signedBlock) public virtual;
+    function postBlockCalldata(SignedBlock memory signedBlock, uint maxTimestamp) public virtual;
 
-    function getBlockCallData(
+    function getBlockCallDataCommitment(
         bytes32 channelId,
         uint forkCnt,
-        uint transactionCnt,
+        uint blockHeight,
         address participant
-    ) public view virtual returns (bool found, BlockCalldata memory);
-
-    function getDispute(
-        bytes32 channelId
-    ) public view virtual returns (Dispute memory);
+    ) public view virtual returns (bool found, bytes32 blockCalldataCommitment);
 
     function createDispute(
-        bytes32 channelId,
-        uint forkCnt,
-        bytes memory encodedLatestFinalizedState,
-        bytes memory encodedLatestCorrectState,
-        ConfirmedBlock[] memory virtualVotingBlocks,
-        address timedoutParticipant,
-        uint foldedTransactionCnt,
-        Proof[] memory proofs
+        Dispute memory dispute
     ) public virtual;
 
+    function auditDispute(
+        Dispute memory dispute,
+        DisputeAuditingData memory disputeAuditingData 
+    ) public virtual returns (address[] memory slashParticipants);
+
     function challengeDispute(
+        Dispute memory dispute,
+        Dispute memory newDispute,
+        DisputeAuditingData memory disputeAuditingData
+    ) public virtual;
+
+    function updateStateSnapshotWithDispute(
         bytes32 channelId,
-        uint forkCnt,
-        uint challengeCnt,
-        Proof[] memory proofs,
-        ConfirmedBlock[] memory virtualVotingBlocks,
-        bytes memory encodedLatestFinalizedState,
-        bytes memory encodedLatestCorrectState
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        DisputeProof memory disputeProof,
+        ExitChannelBlock[] memory exitChannelBlocks
+    ) public virtual;
+
+    function updateStateSnapshotWithoutDispute(
+        bytes32 channelId,
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        ExitChannelBlock[] memory exitChannelBlocks
     ) public virtual;
 }

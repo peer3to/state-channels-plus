@@ -1,3 +1,7 @@
+export const BalanceEthersType = `tuple(
+  uint256 amount,
+  bytes data
+)`;
 export const TransactionEthersType = `tuple(
     tuple(
       bytes32 channelId,
@@ -22,6 +26,11 @@ export const SignedBlockEthersType = `tuple(
             bytes encodedBlock,
             bytes signature)`;
 
+export const BlockConfirmationEthersType = `tuple(
+              SignedBlockEthersType signedBlock,
+              bytes[] signatures
+          )`;
+
 export const JoinChannelEthersType = `tuple(
               bytes32 channelId,
               address participant,
@@ -41,3 +50,23 @@ export const JoinChannelAgreementEthersType = `tuple(
 export const ConfirmedJoinChannelAgreementEthersType = `tuple(
                     bytes encodedJoinChannelAgreement,
                     bytes[] signatures)`;
+
+export const ExitChannelEthersType = `tuple(
+                      address participant,
+                      ${BalanceEthersType} balance,
+                      bool isPartialExit
+                  )`;
+
+export const ExitChannelBlockEthersType = `tuple(
+                      ${ExitChannelEthersType}[] exitChannels,
+                      bytes32 previousBlockHash
+                  )`;
+export const TimeoutEthersType = `tuple(
+                    address participant,
+                    uint256 blockHeight,
+                    uint256 minTimeStamp,
+                    uint256 forkCnt,
+                    bool isForced,
+                    address previousBlockProducer,
+                    bool previousBlockProducerPostedCalldata
+                )`;

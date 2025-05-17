@@ -2,7 +2,10 @@ pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
 import "./DisputeManagerFacet.sol";
+import "./FraudProofFacet.sol";
+
 import "./StateChannelUtilLibrary.sol";
+import "./StateSnapshotFacet.sol";
 import "../StateChannelManagerInterface.sol";
 
 abstract contract AStateChannelManagerProxy is
@@ -10,13 +13,19 @@ abstract contract AStateChannelManagerProxy is
     StateChannelCommon
 {
     DisputeManagerFacet disputeManagerFacet;
+    FraudProofFacet fraudProofFacet;
+    StateSnapshotFacet stateSnapshotFacet;
 
     constructor(
         address _stateMachineImplementation,
-        address _disputeManagerFacet
+        address _disputeManagerFacet,
+        address _fraudProofFacet,
+        address _stateSnapshotFacet
     ) {
         stateMachineImplementation = AStateMachine(_stateMachineImplementation);
         disputeManagerFacet = DisputeManagerFacet(_disputeManagerFacet);
+        fraudProofFacet = FraudProofFacet(_fraudProofFacet);
+        stateSnapshotFacet = StateSnapshotFacet(_stateSnapshotFacet);
         p2pTime = 15;
         agreementTime = 5;
         chainFallbackTime = 30;
@@ -29,213 +38,9 @@ abstract contract AStateChannelManagerProxy is
 
     function _removeParticipantComposable(
         bytes32 channelId,
-        ProcessExit memory processExit
+        ExitChannel memory exitChannel
     ) internal virtual returns (bool);
 
-    function joinChannelWithAgreement(
-        ConfirmedJoinChannelAgreement memory confirmedJoinChannelAgreement,
-        bytes memory encodedState
-    ) public {
-        JoinChannelAgreement memory joinChannelAgreement = abi.decode(
-            confirmedJoinChannelAgreement.encodedJoinChannelAgreement,
-            (JoinChannelAgreement)
-        );
-        SignedJoinChannel memory signedJoinChannel = joinChannelAgreement
-            .signedJoinChannel;
-
-        JoinChannel memory joinChannel = abi.decode(
-            signedJoinChannel.encodedJoinChannel,
-            (JoinChannel)
-        );
-
-        // Require no dispute in progress
-        require(
-            !isDisputeInProgress(joinChannel.channelId),
-            "AStateChannelManager: joinChannelWithAgreement - Dispute in progress"
-        );
-        tryProcessOldExits(joinChannel.channelId);
-
-        //require forkCnt to match
-        require(
-            latestFork[joinChannel.channelId] == joinChannelAgreement.forkCnt,
-            "AStateChannelManager: joinChannelWithAgreement - forkCnt mismatch"
-        );
-
-        //require hash(state) == previousStateHash
-        require(
-            keccak256(encodedState) == joinChannelAgreement.previousStateHash,
-            "AStateChannelManager: joinChannelWithAgreement - previousStateHash mismatch"
-        );
-
-        address[] memory participants = getParticipants(
-            joinChannel.channelId,
-            joinChannelAgreement.forkCnt
-        );
-
-        //require joiner not participant
-        bool isParticipant = StateChannelUtilLibrary.isAddressInArray(
-            participants,
-            joinChannel.participant
-        );
-        require(
-            !isParticipant,
-            "AStateChannelManager: joinChannelWithAgreement - joiner is participant"
-        );
-
-        //require msg.sender == submitter == participant
-        isParticipant = StateChannelUtilLibrary.isAddressInArray(
-            participants,
-            joinChannelAgreement.submitter
-        );
-        require(
-            isParticipant,
-            "AStateChannelManager: joinChannelWithAgreement - submitter not participant"
-        );
-        require(
-            msg.sender == joinChannelAgreement.submitter,
-            "AStateChannelManager: joinChannelWithAgreement - msg.sender != submitter"
-        ); //TODO? think about potential disputes - probably not needed
-
-        //check signatures
-        (bool success, ) = StateChannelUtilLibrary.verifyThresholdSigned(
-            participants,
-            confirmedJoinChannelAgreement.encodedJoinChannelAgreement,
-            confirmedJoinChannelAgreement.signatures
-        );
-        require(
-            success,
-            "AStateChannelManager: joinChannelWithAgreement - signatures invalid"
-        );
-
-        //check initial signature
-        address[] memory p = new address[](1);
-        p[0] = joinChannel.participant;
-        bytes[] memory signature = new bytes[](1);
-        signature[0] = signedJoinChannel.signature;
-        (success, ) = StateChannelUtilLibrary.verifyThresholdSigned(
-            p,
-            signedJoinChannel.encodedJoinChannel,
-            signature
-        );
-        require(
-            success,
-            "AStateChannelManager: joinChannelWithAgreement - initial signature invalid"
-        );
-
-        //apply joinChannelComposable
-        success = _addParticipantComposable(joinChannel);
-        require(
-            success,
-            "AStateChannelManager: joinChannelWithAgreement - addParticipantComposable failed"
-        );
-
-        //apply joinChannelToState
-        JoinChannel[] memory joinCahnnels = new JoinChannel[](1);
-        joinCahnnels[0] = joinChannel;
-        uint successCnt;
-        (encodedState, successCnt) = applyJoinChannelToStateMachine(
-            encodedState,
-            joinCahnnels
-        );
-        require(
-            successCnt == 1,
-            "AStateChannelManager: joinChannelWithAgreement - applyJoinChannelToStateMachine failed"
-        );
-
-        //setState
-        setState(joinChannel.channelId, encodedState);
-        //TODO? - what if somone lies and triggeres this later - should not be wated upon and should trigget dispute from others if they play a move -> they're not a particopant anymore
-    }
-
-    function leaveChannelWithAgreement(
-        LeaveChannelAgreement memory leaveChannelAgreement,
-        bytes memory encodedState
-    ) public {
-        LeaveChannel memory leaveChannel = abi.decode(
-            leaveChannelAgreement.encodedLeaveChannel,
-            (LeaveChannel)
-        );
-        // Require no dispute in progress
-        require(
-            !isDisputeInProgress(leaveChannel.channelId),
-            "AStateChannelManager: leaveChannelWithAgreement - Dispute in progress"
-        );
-        tryProcessOldExits(leaveChannel.channelId);
-
-        //require forkCnt to match
-        require(
-            latestFork[leaveChannel.channelId] == leaveChannel.forkCnt,
-            "AStateChannelManager: leaveChannelWithAgreement - forkCnt mismatch"
-        );
-
-        //require hash(state) == previousStateHash
-        require(
-            keccak256(encodedState) == leaveChannel.previousStateHash,
-            "AStateChannelManager: leaveChannelWithAgreement - previousStateHash mismatch"
-        );
-
-        address[] memory participants = getParticipants(
-            leaveChannel.channelId,
-            leaveChannel.forkCnt
-        );
-
-        //require isParticipant
-        bool isParticipant = StateChannelUtilLibrary.isAddressInArray(
-            participants,
-            leaveChannel.participant
-        );
-        require(
-            isParticipant,
-            "AStateChannelManager: leaveChannelWithAgreement - not participant"
-        );
-
-        //check signatures
-        (bool success, ) = StateChannelUtilLibrary.verifyThresholdSigned(
-            participants,
-            leaveChannelAgreement.encodedLeaveChannel,
-            leaveChannelAgreement.signatures
-        );
-        require(
-            success,
-            "AStateChannelManager: leaveChannelWithAgreement - signatures invalid"
-        );
-
-        address[] memory p = new address[](1);
-        p[0] = leaveChannel.participant;
-        (
-            bytes memory encodedState,
-            ProcessExit[] memory pe,
-            uint successCnt
-        ) = removeParticipantsFromStateMachine(encodedState, p);
-        require(
-            successCnt == 1,
-            "AStateChannelManager: leaveChannelWithAgreement - removeParticipantsFromStateMachine failed"
-        );
-        //apply leaveChannelComposable
-        success = _removeParticipantComposable(leaveChannel.channelId, pe[0]);
-        require(
-            success,
-            "AStateChannelManager: leaveChannelWithAgreement - removeParticipantComposable failed"
-        );
-
-        //setState
-        setState(leaveChannel.channelId, encodedState);
-        //TODO? - what if somone lies and triggeres this later - should not be wated upon and should trigget dispute from others if they play a move -> they're not a particopant anymore
-    }
-
-    function tryProcessOldExits(bytes32 channelId) internal {
-        Dispute storage dispute = disputes[channelId];
-        bool isExpired = dispute.deadlineTimestamp < block.timestamp;
-        if (isExpired) {
-            for (uint i = 0; i < dispute.processExits.length; i++) {
-                _removeParticipantComposable(
-                    channelId,
-                    dispute.processExits[i]
-                );
-            }
-            delete dispute.processExits; //clears the array
-        }
-    }
     function addParticipantComposable(
         JoinChannel memory joinChannel
     ) public onlySelf returns (bool) {
@@ -244,9 +49,9 @@ abstract contract AStateChannelManagerProxy is
 
     function removeParticipantComposable(
         bytes32 channelId,
-        ProcessExit memory processExit
+        ExitChannel memory exitChannel
     ) public onlySelf returns (bool) {
-        return _removeParticipantComposable(channelId, processExit);
+        return _removeParticipantComposable(channelId, exitChannel);
     }
 
     function applyJoinChannelToStateMachine(
@@ -254,10 +59,11 @@ abstract contract AStateChannelManagerProxy is
         JoinChannel[] memory joinCahnnels
     )
         public
+        override
         onlySelf
-        returns (bytes memory encodedModifiedState, uint successCnt)
+        returns (bytes memory encodedModifiedState)
     {
-        return _applyJoinChannelToStateMachine(encodedState, joinCahnnels);
+        return _applyJoinChannelToStateMachine(encodedState,joinCahnnels);
     }
 
     function applySlashesToStateMachine(
@@ -268,8 +74,7 @@ abstract contract AStateChannelManagerProxy is
         onlySelf
         returns (
             bytes memory encodedModifiedState,
-            ProcessExit[] memory,
-            uint successCnt
+            ExitChannel[] memory
         )
     {
         return _applySlashesToStateMachine(encodedState, slashedParticipants);
@@ -283,33 +88,25 @@ abstract contract AStateChannelManagerProxy is
         onlySelf
         returns (
             bytes memory encodedModifiedState,
-            ProcessExit[] memory,
-            uint successCnt
+            ExitChannel[] memory
         )
     {
         return _removeParticipantsFromStateMachine(encodedState, participants);
     }
 
-    function getLatestState(
-        bytes32 channelId
-    ) public view override returns (bytes memory) {
-        return encodedStates[channelId][latestFork[channelId]];
-    }
-
     function _applyJoinChannelToStateMachine(
         bytes memory encodedState,
         JoinChannel[] memory joinCahnnels
-    ) internal returns (bytes memory encodedModifiedState, uint successCnt) {
-        uint successCnt = 0;
+    ) internal returns (bytes memory encodedModifiedState) {
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < joinCahnnels.length; i++) {
             bool success = stateMachineImplementation.joinChannel(
                 joinCahnnels[i]
             );
-            // require(success, "JoinChannel failed");
-            if (success) successCnt++;
+            // require(success, "Slash failed");
+            require(success,ErrorDisputeStateMachineJoiningFailed());
         }
-        return (stateMachineImplementation.getState(), successCnt);
+        return (stateMachineImplementation.getState());
     }
 
     function _applySlashesToStateMachine(
@@ -317,28 +114,24 @@ abstract contract AStateChannelManagerProxy is
         address[] memory slashedParticipants
     )
         internal
+        override
         returns (
             bytes memory encodedModifiedState,
-            ProcessExit[] memory,
-            uint successCnt
+            ExitChannel[] memory exitChannels
         )
     {
-        ProcessExit[] memory processExits = new ProcessExit[](
-            slashedParticipants.length
-        );
-        uint successCnt = 0;
+        exitChannels = new ExitChannel[](slashedParticipants.length);
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < slashedParticipants.length; i++) {
             bool success;
-            (success, processExits[successCnt]) = stateMachineImplementation
+            (success, exitChannels[i]) = stateMachineImplementation
                 .slashParticipant(slashedParticipants[i]);
             // require(success, "Slash failed");
-            if (success) successCnt++;
+            require(success,ErrorDisputeStateMachineSlashingFailed());
         }
         return (
             stateMachineImplementation.getState(),
-            processExits,
-            successCnt
+            exitChannels
         );
     }
 
@@ -347,28 +140,26 @@ abstract contract AStateChannelManagerProxy is
         address[] memory participants
     )
         internal
+        override
         returns (
             bytes memory encodedModifiedState,
-            ProcessExit[] memory,
-            uint successCnt
+            ExitChannel[] memory
         )
     {
-        ProcessExit[] memory processExits = new ProcessExit[](
+        ExitChannel[] memory exitChannels = new ExitChannel[](
             participants.length
         );
-        uint successCnt = 0;
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < participants.length; i++) {
             bool success;
-            (success, processExits[successCnt]) = stateMachineImplementation
+            (success, exitChannels[i]) = stateMachineImplementation
                 .removeParticipant(participants[i]);
             // require(success, "Remove failed");
-            if (success) successCnt++;
+            require(success,ErrorDisputeStateMachineRemovingFailed());
         }
         return (
             stateMachineImplementation.getState(),
-            processExits,
-            successCnt
+            exitChannels
         );
     }
 
@@ -379,77 +170,46 @@ abstract contract AStateChannelManagerProxy is
     ) public override returns (bool, bytes memory) {
         //channelId not used currenlty since all channels have the same SM - later they can be mapped to different ones
         stateMachineImplementation.setState(encodedState);
-        (bool success, bytes memory encodedReturnValue) = address(
+        (bool success, ) = address(
             stateMachineImplementation
         ).call(abi.encodeCall(stateMachineImplementation.stateTransition, _tx));
         return (success, stateMachineImplementation.getState());
         // return (success, abi.decode(encodedReturnValue, (bytes)));
     }
 
-
     /**
-     * This implementation covers a MFS (minimal feature set) funded by the Web3 Foundation.
-     * Posting calldata is currenlty unefficient since the dispute mechanism only has a minimal feature set (MFS)
-     * In the Full feature set (FFS) this will post the calldata and modify a single storage slot
+        Posting calldata is lightweight, since it persists a signle hash/commitment. 
+        It's enough to check just the maxTimestamp safety guard that protects against race conditions, since everything else is committed in the block.
+        We also don't allow overwriting the blockCalldataCommitment if it already exists. 
+        We don't even have to check the siganture of the signedBlock, since the msg.sender takes the responsibility of provifing correct data.
+        If the msg.sender provides junk(an invalid SignedBlock), a fraud proof can slash the msg.sender, by verifying the junk data against the committment.
+        If msg.sender is not part of the channel, other peers will ignore emited events and commitments. The sender will still pay tx fees on-chain.
      */
-    function postBlockCalldata(SignedBlock memory signedBlock) public override {
-        //check siganture
-        address[] memory addressesInThreshold = new address[](1);
-        addressesInThreshold[0] = msg.sender;
-        bytes[] memory signatures = new bytes[](1);
-        signatures[0] = bytes(signedBlock.signature);
-        (bool succeeds, ) = StateChannelUtilLibrary.verifyThresholdSigned(
-            addressesInThreshold,
-            bytes(signedBlock.encodedBlock),
-            signatures
-        );
+    function postBlockCalldata(SignedBlock memory signedBlock, uint maxTimestamp) public override {
+        //Time is the only race condition we need to take into account
+        require(block.timestamp <= maxTimestamp, ErrorBlockCalldataTimestampTooLate());
+        bytes32 commitment = keccak256(abi.encode(signedBlock,block.timestamp));
+        Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
 
-        require(
-            succeeds,
-            "AStateChannelManager: postBlockCalldata signature invalid"
-        );
-
-        //Decode block;
-        Block memory _block = abi.decode(
-            bytes(signedBlock.encodedBlock),
-            (Block)
-        );
-        //Check if sender is participant - needed since chainTime will be used as block/tx time in disputes
-        require(
-            msg.sender == _block.transaction.header.participant,
-            "AStateChannelManager: postBlockCalldata sender must be participant"
-        );
-        //Check timestamp within range:
-        require(
-            _block.transaction.header.timestamp >=
-                block.timestamp - p2pTime - agreementTime - chainFallbackTime,
-            "AStateChannelManager: postBlockCalldata timestamp too old"
-        );
-        require(
-            _block.transaction.header.timestamp <= block.timestamp,
-            "AStateChannelManager: postBlockCalldata timestamp too new"
-        );
+        // Extract values for better readability
         bytes32 channelId = _block.transaction.header.channelId;
         uint forkCnt = _block.transaction.header.forkCnt;
         uint transactionCnt = _block.transaction.header.transactionCnt;
 
-        //Could do aditional checks here like forkCnt < globalForkCnt, but not needed since it can be detected on-client and disputed
-        //Aslo could check if block producer part of state channel, but this too can be discarded on client - interacting on-chain has fees so no reason for someone to spam this
-        //TODO? should potentially remove all checks and just have posting blocks? For honest participants it would be cheaper, and spaming would be disacrded regardless at a cost
-
-        ForkDataAvailability storage forkDataAvailability = postedBlockCalldata[
-            channelId
-        ][forkCnt];
-
-        forkDataAvailability.map[transactionCnt][msg.sender] = BlockCalldata({
-            signedBlock: signedBlock,
-            timestamp: block.timestamp
-        });
-        forkDataAvailability.keys.push(
-            ForkDataAvailabilityKey(transactionCnt, msg.sender)
+        //Don't allow overwriting the blockCalldataCommitment if it already exists
+        require(
+            blockCalldataCommitments[channelId][msg.sender][forkCnt][transactionCnt] == bytes32(0),
+            ErrorBlockCalldataAlreadyPosted()
         );
 
-        emit BlockCalldataPosted(channelId, signedBlock, block.timestamp);
+        blockCalldataCommitments[channelId][msg.sender][forkCnt][transactionCnt] = commitment;
+
+        emit BlockCalldataPosted(
+            _block.transaction.header.channelId,
+            msg.sender,
+            signedBlock,
+            block.timestamp
+        );
     }
 
     function _delegatecall(
@@ -460,7 +220,7 @@ abstract contract AStateChannelManagerProxy is
         if (!success) {
             if (result.length == 0)
                 revert("AStateChannelManagerProxy - Delegatecall failed");
-            assembly {
+            assembly ("memory-safe") {
                 let returndata_size := mload(result)
                 revert(add(32, result), returndata_size)
             }
@@ -468,65 +228,79 @@ abstract contract AStateChannelManagerProxy is
         return result;
     }
 
-    function getDispute(
-        bytes32 channelId
-    ) public view override returns (Dispute memory) {
-        return disputes[channelId];
-    }
-
-    //TODO! - temporary
     function createDispute(
-        bytes32 channelId,
-        uint forkCnt,
-        bytes memory encodedLatestFinalizedState,
-        bytes memory encodedLatestCorrectState,
-        ConfirmedBlock[] memory virtualVotingBlocks,
-        address timedoutParticipant,
-        uint foldedTransactionCnt,
-        Proof[] memory proofs
+        Dispute memory dispute
     ) public override {
         _delegatecall(
             address(disputeManagerFacet),
             abi.encodeCall(
                 disputeManagerFacet.createDispute,
                 (
-                    channelId,
-                    forkCnt,
-                    encodedLatestFinalizedState,
-                    encodedLatestCorrectState,
-                    virtualVotingBlocks,
-                    timedoutParticipant,
-                    foldedTransactionCnt,
-                    proofs
+                    dispute
                 )
             )
         );
     }
 
+    function auditDispute(
+        Dispute memory dispute,
+        DisputeAuditingData memory disputeAuditingData 
+    ) public override returns (address[] memory slashParticipants) {
+       //This is done manually since the logic is different from other _delegatecalls
+       
+       // Encode the function selector and arguments
+        bytes memory data = abi.encodeCall(
+            DisputeManagerFacet.auditDispute,
+            (
+                dispute,
+                disputeAuditingData
+            )
+        );
+        // Perform the low-level call with a gas limit
+        (bool success, bytes memory returnData) = address(this).delegatecall{gas: getGasLimit()}(data);
+        if(!success) {
+           assembly {
+                revert(add(returnData, 0x20), mload(returnData))
+            }
+        }
+        address[] memory slashedParticipants = abi.decode(returnData, (address[]));
+        return  slashedParticipants;
+    }
+
     function challengeDispute(
-        bytes32 channelId,
-        uint forkCnt,
-        uint challengeCnt,
-        Proof[] memory proofs,
-        ConfirmedBlock[] memory virtualVotingBlocks,
-        bytes memory encodedLatestFinalizedState,
-        bytes memory encodedLatestCorrectState
+        Dispute memory dispute,
+        Dispute memory newDispute,
+        DisputeAuditingData memory disputeAuditingData
     ) public override {
         _delegatecall(
             address(disputeManagerFacet),
             abi.encodeCall(
                 disputeManagerFacet.challengeDispute,
                 (
-                    channelId,
-                    forkCnt,
-                    challengeCnt,
-                    proofs,
-                    virtualVotingBlocks,
-                    encodedLatestFinalizedState,
-                    encodedLatestCorrectState
+                    dispute, 
+                    newDispute,
+                    disputeAuditingData
                 )
             )
         );
+    }
+
+    function verifyFraudProofs(
+        Proof[] memory fraudProofs,
+        FraudProofVerificationContext memory fraudProofVerificationContext
+    ) public returns (address[] memory slashParticipants) {
+        bytes memory slashedParticipants = _delegatecall(
+            address(fraudProofFacet),
+            abi.encodeCall(
+                fraudProofFacet.verifyFraudProofs,
+                (
+                    fraudProofs,
+                    fraudProofVerificationContext
+                )
+            )
+        );
+
+        return abi.decode(slashedParticipants, (address[]));
     }
 
     function getForkCnt(
@@ -534,21 +308,22 @@ abstract contract AStateChannelManagerProxy is
     )
         public
         view
-        override(StateChannelCommon, StateChannelManagerInterface)
+        override(StateChannelManagerInterface)
         returns (uint)
     {
-        return StateChannelCommon.getForkCnt(channelId);
+        return disputeData[channelId].disputeCommitments.length;
     }
 
     function getParticipants(
-        bytes32 channelId,
-        uint forkCnt
+        bytes32 channelId
     )
+
         public
-        override(StateChannelCommon, StateChannelManagerInterface)
+        view
+        override(StateChannelManagerInterface)
         returns (address[] memory)
     {
-        return StateChannelCommon.getParticipants(channelId, forkCnt);
+        return getSnapshotParticipants(channelId);
     }
 
     function getNextToWrite(
@@ -560,24 +335,6 @@ abstract contract AStateChannelManagerProxy is
         returns (address)
     {
         return StateChannelCommon.getNextToWrite(channelId, encodedState);
-    }
-
-    function isGenesisState(
-        bytes32 channelId,
-        uint forkCnt,
-        bytes memory encodedFinalizedState
-    )
-        public
-        view
-        override(StateChannelCommon, StateChannelManagerInterface)
-        returns (bool)
-    {
-        return
-            StateChannelCommon.isGenesisState(
-                channelId,
-                forkCnt,
-                encodedFinalizedState
-            );
     }
 
     function getP2pTime()
@@ -625,22 +382,22 @@ abstract contract AStateChannelManagerProxy is
         return StateChannelCommon.getAllTimes();
     }
 
-    function getBlockCallData(
+    function getBlockCallDataCommitment(
         bytes32 channelId,
         uint forkCnt,
-        uint transactionCnt,
+        uint blockHeight,
         address participant
     )
         public
         view
         override(StateChannelCommon, StateChannelManagerInterface)
-        returns (bool found, BlockCalldata memory)
+        returns (bool found, bytes32 blockCalldataCommitment)
     {
         return
-            StateChannelCommon.getBlockCallData(
+            StateChannelCommon.getBlockCallDataCommitment(
                 channelId,
                 forkCnt,
-                transactionCnt,
+                blockHeight,
                 participant
             );
     }
@@ -663,18 +420,6 @@ abstract contract AStateChannelManagerProxy is
             );
     }
 
-    function getGenesisTimestamp(
-        bytes32 channelId,
-        uint forkCnt
-    )
-        public
-        view
-        override(StateChannelCommon, StateChannelManagerInterface)
-        returns (uint)
-    {
-        return StateChannelCommon.getGenesisTimestamp(channelId, forkCnt);
-    }
-
     function isChannelOpen(
         bytes32 channelId
     )
@@ -684,5 +429,62 @@ abstract contract AStateChannelManagerProxy is
         returns (bool)
     {
         return StateChannelCommon.isChannelOpen(channelId);
+    }
+
+    function updateStateSnapshotWithDispute(
+        bytes32 channelId,
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        DisputeProof memory disputeProof,
+        ExitChannelBlock[] memory exitChannelBlocks
+    ) public override {
+        _delegatecall(
+            address(stateSnapshotFacet),
+            abi.encodeCall(
+                stateSnapshotFacet.updateStateSnapshotWithDispute,
+                (
+                    channelId,
+                    milestoneProofs,
+                    milestoneSnapshots,
+                    disputeProof,
+                    exitChannelBlocks
+                )
+            )
+        );
+    }
+
+    function updateStateSnapshotWithoutDispute(
+        bytes32 channelId,
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        ExitChannelBlock[] memory exitChannelBlocks
+    ) public override {
+        _delegatecall(
+            address(stateSnapshotFacet),
+            abi.encodeCall(
+                stateSnapshotFacet.updateStateSnapshotWithoutDispute,
+                (
+                    channelId,
+                    milestoneProofs,
+                    milestoneSnapshots,
+                    exitChannelBlocks
+                )
+            )
+        );
+    }
+
+    function verifyForkProof(
+        ForkMilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        StateSnapshot memory genesisSnapshot
+    ) public returns (bool isValid, bytes memory lastBlockEncoded) {
+        bytes memory result = _delegatecall(
+            address(disputeManagerFacet),
+            abi.encodeCall(
+                disputeManagerFacet.verifyForkProof,
+                (milestoneProofs, milestoneSnapshots, genesisSnapshot)
+            )
+        );
+        return abi.decode(result, (bool, bytes));
     }
 }
