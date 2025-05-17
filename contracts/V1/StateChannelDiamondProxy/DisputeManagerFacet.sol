@@ -23,7 +23,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             block.timestamp
         ));
         disputeData[dispute.channelId].disputeCommitments.push(disputeCommitment);
-        emit DisputeCommited(encodedDispute,block.timestamp, disputeCommitment);
+        emit DisputeCommited(encodedDispute, block.timestamp);
     }
     
     

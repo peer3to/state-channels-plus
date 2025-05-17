@@ -20,8 +20,7 @@ interface StateChannelManagerEvents {
 
     event DisputeCommited(
         bytes encodedDispute,
-        uint timestamp,
-        bytes32 disputeCommitment
+        uint timestamp
     );
 
     event DisputeChallengeResultWithDisputePair(

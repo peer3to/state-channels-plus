@@ -36,6 +36,10 @@ contract StateChannelCommon is
         return stateSnapshots[channelId].participants;
     }
 
+    function getPendingParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
+        return disputeData[channelId].pendingParticipants;
+    }
+
     function getSnapshotForkCnt(
         bytes32 channelId
     ) public view virtual returns (uint) {
