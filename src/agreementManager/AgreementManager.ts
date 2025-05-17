@@ -29,8 +29,6 @@ class AgreementManager {
     latestJoinChannelBlockHash: Map<BytesLike, BytesLike> = new Map();
     latestExitChannelBlockHash: Map<BytesLike, BytesLike> = new Map();
 
-    // snapShotCommitment -> stateSnapshot
-    stateSnapshots: Map<BytesLike, StateSnapshotStruct> = new Map();
     forkService = new ForkService();
     queueService = new QueueService();
     chainTracker = new OnChainTracker(
@@ -70,11 +68,11 @@ class AgreementManager {
 
     //After succesfull verification and execution
     public addBlock(
-        block: BlockStruct,
-        originalSignature: SignatureLike,
-        encodedState: string
+        signedBlock: SignedBlockStruct,
+        encodedState: string,
+        snapShot: StateSnapshotStruct
     ) {
-        this.forkService.addBlock(block, originalSignature, encodedState);
+        this.forkService.addBlock(signedBlock, encodedState, snapShot);
     }
     //Doesn't check signature - just stores it
     public confirmBlock(
@@ -188,22 +186,6 @@ class AgreementManager {
     ): BytesLike | undefined {
         return this.forkService.getAgreement(forkCnt, transactionCnt)
             ?.encodedState;
-    }
-
-    public getMilestoneSnapshots(forkCnt: number): StateSnapshotStruct[] {
-        const snapShotCommitments =
-            this.forkService.collectMilestoneSnapshots(forkCnt);
-        const snapShots: StateSnapshotStruct[] = [];
-        for (const snapShotCommitment of snapShotCommitments) {
-            const snapShot = this.stateSnapshots.get(snapShotCommitment);
-            if (!snapShot) {
-                throw new Error(
-                    `AgreementManager - getMilestoneSnapshots - snapShot not found: ${snapShotCommitment}`
-                );
-            }
-            snapShots.push(snapShot);
-        }
-        return snapShots;
     }
 
     public getForkProofSignedBlocks(forkCnt: number): SignedBlockStruct[] {

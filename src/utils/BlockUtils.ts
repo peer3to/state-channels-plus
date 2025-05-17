@@ -1,4 +1,7 @@
-import { BlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+import {
+    BlockStruct,
+    SignedBlockStruct
+} from "@typechain-types/contracts/V1/DataTypes";
 import { EvmUtils } from "./EvmUtils";
 import exp from "constants";
 import { AddressLike, SignatureLike } from "ethers";
@@ -17,26 +20,33 @@ export class BlockUtils {
     /**
      * Get the block height (transaction count) from a block
      */
-    public static getHeight(block: BlockStruct): number {
+    public static getHeight(signedBlock: SignedBlockStruct): number {
+        const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
         return Number(block.transaction.header.transactionCnt);
     }
 
     /**
      * Get the fork number from a block
      */
-    public static getFork(block: BlockStruct): number {
+    public static getFork(signedBlock: SignedBlockStruct): number {
+        const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
         return Number(block.transaction.header.forkCnt);
     }
 
     /**
      * Get the timestamp from a block
      */
-    public static getTimestamp(block: BlockStruct): number {
+    public static getTimestamp(signedBlock: SignedBlockStruct): number {
+        const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
         return Number(block.transaction.header.timestamp);
     }
 
-    public static getBlockAuthor(block: BlockStruct): string {
-        return block.transaction.header.participant as string;
+    public static getBlockAuthor(signedBlock: SignedBlockStruct): string {
+        const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
+        return EvmUtils.retrieveSignerAddressBlock(
+            block,
+            signedBlock.signature as SignatureLike
+        );
     }
 
     public static getChannelId(block: BlockStruct): string {

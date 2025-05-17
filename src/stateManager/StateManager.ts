@@ -137,21 +137,26 @@ class StateManager {
             signedBlock,
             Number(timestamp)
         );
+        // Collect fraud proof and initiate dispute for any fraudulent flag returned from block validation pipeline
         let block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
         let disputeProof: ProofStruct;
-        if (flag == AgreementFlag.DOUBLE_SIGN) {
+        if (
+            flag == AgreementFlag.DOUBLE_SIGN ||
+            flag == AgreementFlag.DUPLICATE
+        ) {
             console.log("StateManager - collectOnChainBlock - double sign");
             disputeProof =
-                this.disputeHandler.proofManager.createDoubleSignProof([
+                this.disputeHandler.proofManager.createDoubleSignProof(
                     signedBlock
-                ]);
-            this.disputeHandler.createDispute(
-                block.transaction.header.forkCnt,
-                "0x00",
-                0,
-                [disputeProof]
+                );
+            const disputeTimestamp = Clock.getTimeInSeconds();
+            this.disputeHandler.createNewDispute(
+                Number(block.transaction.header.forkCnt),
+                Number(block.transaction.header.transactionCnt),
+                [disputeProof],
+                disputeTimestamp
             );
-        } else if (flag == AgreementFlag.INCORRECT_DATA) {
+        } else if (flag == AgreementFlag.INVALID_PREVIOUS_BLOCK) {
             console.log("StateManager - collectOnChainBlock - incorrect data");
             disputeProof =
                 this.disputeHandler.proofManager.createIncorrectDataProof(
@@ -269,12 +274,10 @@ class StateManager {
     // Passes the block confirmation through a verification pipeline and returns an execution flag
     public async onBlockConfirmation(
         signedBlock: SignedBlockStruct,
-        confirmationSignature: BytesLike,
-        block?: BlockStruct
+        confirmationSignature: BytesLike
     ): Promise<ExecutionFlags> {
         let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS; // Default to SUCCESS
-        const decodedBlock =
-            block ?? EvmUtils.decodeBlock(signedBlock.encodedBlock);
+        const decodedBlock = EvmUtils.decodeBlock(signedBlock.encodedBlock);
 
         try {
             const result =

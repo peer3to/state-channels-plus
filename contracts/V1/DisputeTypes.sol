@@ -89,6 +89,7 @@ enum ProofType {
     BlockEmptyBlock,
     BlockInvalidStateTransition,
     BlockOutOfGas,
+    BlockInvalidPreviousLink,
     // Timeout related fraud proofs
     TimeoutThreshold,
     TimeoutPriorInvalid,
@@ -115,6 +116,12 @@ struct BlockInvalidStateTransitionProof {
     SignedBlock previousBlock;
     StateSnapshot previousBlockStateSnapshot;
     bytes previousStateStateMachineState;
+}
+
+struct BlockInvalidPreviousLinkProof {
+    SignedBlock invalidBlock;
+    SignedBlock previousBlock;
+    bytes previousBlockStateMachineState;
 }
 
 

@@ -1,9 +1,8 @@
-import { AddressLike, SignatureLike } from "ethers";
+import { AddressLike, BytesLike } from "ethers";
 import {
     SignedBlockStruct,
-    BlockStruct,
-    StateSnapshotStruct,
-    BlockConfirmationStruct
+    BlockConfirmationStruct,
+    StateSnapshotStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import { ForkProofStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 // A fork is created by a DLT by disputing someone or asking the DLT to enforce a state.
@@ -18,7 +17,7 @@ export type AgreementFork = {
     forkGenesisStateEncoded: string; //genesis state (encoded) of the fork
     genesisParticipants: AddressLike[];
     genesisTimestamp: number; //timestamp of the first block in the fork
-    chainBlocks: ChainBlocks[]; //Blocks that are posted on chain for the fork
+    chainBlocks: ChainBlock[]; //Blocks that are posted on chain for the fork
     agreements: Agreement[]; //The agreements that are part of the fork - total order
     forkProof: ForkProofStruct;
 };
@@ -27,10 +26,10 @@ export type Agreement = {
     blockConfirmation: BlockConfirmationStruct;
     encodedState: string;
     addressesInThreshold: AddressLike[];
-    snapShotCommitment: string;
+    snapShot: StateSnapshotStruct;
 };
-export type ChainBlocks = {
-    transactionCnt: number;
-    participantAdr: AddressLike;
+
+export type ChainBlock = {
+    signedBlock: SignedBlockStruct;
     timestamp: number;
 };

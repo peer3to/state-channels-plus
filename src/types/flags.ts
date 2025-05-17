@@ -10,6 +10,8 @@ export enum ExecutionFlags {
 }
 
 export enum AgreementFlag {
+    INVALID_STATE_TRANSITION,
+    INVALID_PREVIOUS_BLOCK,
     INVALID_SIGNATURE,
     READY,
     DUPLICATE,

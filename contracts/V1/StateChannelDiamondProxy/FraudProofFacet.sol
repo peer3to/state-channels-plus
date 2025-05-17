@@ -15,6 +15,7 @@ contract FraudProofFacet is StateChannelCommon {
         proofHandlers[ProofType.BlockDoubleSign] = _handleBlockDoubleSign;
         proofHandlers[ProofType.BlockEmptyBlock] = _handleBlockEmptyBlock;
         proofHandlers[ProofType.BlockInvalidStateTransition] = _handleBlockInvalidStateTransition;
+        proofHandlers[ProofType.BlockInvalidPreviousLink] = _handleBlockInvalidPreviousLink;
         proofHandlers[ProofType.TimeoutThreshold] = _handleTimeoutThreshold;
         proofHandlers[ProofType.TimeoutPriorInvalid] = _handleTimeoutPriorInvalid;
         proofHandlers[ProofType.DisputeInvalidPreviousRecursive] = _handleDisputeInvalidPreviousRecursive;
@@ -49,7 +50,7 @@ contract FraudProofFacet is StateChannelCommon {
         Block memory block1 = abi.decode(blockDoubleSignProof.block1.encodedBlock, (Block));
         Block memory block2 = abi.decode(blockDoubleSignProof.block2.encodedBlock, (Block));
 
-        if(fraudProofVerificationContext.channelId != block1.transaction.header.channelId || fraudProofVerificationContext.channelId != block2.transaction.header.channelId) {
+        if(fraudProofVerificationContext.channelId != block1.transaction.header.channelId && fraudProofVerificationContext.channelId != block2.transaction.header.channelId) {
             revert ErrorNotSameChannelId();
         }
 
@@ -149,6 +150,21 @@ contract FraudProofFacet is StateChannelCommon {
         });
         require(fraudBlock.stateSnapshotHash == keccak256(abi.encode(newStateSnapshot)), ErrorValidStateTransition());
         
+        return signer;
+    }
+
+    function _handleBlockInvalidPreviousLink(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal pure returns (address) {
+        BlockInvalidPreviousLinkProof memory blockInvalidPreviousLinkProof = abi.decode(encodedProof, (BlockInvalidPreviousLinkProof));
+        SignedBlock memory invalidSignedBlock = blockInvalidPreviousLinkProof.invalidBlock;
+        SignedBlock memory previousSignedBlock = blockInvalidPreviousLinkProof.previousBlock;
+        bytes memory previousBlockStateMachineState = blockInvalidPreviousLinkProof.previousBlockStateMachineState;
+        Block memory invalidBlock = abi.decode(invalidSignedBlock.encodedBlock, (Block));
+
+        address signer = StateChannelUtilLibrary.retriveSignerAddress(
+            invalidSignedBlock.encodedBlock,
+            invalidSignedBlock.signature
+        );
+
         return signer;
     }
     // ----------------------------------- Timeout Fraud Proofs -----------------------------------

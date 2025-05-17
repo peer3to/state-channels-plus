@@ -1,10 +1,12 @@
 // Owns the array of forks + all direct lookups.
 // No knowledge about signatures, queues, or on-chain events.
 import {
+    BlockConfirmationStruct,
     BlockStruct,
+    SignedBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import { AddressLike, BytesLike, ethers, SignatureLike } from "ethers";
+import { AddressLike, BytesLike, ethers } from "ethers";
 import { BlockUtils, EvmUtils } from "@/utils";
 import { Agreement, AgreementFork } from "./types";
 import { ForkProofStruct } from "@typechain-types/contracts/V1/DisputeTypes";
@@ -40,42 +42,38 @@ export default class ForkService {
     private addAgreement(forkCnt: number, agreement: Agreement): void {
         this.forks[forkCnt].agreements.push(agreement);
     }
-    public createSnapShot(
-        forkCnt: number,
-        transactionCnt: number
-    ): StateSnapshotStruct {}
 
     //After succesfull verification and execution
     public addBlock(
-        block: BlockStruct,
-        originalSignature: SignatureLike,
-        encodedState: string
+        signedBlock: SignedBlockStruct,
+        encodedState: string,
+        snapShot: StateSnapshotStruct
     ) {
-        const forkCnt = BlockUtils.getFork(block);
+        const forkCnt = BlockUtils.getFork(signedBlock);
 
         if (!this.isValidForkCnt(forkCnt))
             // this should never happen since checks are done before
             throw new Error(
                 "AgreementManager - addBlock - forkCnt is not correct"
             );
-        const snapShotCommitment = ethers.keccak256(
-            EvmUtils.encodeStateSnapshot(
-                this.createSnapShot(forkCnt, this.getNextBlockHeight() - 1)
-            )
+
+        const agreement = this.getAgreementByBlock(
+            EvmUtils.decodeBlock(signedBlock.encodedBlock)
         );
-        const agreement = this.getAgreementByBlock(block);
         if (agreement)
             // this should never happen since checks are done before
             throw new Error(
                 "AgreementManager - addBlock - double sign or incorrect data"
             );
-
+        const blockConfirmation: BlockConfirmationStruct = {
+            signedBlock: signedBlock,
+            signatures: []
+        };
         this.addAgreement(forkCnt, {
-            block,
-            blockSignatures: [originalSignature],
+            blockConfirmation,
             encodedState,
             addressesInThreshold: [],
-            snapShotCommitment
+            snapShot
         });
     }
 
@@ -83,26 +81,28 @@ export default class ForkService {
      * Adds a transaction record to the chainBlocks array for a specific fork
      */
     public addChainBlock(
-        forkCnt: number,
-        transactionCnt: number,
-        participantAdr: string,
+        signedBlock: SignedBlockStruct,
         timestamp: number
     ): void {
+        const { forkCnt } = BlockUtils.getCoordinates(
+            EvmUtils.decodeBlock(signedBlock.encodedBlock)
+        );
         if (!this.isValidForkCnt(forkCnt)) {
             throw new Error("ForkService - addChainBlock - Invalid fork count");
         }
 
         this.forks[forkCnt].chainBlocks.push({
-            transactionCnt,
-            participantAdr,
+            signedBlock,
             timestamp
         });
     }
 
     /*────────── getters ──────────*/
 
-    collectMilestoneSnapshots(forkCnt: number): BytesLike[] {
-        const snapShotCommitments = [];
+    collectMilestoneSnapshots(forkCnt: number): StateSnapshotStruct[] {
+        const snapShotCommitments: { commitment: BytesLike; height: number }[] =
+            [];
+        const stateSnapshots = [];
         for (
             let i = 0;
             i < this.forks[forkCnt].forkProof.forkMilestoneProofs.length;
@@ -112,9 +112,24 @@ export default class ForkService {
                 this.forks[forkCnt].forkProof.forkMilestoneProofs[i]
                     .blockConfirmations[0].signedBlock.encodedBlock
             );
-            snapShotCommitments.push(blockDecoded.stateSnapshotHash);
+            snapShotCommitments.push({
+                commitment: blockDecoded.stateSnapshotHash,
+                height: Number(blockDecoded.transaction.header.transactionCnt)
+            });
         }
-        return snapShotCommitments;
+        for (const snapShotCommitment of snapShotCommitments) {
+            const stateSnapshot =
+                this.forks[forkCnt].agreements[snapShotCommitment.height]
+                    .snapShot;
+            if (
+                ethers.keccak256(
+                    EvmUtils.encodeStateSnapshot(stateSnapshot)
+                ) === snapShotCommitment.commitment
+            ) {
+                stateSnapshots.push(stateSnapshot);
+            }
+        }
+        return stateSnapshots;
     }
     getForkProof(forkCnt: number): ForkProofStruct | undefined {
         return this.forks[forkCnt].forkProof;
@@ -122,9 +137,8 @@ export default class ForkService {
     getSnapShot(
         forkCnt: number,
         transactionCnt: number
-    ): BytesLike | undefined {
-        return this.forks[forkCnt].agreements[transactionCnt]
-            .snapShotCommitment as BytesLike;
+    ): StateSnapshotStruct | undefined {
+        return this.forks[forkCnt].agreements[transactionCnt].snapShot;
     }
     getLatestForkCnt(): number {
         return Math.max(0, this.forks.length - 1);
@@ -157,8 +171,15 @@ export default class ForkService {
             ? this.forks[forkCnt].agreements[txCnt]
             : undefined;
     }
-    getBlock(forkCnt: number, txCnt: number): BlockStruct | undefined {
-        return this.getAgreement(forkCnt, txCnt)?.block;
+    getBlock(forkCnt: number, txCnt: number): SignedBlockStruct | undefined {
+        return this.getAgreement(forkCnt, txCnt)?.blockConfirmation.signedBlock;
+    }
+
+    getBlockConfirmation(
+        forkCnt: number,
+        txCnt: number
+    ): BlockConfirmationStruct | undefined {
+        return this.getAgreement(forkCnt, txCnt)?.blockConfirmation;
     }
 
     getAgreementByBlock(block: BlockStruct): Agreement | undefined {
@@ -192,7 +213,8 @@ export default class ForkService {
     /*────────── timestamp helpers ─────────*/
     getLatestBlockTimestamp(forkCnt: number): number {
         const fork = this.forks[forkCnt];
-        const latestBlock = this.getLatestAgreement(forkCnt)?.block;
+        const latestBlock =
+            this.getLatestAgreement(forkCnt)?.blockConfirmation.signedBlock!;
         const latestTimestamp = latestBlock
             ? BlockUtils.getTimestamp(latestBlock)
             : 0;

@@ -1,4 +1,4 @@
-import { ethers, SignatureLike } from "ethers";
+import { ethers } from "ethers";
 import {
     SignedBlockStruct,
     BlockStruct
@@ -20,7 +20,15 @@ export default class BlockValidator {
 
     isBlockInChain(block: BlockStruct): boolean {
         const ag = this.forks.getAgreementByBlock(block);
-        return ag !== undefined && BlockUtils.areBlocksEqual(ag.block, block);
+        return (
+            ag !== undefined &&
+            BlockUtils.areBlocksEqual(
+                EvmUtils.decodeBlock(
+                    ag.blockConfirmation.signedBlock.encodedBlock
+                ),
+                block
+            )
+        );
     }
 
     /** In chain OR parked in the “future queue” */
@@ -34,7 +42,11 @@ export default class BlockValidator {
         if (!fork) throw new Error("BlockValidator - fork not found");
         const genesis = fork.genesisTimestamp;
         const lastAg = this.forks.getLatestAgreement(forkCnt);
-        const lastTs = Number(lastAg?.block.transaction.header.timestamp ?? 0);
+        const lastTs = Number(
+            EvmUtils.decodeBlock(
+                lastAg?.blockConfirmation.signedBlock.encodedBlock!
+            ).transaction.header.timestamp ?? 0
+        );
         return Math.max(genesis, lastTs);
     }
 
@@ -49,17 +61,16 @@ export default class BlockValidator {
     check(signed: SignedBlockStruct): AgreementFlag {
         const block = EvmUtils.decodeBlock(signed.encodedBlock);
         const { forkCnt, height } = BlockUtils.getCoordinates(block);
-        const participant = BlockUtils.getBlockAuthor(block);
+        const signer = BlockUtils.getBlockAuthor(signed);
 
         /* 1 – valid signature? */
-        const signer = EvmUtils.retrieveSignerAddressBlock(
-            block,
-            signed.signature as SignatureLike
-        );
-        if (signer !== participant) return AgreementFlag.INVALID_SIGNATURE;
+        if (signer !== block.transaction.header.participant)
+            return AgreementFlag.INVALID_SIGNATURE;
 
         /* 2 – duplicate? */
-        if (this.isBlockDuplicate(block)) return AgreementFlag.DUPLICATE;
+        if (this.isBlockDuplicate(block)) {
+            return AgreementFlag.DUPLICATE;
+        }
 
         /* 3 – known fork? */
         if (!this.forks.isValidForkCnt(forkCnt)) return AgreementFlag.NOT_READY;
@@ -67,9 +78,9 @@ export default class BlockValidator {
         /* 4 – double sign / incorrect data vs existing agmt */
         const existing = this.forks.getBlock(forkCnt, height);
         if (existing) {
-            return BlockUtils.getBlockAuthor(existing) === participant
-                ? AgreementFlag.DOUBLE_SIGN
-                : AgreementFlag.INCORRECT_DATA;
+            if (BlockUtils.getBlockAuthor(existing) === signer) {
+                return AgreementFlag.DOUBLE_SIGN;
+            }
         }
 
         /* 5 – first block of fork genesis? */
@@ -77,17 +88,17 @@ export default class BlockValidator {
             const expectedPrev = ethers.keccak256(
                 this.forks.getFork(forkCnt)!.forkGenesisStateEncoded
             );
-            return block.previousStateHash === expectedPrev
-                ? AgreementFlag.READY
-                : AgreementFlag.INCORRECT_DATA;
+            if (block.previousBlockHash !== expectedPrev) {
+                return AgreementFlag.INVALID_PREVIOUS_BLOCK;
+            }
         }
 
         /* 6 – compare with previous block in chain */
         const prev = this.forks.getBlock(forkCnt, height - 1);
         if (!prev) return AgreementFlag.NOT_READY;
-
-        return prev.stateHash === block.previousStateHash
-            ? AgreementFlag.READY
-            : AgreementFlag.INCORRECT_DATA;
+        if (block.previousBlockHash !== ethers.keccak256(prev.encodedBlock)) {
+            return AgreementFlag.INVALID_PREVIOUS_BLOCK;
+        }
+        return AgreementFlag.READY;
     }
 }

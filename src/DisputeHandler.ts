@@ -97,7 +97,9 @@ class DisputeHandler {
             );
         }
         const milestoneSnapshots =
-            this.agreementManager.getMilestoneSnapshots(forkCnt);
+            this.agreementManager.forkService.collectMilestoneSnapshots(
+                forkCnt
+            );
         const latestStateStateMachineState =
             this.agreementManager.getStateMachineState(forkCnt, transactionCnt);
         if (!latestStateStateMachineState) {
@@ -387,7 +389,10 @@ class DisputeHandler {
     // listen to new dispoute and do audit after receciving the dispute and also do extra checks
     // like did the dispute return slashes, and does it use the latest state snapshot
     // TODO!!
-    //public onDisputeCreated(dispute: DisputeStruct): Promise<void> {}
+    public onDispute(dispute: DisputeStruct): Promise<void> {
+        // TODO
+        return Promise.resolve();
+    }
 }
 
 export default DisputeHandler;
