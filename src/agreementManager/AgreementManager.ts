@@ -8,6 +8,7 @@ import {
     JoinChannelBlockStruct,
     ExitChannelBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 import { BlockUtils, EvmUtils } from "@/utils";
 import { AgreementFlag } from "@/types";
 import * as SetUtils from "@/utils/set";

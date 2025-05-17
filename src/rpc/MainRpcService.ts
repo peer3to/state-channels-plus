@@ -3,6 +3,7 @@ import {
     SignedBlockStruct,
     SignedJoinChannelStruct
 } from "@typechain-types/contracts/V1/DataTypes";
+import { SignedDisputeStruct } from "@typechain-types/contracts/V1/DataTypes";
 
 import P2PManager from "@/P2PManager";
 import RpcProxy from "./RpcProxy";
@@ -123,6 +124,10 @@ class MainRpcService {
             originalSignedBlock,
             confirmationSignature
         );
+    }
+
+    public async onDisputeConfirmation(signedDispute: SignedDisputeStruct) {
+        this.stateTransitionService.onDisputeConfirmation(signedDispute);
     }
 }
 export default MainRpcService;

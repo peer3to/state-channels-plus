@@ -28,11 +28,25 @@ contract StateChannelCommon is
     function getDisputeLength(bytes32 channelId) public view virtual returns (uint) {
         return disputeData[channelId].disputeCommitments.length;
     }
+    function getLatestDisputeCommitment(bytes32 channelId) public view virtual returns (bytes32) {
+        uint index = getDisputeLength(channelId) - 1;
+        return disputeData[channelId].disputeCommitments[index];
+    }
 
     function getSnapshotParticipants(
         bytes32 channelId
     ) public view virtual returns (address[] memory) {
         return stateSnapshots[channelId].participants;
+    }
+
+    function getPendingParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
+        return disputeData[channelId].pendingParticipants;
+    }
+
+    function getSnapshotForkCnt(
+        bytes32 channelId
+    ) public view virtual returns (uint) {
+        return stateSnapshots[channelId].forkCnt;
     }
 
     function getStatemachineParticipants(

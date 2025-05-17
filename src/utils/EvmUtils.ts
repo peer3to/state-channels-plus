@@ -58,19 +58,15 @@ export class EvmUtils {
         transaction: TransactionStruct,
         signer: ethers.Signer
     ): Promise<{ encodedTransaction: BytesLike; signature: string }> {
-        let encodedTransaction = EvmUtils.encodeTransaction(transaction);
-        let encodedHash = ethers.keccak256(encodedTransaction);
-        let econdedHashBytes = ethers.getBytes(encodedHash);
-        let signature = await signer.signMessage(econdedHashBytes);
-        return { encodedTransaction: encodedTransaction, signature };
+        const { encoded, signature } = await SignatureUtils.sign(
+            transaction,
+            signer
+        );
+        return { encodedTransaction: encoded, signature };
     }
 
     public static encodeBlock(block: BlockStruct): string {
-        let blockEncoded = ethers.AbiCoder.defaultAbiCoder().encode(
-            [BlockEthersType],
-            [block]
-        );
-        return blockEncoded;
+        return Codec.encode(block);
     }
 
     public static decodeBlock(blockEncoded: BytesLike): BlockStruct {
@@ -97,21 +93,29 @@ export class EvmUtils {
         block: BlockStruct,
         signer: ethers.Signer
     ): Promise<SignedBlockStruct> {
-        let encodedBlock = EvmUtils.encodeBlock(block);
-        let encodedHash = ethers.keccak256(encodedBlock);
-        let econdedHashBytes = ethers.getBytes(encodedHash);
-        let signature = await signer.signMessage(econdedHashBytes);
-        return { encodedBlock: encodedBlock, signature };
+        const { encoded, signature } = await SignatureUtils.sign(block, signer);
+        return { encodedBlock: encoded, signature };
+    }
+
+    public static async signDispute(
+        dispute: DisputeStruct,
+        signer: ethers.Signer
+    ): Promise<SignedDisputeStruct> {
+        const { encoded, signature } = await SignatureUtils.sign(
+            dispute,
+            signer
+        );
+        return { encodedDispute: encoded, signature };
     }
 
     public static retrieveSignerAddressBlock(
         block: BlockStruct,
         signature: SignatureLike
     ): string {
-        let encodedBlock = EvmUtils.encodeBlock(block);
-        let encodedHash = ethers.keccak256(encodedBlock);
-        let econdedHashBytes = ethers.getBytes(encodedHash);
-        return ethers.verifyMessage(econdedHashBytes, signature);
+        return SignatureUtils.getSignerAddressFromMsg(
+            Codec.encode(block),
+            signature
+        );
     }
 
     public static encodeJoinChannel(jc: JoinChannelStruct): string {
@@ -143,55 +147,23 @@ export class EvmUtils {
         return exitChannelEncoded;
     }
     public static decodeJoinChannel(jcEncoded: BytesLike): JoinChannelStruct {
-        let jcDecoded = ethers.AbiCoder.defaultAbiCoder().decode(
-            [JoinChannelEthersType],
-            jcEncoded
-        );
-        return EvmUtils.ethersResultToObjectRecursive(
-            jcDecoded[0]
-        ) as JoinChannelStruct;
+        return Codec.decodeJoinChannel(jcEncoded);
     }
     public static async signJoinChannel(
         jc: JoinChannelStruct,
         signer: ethers.Signer
     ): Promise<SignedJoinChannelStruct> {
-        let encodedJoinChannel = EvmUtils.encodeJoinChannel(jc);
-        let encodedHash = ethers.keccak256(encodedJoinChannel);
-        let econdedHashBytes = ethers.getBytes(encodedHash);
-        let signature = await signer.signMessage(econdedHashBytes);
-        return { encodedJoinChannel, signature };
+        const { encoded, signature } = await SignatureUtils.sign(jc, signer);
+        return { encodedJoinChannel: encoded, signature };
     }
     public static retrieveSignerAddressJoinChannel(
         jc: JoinChannelStruct,
         signature: SignatureLike
     ): string {
-        let encodedJoinChannel = EvmUtils.encodeJoinChannel(jc);
-        let encodedHash = ethers.keccak256(encodedJoinChannel);
-        let econdedHashBytes = ethers.getBytes(encodedHash);
-        return ethers.verifyMessage(econdedHashBytes, signature);
+        return SignatureUtils.getSignerAddress(jc, signature);
     }
     //empty arrays '[]' can exist but not empty objects {} - Etheres is really bad for this with the Result object
     public static ethersResultToObjectRecursive(result: ethers.Result) {
-        let obj: Record<string, any> = {};
-        try {
-            obj = result.toObject();
-            let cnt = 0;
-            for (let key in obj) {
-                if (key == "_") obj = result.toArray();
-                cnt++;
-            }
-            if (cnt == 0) obj = result.toArray();
-        } catch (e) {
-            obj = result.toArray();
-        }
-        for (let key in obj) {
-            if (
-                obj[key] instanceof ethers.Result &&
-                Object.getPrototypeOf(obj[key]) === ethers.Result.prototype
-            ) {
-                obj[key] = EvmUtils.ethersResultToObjectRecursive(obj[key]);
-            }
-        }
-        return obj;
+        return Codec.ethersResultToObjectRecursive(result);
     }
 }

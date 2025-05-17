@@ -16,8 +16,15 @@ export enum Direction {
     BACKWARD = "backward"
 }
 
+interface StoredDispute {
+    dispute: DisputeStruct;
+    timestamp: number;
+    signatures: SignatureLike[];
+}
+
 export default class ForkService {
     private forks: AgreementFork[] = [];
+    private disputes: StoredDispute[] = [];
 
     /*────────── mutators ──────────*/
     newFork(
@@ -189,6 +196,14 @@ export default class ForkService {
 
     getLatestAgreement(forkCnt: number): Agreement | undefined {
         return this.forks[forkCnt]?.agreements.at(-1);
+    }
+
+    getLatestDispute(): StoredDispute | undefined {
+        return this.disputes.at(-1);
+    }
+
+    getDisputesCount(): number {
+        return this.disputes.length;
     }
 
     /*────────── iterator ──────────*/

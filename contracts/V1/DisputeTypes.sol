@@ -124,6 +124,11 @@ struct BlockInvalidPreviousLinkProof {
     bytes previousBlockStateMachineState;
 }
 
+struct BlockInvalidPreviousLinkProof {
+    SignedBlock invalidBlock;
+    SignedBlock previousBlock;
+    bytes previousBlockStateMachineState;
+}
 
 struct BlockDoubleSignProof {
     SignedBlock block1;
@@ -146,6 +151,7 @@ struct DisputeInvalidPreviousRecursiveProof {
     Dispute originalDispute;
     uint originalDisputeTimestamp;
     uint invalidRecursiveDisputeTimestamp;
+    bytes latestStateSnapshot;
     bytes invalidRecursiveDisputeOutputState;
 }
 
@@ -183,6 +189,7 @@ struct DisputeAuditingData {
     StateSnapshot[] milestoneSnapshots; //for K milestones there will be K-1 snapshots, since the first milestone is the genesisSnapshot
     bytes latestStateStateMachineState;
     JoinChannelBlock[] joinChannelBlocks;
+    uint timestamp;
     uint timestamp;
     // ========================== optional ===============================
     Dispute previousDispute; // (optional) needed to verify 'this' dispute genesis against the previous dispute outputSnapshot or genesisSnapshot (in the case of a recursive dispute) - if not present, genesis is the latest on-chain Snapshot
