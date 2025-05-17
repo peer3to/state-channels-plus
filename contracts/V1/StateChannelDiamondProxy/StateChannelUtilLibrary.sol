@@ -114,7 +114,7 @@ library StateChannelUtilLibrary {
         for (uint i = 0; i < array2.length; i++) {
             result[array1.length + i] = array2[i];
         }
-       return result;
+        return result;
     }
 
     function concatExitChannelArrays(ExitChannel[] memory array1, ExitChannel[] memory array2) internal pure returns (ExitChannel[] memory) {
@@ -125,7 +125,7 @@ library StateChannelUtilLibrary {
         for (uint i = 0; i < array2.length; i++) {
             result[array1.length + i] = array2[i];
         }
-       return result;
+        return result;
     }
 
     function areAddressArraysEqual(
@@ -141,5 +141,43 @@ library StateChannelUtilLibrary {
             }
         }
         return true;
+    }
+
+    function concatAddressArraysNoDuplicates(
+        address[] memory array1,
+        address[] memory array2
+    ) internal pure returns (address[] memory) {
+        // array1 is assumed to contain no duplicates
+        // Create the result array with maximum possible size
+        address[] memory result = new address[](array1.length + array2.length);
+
+        // Copy all items from first array directly to the result
+        for (uint i = 0; i < array1.length; i++) {
+            result[i] = array1[i];
+        }
+
+        uint uniqueCount = array1.length;
+
+        // Add items from second array, skipping duplicates
+        for (uint i = 0; i < array2.length; i++) {
+            // Check if item already exists in rarray1
+            if (!isAddressInArray(result, array2[i])) {
+                result[uniqueCount] = array2[i];
+                uniqueCount++;
+            }
+        }
+
+        // If we didn't find any duplicates, we can return the result as is
+        if (uniqueCount == array1.length + array2.length) {
+            return result;
+        }
+
+        // Otherwise we need to create a sized-down copy
+        address[] memory finalResult = new address[](uniqueCount);
+        for (uint i = 0; i < uniqueCount; i++) {
+            finalResult[i] = result[i];
+        }
+
+        return finalResult;
     }
 }

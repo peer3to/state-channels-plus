@@ -66,10 +66,13 @@ contract StateSnapshotFacet is StateChannelCommon {
             _isDisputeCommitmentValid(dispute, disputeTimestamp, channelId),
             ErrorDisputeProofNotValid()
         );
-        // TODO: add addressesInThreshold
-        // addressesInThreshold are? snapshot.participents - onchainSlasshes?
+
+        address[] memory addressesInThreshold = _getAddressesInThreshold(
+            channelId
+        );
+
         require(
-            _isDisputeFinalized(disputeProof, ),
+            _isDisputeFinalized(disputeProof, addressesInThreshold),
             ErrorDisputeNotFinalized()
         );
         require(
@@ -205,6 +208,60 @@ contract StateSnapshotFacet is StateChannelCommon {
         return providedDisputeCommitment == onChainDisputeCommitment;
     }
 
+    function _getAddressesInThreshold(
+        bytes32 channelId
+    ) internal view returns (address[] memory) {
+        address[] memory snapshotParticipants = getSnapshotParticipants(
+            channelId
+        );
+        address[] memory slashedParticipants = getOnChainSlashedParticipants(
+            channelId
+        );
+
+        // address[] memory pendingParticpants = getPendingParticipants(channelId);
+        address[] memory pendingParticpants = new address[](0);
+
+        // Merge participants with deduplication
+        address[] memory uniqueParticipants = StateChannelUtilLibrary
+            .concatAddressArraysNoDuplicates(
+                snapshotParticipants,
+                pendingParticpants
+            );
+
+        // Pre-allocate maximum possible size
+        address[] memory result = new address[](uniqueParticipants.length);
+        uint validCount = 0;
+
+        for (uint i = 0; i < uniqueParticipants.length; i++) {
+            // Skip if participant is slashed
+            if (
+                StateChannelUtilLibrary.isAddressInArray(
+                    slashedParticipants,
+                    uniqueParticipants[i]
+                )
+            ) {
+                continue;
+            }
+
+            // Add to result immediately
+            result[validCount] = uniqueParticipants[i];
+            validCount++;
+        }
+
+        // If we used all slots, return as is
+        if (validCount == uniqueParticipants.length) {
+            return result;
+        }
+
+        // Otherwise create a properly sized copy
+        address[] memory finalResult = new address[](validCount);
+        for (uint i = 0; i < validCount; i++) {
+            finalResult[i] = result[i];
+        }
+
+        return finalResult;
+    }
+
     function _isDisputeFinalized(
         DisputeProof memory disputeProof,
         address[] memory addressesInThreshold
@@ -212,12 +269,13 @@ contract StateSnapshotFacet is StateChannelCommon {
         if (block.timestamp >= disputeProof.timestamp + getChallengeTime()) {
             return true;
         }
-        bytes memory encodedDispute = Codec.encode(disputeProof.dispute);
-        return StateChannelUtilLibrary.verifyThresholdSigned(
+        bytes memory encodedDispute = abi.encode(disputeProof.dispute);
+        (bool isValid, ) = StateChannelUtilLibrary.verifyThresholdSigned(
             addressesInThreshold,
             encodedDispute,
             disputeProof.signatures
         );
+        return isValid;
     }
 
     function _isStateSnapshotValid(
