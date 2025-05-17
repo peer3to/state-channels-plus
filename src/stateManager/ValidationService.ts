@@ -13,7 +13,8 @@ import {
     EvmUtils,
     scheduleTask,
     subjectiveTimingFlag,
-    SignatureUtils
+    SignatureUtils,
+    getActiveParticipants
 } from "@/utils";
 import AStateMachine from "@/AStateMachine";
 import { Clock } from "..";
@@ -161,10 +162,10 @@ export default class ValidationService {
         return success();
     }
 
-    public validateDispute(
+    public async validateDispute(
         disputeStruct: DisputeStruct,
         timestamp: number
-    ): boolean {
+    ): Promise<boolean> {
         // triggered by StateManager.onDisputeCommitted, which is triggered by chain event 'DisputeCommitted'
         // therefore it is assumed that validation has already happened on
 
@@ -176,57 +177,64 @@ export default class ValidationService {
         ) {
             return false;
         }
-        if (
-            !this.agreementManager.isParticipantInLatestFork(
-                disputeStruct.disputer
-            )
-        )
+
+        const allowedParticipantsSet = await getActiveParticipants(
+            this.scmContract,
+            this.getChannelId()
+        );
+        if (!allowedParticipantsSet.has(disputeStruct.disputer as string)) {
             return false;
+        }
+
         return true;
     }
 
-    public validateDisputeConfirmation(
-        dispute: DisputeStruct,
+    public async validateDisputeConfirmation(
+        disputeStruct: DisputeStruct,
         confirmationSignature: BytesLike
-    ): ValidationResult {
+    ): Promise<ValidationResult> {
         if (!this.isChannelOpen()) return notReady();
 
         // Check if dispute exists
-        if (!this.agreementManager.isDisputeKnown(dispute)) {
+        if (!this.agreementManager.isDisputeKnown(disputeStruct)) {
             // Dispute not found - could be gossip arrived before event
             // Return NOT_READY to allow retry
             return notReady();
         }
 
         // Validate signature
-        const confirmer = SignatureUtils.getSignerAddress(
-            dispute,
-            confirmationSignature as SignatureLike
-        );
-        if (!this.agreementManager.isParticipantInLatestFork(confirmer))
-            return disconnect();
-
-        // Check for duplicate signature
-        if (
-            this.agreementManager.getDisputeSignatures(dispute).some((sig) => {
-                const signer = SignatureUtils.getSignerAddress(dispute, sig);
-                return signer === confirmer;
-            })
-        ) {
-            return duplicate();
+        let confirmer;
+        try {
+            confirmer = SignatureUtils.getSignerAddress(
+                disputeStruct,
+                confirmationSignature as SignatureLike
+            );
+        } catch (error) {
+            return dispute(AgreementFlag.INVALID_SIGNATURE);
         }
 
         // Check if participant already signed with a different signature
-        // This could be a double sign attempt
         const hasParticipantSigned =
             this.agreementManager.hasParticipantSignedDispute(
-                dispute,
+                disputeStruct,
                 confirmer
             );
 
         if (hasParticipantSigned) {
-            // TODO: This could be used as proof of double signing
-            return disconnect();
+            return duplicate();
+        }
+
+        const allowedParticipantsSet = await getActiveParticipants(
+            this.scmContract,
+            this.getChannelId()
+        );
+
+        if (confirmer === disputeStruct.disputer) {
+            return dispute(AgreementFlag.DOUBLE_SIGN);
+        }
+
+        if (!allowedParticipantsSet.has(confirmer)) {
+            return dispute(AgreementFlag.INVALID_SIGNATURE);
         }
 
         return success();

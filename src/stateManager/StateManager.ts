@@ -27,7 +27,14 @@ import DisputeHandler from "@/DisputeHandler";
 import P2PManager from "@/P2PManager";
 
 import AStateMachine from "@/AStateMachine";
-import { EvmUtils, DebugProxy, Mutex, scheduleTask } from "@/utils";
+import {
+    EvmUtils,
+    DebugProxy,
+    Mutex,
+    scheduleTask,
+    difference,
+    getActiveParticipants
+} from "@/utils";
 import StateChannelEventListener from "@/StateChannelEventListener";
 
 import P2pEventHooks from "@/P2pEventHooks";
@@ -491,22 +498,21 @@ class StateManager {
         if (!fork) {
             throw new Error("No latest fork found");
         }
-        const requiredAddressesSet = SetUtils.stringSetFromArray(
-            fork.addressesInThreshold
-        );
 
         // Get all participants who have signed the dispute
         const disputeSignatures = this.agreementManager.getDisputeSignatures(
             disputeData.dispute
         );
 
+        const allowedParticipantsSet = await getActiveParticipants(
+            this.stateChannelManagerContract,
+            this.getChannelId()
+        );
+
         const hasThreshold = SignatureUtils.hasSignatureThreshold(
-            fork.addressesInThreshold,
+            allowedParticipantsSet,
             Codec.encode(disputeData.dispute),
-            disputeSignatures,
-            {
-                addressesToIgnore: [disputeData.dispute.disputer]
-            }
+            disputeSignatures
         );
 
         if (hasThreshold) {
@@ -527,10 +533,6 @@ class StateManager {
             "Dispute is not finalized, state snapshot was not submitted"
         );
     }
-
-    // returns participants who haven't signed the block
-    // 1 is currently unused
-    // 2 belong in the AgreementManager
 
     public getEncodedState(): Promise<string> {
         return this.stateMachine.getState();
@@ -734,7 +736,7 @@ class StateManager {
         const dispute = Codec.decodeDispute(encodedDispute);
 
         // Validate dispute
-        const valid = this.validationService.validateDispute(
+        const valid = await this.validationService.validateDispute(
             dispute,
             timestamp
         );
@@ -760,13 +762,13 @@ class StateManager {
     ) {
         this.outputStateSnapshotData.set(commitment, outputStateSnapshot);
     }
-    public onDisputeConfirmation(
+    public async onDisputeConfirmation(
         signedDispute: SignedDisputeStruct
-    ): ExecutionFlags {
+    ): Promise<ExecutionFlags> {
         const dispute = Codec.decodeDispute(signedDispute.encodedDispute);
 
         const { success, flag } =
-            this.validationService.validateDisputeConfirmation(
+            await this.validationService.validateDisputeConfirmation(
                 dispute,
                 signedDispute.signature
             );

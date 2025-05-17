@@ -13,3 +13,4 @@ export * from "./SignatureCollectionMap";
 export * from "./timestamp";
 export * from "./Codec";
 export * from "./SignatureUtils";
+export * from "./participantUtils";

@@ -37,7 +37,7 @@ export class SignatureUtils {
     }
 
     public static hasSignatureThreshold(
-        addressesInThreshold: AddressLike[],
+        addressesInThreshold: AddressLike[] | Set<AddressLike>,
         data: BytesLike,
         signatures: SignatureLike[],
         options: {
@@ -49,8 +49,11 @@ export class SignatureUtils {
         // Create a Set of addresses to ignore (for O(1) lookups)
         const ignoreSet = new Set(options.addressesToIgnore);
 
-        // Create a Set of required addresses
-        const requiredAddresses = new Set(addressesInThreshold);
+        // Create a Set of required addresses (or use existing Set)
+        const requiredAddresses =
+            addressesInThreshold instanceof Set
+                ? addressesInThreshold
+                : new Set(addressesInThreshold);
 
         // Create a Set to track which threshold addresses we've found
         const matchedAddresses = new Set<AddressLike>();

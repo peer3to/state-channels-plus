@@ -53,7 +53,7 @@ class StateTransitionService extends ARpcService {
 
     public async onDisputeConfirmation(signedDispute: SignedDisputeStruct) {
         const flag =
-            this.mainRpcService.p2pManager.stateManager.onDisputeConfirmation(
+            await this.mainRpcService.p2pManager.stateManager.onDisputeConfirmation(
                 signedDispute
             );
         if (
@@ -80,7 +80,7 @@ class StateTransitionService extends ARpcService {
             try {
                 await retry(async () => {
                     const retryFlag =
-                        this.mainRpcService.p2pManager.stateManager.onDisputeConfirmation(
+                        await this.mainRpcService.p2pManager.stateManager.onDisputeConfirmation(
                             signedDispute
                         );
                     if (retryFlag !== ExecutionFlags.SUCCESS) {
