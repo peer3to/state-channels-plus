@@ -33,6 +33,7 @@
     "solidity-coverage": "^0.8.1",
     "source-map-support": "^0.5.21",
     "ts-node": "^10.9.2",
+    "tsc-alias": "^1.8.16",
     "tsconfig-paths": "^4.2.0",
     "typechain": "^8.3.0",
     "typescript": "^5.3.3",
@@ -64,7 +65,7 @@
     "testc": "yarn compile && yarn hardhat test",
     "test": "yarn hardhat test",
     "test:coverage": "nyc --reporter=html yarn testts",
-    "build": "yarn compile && rimraf dist && tsc && npm pack && node rename-pack.js",
+    "build": "yarn compile && rimraf dist && tsc && tsc-alias --project tsconfig.json && npm pack && node rename-pack.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky install"
