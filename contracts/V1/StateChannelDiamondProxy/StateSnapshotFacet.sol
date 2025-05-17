@@ -218,8 +218,7 @@ contract StateSnapshotFacet is StateChannelCommon {
             channelId
         );
 
-        // address[] memory pendingParticpants = getPendingParticipants(channelId);
-        address[] memory pendingParticpants = new address[](0);
+        address[] memory pendingParticpants = getPendingParticipants(channelId);
 
         // Merge participants with deduplication
         address[] memory uniqueParticipants = StateChannelUtilLibrary
