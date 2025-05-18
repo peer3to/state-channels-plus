@@ -116,11 +116,12 @@ describe("EvmStateMachine", function () {
         );
         console.log("Connection established");
         //on-chain open the channel
-        await mathscm.openChannel(
+        const re = await mathscm.openChannel(
             joinChannelCommitment1.channelId,
             [jc1Signed.encodedJoinChannel, jc2Signed.encodedJoinChannel],
             [jc1Signed.signature, jc2Signed.signature]
         );
+        console.log(`Tx hash:${re.hash}`);
 
         // sleep for 2 seconds - should be enough for the SM to pickup the channel open event and initiate
         await new Promise((resolve) => setTimeout(resolve, 1000));

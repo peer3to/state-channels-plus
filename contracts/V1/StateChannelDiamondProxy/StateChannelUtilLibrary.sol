@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-
+import "../DataTypes.sol";
 library StateChannelUtilLibrary {
     /**
      * @param addressesInThreshold - The public EOA addresses of the signers in the threshold
@@ -86,27 +86,109 @@ library StateChannelUtilLibrary {
         return false;
     }
 
-    //Return set length after tryIndesrt
+    //Return set length after tryInsert
     function tryInsertAddressInThresholdSet(
         address adr,
         address[] memory set,
-        uint currentSetLength,
+        uint currentThresholdCount,
         address[] memory expectedAddresses
     ) internal pure returns (uint) {
-        bool found = false;
         //Check is address in expectedAddresses
         for (uint i = 0; i < expectedAddresses.length; i++) {
             if (expectedAddresses[i] == adr) {
-                found = true;
-                break;
+                if(set[i] != adr) {
+                    set[i] = adr;
+                    currentThresholdCount++;
+                    break;
+                }
             }
         }
-        if (!found) return currentSetLength;
-        //Try and insert
-        for (uint i = 0; i < currentSetLength; i++) {
-            if (set[i] == adr) return currentSetLength;
+        return currentThresholdCount;
+    }
+
+    function concatAddressArrays(address[] memory array1, address[] memory array2) internal pure returns (address[] memory) {
+        address[] memory result = new address[](array1.length + array2.length);
+        for (uint i = 0; i < array1.length; i++) {
+            result[i] = array1[i];
         }
-        set[currentSetLength] = adr;
-        return currentSetLength + 1;
+        for (uint i = 0; i < array2.length; i++) {
+            result[array1.length + i] = array2[i];
+        }
+        return result;
+    }
+
+    function concatBytesArrays(bytes[] memory array1, bytes[] memory array2) internal pure returns (bytes[] memory) {
+        bytes[] memory result = new bytes[](array1.length + array2.length);
+        for (uint i = 0; i < array1.length; i++) {
+            result[i] = array1[i];
+        }
+        for (uint i = 0; i < array2.length; i++) {
+            result[array1.length + i] = array2[i];
+        }
+       return result;
+    }
+
+    function concatExitChannelArrays(ExitChannel[] memory array1, ExitChannel[] memory array2) internal pure returns (ExitChannel[] memory) {
+        ExitChannel[] memory result = new ExitChannel[](array1.length + array2.length);
+        for (uint i = 0; i < array1.length; i++) {
+            result[i] = array1[i];
+        }
+        for (uint i = 0; i < array2.length; i++) {
+            result[array1.length + i] = array2[i];
+        }
+        return result;
+    }
+
+    function areAddressArraysEqual(
+        address[] memory array1,
+        address[] memory array2
+    ) internal pure returns (bool) {
+        if (array1.length != array2.length) {
+            return false;
+        }
+        for (uint i = 0; i < array1.length; i++) {
+            if (array1[i] != array2[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function concatAddressArraysNoDuplicates(
+        address[] memory array1,
+        address[] memory array2
+    ) internal pure returns (address[] memory) {
+        // array1 is assumed to contain no duplicates
+        // Create the result array with maximum possible size
+        address[] memory result = new address[](array1.length + array2.length);
+
+        // Copy all items from first array directly to the result
+        for (uint i = 0; i < array1.length; i++) {
+            result[i] = array1[i];
+        }
+
+        uint uniqueCount = array1.length;
+
+        // Add items from second array, skipping duplicates
+        for (uint i = 0; i < array2.length; i++) {
+            // Check if item already exists in rarray1
+            if (!isAddressInArray(result, array2[i])) {
+                result[uniqueCount] = array2[i];
+                uniqueCount++;
+            }
+        }
+
+        // If we didn't find any duplicates, we can return the result as is
+        if (uniqueCount == array1.length + array2.length) {
+            return result;
+        }
+
+        // Otherwise we need to create a sized-down copy
+        address[] memory finalResult = new address[](uniqueCount);
+        for (uint i = 0; i < uniqueCount; i++) {
+            finalResult[i] = result[i];
+        }
+
+        return finalResult;
     }
 }

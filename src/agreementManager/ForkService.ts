@@ -4,14 +4,23 @@ import { BlockStruct } from "@typechain-types/contracts/V1/DataTypes";
 import { AddressLike, SignatureLike } from "ethers";
 import { BlockUtils } from "@/utils";
 import { Agreement, AgreementFork } from "./types";
+import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import { SignatureUtils } from "@/utils/SignatureUtils";
 
 export enum Direction {
     FORWARD = "forward",
     BACKWARD = "backward"
 }
 
+interface StoredDispute {
+    dispute: DisputeStruct;
+    timestamp: number;
+    signatures: SignatureLike[];
+}
+
 export default class ForkService {
     private forks: AgreementFork[] = [];
+    private disputes: StoredDispute[] = [];
 
     /*────────── mutators ──────────*/
     newFork(
@@ -27,6 +36,48 @@ export default class ForkService {
             genesisTimestamp,
             chainBlocks: [],
             agreements: []
+        });
+    }
+
+    addDispute(dispute: DisputeStruct, timestamp: number): void {
+        this.disputes.push({
+            dispute,
+            timestamp,
+            signatures: []
+        });
+    }
+
+    addDisputeSignature(
+        dispute: DisputeStruct,
+        signature: SignatureLike
+    ): void {
+        const storedDispute = this.disputes[Number(dispute.disputeIndex)];
+
+        storedDispute.signatures.push(signature);
+    }
+
+    isDisputeKnown(dispute: DisputeStruct): boolean {
+        return this.disputes[Number(dispute.disputeIndex)]?.dispute === dispute;
+    }
+
+    getDisputeSignatures(dispute: DisputeStruct): SignatureLike[] {
+        return this.disputes[Number(dispute.disputeIndex)]?.signatures || [];
+    }
+
+    hasParticipantSignedDispute(
+        dispute: DisputeStruct,
+        participant: AddressLike
+    ): boolean {
+        const storedDispute = this.disputes[Number(dispute.disputeIndex)];
+        if (!storedDispute) return false;
+
+        return storedDispute.signatures.some((sig) => {
+            try {
+                const signer = SignatureUtils.getSignerAddress(dispute, sig);
+                return signer === participant;
+            } catch {
+                return false;
+            }
         });
     }
 
@@ -125,6 +176,14 @@ export default class ForkService {
 
     getLatestAgreement(forkCnt: number): Agreement | undefined {
         return this.forks[forkCnt]?.agreements.at(-1);
+    }
+
+    getLatestDispute(): StoredDispute | undefined {
+        return this.disputes.at(-1);
+    }
+
+    getDisputesCount(): number {
+        return this.disputes.length;
     }
 
     /*────────── iterator ──────────*/

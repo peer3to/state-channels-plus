@@ -1,7 +1,12 @@
 import {
     TransactionStruct,
     SignedBlockStruct,
-    BlockStruct
+    BlockStruct,
+    StateSnapshotStruct,
+    ForkMilestoneProofStruct,
+    ExitChannelBlockStruct,
+    DisputeProofStruct,
+    SignedDisputeStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import {
     AddressLike,
@@ -22,7 +27,14 @@ import DisputeHandler from "@/DisputeHandler";
 import P2PManager from "@/P2PManager";
 
 import AStateMachine from "@/AStateMachine";
-import { EvmUtils, DebugProxy, Mutex, scheduleTask } from "@/utils";
+import {
+    EvmUtils,
+    DebugProxy,
+    Mutex,
+    scheduleTask,
+    difference,
+    getActiveParticipants
+} from "@/utils";
 import StateChannelEventListener from "@/StateChannelEventListener";
 
 import P2pEventHooks from "@/P2pEventHooks";
@@ -35,6 +47,9 @@ import {
     processConfirmationDecision
 } from "./processConfirmationDecisionHandlers";
 import ValidationService from "./ValidationService";
+import { Codec } from "@/utils/Codec";
+import { SignatureUtils } from "@/utils/SignatureUtils";
+import * as SetUtils from "@/utils/set";
 
 let DEBUG_STATE_MANAGER = false;
 class StateManager {
@@ -52,6 +67,17 @@ class StateManager {
     self = DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
     isDisposed: boolean = false;
     validationService: ValidationService;
+    // Store latest dispute data
+    private latestDisputeData: {
+        dispute: DisputeStruct;
+        timestamp: number;
+        commitment: string;
+    } | null = null;
+
+    // Store output state snapshots data
+    private readonly outputStateSnapshotData: Map<string, StateSnapshotStruct> =
+        new Map();
+
     constructor(
         signer: ethers.Signer,
         signerAddress: AddressLike,
@@ -392,7 +418,7 @@ class StateManager {
             console.log("Posting calldata on chain!");
             this.p2pEventHooks.onPostingCalldata?.();
             this.stateChannelManagerContract
-                .postBlockCalldata(signedBlock)
+                .postBlockCalldata(signedBlock, Clock.getTimeInSeconds())
                 .then((txResponse) => txResponse.wait())
                 .catch((error) => {
                     console.log("Error posting block on chain", error);
@@ -400,9 +426,113 @@ class StateManager {
         }
     }
 
-    // returns participants who haven't signed the block
-    // 1 is currently unused
-    // 2 belong in the AgreementManager
+    public async postStateSnapshot(
+        milestoneProofs: ForkMilestoneProofStruct[],
+        milestoneSnapshots: StateSnapshotStruct[],
+        exitChannelBlocks: ExitChannelBlockStruct[] = []
+    ) {
+        // Get on-chain state
+        const onChainForkCnt =
+            await this.stateChannelManagerContract.getForkCnt(this.channelId);
+        const onChainDisputeLength =
+            await this.stateChannelManagerContract.getDisputeLength(
+                this.channelId
+            );
+
+        if (onChainDisputeLength == onChainForkCnt) {
+            // Call contract without dispute
+            return this.stateChannelManagerContract.updateStateSnapshotWithoutDispute(
+                this.channelId,
+                milestoneProofs,
+                milestoneSnapshots,
+                exitChannelBlocks
+            );
+        }
+
+        // Need to include a dispute
+        const disputeData = this.agreementManager.forks.getLatestDispute();
+        if (!disputeData) {
+            throw new Error(
+                "No dispute data available but dispute length > fork count"
+            );
+        }
+
+        // Get output state snapshot data
+        const encodedDispute = Codec.encode(disputeData.dispute);
+        const commitment = ethers.keccak256(
+            ethers.AbiCoder.defaultAbiCoder().encode(
+                ["bytes", "uint256"],
+                [encodedDispute, disputeData.timestamp]
+            )
+        );
+        const outputStateSnapshot =
+            this.outputStateSnapshotData.get(commitment);
+        if (!outputStateSnapshot) {
+            throw new Error("No output state snapshot data available");
+        }
+
+        const disputeProof: DisputeProofStruct = {
+            dispute: disputeData.dispute,
+            outputStateSnapshot: outputStateSnapshot,
+            timestamp: disputeData.timestamp,
+            signatures: []
+        };
+
+        // Check if dispute is within agreement time
+        const currentTime = Clock.getTimeInSeconds();
+        const timeSinceDispute = currentTime - disputeData.timestamp;
+
+        if (timeSinceDispute > this.timeConfig.challengeTime) {
+            // dispute is already finalized, no need for threshold finaliztion
+            return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
+                this.channelId,
+                milestoneProofs,
+                milestoneSnapshots,
+                disputeProof,
+                exitChannelBlocks
+            );
+        }
+
+        // Check if we have threshold signatures on the dispute
+        const fork = this.agreementManager.forks.latestFork();
+        if (!fork) {
+            throw new Error("No latest fork found");
+        }
+
+        // Get all participants who have signed the dispute
+        const disputeSignatures = this.agreementManager.getDisputeSignatures(
+            disputeData.dispute
+        );
+
+        const allowedParticipantsSet = await getActiveParticipants(
+            this.stateChannelManagerContract,
+            this.getChannelId()
+        );
+
+        const hasThreshold = SignatureUtils.hasSignatureThreshold(
+            allowedParticipantsSet,
+            Codec.encode(disputeData.dispute),
+            disputeSignatures
+        );
+
+        if (hasThreshold) {
+            // Create dispute proof from the latest dispute
+            // Call contract with dispute and signatures
+            disputeProof.signatures = disputeSignatures as BytesLike[];
+            return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
+                this.channelId,
+                milestoneProofs,
+                milestoneSnapshots,
+                disputeProof,
+                exitChannelBlocks
+            );
+        }
+
+        // Dispute is not finalized
+        console.log(
+            "Dispute is not finalized, state snapshot was not submitted"
+        );
+    }
 
     public getEncodedState(): Promise<string> {
         return this.stateMachine.getState();
@@ -599,6 +729,58 @@ class StateManager {
 
     private isChannelOpen(): boolean {
         return this.getForkCnt() !== -1;
+    }
+
+    // ----- Event handlers -----
+    public async onDisputeCommitted(encodedDispute: string, timestamp: number) {
+        const dispute = Codec.decodeDispute(encodedDispute);
+
+        // Validate dispute
+        const valid = await this.validationService.validateDispute(
+            dispute,
+            timestamp
+        );
+
+        if (!valid) {
+            return;
+        }
+        // Add dispute to ForkService
+        this.agreementManager.addDispute(dispute, timestamp);
+
+        if (dispute.disputer !== this.signerAddress) {
+            // this signs the dispute, adds the signature to the AgreementManager and broadcasts
+            //  the dispute with the additional signature
+            // the disputer should not broadcast the dispute, since all peers will receive the dsiputer's signature
+            // on the dispute event
+            this.p2pManager.p2pSigner.confirmDispute(dispute);
+        }
+    }
+
+    public onOutputStateSnapshotVerified(
+        outputStateSnapshot: StateSnapshotStruct,
+        commitment: string
+    ) {
+        this.outputStateSnapshotData.set(commitment, outputStateSnapshot);
+    }
+    public async onDisputeConfirmation(
+        signedDispute: SignedDisputeStruct
+    ): Promise<ExecutionFlags> {
+        const dispute = Codec.decodeDispute(signedDispute.encodedDispute);
+
+        const { success, flag } =
+            await this.validationService.validateDisputeConfirmation(
+                dispute,
+                signedDispute.signature
+            );
+
+        if (success) {
+            this.agreementManager.confirmDispute(
+                dispute,
+                signedDispute.signature as SignatureLike
+            );
+        }
+
+        return flag;
     }
 }
 

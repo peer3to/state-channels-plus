@@ -9,11 +9,13 @@ import "./MathStateMachine.sol";
 // Uncomment this line to use console.log
 // import "hardhat/console.sol";
 
-contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
+abstract contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
     constructor(
-        address aStateMaachineAddress,
-        address disputeManagerFacet
-    ) AStateChannelManagerProxy(aStateMaachineAddress, disputeManagerFacet) {
+        address aStateMachineAddress,
+        address disputeManagerFacet,
+        address fraudProofFacet,
+        address stateSnapshotFacet
+    ) AStateChannelManagerProxy(aStateMachineAddress, disputeManagerFacet, fraudProofFacet, stateSnapshotFacet) {
         p2pTime = 5;
         agreementTime = 5;
         chainFallbackTime = 5;
@@ -76,7 +78,7 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
             );
 
             require(
-                joinChannels[i].amount > 0,
+                joinChannels[i].balance.amount > 0,
                 "MathStateChannelManager: openChannel amount must be greater than 0"
             );
             //TODO process deposits (this is composable with the global state (other contracts))
@@ -94,8 +96,8 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
             genesisState.participants[i] = joinChannels[i].participant;
         }
         bytes memory genesisStateEcoded = abi.encode(genesisState);
-        encodedStates[channelId][0] = genesisStateEcoded;
-        genesisTimestamps[channelId][0] = block.timestamp;
+        // encodedStates[channelId][0] = genesisStateEcoded;
+        //TODO! Snapshot instead od encodedState -> think about this
         emit SetState(channelId, genesisStateEcoded, 0, block.timestamp);
     }
 
@@ -111,6 +113,11 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
         bytes[] calldata signatures
     ) public virtual override {}
 
+    function processExitChannel(
+        bytes32 channelId,
+        ExitChannel calldata exitChannel
+    ) public virtual override {}
+
     function addParticipant(
         bytes32 channelId,
         bytes[] calldata removeParticipantData,
@@ -123,6 +130,6 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
 
     function _removeParticipantComposable(
         bytes32 channelId,
-        ProcessExit memory processExit
+        ExitChannel memory exitChannel
     ) internal virtual override returns (bool) {}
 }
