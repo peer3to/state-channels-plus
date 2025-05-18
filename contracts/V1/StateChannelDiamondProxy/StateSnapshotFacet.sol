@@ -116,6 +116,8 @@ contract StateSnapshotFacet is StateChannelCommon {
 
         // clear onChainSlashedParticipants
         delete disputeData[channelId].onChainSlashedParticipants;
+        // clear pendingParticipants
+        delete disputeData[channelId].pendingParticipants;
 
         emit StateSnapshotUpdated(
             channelId,
