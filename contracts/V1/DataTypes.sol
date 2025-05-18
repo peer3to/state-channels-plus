@@ -17,8 +17,7 @@ contract DataTypes {
         Timeout memory l,
         StateSnapshot memory m,
         DisputeProof memory n,
-        SignedDispute memory o,
-        StateSnapshot memory m
+        SignedDispute memory o
     ) {}
 }
 

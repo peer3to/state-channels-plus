@@ -43,6 +43,7 @@ error ErrorDisputeBalanceInvariantInvalid();
 error ErrorWithinChallengePeriod();
 error ErrorInvalidSignedBlocks();
 error ErrorInvalidLatestState();
+error ErrorValidPreviousLink();
 error ErrorInvalidDisputeOutputState();
 error ErrorRecursiveDisputeNotExtendingSlashes();
 //Race conditions

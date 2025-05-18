@@ -76,7 +76,7 @@ export default class BlockValidator {
         if (!this.forks.isValidForkCnt(forkCnt)) return AgreementFlag.NOT_READY;
 
         /* 4 – double sign / incorrect data vs existing agmt */
-        const existing = this.forks.getBlock(forkCnt, height);
+        const existing = this.forks.getSignedBlock(forkCnt, height);
         if (existing) {
             if (BlockUtils.getBlockAuthor(existing) === signer) {
                 return AgreementFlag.DOUBLE_SIGN;
@@ -94,7 +94,7 @@ export default class BlockValidator {
         }
 
         /* 6 – compare with previous block in chain */
-        const prev = this.forks.getBlock(forkCnt, height - 1);
+        const prev = this.forks.getSignedBlock(forkCnt, height - 1);
         if (!prev) return AgreementFlag.NOT_READY;
         if (block.previousBlockHash !== ethers.keccak256(prev.encodedBlock)) {
             return AgreementFlag.INVALID_PREVIOUS_BLOCK;

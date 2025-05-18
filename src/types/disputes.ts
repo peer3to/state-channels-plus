@@ -21,6 +21,12 @@ export const BlockDoubleSignProofEthersType = `tuple(
     ${SignedBlockEthersType} block2
 )`;
 
+export const BlockInvalidPreviousLinkProofEthersType = `tuple(
+    ${SignedBlockEthersType} invalidBlock,
+    ${SignedBlockEthersType} previousBlock,
+    bytes previousStateMachineState
+)`;
+
 export const TimeoutPriorInvalidProofEthersType = `tuple(
     ${DisputeEthersType} originalDispute,
     ${DisputeEthersType} recursiveDispute,
@@ -47,6 +53,7 @@ export enum ProofType {
     BlockEmpty,
     BlockDoubleSign,
     BlockInvalidStateTransition,
+    BlockInvalidPreviousLink,
     TimeoutThreshold,
     TimeoutPriorInvalid,
     DisputeInvalidPreviousRecursive
@@ -57,6 +64,8 @@ const DISPUTE_PROOF_ETHERS_TYPES: Record<ProofType, string> = {
     [ProofType.BlockDoubleSign]: BlockDoubleSignProofEthersType,
     [ProofType.BlockInvalidStateTransition]:
         BlockInvalidStateTransitionProofEthersType,
+    [ProofType.BlockInvalidPreviousLink]:
+        BlockInvalidPreviousLinkProofEthersType,
     [ProofType.TimeoutThreshold]: TimeoutThresholdProofEthersType,
     [ProofType.TimeoutPriorInvalid]: TimeoutPriorInvalidProofEthersType,
     [ProofType.DisputeInvalidPreviousRecursive]:

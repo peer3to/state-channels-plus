@@ -76,18 +76,13 @@ class ProofManager {
         const transactionCnt = EvmUtils.decodeBlock(emptyBlock.encodedBlock)
             .transaction.header.transactionCnt as number;
 
-        const previousBlock = this.agreementManager.getBlock(
+        const previousBlock = this.agreementManager.forkService.getSignedBlock(
             forkCnt,
             transactionCnt - 1
         );
         let signedPreviousBlock: SignedBlockStruct;
         if (previousBlock) {
-            const prevBlockSignature =
-                this.agreementManager.getOriginalSignature(previousBlock);
-            signedPreviousBlock = {
-                encodedBlock: EvmUtils.encodeBlock(previousBlock),
-                signature: prevBlockSignature as BytesLike
-            };
+            signedPreviousBlock = previousBlock;
         } else {
             signedPreviousBlock = emptyBlock;
         }
@@ -112,18 +107,13 @@ class ProofManager {
             .transaction.header.forkCnt as number;
         const transactionCnt = EvmUtils.decodeBlock(invalidBlock.encodedBlock)
             .transaction.header.transactionCnt as number;
-        const previousBlock = this.agreementManager.getBlock(
+        const previousBlock = this.agreementManager.forkService.getSignedBlock(
             forkCnt,
             transactionCnt - 1
         );
         let signedPreviousBlock: SignedBlockStruct;
         if (previousBlock) {
-            const prevBlockSignature =
-                this.agreementManager.getOriginalSignature(previousBlock)!;
-            signedPreviousBlock = {
-                encodedBlock: EvmUtils.encodeBlock(previousBlock),
-                signature: prevBlockSignature as BytesLike
-            };
+            signedPreviousBlock = previousBlock;
         } else {
             signedPreviousBlock = invalidBlock;
         }
@@ -144,6 +134,50 @@ class ProofManager {
             proofType: ProofType.BlockInvalidStateTransition,
             encodedProof: ProofManager.encodeProof(
                 ProofType.BlockInvalidStateTransition,
+                proof
+            )!
+        };
+    }
+
+    public createBlockInvalidPreviousLinkProof(
+        invalidBlock: SignedBlockStruct
+    ): dt.ProofStruct {
+        let previousStateMachineState: BytesLike;
+        let previousBlock: SignedBlockStruct;
+        if (
+            EvmUtils.decodeBlock(invalidBlock.encodedBlock).transaction.header
+                .transactionCnt == 0
+        ) {
+            previousStateMachineState =
+                this.agreementManager.getForkGenesisStateEncoded(
+                    EvmUtils.decodeBlock(invalidBlock.encodedBlock).transaction
+                        .header.forkCnt as number
+                ) as BytesLike;
+            previousBlock = invalidBlock;
+        } else {
+            previousStateMachineState = this.agreementManager.getEncodedState(
+                EvmUtils.decodeBlock(invalidBlock.encodedBlock).transaction
+                    .header.forkCnt as number,
+                (EvmUtils.decodeBlock(invalidBlock.encodedBlock).transaction
+                    .header.transactionCnt as number) - 1
+            ) as BytesLike;
+            previousBlock = this.agreementManager.forkService.getSignedBlock(
+                EvmUtils.decodeBlock(invalidBlock.encodedBlock).transaction
+                    .header.forkCnt as number,
+                (EvmUtils.decodeBlock(invalidBlock.encodedBlock).transaction
+                    .header.transactionCnt as number) - 1
+            )!;
+        }
+
+        const proof: dt.BlockInvalidPreviousLinkProofStruct = {
+            invalidBlock,
+            previousStateMachineState,
+            previousBlock
+        };
+        return {
+            proofType: ProofType.BlockInvalidPreviousLink,
+            encodedProof: ProofManager.encodeProof(
+                ProofType.BlockInvalidPreviousLink,
                 proof
             )!
         };

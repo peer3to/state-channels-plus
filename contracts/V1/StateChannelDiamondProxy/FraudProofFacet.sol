@@ -152,6 +152,28 @@ contract FraudProofFacet is StateChannelCommon {
         
         return signer;
     }
+
+    function _handleBlockInvalidPreviousLink(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal pure returns (address) {
+        BlockInvalidPreviousLinkProof memory blockInvalidPreviousLinkProof = abi.decode(encodedProof, (BlockInvalidPreviousLinkProof));
+        Block memory fraudBlock = abi.decode(blockInvalidPreviousLinkProof.invalidBlock.encodedBlock, (Block));
+                  
+        if(fraudBlock.transaction.header.transactionCnt == 0){
+            bytes memory previousStateMachineState = blockInvalidPreviousLinkProof.previousStateMachineState;
+            require(fraudBlock.previousBlockHash != keccak256(abi.encode(previousStateMachineState)), ErrorValidPreviousLink());
+        }else{
+
+            Block memory previousBlock = abi.decode(blockInvalidPreviousLinkProof.previousBlock.encodedBlock, (Block));
+            require(previousBlock.transaction.header.channelId == fraudBlock.transaction.header.channelId
+            && fraudBlock.transaction.header.channelId == fraudProofVerificationContext.channelId, ErrorNotSameChannelId()
+            );
+            require(fraudBlock.previousBlockHash != keccak256(abi.encode(previousBlock)), ErrorValidPreviousLink());
+        }
+        address signer = StateChannelUtilLibrary.retriveSignerAddress(
+            blockInvalidPreviousLinkProof.invalidBlock.encodedBlock,
+            blockInvalidPreviousLinkProof.invalidBlock.signature
+        );
+        return signer;
+    }
     // ----------------------------------- Timeout Fraud Proofs -----------------------------------
     function _handleTimeoutThreshold(bytes memory encodedProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal view returns (address) {
         
@@ -246,7 +268,6 @@ contract FraudProofFacet is StateChannelCommon {
         Dispute memory invalidRecursiveDispute = disputeInvalidPreviousRecursiveProof.invalidRecursiveDispute;
         uint originalDisputeTimestamp = disputeInvalidPreviousRecursiveProof.originalDisputeTimestamp;
         uint invalidRecursiveDisputeTimestamp = disputeInvalidPreviousRecursiveProof.invalidRecursiveDisputeTimestamp;
-        bytes memory latestStateSnapshot = disputeInvalidPreviousRecursiveProof.latestStateSnapshot;
         bytes memory invalidRecursiveDisputeOutputState = disputeInvalidPreviousRecursiveProof.invalidRecursiveDisputeOutputState;
         Block memory originalDisputeLastBlock = abi.decode(originalDispute.stateProof.signedBlocks[originalDispute.stateProof.signedBlocks.length - 1].encodedBlock, (Block));
         Block memory invalidRecursiveDisputeLastBlock = abi.decode(invalidRecursiveDispute.stateProof.signedBlocks[invalidRecursiveDispute.stateProof.signedBlocks.length - 1].encodedBlock, (Block));

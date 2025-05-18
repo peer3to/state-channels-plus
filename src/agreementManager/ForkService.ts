@@ -6,7 +6,7 @@ import {
     SignedBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import { AddressLike, BytesLike, ethers } from "ethers";
+import { AddressLike, BytesLike, ethers, SignatureLike } from "ethers";
 import { BlockUtils, EvmUtils } from "@/utils";
 import { Agreement, AgreementFork } from "./types";
 import { ForkProofStruct } from "@typechain-types/contracts/V1/DisputeTypes";
@@ -16,15 +16,8 @@ export enum Direction {
     BACKWARD = "backward"
 }
 
-interface StoredDispute {
-    dispute: DisputeStruct;
-    timestamp: number;
-    signatures: SignatureLike[];
-}
-
 export default class ForkService {
     private forks: AgreementFork[] = [];
-    private disputes: StoredDispute[] = [];
 
     /*────────── mutators ──────────*/
     newFork(
@@ -178,7 +171,10 @@ export default class ForkService {
             ? this.forks[forkCnt].agreements[txCnt]
             : undefined;
     }
-    getBlock(forkCnt: number, txCnt: number): SignedBlockStruct | undefined {
+    getSignedBlock(
+        forkCnt: number,
+        txCnt: number
+    ): SignedBlockStruct | undefined {
         return this.getAgreement(forkCnt, txCnt)?.blockConfirmation.signedBlock;
     }
 
@@ -196,14 +192,6 @@ export default class ForkService {
 
     getLatestAgreement(forkCnt: number): Agreement | undefined {
         return this.forks[forkCnt]?.agreements.at(-1);
-    }
-
-    getLatestDispute(): StoredDispute | undefined {
-        return this.disputes.at(-1);
-    }
-
-    getDisputesCount(): number {
-        return this.disputes.length;
     }
 
     /*────────── iterator ──────────*/

@@ -221,12 +221,6 @@ class AgreementManager {
     public getNextBlockHeight(): number {
         return this.forkService.getNextBlockHeight();
     }
-    public getBlock(
-        forkCnt: number,
-        transactionCnt: number
-    ): BlockStruct | undefined {
-        return this.forkService.getAgreement(forkCnt, transactionCnt)?.block;
-    }
     public getBlockConfirmation(
         forkCnt: number,
         transactionCnt: number
@@ -394,14 +388,6 @@ class AgreementManager {
         return fork?.forkGenesisStateEncoded;
     }
 
-    public getForkGenesisStateSnapshot(
-        forkCnt: number
-    ): StateSnapshotStruct | undefined {
-        const fork = this.forkService.getFork(forkCnt);
-        return this.stateSnapshots.get(
-            fork?.agreements[0]?.snapShotCommitment!
-        );
-    }
     public getSnapShot(
         forkCnt: number,
         transactionCnt: number

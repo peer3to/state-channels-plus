@@ -9,17 +9,18 @@ contract DisputeTypes {
         BlockDoubleSignProof memory b,
         BlockEmptyProof memory c,
         BlockInvalidStateTransitionProof memory d,
-        TimeoutThresholdProof memory e,
-        TimeoutPriorInvalidProof memory f,
-        DisputeNotLatestStateProof memory g,
-        DisputeInvalidStateProof memory h,
-        DisputeInvalidPreviousRecursiveProof memory i,
-        DisputeInvalidExitChannelBlocksProof memory j,
-        ForkMilestoneProof memory k,
-        ForkProof memory l,
-        StateProof memory m,
-        Proof memory n,
-        ProofType o
+        BlockInvalidPreviousLinkProof memory e,
+        TimeoutThresholdProof memory f,
+        TimeoutPriorInvalidProof memory g,
+        DisputeNotLatestStateProof memory h,
+        DisputeInvalidStateProof memory i,
+        DisputeInvalidPreviousRecursiveProof memory j,
+        DisputeInvalidExitChannelBlocksProof memory k,
+        ForkMilestoneProof memory l,
+        ForkProof memory m,
+        StateProof memory n,
+        Proof memory o,
+        ProofType p
     ) {}
 }
 
@@ -121,14 +122,9 @@ struct BlockInvalidStateTransitionProof {
 struct BlockInvalidPreviousLinkProof {
     SignedBlock invalidBlock;
     SignedBlock previousBlock;
-    bytes previousBlockStateMachineState;
+    bytes previousStateMachineState;
 }
 
-struct BlockInvalidPreviousLinkProof {
-    SignedBlock invalidBlock;
-    SignedBlock previousBlock;
-    bytes previousBlockStateMachineState;
-}
 
 struct BlockDoubleSignProof {
     SignedBlock block1;
@@ -151,7 +147,6 @@ struct DisputeInvalidPreviousRecursiveProof {
     Dispute originalDispute;
     uint originalDisputeTimestamp;
     uint invalidRecursiveDisputeTimestamp;
-    bytes latestStateSnapshot;
     bytes invalidRecursiveDisputeOutputState;
 }
 
@@ -189,7 +184,6 @@ struct DisputeAuditingData {
     StateSnapshot[] milestoneSnapshots; //for K milestones there will be K-1 snapshots, since the first milestone is the genesisSnapshot
     bytes latestStateStateMachineState;
     JoinChannelBlock[] joinChannelBlocks;
-    uint timestamp;
     uint timestamp;
     // ========================== optional ===============================
     Dispute previousDispute; // (optional) needed to verify 'this' dispute genesis against the previous dispute outputSnapshot or genesisSnapshot (in the case of a recursive dispute) - if not present, genesis is the latest on-chain Snapshot

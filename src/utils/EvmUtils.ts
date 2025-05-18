@@ -21,6 +21,9 @@ import {
     TransactionEthersType
 } from "@/types";
 import { DisputeAuditingDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
+import { SignatureUtils } from "./SignatureUtils";
+import { Codec } from "./Codec";
+import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 
 export class EvmUtils {
     public static encodeTransaction(transaction: TransactionStruct): string {
@@ -100,7 +103,7 @@ export class EvmUtils {
     public static async signDispute(
         dispute: DisputeStruct,
         signer: ethers.Signer
-    ): Promise<SignedDisputeStruct> {
+    ): Promise<{ encodedDispute: BytesLike; signature: SignatureLike }> {
         const { encoded, signature } = await SignatureUtils.sign(
             dispute,
             signer

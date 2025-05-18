@@ -185,14 +185,15 @@ class StateManager {
         } else if (flag == AgreementFlag.INVALID_PREVIOUS_BLOCK) {
             console.log("StateManager - collectOnChainBlock - incorrect data");
             disputeProof =
-                this.disputeHandler.proofManager.createIncorrectDataProof(
+                this.disputeHandler.proofManager.createBlockInvalidPreviousLinkProof(
                     signedBlock
                 );
-            this.disputeHandler.createDispute(
-                block.transaction.header.forkCnt,
-                "0x00",
-                0,
-                [disputeProof]
+            const disputeTimestamp = Clock.getTimeInSeconds();
+            this.disputeHandler.createNewDispute(
+                Number(block.transaction.header.forkCnt),
+                Number(block.transaction.header.transactionCnt),
+                [disputeProof],
+                disputeTimestamp
             );
         }
         console.log("StateManager - collectOnChainBlock - done");
