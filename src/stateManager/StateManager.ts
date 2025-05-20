@@ -342,10 +342,13 @@ class StateManager {
     public async applyTransaction(transaction: TransactionStruct): Promise<{
         success: boolean;
         encodedState: string;
-        previousStateHash: string;
+        previousBlockHash: BytesLike;
         successCallback: () => void;
     }> {
-        const previousStateHash = await this.getEncodedStateKecak256();
+        const previousBlockHash = await this.getPreviousBlockHash(
+            transaction.header.forkCnt as number,
+            transaction.header.transactionCnt as number
+        );
         let { success, successCallback } =
             await this.stateMachine.stateTransition(transaction);
         const encodedState = await this.stateMachine.getState();
@@ -353,19 +356,19 @@ class StateManager {
         return {
             success,
             encodedState,
-            previousStateHash,
+            previousBlockHash,
             successCallback
         };
     }
 
     // Used when authoring a block - Executes the transaction and returns a signed block
-    public async playTransaction(
+    public async executeTransaction(
         tx: TransactionStruct
     ): Promise<SignedBlockStruct> {
         await this.mutex.lock();
 
         try {
-            console.log("Play Transaction", this.getForkCnt());
+            console.log("execute Transaction", this.getForkCnt());
             if (!this.isChannelOpen()) {
                 throw new Error("Channel not open");
             }
@@ -379,7 +382,7 @@ class StateManager {
             const {
                 success,
                 encodedState,
-                previousStateHash,
+                previousBlockHash,
                 successCallback
             } = await this.applyTransaction(tx);
 
@@ -389,13 +392,13 @@ class StateManager {
                 );
             }
 
-            const block = await this.createBlock(tx, previousStateHash);
+            const block = await this.createBlock(tx, previousBlockHash);
             const signedBlock = await this.signBlock(block);
 
             this.agreementManager.addBlock(
-                block,
-                signedBlock.signature as SignatureLike,
-                encodedState
+                signedBlock,
+                encodedState,
+                signedBlock.signature as SignatureLike //should be current snapshot
             );
 
             successCallback();
@@ -544,6 +547,18 @@ class StateManager {
 
     public getEncodedStateKecak256(): Promise<string> {
         return this.getEncodedState().then(ethers.keccak256);
+    }
+
+    public getPreviousBlockHash(
+        forkCnt: number,
+        transactionCnt: number
+    ): BytesLike {
+        return ethers.keccak256(
+            this.agreementManager.forkService.getSignedBlock(
+                forkCnt,
+                transactionCnt - 1
+            )?.encodedBlock!
+        );
     }
 
     // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute
@@ -714,14 +729,19 @@ class StateManager {
 
     private async createBlock(
         tx: TransactionStruct,
-        previousStateHash: string
+        previousBlockHash: BytesLike
     ): Promise<BlockStruct> {
-        const currentStateHash = await this.getEncodedStateKecak256();
+        const currentStateSnapshot =
+            this.agreementManager.getLatestStateSnapshot(
+                tx.header.forkCnt as number
+            )!;
 
         return {
             transaction: tx,
-            stateHash: currentStateHash,
-            previousStateHash
+            stateSnapshotHash: ethers.keccak256(
+                EvmUtils.encodeStateSnapshot(currentStateSnapshot)
+            ),
+            previousBlockHash: previousBlockHash
         };
     }
 

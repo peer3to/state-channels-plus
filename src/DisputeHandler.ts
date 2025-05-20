@@ -80,8 +80,9 @@ class DisputeHandler {
         prevDispute: DisputeStruct,
         prevDisputeTimestamp: BigNumberish
     ): DisputeAuditingDataStruct {
+        const deposit = this.stateChannelManagerContract;
         const genesisStateSnapshot =
-            this.agreementManager.getForkGenesisStateSnapshot(forkCnt);
+            this.agreementManager.getForkGenesisSnapshot(forkCnt);
         if (!genesisStateSnapshot) {
             throw new Error(
                 `DisputeHandler - createDisputeAuditingData - no genesis state snapshot for fork: ${forkCnt}`

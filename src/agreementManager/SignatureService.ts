@@ -1,4 +1,4 @@
-import { AddressLike, SignatureLike } from "ethers";
+import { AddressLike, BytesLike, SignatureLike } from "ethers";
 
 import * as SetUtils from "@/utils/set";
 import { EvmUtils, BlockUtils } from "@/utils";
@@ -6,22 +6,23 @@ import { Agreement, AgreementFork } from "./types";
 
 export default class SignatureService {
     static getSignerAddresses(agreement: Agreement): Set<string> {
-        return BlockUtils.getSignerAddresses(
-            agreement.block,
-            agreement.blockSignatures
-        );
+        return new Set(agreement.addressesInThreshold as string[]);
     }
 
     static getParticipantSignature(
         agreement: Agreement,
         participant: AddressLike
     ): { didSign: boolean; signature: SignatureLike | undefined } {
-        for (const sig of agreement.blockSignatures) {
+        for (const sig of agreement.blockConfirmation.signatures) {
             if (
-                EvmUtils.retrieveSignerAddressBlock(agreement.block, sig) ===
-                participant
+                EvmUtils.retrieveSignerAddressBlock(
+                    EvmUtils.decodeBlock(
+                        agreement.blockConfirmation.signedBlock.encodedBlock
+                    ),
+                    sig as SignatureLike
+                ) === participant
             ) {
-                return { didSign: true, signature: sig };
+                return { didSign: true, signature: sig as SignatureLike };
             }
         }
         return { didSign: false, signature: undefined };
@@ -31,14 +32,16 @@ export default class SignatureService {
         agreement: Agreement,
         target: SignatureLike
     ): boolean {
-        return agreement.blockSignatures.includes(target);
+        return agreement.blockConfirmation.signatures.includes(
+            target as BytesLike
+        );
     }
 
-    static getParticipantsWhoDidntSign(
-        fork: AgreementFork,
-        agreement: Agreement
-    ): AddressLike[] {
+    static getParticipantsWhoDidntSign(agreement: Agreement): AddressLike[] {
         const signerSet = this.getSignerAddresses(agreement);
-        return SetUtils.excludeFromArray(fork.addressesInThreshold, signerSet);
+        return SetUtils.excludeFromArray(
+            agreement.addressesInThreshold,
+            signerSet
+        );
     }
 }

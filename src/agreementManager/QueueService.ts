@@ -1,8 +1,8 @@
 import {
     SignedBlockStruct,
-    BlockStruct
+    BlockStruct,
+    BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import { BlockConfirmation } from "./types";
 import { BlockUtils, EvmUtils } from "@/utils";
 
 type ForkCnt = number;
@@ -64,7 +64,7 @@ export default class QueueService {
 
     /*──────── Confirmation queue ────────*/
 
-    queueConfirmation(blockConfirmation: BlockConfirmation): void {
+    queueConfirmation(blockConfirmation: BlockConfirmationStruct): void {
         const block = EvmUtils.decodeBlock(
             blockConfirmation.originalSignedBlock.encodedBlock
         );
