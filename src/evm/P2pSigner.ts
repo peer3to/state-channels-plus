@@ -1,5 +1,6 @@
 import {
     AddressLike,
+    BigNumberish,
     BytesLike,
     ethers,
     SignatureLike,
@@ -8,8 +9,10 @@ import {
 } from "ethers";
 
 import {
+    JoinChannelConfirmationStruct,
     JoinChannelStruct,
     SignedBlockStruct,
+    SignedJoinChannelStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DataTypes";
@@ -19,7 +22,6 @@ import { EvmUtils, Codec, SignatureUtils } from "@/utils";
 
 class P2pSigner implements Signer {
     signer: Signer;
-    signerAddress: AddressLike;
     provider: ethers.Provider | null;
     p2pManager: P2PManager;
 
@@ -33,13 +35,8 @@ class P2pSigner implements Signer {
         this.jc = jc;
         this.signedJc = signedJc;
     }
-    constructor(
-        signer: Signer,
-        signerAddress: AddressLike,
-        p2pManager: P2PManager
-    ) {
+    constructor(signer: Signer, p2pManager: P2PManager) {
         this.signer = signer;
-        this.signerAddress = signerAddress;
         this.provider = signer.provider;
         this.p2pManager = p2pManager;
         this.isLeader = false;
@@ -170,6 +167,38 @@ class P2pSigner implements Signer {
         // Broadcast confirmation with our signature
         this.p2pManager.rpcProxy
             .onDisputeConfirmation(signedDispute)
+            .broadcast();
+    }
+
+    public async joinChannel(
+        channelId: BytesLike,
+        amount: BigNumberish,
+        deadlineTimestamp: BigNumberish,
+        data: BytesLike
+    ) {
+        const joinChannelRequest: JoinChannelStruct = {
+            channelId,
+            participant: await this.getAddress(),
+            balance: {
+                amount,
+                data
+            },
+            deadlineTimestamp
+        };
+
+        // Encode and sign the request
+        const encodedJoinChannel =
+            EvmUtils.encodeJoinChannel(joinChannelRequest);
+        const signedJoinChannel: SignedJoinChannelStruct = {
+            encodedJoinChannel: encodedJoinChannel,
+            signature: await this.signMessage(encodedJoinChannel)
+        };
+
+        // Store locally before broadcasting ?
+
+        // Broadcast the request
+        this.p2pManager.rpcProxy
+            .onJoinChannelRequest(signedJoinChannel)
             .broadcast();
     }
 }
