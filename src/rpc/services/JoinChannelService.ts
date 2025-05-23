@@ -148,19 +148,13 @@ class JoinChannelService extends ARpcService {
             );
             const activeParticipants = Array.from(activeParticipantsSet);
             if (this.joinChannelMap.didEveryoneSign(key, activeParticipants)) {
-                await this.processCompletedJoinRequest(
-                    signedJoinChannel,
-                    this.joinChannelMap.getSignatures(key)
-                );
+                await this.processCompletedJoinRequest(signedJoinChannel);
             }
         } catch (error) {
             console.error("Error processing join channel request:", error);
         }
     }
 
-    /**
-     * Validate a confirmation signature and return validation flag
-     */
     private async validateConfirmationSignature(
         joinChannel: JoinChannelStruct,
         confirmationSignature: SignatureLike
@@ -193,9 +187,6 @@ class JoinChannelService extends ARpcService {
         return ValidationFlag.VALID;
     }
 
-    /**
-     * Validate the original request and requester's signature
-     */
     private async validateOriginalRequest(
         joinChannel: JoinChannelStruct,
         signature: SignatureLike
@@ -227,9 +218,6 @@ class JoinChannelService extends ARpcService {
         return ValidationFlag.VALID;
     }
 
-    /**
-     * Get active participants for a channel
-     */
     private async getActiveParticipants(
         channelId: BytesLike
     ): Promise<Set<string>> {
@@ -239,9 +227,6 @@ class JoinChannelService extends ARpcService {
         return await getActiveParticipants(scmContract, channelId);
     }
 
-    /**
-     * Initialize request in the map
-     */
     private initializeRequest(
         key: string,
         joinChannel: JoinChannelStruct,
@@ -278,6 +263,7 @@ class JoinChannelService extends ARpcService {
     /**
      * Prepare state snapshot data for on-chain submission
      * TODO: Implement the actual logic to generate milestone proofs, snapshots, and exit channel blocks
+     * also, this function does not belong here, probably belongs to the state manager or maybe the agreement manager
      */
     private async prepareStateSnapshotData(): Promise<{
         milestoneProofs: ForkMilestoneProofStruct[];
@@ -298,9 +284,6 @@ class JoinChannelService extends ARpcService {
         };
     }
 
-    /**
-     * Get the previous join channel block hash
-     */
     private async getPreviousJoinChannelBlockHash(
         channelId: BytesLike,
         needsStateSnapshotSubmission: boolean,
@@ -321,12 +304,8 @@ class JoinChannelService extends ARpcService {
         }
     }
 
-    /**
-     * Process a completed join channel request with all required signatures
-     */
     private async processCompletedJoinRequest(
-        signedJoinChannel: SignedJoinChannelStruct,
-        confirmationSignatures: SignatureLike[]
+        signedJoinChannel: SignedJoinChannelStruct
     ): Promise<void> {
         const joinChannel = EvmUtils.decodeJoinChannel(
             signedJoinChannel.encodedJoinChannel
