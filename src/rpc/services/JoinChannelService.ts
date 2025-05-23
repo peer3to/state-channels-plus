@@ -14,6 +14,14 @@ type JoinChanenelConfirmation = {
     confirmationSignatures: SignatureLike[];
 };
 
+enum ValidationFlag {
+    VALID,
+    INVALID_SIGNATURE,
+    DOUBLE_SIGN,
+    DISCONNECT,
+    ALREADY_IN_CHANNEL
+}
+
 class JoinChannelService extends ARpcService {
     // **** part of joinChannel logic ****
     joinChannelMap = new SignatureCollectionMap();
@@ -37,25 +45,109 @@ class JoinChannelService extends ARpcService {
                 Number(joinChannel.deadlineTimestamp) -
                 Clock.getTimeInSeconds();
             if (timeRemaining <= 0) {
+                this.joinChannelMap.delete(key);
                 return; // Request expired
             }
+            const isNewRequest = !this.joinChannelMap.has(key);
 
-            // Split into two handlers based on whether we have a confirmation signature
-            if (!confirmationSignature) {
-                // Handle new join request (no confirmation signature)
-                await this.handleNewRequest(
+            // Handle new request initialization if needed
+            if (isNewRequest) {
+                // Validate the request
+                const validationResult = await this.validateOriginalRequest(
+                    joinChannel,
+                    signedJoinChannel.signature as SignatureLike
+                );
+                if (validationResult !== ValidationFlag.VALID) {
+                    console.warn(
+                        `Invalid original request: ${ValidationFlag[validationResult]}`
+                    );
+                    return;
+                }
+
+                // Initialize the request with original signature
+                this.initializeRequest(
                     key,
                     joinChannel,
-                    signedJoinChannel,
+                    signedJoinChannel.signature as SignatureLike,
                     timeRemaining
                 );
-            } else {
-                // Handle confirmation signature
-                await this.handleConfirmation(
-                    key,
+            }
+
+            // Process confirmation signature if present
+            if (confirmationSignature) {
+                // Validate the confirmation signature
+                const validationResult =
+                    await this.validateConfirmationSignature(
+                        joinChannel,
+                        confirmationSignature
+                    );
+
+                if (validationResult !== ValidationFlag.VALID) {
+                    console.warn(
+                        `Invalid confirmation signature: ${ValidationFlag[validationResult]}`
+                    );
+                    return;
+                }
+
+                const confirmerAddress =
+                    EvmUtils.retrieveSignerAddressJoinChannel(
+                        joinChannel,
+                        confirmationSignature
+                    );
+
+                // Store the confirmation signature
+                this.joinChannelMap.tryInsert(key, {
+                    signerAddress: confirmerAddress,
+                    signature: confirmationSignature
+                });
+
+                // Broadcast the incoming signature too
+                this.mainRpcService.rpcProxy
+                    .onJoinChannelRequest(
+                        signedJoinChannel,
+                        confirmationSignature
+                    )
+                    .broadcast();
+            }
+
+            // Add our signature if we haven't already
+            const myAddress =
+                await this.mainRpcService.p2pManager.p2pSigner.getAddress();
+            if (
+                !this.joinChannelMap
+                    .get(key)
+                    ?.some((sig) => sig.signerAddress === myAddress)
+            ) {
+                // Sign it ourselves
+                const mySignedJC = await EvmUtils.signJoinChannel(
                     joinChannel,
+                    this.mainRpcService.p2pManager.p2pSigner
+                );
+
+                // Add our signature
+                this.joinChannelMap.tryInsert(key, {
+                    signerAddress: myAddress,
+                    signature: mySignedJC.signature as SignatureLike
+                });
+
+                // Broadcast with our signature
+                this.mainRpcService.rpcProxy
+                    .onJoinChannelRequest(
+                        signedJoinChannel,
+                        mySignedJC.signature as SignatureLike
+                    )
+                    .broadcast();
+            }
+
+            // Check if we have all required signatures
+            const activeParticipantsSet = await this.getActiveParticipants(
+                joinChannel.channelId
+            );
+            const activeParticipants = Array.from(activeParticipantsSet);
+            if (this.joinChannelMap.didEveryoneSign(key, activeParticipants)) {
+                await this.processCompletedJoinRequest(
                     signedJoinChannel,
-                    confirmationSignature
+                    this.joinChannelMap.getSignatures(key)
                 );
             }
         } catch (error) {
@@ -64,20 +156,61 @@ class JoinChannelService extends ARpcService {
     }
 
     /**
+     * Validate a confirmation signature and return validation flag
+     */
+    private async validateConfirmationSignature(
+        joinChannel: JoinChannelStruct,
+        confirmationSignature: SignatureLike
+    ): Promise<ValidationFlag> {
+        let confirmerAddress: string;
+        try {
+            // Verify the signature itself is well-formed
+            confirmerAddress = EvmUtils.retrieveSignerAddressJoinChannel(
+                joinChannel,
+                confirmationSignature
+            );
+        } catch (error) {
+            console.error("Error validating confirmation signature:", error);
+            return ValidationFlag.INVALID_SIGNATURE;
+        }
+
+        // Make sure this isn't the creator signing again
+        if (confirmerAddress === joinChannel.participant) {
+            return ValidationFlag.DOUBLE_SIGN;
+        }
+
+        // Check if signer is in the allowed participant set
+        const activeParticipantsSet = await this.getActiveParticipants(
+            joinChannel.channelId
+        );
+        if (!activeParticipantsSet.has(confirmerAddress)) {
+            return ValidationFlag.DISCONNECT;
+        }
+
+        return ValidationFlag.VALID;
+    }
+
+    /**
      * Validate the original request and requester's signature
      */
     private async validateOriginalRequest(
         joinChannel: JoinChannelStruct,
-        signedJoinChannel: SignedJoinChannelStruct
-    ): Promise<boolean> {
+        signature: SignatureLike
+    ): Promise<ValidationFlag> {
         // Validate the signature matches the participant
-        const signerAddress = EvmUtils.retrieveSignerAddressJoinChannel(
-            joinChannel,
-            signedJoinChannel.signature as SignatureLike
-        );
+        let signerAddress: string;
+        try {
+            signerAddress = EvmUtils.retrieveSignerAddressJoinChannel(
+                joinChannel,
+                signature
+            );
+        } catch (error) {
+            console.error("Error validating original request:", error);
+            return ValidationFlag.INVALID_SIGNATURE;
+        }
 
         if (joinChannel.participant !== signerAddress) {
-            return false; // Invalid signature
+            return ValidationFlag.INVALID_SIGNATURE;
         }
 
         // Ensure the participant is not already in the channel
@@ -85,10 +218,10 @@ class JoinChannelService extends ARpcService {
             joinChannel.channelId
         );
         if (activeParticipantsSet.has(joinChannel.participant.toString())) {
-            return false; // Participant already in channel
+            return ValidationFlag.ALREADY_IN_CHANNEL;
         }
 
-        return true;
+        return ValidationFlag.VALID;
     }
 
     /**
@@ -109,163 +242,19 @@ class JoinChannelService extends ARpcService {
     private initializeRequest(
         key: string,
         joinChannel: JoinChannelStruct,
-        signedJoinChannel: SignedJoinChannelStruct,
+        signature: SignatureLike,
         timeRemaining: number
     ): void {
         // Add requester's signature
         this.joinChannelMap.tryInsert(key, {
             signerAddress: joinChannel.participant.toString(),
-            signature: signedJoinChannel.signature as SignatureLike
+            signature: signature
         });
 
         // Set expiration
         setTimeout(() => {
             this.joinChannelMap.delete(key);
         }, timeRemaining * 1000);
-    }
-
-    /**
-     * Sign and broadcast our signature
-     */
-    private async signAndBroadcast(
-        joinChannel: JoinChannelStruct,
-        signedJoinChannel: SignedJoinChannelStruct,
-        key: string
-    ): Promise<void> {
-        // Sign it ourselves
-        const mySignedJC = await EvmUtils.signJoinChannel(
-            joinChannel,
-            this.mainRpcService.p2pManager.p2pSigner
-        );
-
-        // Add our signature
-        const myAddress =
-            await this.mainRpcService.p2pManager.p2pSigner.getAddress();
-        this.joinChannelMap.tryInsert(key, {
-            signerAddress: myAddress,
-            signature: mySignedJC.signature as SignatureLike
-        });
-
-        // Broadcast with our signature
-        this.mainRpcService.rpcProxy
-            .onJoinChannelRequest(
-                signedJoinChannel,
-                mySignedJC.signature as SignatureLike
-            )
-            .broadcast();
-    }
-
-    /**
-     * Handle a new join channel request (no confirmation signature)
-     */
-    private async handleNewRequest(
-        key: string,
-        joinChannel: JoinChannelStruct,
-        signedJoinChannel: SignedJoinChannelStruct,
-        timeRemaining: number
-    ): Promise<void> {
-        // Validate the request
-        const isValid = await this.validateOriginalRequest(
-            joinChannel,
-            signedJoinChannel
-        );
-        if (!isValid) {
-            return;
-        }
-
-        // Create entry if doesn't exist
-        if (!this.joinChannelMap.has(key)) {
-            // Initialize the request
-            this.initializeRequest(
-                key,
-                joinChannel,
-                signedJoinChannel,
-                timeRemaining
-            );
-
-            // Sign and broadcast
-            await this.signAndBroadcast(joinChannel, signedJoinChannel, key);
-        }
-    }
-
-    /**
-     * Handle a confirmation signature
-     */
-    private async handleConfirmation(
-        key: string,
-        joinChannel: JoinChannelStruct,
-        signedJoinChannel: SignedJoinChannelStruct,
-        confirmationSignature: SignatureLike
-    ): Promise<void> {
-        // First, check if we have this request already
-        const isNewRequest = !this.joinChannelMap.has(key);
-
-        if (isNewRequest) {
-            // Validate the original request
-            const isValid = await this.validateOriginalRequest(
-                joinChannel,
-                signedJoinChannel
-            );
-            if (!isValid) {
-                return;
-            }
-
-            // Initialize the request
-            const timeRemaining =
-                Number(joinChannel.deadlineTimestamp) -
-                Clock.getTimeInSeconds();
-            this.initializeRequest(
-                key,
-                joinChannel,
-                signedJoinChannel,
-                timeRemaining
-            );
-        }
-
-        // Verify the confirmation signature
-        const confirmerAddress = EvmUtils.retrieveSignerAddressJoinChannel(
-            joinChannel,
-            confirmationSignature
-        );
-
-        // Make sure this isn't the creator signing again
-        if (confirmerAddress === joinChannel.participant) {
-            return; // Creator can't confirm their own request
-        }
-
-        // Check if signer is in the allowed participant set
-        const activeParticipantsSet = await this.getActiveParticipants(
-            joinChannel.channelId
-        );
-        if (!activeParticipantsSet.has(confirmerAddress)) {
-            return; // Not an allowed participant
-        }
-
-        // Store the confirmation signature
-        this.joinChannelMap.tryInsert(key, {
-            signerAddress: confirmerAddress,
-            signature: confirmationSignature
-        });
-
-        // Sign it ourselves if we haven't already
-        const myAddress =
-            await this.mainRpcService.p2pManager.p2pSigner.getAddress();
-        if (
-            !this.joinChannelMap
-                .get(key)
-                .some((sig) => sig.signerAddress === myAddress)
-        ) {
-            await this.signAndBroadcast(joinChannel, signedJoinChannel, key);
-        }
-
-        // Check if we have all required signatures
-        const activeParticipants = Array.from(activeParticipantsSet);
-        if (this.joinChannelMap.didEveryoneSign(key, activeParticipants)) {
-            await this.processCompletedJoinRequest(
-                signedJoinChannel,
-                this.joinChannelMap.getSignatures(key)
-            );
-        }
     }
 
     /**
