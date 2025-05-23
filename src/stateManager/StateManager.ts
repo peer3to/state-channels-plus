@@ -6,7 +6,8 @@ import {
     ForkMilestoneProofStruct,
     ExitChannelBlockStruct,
     DisputeProofStruct,
-    SignedDisputeStruct
+    SignedDisputeStruct,
+    TimeoutStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import {
     AddressLike,
@@ -215,24 +216,24 @@ class StateManager {
             }
         }
     }
-    private async tryConfirmFromQueue(): Promise<void> {
-        //TODO! race condition and skipping a txCount
-        let confirmations = this.agreementManager.tryDequeueConfirmations(
-            this.getForkCnt(),
-            this.getNextBlockHeight()
-        );
+    // private async tryConfirmFromQueue(): Promise<void> {
+    //     //TODO! race condition and skipping a txCount
+    //     let confirmations = this.agreementManager.tryDequeueConfirmations(
+    //         this.getForkCnt(),
+    //         this.getNextBlockHeight()
+    //     );
 
-        for (const confirmation of confirmations) {
-            if (
-                (await this.onBlockConfirmation(
-                    confirmation.originalSignedBlock,
-                    confirmation.confirmationSignature as string
-                )) == ExecutionFlags.DISPUTE
-            ) {
-                break;
-            }
-        }
-    }
+    //     for (const confirmation of confirmations) {
+    //         if (
+    //             (await this.onBlockConfirmation(
+    //                 confirmation.signedBlock,
+    //                 confirmation.signedBlock.signature as SignatureLike
+    //             )) == ExecutionFlags.DISPUTE
+    //         ) {
+    //             break;
+    //         }
+    //     }
+    // }
     /**
      * Triggered by the On-chain Event Listener when a new state is set on-chain
      * @param encodedState - Encoded state of the state machine
@@ -330,11 +331,11 @@ class StateManager {
                 );
             }
 
-            await this.processConfirmationDecision(
-                signedBlock,
-                confirmationSignature as SignatureLike,
-                finalExecutionFlag
-            );
+            // await this.processConfirmationDecision(
+            //     signedBlock,
+            //     confirmationSignature as SignatureLike,
+            //     finalExecutionFlag
+            // );
         }
     }
 
@@ -359,6 +360,21 @@ class StateManager {
             previousBlockHash,
             successCallback
         };
+    }
+
+    public async createStateSnapshot(): Promise<StateSnapshotStruct> {
+        const snapshot: StateSnapshotStruct = {
+            stateMachineStateHash: await this.getEncodedStateKecak256(),
+            participants: await this.stateMachine.getParticipants(),
+            forkCnt: this.getForkCnt(),
+            latestJoinChannelBlockHash:
+                this.agreementManager.getLatestJoinChannelBlockHash(),
+            latestExitChannelBlockHash:
+                this.agreementManager.getLatestExitChannelBlockHash(),
+            totalDeposits: this.agreementManager.totalDeposits,
+            totalWithdrawals: this.agreementManager.totalWithdrawals
+        };
+        return snapshot;
     }
 
     // Used when authoring a block - Executes the transaction and returns a signed block
@@ -394,18 +410,19 @@ class StateManager {
 
             const block = await this.createBlock(tx, previousBlockHash);
             const signedBlock = await this.signBlock(block);
-
+            // create a snapshot from the current state
+            const stateSnapshot = await this.createStateSnapshot();
             this.agreementManager.addBlock(
                 signedBlock,
                 encodedState,
-                signedBlock.signature as SignatureLike //should be current snapshot
+                stateSnapshot
             );
 
             successCallback();
             await this.onSuccessCommon();
 
             scheduleTask(
-                () => this.maybePostBlockOnChain(block, signedBlock),
+                () => this.maybePostBlockOnChain(signedBlock),
                 this.timeConfig.agreementTime * 1000,
                 "maybePostBlockOnChain"
             );
@@ -417,11 +434,10 @@ class StateManager {
     }
 
     private async maybePostBlockOnChain(
-        block: BlockStruct,
         signedBlock: SignedBlockStruct
     ): Promise<void> {
         // If not everyone has signed, do the on-chain post
-        if (!this.agreementManager.didEveryoneSignBlock(block)) {
+        if (!this.agreementManager.didEveryoneSignBlock(signedBlock)) {
             console.log("Posting calldata on chain!");
             this.p2pEventHooks.onPostingCalldata?.();
             this.stateChannelManagerContract
@@ -433,6 +449,7 @@ class StateManager {
         }
     }
 
+    // TODO: Luke
     public async postStateSnapshot(
         milestoneProofs: ForkMilestoneProofStruct[],
         milestoneSnapshots: StateSnapshotStruct[],
@@ -457,7 +474,8 @@ class StateManager {
         }
 
         // Need to include a dispute
-        const disputeData = this.agreementManager.forks.getLatestDispute();
+        const disputeData =
+            this.agreementManager.forkService.getLatestDispute();
         if (!disputeData) {
             throw new Error(
                 "No dispute data available but dispute length > fork count"
@@ -501,7 +519,7 @@ class StateManager {
         }
 
         // Check if we have threshold signatures on the dispute
-        const fork = this.agreementManager.forks.latestFork();
+        const fork = this.agreementManager.forkService.getLatestFork();
         if (!fork) {
             throw new Error("No latest fork found");
         }
@@ -568,7 +586,10 @@ class StateManager {
         participantAdr: string
     ) {
         if (participantAdr == this.signerAddress) return;
-        const block = this.agreementManager.getBlock(forkCnt, transactionCnt);
+        const block = this.agreementManager.forkService.getSignedBlock(
+            forkCnt,
+            transactionCnt
+        );
         if (block) {
             if (this.agreementManager.didEveryoneSignBlock(block)) return;
         }
@@ -591,7 +612,7 @@ class StateManager {
         )
             return;
         const response =
-            await this.stateChannelManagerContract.getBlockCallData(
+            await this.stateChannelManagerContract.getBlockCallDataCommitment(
                 this.channelId,
                 forkCnt,
                 transactionCnt,
@@ -604,21 +625,42 @@ class StateManager {
             (Clock.getTimeInSeconds() -
                 this.agreementManager.getLatestBlockTimestamp(forkCnt));
         if (delayTimeSeconds < 0) {
-            this.disputeHandler.createDispute(
+            const timeout: TimeoutStruct = {
+                participant: participantAdr,
+                blockHeight: transactionCnt,
+                minTimeStamp: Clock.getTimeInSeconds() + 10,
+                forkCnt: forkCnt,
+                isForced: false,
+                previousBlockProducer: ethers.ZeroAddress,
+                previousBlockProducerPostedCalldata: false
+            };
+
+            this.disputeHandler.createNewDispute(
                 forkCnt,
-                participantAdr,
                 transactionCnt,
-                []
+                [],
+                Clock.getTimeInSeconds(),
+                timeout
             );
             console.log("Timeout participant!");
         } else {
             scheduleTask(
                 async () => {
-                    this.disputeHandler.createDispute(
+                    const timeout: TimeoutStruct = {
+                        participant: participantAdr,
+                        blockHeight: transactionCnt,
+                        minTimeStamp: Clock.getTimeInSeconds() + 10,
+                        forkCnt: forkCnt,
+                        isForced: false,
+                        previousBlockProducer: ethers.ZeroAddress,
+                        previousBlockProducerPostedCalldata: false
+                    };
+                    this.disputeHandler.createNewDispute(
                         forkCnt,
-                        participantAdr,
                         transactionCnt,
-                        []
+                        [],
+                        Clock.getTimeInSeconds(),
+                        timeout
                     );
                     console.log(
                         "Timeout participant! - delayed",
@@ -635,7 +677,7 @@ class StateManager {
         // Immediately schedule a confirm/execute from queue on next tick
         scheduleTask(
             () => {
-                this.tryConfirmFromQueue();
+                //this.tryConfirmFromQueue();
                 this.tryExecuteFromQueue();
             },
             0,
@@ -685,26 +727,26 @@ class StateManager {
     }
 
     // Helper function that takes appropriate action on the block confirmation based on the execution flag and agreement flag
-    private async processConfirmationDecision(
-        originalSignedBlock: SignedBlockStruct,
-        confirmationSignature: SignatureLike,
-        executionFlag: ExecutionFlags
-    ) {
-        // Build the context for the decision
-        const ctx: ConfirmationDecisionContext = {
-            isDisposed: this.isDisposed,
-            tryConfirmFromQueue: this.tryConfirmFromQueue.bind(this),
-            queueConfirmation:
-                this.agreementManager.queueConfirmation.bind(this)
-        };
+    // private async processConfirmationDecision(
+    //     originalSignedBlock: SignedBlockStruct,
+    //     confirmationSignature: SignatureLike,
+    //     executionFlag: ExecutionFlags
+    // ) {
+    //     // Build the context for the decision
+    //     const ctx: ConfirmationDecisionContext = {
+    //         isDisposed: this.isDisposed,
+    //         tryConfirmFromQueue: this.tryConfirmFromQueue.bind(this),
+    //         queueConfirmation:
+    //             this.agreementManager.queueConfirmation.bind(this)
+    //     };
 
-        await processConfirmationDecision(
-            originalSignedBlock,
-            confirmationSignature,
-            executionFlag,
-            ctx
-        );
-    }
+    //     await processConfirmationDecision(
+    //         originalSignedBlock,
+    //         confirmationSignature,
+    //         executionFlag,
+    //         ctx
+    //     );
+    // }
 
     private getTimeoutWaitTimeSeconds() {
         return (
@@ -756,20 +798,29 @@ class StateManager {
     }
 
     // ----- Event handlers -----
-    public async onDisputeCommitted(encodedDispute: string, timestamp: number) {
+    public async onDisputeCommitted(
+        encodedDispute: string,
+        encodedDisputeAuditingData: string
+    ) {
         const dispute = Codec.decodeDispute(encodedDispute);
-
+        const disputeAuditingData = Codec.decodeDisputeAuditingData(
+            encodedDisputeAuditingData
+        );
         // Validate dispute
         const valid = await this.validationService.validateDispute(
             dispute,
-            timestamp
+            disputeAuditingData
         );
 
         if (!valid) {
             return;
         }
         // Add dispute to ForkService
-        this.agreementManager.addDispute(dispute, timestamp);
+        this.disputeHandler.addDispute(
+            this.getForkCnt(),
+            dispute,
+            disputeAuditingData
+        );
 
         if (dispute.disputer !== this.signerAddress) {
             // this signs the dispute, adds the signature to the AgreementManager and broadcasts

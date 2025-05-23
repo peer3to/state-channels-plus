@@ -27,7 +27,14 @@ class AgreementManager {
     // latestBlockHash
     latestJoinChannelBlockHash: BytesLike = ethers.ZeroHash;
     latestExitChannelBlockHash: BytesLike = ethers.ZeroHash;
-
+    totalDeposits: BalanceStruct = {
+        amount: 0,
+        data: ethers.toUtf8Bytes("")
+    };
+    totalWithdrawals: BalanceStruct = {
+        amount: 0,
+        data: ethers.toUtf8Bytes("")
+    };
     forkService = new ForkService();
     queueService = new QueueService();
     chainTracker = new OnChainTracker(
@@ -403,7 +410,8 @@ class AgreementManager {
     public isParticipantInLatestFork(participant: AddressLike): boolean {
         const fork = this.forkService.getLatestFork();
         if (!fork) return false;
-        return new Set(fork.genesisParticipants).has(participant);
+        const latestAgreement = fork.agreements[-1];
+        return new Set(latestAgreement.addressesInThreshold).has(participant);
     }
 
     public getEncodedState(
@@ -607,11 +615,11 @@ class AgreementManager {
 
     //both canonical chain and future queue
     //both canonical chain and future queue
-    public isBlockInChain(block: BlockStruct): boolean {
-        return this.blockValidator.isBlockInChain(block);
+    public isBlockInChain(sb: SignedBlockStruct): boolean {
+        return this.blockValidator.isBlockInChain(sb);
     }
-    public isBlockDuplicate(block: BlockStruct): boolean {
-        return this.blockValidator.isBlockDuplicate(block);
+    public isBlockDuplicate(sb: SignedBlockStruct): boolean {
+        return this.blockValidator.isBlockDuplicate(sb);
     }
     public checkBlock(signedBlock: SignedBlockStruct): AgreementFlag {
         return this.blockValidator.check(signedBlock);

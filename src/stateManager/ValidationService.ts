@@ -19,6 +19,7 @@ import {
 import AStateMachine from "@/AStateMachine";
 import { Clock } from "..";
 import ProofManager from "@/ProofManager";
+import { DisputeAuditingDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 interface ValidationResult {
     success: boolean;
@@ -117,7 +118,7 @@ export default class ValidationService {
 
     public async validateBlockConfirmation(
         signed: SignedBlockStruct,
-        confirmationSig: BytesLike,
+        confirmationSignature: BytesLike,
         block?: BlockStruct
     ): Promise<ValidationResult> {
         const blk = block ?? EvmUtils.decodeBlock(signed.encodedBlock);
@@ -125,15 +126,15 @@ export default class ValidationService {
         if (!this.isChannelOpen()) return notReady();
         if (!this.isSignedBlockAuthentic(signed, blk, this.getChannelId()))
             return disconnect();
-        if (this.isPastFork(BlockUtils.getFork(blk))) return pastFork();
+        if (this.isPastFork(BlockUtils.getFork(signed))) return pastFork();
 
         // Ensure block in chain
-        if (!this.agreementManager.isBlockInChain(blk)) {
+        if (!this.agreementManager.isBlockInChain(signed)) {
             const flag = await this.onSignedBlock(signed, blk);
 
             if (flag === ExecutionFlags.DUPLICATE) {
                 // Possibly it has become part of the chain now
-                if (!this.agreementManager.isBlockInChain(blk)) {
+                if (!this.agreementManager.isBlockInChain(signed)) {
                     return { success: false, flag: ExecutionFlags.NOT_READY };
                 }
             } else if (flag !== ExecutionFlags.SUCCESS) {
@@ -143,9 +144,9 @@ export default class ValidationService {
         }
 
         /* confirmer inside fork */
-        const confirmer = EvmUtils.retrieveSignerAddressBlock(
-            blk,
-            confirmationSig as SignatureLike
+        const confirmer = SignatureUtils.getSignerAddress(
+            signed.encodedBlock,
+            confirmationSignature as SignatureLike
         );
         if (!this.agreementManager.isParticipantInLatestFork(confirmer))
             return disconnect();
@@ -153,8 +154,8 @@ export default class ValidationService {
         /* duplicate sig */
         if (
             this.agreementManager.doesSignatureExist(
-                blk,
-                confirmationSig as SignatureLike
+                EvmUtils.decodeBlock(signed.encodedBlock),
+                confirmationSignature as SignatureLike
             )
         )
             return duplicate();
@@ -164,7 +165,7 @@ export default class ValidationService {
 
     public async validateDispute(
         disputeStruct: DisputeStruct,
-        timestamp: number
+        disputeAuditingData: DisputeAuditingDataStruct
     ): Promise<boolean> {
         // triggered by StateManager.onDisputeCommitted, which is triggered by chain event 'DisputeCommitted'
         // therefore it is assumed that validation has already happened on

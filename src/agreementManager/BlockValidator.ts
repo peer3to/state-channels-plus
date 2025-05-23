@@ -18,22 +18,24 @@ export default class BlockValidator {
         private readonly chain: OnChainTracker
     ) {}
 
-    isBlockInChain(block: BlockStruct): boolean {
-        const ag = this.forks.getAgreementByBlock(block);
+    isBlockInChain(sb: SignedBlockStruct): boolean {
+        const ag = this.forks.getAgreementByBlock(
+            EvmUtils.decodeBlock(sb.encodedBlock)
+        );
         return (
             ag !== undefined &&
             BlockUtils.areBlocksEqual(
                 EvmUtils.decodeBlock(
                     ag.blockConfirmation.signedBlock.encodedBlock
                 ),
-                block
+                EvmUtils.decodeBlock(sb.encodedBlock)
             )
         );
     }
 
     /** In chain OR parked in the “future queue” */
-    isBlockDuplicate(block: BlockStruct): boolean {
-        return this.isBlockInChain(block) || this.queues.isBlockQueued(block);
+    isBlockDuplicate(sb: SignedBlockStruct): boolean {
+        return this.isBlockInChain(sb) || this.queues.isBlockQueued(sb);
     }
 
     /** Canonical chain: latest timestamp in this fork           */
@@ -68,7 +70,7 @@ export default class BlockValidator {
             return AgreementFlag.INVALID_SIGNATURE;
 
         /* 2 – duplicate? */
-        if (this.isBlockDuplicate(block)) {
+        if (this.isBlockDuplicate(signed)) {
             return AgreementFlag.DUPLICATE;
         }
 

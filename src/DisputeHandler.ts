@@ -32,6 +32,11 @@ interface DisputeOutputState {
     totalDeposits: BalanceStruct;
     totalWithdrawals: BalanceStruct;
 }
+
+interface DisputeData {
+    dispute: DisputeStruct;
+    disputeAuditingData: DisputeAuditingDataStruct;
+}
 class DisputeHandler {
     signer: ethers.Signer;
     signerAddress: AddressLike;
@@ -39,7 +44,7 @@ class DisputeHandler {
     stateChannelManagerContract: AStateChannelManagerProxy;
     channelId: BytesLike;
     localProofs: Map<ForkCnt, ProofStruct[]> = new Map();
-    disputes: Map<ForkCnt, DisputeStruct> = new Map();
+    disputes: Map<ForkCnt, DisputeData> = new Map();
     disputedForks: Map<ForkCnt, boolean> = new Map();
     p2pEventHooks: P2pEventHooks;
     self = DEBUG_DISPUTE_HANDLER ? DebugProxy.createProxy(this) : this;
@@ -69,6 +74,18 @@ class DisputeHandler {
 
     public setChannelId(channelId: BytesLike): void {
         this.channelId = channelId;
+    }
+
+    public addDispute(
+        forkCnt: number,
+        dispute: DisputeStruct,
+        disputeAuditingData: DisputeAuditingDataStruct
+    ): void {
+        const disputeData: DisputeData = {
+            dispute,
+            disputeAuditingData
+        };
+        this.disputes.set(forkCnt, disputeData);
     }
 
     // creating a dispute auditing data struct
@@ -108,9 +125,7 @@ class DisputeHandler {
                 `DisputeHandler - createDisputeAuditingData - no latest state state machine state for fork: ${forkCnt}`
             );
         }
-        const joinChannelBlocks = this.agreementManager.getJoinChannelChain(
-            this.channelId
-        );
+        const joinChannelBlocks = this.agreementManager.getJoinChannelChain();
 
         const disputeAuditingData: DisputeAuditingDataStruct = {
             genesisStateSnapshot: genesisStateSnapshot,
@@ -205,12 +220,10 @@ class DisputeHandler {
                 this.channelId
             );
         const onChainLatestJoinChannelBlockHash =
-            this.agreementManager.getLatestJoinChannelBlockHash(this.channelId);
+            this.agreementManager.getLatestJoinChannelBlockHash();
         const latestExitChannelBlockHash =
-            this.agreementManager.getLatestJoinChannelBlockHash(this.channelId);
-        const exitChannelBlocks = this.agreementManager.getExitChannelChain(
-            this.channelId
-        );
+            this.agreementManager.getLatestJoinChannelBlockHash();
+        const exitChannelBlocks = this.agreementManager.getExitChannelChain();
 
         const {
             encodedModifiedState,
@@ -227,7 +240,7 @@ class DisputeHandler {
             onChainSlashes,
             ethers.ZeroAddress,
             ethers.ZeroAddress,
-            this.agreementManager.getJoinChannelChain(this.channelId),
+            this.agreementManager.getJoinChannelChain(),
             this.agreementManager.getSnapShot(forkCnt, transactionCnt)!
         )) as unknown as DisputeOutputState;
 
@@ -290,13 +303,15 @@ class DisputeHandler {
         forkCnt: number,
         transactionCnt: number,
         proofs: ProofStruct[],
-        timestamp: BigNumberish
+        timestamp: BigNumberish,
+        timeout?: TimeoutStruct
     ): Promise<void> {
         const dispute = await this.createDisputeStruct(
             forkCnt,
             transactionCnt,
             proofs,
-            timestamp
+            timestamp,
+            timeout
         );
 
         await retry(

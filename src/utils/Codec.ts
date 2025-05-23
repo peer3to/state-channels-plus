@@ -6,17 +6,20 @@ import {
 } from "@typechain-types/contracts/V1/DataTypes";
 import {
     BlockEthersType,
+    DisputeAuditingDataEthersType,
     DisputeEthersType,
     JoinChannelEthersType,
     TransactionEthersType
 } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import { DisputeAuditingDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 type StructType =
     | BlockStruct
     | JoinChannelStruct
     | TransactionStruct
-    | DisputeStruct;
+    | DisputeStruct
+    | DisputeAuditingDataStruct;
 
 export class Codec {
     private static readonly structToEthersType = new Map<string, any>([
@@ -29,7 +32,8 @@ export class Codec {
         ["Block", BlockEthersType],
         ["JoinChannel", JoinChannelEthersType],
         ["Transaction", TransactionEthersType],
-        ["Dispute", DisputeEthersType]
+        ["Dispute", DisputeEthersType],
+        ["DisputeAuditingData", DisputeAuditingDataEthersType]
     ]);
 
     public static encode(struct: StructType): string {
@@ -94,5 +98,10 @@ export class Codec {
     }
     public static decodeDispute(encoded: BytesLike): DisputeStruct {
         return this.decode(encoded, "Dispute");
+    }
+    public static decodeDisputeAuditingData(
+        encoded: BytesLike
+    ): DisputeAuditingDataStruct {
+        return this.decode(encoded, "DisputeAuditingData");
     }
 }
