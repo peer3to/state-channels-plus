@@ -2,7 +2,10 @@ import { SignatureLike } from "ethers";
 import { ARpcService, MainRpcService } from "@/rpc";
 import {
     SignedJoinChannelStruct,
-    JoinChannelStruct
+    JoinChannelStruct,
+    ForkMilestoneProofStruct,
+    StateSnapshotStruct,
+    ExitChannelBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import { EvmUtils, SignatureCollectionMap } from "@/utils";
 import Clock from "@/Clock";
@@ -257,6 +260,67 @@ class JoinChannelService extends ARpcService {
         }, timeRemaining * 1000);
     }
 
+    private async needsStateSnapshotSubmission(
+        channelId: BytesLike
+    ): Promise<boolean> {
+        const scmContract =
+            this.mainRpcService.p2pManager.stateManager
+                .stateChannelManagerContract;
+
+        const [snapshotForkCnt, disputeLength] = await Promise.all([
+            scmContract.getSnapshotForkCnt(channelId),
+            scmContract.getDisputeLength(channelId)
+        ]);
+
+        return snapshotForkCnt !== disputeLength;
+    }
+
+    /**
+     * Prepare state snapshot data for on-chain submission
+     * TODO: Implement the actual logic to generate milestone proofs, snapshots, and exit channel blocks
+     */
+    private async prepareStateSnapshotData(): Promise<{
+        milestoneProofs: ForkMilestoneProofStruct[];
+        milestoneSnapshots: StateSnapshotStruct[];
+        exitChannelBlocks: ExitChannelBlockStruct[];
+    }> {
+        // TODO: Implement actual logic
+        // This should:
+        // 1. Generate milestone proofs for the fork transitions
+        // 2. Create state snapshots that include the new participant
+        // 3. Generate exit channel blocks if needed
+
+        // Placeholder return - replace with actual implementation
+        return {
+            milestoneProofs: [],
+            milestoneSnapshots: [],
+            exitChannelBlocks: []
+        };
+    }
+
+    /**
+     * Get the previous join channel block hash
+     */
+    private async getPreviousJoinChannelBlockHash(
+        channelId: BytesLike,
+        needsStateSnapshotSubmission: boolean,
+        milestoneSnapshots: StateSnapshotStruct[]
+    ): Promise<string> {
+        if (needsStateSnapshotSubmission) {
+            // We have milestone snapshots, use the latest one
+            const latestSnapshot =
+                milestoneSnapshots[milestoneSnapshots.length - 1];
+            return latestSnapshot.latestJoinChannelBlockHash as string;
+        } else {
+            // Read from chain
+            const scmContract =
+                this.mainRpcService.p2pManager.stateManager
+                    .stateChannelManagerContract;
+            const stateSnapshot = await scmContract.getStateSnapshot(channelId);
+            return stateSnapshot.latestJoinChannelBlockHash as string;
+        }
+    }
+
     /**
      * Process a completed join channel request with all required signatures
      */
@@ -264,33 +328,50 @@ class JoinChannelService extends ARpcService {
         signedJoinChannel: SignedJoinChannelStruct,
         confirmationSignatures: SignatureLike[]
     ): Promise<void> {
-        // TODO: Replace this with actual implementation
-        // Should read on-chain data and update as needed
-
         const joinChannel = EvmUtils.decodeJoinChannel(
             signedJoinChannel.encodedJoinChannel
         );
 
-        // 1. Read on-chain data
-        // const channelInfo = await this.mainRpcService.p2pManager.stateManager.getChannelInfo(joinChannel.channelId);
+        // 1. Check if we need to submit a state snapshot
+        const needsStateSnapshotSubmission =
+            await this.needsStateSnapshotSubmission(joinChannel.channelId);
 
-        // 2. Update state manager
-        // await this.mainRpcService.p2pManager.stateManager.agreementManager.addJoinChannel(
-        //     joinChannel,
-        //     signedJoinChannel.signature,
-        //     confirmationSignatures
-        // );
+        let milestoneSnapshots: StateSnapshotStruct[] = [];
 
-        // 3. If leader, update on-chain state
-        // if (this.mainRpcService.p2pManager.p2pSigner.getIsLeader()) {
-        //     await this.updateChannelOnChain(joinChannel, confirmationSignatures);
-        // }
+        // 2. If state snapshot submission is needed, prepare and submit
+        if (needsStateSnapshotSubmission) {
+            const {
+                milestoneProofs,
+                milestoneSnapshots: snapshots,
+                exitChannelBlocks
+            } = await this.prepareStateSnapshotData();
 
-        console.log("Join channel request processed with all signatures", {
-            channelId: joinChannel.channelId,
-            participant: joinChannel.participant,
-            signatures: confirmationSignatures.length
-        });
+            milestoneSnapshots = snapshots;
+
+            await this.mainRpcService.p2pManager.stateManager.postStateSnapshot(
+                milestoneProofs,
+                milestoneSnapshots,
+                exitChannelBlocks
+            );
+        }
+
+        // 3. Create JoinChannelBlock with the completed join channel request
+        const previousBlockHash = await this.getPreviousJoinChannelBlockHash(
+            joinChannel.channelId,
+            needsStateSnapshotSubmission,
+            milestoneSnapshots
+        );
+
+        const joinChannelBlock = {
+            joinChannels: [joinChannel],
+            previousBlockHash
+        };
+
+        // 4. Create the Dispute that will increase the number of participants to include the new participant
+        // currently (23.05.2025) is "under construction". waiting for the TS side machinary to collect the dispute data
+        // to be written by Mrisho
+
+        // 5. submit to chain
     }
 }
 
