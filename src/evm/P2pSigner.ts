@@ -1,5 +1,6 @@
 import {
     AddressLike,
+    BigNumberish,
     BytesLike,
     ethers,
     SignatureLike,
@@ -10,6 +11,7 @@ import {
 import {
     JoinChannelStruct,
     SignedBlockStruct,
+    SignedJoinChannelStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DataTypes";
@@ -170,6 +172,38 @@ class P2pSigner implements Signer {
         // Broadcast confirmation with our signature
         this.p2pManager.rpcProxy
             .onDisputeConfirmation(signedDispute)
+            .broadcast();
+    }
+
+    public async joinChannel(
+        channelId: BytesLike,
+        amount: BigNumberish,
+        deadlineTimestamp: BigNumberish,
+        data: BytesLike
+    ) {
+        const joinChannelRequest: JoinChannelStruct = {
+            channelId,
+            participant: this.signerAddress,
+            balance: {
+                amount,
+                data
+            },
+            deadlineTimestamp
+        };
+
+        // Encode and sign the request
+        const encodedJoinChannel =
+            EvmUtils.encodeJoinChannel(joinChannelRequest);
+        const signedJoinChannel: SignedJoinChannelStruct = {
+            encodedJoinChannel: encodedJoinChannel,
+            signature: await this.signMessage(encodedJoinChannel)
+        };
+
+        // Store locally before broadcasting ?
+
+        // Broadcast the request
+        this.p2pManager.rpcProxy
+            .onJoinChannelRequest(signedJoinChannel)
             .broadcast();
     }
 }

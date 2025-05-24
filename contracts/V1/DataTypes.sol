@@ -12,12 +12,13 @@ contract DataTypes {
         JoinChannel memory g,
         JoinChannelBlock memory h,
         SignedJoinChannel memory i,
-        ExitChannel memory j,
-        ExitChannelBlock memory k,
-        Timeout memory l,
-        StateSnapshot memory m,
-        DisputeProof memory n,
-        SignedDispute memory o
+        JoinChannelConfirmation memory j,
+        ExitChannel memory k,
+        ExitChannelBlock memory l,
+        Timeout memory m,
+        StateSnapshot memory n,
+        DisputeProof memory o,
+        SignedDispute memory p
     ) {}
 }
 
