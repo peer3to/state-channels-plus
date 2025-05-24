@@ -14,6 +14,7 @@ Provide a concise summary of the changes made in this PR, including the rational
 - [ ] I have written tests that cover the new or changed code.
 - [ ] I have added necessary documentation (if appropriate).
 - [ ] I have linked relevant issues and/or created follow-up issues.
+- [ ] I have ran compile, build and test, all works for me
 
 ## 🔗 Follow-up Issues
 
