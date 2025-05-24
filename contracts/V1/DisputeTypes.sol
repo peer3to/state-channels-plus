@@ -31,7 +31,7 @@ struct Dispute {
     address[] leaveChannelParticipants;
     address[] slashedParticipants;
     address[] participants;
-    ProcessExit[] processExits; //Channel removals that will be processed once the dispute is finalized
+    ExitChannel[] exitChannels; //Channel removals that will be processed once the dispute is finalized
     uint creationTimestamp;
     uint deadlineTimestamp;
 }

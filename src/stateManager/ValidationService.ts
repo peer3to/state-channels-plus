@@ -168,8 +168,11 @@ export default class ValidationService {
         const previousStateHash = await this.stateMachine
             .getState()
             .then(ethers.keccak256);
-        let { success: txOK, successCallback } =
-            await this.stateMachine.stateTransition(block.transaction);
+        let {
+            success: txOK,
+            successCallback,
+            exitChannels: _
+        } = await this.stateMachine.stateTransition(block.transaction);
 
         const encodedState = await this.stateMachine.getState();
         const stateHash = ethers.keccak256(encodedState);

@@ -12,7 +12,9 @@ contract DataTypes {
         ConfirmedJoinChannelAgreement memory g,
         LeaveChannel memory h,
         LeaveChannelAgreement memory i,
-        ConfirmedBlock memory j
+        ConfirmedBlock memory j,
+        ExitChannel memory k,
+        ExitChannelBlock memory l
     ) {}
 }
 //TODO? - think should post state - everyone should be able to replicate the state since genesis (fork) and if a block is posted in the future and some are missing - someone will be folded before the posted BLOCK, as for posting too much in the future it can be challenged
@@ -109,6 +111,19 @@ struct LeaveChannel {
     bytes32 previousStateHash;
     uint deadlineTimestamp;
     bytes data; //custom data
+}
+
+
+struct ExitChannel {
+    address participant;
+    bool isPartialExit;
+    uint256 amount;
+    bytes data; //custom data
+}
+
+struct ExitChannelBlock {
+    bytes32 previousBlockHash;
+    ExitChannel[] exitChannels;
 }
 
 struct LeaveChannelAgreement {

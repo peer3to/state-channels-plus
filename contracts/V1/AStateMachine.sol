@@ -7,6 +7,9 @@ abstract contract AStateMachine {
     address _stateChannelManager;
     bool _nonreentrant;
 
+    // Storage for exit channels generated during transaction
+    ExitChannel[] private _exitChannels;
+
     // ***** DEBUG *****
     // event SetStateA(bytes encodedState);
     // event TxExecutedA(bool success, bytes encodedState);
@@ -25,6 +28,15 @@ abstract contract AStateMachine {
     // return the next participant which should produce a transaction based on the current state (eg. in the game of poker, the next player to play a move)
     function getNextToWrite() public view virtual returns (address);
 
+    function getExitChannels()
+        public
+        view
+        virtual
+        returns (ExitChannel[] memory)
+    {
+        return _exitChannels;
+    }
+
     // modifies the state to add a new participant to the channel
     function _joinChannel(
         JoinChannel memory joinChannel
@@ -33,12 +45,20 @@ abstract contract AStateMachine {
     // define the logic that punishes a participant for misbehaving (can also remove the participant from the state channel)
     function _slashParticipant(
         address adr
-    ) internal virtual returns (bool, ProcessExit memory);
+    ) internal virtual returns (bool, ExitChannel memory);
 
     // similart to _slashParticipant, but doesn't have to punish the player - just removes them from the state channel
     function _removeParticipant(
         address adr
-    ) internal virtual returns (bool, ProcessExit memory);
+    ) internal virtual returns (bool, ExitChannel memory);
+
+    function _addExitChannel(ExitChannel memory exitChannel) internal {
+        _exitChannels.push(exitChannel);
+    }
+
+    function _clearExitChannels() internal {
+        delete _exitChannels;
+    }
 
     modifier _nonReentrant() {
         require(!_nonreentrant, "ReentrancyGuard: reentrant call");
@@ -48,6 +68,7 @@ abstract contract AStateMachine {
     }
 
     function setState(bytes memory encodedState) external _nonReentrant {
+        _clearExitChannels();
         _setState(encodedState);
         // emit SetStateA(encodedState);
     }
@@ -60,25 +81,34 @@ abstract contract AStateMachine {
 
     function slashParticipant(
         address adr
-    ) external _nonReentrant returns (bool, ProcessExit memory) {
-        return _slashParticipant(adr);
+    ) external _nonReentrant returns (bool, ExitChannel memory) {
+        (bool success, ExitChannel memory exitChannel) = _slashParticipant(adr);
+        if (success) {
+            _addExitChannel(exitChannel);
+        }
+        return (success, exitChannel);
     }
 
     function removeParticipant(
         address adr
-    ) external virtual _nonReentrant returns (bool, ProcessExit memory) {
+    ) external virtual _nonReentrant returns (bool, ExitChannel memory) {
         return _removeParticipant(adr);
     }
 
     function stateTransition(
         Transaction calldata transaction
-    ) external _nonReentrant returns (bool) {
+    )
+        external
+        _nonReentrant
+        returns (bool success, ExitChannel[] memory exitChannels)
+    {
         _tx = transaction;
-        (bool success, bytes memory result) = address(this).call(
+        _clearExitChannels();
+        (bool callSuccess, bytes memory result) = address(this).call(
             transaction.body.data
         );
         // emit TxExecutedA(success, getState());
-        if (!success) {
+        if (!callSuccess) {
             if (result.length == 0)
                 revert("AStateMachine - Call failed - result lenght 0");
             assembly {
@@ -86,7 +116,8 @@ abstract contract AStateMachine {
                 revert(add(32, result), returndata_size)
             }
         }
-        return success;
+
+        return (callSuccess, _exitChannels);
     }
 
     // function stateTransition(bytes memory encodedState, Move memory move) public pure virtual returns (bool,bytes memory);

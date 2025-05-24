@@ -314,9 +314,10 @@ class StateManager {
         encodedState: string;
         previousStateHash: string;
         successCallback: () => void;
+        exitChannels: any[];
     }> {
         const previousStateHash = await this.getEncodedStateKecak256();
-        let { success, successCallback } =
+        let { success, successCallback, exitChannels } =
             await this.stateMachine.stateTransition(transaction);
         const encodedState = await this.stateMachine.getState();
 
@@ -324,7 +325,8 @@ class StateManager {
             success,
             encodedState,
             previousStateHash,
-            successCallback
+            successCallback,
+            exitChannels: exitChannels || []
         };
     }
 

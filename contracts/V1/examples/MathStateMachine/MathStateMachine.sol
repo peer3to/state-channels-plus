@@ -31,6 +31,23 @@ contract MathStateMachine is AStateMachine {
         return state.number;
     }
 
+    // Game-specific function: player voluntarily leaves the game
+    function leaveGame() public returns (bool) {
+        require(
+            _tx.header.participant == getNextToWrite(),
+            "MathStateMachine: leaveGame only next player can leave"
+        );
+        
+        address leavingPlayer = _tx.header.participant;
+        (bool success, ExitChannel memory exitChannel) = _removeParticipant(leavingPlayer);
+        
+        if (success) {
+            _addExitChannel(exitChannel);
+        }
+        
+        return success;
+    }
+
     function _setState(bytes memory encodedState) internal virtual override {
         state = abi.decode(encodedState, (MathState));
     }
@@ -58,26 +75,27 @@ contract MathStateMachine is AStateMachine {
 
     function _slashParticipant(
         address adr
-    ) internal virtual override returns (bool, ProcessExit memory) {
+    ) internal virtual override returns (bool, ExitChannel memory) {
         return _removeParticipant(adr);
     }
 
     function _removeParticipant(
         address adr
-    ) internal virtual override returns (bool, ProcessExit memory) {
+    ) internal virtual override returns (bool, ExitChannel memory) {
         uint256 length = state.participants.length;
-        ProcessExit memory processExit;
+        ExitChannel memory exitChannel;
         for (uint256 i = 0; i < length; i++) {
             if (state.participants[i] == adr) {
                 state.participants[i] = state.participants[length - 1];
                 state.participants.pop();
 
-                processExit.participant = adr;
-                processExit.amount = 0;
-                return (true, processExit);
+                exitChannel.participant = adr;
+                exitChannel.amount = 0;
+                exitChannel.isPartialExit = false;
+                return (true, exitChannel);
             }
         }
-        return (false, processExit);
+        return (false, exitChannel);
     }
 
     function _joinChannel(
