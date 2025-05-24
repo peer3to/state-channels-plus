@@ -6,6 +6,9 @@ import "../StateChannelManagerEvents.sol";
 import "./StateChannelUtilLibrary.sol";
 import "./AStateChannelManagerProxy.sol";
 
+
+
+
 contract StateChannelCommon is
     StateChannelManagerStorage,
     StateChannelManagerEvents

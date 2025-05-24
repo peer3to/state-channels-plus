@@ -31,37 +31,48 @@ export default class OnChainTracker {
             this.queues.queueBlock(signed);
         }
 
-        const blk: BlockStruct = EvmUtils.decodeBlock(signed.encodedBlock);
-        const { forkCnt, height } = BlockUtils.getCoordinates(blk);
-        const participant = BlockUtils.getBlockAuthor(blk);
+        const { forkCnt, height } = BlockUtils.getCoordinates(
+            EvmUtils.decodeBlock(signed.encodedBlock)
+        );
+        const participant = BlockUtils.getBlockAuthor(signed);
 
         if (!this.hasPosted(forkCnt, height, participant)) {
-            this.forks.addChainBlock(forkCnt, height, participant, timestamp);
+            this.forks.addChainBlock(signed, timestamp);
         }
         return flag;
     }
 
     /** Highest timestamp recorded for fork ≤ maxTxCnt */
     latestTimestamp(forkCnt: number, maxHeight: number): number {
-        const fork = this.forks.forkAt(forkCnt);
+        const fork = this.forks.getFork(forkCnt);
         if (!fork) throw new Error("OnChainTracker - fork not found");
 
         let latest = 0;
         for (const cb of fork.chainBlocks) {
-            if (cb.transactionCnt > maxHeight) continue;
+            if (
+                Number(
+                    EvmUtils.decodeBlock(cb.signedBlock.encodedBlock)
+                        .transaction.header.transactionCnt
+                ) > maxHeight
+            )
+                continue;
             if (cb.timestamp > latest) latest = cb.timestamp;
         }
         return latest;
     }
 
     hasPosted(forkCnt: number, height: number, address: AddressLike): boolean {
-        const fork = this.forks.forkAt(forkCnt);
+        const fork = this.forks.getFork(forkCnt);
         return (
             !!fork &&
             fork.chainBlocks.some(
                 (cb) =>
-                    cb.transactionCnt === height &&
-                    cb.participantAdr === address
+                    Number(
+                        EvmUtils.decodeBlock(cb.signedBlock.encodedBlock)
+                            .transaction.header.transactionCnt
+                    ) === height &&
+                    EvmUtils.decodeBlock(cb.signedBlock.encodedBlock)
+                        .transaction.header.participant === address
             )
         );
     }

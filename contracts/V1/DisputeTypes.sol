@@ -9,19 +9,18 @@ contract DisputeTypes {
         BlockDoubleSignProof memory b,
         BlockEmptyProof memory c,
         BlockInvalidStateTransitionProof memory d,
-        TimeoutThresholdProof memory e,
-        TimeoutPriorInvalidProof memory f,
-        DisputeNotLatestStateProof memory g,
-        DisputeOutOfGasProof memory h,
-        DisputeInvalidOutputStateProof memory i,
-        DisputeInvalidStateProof memory j,
-        DisputeInvalidPreviousRecursiveProof memory k,
-        DisputeInvalidExitChannelBlocksProof memory l,
-        ForkMilestoneProof memory m,
-        ForkProof memory n,
-        StateProof memory o,
-        Proof memory p,
-        ProofType q
+        BlockInvalidPreviousLinkProof memory e,
+        TimeoutThresholdProof memory f,
+        TimeoutPriorInvalidProof memory g,
+        DisputeNotLatestStateProof memory h,
+        DisputeInvalidStateProof memory i,
+        DisputeInvalidPreviousRecursiveProof memory j,
+        DisputeInvalidExitChannelBlocksProof memory k,
+        ForkMilestoneProof memory l,
+        ForkProof memory m,
+        StateProof memory n,
+        Proof memory o,
+        ProofType p
     ) {}
 }
 
@@ -91,6 +90,7 @@ enum ProofType {
     BlockEmptyBlock,
     BlockInvalidStateTransition,
     BlockOutOfGas,
+    BlockInvalidPreviousLink,
     // Timeout related fraud proofs
     TimeoutThreshold,
     TimeoutPriorInvalid,
@@ -119,6 +119,12 @@ struct BlockInvalidStateTransitionProof {
     bytes previousStateStateMachineState;
 }
 
+struct BlockInvalidPreviousLinkProof {
+    SignedBlock invalidBlock;
+    SignedBlock previousBlock;
+    bytes previousStateMachineState;
+}
+
 
 struct BlockDoubleSignProof {
     SignedBlock block1;
@@ -132,14 +138,6 @@ struct DisputeNotLatestStateProof {
     uint originalDisputeTimestamp;
 }
 
-struct DisputeOutOfGasProof {
-    Dispute dispute;
-}
-
-struct DisputeInvalidOutputStateProof {
-    Dispute dispute;
-}
-
 struct DisputeInvalidStateProof {
     Dispute dispute;
 }
@@ -149,7 +147,6 @@ struct DisputeInvalidPreviousRecursiveProof {
     Dispute originalDispute;
     uint originalDisputeTimestamp;
     uint invalidRecursiveDisputeTimestamp;
-    bytes latestStateSnapshot;
     bytes invalidRecursiveDisputeOutputState;
 }
 

@@ -121,11 +121,14 @@ describe("AgreementManager", () => {
                 nowTimestamp
             );
 
-            expect(localAgreementManager.forks.nextForkIndex()).to.equal(1);
             expect(
-                localAgreementManager.forks.forkAt(0)?.forkGenesisStateEncoded
+                localAgreementManager.forkService.getNextForkIndex()
+            ).to.equal(1);
+            expect(
+                localAgreementManager.forkService.getFork(0)
+                    ?.forkGenesisStateEncoded
             ).to.equal(commonGenesisState);
-            const fork = localAgreementManager.forks.forkAt(0);
+            const fork = localAgreementManager.forkService.getFork(0);
             expect(fork?.addressesInThreshold).to.deep.equal(addresses);
             expect(fork?.genesisTimestamp).to.equal(nowTimestamp);
             expect(fork?.chainBlocks).to.deep.equal([]);
@@ -143,7 +146,7 @@ describe("AgreementManager", () => {
                 nowTimestamp
             );
 
-            expect(freshManager.forks.latestForkCnt()).to.equal(0);
+            expect(freshManager.forkService.getLatestForkCnt()).to.equal(0);
         });
 
         it("should allow multiple forks to be created sequentially", () => {
@@ -162,12 +165,12 @@ describe("AgreementManager", () => {
                 nowTimestamp + 100
             );
 
-            expect(freshManager.forks.nextForkIndex()).to.equal(2);
+            expect(freshManager.forkService.getNextForkIndex()).to.equal(2);
             expect(
-                freshManager.forks.forkAt(0)?.forkGenesisStateEncoded
+                freshManager.forkService.getFork(0)?.forkGenesisStateEncoded
             ).to.equal(commonGenesisState);
             expect(
-                freshManager.forks.forkAt(1)?.forkGenesisStateEncoded
+                freshManager.forkService.getFork(1)?.forkGenesisStateEncoded
             ).to.equal(commonGenesisState2);
         });
     });
@@ -231,7 +234,7 @@ describe("AgreementManager", () => {
         describe("When checking for duplicates in the canonical chain", () => {
             it("should return true if the block exists in the canonical chain", () => {
                 const isBlockInChainStub = sinon
-                    .stub(agreementManager.validator, "isBlockInChain")
+                    .stub(agreementManager.blockValidator, "isBlockInChain")
                     .returns(true);
 
                 expect(agreementManager.isBlockDuplicate(block)).to.be.true;
@@ -347,7 +350,10 @@ describe("AgreementManager", () => {
 
             const forkCnt = Number(block.transaction.header.forkCnt);
             const txCnt = Number(block.transaction.header.transactionCnt);
-            const agreement = freshManager.forks.agreement(forkCnt, txCnt);
+            const agreement = freshManager.forkService.getAgreement(
+                forkCnt,
+                txCnt
+            );
 
             expect(agreement).to.not.be.undefined;
             expect(agreement!.block).to.deep.equal(block);
@@ -403,7 +409,10 @@ describe("AgreementManager", () => {
 
             const forkCnt = Number(block.transaction.header.forkCnt);
             const txCnt = Number(block.transaction.header.transactionCnt);
-            const agreement = freshManager.forks.agreement(forkCnt, txCnt);
+            const agreement = freshManager.forkService.getAgreement(
+                forkCnt,
+                txCnt
+            );
 
             expect(agreement!.blockSignatures).to.have.lengthOf(2);
             expect(agreement!.blockSignatures).to.include(signature);
@@ -429,7 +438,7 @@ describe("AgreementManager", () => {
                 nowTimestamp
             );
 
-            expect(localManager.forks.latestForkCnt()).to.equal(1);
+            expect(localManager.forkService.getLatestForkCnt()).to.equal(1);
         });
     });
 
@@ -1406,7 +1415,8 @@ describe("AgreementManager", () => {
                     })
                 }),
                 previousStateHash: ethers.keccak256(
-                    manager.forks.forkAt(0)?.forkGenesisStateEncoded ?? ""
+                    manager.forkService.getFork(0)?.forkGenesisStateEncoded ??
+                        ""
                 )
             });
 
@@ -1420,7 +1430,7 @@ describe("AgreementManager", () => {
             expect(manager.didParticipantPostOnChain(0, 0, address1)).to.be
                 .true;
 
-            const chainBlocks = manager.forks.forkAt(0)?.chainBlocks;
+            const chainBlocks = manager.forkService.getFork(0)?.chainBlocks;
             expect(chainBlocks).to.have.lengthOf(1);
             expect(chainBlocks![0].transactionCnt).to.equal(0);
             expect(chainBlocks![0].participantAdr).to.equal(address1);
@@ -1439,7 +1449,7 @@ describe("AgreementManager", () => {
                 manager.collectOnChainBlock(invalidSignedBlock, timestamp)
             ).to.equal(AgreementFlag.INVALID_SIGNATURE);
 
-            const chainBlocks = manager.forks.forkAt(0)?.chainBlocks;
+            const chainBlocks = manager.forkService.getFork(0)?.chainBlocks;
             expect(chainBlocks).to.have.lengthOf(0);
         });
 
@@ -1453,7 +1463,7 @@ describe("AgreementManager", () => {
 
             expect(result).to.equal(AgreementFlag.DUPLICATE);
 
-            const chainBlocks = manager.forks.forkAt(0)?.chainBlocks;
+            const chainBlocks = manager.forkService.getFork(0)?.chainBlocks;
             expect(chainBlocks).to.have.lengthOf(1);
             expect(chainBlocks![0].timestamp).to.equal(timestamp); // Original timestamp
         });
