@@ -1,6 +1,8 @@
+import { ExitChannelStruct } from "@typechain-types/contracts/V1/DataTypes";
+
 type TransitionResponse = {
     success: boolean;
-    exitChannels: any[];
+    exitChannels: ExitChannelStruct[];
     successCallback: () => void;
 };
 abstract class AStateMachine {
@@ -9,6 +11,7 @@ abstract class AStateMachine {
     public abstract getParticipants(): Promise<any[]>;
     public abstract getNextToWrite(): Promise<string>;
     public abstract setState(serializedState: any): Promise<any>;
+    public abstract getExitChannels(): Promise<ExitChannelStruct[]>;
     public abstract getState(): Promise<any>;
 }
 

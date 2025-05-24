@@ -29,7 +29,7 @@ abstract contract AStateChannelManagerProxy is
 
     function _removeParticipantComposable(
         bytes32 channelId,
-        ProcessExit memory processExit
+        ExitChannel memory exitChannel
     ) internal virtual returns (bool);
 
     function joinChannelWithAgreement(
@@ -204,7 +204,7 @@ abstract contract AStateChannelManagerProxy is
         p[0] = leaveChannel.participant;
         (
             bytes memory encodedState,
-            ProcessExit[] memory pe,
+            ExitChannel[] memory pe,
             uint successCnt
         ) = removeParticipantsFromStateMachine(encodedState, p);
         require(
@@ -227,13 +227,13 @@ abstract contract AStateChannelManagerProxy is
         Dispute storage dispute = disputes[channelId];
         bool isExpired = dispute.deadlineTimestamp < block.timestamp;
         if (isExpired) {
-            for (uint i = 0; i < dispute.processExits.length; i++) {
+            for (uint i = 0; i < dispute.exitChannels.length; i++) {
                 _removeParticipantComposable(
                     channelId,
-                    dispute.processExits[i]
+                    dispute.exitChannels[i]
                 );
             }
-            delete dispute.processExits; //clears the array
+            delete dispute.exitChannels; //clears the array
         }
     }
     function addParticipantComposable(
@@ -244,9 +244,9 @@ abstract contract AStateChannelManagerProxy is
 
     function removeParticipantComposable(
         bytes32 channelId,
-        ProcessExit memory processExit
+        ExitChannel memory exitChannel
     ) public onlySelf returns (bool) {
-        return _removeParticipantComposable(channelId, processExit);
+        return _removeParticipantComposable(channelId, exitChannel);
     }
 
     function applyJoinChannelToStateMachine(
@@ -268,7 +268,7 @@ abstract contract AStateChannelManagerProxy is
         onlySelf
         returns (
             bytes memory encodedModifiedState,
-            ProcessExit[] memory,
+            ExitChannel[] memory,
             uint successCnt
         )
     {
@@ -283,7 +283,7 @@ abstract contract AStateChannelManagerProxy is
         onlySelf
         returns (
             bytes memory encodedModifiedState,
-            ProcessExit[] memory,
+            ExitChannel[] memory,
             uint successCnt
         )
     {
@@ -319,25 +319,25 @@ abstract contract AStateChannelManagerProxy is
         internal
         returns (
             bytes memory encodedModifiedState,
-            ProcessExit[] memory,
+            ExitChannel[] memory,
             uint successCnt
         )
     {
-        ProcessExit[] memory processExits = new ProcessExit[](
+        ExitChannel[] memory exitChannels = new ExitChannel[](
             slashedParticipants.length
         );
         uint successCnt = 0;
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < slashedParticipants.length; i++) {
             bool success;
-            (success, processExits[successCnt]) = stateMachineImplementation
+            (success, exitChannels[successCnt]) = stateMachineImplementation
                 .slashParticipant(slashedParticipants[i]);
             // require(success, "Slash failed");
             if (success) successCnt++;
         }
         return (
             stateMachineImplementation.getState(),
-            processExits,
+            exitChannels,
             successCnt
         );
     }
@@ -349,25 +349,25 @@ abstract contract AStateChannelManagerProxy is
         internal
         returns (
             bytes memory encodedModifiedState,
-            ProcessExit[] memory,
+            ExitChannel[] memory,
             uint successCnt
         )
     {
-        ProcessExit[] memory processExits = new ProcessExit[](
+        ExitChannel[] memory exitChannels = new ExitChannel[](
             participants.length
         );
         uint successCnt = 0;
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < participants.length; i++) {
             bool success;
-            (success, processExits[successCnt]) = stateMachineImplementation
+            (success, exitChannels[successCnt]) = stateMachineImplementation
                 .removeParticipant(participants[i]);
             // require(success, "Remove failed");
             if (success) successCnt++;
         }
         return (
             stateMachineImplementation.getState(),
-            processExits,
+            exitChannels,
             successCnt
         );
     }

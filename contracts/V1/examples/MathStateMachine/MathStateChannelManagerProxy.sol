@@ -123,6 +123,6 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
 
     function _removeParticipantComposable(
         bytes32 channelId,
-        ProcessExit memory processExit
+        ExitChannel memory exitChannel
     ) internal virtual override returns (bool) {}
 }

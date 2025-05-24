@@ -29,11 +29,11 @@ contract DisputeManagerFacet is StateChannelCommon {
      */
     function removeParticipantComposable(
         bytes32 channelId,
-        ProcessExit memory processExit
+        ExitChannel memory exitChannel
     ) internal returns (bool) {
         return
             AStateChannelManagerProxy(address(this))
-                .removeParticipantComposable(channelId, processExit);
+                .removeParticipantComposable(channelId, exitChannel);
     }
 
     // function getNext
@@ -60,7 +60,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         virtual
         returns (
             bytes memory encodedModifiedState,
-            ProcessExit[] memory,
+            ExitChannel[] memory,
             uint successCnt
         )
     {
@@ -80,7 +80,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         virtual
         returns (
             bytes memory encodedModifiedState,
-            ProcessExit[] memory,
+            ExitChannel[] memory,
             uint successCnt
         )
     {
@@ -306,33 +306,33 @@ contract DisputeManagerFacet is StateChannelCommon {
             ErrorJoinChannelFailed()
         );
 
-        // Clear processExits
-        delete dispute.processExits;
+        // Clear exitChannels
+        delete dispute.exitChannels;
 
         // 2.1) Shrink the set of participants - apply slashes
-        ProcessExit[] memory processExits;
+        ExitChannel[] memory exitChannels;
         (
             latestEncodedState,
-            processExits,
+            exitChannels,
             successCnt
         ) = applySlashesToStateMachine(
             latestEncodedState,
             dispute.slashedParticipants
         );
         for (uint i = 0; i < successCnt; i++)
-            dispute.processExits.push(processExits[i]);
+            dispute.exitChannels.push(exitChannels[i]);
 
         // 2.2) Shrink the set of participants - apply leaveChannelForce requests
         (
             latestEncodedState,
-            processExits,
+            exitChannels,
             successCnt
         ) = removeParticipantsFromStateMachine(
             latestEncodedState,
             dispute.leaveChannelParticipants
         );
         for (uint i = 0; i < successCnt; i++)
-            dispute.processExits.push(processExits[i]);
+            dispute.exitChannels.push(exitChannels[i]);
 
         // 2.3) Shrink the set of participants - apply timeout
         if (dispute.timedoutParticipant != address(0)) {
@@ -340,11 +340,11 @@ contract DisputeManagerFacet is StateChannelCommon {
             arr[0] = dispute.timedoutParticipant;
             (
                 latestEncodedState,
-                processExits,
+                exitChannels,
                 successCnt
             ) = removeParticipantsFromStateMachine(latestEncodedState, arr);
             for (uint i = 0; i < successCnt; i++)
-                dispute.processExits.push(processExits[i]);
+                dispute.exitChannels.push(exitChannels[i]);
         }
         dispute.encodedLatestCorrectState = latestEncodedState;
     }
