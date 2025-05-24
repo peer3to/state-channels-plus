@@ -148,7 +148,7 @@ export function disputeStruct(
         joinChannelParticipants: overrides.joinChannelParticipants ?? [],
         leaveChannelParticipants: overrides.leaveChannelParticipants ?? [],
         participants: overrides.participants ?? [],
-        processExits: overrides.processExits ?? [],
+        exitChannels: overrides.exitChannels ?? [],
         creationTimestamp:
             overrides.creationTimestamp ?? Math.floor(Date.now() / 1000)
     };

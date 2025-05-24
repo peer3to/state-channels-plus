@@ -64,19 +64,17 @@ abstract contract AStateMachine {
     // define the logic that punishes a participant for misbehaving (can also remove the participant from the state channel)
     function _slashParticipant(
         address adr
-    ) internal virtual returns (bool,ExitChannel memory exitChannel);
+    ) internal virtual returns (bool, ExitChannel memory);
 
     // similart to _slashParticipant, but doesn't have to punish the player - just removes them from the state channel
     function _removeParticipant(
         address adr
-    ) internal virtual returns (bool,ExitChannel memory exitChannel);
+    ) internal virtual returns (bool, ExitChannel memory);
 
-    // Internal function to add an exit channel to storage
     function _addExitChannel(ExitChannel memory exitChannel) internal {
         _exitChannels.push(exitChannel);
     }
 
-    // Internal function to clear exit channels storage
     function _clearExitChannels() internal {
         delete _exitChannels;
     }
@@ -102,7 +100,7 @@ abstract contract AStateMachine {
 
     function slashParticipant(
         address adr
-    ) external _nonReentrant returns (bool, ExitChannel memory exitChannel) {
+    ) external _nonReentrant returns (bool, ExitChannel memory) {
         (bool success, ExitChannel memory exitChannel) = _slashParticipant(adr);
         if (success) {
             _addExitChannel(exitChannel);
@@ -112,7 +110,7 @@ abstract contract AStateMachine {
 
     function removeParticipant(
         address adr
-    ) external virtual _nonReentrant returns (bool, ExitChannel memory exitChannel) {
+    ) external virtual _nonReentrant returns (bool, ExitChannel memory) {
         return _removeParticipant(adr);
     }
 
@@ -121,7 +119,7 @@ abstract contract AStateMachine {
     )
         external
         _nonReentrant
-        returns (bool success, ProcessExit[] memory exitChannels)
+        returns (bool success, ExitChannel[] memory exitChannels)
     {
         _tx = transaction;
         _clearExitChannels();

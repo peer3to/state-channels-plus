@@ -43,7 +43,7 @@ contract MathStateMachine is AStateMachine {
         );
         
         address leavingPlayer = _tx.header.participant;
-        (bool success, ProcessExit memory exitChannel) = _removeParticipant(leavingPlayer);
+        (bool success, ExitChannel memory exitChannel) = _removeParticipant(leavingPlayer);
         
         if (success) {
             _addExitChannel(exitChannel);

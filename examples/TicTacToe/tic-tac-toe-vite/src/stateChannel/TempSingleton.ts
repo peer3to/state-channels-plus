@@ -152,10 +152,11 @@ class TempSingleton {
                 },
                 onDisputeUpdate: async (dispute: DisputeStruct) => {
                     console.log("onDisputeUpdate", dispute);
-                    for (let i = 0; i < dispute.processExits.length; i++) {
-                        let processExit = dispute.processExits[i];
-                        let participant = processExit.participant;
-                        let amount = processExit.amount;
+                    for (let i = 0; i < dispute.exitChannels.length; i++) {
+                        let exitChannel = dispute.exitChannels[i];
+                        let participant = exitChannel.participant;
+                        let amount = exitChannel.amount;
+                        let isPartialExit = exitChannel.isPartialExit;
                         if (participant === this.p2pSigner?.signerAddress) {
                             this.myBalance = Number(amount);
                             console.log(

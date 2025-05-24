@@ -162,33 +162,34 @@ contract TicTacToeStateMachine is AStateMachine {
 
     function _slashParticipant(
         address adr
-    ) internal virtual override returns (bool, ProcessExit memory) {
+    ) internal virtual override returns (bool, ExitChannel memory) {
         return _removeParticipant(adr);
     }
 
     function _removeParticipant(
         address adr
-    ) internal virtual override returns (bool, ProcessExit memory) {
+    ) internal virtual override returns (bool, ExitChannel memory) {
         uint256 length = state.participants.length;
-        ProcessExit memory processExit;
+        ExitChannel memory exitChannel;
         for (uint256 i = 0; i < length; i++) {
             if (state.participants[i] == adr) {
                 uint transferAmount = state.betAmount > state.balances[i] ? state.balances[i] : state.betAmount;
                 state.balances[i] -= transferAmount;
                 state.balances[(i + 1) % 2] += transferAmount;
 
-                processExit.participant = adr;
-                processExit.amount = state.balances[i];
+                exitChannel.participant = adr;
+                exitChannel.amount = state.balances[i];
+                exitChannel.isPartialExit = false;
                 
                 state.participants[i] = state.participants[length - 1];
                 state.participants.pop();
                 state.balances[i] = state.balances[length - 1];
                 state.balances.pop();
-                emit RemovedParticipant(adr, processExit.amount);
-                return (true, processExit);
+                emit RemovedParticipant(adr, exitChannel.amount);
+                return (true, exitChannel);
             }
         }
-        return (false, processExit);
+        return (false, exitChannel);
     }
 
     function _joinChannel(

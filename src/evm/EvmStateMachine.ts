@@ -91,13 +91,13 @@ class EvmStateMachine extends AStateMachine {
         try {
             const result = await this.contractExecuter.executeCall(encodedData);
 
-            // Decode the return values: (bool success, ProcessExit[] exitChannels)
+            // Decode the return values: (bool success, ExitChannel[] exitChannels)
             const hexResult = ethers.hexlify(result.returnValue);
             const [success, exitChannels] =
                 ethers.AbiCoder.defaultAbiCoder().decode(
                     [
                         "bool",
-                        "tuple(address participant, uint256 amount, bytes data)[]"
+                        "tuple(address participant, bool isPartialExit, uint256 amount, bytes data)[]"
                     ],
                     hexResult
                 );
