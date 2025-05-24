@@ -32,18 +32,13 @@ export class SignatureCollectionMap {
         );
     }
 
-    // Return in the same format as before for backward compatibility
-    public get(key: string): SignerAndSignature[] {
-        const innerMap = this.map.get(key);
-        if (!innerMap) return [];
+    public get(key: string): Map<string, SignatureLike> | undefined {
+        return this.map.get(key);
+    }
 
-        // Convert Map entries to array of SignerAndSignature objects
-        return Array.from(innerMap.entries()).map(
-            ([signerAddress, signature]) => ({
-                signerAddress,
-                signature
-            })
-        );
+    public hasSignature(key: string, signerAddress: string): boolean {
+        const innerMap = this.map.get(key);
+        return innerMap ? innerMap.has(signerAddress) : false;
     }
 
     // Get just the signatures for a key
