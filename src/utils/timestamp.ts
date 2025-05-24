@@ -13,9 +13,9 @@ export function subjectiveTimingFlag(
 ): ExecutionFlags {
     const diff = BigInt(nowTs) - BigInt(blockTs);
     // Check if block is too old
-    if (diff > TOLERANCE_PAST) return ExecutionFlags.NOT_ENOUGH_TIME;
+    if (diff > TOLERANCE_PAST) return ExecutionFlags.TIMESTAMP_IN_PAST;
     // Check if block is too far in the future
-    if (diff < -TOLERANCE_FUTURE) return ExecutionFlags.DISPUTE;
+    if (diff < -TOLERANCE_FUTURE) return ExecutionFlags.TIMESTAMP_IN_FUTURE;
     // ok
     return ExecutionFlags.SUCCESS;
 }

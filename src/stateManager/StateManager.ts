@@ -261,20 +261,18 @@ class StateManager {
 
     // Passes the signedBlock through a verification pipeline and returns an execution flag based on the outcome
     public async onSignedBlock(
-        signedBlock: SignedBlockStruct,
-        block?: BlockStruct
+        signedBlock: SignedBlockStruct
     ): Promise<ExecutionFlags> {
         // Default everything to SUCCESS + no AgreementFlag
         let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS;
         let finalAgreementFlag: AgreementFlag | undefined = undefined;
-        const decodedBlock =
-            block ?? EvmUtils.decodeBlock(signedBlock.encodedBlock);
 
         try {
             await this.mutex.lock();
+            const stateSnapshot = await this.createStateSnapshot();
             const result = await this.validationService.validateSignedBlock(
                 signedBlock,
-                decodedBlock
+                stateSnapshot
             );
 
             finalExecutionFlag = result.flag;
