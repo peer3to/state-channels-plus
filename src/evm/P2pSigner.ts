@@ -9,7 +9,6 @@ import {
 } from "ethers";
 
 import {
-    JoinChannelConfirmationStruct,
     JoinChannelStruct,
     SignedBlockStruct,
     SignedJoinChannelStruct,
@@ -22,6 +21,7 @@ import { EvmUtils, Codec, SignatureUtils } from "@/utils";
 
 class P2pSigner implements Signer {
     signer: Signer;
+    signerAddress: AddressLike;
     provider: ethers.Provider | null;
     p2pManager: P2PManager;
 
@@ -35,8 +35,13 @@ class P2pSigner implements Signer {
         this.jc = jc;
         this.signedJc = signedJc;
     }
-    constructor(signer: Signer, p2pManager: P2PManager) {
+    constructor(
+        signer: Signer,
+        signerAddress: AddressLike,
+        p2pManager: P2PManager
+    ) {
         this.signer = signer;
+        this.signerAddress = signerAddress;
         this.provider = signer.provider;
         this.p2pManager = p2pManager;
         this.isLeader = false;
@@ -178,7 +183,7 @@ class P2pSigner implements Signer {
     ) {
         const joinChannelRequest: JoinChannelStruct = {
             channelId,
-            participant: await this.getAddress(),
+            participant: this.signerAddress,
             balance: {
                 amount,
                 data
