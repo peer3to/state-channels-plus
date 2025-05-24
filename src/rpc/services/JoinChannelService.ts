@@ -12,23 +12,16 @@ import Clock from "@/Clock";
 import { getActiveParticipants } from "@/utils/participantUtils";
 import { BytesLike } from "ethers";
 
-type JoinChanenelConfirmation = {
-    signedJoinChannel: SignedJoinChannelStruct;
-    confirmationSignatures: SignatureLike[];
-};
-
 enum ValidationFlag {
     VALID,
     INVALID_SIGNATURE,
     DOUBLE_SIGN,
-    DISCONNECT,
-    ALREADY_IN_CHANNEL
+    DISCONNECT
 }
 
 class JoinChannelService extends ARpcService {
     // **** part of joinChannel logic ****
     joinChannelMap = new SignatureCollectionMap();
-    joinChannelQueue: JoinChanenelConfirmation[] = [];
 
     constructor(mainRpcService: MainRpcService) {
         super(mainRpcService);
@@ -67,12 +60,14 @@ class JoinChannelService extends ARpcService {
                     return;
                 }
 
-                // Initialize the request with original signature
-                this.initializeRequest(
+                // Add requester's signature with timeout
+                this.joinChannelMap.tryInsert(
                     key,
-                    joinChannel,
-                    signedJoinChannel.signature as SignatureLike,
-                    timeRemaining
+                    {
+                        signerAddress: joinChannel.participant.toString(),
+                        signature: signedJoinChannel.signature as SignatureLike
+                    },
+                    { timeoutMs: timeRemaining * 1000 } // Convert to milliseconds
                 );
             }
 
@@ -203,14 +198,6 @@ class JoinChannelService extends ARpcService {
             return ValidationFlag.INVALID_SIGNATURE;
         }
 
-        // Ensure the participant is not already in the channel
-        const activeParticipantsSet = await this.getActiveParticipants(
-            joinChannel.channelId
-        );
-        if (activeParticipantsSet.has(joinChannel.participant.toString())) {
-            return ValidationFlag.ALREADY_IN_CHANNEL;
-        }
-
         return ValidationFlag.VALID;
     }
 
@@ -223,37 +210,18 @@ class JoinChannelService extends ARpcService {
         return await getActiveParticipants(scmContract, channelId);
     }
 
-    private initializeRequest(
-        key: string,
-        joinChannel: JoinChannelStruct,
-        signature: SignatureLike,
-        timeRemaining: number
-    ): void {
-        // Add requester's signature
-        this.joinChannelMap.tryInsert(key, {
-            signerAddress: joinChannel.participant.toString(),
-            signature: signature
-        });
-
-        // Set expiration
-        setTimeout(() => {
-            this.joinChannelMap.delete(key);
-        }, timeRemaining * 1000);
-    }
-
     private async needsStateSnapshotSubmission(
         channelId: BytesLike
     ): Promise<boolean> {
-        const scmContract =
-            this.mainRpcService.p2pManager.stateManager
-                .stateChannelManagerContract;
+        // TODO
+        // right now we are cutting slack and just assume that we need to submit a state snapshot
+        // since that is by far the most common case
 
-        const [snapshotForkCnt, disputeLength] = await Promise.all([
-            scmContract.getSnapshotForkCnt(channelId),
-            scmContract.getDisputeLength(channelId)
-        ]);
-
-        return snapshotForkCnt !== disputeLength;
+        // when we will have a solid storage layer, what needs to be done here is one of two options:
+        // a. the ok option: look at locally sotred latest state snapshot and compare to the one on chain
+        // b. the better option: there is a "onStateSnapshotUpdated" hook (or smimilar name). this should be used to locally store the latest stateSnapshot
+        // that is on chain - this way the comparison will not need to call the chain
+        return true;
     }
 
     /**
