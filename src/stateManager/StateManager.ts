@@ -50,6 +50,7 @@ import ValidationService from "./ValidationService";
 import { Codec } from "@/utils/Codec";
 import { SignatureUtils } from "@/utils/SignatureUtils";
 import * as SetUtils from "@/utils/set";
+import { ExitChannelStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/FraudProofFacet";
 
 let DEBUG_STATE_MANAGER = false;
 class StateManager {
@@ -340,9 +341,10 @@ class StateManager {
         encodedState: string;
         previousStateHash: string;
         successCallback: () => void;
+        exitChannels: ExitChannelStruct[];
     }> {
         const previousStateHash = await this.getEncodedStateKecak256();
-        let { success, successCallback } =
+        let { success, successCallback, exitChannels } =
             await this.stateMachine.stateTransition(transaction);
         const encodedState = await this.stateMachine.getState();
 
@@ -350,7 +352,8 @@ class StateManager {
             success,
             encodedState,
             previousStateHash,
-            successCallback
+            successCallback,
+            exitChannels: exitChannels || []
         };
     }
 
