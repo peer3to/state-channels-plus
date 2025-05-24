@@ -1,5 +1,6 @@
 type TransitionResponse = {
     success: boolean;
+    exitChannels: any[];
     successCallback: () => void;
 };
 abstract class AStateMachine {

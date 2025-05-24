@@ -31,6 +31,23 @@ contract MathStateMachine is AStateMachine {
         return state.number;
     }
 
+    // Game-specific function: player voluntarily leaves the game
+    function leaveGame() public returns (bool) {
+        require(
+            _tx.header.participant == getNextToWrite(),
+            "MathStateMachine: leaveGame only next player can leave"
+        );
+        
+        address leavingPlayer = _tx.header.participant;
+        (bool success, ProcessExit memory exitChannel) = _removeParticipant(leavingPlayer);
+        
+        if (success) {
+            _addExitChannel(exitChannel);
+        }
+        
+        return success;
+    }
+
     function _setState(bytes memory encodedState) internal virtual override {
         state = abi.decode(encodedState, (MathState));
     }
