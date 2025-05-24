@@ -6,11 +6,21 @@ type SignerAndSignature = {
     signature: SignatureLike;
 };
 
+type options = {
+    timeoutMs?: number;
+};
+
 export class SignatureCollectionMap {
     // Replace array with a nested Map: signerAddress -> signature
     private map: Map<string, Map<string, SignatureLike>> = new Map();
+    // Optional timeout tracking
+    private timeouts: Map<string, NodeJS.Timeout> = new Map();
 
-    public tryInsert(key: string, value: SignerAndSignature): void {
+    public tryInsert(
+        key: string,
+        value: SignerAndSignature,
+        options?: options
+    ): void {
         if (!this.map.has(key)) {
             this.map.set(key, new Map());
         }
@@ -19,6 +29,29 @@ export class SignatureCollectionMap {
         const innerMap = this.map.get(key)!;
         if (!innerMap.has(value.signerAddress)) {
             innerMap.set(value.signerAddress, value.signature);
+        }
+        if (options?.timeoutMs) {
+            this.setTimeout(key, options.timeoutMs);
+        }
+    }
+
+    public setTimeout(key: string, timeoutMs: number): void {
+        // Clear existing timeout if any
+        this.clearTimeout(key);
+
+        // Set new timeout
+        const timeoutId = setTimeout(() => {
+            this.delete(key);
+        }, timeoutMs);
+
+        this.timeouts.set(key, timeoutId);
+    }
+
+    private clearTimeout(key: string): void {
+        const existingTimeout = this.timeouts.get(key);
+        if (existingTimeout) {
+            clearTimeout(existingTimeout);
+            this.timeouts.delete(key);
         }
     }
 
@@ -53,10 +86,14 @@ export class SignatureCollectionMap {
     }
 
     public delete(key: string): boolean {
+        this.clearTimeout(key);
         return this.map.delete(key);
     }
 
     public clear(): void {
+        // Clear all timeouts
+        this.timeouts.forEach((timeout) => clearTimeout(timeout));
+        this.timeouts.clear();
         this.map.clear();
     }
 
