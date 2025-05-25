@@ -2,13 +2,17 @@ import { BytesLike, ethers } from "ethers";
 import {
     BlockStruct,
     JoinChannelStruct,
+    ExitChannelBlockStruct,
+    ExitChannelStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import {
     BlockEthersType,
     DisputeEthersType,
     JoinChannelEthersType,
-    TransactionEthersType
+    TransactionEthersType,
+    ExitChannelEthersType,
+    ExitChannelBlockEthersType
 } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 
@@ -16,7 +20,9 @@ type StructType =
     | BlockStruct
     | JoinChannelStruct
     | TransactionStruct
-    | DisputeStruct;
+    | DisputeStruct
+    | ExitChannelBlockStruct
+    | ExitChannelStruct;
 
 export class Codec {
     private static readonly structToEthersType = new Map<string, any>([
@@ -24,12 +30,16 @@ export class Codec {
         ["JoinChannelStruct", JoinChannelEthersType],
         ["TransactionStruct", TransactionEthersType],
         ["DisputeStruct", DisputeEthersType],
+        ["ExitChannelStruct", ExitChannelEthersType],
+        ["ExitChannelBlockStruct", ExitChannelBlockEthersType],
 
         // for convenience when decoding
         ["Block", BlockEthersType],
         ["JoinChannel", JoinChannelEthersType],
         ["Transaction", TransactionEthersType],
-        ["Dispute", DisputeEthersType]
+        ["Dispute", DisputeEthersType],
+        ["ExitChannel", ExitChannelEthersType],
+        ["ExitChannelBlock", ExitChannelBlockEthersType]
     ]);
 
     public static encode(struct: StructType): string {
@@ -94,5 +104,10 @@ export class Codec {
     }
     public static decodeDispute(encoded: BytesLike): DisputeStruct {
         return this.decode(encoded, "Dispute");
+    }
+    public static decodeExitChannelBlock(
+        encoded: BytesLike
+    ): ExitChannelBlockStruct {
+        return this.decode(encoded, "ExitChannelBlock");
     }
 }

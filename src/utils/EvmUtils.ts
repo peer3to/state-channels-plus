@@ -5,6 +5,7 @@ import {
     SignedBlockStruct,
     SignedDisputeStruct,
     SignedJoinChannelStruct,
+    ExitChannelBlockStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 
@@ -83,5 +84,14 @@ export class EvmUtils {
     //empty arrays '[]' can exist but not empty objects {} - Etheres is really bad for this with the Result object
     public static ethersResultToObjectRecursive(result: ethers.Result) {
         return Codec.ethersResultToObjectRecursive(result);
+    }
+
+    public static encodeExitChannelBlock(ecb: ExitChannelBlockStruct): string {
+        return Codec.encode(ecb);
+    }
+    public static decodeExitChannelBlock(
+        ecbEncoded: BytesLike
+    ): ExitChannelBlockStruct {
+        return Codec.decodeExitChannelBlock(ecbEncoded);
     }
 }

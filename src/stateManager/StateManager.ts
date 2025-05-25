@@ -5,6 +5,7 @@ import {
     StateSnapshotStruct,
     ForkMilestoneProofStruct,
     ExitChannelBlockStruct,
+    ExitChannelStruct,
     DisputeProofStruct,
     SignedDisputeStruct
 } from "@typechain-types/contracts/V1/DataTypes";
@@ -354,11 +355,29 @@ class StateManager {
         // if this is an exit channel transaction, we need to store the exit channel block hash
         // and to also add the exit channel block hash to the state snapshot
 
+        const forkCnt = transaction.header.forkCnt;
+        const blockHeight = transaction.header.transactionCnt;
+        const exitChannels: ExitChannelStruct[] = [];
+        const previousBlockHash =
+            this.stateSnapshotStorage.getLatestExitChannelBlockHash();
+        const exitChannelBlock: ExitChannelBlockStruct = {
+            exitChannels,
+            previousBlockHash: previousBlockHash as BytesLike
+        };
+        const exitChannelBlockHash =
+            EvmUtils.encodeExitChannelBlock(exitChannelBlock);
+        //TODO: same here, check that these numebr typings are ok or replace by a bigNumberish
+        this.stateSnapshotStorage.storeExitChannelBlockHash(
+            Number(forkCnt),
+            Number(blockHeight),
+            exitChannelBlockHash
+        );
+
         // now we can create a new stateSnapshot
         const stateSnapshot: StateSnapshotStruct = {
             stateMachineStateHash: encodedState,
             participants: await this.stateMachine.getParticipants(),
-            forkCnt: transaction.header.forkCnt,
+            forkCnt: forkCnt,
             latestJoinChannelBlockHash:
                 this.stateSnapshotStorage.getLatestJoinChannelBlockHash() as BytesLike,
             latestExitChannelBlockHash:
@@ -370,11 +389,7 @@ class StateManager {
         // Store the state snapshot in the storage
         //TODO: check that these storage typings are the best ones to use here
         // needs to check if its ok to store a number or a BigNumberish
-        this.stateSnapshotStorage.store(
-            Number(transaction.header.transactionCnt),
-            stateSnapshot
-        );
-        // store the exit channel block hash if this is an exit channel transaction
+        this.stateSnapshotStorage.store(Number(blockHeight), stateSnapshot);
 
         return {
             success,
