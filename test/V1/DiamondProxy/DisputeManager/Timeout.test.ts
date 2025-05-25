@@ -1,11 +1,9 @@
 import { ethers } from "hardhat";
 import {
-    createJoinChannelTestObject,
     deployMathChannelProxyFixture,
-    getMathDeploymentTransaction,
-    getMathP2pEventHooks
-} from "@test/utils/testHelpers";
-import { EvmUtils, BarrierLocal } from "@/utils";
+    getMathDeploymentTransaction
+} from "@test/test_utils/testHelpers";
+import { BarrierLocal } from "@/utils";
 import { P2pInstance, EvmStateMachine } from "@/evm";
 import {
     MathStateChannelManagerProxy,

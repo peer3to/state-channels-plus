@@ -9,7 +9,7 @@ import "./MathStateMachine.sol";
 // Uncomment this line to use console.log
 // import "hardhat/console.sol";
 
-abstract contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
+contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
     constructor(
         address aStateMachineAddress,
         address disputeManagerFacet,
