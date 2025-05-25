@@ -68,6 +68,7 @@ class StateManager {
     self = DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
     isDisposed: boolean = false;
     validationService: ValidationService;
+    stateSnapshotStorage: StateSnapshotStorage;
     // Store latest dispute data
     private latestDisputeData: {
         dispute: DisputeStruct;
@@ -117,6 +118,7 @@ class StateManager {
             this.signerAddress,
             this.onSignedBlock.bind(this)
         );
+        this.stateSnapshotStorage = new StateSnapshotStorage();
     }
     //Mark resources for garbage collection
     public async dispose() {
@@ -336,6 +338,7 @@ class StateManager {
     }
 
     //Aplies a transaction to the state machine and returns the encoded state with a success callback
+    //Also stores the state snapshot and any exit channels in the storage
     public async applyTransaction(transaction: TransactionStruct): Promise<{
         success: boolean;
         encodedState: string;
@@ -346,6 +349,36 @@ class StateManager {
         let { success, successCallback } =
             await this.stateMachine.stateTransition(transaction);
         const encodedState = await this.stateMachine.getState();
+
+        const forkCnt = transaction.header.forkCnt;
+        const height = transaction.header.transactionCnt;
+
+        //TODO: is the join/exit channel info stored in the transactionBody's data variable ?
+        // if this is an exit channel transaction, we need to store the exit channel block hash
+        // and to also add the exit channel block hash to the state snapshot
+
+        // now we can create a new stateSnapshot
+        const stateSnapshot: StateSnapshotStruct = {
+            stateMachineStateHash: encodedState,
+            participants: await this.stateMachine.getParticipants(),
+            forkCnt: forkCnt,
+            latestJoinChannelBlockHash:
+                this.stateSnapshotStorage.getLatestJoinChannelBlockHash() as BytesLike,
+            latestExitChannelBlockHash:
+                this.stateSnapshotStorage.getLatestExitChannelBlockHash() as BytesLike,
+            totalDeposits: this.stateSnapshotStorage.getTotalDeposits(),
+            totalWithdrawals: this.stateSnapshotStorage.getTotalWithdrawals()
+        };
+
+        // Store the state snapshot in the storage
+        //TODO: check that these storage typings are the best ones to use here
+        // needs to check if its ok to store a number or a BigNumberish
+        this.stateSnapshotStorage.store(
+            Number(forkCnt),
+            Number(height),
+            stateSnapshot
+        );
+        // store the exit channel block hash if this is an exit channel transaction
 
         return {
             success,

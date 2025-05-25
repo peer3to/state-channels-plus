@@ -1,4 +1,11 @@
-import { StateSnapshotStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { EvmUtils } from "@/utils";
+import { BigNumberish, BytesLike, toBeHex } from "ethers";
+import {
+    JoinChannelBlockStruct,
+    StateSnapshotStruct,
+    BalanceStruct
+} from "@typechain-types/contracts/V1/DataTypes";
+import { EVM } from "@ethereumjs/evm";
 
 /**
  * StateSnapshotStorage provides persistent storage for state snapshots
@@ -7,15 +14,36 @@ import { StateSnapshotStruct } from "@typechain-types/contracts/V1/DataTypes";
 export default class StateSnapshotStorage {
     // map [fork count, block height] => struct
     // we make the key a string to avoid double mapping
-    private stateSnapshotStructsMap: Map<string, StateSnapshotStruct> =
-        new Map();
-    private joinChannelBlockHashesMap: Map<string, string> = new Map();
-    private exitChannelBlockHashesMap: Map<string, string> = new Map();
+    private stateSnapshotStructsMap: Map<string, StateSnapshotStruct>;
+
+    //TODO; technically speaking all blockStructs have the hash of the previous one inside
+    // so we could store only the latest one
+    // but then if we want to fetch a specific block hash, we would need to traverse the chain
+    // and that would be inefficient, but at the same time we are not supposed to
+    // have a lot of join/exit channel blocks
+    private joinChannelBlockHashesMap: Map<string, BytesLike>;
+    private latestJoinChannelBlockHash: BytesLike | undefined;
+    private exitChannelBlockHashesMap: Map<string, BytesLike>;
+    private latestExitChannelBlockHash: BytesLike | undefined;
+
+    private totalDeposits: BalanceStruct;
+    private totalWithdrawals: BalanceStruct;
 
     constructor() {
         this.stateSnapshotStructsMap = new Map();
         this.joinChannelBlockHashesMap = new Map();
         this.exitChannelBlockHashesMap = new Map();
+        this.totalDeposits = {
+            amount: BigInt(0),
+            data: "0x"
+        };
+        this.totalWithdrawals = {
+            amount: BigInt(0),
+            data: "0x"
+        };
+        this.latestJoinChannelBlockHash = undefined;
+        this.latestExitChannelBlockHash = undefined;
+        console.log("StateSnapshotStorage initialized");
     }
 
     // State snapshot management methods
@@ -66,6 +94,14 @@ export default class StateSnapshotStorage {
     ) {
         const key = this.makeKey(forkCnt, blockHeight);
         this.joinChannelBlockHashesMap.set(key, blockHash);
+        this.latestJoinChannelBlockHash = blockHash;
+
+        // Update total deposits
+        const joinChannelBlock = EvmUtils.decodeJoinChannelBlock(blockHash);
+        if (joinChannelBlock && joinChannelBlock.joinChannels.length > 0) {
+            this.addToTotalDeposits(joinChannelBlock.joinChannels[0].balance);
+        }
+
         console.log(
             `Stored join channel block hash for fork ${forkCnt}, height ${blockHeight}`
         );
@@ -77,9 +113,13 @@ export default class StateSnapshotStorage {
     getJoinChannelBlockHash(
         forkCnt: number,
         blockHeight: number
-    ): string | undefined {
+    ): BytesLike | undefined {
         const key = this.makeKey(forkCnt, blockHeight);
         return this.joinChannelBlockHashesMap.get(key);
+    }
+
+    getLatestJoinChannelBlockHash(): BytesLike | undefined {
+        return this.latestJoinChannelBlockHash;
     }
 
     /**
@@ -92,6 +132,7 @@ export default class StateSnapshotStorage {
     ) {
         const key = this.makeKey(forkCnt, blockHeight);
         this.exitChannelBlockHashesMap.set(key, blockHash);
+        this.latestExitChannelBlockHash = blockHash;
         console.log(
             `Stored exit channel block hash for fork ${forkCnt}, height ${blockHeight}`
         );
@@ -103,9 +144,48 @@ export default class StateSnapshotStorage {
     getExitChannelBlockHash(
         forkCnt: number,
         blockHeight: number
-    ): string | undefined {
+    ): BytesLike | undefined {
         const key = this.makeKey(forkCnt, blockHeight);
         return this.exitChannelBlockHashesMap.get(key);
+    }
+
+    getLatestExitChannelBlockHash(): BytesLike | undefined {
+        return this.latestExitChannelBlockHash;
+    }
+
+    // Total deposits and withdrawals management methods
+
+    /**
+     * Add to the total deposits
+     * Doesn't handle data yet, just the amount
+     */
+    private addToTotalDeposits(balance: BalanceStruct) {
+        //TODO: create a method to add two balances together
+        this.totalDeposits.amount += toBeHex(balance.amount);
+        console.log(`Total deposits updated: ${this.totalDeposits}`);
+    }
+
+    /**
+     * Get the total deposits
+     */
+    getTotalDeposits(): BalanceStruct {
+        return this.totalDeposits;
+    }
+
+    /**
+     * Add to the total withdrawals
+     * Doesnt handle data yet, just the amount
+     */
+    addToTotalWithdrawals(balance: BalanceStruct) {
+        this.totalWithdrawals.amount += toBeHex(balance.amount);
+        console.log(`Total withdrawals updated: ${this.totalWithdrawals}`);
+    }
+
+    /**
+     * Get the total withdrawals
+     */
+    getTotalWithdrawals(): BalanceStruct {
+        return this.totalWithdrawals;
     }
 
     // Helper methods
