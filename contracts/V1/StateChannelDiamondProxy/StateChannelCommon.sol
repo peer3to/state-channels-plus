@@ -153,7 +153,7 @@ contract StateChannelCommon is
         //Use snapshot as genesis if NOT recursive dispute && on-chain snapshot is from the same fork
         return dispute.previousRecursiveDisputeIndex == type(uint).max && stateSnapshot.forkCnt == dispute.disputeIndex;
     }
-    
+
     function _isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) internal view returns (bool) {
         //check dispute commits to disputeData
         if(dispute.disputeAuditingDataHash != keccak256(abi.encode(disputeAuditingData))) {
@@ -206,9 +206,9 @@ contract StateChannelCommon is
         }
         return previousJoinChannelBlockHash == disputeAuditingData.outputStateSnapshot.latestExitChannelBlockHash;
 
-    } 
+    }
 
-     // Doesn't do any checks and just applies all slashes, removals and joins to a specific stateMachineState and generates the outputStateMachineState - similar logic to playTransaction in the typescript code - this is done to help the backer generate a correct output state while forging the dispute
+    // Doesn't do any checks and just applies all slashes, removals and joins to a specific stateMachineState and generates the outputStateMachineState - similar logic to playTransaction in the typescript code - this is done to help the backer generate a correct output state while forging the dispute
     function generateDisputeOutputState(
         bytes memory encodedStateMachineState,
         Proof[] memory fraudProofs,
@@ -218,59 +218,166 @@ contract StateChannelCommon is
         address timeoutRemoval,
         JoinChannelBlock[] memory joinChannelBlocks,
         StateSnapshot memory latestStateSnapshot
-    ) public returns (bytes memory encodedModifiedState, ExitChannelBlock memory exitBlock, Balance memory totalDeposits, Balance memory totalWithdrawals, address[] memory slashParticipants) {
-        ExitChannel[] memory exitChannels;
+    )
+        public
+        returns (
+            bytes memory encodedModifiedState,
+            ExitChannelBlock memory exitBlock,
+            Balance memory totalDeposits,
+            Balance memory totalWithdrawals,
+            address[] memory slashParticipants
+        )
+    {
         totalDeposits = latestStateSnapshot.totalDeposits;
         totalWithdrawals = latestStateSnapshot.totalWithdrawals;
-        // *************** Apply joins ***************
-        for(uint i = 0; i < joinChannelBlocks.length; i++) {
+
+        // Apply joins
+        encodedModifiedState = _applyJoins(
+            encodedStateMachineState,
+            joinChannelBlocks,
+            totalDeposits
+        );
+
+        // Apply slashes
+        ExitChannel[] memory slashExitChannels;
+        (
+            encodedModifiedState,
+            slashExitChannels,
+            slashParticipants
+        ) = _applySlashes(
+            encodedModifiedState,
+            fraudProofs,
+            poofContext,
+            onChainSlashes
+        );
+
+        // Apply removals
+        ExitChannel[] memory removalExitChannels = _applyRemovals(
+            encodedModifiedState,
+            selfRemoval,
+            timeoutRemoval,
+            slashParticipants.length
+        );
+
+        // Combine exit channels and calculate totals
+        ExitChannel[] memory allExitChannels = StateChannelUtilLibrary
+            .concatExitChannelArrays(slashExitChannels, removalExitChannels);
+        totalWithdrawals = _calculateTotalWithdrawals(
+            totalWithdrawals,
+            allExitChannels
+        );
+
+        exitBlock = _formExitChannelBlock(
+            latestStateSnapshot.latestExitChannelBlockHash,
+            allExitChannels
+        );
+
+        return (
+            encodedModifiedState,
+            exitBlock,
+            totalDeposits,
+            totalWithdrawals,
+            slashParticipants
+        );
+    }
+
+    function _applyJoins(
+        bytes memory encodedStateMachineState,
+        JoinChannelBlock[] memory joinChannelBlocks,
+        Balance memory totalDeposits
+    ) internal returns (bytes memory encodedModifiedState) {
+        encodedModifiedState = encodedStateMachineState;
+        for (uint i = 0; i < joinChannelBlocks.length; i++) {
             JoinChannelBlock memory joinChannelBlock = joinChannelBlocks[i];
-            // apply the joins to the state machine
-            encodedModifiedState = applyJoinChannelToStateMachine(encodedStateMachineState, joinChannelBlock.joinChannels);
-            for(uint j = 0; j < joinChannelBlock.joinChannels.length; j++) {
+            encodedModifiedState = applyJoinChannelToStateMachine(
+                encodedModifiedState,
+                joinChannelBlock.joinChannels
+            );
+            for (uint j = 0; j < joinChannelBlock.joinChannels.length; j++) {
                 totalDeposits = stateMachineImplementation.addBalance(
                     totalDeposits,
                     joinChannelBlock.joinChannels[j].balance
                 );
             }
         }
+    }
 
-        // *************** Apply slashes ***************
-        //if contains duplicates or not participants SHOULD fail applying to the stateMachine, so no need for aditional checks
-        address[] memory slashes = StateChannelUtilLibrary.concatAddressArrays(_verifyFraudProofs(fraudProofs,poofContext), onChainSlashes);
-        // apply the slashes to the state machine
-    
-        (encodedModifiedState, exitChannels) = _applySlashesToStateMachine(encodedStateMachineState, slashes);
+    function _applySlashes(
+        bytes memory encodedStateMachineState,
+        Proof[] memory fraudProofs,
+        FraudProofVerificationContext memory poofContext,
+        address[] memory onChainSlashes
+    )
+        internal
+        returns (
+            bytes memory encodedModifiedState,
+            ExitChannel[] memory exitChannels,
+            address[] memory slashes
+        )
+    {
+        slashes = StateChannelUtilLibrary.concatAddressArrays(
+            _verifyFraudProofs(fraudProofs, poofContext),
+            onChainSlashes
+        );
+        (encodedModifiedState, exitChannels) = _applySlashesToStateMachine(
+            encodedStateMachineState,
+            slashes
+        );
+    }
 
-        // *************** Apply removals ***************
+    function _applyRemovals(
+        bytes memory encodedModifiedState,
+        address selfRemoval,
+        address timeoutRemoval,
+        uint slashesLength
+    ) internal returns (ExitChannel[] memory exitChannels) {
         ExitChannel[] memory selfExitChannel;
-        if(selfRemoval != address(0)){
-            // apply the removals to the state machine
-            address[] memory array = new address[](1);
-            array[0] = selfRemoval;    
-            (encodedModifiedState, selfExitChannel) = _removeParticipantsFromStateMachine(encodedModifiedState, array);
-            
-        }
         ExitChannel[] memory timeoutExitChannel;
-        if(timeoutRemoval != address(0) && slashes.length == 0) {
-            // apply the removals to the state machine
-            address[] memory array = new address[](1);
-            array[0] = timeoutRemoval;    
-            (encodedModifiedState, timeoutExitChannel) = _removeParticipantsFromStateMachine(encodedModifiedState, array);
 
-        exitChannels = StateChannelUtilLibrary.concatExitChannelArrays(selfExitChannel, timeoutExitChannel);
-        }else{
-            exitChannels = StateChannelUtilLibrary.concatExitChannelArrays(exitChannels,selfExitChannel);
+        if (selfRemoval != address(0)) {
+            address[] memory array = new address[](1);
+            array[0] = selfRemoval;
+            (
+                encodedModifiedState,
+                selfExitChannel
+            ) = _removeParticipantsFromStateMachine(
+                encodedModifiedState,
+                array
+            );
         }
-        for(uint i = 0; i < exitChannels.length; i++) {
+
+        if (timeoutRemoval != address(0) && slashesLength == 0) {
+            address[] memory array = new address[](1);
+            array[0] = timeoutRemoval;
+            (
+                encodedModifiedState,
+                timeoutExitChannel
+            ) = _removeParticipantsFromStateMachine(
+                encodedModifiedState,
+                array
+            );
+            exitChannels = StateChannelUtilLibrary.concatExitChannelArrays(
+                selfExitChannel,
+                timeoutExitChannel
+            );
+        } else {
+            exitChannels = selfExitChannel;
+        }
+    }
+
+    function _calculateTotalWithdrawals(
+        Balance memory totalWithdrawals,
+        ExitChannel[] memory exitChannels
+    ) internal view returns (Balance memory) {
+        for (uint i = 0; i < exitChannels.length; i++) {
             totalWithdrawals = stateMachineImplementation.addBalance(
                 totalWithdrawals,
                 exitChannels[i].balance
             );
         }
-        return (encodedModifiedState, _formExitChannelBlock(latestStateSnapshot.latestExitChannelBlockHash, exitChannels), totalDeposits, totalWithdrawals,slashes);
+        return totalWithdrawals;
     }
-    
+
     function _verifyFraudProofs(
         Proof[] memory fraudProofs,
         FraudProofVerificationContext memory poofContext
@@ -321,9 +428,9 @@ contract StateChannelCommon is
         ExitChannel[] memory exitChannels
     ) internal pure returns (ExitChannelBlock memory _block) {
         return ExitChannelBlock({
-            exitChannels: exitChannels,
-            previousBlockHash: previousBlockHash
-        });
+                exitChannels: exitChannels,
+                previousBlockHash: previousBlockHash
+            });
     }
 
     function applyJoinChannelToStateMachine(
