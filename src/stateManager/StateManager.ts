@@ -350,9 +350,6 @@ class StateManager {
             await this.stateMachine.stateTransition(transaction);
         const encodedState = await this.stateMachine.getState();
 
-        const forkCnt = transaction.header.forkCnt;
-        const height = transaction.header.transactionCnt;
-
         //TODO: is the join/exit channel info stored in the transactionBody's data variable ?
         // if this is an exit channel transaction, we need to store the exit channel block hash
         // and to also add the exit channel block hash to the state snapshot
@@ -361,7 +358,7 @@ class StateManager {
         const stateSnapshot: StateSnapshotStruct = {
             stateMachineStateHash: encodedState,
             participants: await this.stateMachine.getParticipants(),
-            forkCnt: forkCnt,
+            forkCnt: transaction.header.forkCnt,
             latestJoinChannelBlockHash:
                 this.stateSnapshotStorage.getLatestJoinChannelBlockHash() as BytesLike,
             latestExitChannelBlockHash:
@@ -374,8 +371,7 @@ class StateManager {
         //TODO: check that these storage typings are the best ones to use here
         // needs to check if its ok to store a number or a BigNumberish
         this.stateSnapshotStorage.store(
-            Number(forkCnt),
-            Number(height),
+            Number(transaction.header.transactionCnt),
             stateSnapshot
         );
         // store the exit channel block hash if this is an exit channel transaction

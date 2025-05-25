@@ -51,16 +51,12 @@ export default class StateSnapshotStorage {
     /**
      * Store a state snapshot
      */
-    store(
-        forkCnt: number, //might get that from the snapshot itself later on
-        blockHeight: number,
-        snapshot: StateSnapshotStruct
-    ) {
-        const key = this.makeKey(forkCnt, blockHeight);
+    store(blockHeight: number, snapshot: StateSnapshotStruct) {
+        const key = this.makeKey(Number(snapshot.forkCnt), blockHeight);
         this.stateSnapshotStructsMap.set(key, snapshot);
 
         console.log(
-            `Stored snapshot for fork ${forkCnt}, height ${blockHeight}`
+            `Stored snapshot for fork ${snapshot.forkCnt}, height ${blockHeight}`
         );
     }
 
