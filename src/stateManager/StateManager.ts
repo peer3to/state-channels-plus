@@ -6,7 +6,8 @@ import {
     ForkMilestoneProofStruct,
     ExitChannelBlockStruct,
     DisputeProofStruct,
-    SignedDisputeStruct
+    SignedDisputeStruct,
+    ExitChannelStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import {
     AddressLike,
@@ -49,8 +50,6 @@ import {
 import ValidationService from "./ValidationService";
 import { Codec } from "@/utils/Codec";
 import { SignatureUtils } from "@/utils/SignatureUtils";
-import * as SetUtils from "@/utils/set";
-import { ExitChannelStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/FraudProofFacet";
 
 let DEBUG_STATE_MANAGER = false;
 class StateManager {
