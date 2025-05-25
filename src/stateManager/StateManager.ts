@@ -390,6 +390,10 @@ class StateManager {
 
         const forkCnt = transaction.header.forkCnt;
         const blockHeight = transaction.header.transactionCnt;
+
+        //we first handle the exit channels
+        //TODO: these will come from the state machine, udpate the code once the
+        // state machine code is updated on the dispute branch
         const exitChannels: ExitChannelStruct[] = [];
         const previousBlockHash =
             this.stateSnapshotStorage.getLatestExitChannelBlockHash();
