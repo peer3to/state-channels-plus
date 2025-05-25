@@ -6,7 +6,8 @@ import {
     SignedDisputeStruct,
     SignedJoinChannelStruct,
     ExitChannelBlockStruct,
-    TransactionStruct
+    TransactionStruct,
+    JoinChannelBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 
 import { SignatureUtils } from "./SignatureUtils";
@@ -93,5 +94,14 @@ export class EvmUtils {
         ecbEncoded: BytesLike
     ): ExitChannelBlockStruct {
         return Codec.decodeExitChannelBlock(ecbEncoded);
+    }
+
+    public static encodeJoinChannelBlock(jcb: JoinChannelBlockStruct): string {
+        return Codec.encode(jcb);
+    }
+    public static decodeJoinChannelBlock(
+        jcbEncoded: BytesLike
+    ): JoinChannelBlockStruct {
+        return Codec.decodeJoinChannelBlock(jcbEncoded);
     }
 }

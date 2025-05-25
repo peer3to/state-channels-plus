@@ -38,6 +38,10 @@ export const JoinChannelEthersType = `tuple(
               uint deadlineTimestamp,
               bytes data)`;
 
+export const JoinChannelBlockEthersType = `tuple(
+              bytes32 previousBlockHash,
+              JoinChannel[] joinChannels)`;
+
 export const SignedJoinChannelEthersType = `tuple(
                 bytes encodedJoinChannel,
                 bytes signature)`;

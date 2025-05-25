@@ -3,6 +3,7 @@ import {
     SignedBlockStruct,
     BlockStruct,
     StateSnapshotStruct,
+    JoinChannelBlockStruct,
     ForkMilestoneProofStruct,
     ExitChannelBlockStruct,
     ExitChannelStruct,
@@ -336,6 +337,19 @@ class StateManager {
                 finalExecutionFlag
             );
         }
+    }
+
+    //Triggered by the On-chain Event Listener when a joinChannelEvent is emitted on-chain
+    public onJoinChannel(joinChannelBlock: JoinChannelBlockStruct) {
+        const forkCnt = this.getForkCnt();
+        const blockHeight = this.getNextBlockHeight();
+        const blockHash = EvmUtils.encodeJoinChannelBlock(joinChannelBlock);
+        this.stateSnapshotStorage.storeJoinChannelBlockHash(
+            forkCnt,
+            blockHeight,
+            blockHash
+        );
+        this.p2pEventHooks.onJoinChannel?.(joinChannelBlock);
     }
 
     //Aplies a transaction to the state machine and returns the encoded state with a success callback
