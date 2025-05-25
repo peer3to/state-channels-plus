@@ -38,6 +38,11 @@ abstract contract AStateMachine {
     // return the next participant which should produce a transaction based on the current state (eg. in the game of poker, the next player to play a move)
     function getNextToWrite() public view virtual returns (address);
 
+    // return the current exit channels
+    function getExitChannels() public view returns (ExitChannel[] memory) {
+        return _exitChannels;
+    }
+
     // return the balance1 + balance2
     function addBalance(Balance memory balance1, Balance memory balance2) public pure virtual returns (Balance memory sum);
 
