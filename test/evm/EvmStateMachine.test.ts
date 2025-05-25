@@ -5,7 +5,7 @@ import * as sinon from "sinon";
 
 import { ContractExecuter, EvmStateMachine } from "@/evm";
 
-import { getMathDeploymentTransaction } from "@test/utils/testHelpers";
+import { getMathDeploymentTransaction } from "@test/test_utils/testHelpers";
 import { TransactionStruct } from "@typechain-types/contracts/V1/DataTypes";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 

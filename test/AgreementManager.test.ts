@@ -10,6 +10,7 @@ import sinon from "sinon";
 import AgreementManager from "@/agreementManager";
 import { AgreementFlag } from "@/types";
 import { SignatureLike, Signer } from "ethers";
+import { Codec } from "@/utils";
 
 describe("AgreementManager", () => {
     const commonEncodedState = ethers.hexlify(ethers.randomBytes(32));
@@ -299,7 +300,7 @@ describe("AgreementManager", () => {
                                 .participant as string
                         })
                     }),
-                    previousStateHash: ethers.hexlify(ethers.randomBytes(32))
+                    previousBlockHash: ethers.hexlify(ethers.randomBytes(32))
                 });
                 const differentSignedBlock = await EvmUtils.signBlock(
                     differentContentBlock,
@@ -376,7 +377,7 @@ describe("AgreementManager", () => {
         it("should throw error when encoded block doesn't match existing block", () => {
             const differentBlock = factory.block({
                 transaction: block.transaction,
-                previousStateHash: ethers.hexlify(ethers.randomBytes(32))
+                previousBlockHash: ethers.hexlify(ethers.randomBytes(32))
             });
 
             expect(() =>
@@ -652,7 +653,7 @@ describe("AgreementManager", () => {
             // Create a different block with the same coordinates
             const differentBlock = factory.block({
                 transaction: block.transaction,
-                previousStateHash: ethers.hexlify(ethers.randomBytes(32))
+                previousBlockHash: ethers.hexlify(ethers.randomBytes(32))
             });
 
             expect(localManager.didEveryoneSignBlock(differentBlock)).to.be
@@ -757,7 +758,7 @@ describe("AgreementManager", () => {
         it("should throw error when block exists but with different content", () => {
             const differentBlock = factory.block({
                 transaction: block.transaction,
-                previousStateHash: ethers.hexlify(ethers.randomBytes(32)) // Different content
+                previousBlockHash: ethers.hexlify(ethers.randomBytes(32)) // Different content
             });
 
             expect(() =>
@@ -802,7 +803,7 @@ describe("AgreementManager", () => {
         it("should return false when block exists but with different content", () => {
             const differentBlock = factory.block({
                 transaction: block.transaction,
-                previousStateHash: ethers.hexlify(ethers.randomBytes(32)) // Different content
+                previousBlockHash: ethers.hexlify(ethers.randomBytes(32)) // Different content
             });
 
             expect(
@@ -880,7 +881,7 @@ describe("AgreementManager", () => {
                         participant: address1
                     })
                 }),
-                previousStateHash: ethers.keccak256(commonGenesisState)
+                previousBlockHash: ethers.keccak256(commonGenesisState)
             });
 
             const block1 = factory.block({
@@ -890,7 +891,7 @@ describe("AgreementManager", () => {
                         participant: address1
                     })
                 }),
-                previousStateHash: block0.stateHash
+                previousBlockHash: Codec.encode(block0)
             });
 
             const block2 = factory.block({
@@ -900,7 +901,7 @@ describe("AgreementManager", () => {
                         participant: address1
                     })
                 }),
-                previousStateHash: block1.stateHash
+                previousBlockHash: Codec.encode(block1)
             });
 
             blocks = [block0, block1, block2];
@@ -1110,7 +1111,7 @@ describe("AgreementManager", () => {
                         participant: addresses[0]
                     })
                 }),
-                previousStateHash: ethers.keccak256(commonGenesisState)
+                previousBlockHash: ethers.keccak256(commonGenesisState)
             });
 
             const block1 = factory.block({
@@ -1120,7 +1121,7 @@ describe("AgreementManager", () => {
                         participant: addresses[0]
                     })
                 }),
-                previousStateHash: block0.stateHash
+                previousBlockHash: Codec.encode(block0)
             });
 
             const block2 = factory.block({
@@ -1130,7 +1131,7 @@ describe("AgreementManager", () => {
                         participant: addresses[0]
                     })
                 }),
-                previousStateHash: block1.stateHash
+                previousBlockHash: Codec.encode(block1)
             });
 
             blocks = [block0, block1, block2];
@@ -1270,8 +1271,8 @@ describe("AgreementManager", () => {
                         participant: address1
                     })
                 }),
-                previousStateHash: ethers.keccak256(commonGenesisState),
-                stateHash: ethers.hexlify(ethers.randomBytes(32)) // Different state hash
+                previousBlockHash: ethers.keccak256(commonGenesisState),
+                stateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)) // Different state hash
             });
 
             const secondSignedBlock = await EvmUtils.signBlock(
@@ -1298,7 +1299,7 @@ describe("AgreementManager", () => {
                         participant: address1
                     })
                 }),
-                previousStateHash: ethers.hexlify(ethers.randomBytes(32)) // Wrong hash
+                previousBlockHash: ethers.hexlify(ethers.randomBytes(32)) // Wrong hash
             });
 
             const signedWrongHashBlock = await EvmUtils.signBlock(
@@ -1322,7 +1323,7 @@ describe("AgreementManager", () => {
                         participant: address1
                     })
                 }),
-                previousStateHash: ethers.hexlify(ethers.randomBytes(32))
+                previousBlockHash: ethers.hexlify(ethers.randomBytes(32))
             });
 
             const signedFutureBlock = await EvmUtils.signBlock(
@@ -1348,7 +1349,7 @@ describe("AgreementManager", () => {
                         participant: address1
                     })
                 }),
-                previousStateHash: block.stateHash // Correct hash
+                previousBlockHash: Codec.encode(block) // Correct hash
             });
 
             const signedBlock1 = await EvmUtils.signBlock(block1, signer1);
@@ -1375,7 +1376,7 @@ describe("AgreementManager", () => {
                         participant: address1
                     })
                 }),
-                previousStateHash: ethers.keccak256(commonGenesisState)
+                previousBlockHash: ethers.keccak256(commonGenesisState)
             });
 
             const signedBlockWithCorrectHash = await EvmUtils.signBlock(
@@ -1405,7 +1406,7 @@ describe("AgreementManager", () => {
                         participant: address1
                     })
                 }),
-                previousStateHash: ethers.keccak256(
+                previousBlockHash: ethers.keccak256(
                     manager.forks.forkAt(0)?.forkGenesisStateEncoded ?? ""
                 )
             });

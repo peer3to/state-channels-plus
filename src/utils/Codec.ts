@@ -18,6 +18,12 @@ type StructType =
     | TransactionStruct
     | DisputeStruct;
 
+export type StructTypeName =
+    | "Block"
+    | "JoinChannel"
+    | "Transaction"
+    | "Dispute";
+
 export class Codec {
     private static readonly structToEthersType = new Map<string, any>([
         ["BlockStruct", BlockEthersType],
@@ -32,11 +38,51 @@ export class Codec {
         ["Dispute", DisputeEthersType]
     ]);
 
-    public static encode(struct: StructType): string {
-        const structName = struct.constructor.name;
-        const ethersType = this.structToEthersType.get(structName);
+    public static encode(
+        struct: StructType,
+        explicitType?: StructTypeName
+    ): string {
+        let ethersType: string | undefined;
+
+        // If explicit type is provided, use it directly
+        if (explicitType) {
+            ethersType = this.structToEthersType.get(explicitType);
+        } else {
+            // Try constructor name first
+            const structName = struct.constructor.name;
+            ethersType = this.structToEthersType.get(structName);
+
+            // Simple fallback for plain objects - try common types
+            if (!ethersType && structName === "Object") {
+                // Try JoinChannel first (most common)
+                if (
+                    "channelId" in struct &&
+                    "participant" in struct &&
+                    "balance" in struct
+                ) {
+                    ethersType = JoinChannelEthersType;
+                }
+                // Try Block
+                else if ("transaction" in struct && "stateHash" in struct) {
+                    ethersType = BlockEthersType;
+                }
+                // Try Transaction
+                else if ("header" in struct && "body" in struct) {
+                    ethersType = TransactionEthersType;
+                }
+                // Try Dispute
+                else if ("disputeIndex" in struct && "channelId" in struct) {
+                    ethersType = DisputeEthersType;
+                }
+            }
+        }
+
         if (!ethersType) {
-            throw new Error(`No ethers type mapping found for ${structName}`);
+            const availableFields = Object.keys(struct || {}).join(", ");
+            const structName = struct.constructor.name;
+            throw new Error(
+                `Cannot encode struct with constructor name "${structName}". Available fields: [${availableFields}]. Consider using explicit type: Codec.encode(struct, "JoinChannel")`
+            );
         }
 
         return ethers.AbiCoder.defaultAbiCoder().encode([ethersType], [struct]);
