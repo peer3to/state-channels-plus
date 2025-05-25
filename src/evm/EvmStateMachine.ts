@@ -90,12 +90,34 @@ class EvmStateMachine extends AStateMachine {
 
         try {
             const result = await this.contractExecuter.executeCall(encodedData);
+
+            // Decode the return values: (bool success, ExitChannel[] exitChannels)
+            const hexResult = ethers.hexlify(result.returnValue);
+            const [success, exitChannels] =
+                ethers.AbiCoder.defaultAbiCoder().decode(
+                    [
+                        "bool",
+                        "tuple(address participant, bool isPartialExit, uint256 amount, bytes data)[]"
+                    ],
+                    hexResult
+                );
+
             return {
-                success: true,
+                success: success,
+                exitChannels: exitChannels,
                 successCallback: () => this.processLogs(result.logs)
             };
         } catch (error) {
-            return { success: false, successCallback: () => {} };
+            console.error(
+                "EvmStateMachine.stateTransition ERROR:",
+                error instanceof Error ? error.message : String(error)
+            );
+
+            return {
+                success: false,
+                successCallback: () => {},
+                exitChannels: []
+            };
         }
     }
 
@@ -120,6 +142,18 @@ class EvmStateMachine extends AStateMachine {
             hexResult
         );
         return addresses.toArray();
+    }
+
+    async getExitChannels(): Promise<any[]> {
+        const callData = this.getEncodedCalldata("getExitChannels");
+
+        let result = await this.contractExecuter.executeCall(callData);
+        const hexResult = ethers.hexlify(result.returnValue);
+        const [exitChannels] = ethers.AbiCoder.defaultAbiCoder().decode(
+            ["tuple(address participant, uint256 amount, bytes data)[]"],
+            hexResult
+        );
+        return exitChannels.toArray();
     }
 
     async getNextToWrite(): Promise<string> {

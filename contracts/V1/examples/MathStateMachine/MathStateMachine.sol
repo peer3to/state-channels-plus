@@ -19,7 +19,7 @@ contract MathStateMachine is AStateMachine {
 
     event Addition(uint a, uint b, uint result);
     event NextToPlay(address player);
-
+    
     function add(uint _number) public returns (uint) {
         require(
             _tx.header.participant == getNextToWrite(),
@@ -60,7 +60,7 @@ contract MathStateMachine is AStateMachine {
         return state.participants[state.number % state.participants.length];
     }
 
-     function _slashParticipant(
+    function _slashParticipant(
         address adr
     ) internal virtual override returns (bool, ExitChannel memory) {
         return _removeParticipant(adr);
@@ -83,6 +83,22 @@ contract MathStateMachine is AStateMachine {
             }
         }
         return (false, exitChannel);
+    }
+    // Game-specific function: player voluntarily leaves the game
+    function leaveGame() public returns (bool) {
+        require(
+            _tx.header.participant == getNextToWrite(),
+            "MathStateMachine: leaveGame only next player can leave"
+        );
+
+        address leavingPlayer = _tx.header.participant;
+        (bool success, ExitChannel memory exitChannel) = _removeParticipant(leavingPlayer);
+
+        if (success) {
+            _addExitChannel(exitChannel);
+        }
+
+        return success;
     }
 
     function _joinChannel(

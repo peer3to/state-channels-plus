@@ -131,7 +131,7 @@ export async function getMathDeploymentTransaction(
 ) {
     const MathStateMachineFactory =
         await _ethers.getContractFactory("MathStateMachine");
-    return await MathStateMachineFactory.getDeployTransaction();
+    return await MathStateMachineFactory.getDeployTransaction(10_000);
 }
 
 export function getMathP2pEventHooks(
