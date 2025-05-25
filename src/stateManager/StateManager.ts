@@ -350,13 +350,12 @@ class StateManager {
         let { success, successCallback } =
             await this.stateMachine.stateTransition(transaction);
         const encodedState = await this.stateMachine.getState();
-
-        //TODO: is the join/exit channel info stored in the transactionBody's data variable ?
-        // if this is an exit channel transaction, we need to store the exit channel block hash
-        // and to also add the exit channel block hash to the state snapshot
-
         const forkCnt = transaction.header.forkCnt;
         const blockHeight = transaction.header.transactionCnt;
+
+        //we first handle the exit channels
+        //TODO: these will come from the state machine, udpate the code once the
+        // state machine code is updated on the dispute branch
         const exitChannels: ExitChannelStruct[] = [];
         const previousBlockHash =
             this.stateSnapshotStorage.getLatestExitChannelBlockHash();
