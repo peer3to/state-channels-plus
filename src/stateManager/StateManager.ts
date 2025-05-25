@@ -25,6 +25,7 @@ import {
 import Clock from "@/Clock";
 import DisputeHandler from "@/DisputeHandler";
 import P2PManager from "@/P2PManager";
+import StateSnapshotStorage from "@/storage/StateSnapshotStorage";
 
 import AStateMachine from "@/AStateMachine";
 import {
