@@ -8,7 +8,8 @@ import {
     ExitChannelBlockStruct,
     ExitChannelStruct,
     DisputeProofStruct,
-    SignedDisputeStruct
+    SignedDisputeStruct,
+    ExitChannelStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import {
     AddressLike,
@@ -359,9 +360,10 @@ class StateManager {
         encodedState: string;
         previousStateHash: string;
         successCallback: () => void;
+        exitChannels: ExitChannelStruct[];
     }> {
         const previousStateHash = await this.getEncodedStateKecak256();
-        let { success, successCallback } =
+        let { success, successCallback, exitChannels } =
             await this.stateMachine.stateTransition(transaction);
         const encodedState = await this.stateMachine.getState();
         const forkCnt = transaction.header.forkCnt;
@@ -408,7 +410,8 @@ class StateManager {
             success,
             encodedState,
             previousStateHash,
-            successCallback
+            successCallback,
+            exitChannels
         };
     }
 
