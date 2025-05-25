@@ -388,6 +388,24 @@ class StateManager {
             exitChannelBlockHash
         );
 
+        const forkCnt = transaction.header.forkCnt;
+        const blockHeight = transaction.header.transactionCnt;
+        const exitChannels: ExitChannelStruct[] = [];
+        const previousBlockHash =
+            this.stateSnapshotStorage.getLatestExitChannelBlockHash();
+        const exitChannelBlock: ExitChannelBlockStruct = {
+            exitChannels,
+            previousBlockHash: previousBlockHash as BytesLike
+        };
+        const exitChannelBlockHash =
+            EvmUtils.encodeExitChannelBlock(exitChannelBlock);
+        //TODO: same here, check that these numebr typings are ok or replace by a bigNumberish
+        this.stateSnapshotStorage.storeExitChannelBlockHash(
+            Number(forkCnt),
+            Number(blockHeight),
+            exitChannelBlockHash
+        );
+
         // now we can create a new stateSnapshot
         const stateSnapshot: StateSnapshotStruct = {
             stateMachineStateHash: encodedState,
