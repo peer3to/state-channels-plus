@@ -1,3 +1,4 @@
+import { JoinChannelBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 
 type P2pEventHooks = {
@@ -8,6 +9,7 @@ type P2pEventHooks = {
     onPostedCalldata?: () => void;
     onInitiatingDispute?: () => void;
     onDisputeUpdate?: (dispute: DisputeStruct) => void;
+    onJoinChannel?: (joinChannelBlock: JoinChannelBlockStruct) => void;
 };
 
 export default P2pEventHooks;
