@@ -8,6 +8,7 @@ import { TransactionStruct } from "@typechain-types/contracts/V1/DataTypes";
 import StateManager from "@/stateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
+import { ExitChannelEthersType } from "@/types/ethers";
 import { DebugProxy } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import AStateMachine from "@/AStateMachine";
@@ -94,10 +95,7 @@ class EvmStateMachine extends AStateMachine {
             const hexResult = ethers.hexlify(result.returnValue);
             const [success, exitChannels] =
                 ethers.AbiCoder.defaultAbiCoder().decode(
-                    [
-                        "bool",
-                        "tuple(address participant, bool isPartialExit, uint256 amount, bytes data)[]"
-                    ],
+                    ["bool", `${ExitChannelEthersType}[]`],
                     hexResult
                 );
             return {
@@ -143,7 +141,7 @@ class EvmStateMachine extends AStateMachine {
         let result = await this.contractExecuter.executeCall(callData);
         const hexResult = ethers.hexlify(result.returnValue);
         const [exitChannels] = ethers.AbiCoder.defaultAbiCoder().decode(
-            ["tuple(address participant, uint256 amount, bytes data)[]"],
+            [`${ExitChannelEthersType}[]`],
             hexResult
         );
         return exitChannels.toArray();
