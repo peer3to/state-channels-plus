@@ -7,6 +7,7 @@ abstract contract AStateMachine {
     address _stateChannelManager;
     bool _nonreentrant;
     uint gasLimit;
+    ExitChannel[] private _exitChannels;
 
     constructor(uint256 _gasLimit) {
         gasLimit = _gasLimit;
@@ -29,20 +30,41 @@ abstract contract AStateMachine {
     // return the next participant which should produce a transaction based on the current state (eg. in the game of poker, the next player to play a move)
     function getNextToWrite() public view virtual returns (address);
 
+    // return the current exit channels
+    function getExitChannels() public view returns (ExitChannel[] memory) {
+        return _exitChannels;
+    }
+
     // return the balance1 + balance2
-    function addBalance(Balance memory balance1, Balance memory balance2) public pure virtual returns (Balance memory sum);
-    
+    function addBalance(
+        Balance memory balance1,
+        Balance memory balance2
+    ) public pure virtual returns (Balance memory sum);
+
     // return the balance1 - balance2 OR throw an error if balance1 < balance2
-    function subtractBalance(Balance memory balance1, Balance memory balance2) public pure virtual returns (Balance memory diff);
-    
+    function subtractBalance(
+        Balance memory balance1,
+        Balance memory balance2
+    ) public pure virtual returns (Balance memory diff);
+
     // return true if balance1 == balance2, false otherwise
-    function areBalancesEqual(Balance memory balance1, Balance memory balance2) public pure virtual returns (bool);
+    function areBalancesEqual(
+        Balance memory balance1,
+        Balance memory balance2
+    ) public pure virtual returns (bool);
 
     // return true if balance1 < balance2, false otherwise
-    function isBalanceLesserThan(Balance memory balance1, Balance memory balance2) public pure virtual returns (bool);
+    function isBalanceLesserThan(
+        Balance memory balance1,
+        Balance memory balance2
+    ) public pure virtual returns (bool);
 
     // return the total balance of the current state (e.g. sum up all participants balances)
-    function getTotalStateBalance() public view virtual returns (Balance memory totalBalance);
+    function getTotalStateBalance()
+        public
+        view
+        virtual
+        returns (Balance memory totalBalance);
 
     // modifies the state to add a new participant to the channel
     function _joinChannel(
@@ -52,18 +74,19 @@ abstract contract AStateMachine {
     // define the logic that punishes a participant for misbehaving (can also remove the participant from the state channel)
     function _slashParticipant(
         address adr
-    ) internal virtual returns (bool,ExitChannel memory exitChannel);
+    ) internal virtual returns (bool, ExitChannel memory exitChannel);
 
     // similart to _slashParticipant, but doesn't have to punish the player - just removes them from the state channel
     function _removeParticipant(
         address adr
-    ) internal virtual returns (bool,ExitChannel memory exitChannel);
+    ) internal virtual returns (bool, ExitChannel memory exitChannel);
 
-    modifier _nonReentrant() {
-        require(!_nonreentrant, "ReentrancyGuard: reentrant call");
-        _nonreentrant = true;
-        _;
-        _nonreentrant = false;
+    function _addExitChannel(ExitChannel memory exitChannel) internal {
+        _exitChannels.push(exitChannel);
+    }
+
+    function _clearExitChannels() internal {
+        delete _exitChannels;
     }
 
     function setState(bytes memory encodedState) external _nonReentrant {
@@ -80,18 +103,28 @@ abstract contract AStateMachine {
     function slashParticipant(
         address adr
     ) external _nonReentrant returns (bool, ExitChannel memory exitChannel) {
-        return _slashParticipant(adr);
+        (bool success, ExitChannel memory exitChannel) = _slashParticipant(adr);
+        if (success) {
+            _addExitChannel(exitChannel);
+        }
+        return (success, exitChannel);
     }
 
     function removeParticipant(
         address adr
-    ) external virtual _nonReentrant returns (bool, ExitChannel memory exitChannel) {
+    )
+        external
+        virtual
+        _nonReentrant
+        returns (bool, ExitChannel memory exitChannel)
+    {
         return _removeParticipant(adr);
     }
 
     function stateTransition(
         Transaction calldata transaction
-    ) external _nonReentrant returns (bool) {
+    ) external _nonReentrant returns (bool, ExitChannel[] memory) {
+        _clearExitChannels();
         _tx = transaction;
         (bool success, bytes memory result) = address(this).call{gas: gasLimit}(
             transaction.body.data
@@ -105,7 +138,14 @@ abstract contract AStateMachine {
                 revert(add(32, result), returndata_size)
             }
         }
-        return success;
+        return (success, _exitChannels);
+    }
+
+    modifier _nonReentrant() {
+        require(!_nonreentrant, "ReentrancyGuard: reentrant call");
+        _nonreentrant = true;
+        _;
+        _nonreentrant = false;
     }
 
     // function stateTransition(bytes memory encodedState, Move memory move) public pure virtual returns (bool,bytes memory);

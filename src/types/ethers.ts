@@ -53,9 +53,8 @@ export const ConfirmedJoinChannelAgreementEthersType = `tuple(
 
 export const ExitChannelEthersType = `tuple(
                       address participant,
-                      ${BalanceEthersType} balance,
-                      bool isPartialExit
-                  )`;
+                      ${BalanceEthersType} balance
+                    )`;
 
 export const ExitChannelBlockEthersType = `tuple(
                       ${ExitChannelEthersType}[] exitChannels,

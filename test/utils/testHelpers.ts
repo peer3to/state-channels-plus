@@ -30,9 +30,11 @@ export const createJoinChannelTestObject = (
                   )
               )
             : ethers.keccak256("0x2371"),
-        amount: 500,
-        deadlineTimestamp: currentTime + 120, // 2 minutes from now
-        data: "0x00"
+        balance: {
+            amount: 500,
+            data: "0x00"
+        },
+        deadlineTimestamp: currentTime + 120 // 2 minutes from now
     };
     return jc;
 };
@@ -88,26 +90,28 @@ export async function deployMathChannelProxyFixture(
         "DisputeManagerFacet",
         { libraries: { StateChannelUtilLibrary: libraryAddress } }
     );
-    // Deploy FraudProofVerification facet
+    let disputeManagerFacet = await disputeManagerFacetFactory.deploy();
+    let disputeManagerFacetAddress = await disputeManagerFacet.getAddress();
+
+    //Deploy FraudProofFacet
     let fraudProofFacetFactory = await _ethers.getContractFactory(
         "FraudProofFacet",
         { libraries: { StateChannelUtilLibrary: libraryAddress } }
     );
-
-    let disputeManagerFacet = await disputeManagerFacetFactory.deploy();
-    let disputeManagerFacetAddress = await disputeManagerFacet.getAddress();
-
     let fraudProofFacet = await fraudProofFacetFactory.deploy();
     let fraudProofFacetAddress = await fraudProofFacet.getAddress();
-    //State machine logic
-    let mathSmFactory = await _ethers.getContractFactory("MathStateMachine");
-    let mathContactInstance = await mathSmFactory.deploy();
 
     //Deploy StateSnapshotFacet
-    let stateSnapshotFacetFactory =
-        await _ethers.getContractFactory("StateSnapshotFacet");
+    let stateSnapshotFacetFactory = await _ethers.getContractFactory(
+        "StateSnapshotFacet",
+        { libraries: { StateChannelUtilLibrary: libraryAddress } }
+    );
     let stateSnapshotFacet = await stateSnapshotFacetFactory.deploy();
     let stateSnapshotFacetAddress = await stateSnapshotFacet.getAddress();
+
+    //State machine logic
+    let mathSmFactory = await _ethers.getContractFactory("MathStateMachine");
+    let mathContactInstance = await mathSmFactory.deploy(500000);
 
     //Deploy MathStateChannelManager
     let mathSmcFactory = await _ethers.getContractFactory(
@@ -127,11 +131,12 @@ export async function deployMathChannelProxyFixture(
     };
 }
 export async function getMathDeploymentTransaction(
-    _ethers: typeof ethers & HardhatEthersHelpers
+    _ethers: typeof ethers & HardhatEthersHelpers,
+    gasLimit: number = 500000
 ) {
     const MathStateMachineFactory =
         await _ethers.getContractFactory("MathStateMachine");
-    return await MathStateMachineFactory.getDeployTransaction();
+    return await MathStateMachineFactory.getDeployTransaction(gasLimit);
 }
 
 export function getMathP2pEventHooks(

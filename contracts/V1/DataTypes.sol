@@ -90,7 +90,6 @@ struct JoinChannelConfirmation {
 struct ExitChannel {
     address participant;
     Balance balance;
-    bool isPartialExit;
 }
 
 struct ExitChannelBlock {

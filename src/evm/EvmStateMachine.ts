@@ -8,6 +8,7 @@ import { TransactionStruct } from "@typechain-types/contracts/V1/DataTypes";
 import StateManager from "@/stateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
+import { ExitChannelEthersType } from "@/types/ethers";
 import { DebugProxy } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import AStateMachine from "@/AStateMachine";
@@ -90,12 +91,24 @@ class EvmStateMachine extends AStateMachine {
 
         try {
             const result = await this.contractExecuter.executeCall(encodedData);
+            // Decode the return values: (bool success, ExitChannel[] exitChannels)
+            const hexResult = ethers.hexlify(result.returnValue);
+            const [success, exitChannels] =
+                ethers.AbiCoder.defaultAbiCoder().decode(
+                    ["bool", `${ExitChannelEthersType}[]`],
+                    hexResult
+                );
             return {
                 success: true,
-                successCallback: () => this.processLogs(result.logs)
+                successCallback: () => this.processLogs(result.logs),
+                exitChannels: exitChannels
             };
         } catch (error) {
-            return { success: false, successCallback: () => {} };
+            return {
+                success: false,
+                successCallback: () => {},
+                exitChannels: []
+            };
         }
     }
 
@@ -120,6 +133,18 @@ class EvmStateMachine extends AStateMachine {
             hexResult
         );
         return addresses.toArray();
+    }
+
+    async getExitChannels(): Promise<any[]> {
+        const callData = this.getEncodedCalldata("getExitChannels");
+
+        let result = await this.contractExecuter.executeCall(callData);
+        const hexResult = ethers.hexlify(result.returnValue);
+        const [exitChannels] = ethers.AbiCoder.defaultAbiCoder().decode(
+            [`${ExitChannelEthersType}[]`],
+            hexResult
+        );
+        return exitChannels.toArray();
     }
 
     async getNextToWrite(): Promise<string> {
