@@ -55,7 +55,7 @@ export class Codec {
         return ethers.AbiCoder.defaultAbiCoder().encode([ethersType], [struct]);
     }
 
-    public static encodeWithExplicitType(
+    public static encode(
         struct: StructType,
         explicitType: StructTypeName
     ): string {
