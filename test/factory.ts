@@ -33,7 +33,6 @@ export function transactionBody(
     overrides: Partial<TransactionBodyStruct> = {}
 ): TransactionBodyStruct {
     return {
-        transactionType: 1,
         encodedData: "0x",
         data: "0x",
         ...overrides
@@ -95,8 +94,8 @@ export function agreementManager(addresses: string[] = []): AgreementManager {
 export function block(overrides: Partial<BlockStruct> = {}): BlockStruct {
     const block: BlockStruct = {
         transaction: transaction(),
-        previousStateHash: ethers.hexlify(ethers.randomBytes(32)),
-        stateHash: ethers.hexlify(ethers.randomBytes(32))
+        previousBlockHash: ethers.hexlify(ethers.randomBytes(32)),
+        stateSnapshotHash: ethers.hexlify(ethers.randomBytes(32))
     };
 
     if (overrides.transaction) {
@@ -125,31 +124,36 @@ export function signature(): string {
 export function disputeStruct(
     overrides: Partial<DisputeStruct> = {}
 ): DisputeStruct {
-    return {
+    const defaultDispute: DisputeStruct = {
         channelId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
-        virtualVotingBlocks: overrides.virtualVotingBlocks ?? [],
-        foldedTransactionCnt: overrides.foldedTransactionCnt ?? 0,
-        slashedParticipants: overrides.slashedParticipants ?? [],
-        timedoutParticipant:
-            overrides.timedoutParticipant ?? ethers.ZeroAddress,
-        postedStateDisputer:
-            overrides.postedStateDisputer ?? ethers.ZeroAddress,
-        forkCnt: overrides.forkCnt ?? 0,
-        challengeCnt: overrides.challengeCnt ?? 0,
-        encodedLatestFinalizedState:
-            overrides.encodedLatestFinalizedState ??
-            ethers.hexlify(ethers.randomBytes(32)),
-        encodedLatestCorrectState:
-            overrides.encodedLatestCorrectState ??
-            ethers.hexlify(ethers.randomBytes(32)),
-        deadlineTimestamp:
-            overrides.deadlineTimestamp ?? Math.floor(Date.now() / 1000) + 1000,
-        timeoutDisputer: overrides.timeoutDisputer ?? ethers.ZeroAddress,
-        joinChannelParticipants: overrides.joinChannelParticipants ?? [],
-        leaveChannelParticipants: overrides.leaveChannelParticipants ?? [],
-        participants: overrides.participants ?? [],
-        processExits: overrides.processExits ?? [],
-        creationTimestamp:
-            overrides.creationTimestamp ?? Math.floor(Date.now() / 1000)
+        genesisStateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
+        latestStateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
+        stateProof: {
+            forkProof: { forkMilestoneProofs: [] },
+            signedBlocks: []
+        },
+        fraudProofs: [],
+        onChainSlashes: [],
+        onChainLatestJoinChannelBlockHash: ethers.hexlify(
+            ethers.randomBytes(32)
+        ),
+        outputStateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
+        exitChannelBlocks: [],
+        disputeAuditingDataHash: ethers.hexlify(ethers.randomBytes(32)),
+        disputer: ethers.ZeroAddress,
+        disputeIndex: 0,
+        previousRecursiveDisputeIndex: 0,
+        timeout: {
+            participant: ethers.ZeroAddress,
+            blockHeight: 0,
+            minTimeStamp: Math.floor(Date.now() / 1000),
+            forkCnt: 0,
+            isForced: false,
+            previousBlockProducer: ethers.ZeroAddress,
+            previousBlockProducerPostedCalldata: false
+        },
+        selfRemoval: false
     };
+
+    return { ...defaultDispute, ...overrides };
 }

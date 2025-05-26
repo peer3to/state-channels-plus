@@ -1,7 +1,7 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { BytesLike, Signer } from "ethers";
-import { deployLibraryTestContract } from "@test/utils/testHelpers";
+import { deployLibraryTestContract } from "@test/test_utils/testHelpers";
 import { StateChannelUtilLibrary } from "@typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 

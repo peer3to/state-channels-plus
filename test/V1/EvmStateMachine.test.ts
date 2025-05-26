@@ -6,7 +6,7 @@ import {
     createJoinChannelTestObject,
     deployMathChannelProxyFixture,
     getMathP2pEventHooks
-} from "@test/utils/testHelpers";
+} from "@test/test_utils/testHelpers";
 import P2pEventHooks from "@/P2pEventHooks";
 import { EvmUtils } from "@/utils";
 
@@ -23,7 +23,7 @@ describe("EvmStateMachine", function () {
         let mathscm = math.mathChannelManager;
 
         //P2P setup;
-        let deployTx = await mathSM.getDeployTransaction(); // this deployes the contract locally
+        let deployTx = await mathSM.getDeployTransaction(500000); // this deployes the contract locally
         let mathContractFirstPlayer: MathStateMachine;
         let mathContractSecondPlayer: MathStateMachine;
 

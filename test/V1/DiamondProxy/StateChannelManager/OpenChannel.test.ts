@@ -6,7 +6,7 @@ import {
     deployMathChannelProxyFixture,
     getSigners,
     createJoinChannelTestObject
-} from "@test/utils/testHelpers";
+} from "@test/test_utils/testHelpers";
 import { EvmUtils } from "@/utils";
 import {
     MathStateChannelManagerProxy,
@@ -236,7 +236,10 @@ describe("StateChannelManagerProxy", function () {
         it("2 participants amount 0 - fail", async function () {
             let jc1 = createJoinChannelTestObject(firstSigner.address);
             let jc2 = createJoinChannelTestObject(secondSigner.address);
-            jc2.amount = 0;
+            jc2.balance = {
+                amount: 0,
+                data: "0x"
+            };
 
             let jc1Signed = await EvmUtils.signJoinChannel(jc1, firstSigner);
             let jc2Signed = await EvmUtils.signJoinChannel(jc2, secondSigner);

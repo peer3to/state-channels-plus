@@ -18,6 +18,12 @@ type StructType =
     | TransactionStruct
     | DisputeStruct;
 
+export type StructTypeName =
+    | "Block"
+    | "JoinChannel"
+    | "Transaction"
+    | "Dispute";
+
 export class Codec {
     private static readonly structToEthersType = new Map<string, any>([
         ["BlockStruct", BlockEthersType],
@@ -33,12 +39,30 @@ export class Codec {
     ]);
 
     public static encode(struct: StructType): string {
+        let ethersType: string | undefined;
+
         const structName = struct.constructor.name;
-        const ethersType = this.structToEthersType.get(structName);
+        ethersType = this.structToEthersType.get(structName);
+
         if (!ethersType) {
-            throw new Error(`No ethers type mapping found for ${structName}`);
+            const availableFields = Object.keys(struct || {}).join(", ");
+            const structName = struct.constructor.name;
+            throw new Error(
+                `Cannot encode struct with constructor name "${structName}". Available fields: [${availableFields}]. Consider using explicit type: Codec.encode(struct, "JoinChannel")`
+            );
         }
 
+        return ethers.AbiCoder.defaultAbiCoder().encode([ethersType], [struct]);
+    }
+
+    public static encodeWithExplicitType(
+        struct: StructType,
+        explicitType: StructTypeName
+    ): string {
+        const ethersType = this.structToEthersType.get(explicitType);
+        if (!ethersType) {
+            throw new Error(`No ethers type mapping found for ${explicitType}`);
+        }
         return ethers.AbiCoder.defaultAbiCoder().encode([ethersType], [struct]);
     }
 

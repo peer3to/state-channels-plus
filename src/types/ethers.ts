@@ -34,9 +34,8 @@ export const BlockConfirmationEthersType = `tuple(
 export const JoinChannelEthersType = `tuple(
               bytes32 channelId,
               address participant,
-              uint amount,
               uint deadlineTimestamp,
-              bytes data)`;
+              ${BalanceEthersType} balance)`;
 
 export const SignedJoinChannelEthersType = `tuple(
                 bytes encodedJoinChannel,
