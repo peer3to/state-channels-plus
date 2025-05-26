@@ -5,7 +5,8 @@ import {
     ProofStruct,
     DisputeStruct,
     TimeoutStruct,
-    StateProofStruct
+    StateProofStruct,
+    DisputeData
 } from "@typechain-types/contracts/V1/DisputeTypes";
 import {
     BalanceStruct,
@@ -33,10 +34,6 @@ interface DisputeOutputState {
     totalWithdrawals: BalanceStruct;
 }
 
-interface DisputeData {
-    dispute: DisputeStruct;
-    disputeAuditingData: DisputeAuditingDataStruct;
-}
 class DisputeHandler {
     signer: ethers.Signer;
     signerAddress: AddressLike;
@@ -45,6 +42,7 @@ class DisputeHandler {
     channelId: BytesLike;
     localProofs: Map<ForkCnt, ProofStruct[]> = new Map();
     disputes: Map<ForkCnt, DisputeData> = new Map();
+
     disputedForks: Map<ForkCnt, boolean> = new Map();
     p2pEventHooks: P2pEventHooks;
     self = DEBUG_DISPUTE_HANDLER ? DebugProxy.createProxy(this) : this;
@@ -306,7 +304,7 @@ class DisputeHandler {
         timestamp: BigNumberish,
         timeout?: TimeoutStruct
     ): Promise<void> {
-        const dispute = await this.createDisputeStruct(
+        const { dispute, disputeAuditingData } = await this.createDisputeStruct(
             forkCnt,
             transactionCnt,
             proofs,
@@ -318,7 +316,7 @@ class DisputeHandler {
             async () => {
                 const txResponse =
                     await this.stateChannelManagerContract.createDispute(
-                        dispute.dispute
+                        dispute
                     );
                 const txReceipt = await txResponse.wait();
                 return txReceipt;
@@ -333,6 +331,8 @@ class DisputeHandler {
                 }
             }
         );
+
+        // gossip to all peers
     }
 
     public async auditDispute(

@@ -51,6 +51,7 @@ import ValidationService from "./ValidationService";
 import { Codec } from "@/utils/Codec";
 import { SignatureUtils } from "@/utils/SignatureUtils";
 import * as SetUtils from "@/utils/set";
+import { DisputeAuditingDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 let DEBUG_STATE_MANAGER = false;
 class StateManager {
@@ -796,36 +797,38 @@ class StateManager {
     }
 
     // ----- Event handlers -----
-    public async onDisputeCommitted(
-        encodedDispute: string,
-        encodedDisputeAuditingData: string
-    ) {
-        const dispute = Codec.decodeDispute(encodedDispute);
-        const disputeAuditingData = Codec.decodeDisputeAuditingData(
-            encodedDisputeAuditingData
-        );
-        // Validate dispute
-        const valid = await this.validationService.validateDispute(
-            dispute,
-            disputeAuditingData
-        );
+    public async onDisputeCommitted(encodedDispute: string, timestamp: number) {
+        try {
+            // wait for p2p onInitiatingDispute event
+            let disputeAuditingData: DisputeAuditingDataStruct;
+            await this.p2pEventHooks.onInitiatingDispute!(disputeData);
 
-        if (!valid) {
-            return;
-        }
-        // Add dispute to ForkService
-        this.disputeHandler.addDispute(
-            this.getForkCnt(),
-            dispute,
-            disputeAuditingData
-        );
+            const dispute = Codec.decodeDispute(encodedDispute);
+            // Validate dispute
+            const valid = await this.validationService.validateDispute(
+                dispute,
+                disputeAuditingData
+            );
 
-        if (dispute.disputer !== this.signerAddress) {
-            // this signs the dispute, adds the signature to the AgreementManager and broadcasts
-            //  the dispute with the additional signature
-            // the disputer should not broadcast the dispute, since all peers will receive the dsiputer's signature
-            // on the dispute event
-            this.p2pManager.p2pSigner.confirmDispute(dispute);
+            if (!valid) {
+                // TODO: challenge dispute
+            }
+            // Add dispute to ForkService
+            this.disputeHandler.addDispute(
+                this.getForkCnt(),
+                dispute,
+                disputeAuditingData
+            );
+
+            if (dispute.disputer !== this.signerAddress) {
+                // this signs the dispute, adds the signature to the AgreementManager and broadcasts
+                //  the dispute with the additional signature
+                // the disputer should not broadcast the dispute, since all peers will receive the dsiputer's signature
+                // on the dispute event
+                this.p2pManager.p2pSigner.confirmDispute(dispute);
+            }
+        } catch (error) {
+            console.error("Error onDisputeCommitted Event", error);
         }
     }
 

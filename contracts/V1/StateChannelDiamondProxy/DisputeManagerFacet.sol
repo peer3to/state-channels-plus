@@ -136,7 +136,7 @@ contract DisputeManagerFacet is StateChannelCommon {
 
    
     // =============================== State Proofs Verification  ===============================
-    function _verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) internal returns (bool isValid) {
+    function _verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) internal pure returns (bool isValid) {
         //This runs after verifying auditingData and genesisStateSnapshot => we can skip those checks here
         
         // Milestone checking
@@ -224,7 +224,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         ForkMilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         StateSnapshot memory genesisSnapshot
-    ) public returns (bool isValid, bytes memory lastBlockEncoded) {
+    ) public pure returns (bool isValid, bytes memory lastBlockEncoded) {
         address[] memory participants = genesisSnapshot.participants;
         StateSnapshot memory snapshot = genesisSnapshot;
         lastBlockEncoded = "";

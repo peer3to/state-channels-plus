@@ -1,4 +1,7 @@
-import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import {
+    DisputeStruct,
+    DisputeData
+} from "@typechain-types/contracts/V1/DisputeTypes";
 
 type P2pEventHooks = {
     onConnection?: (address: string) => void;
@@ -6,7 +9,7 @@ type P2pEventHooks = {
     onSetState?: () => void;
     onPostingCalldata?: () => void;
     onPostedCalldata?: () => void;
-    onInitiatingDispute?: () => void;
+    onInitiatingDispute?: (disputeData: DisputeData) => void;
     onDisputeUpdate?: (dispute: DisputeStruct) => void;
 };
 

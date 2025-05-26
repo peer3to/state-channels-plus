@@ -71,17 +71,6 @@ class StateChannelEventListener {
                 this.stateManager.collectOnChainBlock(signedBlock, timestamp);
             }
         },
-        DisputeUpdate: {
-            filterFactory: (channelId: BytesLike) =>
-                this.stateChannelManagerContract.filters.DisputeUpdated(
-                    channelId
-                ),
-            handler: (logObj: any) => {
-                this.stateManager.onDisputeUpdate(
-                    logObj.args.dispute as DisputeStruct
-                );
-            }
-        },
         DisputeCommited: {
             filterFactory: (channelId: BytesLike) =>
                 this.stateChannelManagerContract.filters.DisputeCommited(
@@ -89,7 +78,7 @@ class StateChannelEventListener {
                 ),
             handler: (logObj: any) => {
                 const encodedDispute = logObj.args.encodedDispute;
-                const timestamp = Number(logObj.args.timestamp);
+                const timestamp = logObj.args.timestamp;
                 return this.stateManager.onDisputeCommitted(
                     encodedDispute,
                     timestamp
