@@ -46,6 +46,12 @@ contract StateChannelCommon is
         return stateSnapshots[channelId].forkCnt;
     }
 
+    function getStateSnapshot(
+        bytes32 channelId
+    ) public view virtual returns (StateSnapshot memory) {
+        return stateSnapshots[channelId];
+    }
+
     function getStatemachineParticipants(
         bytes memory encodedState
     ) public virtual returns (address[] memory) {
