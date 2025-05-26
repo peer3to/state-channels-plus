@@ -8,6 +8,7 @@ import "../../AStateMachine.sol";
 struct MathState {
     uint number;
     address[] participants;
+    uint[] balances;
 }
 
 contract MathStateMachine is AStateMachine {
@@ -33,6 +34,16 @@ contract MathStateMachine is AStateMachine {
 
     function getSum() public view returns (uint) {
         return state.number;
+    }
+
+    // Get balance for a specific participant
+    function getBalance(address participant) public view returns (uint) {
+        for (uint i = 0; i < state.participants.length; i++) {
+            if (state.participants[i] == participant) {
+                return state.balances[i];
+            }
+        }
+        return 0;
     }
 
     function _setState(bytes memory encodedState) internal virtual override {
@@ -73,12 +84,18 @@ contract MathStateMachine is AStateMachine {
         ExitChannel memory exitChannel;
         for (uint256 i = 0; i < length; i++) {
             if (state.participants[i] == adr) {
+                // Store the participant's balance before removal
+                uint participantBalance = state.balances[i];
+                
+                // Remove participant and their balance
                 state.participants[i] = state.participants[length - 1];
                 state.participants.pop();
+                state.balances[i] = state.balances[length - 1];
+                state.balances.pop();
 
-                ExitChannel memory exitChannel;
+                // Create exit channel with the participant's balance
                 exitChannel.participant = adr;
-                exitChannel.balance.amount = 0;
+                exitChannel.balance.amount = participantBalance;
                 return (true, exitChannel);
             }
         }

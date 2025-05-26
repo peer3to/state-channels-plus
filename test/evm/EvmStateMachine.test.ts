@@ -329,11 +329,14 @@ describe("EvmStateMachine", function () {
         let signers: HardhatEthersSigner[];
         let transactionCounter = 0;
 
-        const STATE_SHAPE = ["tuple(uint256 number, address[] participants)"];
+        const STATE_SHAPE = [
+            "tuple(uint256 number, address[] participants, uint256[] balances)"
+        ];
 
         function encodeState(state: {
             number: bigint;
             participants: string[];
+            balances: bigint[];
         }): string {
             return ethers.AbiCoder.defaultAbiCoder().encode(STATE_SHAPE, [
                 state
@@ -343,6 +346,7 @@ describe("EvmStateMachine", function () {
         function decodeState(encodedState: string): {
             number: bigint;
             participants: string[];
+            balances: bigint[];
         } {
             return ethers.AbiCoder.defaultAbiCoder().decode(
                 STATE_SHAPE,
@@ -365,7 +369,6 @@ describe("EvmStateMachine", function () {
                     channelId: ethers.id("testChannel")
                 },
                 body: {
-                    transactionType: 0,
                     encodedData: "0x",
                     data: data
                 }
@@ -419,16 +422,19 @@ describe("EvmStateMachine", function () {
         });
 
         it("should handle player leaving game with exitChannels", async function () {
-            // Set up state with 3 participants
+            // Set up state with 3 participants and initial balances
             const participantAddresses = [
                 await signers[0].getAddress(),
                 await signers[1].getAddress(),
                 await signers[2].getAddress()
             ];
 
+            const initialBalances = [100n, 200n, 300n];
+
             const initialState = {
                 number: 0n, // signers[0] will be next to write (0 % 3 = 0)
-                participants: participantAddresses
+                participants: participantAddresses,
+                balances: initialBalances
             };
 
             await stateMachine.setState(encodeState(initialState));
@@ -436,6 +442,20 @@ describe("EvmStateMachine", function () {
             // Verify initial state
             const initialParticipants = await stateMachine.getParticipants();
             expect(initialParticipants).to.have.length(3);
+
+            // Verify initial balances
+            const player0Balance = await stateMachine.runView({
+                data: mathStateMachine.interface.encodeFunctionData(
+                    "getBalance",
+                    [participantAddresses[0]]
+                )
+            });
+            const decodedBalance0 =
+                mathStateMachine.interface.decodeFunctionResult(
+                    "getBalance",
+                    player0Balance
+                );
+            expect(decodedBalance0[0]).to.equal(100n);
 
             // Player 0 calls leaveGame
             const tx = createTransaction(
@@ -453,15 +473,42 @@ describe("EvmStateMachine", function () {
             expect(result.exitChannels).to.be.an("array");
             expect(result.exitChannels).to.have.length(1);
 
-            // Assert correct exitChannel data
+            // Assert correct exitChannel data - player should get their balance (100)
             const exitChannel = result.exitChannels[0];
             expect(exitChannel.participant).to.equal(participantAddresses[0]);
-            expect(exitChannel.amount).to.equal(0n);
+            expect(exitChannel.balance.amount).to.equal(100n); // Player 0's initial balance
 
             // Assert only 2 participants remain
             const updatedParticipants = await stateMachine.getParticipants();
             expect(updatedParticipants).to.have.length(2);
             expect(updatedParticipants).to.not.include(participantAddresses[0]);
+
+            // Verify remaining participants still have their balances
+            const player1Balance = await stateMachine.runView({
+                data: mathStateMachine.interface.encodeFunctionData(
+                    "getBalance",
+                    [participantAddresses[1]]
+                )
+            });
+            const decodedBalance1 =
+                mathStateMachine.interface.decodeFunctionResult(
+                    "getBalance",
+                    player1Balance
+                );
+            expect(decodedBalance1[0]).to.equal(200n);
+
+            const player2Balance = await stateMachine.runView({
+                data: mathStateMachine.interface.encodeFunctionData(
+                    "getBalance",
+                    [participantAddresses[2]]
+                )
+            });
+            const decodedBalance2 =
+                mathStateMachine.interface.decodeFunctionResult(
+                    "getBalance",
+                    player2Balance
+                );
+            expect(decodedBalance2[0]).to.equal(300n);
 
             const exitChannels = await stateMachine.getExitChannels();
             expect(exitChannels).to.have.length(1);
@@ -494,7 +541,11 @@ describe("EvmStateMachine", function () {
             // Change values in the state
             const modifiedState = {
                 number: initialState.number + 20n,
-                participants: [...initialState.participants, signers[1].address]
+                participants: [
+                    ...initialState.participants,
+                    signers[1].address
+                ],
+                balances: [...initialState.balances, 0n]
             };
 
             // Set the modified state
@@ -514,6 +565,12 @@ describe("EvmStateMachine", function () {
             expect(
                 newState.participants[newState.participants.length - 1]
             ).to.equal(signers[1].address);
+            expect(newState.balances.length).to.equal(
+                modifiedState.balances.length
+            );
+            expect(newState.balances[newState.balances.length - 1]).to.equal(
+                0n
+            );
         });
     });
 });
