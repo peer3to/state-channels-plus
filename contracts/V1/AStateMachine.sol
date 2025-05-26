@@ -18,13 +18,6 @@ abstract contract AStateMachine {
 
     // ***** DEBUG *****
 
-    modifier _nonReentrant() {
-        require(!_nonreentrant, "ReentrancyGuard: reentrant call");
-        _nonreentrant = true;
-        _;
-        _nonreentrant = false;
-    }
-
     // Restore the state (variables) of the contract by deserializing/decoding the given the encoded state
     function _setState(bytes memory encodedState) internal virtual;
 
@@ -43,19 +36,35 @@ abstract contract AStateMachine {
     }
 
     // return the balance1 + balance2
-    function addBalance(Balance memory balance1, Balance memory balance2) public pure virtual returns (Balance memory sum);
+    function addBalance(
+        Balance memory balance1,
+        Balance memory balance2
+    ) public pure virtual returns (Balance memory sum);
 
     // return the balance1 - balance2 OR throw an error if balance1 < balance2
-    function subtractBalance(Balance memory balance1, Balance memory balance2) public pure virtual returns (Balance memory diff);
+    function subtractBalance(
+        Balance memory balance1,
+        Balance memory balance2
+    ) public pure virtual returns (Balance memory diff);
 
     // return true if balance1 == balance2, false otherwise
-    function areBalancesEqual(Balance memory balance1, Balance memory balance2) public pure virtual returns (bool);
+    function areBalancesEqual(
+        Balance memory balance1,
+        Balance memory balance2
+    ) public pure virtual returns (bool);
 
     // return true if balance1 < balance2, false otherwise
-    function isBalanceLesserThan(Balance memory balance1, Balance memory balance2) public pure virtual returns (bool);
+    function isBalanceLesserThan(
+        Balance memory balance1,
+        Balance memory balance2
+    ) public pure virtual returns (bool);
 
     // return the total balance of the current state (e.g. sum up all participants balances)
-    function getTotalStateBalance() public view virtual returns (Balance memory totalBalance);
+    function getTotalStateBalance()
+        public
+        view
+        virtual
+        returns (Balance memory totalBalance);
 
     // modifies the state to add a new participant to the channel
     function _joinChannel(
@@ -103,7 +112,12 @@ abstract contract AStateMachine {
 
     function removeParticipant(
         address adr
-    ) external virtual _nonReentrant returns (bool, ExitChannel memory exitChannel) {
+    )
+        external
+        virtual
+        _nonReentrant
+        returns (bool, ExitChannel memory exitChannel)
+    {
         return _removeParticipant(adr);
     }
 
@@ -125,6 +139,13 @@ abstract contract AStateMachine {
             }
         }
         return (success, _exitChannels);
+    }
+
+    modifier _nonReentrant() {
+        require(!_nonreentrant, "ReentrancyGuard: reentrant call");
+        _nonreentrant = true;
+        _;
+        _nonreentrant = false;
     }
 
     // function stateTransition(bytes memory encodedState, Move memory move) public pure virtual returns (bool,bytes memory);
