@@ -38,44 +38,11 @@ export class Codec {
         ["Dispute", DisputeEthersType]
     ]);
 
-    public static encode(
-        struct: StructType,
-        explicitType?: StructTypeName
-    ): string {
+    public static encode(struct: StructType): string {
         let ethersType: string | undefined;
 
-        // If explicit type is provided, use it directly
-        if (explicitType) {
-            ethersType = this.structToEthersType.get(explicitType);
-        } else {
-            // Try constructor name first
-            const structName = struct.constructor.name;
-            ethersType = this.structToEthersType.get(structName);
-
-            // Simple fallback for plain objects - try common types
-            if (!ethersType && structName === "Object") {
-                // Try JoinChannel first (most common)
-                if (
-                    "channelId" in struct &&
-                    "participant" in struct &&
-                    "balance" in struct
-                ) {
-                    ethersType = JoinChannelEthersType;
-                }
-                // Try Block
-                else if ("transaction" in struct && "stateHash" in struct) {
-                    ethersType = BlockEthersType;
-                }
-                // Try Transaction
-                else if ("header" in struct && "body" in struct) {
-                    ethersType = TransactionEthersType;
-                }
-                // Try Dispute
-                else if ("disputeIndex" in struct && "channelId" in struct) {
-                    ethersType = DisputeEthersType;
-                }
-            }
-        }
+        const structName = struct.constructor.name;
+        ethersType = this.structToEthersType.get(structName);
 
         if (!ethersType) {
             const availableFields = Object.keys(struct || {}).join(", ");
@@ -85,6 +52,17 @@ export class Codec {
             );
         }
 
+        return ethers.AbiCoder.defaultAbiCoder().encode([ethersType], [struct]);
+    }
+
+    public static encodeWithExplicitType(
+        struct: StructType,
+        explicitType: StructTypeName
+    ): string {
+        const ethersType = this.structToEthersType.get(explicitType);
+        if (!ethersType) {
+            throw new Error(`No ethers type mapping found for ${explicitType}`);
+        }
         return ethers.AbiCoder.defaultAbiCoder().encode([ethersType], [struct]);
     }
 
