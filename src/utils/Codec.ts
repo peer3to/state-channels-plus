@@ -38,30 +38,28 @@ export class Codec {
         ["Dispute", DisputeEthersType]
     ]);
 
-    public static encode(struct: StructType): string {
+    public static encode(struct: StructType): string;
+    public static encode(struct: any, explicitType: StructTypeName): string;
+    public static encode(struct: any, explicitType?: StructTypeName): string {
         let ethersType: string | undefined;
-
-        const structName = struct.constructor.name;
-        ethersType = this.structToEthersType.get(structName);
-
-        if (!ethersType) {
-            const availableFields = Object.keys(struct || {}).join(", ");
+        if (explicitType) {
+            ethersType = this.structToEthersType.get(explicitType);
+            if (!ethersType) {
+                throw new Error(
+                    `No ethers type mapping found for ${explicitType}`
+                );
+            }
+        } else {
             const structName = struct.constructor.name;
-            throw new Error(
-                `Cannot encode struct with constructor name "${structName}". Available fields: [${availableFields}]. Consider using explicit type: Codec.encode(struct, "JoinChannel")`
-            );
-        }
+            ethersType = this.structToEthersType.get(structName);
 
-        return ethers.AbiCoder.defaultAbiCoder().encode([ethersType], [struct]);
-    }
-
-    public static encodeWithExplicitType(
-        struct: StructType,
-        explicitType: StructTypeName
-    ): string {
-        const ethersType = this.structToEthersType.get(explicitType);
-        if (!ethersType) {
-            throw new Error(`No ethers type mapping found for ${explicitType}`);
+            if (!ethersType) {
+                const availableFields = Object.keys(struct || {}).join(", ");
+                const structName = struct.constructor.name;
+                throw new Error(
+                    `Cannot encode struct with constructor name "${structName}". Available fields: [${availableFields}]. Consider using explicit type: Codec.encode(struct, "JoinChannel")`
+                );
+            }
         }
         return ethers.AbiCoder.defaultAbiCoder().encode([ethersType], [struct]);
     }

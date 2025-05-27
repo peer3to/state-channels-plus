@@ -60,7 +60,14 @@ export const confirmationDecisionHandlers: Record<
     [ExecutionFlags.NOT_ENOUGH_TIME]: async () => {},
 
     // TODO - think about this - should this be a dispute or just ignore?
-    [ExecutionFlags.PAST_FORK]: async () => {}
+    [ExecutionFlags.PAST_FORK]: async () => {},
+    [ExecutionFlags.TIMESTAMP_IN_PAST]: function (
+        originalSignedBlock: SignedBlockStruct,
+        confirmationSignature: SignatureLike,
+        ctx: ConfirmationDecisionContext
+    ): Promise<void> {
+        throw new Error("Function not implemented.");
+    }
 };
 
 export async function processConfirmationDecision(

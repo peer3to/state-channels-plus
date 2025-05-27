@@ -100,14 +100,13 @@ class P2pSigner implements Signer {
                 timestamp: BigInt(Clock.getTimeInSeconds())
             },
             body: {
-                transactionType: 0,
                 encodedData: tx.data!,
                 data: tx.data!
             }
         };
 
         let signedBlock =
-            await this.p2pManager.stateManager.playTransaction(_tx);
+            await this.p2pManager.stateManager.executeTransaction(_tx);
         this.p2pManager.rpcProxy.onSignedBlock(signedBlock).broadcast();
         return "There is no TransactionResponse p2p - everything executed localy" as unknown as TransactionResponse; //TODO
     }
@@ -171,7 +170,10 @@ class P2pSigner implements Signer {
 
         // Broadcast confirmation with our signature
         this.p2pManager.rpcProxy
-            .onDisputeConfirmation(signedDispute)
+            .onDisputeConfirmation({
+                encodedDispute: signedDispute.encodedDispute,
+                signature: signedDispute.signature as BytesLike
+            })
             .broadcast();
     }
 

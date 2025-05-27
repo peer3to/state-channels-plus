@@ -3,7 +3,10 @@ import {
     BlockStruct,
     TransactionStruct,
     TransactionHeaderStruct,
-    TransactionBodyStruct
+    TransactionBodyStruct,
+    StateSnapshotStruct,
+    BlockConfirmationStruct,
+    SignedBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import AgreementManager from "@/agreementManager";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
@@ -87,6 +90,36 @@ export function agreementManager(addresses: string[] = []): AgreementManager {
 }
 
 /**
+ * Creates a mock stateSnapshot for testing
+ * @param overrides Optional overrides for the snapshot properties
+ * @returns A mock StateSnapshotStruct
+ */
+export function stateSnapshot(
+    overrides: Partial<StateSnapshotStruct> = {}
+): StateSnapshotStruct {
+    const defaultSnapshot: StateSnapshotStruct = {
+        stateMachineStateHash: ethers.hexlify(ethers.randomBytes(32)),
+        participants: [
+            ethers.Wallet.createRandom().address,
+            ethers.Wallet.createRandom().address
+        ],
+        forkCnt: 0,
+        latestJoinChannelBlockHash: ethers.hexlify(ethers.randomBytes(32)),
+        latestExitChannelBlockHash: ethers.hexlify(ethers.randomBytes(32)),
+        totalDeposits: {
+            amount: 0,
+            data: ethers.toUtf8Bytes("")
+        },
+        totalWithdrawals: {
+            amount: 0,
+            data: ethers.toUtf8Bytes("")
+        }
+    };
+
+    return { ...defaultSnapshot, ...overrides };
+}
+
+/**
  * Creates a mock block for testing
  * @param overrides Optional overrides for the block properties
  * @returns A mock BlockStruct
@@ -106,6 +139,22 @@ export function block(overrides: Partial<BlockStruct> = {}): BlockStruct {
     }
 
     return { ...block, ...overrides };
+}
+
+/**
+ * Creates a mock block confirmation for testing
+ * @param a mock signed block
+ * @returns A mock BlockConfirmationStruct
+ */
+export function blockConfirmation(
+    overrides: SignedBlockStruct
+): BlockConfirmationStruct {
+    const defaultConfirmation: BlockConfirmationStruct = {
+        signedBlock: overrides,
+        signatures: []
+    };
+
+    return defaultConfirmation;
 }
 
 /**

@@ -19,10 +19,10 @@ const disputeHandlers: Partial<
     >
 > = {
     [AgreementFlag.DOUBLE_SIGN]: async (signedBlock, ctx) => {
-        ctx.disputeHandler.disputeDoubleSign([signedBlock]);
+        // TODO
     },
     [AgreementFlag.INCORRECT_DATA]: async (signedBlock, ctx) => {
-        ctx.disputeHandler.disputeIncorrectData(signedBlock);
+        // TODO
     }
 };
 
@@ -69,7 +69,14 @@ export const executionDecisionHandlers: Record<
     [ExecutionFlags.NOT_ENOUGH_TIME]: async () => {},
 
     // TODO - think about this - should this be a dispute or just ignore?
-    [ExecutionFlags.PAST_FORK]: async () => {}
+    [ExecutionFlags.PAST_FORK]: async () => {},
+    [ExecutionFlags.TIMESTAMP_IN_PAST]: function (
+        signedBlock: SignedBlockStruct,
+        agreementFlag: AgreementFlag | undefined,
+        ctx: DecisionContext
+    ): Promise<void> {
+        throw new Error("Function not implemented.");
+    }
 };
 
 export async function processExecutionDecision(

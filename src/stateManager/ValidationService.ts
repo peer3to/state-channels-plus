@@ -2,7 +2,8 @@ import AgreementManager from "@/agreementManager";
 import { ExecutionFlags, TimeConfig, AgreementFlag } from "@/types";
 import {
     BlockStruct,
-    SignedBlockStruct
+    SignedBlockStruct,
+    StateSnapshotStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 import DisputeHandler from "@/DisputeHandler";
@@ -19,6 +20,7 @@ import {
 import AStateMachine from "@/AStateMachine";
 import { Clock } from "..";
 import ProofManager from "@/ProofManager";
+import { DisputeAuditingDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 interface ValidationResult {
     success: boolean;
@@ -45,11 +47,15 @@ export default class ValidationService {
     /*──────────────────────── PUBLIC API ────────────────────────*/
     public async validateSignedBlock(
         signedBlock: SignedBlockStruct,
-        block?: BlockStruct
+        stateSnapshot: StateSnapshotStruct
     ): Promise<ValidationResult> {
-        const blk = block ?? EvmUtils.decodeBlock(signedBlock.encodedBlock);
-        const forkCnt = BlockUtils.getFork(blk);
-        const height = BlockUtils.getHeight(blk);
+        const blk = EvmUtils.decodeBlock(signedBlock.encodedBlock);
+        const forkCnt = BlockUtils.getFork(
+            EvmUtils.decodeBlock(signedBlock.encodedBlock)
+        );
+        const height = BlockUtils.getHeight(
+            EvmUtils.decodeBlock(signedBlock.encodedBlock)
+        );
 
         if (!this.isChannelOpen()) return notReady();
 
@@ -65,7 +71,8 @@ export default class ValidationService {
             return pastFork();
 
         // Check for duplicate blocks
-        if (this.agreementManager.isBlockDuplicate(blk)) return duplicate();
+        if (this.agreementManager.isBlockDuplicate(signedBlock))
+            return duplicate();
 
         // Check for future blocks
         const isFutureFork = forkCnt > this.getForkCnt();
@@ -75,7 +82,9 @@ export default class ValidationService {
         // Check if participant is in the fork
         if (
             !this.agreementManager.isParticipantInLatestFork(
-                BlockUtils.getBlockAuthor(blk)
+                BlockUtils.getBlockAuthor(
+                    EvmUtils.decodeBlock(signedBlock.encodedBlock)
+                )
             )
         )
             return disconnect();
@@ -97,27 +106,31 @@ export default class ValidationService {
         }
 
         // Validate timestamp
-        if (!(await this.isGoodTimestamp(blk)))
+        if (!(await this.isGoodTimestamp(signedBlock)))
             return dispute(AgreementFlag.INCORRECT_DATA);
 
         // Check if enough time has passed
-        const timeFlag = await this.isEnoughTimeSubjective(signedBlock, blk);
+        const timeFlag = await this.isEnoughTimeSubjective(blk);
         if (timeFlag !== ExecutionFlags.SUCCESS) {
             return { success: false, flag: timeFlag };
         }
 
         // Validate block producer
         const nextToWrite = await this.stateMachine.getNextToWrite();
-        if (BlockUtils.getBlockAuthor(blk) !== nextToWrite)
+        if (
+            BlockUtils.getBlockAuthor(
+                EvmUtils.decodeBlock(signedBlock.encodedBlock)
+            ) !== nextToWrite
+        )
             return dispute(AgreementFlag.INCORRECT_DATA);
 
         // Process state transition
-        return this.processStateTransition(blk, signedBlock);
+        return this.processStateTransition(blk, signedBlock, stateSnapshot);
     }
 
     public async validateBlockConfirmation(
         signed: SignedBlockStruct,
-        confirmationSig: BytesLike,
+        confirmationSignature: BytesLike,
         block?: BlockStruct
     ): Promise<ValidationResult> {
         const blk = block ?? EvmUtils.decodeBlock(signed.encodedBlock);
@@ -125,15 +138,20 @@ export default class ValidationService {
         if (!this.isChannelOpen()) return notReady();
         if (!this.isSignedBlockAuthentic(signed, blk, this.getChannelId()))
             return disconnect();
-        if (this.isPastFork(BlockUtils.getFork(blk))) return pastFork();
+        if (
+            this.isPastFork(
+                BlockUtils.getFork(EvmUtils.decodeBlock(signed.encodedBlock))
+            )
+        )
+            return pastFork();
 
         // Ensure block in chain
-        if (!this.agreementManager.isBlockInChain(blk)) {
+        if (!this.agreementManager.isBlockInChain(signed)) {
             const flag = await this.onSignedBlock(signed, blk);
 
             if (flag === ExecutionFlags.DUPLICATE) {
                 // Possibly it has become part of the chain now
-                if (!this.agreementManager.isBlockInChain(blk)) {
+                if (!this.agreementManager.isBlockInChain(signed)) {
                     return { success: false, flag: ExecutionFlags.NOT_READY };
                 }
             } else if (flag !== ExecutionFlags.SUCCESS) {
@@ -143,9 +161,9 @@ export default class ValidationService {
         }
 
         /* confirmer inside fork */
-        const confirmer = EvmUtils.retrieveSignerAddressBlock(
-            blk,
-            confirmationSig as SignatureLike
+        const confirmer = SignatureUtils.getSignerAddress(
+            signed.encodedBlock,
+            confirmationSignature as SignatureLike
         );
         if (!this.agreementManager.isParticipantInLatestFork(confirmer))
             return disconnect();
@@ -153,8 +171,8 @@ export default class ValidationService {
         /* duplicate sig */
         if (
             this.agreementManager.doesSignatureExist(
-                blk,
-                confirmationSig as SignatureLike
+                EvmUtils.decodeBlock(signed.encodedBlock),
+                confirmationSignature as SignatureLike
             )
         )
             return duplicate();
@@ -164,27 +182,12 @@ export default class ValidationService {
 
     public async validateDispute(
         disputeStruct: DisputeStruct,
-        timestamp: number
+        disputeAuditingData: DisputeAuditingDataStruct
     ): Promise<boolean> {
         // triggered by StateManager.onDisputeCommitted, which is triggered by chain event 'DisputeCommitted'
         // therefore it is assumed that validation has already happened on
 
-        // this is the place to add any validation that should run on a new dispute
-
-        if (
-            disputeStruct.disputeIndex !==
-            this.agreementManager.forks.getDisputesCount()
-        ) {
-            return false;
-        }
-
-        const allowedParticipantsSet = await getActiveParticipants(
-            this.scmContract,
-            this.getChannelId()
-        );
-        if (!allowedParticipantsSet.has(disputeStruct.disputer as string)) {
-            return false;
-        }
+        // this is the place to add any validation that should run on a new disput
 
         return true;
     }
@@ -193,50 +196,6 @@ export default class ValidationService {
         disputeStruct: DisputeStruct,
         confirmationSignature: BytesLike
     ): Promise<ValidationResult> {
-        if (!this.isChannelOpen()) return notReady();
-
-        // Check if dispute exists
-        if (!this.agreementManager.isDisputeKnown(disputeStruct)) {
-            // Dispute not found - could be gossip arrived before event
-            // Return NOT_READY to allow retry
-            return notReady();
-        }
-
-        // Validate signature
-        let confirmer;
-        try {
-            confirmer = SignatureUtils.getSignerAddress(
-                disputeStruct,
-                confirmationSignature as SignatureLike
-            );
-        } catch (error) {
-            return dispute(AgreementFlag.INVALID_SIGNATURE);
-        }
-
-        // Check if participant already signed with a different signature
-        const hasParticipantSigned =
-            this.agreementManager.hasParticipantSignedDispute(
-                disputeStruct,
-                confirmer
-            );
-
-        if (hasParticipantSigned) {
-            return duplicate();
-        }
-
-        const allowedParticipantsSet = await getActiveParticipants(
-            this.scmContract,
-            this.getChannelId()
-        );
-
-        if (confirmer === disputeStruct.disputer) {
-            return dispute(AgreementFlag.DOUBLE_SIGN);
-        }
-
-        if (!allowedParticipantsSet.has(confirmer)) {
-            return dispute(AgreementFlag.INVALID_SIGNATURE);
-        }
-
         return success();
     }
 
@@ -244,38 +203,38 @@ export default class ValidationService {
 
     private async processStateTransition(
         block: BlockStruct,
-        signed: SignedBlockStruct
+        signed: SignedBlockStruct,
+        stateSnapshot: StateSnapshotStruct
     ): Promise<ValidationResult> {
-        const previousStateHash = await this.stateMachine
-            .getState()
-            .then(ethers.keccak256);
-        let {
-            success: txOK,
-            successCallback,
-            exitChannels: _
-        } = await this.stateMachine.stateTransition(block.transaction);
+        const prevBlock = this.agreementManager.forkService.getSignedBlock(
+            block.transaction.header.forkCnt as number,
+            (block.transaction.header.transactionCnt as number) - 1
+        )!;
+        const prevBlockHash = ethers.keccak256(
+            EvmUtils.encodeBlock(EvmUtils.decodeBlock(prevBlock.encodedBlock))
+        );
+
+        let { success: txOK, successCallback } =
+            await this.stateMachine.stateTransition(block.transaction);
 
         const encodedState = await this.stateMachine.getState();
-        const stateHash = ethers.keccak256(encodedState);
+        const stateSnapshotHash = ethers.keccak256(
+            EvmUtils.encodeStateSnapshot(stateSnapshot)
+        );
 
         const hashOK =
-            stateHash === block.stateHash &&
-            previousStateHash === block.previousStateHash;
+            stateSnapshotHash === stateSnapshot.stateMachineStateHash &&
+            prevBlockHash === block.previousBlockHash;
 
         if (!txOK || !hashOK) return dispute(AgreementFlag.INCORRECT_DATA);
 
-        this.agreementManager.addBlock(
-            block,
-            signed.signature as SignatureLike,
-            encodedState
-        );
+        this.agreementManager.addBlock(signed, encodedState, stateSnapshot);
         scheduleTask(successCallback, 0, "stateTransitionSuccessCallback");
         return success();
     }
 
     /* subjective time window */
     private async isEnoughTimeSubjective(
-        signed: SignedBlockStruct,
         blk: BlockStruct
     ): Promise<ExecutionFlags> {
         if (!(await this.isMyTurn())) return ExecutionFlags.SUCCESS;
@@ -284,20 +243,29 @@ export default class ValidationService {
             BlockUtils.getTimestamp(blk),
             Clock.getTimeInSeconds()
         );
-        if (flag === ExecutionFlags.DISPUTE) {
-            const proof = ProofManager.createBlockTooFarInFutureProof(signed);
-            this.disputeHandler.createDispute(this.getForkCnt(), "0x00", 0, [
-                proof
-            ]);
+
+        if (flag === ExecutionFlags.TIMESTAMP_IN_PAST) {
+            // TODO: create dispute and timeout fraud proof
+        }
+        if (flag === ExecutionFlags.TIMESTAMP_IN_FUTURE) {
+            // TODO: create dispute and timeout fraud proof
         }
         return flag;
     }
 
     /* objective / chain timestamp */
-    private async isGoodTimestamp(blk: BlockStruct): Promise<boolean> {
-        const forkCnt = BlockUtils.getFork(blk);
-        const blockHeight = BlockUtils.getHeight(blk);
-        const blockTimestamp = BlockUtils.getTimestamp(blk);
+    private async isGoodTimestamp(
+        signedBlock: SignedBlockStruct
+    ): Promise<boolean> {
+        const forkCnt = BlockUtils.getFork(
+            EvmUtils.decodeBlock(signedBlock.encodedBlock)
+        );
+        const blockHeight = BlockUtils.getHeight(
+            EvmUtils.decodeBlock(signedBlock.encodedBlock)
+        );
+        const blockTimestamp = BlockUtils.getTimestamp(
+            EvmUtils.decodeBlock(signedBlock.encodedBlock)
+        );
 
         const latestTxTs =
             this.agreementManager.getLatestBlockTimestamp(forkCnt);
@@ -360,7 +328,10 @@ export default class ValidationService {
             signed.signature as SignatureLike
         );
 
-        return signer === BlockUtils.getBlockAuthor(block);
+        return (
+            signer ===
+            BlockUtils.getBlockAuthor(EvmUtils.decodeBlock(signed.encodedBlock))
+        );
     }
 }
 

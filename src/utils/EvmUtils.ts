@@ -1,18 +1,62 @@
 import { BytesLike, ethers, SignatureLike } from "ethers";
 import {
     BlockStruct,
+    ExitChannelBlockStruct,
+    ExitChannelStruct,
+    JoinChannelBlockStruct,
     JoinChannelStruct,
     SignedBlockStruct,
-    SignedDisputeStruct,
     SignedJoinChannelStruct,
+    StateSnapshotStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-
+import {
+    BlockEthersType,
+    DisputeAuditingDataEthersType,
+    ExitChannelBlockEthersType,
+    ExitChannelEthersType,
+    JoinChannelBlockEthersType,
+    JoinChannelEthersType,
+    StateSnapshotEthersType,
+    TransactionEthersType
+} from "@/types";
+import { DisputeAuditingDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 import { SignatureUtils } from "./SignatureUtils";
 import { Codec } from "./Codec";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 
 export class EvmUtils {
+    public static encodeTransaction(transaction: TransactionStruct): string {
+        let transactionEncoded = ethers.AbiCoder.defaultAbiCoder().encode(
+            [TransactionEthersType],
+            [transaction]
+        );
+        return transactionEncoded;
+    }
+
+    public static decodeTransaction(
+        transactionEncoded: BytesLike
+    ): TransactionStruct {
+        let transactionDecoded = ethers.AbiCoder.defaultAbiCoder().decode(
+            [TransactionEthersType],
+            transactionEncoded
+        );
+        return EvmUtils.ethersResultToObjectRecursive(
+            transactionDecoded[0]
+        ) as TransactionStruct;
+    }
+
+    public static encodeDisputeAuditingData(
+        disputeAuditingData: DisputeAuditingDataStruct
+    ): string {
+        let disputeAuditingDataEncoded =
+            ethers.AbiCoder.defaultAbiCoder().encode(
+                [DisputeAuditingDataEthersType],
+                [disputeAuditingData]
+            );
+        return disputeAuditingDataEncoded;
+    }
+
     public static async signTransaction(
         transaction: TransactionStruct,
         signer: ethers.Signer
@@ -29,7 +73,23 @@ export class EvmUtils {
     }
 
     public static decodeBlock(blockEncoded: BytesLike): BlockStruct {
-        return Codec.decodeBlock(blockEncoded);
+        let blockDecoded = ethers.AbiCoder.defaultAbiCoder().decode(
+            [BlockEthersType],
+            blockEncoded
+        );
+        return EvmUtils.ethersResultToObjectRecursive(
+            blockDecoded[0]
+        ) as BlockStruct;
+    }
+
+    public static encodeStateSnapshot(
+        stateSnapshot: StateSnapshotStruct
+    ): string {
+        let stateSnapshotEncoded = ethers.AbiCoder.defaultAbiCoder().encode(
+            [StateSnapshotEthersType],
+            [stateSnapshot]
+        );
+        return stateSnapshotEncoded;
     }
 
     public static async signBlock(
@@ -43,7 +103,7 @@ export class EvmUtils {
     public static async signDispute(
         dispute: DisputeStruct,
         signer: ethers.Signer
-    ): Promise<SignedDisputeStruct> {
+    ): Promise<{ encodedDispute: BytesLike; signature: SignatureLike }> {
         const { encoded, signature } = await SignatureUtils.sign(
             dispute,
             signer
@@ -62,7 +122,32 @@ export class EvmUtils {
     }
 
     public static encodeJoinChannel(jc: JoinChannelStruct): string {
-        return Codec.encode(jc);
+        let joinChannelEncoded = ethers.AbiCoder.defaultAbiCoder().encode(
+            [JoinChannelEthersType],
+            [jc]
+        );
+        return joinChannelEncoded;
+    }
+    public static encodeJoinChannelBlock(jc: JoinChannelBlockStruct): string {
+        let joinChannelEncoded = ethers.AbiCoder.defaultAbiCoder().encode(
+            [JoinChannelBlockEthersType],
+            [jc]
+        );
+        return joinChannelEncoded;
+    }
+    public static encodeExitChannel(ec: ExitChannelStruct): string {
+        let exitChannelEncoded = ethers.AbiCoder.defaultAbiCoder().encode(
+            [ExitChannelEthersType],
+            [ec]
+        );
+        return exitChannelEncoded;
+    }
+    public static encodeExitChannelBlock(ec: ExitChannelBlockStruct): string {
+        let exitChannelEncoded = ethers.AbiCoder.defaultAbiCoder().encode(
+            [ExitChannelBlockEthersType],
+            [ec]
+        );
+        return exitChannelEncoded;
     }
     public static decodeJoinChannel(jcEncoded: BytesLike): JoinChannelStruct {
         return Codec.decodeJoinChannel(jcEncoded);
