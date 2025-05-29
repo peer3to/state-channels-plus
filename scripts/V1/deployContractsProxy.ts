@@ -1,10 +1,12 @@
 import { ethers } from "hardhat";
 import { Wallet, NonceManager, Signer } from "ethers";
 import { DeployUtils } from "@/utils";
-import dotenv from "dotenv";
+import devEnv from "../../env.dev.json";
+import prodEnv from "../../env.prod.json";
 
-dotenv.config();
-const PROVIDER_URL = process.env.PROVIDER_URL || "http://localhost:8545";
+const env = process.env.NODE_ENV === "production" ? prodEnv : devEnv;
+
+const PROVIDER_URL = env.PROVIDER_URL;
 
 const getRandomSigner = () => {
     let randomSinger: Signer = Wallet.createRandom(

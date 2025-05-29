@@ -1,15 +1,17 @@
 import { ethers } from "hardhat";
 import { Wallet, NonceManager, Signer } from "ethers";
 import { DeployUtils } from "@peer3/state-channels-plus";
-import dotenv from "dotenv";
 import {
     TicTacToeStateChannelManagerProxy,
     TicTacToeStateMachine
-} from "../typechain-types";
+} from "../../../typechain-types";
 import path from "path";
+import devEnv from "../../../env.dev.json";
+import prodEnv from "../../../env.prod.json";
 
-dotenv.config();
-const PROVIDER_URL = process.env.PROVIDER_URL || "http://localhost:8545";
+const env = process.env.NODE_ENV === "production" ? prodEnv : devEnv;
+
+const PROVIDER_URL = env.PROVIDER_URL;
 
 const getRandomSigner = () => {
     let randomSinger: Signer = Wallet.createRandom(

@@ -18,8 +18,12 @@ import {
     JoinChannelService,
     WebRTCSetupService
 } from "./services";
+import devEnv from "../../env.dev.json";
+import prodEnv from "../../env.prod.json";
 
-let DEBUG_RPC = false;
+const env = process.env.NODE_ENV === "production" ? prodEnv : devEnv;
+
+let DEBUG_RPC = env.DEBUG_RPC;
 // dotenv.config();
 // DEBUG_RPC = process.env.DEBUG_P2P_MANAGER === "true";
 //TODO! refactor this

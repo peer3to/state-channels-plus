@@ -13,9 +13,20 @@ import {
     MathStateMachine
 } from "@typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import devEnv from "../../../../env.dev.json";
+import prodEnv from "../../../../env.prod.json";
+
+// Choose the correct environment config based on NODE_ENV
+const env = process.env.NODE_ENV === "production" ? prodEnv : devEnv;
 
 describe("StateChannelManagerProxy", function () {
-    process.env.DEBUG_LOCAL_TRANSPORT = "true"; //will use local transport - these tests aren't meant to test the distributed system
+    process.env.DEBUG_LOCAL_TRANSPORT = JSON.stringify(
+        env.DEBUG_LOCAL_TRANSPORT
+    );
+    // Use env.DEBUG_LOCAL_TRANSPORT in your test setup or pass it to your code as needed
+    // Example usage:
+    // const debugLocalTransport = env.DEBUG_LOCAL_TRANSPORT;
+    // You can now use debugLocalTransport in your test logic or pass it to the code under test
 
     let mathChannelManager: MathStateChannelManagerProxy;
     let mathInstance: MathStateMachine;

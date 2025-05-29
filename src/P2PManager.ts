@@ -10,9 +10,12 @@ import { ethers } from "ethers";
 import { DebugProxy, LocalDiscoveryServer } from "@/utils";
 import { RpcHandleMethods } from "@/rpc/RpcProxy";
 import { Buffer } from "buffer";
+import devEnv from "../env.dev.json";
+import prodEnv from "../env.prod.json";
 
-let DEBUG_P2P_MANAGER = false;
-let DEBUG_LOCAL_TRANSPORT = false;
+const env = process.env.NODE_ENV === "production" ? prodEnv : devEnv;
+let DEBUG_P2P_MANAGER = env.DEBUG_P2P_MANAGER;
+let DEBUG_LOCAL_TRANSPORT = env.DEBUG_LOCAL_TRANSPORT;
 // dotenv.config();
 // DEBUG_P2P_MANAGER = process.env.DEBUG_P2P_MANAGER === "true";
 // DEBUG_LOCAL_TRANSPORT= process.env.DEBUG_LOCAL_TRANSPORT === "true";
