@@ -1,1 +1,6 @@
-yarn lint-staged
+if yarn prettier --check .; then
+  yarn lint-staged
+else
+  yarn prettier --write .
+  git add .
+fi

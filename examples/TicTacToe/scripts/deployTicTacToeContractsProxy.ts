@@ -5,10 +5,9 @@ import {
     TicTacToeStateChannelManagerProxy,
     TicTacToeStateMachine
 } from "../../../typechain-types";
-import path from "path";
-import peer3Config from "../../../peer3config.json";
 
-const PROVIDER_URL = peer3Config.PROVIDER_URL || "http://localhost:8545";
+const getProviderUrl = require("../tic-tac-toe-vite/getProviderUrl.js").default;
+const PROVIDER_URL = getProviderUrl()|| "http://localhost:8545";
 
 const getRandomSigner = () => {
     let randomSinger: Signer = Wallet.createRandom(

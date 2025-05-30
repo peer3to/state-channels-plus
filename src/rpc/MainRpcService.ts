@@ -18,9 +18,16 @@ import {
     JoinChannelService,
     WebRTCSetupService
 } from "./services";
-import peer3Config from "../../peer3config.json";
+import fs from "fs";
+import path from "path";
 
-let DEBUG_RPC = false || peer3Config.DEBUG_RPC;
+const configPath = path.resolve(process.cwd(), "peer3config.json");
+let peer3Config: any = {};
+if (fs.existsSync(configPath)) {
+    peer3Config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+}
+
+let DEBUG_RPC = peer3Config.DEBUG_RPC || false;
 
 //TODO! refactor this
 type JoinChanenelConfirmation = {
