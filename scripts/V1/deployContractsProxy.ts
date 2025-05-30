@@ -1,10 +1,9 @@
 import { ethers } from "hardhat";
 import { Wallet, NonceManager, Signer } from "ethers";
 import { DeployUtils } from "@/utils";
-import dotenv from "dotenv";
+import peer3Config from "../../peer3config.json";
 
-dotenv.config();
-const PROVIDER_URL = process.env.PROVIDER_URL || "http://localhost:8545";
+const PROVIDER_URL = peer3Config.PROVIDER_URL || "http://localhost:8545";
 
 const getRandomSigner = () => {
     let randomSinger: Signer = Wallet.createRandom(
