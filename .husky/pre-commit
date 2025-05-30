@@ -1,6 +1,8 @@
 if yarn prettier --check .; then
   yarn lint-staged
+  forge fmt
 else
   yarn prettier --write .
   git add .
+  forge fmt
 fi

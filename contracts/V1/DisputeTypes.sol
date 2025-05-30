@@ -52,10 +52,10 @@ struct Dispute {
     /// @notice Address of the disputer, this can be anyone who have a stake in the dispute on chain
     address disputer;
     /// @notice Index of the dispute
-    uint disputeIndex;
+    uint256 disputeIndex;
     // ========================== optional ===============================
     /// @notice Previous recursive dispute uint
-    uint previousRecursiveDisputeIndex; // default value type(uint).max
+    uint256 previousRecursiveDisputeIndex; // default value type(uint).max
     /// @notice Timeout for the dispute
     Timeout timeout;
     /// @notice Self removal for the dispute
@@ -119,7 +119,6 @@ struct BlockInvalidStateTransitionProof {
     bytes previousStateStateMachineState;
 }
 
-
 struct BlockDoubleSignProof {
     SignedBlock block1;
     SignedBlock block2;
@@ -129,7 +128,7 @@ struct BlockDoubleSignProof {
 struct DisputeNotLatestStateProof {
     BlockConfirmation newerBlock;
     Dispute originalDispute;
-    uint originalDisputeTimestamp;
+    uint256 originalDisputeTimestamp;
 }
 
 struct DisputeOutOfGasProof {
@@ -147,8 +146,8 @@ struct DisputeInvalidStateProof {
 struct DisputeInvalidPreviousRecursiveProof {
     Dispute invalidRecursiveDispute;
     Dispute originalDispute;
-    uint originalDisputeTimestamp;
-    uint invalidRecursiveDisputeTimestamp;
+    uint256 originalDisputeTimestamp;
+    uint256 invalidRecursiveDisputeTimestamp;
     bytes latestStateSnapshot;
     bytes invalidRecursiveDisputeOutputState;
 }
@@ -162,21 +161,21 @@ struct DisputeInvalidExitChannelBlocksProof {
 struct TimeoutThresholdProof {
     BlockConfirmation thresholdBlock;
     Dispute timedOutDispute;
-    uint timedOutDisputeTimestamp;
+    uint256 timedOutDisputeTimestamp;
     bytes latestStateSnapshot;
 }
 
 struct TimeoutPriorInvalidProof {
     Dispute originalDispute;
     Dispute recursiveDispute;
-    uint originalDisputeTimestamp;
-    uint recursiveDisputeTimestamp;
+    uint256 originalDisputeTimestamp;
+    uint256 recursiveDisputeTimestamp;
 }
 
 /// @dev a pair consisting of first index (index of the malicious dispute) and last index (last index in the array)
 struct DisputePair {
-    uint firstIndex;
-    uint lastIndex;
+    uint256 firstIndex;
+    uint256 lastIndex;
 }
 
 /// @dev data for dispute auditing
@@ -187,10 +186,10 @@ struct DisputeAuditingData {
     StateSnapshot[] milestoneSnapshots; //for K milestones there will be K-1 snapshots, since the first milestone is the genesisSnapshot
     bytes latestStateStateMachineState;
     JoinChannelBlock[] joinChannelBlocks;
-    uint timestamp;
+    uint256 timestamp;
     // ========================== optional ===============================
     Dispute previousDispute; // (optional) needed to verify 'this' dispute genesis against the previous dispute outputSnapshot or genesisSnapshot (in the case of a recursive dispute) - if not present, genesis is the latest on-chain Snapshot
-    uint previousDisputeTimestamp; // (optional) needed to verify the commitment of the previous dispute
+    uint256 previousDisputeTimestamp; // (optional) needed to verify the commitment of the previous dispute
 }
 
 struct DisputeData {

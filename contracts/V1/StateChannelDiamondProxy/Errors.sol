@@ -32,7 +32,7 @@ error ErrorDisputeCommitmentNotAvailable();
 error ErrorDisputeExpired();
 error ErrorDisputeGenesisInvalid();
 error ErrorDisputeStateProofInvalid();
-error ErrorDisptuteFraudProofDidntSlash(uint proofIndex);
+error ErrorDisptuteFraudProofDidntSlash(uint256 proofIndex);
 error ErrorDisputeStateMachineJoiningFailed();
 error ErrorDisputeStateMachineSlashingFailed();
 error ErrorDisputeStateMachineRemovingFailed();
@@ -73,7 +73,7 @@ error ErrorInvalidBlock();
 error ErrorInvalidStateSnapshotHash();
 error ErrorValidStateTransition();
 //Incorrect data
-error ErrorIncorrectDataStateHashNotLinkedToBlock(uint blockNumber);
+error ErrorIncorrectDataStateHashNotLinkedToBlock(uint256 blockNumber);
 error ErrorIncorrectDataBlocksNotLinked();
 error ErrorIncorrectLatestStateSnapshot();
 
@@ -94,7 +94,6 @@ error ErrorJoinChannelNotMyTurn();
 error ErrorJoinChannelAlreadyInChannel();
 error ErrorJoinChannelExpired();
 error ErrorJoinChannelAlreadyAdded();
-
 
 // ========================== DisputeManagerFacet ==========================
 
