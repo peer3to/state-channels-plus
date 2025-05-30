@@ -17,4 +17,5 @@ typechain-types
 ./wake
 
 .nyc_output
+peer3config.json
 

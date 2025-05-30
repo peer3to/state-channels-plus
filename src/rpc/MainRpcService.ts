@@ -18,10 +18,10 @@ import {
     JoinChannelService,
     WebRTCSetupService
 } from "./services";
+import peer3Config from "../../peer3config.json";
 
-let DEBUG_RPC = false;
-// dotenv.config();
-// DEBUG_RPC = process.env.DEBUG_P2P_MANAGER === "true";
+let DEBUG_RPC = false || peer3Config.DEBUG_RPC;
+
 //TODO! refactor this
 type JoinChanenelConfirmation = {
     signedJoinChannel: SignedJoinChannelStruct;

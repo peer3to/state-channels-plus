@@ -1,10 +1,18 @@
-import dotenv from "dotenv";
+import fs from "fs";
 import path from "path";
 
 function getProviderUrl() {
-    const envPath = path.resolve("../.env");
-    dotenv.config({ path: envPath });
-    return process.env.PROVIDER_URL || "http://localhost:8545";
+    const configPath = path.resolve(process.cwd(), "peer3config.json");
+    let providerUrl = "http://localhost:8545"; // default
+
+    if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        if (config.PROVIDER_URL) {
+            providerUrl = config.PROVIDER_URL;
+        }
+    }
+
+    return providerUrl;
 }
 
 export default getProviderUrl;
