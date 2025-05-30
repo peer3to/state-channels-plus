@@ -16,26 +16,15 @@ contract LibraryTestContract {
             calldatacopy(0, 0, calldatasize())
 
             // Delegate call to the library
-            let result := delegatecall(
-                gas(),
-                implementation,
-                0,
-                calldatasize(),
-                0,
-                0
-            )
+            let result := delegatecall(gas(), implementation, 0, calldatasize(), 0, 0)
 
             // Copy returned data
             returndatacopy(0, 0, returndatasize())
 
             // Return based on success or failure of the call
             switch result
-            case 0 {
-                revert(0, returndatasize())
-            }
-            default {
-                return(0, returndatasize())
-            }
+            case 0 { revert(0, returndatasize()) }
+            default { return(0, returndatasize()) }
         }
     }
 }
