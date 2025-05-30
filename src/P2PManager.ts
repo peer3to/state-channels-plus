@@ -10,7 +10,14 @@ import { ethers } from "ethers";
 import { DebugProxy, LocalDiscoveryServer } from "@/utils";
 import { RpcHandleMethods } from "@/rpc/RpcProxy";
 import { Buffer } from "buffer";
-import peer3Config from "../peer3config.json";
+import fs from "fs";
+import path from "path";
+
+const configPath = path.resolve(process.cwd(), "peer3config.json");
+let peer3Config: any = {};
+if (fs.existsSync(configPath)) {
+    peer3Config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+}
 
 let DEBUG_P2P_MANAGER = false || peer3Config.DEBUG_P2P_MANAGER;
 let DEBUG_LOCAL_TRANSPORT = false || peer3Config.DEBUG_LOCAL_TRANSPORT;
