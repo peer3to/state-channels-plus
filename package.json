@@ -67,8 +67,7 @@
     "test:coverage": "nyc --reporter=html yarn testts",
     "build": "yarn compile && rimraf dist && tsc && npm pack && node rename-pack.js",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "prepare": "husky install"
+    "format:check": "prettier --check ."
   },
   "lint-staged": {
     "**/*": "prettier --write --ignore-unknown"
