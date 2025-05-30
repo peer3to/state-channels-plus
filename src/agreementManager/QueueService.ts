@@ -2,8 +2,9 @@ import {
     SignedBlockStruct,
     BlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import { BlockConfirmation } from "./types";
+import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/DataTypes";
 import { BlockUtils, EvmUtils } from "@/utils";
+import { SignatureLike } from "ethers";
 
 type ForkCnt = number;
 type Height = number;
@@ -32,7 +33,7 @@ function insertNestedMapWithOverwrite<T>(
 
 export default class QueueService {
     private blockQ: Queue<SignedBlockStruct> = new Map();
-    private confQ: Queue<BlockConfirmation> = new Map();
+    private confQ: Queue<BlockConfirmationStruct> = new Map();
 
     /*────────── Block queue ─────────*/
 
@@ -64,14 +65,14 @@ export default class QueueService {
 
     /*──────── Confirmation queue ────────*/
 
-    queueConfirmation(blockConfirmation: BlockConfirmation): void {
+    queueConfirmation(blockConfirmation: BlockConfirmationStruct): void {
         const block = EvmUtils.decodeBlock(
-            blockConfirmation.originalSignedBlock.encodedBlock
+            blockConfirmation.signedBlock.encodedBlock
         );
         const { forkCnt, height } = BlockUtils.getCoordinates(block);
         const confirmationSigner = EvmUtils.retrieveSignerAddressBlock(
             block,
-            blockConfirmation.confirmationSignature
+            blockConfirmation.signedBlock.signature as SignatureLike
         );
         insertNestedMapWithOverwrite(
             this.confQ,
@@ -85,7 +86,7 @@ export default class QueueService {
     tryDequeueConfirmations(
         forkCnt: ForkCnt,
         height: Height
-    ): BlockConfirmation[] {
+    ): BlockConfirmationStruct[] {
         const heightMap = this.confQ.get(forkCnt);
         if (!heightMap) return [];
 

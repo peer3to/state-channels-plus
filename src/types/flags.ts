@@ -5,11 +5,14 @@ export enum ExecutionFlags {
     DISCONNECT,
     DISPUTE,
     TIMESTAMP_IN_FUTURE,
+    TIMESTAMP_IN_PAST,
     NOT_ENOUGH_TIME,
     PAST_FORK
 }
 
 export enum AgreementFlag {
+    INVALID_STATE_TRANSITION,
+    INVALID_PREVIOUS_BLOCK,
     INVALID_SIGNATURE,
     READY,
     DUPLICATE,

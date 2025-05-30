@@ -1,88 +1,68 @@
 import {
-    BlockConfirmationEthersType,
-    ExitChannelBlockEthersType,
+    DisputeEthersType,
+    ProofType,
     SignedBlockEthersType,
-    TimeoutEthersType
+    StateSnapshotEthersType
 } from "./ethers";
 
-export const ForkMilestoneProofEthersType = `tuple(
-    ${BlockConfirmationEthersType}[] blockConfirmations
+export const BlockEmptyProofEthersType = `tuple(
+    ${SignedBlockEthersType} emptyBlock,
+    ${SignedBlockEthersType} previousBlock,
 )`;
 
-export const ForkProofEthersType = `tuple(
-    ${ForkMilestoneProofEthersType}[] forkMilestoneProofs
+export const BlockInvalidStateTransitionProofEthersType = `tuple(
+    ${SignedBlockEthersType} invalidBlock,
+    ${SignedBlockEthersType} previousBlock,
+    ${StateSnapshotEthersType} previousBlockStateSnapshot,
+    bytes previousStateStateMachineState
 )`;
 
-export const StateProofEthersType = `tuple(
-    ${ForkProofEthersType} forkProof,
-    ${SignedBlockEthersType}[] signedBlocks
-)`;
-
-export const ProofEthersType = `tuple(
-    uint8 proofType,
-    bytes encodedProof
-)`;
-
-export const DisputeEthersType = `tuple(
-    bytes32 channelId,
-    bytes32 genesisStateSnapshotHash,
-    bytes32 latestStateSnapshotHash,
-    ${StateProofEthersType} stateProof,
-    ${ProofEthersType}[] fraudProofs,
-    address[] onChainSlashes,
-    bytes32 onChainLatestJoinChannelBlockHash,
-    bytes32 outputStateSnapshotHash,
-    ${ExitChannelBlockEthersType}[] exitChannelBlocks,
-    bytes32 disputeAuditingDataHash,
-    address disputer,
-    uint256 disputeIndex,
-    uint256 previousRecursiveDisputeIndex,
-    ${TimeoutEthersType} timeout,
-    bool selfRemoval
-)`;
-
-export const FoldRechallengeProofEthersType = `tuple(
-    string encodedBlock,
-    bytes[] signatures
-    )`;
-
-export const DoubleSignProofEthersType = `tuple(
-        tuple(${SignedBlockEthersType} block1, ${SignedBlockEthersType} block2)[] doubleSigns
-        )`;
-export const IncorrectDataProofEthersType = `tuple(
+export const BlockDoubleSignProofEthersType = `tuple(
     ${SignedBlockEthersType} block1,
-    ${SignedBlockEthersType} block2,
-    string encodedState
-    )`;
-export const NewerStateProofEthersType = `tuple(
-    string encodedBlock,
-    string confirmationSignature
-    )`;
-export const FoldPriorBlockProofEthersType = `tuple(
-    uint moveCnt
-    )`;
-export const BlockTooFarInFutureProofEthersType = `tuple(
-    ${SignedBlockEthersType} block1
-    )`;
+    ${SignedBlockEthersType} block2
+)`;
 
-export enum ProofType {
-    FoldRechallenge,
-    DoubleSign,
-    IncorrectData,
-    NewerState,
-    FoldPriorBlock,
-    BlockTooFarInFuture
-}
+export const BlockInvalidPreviousLinkProofEthersType = `tuple(
+    ${SignedBlockEthersType} invalidBlock,
+    ${SignedBlockEthersType} previousBlock,
+    bytes previousStateMachineState
+)`;
 
-const DISPUTE_PROOF_ETHERS_TYPES: Record<ProofType, string> = {
-    [ProofType.FoldRechallenge]: FoldRechallengeProofEthersType,
-    [ProofType.DoubleSign]: DoubleSignProofEthersType,
-    [ProofType.IncorrectData]: IncorrectDataProofEthersType,
-    [ProofType.NewerState]: NewerStateProofEthersType,
-    [ProofType.FoldPriorBlock]: FoldPriorBlockProofEthersType,
-    [ProofType.BlockTooFarInFuture]: BlockTooFarInFutureProofEthersType
+export const TimeoutPriorInvalidProofEthersType = `tuple(
+    ${DisputeEthersType} originalDispute,
+    ${DisputeEthersType} recursiveDispute,
+    uint256 originalDisputeTimestamp,
+    uint256 recursiveDisputeTimestamp
+)`;
+
+export const TimeoutThresholdProofEthersType = `tuple(
+    ${DisputeEthersType} originalDispute,
+    ${DisputeEthersType} recursiveDispute,
+    uint256 originalDisputeTimestamp,
+    uint256 recursiveDisputeTimestamp
+)`;
+
+export const DisputeInvalidPreviousRecursiveProofEthersType = `tuple(
+    ${DisputeEthersType} invalidRecursiveDispute,
+    ${DisputeEthersType} originalDispute,
+    uint256 originalDisputeTimestamp,
+    uint256 invalidRecursiveDisputeTimestamp,
+    bytes invalidRecursiveDisputeOutputState
+)`;
+
+const DISPUTE_PROOF_ETHERS_TYPES: Partial<Record<ProofType, string>> = {
+    [ProofType.BlockEmptyBlock]: BlockEmptyProofEthersType,
+    [ProofType.BlockDoubleSign]: BlockDoubleSignProofEthersType,
+    [ProofType.BlockInvalidStateTransition]:
+        BlockInvalidStateTransitionProofEthersType,
+    [ProofType.BlockInvalidPreviousLink]:
+        BlockInvalidPreviousLinkProofEthersType,
+    [ProofType.TimeoutThreshold]: TimeoutThresholdProofEthersType,
+    [ProofType.TimeoutPriorInvalid]: TimeoutPriorInvalidProofEthersType,
+    [ProofType.DisputeInvalidPreviousRecursive]:
+        DisputeInvalidPreviousRecursiveProofEthersType
 };
 
 export const getEthersTypeForDisputeProof = (proofType: ProofType): string => {
-    return DISPUTE_PROOF_ETHERS_TYPES[proofType];
+    return DISPUTE_PROOF_ETHERS_TYPES[proofType]!;
 };
