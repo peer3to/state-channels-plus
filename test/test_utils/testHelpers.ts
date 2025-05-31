@@ -1,9 +1,13 @@
 import { ethers, ContractTransactionResponse, AddressLike } from "ethers";
 import { HardhatEthersHelpers } from "hardhat/types/runtime";
 import {
+    DisputeManagerFacet,
+    DisputeManagerFacetTest,
+    FraudProofFacet,
     MathStateChannelManagerProxy,
     MathStateMachine,
-    StateChannelUtilLibrary
+    StateChannelUtilLibrary,
+    StateSnapshotFacet
 } from "@typechain-types";
 
 import { JoinChannelStruct } from "@typechain-types/contracts/V1/DataTypes";
@@ -59,7 +63,7 @@ export async function deployLibraryTestContract(
     let stateChannelUtilLibrary = await stateChannelUtilLibraryFactory.deploy();
     let libraryAddress = await stateChannelUtilLibrary.getAddress();
 
-    //Deploy DisputeManagerFacet
+    //Deploy LibraryTestContract
     let libraryTestContractFactory = await _ethers.getContractFactory(
         "LibraryTestContract"
     );
@@ -70,6 +74,99 @@ export async function deployLibraryTestContract(
     );
     return proxy as StateChannelUtilLibrary;
 }
+
+// ---------------------- Deployment of individual contracts ----------------------
+export async function deployStateChannelUtilLibrary(
+    _ethers: typeof ethers & HardhatEthersHelpers
+): Promise<{
+    libraryUtilContract: StateChannelUtilLibrary;
+    libraryUtilContractAddress: string;
+}> {
+    let libraryUtilContractFactory = await _ethers.getContractFactory(
+        "StateChannelUtilLibrary"
+    );
+    let libraryUtilContract = await libraryUtilContractFactory.deploy();
+    return {
+        libraryUtilContract,
+        libraryUtilContractAddress: await libraryUtilContract.getAddress()
+    };
+}
+
+export async function deployDisputeManagerFacetTest(
+    _ethers: typeof ethers & HardhatEthersHelpers,
+    libraryUtilContractAddress: string
+): Promise<{
+    disputeManagerFacetTest: DisputeManagerFacetTest;
+    disputeManagerFacetTestAddress: string;
+}> {
+    let disputeManagerFacetTestFactory = await _ethers.getContractFactory(
+        "DisputeManagerFacetTest",
+        { libraries: { StateChannelUtilLibrary: libraryUtilContractAddress } }
+    );
+    let disputeManagerFacetTest = await disputeManagerFacetTestFactory.deploy();
+    return {
+        disputeManagerFacetTest,
+        disputeManagerFacetTestAddress: await disputeManagerFacetTest.getAddress()
+    };
+}
+
+export async function deployDisputeManagerFacet(
+    _ethers: typeof ethers & HardhatEthersHelpers,
+    libraryUtilContractAddress: string
+): Promise<{
+    disputeManagerFacet: DisputeManagerFacet;
+    disputeManagerFacetAddress: string;
+}> {
+    let disputeManagerFacetFactory = await _ethers.getContractFactory(
+        "DisputeManagerFacet",
+        { libraries: { StateChannelUtilLibrary: libraryUtilContractAddress } }
+    );
+    let disputeManagerFacet = await disputeManagerFacetFactory.deploy();
+    let disputeManagerFacetAddress = await disputeManagerFacet.getAddress();
+    return {
+        disputeManagerFacet,
+        disputeManagerFacetAddress
+    };
+}
+
+export async function deployFraudProofFacet(
+    _ethers: typeof ethers & HardhatEthersHelpers,
+    libraryUtilContractAddress: string
+): Promise<{
+    fraudProofFacet: FraudProofFacet;
+    fraudProofFacetAddress: string;
+}> {
+    let fraudProofFacetFactory = await _ethers.getContractFactory(
+        "FraudProofFacet",
+        { libraries: { StateChannelUtilLibrary: libraryUtilContractAddress } }
+    );
+    let fraudProofFacet = await fraudProofFacetFactory.deploy();
+    return {
+        fraudProofFacet,
+        fraudProofFacetAddress: await fraudProofFacet.getAddress()
+    };
+}
+
+export async function deployStateSnapshotFacet(
+    _ethers: typeof ethers & HardhatEthersHelpers,
+    libraryUtilContractAddress: string
+): Promise<{
+    stateSnapshotFacet: StateSnapshotFacet;
+    stateSnapshotFacetAddress: string;
+}> {
+    let stateSnapshotFacetFactory = await _ethers.getContractFactory(
+        "StateSnapshotFacet",
+        { libraries: { StateChannelUtilLibrary: libraryUtilContractAddress } }
+    );
+    let stateSnapshotFacet = await stateSnapshotFacetFactory.deploy();
+    return {
+        stateSnapshotFacet,
+        stateSnapshotFacetAddress: await stateSnapshotFacet.getAddress()
+    };
+}
+
+
+
 export async function deployMathChannelProxyFixture(
     _ethers: typeof ethers & HardhatEthersHelpers
 ): Promise<{
@@ -78,36 +175,16 @@ export async function deployMathChannelProxyFixture(
     };
     mathInstance: MathStateMachine;
 }> {
-    //Deploy library
-    let stateChannelUtilLibraryFactory = await _ethers.getContractFactory(
-        "StateChannelUtilLibrary"
-    );
-    let stateChannelUtilLibrary = await stateChannelUtilLibraryFactory.deploy();
-    let libraryAddress = await stateChannelUtilLibrary.getAddress();
-
+    const libraryUtilContract = await deployStateChannelUtilLibrary(_ethers);
+   
     //Deploy DisputeManagerFacet
-    let disputeManagerFacetFactory = await _ethers.getContractFactory(
-        "DisputeManagerFacet",
-        { libraries: { StateChannelUtilLibrary: libraryAddress } }
-    );
-    let disputeManagerFacet = await disputeManagerFacetFactory.deploy();
-    let disputeManagerFacetAddress = await disputeManagerFacet.getAddress();
+    const disputeManagerFacet = await deployDisputeManagerFacet(_ethers, libraryUtilContract.libraryUtilContractAddress);
 
     //Deploy FraudProofFacet
-    let fraudProofFacetFactory = await _ethers.getContractFactory(
-        "FraudProofFacet",
-        { libraries: { StateChannelUtilLibrary: libraryAddress } }
-    );
-    let fraudProofFacet = await fraudProofFacetFactory.deploy();
-    let fraudProofFacetAddress = await fraudProofFacet.getAddress();
+    const fraudProofFacet = await deployFraudProofFacet(_ethers, libraryUtilContract.libraryUtilContractAddress);
 
     //Deploy StateSnapshotFacet
-    let stateSnapshotFacetFactory = await _ethers.getContractFactory(
-        "StateSnapshotFacet",
-        { libraries: { StateChannelUtilLibrary: libraryAddress } }
-    );
-    let stateSnapshotFacet = await stateSnapshotFacetFactory.deploy();
-    let stateSnapshotFacetAddress = await stateSnapshotFacet.getAddress();
+    const stateSnapshotFacet = await deployStateSnapshotFacet(_ethers, libraryUtilContract.libraryUtilContractAddress);
 
     //State machine logic
     let mathSmFactory = await _ethers.getContractFactory("MathStateMachine");
@@ -116,13 +193,13 @@ export async function deployMathChannelProxyFixture(
     //Deploy MathStateChannelManager
     let mathSmcFactory = await _ethers.getContractFactory(
         "MathStateChannelManagerProxy",
-        { libraries: { StateChannelUtilLibrary: libraryAddress } }
+        { libraries: { StateChannelUtilLibrary: libraryUtilContract.libraryUtilContractAddress } }
     );
     let mathStateChannelContactInstance = await mathSmcFactory.deploy(
         await mathContactInstance.getAddress(),
-        disputeManagerFacetAddress,
-        fraudProofFacetAddress,
-        stateSnapshotFacetAddress
+        disputeManagerFacet.disputeManagerFacetAddress,
+        fraudProofFacet.fraudProofFacetAddress,
+        stateSnapshotFacet.stateSnapshotFacetAddress
     );
 
     return {

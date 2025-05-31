@@ -22,6 +22,10 @@ contract StateChannelCommon is
         }
     }
 
+    function updateSnapshot(bytes32 channelId, StateSnapshot memory stateSnapshot) internal virtual {
+        stateSnapshots[channelId] = stateSnapshot;
+    }
+
     function getDisputeLength(bytes32 channelId) public view virtual returns (uint) {
         return disputeData[channelId].disputeCommitments.length;
     }

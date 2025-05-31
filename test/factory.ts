@@ -3,10 +3,12 @@ import {
     BlockStruct,
     TransactionStruct,
     TransactionHeaderStruct,
-    TransactionBodyStruct
+    TransactionBodyStruct,
+    StateSnapshotStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import AgreementManager from "@/agreementManager";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import { DisputePairStruct, DisputeDataStruct } from "@typechain-types/contracts/V1/helpers/StateChannelStorageTest";
 
 /**
  * Creates a default transaction header
@@ -85,6 +87,63 @@ export function agreementManager(addresses: string[] = []): AgreementManager {
     );
     return manager;
 }
+
+/**
+ * Creates a default DisputeDataStruct
+ * @param overrides Optional overrides for the DisputeDataStruct
+ * @returns A DisputeDataStruct with default values
+ */
+export function disputeData(overrides: Partial<DisputeDataStruct> = {}): DisputeDataStruct {
+    const defaultDisputeData: DisputeDataStruct = {
+        disputePairs: [],
+        onChainSlashedParticipants: [],
+        pendingParticipants: [],
+        latestJoinChannelBlockHash: ethers.hexlify(ethers.randomBytes(32)),
+        disputeCommitments: []
+    };
+
+    return { ...defaultDisputeData, ...overrides };
+}
+
+/** 
+ * Creates a default StateSnapshotStruct
+ * @param overrides Optional overrides for the StateSnapshotStruct
+ * @returns A StateSnapshotStruct with default values
+ */
+export function stateSnapshot(overrides: Partial<StateSnapshotStruct> = {}): StateSnapshotStruct {
+    const defaultStateSnapshot: StateSnapshotStruct = {
+        stateMachineStateHash: ethers.hexlify(ethers.randomBytes(32)),
+        participants: [],
+        forkCnt: 0,
+        latestJoinChannelBlockHash: ethers.hexlify(ethers.randomBytes(32)),
+        latestExitChannelBlockHash: ethers.hexlify(ethers.randomBytes(32)),
+        totalDeposits: {
+            amount: 0,
+            data: ethers.hexlify(ethers.randomBytes(32))
+        },
+        totalWithdrawals: {
+            amount: 0,
+            data: ethers.hexlify(ethers.randomBytes(32))
+        }
+    };
+
+    return { ...defaultStateSnapshot, ...overrides };
+}
+
+/**
+ * Creates a default DisputePairStruct
+ * @param overrides Optional overrides for the DisputePairStruct
+ * @returns A DisputePairStruct with default values
+ */
+export function disputePair(overrides: Partial<DisputePairStruct> = {}): DisputePairStruct {
+    const defaultDisputePair: DisputePairStruct = {
+        firstIndex: 0,
+        lastIndex: 0
+    };
+
+    return { ...defaultDisputePair, ...overrides };
+}
+
 
 /**
  * Creates a mock block for testing

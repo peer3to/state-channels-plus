@@ -409,6 +409,8 @@ contract DisputeManagerFacet is StateChannelCommon {
    
     function _canParticipateInDisputes(bytes32 channelId, address participant) internal view returns (bool) {
         StateSnapshot storage stateSnapshot = stateSnapshots[channelId];
+        DisputeData storage _disputeData = disputeData[channelId];
+
         bool isParticipant = false;
         //Check if normal participant
         for(uint i = 0; i < stateSnapshot.participants.length; i++) {
@@ -419,7 +421,6 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
         if(!isParticipant) {
             //check pending participants
-            DisputeData storage _disputeData = disputeData[channelId];
             for(uint i = 0; i < _disputeData.pendingParticipants.length; i++) {
                 if(_disputeData.pendingParticipants[i] == participant) {
                     isParticipant = true;
@@ -429,7 +430,6 @@ contract DisputeManagerFacet is StateChannelCommon {
             if(!isParticipant) return false;
         }
 
-        DisputeData storage _disputeData = disputeData[channelId];
         //check if slashed on-chain -> slashed participants can't participate in disputes
         for(uint i = 0; i < _disputeData.onChainSlashedParticipants.length; i++) {
             if(_disputeData.onChainSlashedParticipants[i] == participant) {
