@@ -58,7 +58,7 @@ The SDK abstracts away most of the complexities of the system and is designed to
 
 ## Configuration
 
-Create a `config.json` file in the root of your project (next to `package.json`) with the following structure and set the values per your configuration:
+Create a `peer3.config.json` file in the root of your project (next to `package.json`) with the following structure and set the values per your configuration:
 
 ```json
 {
@@ -70,6 +70,10 @@ Create a `config.json` file in the root of your project (next to `package.json`)
   "DEBUG_CHANNEL_CONTRACT": false,
   "DEBUG_LOCAL_TRANSPORT": false
 }
+```
+
+```shell
+yarn && yarn build
 ```
 
 ## Run Tests
