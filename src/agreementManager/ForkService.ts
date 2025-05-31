@@ -73,7 +73,10 @@ export default class ForkService {
 
         return storedDispute.signatures.some((sig) => {
             try {
-                const signer = SignatureUtils.getSignerAddress(dispute, sig);
+                const signer = SignatureUtils.getSignerAddressDispute(
+                    dispute,
+                    sig
+                );
                 return signer === participant;
             } catch {
                 return false;

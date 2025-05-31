@@ -3,14 +3,16 @@ import { ethers } from "hardhat";
 import * as factory from "../factory";
 import { EvmUtils } from "@/utils/EvmUtils";
 import {
+    BlockConfirmationStruct,
     BlockStruct,
-    SignedBlockStruct
+    SignedBlockStruct,
+    StateSnapshotStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import sinon from "sinon";
 import AgreementManager from "@/agreementManager";
 import { AgreementFlag } from "@/types";
 import { SignatureLike, Signer } from "ethers";
-import { Codec } from "@/utils";
+import { Codec, Type } from "@/utils";
 
 describe("AgreementManager", () => {
     const commonEncodedState = ethers.hexlify(ethers.randomBytes(32));
@@ -26,6 +28,8 @@ describe("AgreementManager", () => {
     let address2: string;
     let nonParticipantAddress: string;
     let block: BlockStruct;
+    let blockConfirmation: BlockConfirmationStruct;
+    let mockStateSnapshot: StateSnapshotStruct;
     let signedBlock: SignedBlockStruct;
     let invalidForkBlock: BlockStruct;
     let invalidTxBlock: BlockStruct;
@@ -69,6 +73,10 @@ describe("AgreementManager", () => {
                 })
             })
         });
+
+        blockConfirmation = factory.blockConfirmation(signedBlock);
+
+        mockStateSnapshot = factory.stateSnapshot();
 
         invalidForkBlock = factory.block({
             transaction: factory.transaction({
@@ -122,12 +130,15 @@ describe("AgreementManager", () => {
                 nowTimestamp
             );
 
-            expect(localAgreementManager.forks.nextForkIndex()).to.equal(1);
+            expect(localAgreementManager.forkService.nextForkIndex()).to.equal(
+                1
+            );
             expect(
-                localAgreementManager.forks.forkAt(0)?.forkGenesisStateEncoded
+                localAgreementManager.forkService.forkAt(0)
+                    ?.forkGenesisStateEncoded
             ).to.equal(commonGenesisState);
-            const fork = localAgreementManager.forks.forkAt(0);
-            expect(fork?.addressesInThreshold).to.deep.equal(addresses);
+            const fork = localAgreementManager.forkService.forkAt(0);
+            expect(fork?.genesisParticipants).to.deep.equal(addresses);
             expect(fork?.genesisTimestamp).to.equal(nowTimestamp);
             expect(fork?.chainBlocks).to.deep.equal([]);
             expect(fork?.agreements).to.deep.equal([]);
@@ -144,7 +155,7 @@ describe("AgreementManager", () => {
                 nowTimestamp
             );
 
-            expect(freshManager.forks.latestForkCnt()).to.equal(0);
+            expect(freshManager.forkService.latestForkCnt()).to.equal(0);
         });
 
         it("should allow multiple forks to be created sequentially", () => {
@@ -163,12 +174,12 @@ describe("AgreementManager", () => {
                 nowTimestamp + 100
             );
 
-            expect(freshManager.forks.nextForkIndex()).to.equal(2);
+            expect(freshManager.forkService.getNextForkIndex()).to.equal(2);
             expect(
-                freshManager.forks.forkAt(0)?.forkGenesisStateEncoded
+                freshManager.forkService.forkAt(0)?.forkGenesisStateEncoded
             ).to.equal(commonGenesisState);
             expect(
-                freshManager.forks.forkAt(1)?.forkGenesisStateEncoded
+                freshManager.forkService.forkAt(1)?.forkGenesisStateEncoded
             ).to.equal(commonGenesisState2);
         });
     });
@@ -182,37 +193,56 @@ describe("AgreementManager", () => {
             });
 
             it("should return false if the block does not exist in the canonical chain", () => {
-                expect(testAgreementManager.isBlockInChain(block)).to.be.false;
+                expect(testAgreementManager.isBlockInChain(signedBlock)).to.be
+                    .false;
             });
 
             it("should return true if the block exists in the canonical chain", () => {
-                testAgreementManager.addBlock(block, signature, encodedState);
-                expect(testAgreementManager.isBlockInChain(block)).to.be.true;
+                testAgreementManager.addBlock(
+                    signedBlock,
+                    encodedState,
+                    mockStateSnapshot
+                );
+                expect(testAgreementManager.isBlockInChain(signedBlock)).to.be
+                    .true;
             });
 
-            it("should return false if a block with same coordinates but different content exists", () => {
+            it("should return false if a block with same coordinates but different content exists", async () => {
                 const differentBlock = factory.block();
-                expect(testAgreementManager.isBlockInChain(differentBlock)).to
-                    .be.false;
+                const differentSignedBlock = await EvmUtils.signBlock(
+                    differentBlock,
+                    signer1
+                );
+                expect(
+                    testAgreementManager.isBlockInChain(differentSignedBlock)
+                ).to.be.false;
             });
         });
 
         describe("When checking blocks with different fork or transaction counts", () => {
-            it("should return false if the fork count is out of range", () => {
-                expect(agreementManager.isBlockInChain(invalidForkBlock)).to.be
-                    .false;
+            it("should return false if the fork count is out of range", async () => {
+                const differentSignedBlock = await EvmUtils.signBlock(
+                    invalidForkBlock,
+                    signer1
+                );
+                expect(agreementManager.isBlockInChain(differentSignedBlock)).to
+                    .be.false;
             });
 
-            it("should return false if the transaction count is out of range", () => {
-                expect(agreementManager.isBlockInChain(invalidTxBlock)).to.be
-                    .false;
+            it("should return false if the transaction count is out of range", async () => {
+                const differentSignedBlock = await EvmUtils.signBlock(
+                    invalidTxBlock,
+                    signer1
+                );
+                expect(agreementManager.isBlockInChain(differentSignedBlock)).to
+                    .be.false;
             });
         });
 
         describe("Edge cases", () => {
             it("should handle empty forks array", () => {
                 const emptyManager = new AgreementManager();
-                expect(emptyManager.isBlockInChain(block)).to.be.false;
+                expect(emptyManager.isBlockInChain(signedBlock)).to.be.false;
             });
 
             it("should handle fork with no agreements", () => {
@@ -223,7 +253,7 @@ describe("AgreementManager", () => {
                     0,
                     nowTimestamp
                 );
-                expect(manager.isBlockInChain(block)).to.be.false;
+                expect(manager.isBlockInChain(signedBlock)).to.be.false;
             });
         });
     });
@@ -232,15 +262,17 @@ describe("AgreementManager", () => {
         describe("When checking for duplicates in the canonical chain", () => {
             it("should return true if the block exists in the canonical chain", () => {
                 const isBlockInChainStub = sinon
-                    .stub(agreementManager.validator, "isBlockInChain")
+                    .stub(agreementManager.blockValidator, "isBlockInChain")
                     .returns(true);
 
-                expect(agreementManager.isBlockDuplicate(block)).to.be.true;
+                expect(agreementManager.isBlockDuplicate(signedBlock)).to.be
+                    .true;
                 isBlockInChainStub.restore();
             });
 
             it("should return false if the block does not exist in the canonical chain", () => {
-                expect(agreementManager.isBlockDuplicate(block)).to.be.false;
+                expect(agreementManager.isBlockDuplicate(signedBlock)).to.be
+                    .false;
             });
         });
 
@@ -253,10 +285,11 @@ describe("AgreementManager", () => {
             });
 
             it("should return true if the exact same block exists in the not-ready map", () => {
-                expect(testAgreementManager.isBlockDuplicate(block)).to.be.true;
+                expect(testAgreementManager.isBlockDuplicate(signedBlock)).to.be
+                    .true;
             });
 
-            it("should return false if the fork is not in the not-ready map", () => {
+            it("should return false if the fork is not in the not-ready map", async () => {
                 const differentForkBlock = factory.block({
                     transaction: factory.transaction({
                         header: factory.transactionHeader({
@@ -264,12 +297,16 @@ describe("AgreementManager", () => {
                         })
                     })
                 });
+                const differentSignedBlock = await EvmUtils.signBlock(
+                    differentForkBlock,
+                    signer1
+                );
                 expect(
-                    testAgreementManager.isBlockDuplicate(differentForkBlock)
+                    testAgreementManager.isBlockDuplicate(differentSignedBlock)
                 ).to.be.false;
             });
 
-            it("should return false if the transaction count is not in the not-ready map", () => {
+            it("should return false if the transaction count is not in the not-ready map", async () => {
                 const differentTxBlock = factory.block({
                     transaction: factory.transaction({
                         header: factory.transactionHeader({
@@ -277,15 +314,22 @@ describe("AgreementManager", () => {
                         })
                     })
                 });
-                expect(testAgreementManager.isBlockDuplicate(differentTxBlock))
-                    .to.be.false;
+                const differentSignedBlock = await EvmUtils.signBlock(
+                    differentTxBlock,
+                    signer1
+                );
+                expect(
+                    testAgreementManager.isBlockDuplicate(differentSignedBlock)
+                ).to.be.false;
             });
 
-            it("should return false if the participant address is not in the not-ready map", () => {
+            it("should return false if the participant address is not in the not-ready map", async () => {
+                const differentSignedBlock = await EvmUtils.signBlock(
+                    differentParticipantBlock,
+                    signer1
+                );
                 expect(
-                    testAgreementManager.isBlockDuplicate(
-                        differentParticipantBlock
-                    )
+                    testAgreementManager.isBlockDuplicate(differentSignedBlock)
                 ).to.be.false;
             });
 
@@ -309,8 +353,8 @@ describe("AgreementManager", () => {
 
                 localManager.queueBlock(differentSignedBlock);
 
-                expect(localManager.isBlockDuplicate(block)).to.be.false;
-                expect(localManager.isBlockDuplicate(differentContentBlock)).to
+                expect(localManager.isBlockDuplicate(signedBlock)).to.be.false;
+                expect(localManager.isBlockDuplicate(differentSignedBlock)).to
                     .be.true;
             });
         });
@@ -323,20 +367,32 @@ describe("AgreementManager", () => {
             testAgreementManager = createInitializedManager();
         });
 
-        it("should throw error when fork count is invalid", () => {
+        it("should throw error when fork count is invalid", async () => {
+            const differentSignedBlock = await EvmUtils.signBlock(
+                invalidForkBlock,
+                signer1
+            );
             expect(() =>
                 testAgreementManager.addBlock(
-                    invalidForkBlock,
-                    signature,
-                    encodedState
+                    differentSignedBlock,
+                    encodedState,
+                    mockStateSnapshot
                 )
             ).to.throw("AgreementManager - addBlock - forkCnt is not correct");
         });
 
         it("should throw error when agreement already exists", () => {
-            testAgreementManager.addBlock(block, signature, encodedState);
+            testAgreementManager.addBlock(
+                signedBlock,
+                encodedState,
+                mockStateSnapshot
+            );
             expect(() =>
-                testAgreementManager.addBlock(block, signature, encodedState)
+                testAgreementManager.addBlock(
+                    signedBlock,
+                    encodedState,
+                    mockStateSnapshot
+                )
             ).to.throw(
                 "AgreementManager - addBlock - double sign or incorrect data"
             );
@@ -344,15 +400,23 @@ describe("AgreementManager", () => {
 
         it("should correctly update state when adding a new block", () => {
             const freshManager = createInitializedManager();
-            freshManager.addBlock(block, signature, encodedState);
+            freshManager.addBlock(signedBlock, encodedState, mockStateSnapshot);
 
             const forkCnt = Number(block.transaction.header.forkCnt);
             const txCnt = Number(block.transaction.header.transactionCnt);
-            const agreement = freshManager.forks.agreement(forkCnt, txCnt);
+            const agreement = freshManager.forkService.getAgreement(
+                forkCnt,
+                txCnt
+            );
 
             expect(agreement).to.not.be.undefined;
-            expect(agreement!.block).to.deep.equal(block);
-            expect(agreement!.blockSignatures).to.include(signature);
+            expect(agreement!.blockConfirmation).to.deep.equal(
+                blockConfirmation
+            );
+            expect(agreement!.snapShot).to.deep.equal(mockStateSnapshot);
+            expect(agreement!.addressesInThreshold).to.deep.equal(
+                mockStateSnapshot.participants
+            );
             expect(agreement!.encodedState).to.equal(encodedState);
         });
     });
@@ -362,7 +426,11 @@ describe("AgreementManager", () => {
 
         before(() => {
             testAgreementManager = createInitializedManager();
-            testAgreementManager.addBlock(block, signature, encodedState);
+            testAgreementManager.addBlock(
+                signedBlock,
+                encodedState,
+                mockStateSnapshot
+            );
         });
 
         it("should throw error when agreement doesn't exist", () => {
@@ -399,16 +467,20 @@ describe("AgreementManager", () => {
 
         it("should correctly update state when confirming a block", () => {
             const freshManager = createInitializedManager();
-            freshManager.addBlock(block, signature, encodedState);
+            freshManager.addBlock(signedBlock, encodedState, mockStateSnapshot);
             freshManager.confirmBlock(block, wallet2Signature);
 
             const forkCnt = Number(block.transaction.header.forkCnt);
             const txCnt = Number(block.transaction.header.transactionCnt);
-            const agreement = freshManager.forks.agreement(forkCnt, txCnt);
+            const agreement = freshManager.forkService.getAgreement(
+                forkCnt,
+                txCnt
+            );
 
-            expect(agreement!.blockSignatures).to.have.lengthOf(2);
-            expect(agreement!.blockSignatures).to.include(signature);
-            expect(agreement!.blockSignatures).to.include(wallet2Signature);
+            expect(agreement!.blockConfirmation.signatures).to.have.lengthOf(1);
+            expect(agreement!.blockConfirmation.signatures).to.include(
+                signature
+            );
         });
     });
 
@@ -430,7 +502,7 @@ describe("AgreementManager", () => {
                 nowTimestamp
             );
 
-            expect(localManager.forks.latestForkCnt()).to.equal(1);
+            expect(localManager.forkService.latestForkCnt()).to.equal(1);
         });
     });
 
@@ -448,7 +520,7 @@ describe("AgreementManager", () => {
         it("should return the correct next transaction count after adding blocks", async () => {
             const localManager = createInitializedManager();
 
-            localManager.addBlock(block, signature, encodedState);
+            localManager.addBlock(signedBlock, encodedState, mockStateSnapshot);
             expect(localManager.getNextBlockHeight()).to.equal(1);
 
             // Create and add another block with transaction count 1
@@ -459,10 +531,13 @@ describe("AgreementManager", () => {
                     })
                 })
             });
-            const signature1 = await signer1.signMessage(
-                EvmUtils.encodeBlock(block1)
+
+            const signedBlock1 = await EvmUtils.signBlock(block1, signer1);
+            localManager.addBlock(
+                signedBlock1,
+                encodedState,
+                mockStateSnapshot
             );
-            localManager.addBlock(block1, signature1, encodedState);
 
             expect(localManager.getNextBlockHeight()).to.equal(2);
         });
@@ -474,7 +549,7 @@ describe("AgreementManager", () => {
         before(() => {
             localManager = createInitializedManager();
 
-            localManager.addBlock(block, signature, encodedState);
+            localManager.addBlock(signedBlock, encodedState, mockStateSnapshot);
         });
 
         it("should return undefined for invalid fork count", () => {
@@ -517,7 +592,7 @@ describe("AgreementManager", () => {
         before(async () => {
             localManager = createInitializedManager();
 
-            localManager.addBlock(block, signature, encodedState);
+            localManager.addBlock(signedBlock, encodedState, mockStateSnapshot);
         });
 
         it("should return undefined when block doesn't exist", () => {
@@ -576,7 +651,7 @@ describe("AgreementManager", () => {
         before(async () => {
             localManager = createInitializedManager();
 
-            localManager.addBlock(block, signature, encodedState);
+            localManager.addBlock(signedBlock, encodedState, mockStateSnapshot);
 
             // Create and add a second block with higher transaction count
             const block1 = factory.block({
@@ -588,9 +663,12 @@ describe("AgreementManager", () => {
                 })
             });
 
-            const signature1 = (await EvmUtils.signBlock(block1, signer1))
-                .signature as SignatureLike;
-            localManager.addBlock(block1, signature1, encodedState);
+            const signedBlock1 = await EvmUtils.signBlock(block1, signer1);
+            localManager.addBlock(
+                signedBlock1,
+                encodedState,
+                mockStateSnapshot
+            );
         });
 
         it("should return undefined for invalid fork count", () => {
@@ -623,12 +701,15 @@ describe("AgreementManager", () => {
             );
 
             expect(result).to.not.be.undefined;
-            expect(result!.block.transaction.header.transactionCnt).to.equal(1); // Should be the second block (transactionCnt=1)
+            expect(
+                EvmUtils.decodeBlock(result!.encodedBlock).transaction.header
+                    .transactionCnt
+            ).to.equal(1); // Should be the second block (transactionCnt=1)
         });
     });
 
     describe("didEveryoneSignBlock", () => {
-        it("should return false for invalid fork count", () => {
+        it("should return false for invalid fork count", async () => {
             const invalidForkBlock = factory.block({
                 transaction: factory.transaction({
                     header: factory.transactionHeader({
@@ -637,18 +718,22 @@ describe("AgreementManager", () => {
                 })
             });
 
-            expect(agreementManager.didEveryoneSignBlock(invalidForkBlock)).to
-                .be.false;
+            const differentSignedBlock = await EvmUtils.signBlock(
+                invalidForkBlock,
+                signer1
+            );
+            expect(agreementManager.didEveryoneSignBlock(differentSignedBlock))
+                .to.be.false;
         });
 
         it("should return false when the block doesn't exist", () => {
             const localManager = createInitializedManager();
-            expect(localManager.didEveryoneSignBlock(block)).to.be.false;
+            expect(localManager.didEveryoneSignBlock(signedBlock)).to.be.false;
         });
 
         it("should return false when the block content doesn't match the stored one", async () => {
             const localManager = createInitializedManager();
-            localManager.addBlock(block, signature, encodedState);
+            localManager.addBlock(signedBlock, encodedState, mockStateSnapshot);
 
             // Create a different block with the same coordinates
             const differentBlock = factory.block({
@@ -656,34 +741,38 @@ describe("AgreementManager", () => {
                 previousBlockHash: ethers.hexlify(ethers.randomBytes(32))
             });
 
-            expect(localManager.didEveryoneSignBlock(differentBlock)).to.be
-                .false;
+            const differentSignedBlock = await EvmUtils.signBlock(
+                differentBlock,
+                signer1
+            );
+            expect(localManager.didEveryoneSignBlock(differentSignedBlock)).to
+                .be.false;
         });
 
         it("should return false when not everyone has signed the block", () => {
             const localManager = createInitializedManager();
 
-            localManager.addBlock(block, signature, encodedState);
+            localManager.addBlock(signedBlock, encodedState, mockStateSnapshot);
 
-            expect(localManager.didEveryoneSignBlock(block)).to.be.false;
+            expect(localManager.didEveryoneSignBlock(signedBlock)).to.be.false;
         });
 
         it("should return true when all threshold participants have signed the block", async () => {
             const localManager = createInitializedManager();
 
-            localManager.addBlock(block, signature, encodedState);
+            localManager.addBlock(signedBlock, encodedState, mockStateSnapshot);
 
             localManager.confirmBlock(block, wallet2Signature);
 
             // Now all threshold participants (wallet and wallet2) have signed
-            expect(localManager.didEveryoneSignBlock(block)).to.be.true;
+            expect(localManager.didEveryoneSignBlock(signedBlock)).to.be.true;
         });
 
         it("should return false when a signature is from a non-participant in the fork", async () => {
             const localManager = createInitializedManager();
 
             // Add the block signed by wallet (a valid participant)
-            localManager.addBlock(block, signature, encodedState);
+            localManager.addBlock(signedBlock, encodedState, mockStateSnapshot);
 
             // confirm with a signature from a non-participant
             const nonParticipantSignature = (
@@ -692,44 +781,7 @@ describe("AgreementManager", () => {
             localManager.confirmBlock(block, nonParticipantSignature);
 
             // Despite having the right number of signatures, one is from a non-participant
-            expect(localManager.didEveryoneSignBlock(block)).to.be.false;
-        });
-    });
-
-    describe("getOriginalSignature", () => {
-        let localManager: AgreementManager;
-
-        before(async () => {
-            localManager = createInitializedManager();
-
-            localManager.addBlock(block, signature, encodedState);
-
-            localManager.confirmBlock(block, wallet2Signature);
-        });
-
-        it("should return undefined when block doesn't exist", () => {
-            const nonExistentBlock = factory.block({
-                transaction: factory.transaction({
-                    header: factory.transactionHeader({
-                        transactionCnt: 99 // Doesn't exist
-                    })
-                })
-            });
-
-            expect(localManager.getOriginalSignature(nonExistentBlock)).to.be
-                .undefined;
-        });
-
-        it("should return the original signature for an existing block", () => {
-            expect(localManager.getOriginalSignature(block)).to.equal(
-                signature
-            );
-        });
-
-        it("should return author signature when there are multiple signatures", () => {
-            expect(localManager.getOriginalSignature(block)).to.equal(
-                signature
-            );
+            expect(localManager.didEveryoneSignBlock(signedBlock)).to.be.false;
         });
     });
 
@@ -739,7 +791,7 @@ describe("AgreementManager", () => {
         before(async () => {
             localManager = createInitializedManager();
 
-            localManager.addBlock(block, signature, encodedState);
+            localManager.addBlock(signedBlock, encodedState, mockStateSnapshot);
         });
 
         it("should return false when block doesn't exist", () => {
@@ -783,7 +835,7 @@ describe("AgreementManager", () => {
         before(() => {
             localManager = createInitializedManager();
 
-            localManager.addBlock(block, signature, encodedState);
+            localManager.addBlock(signedBlock, encodedState, mockStateSnapshot);
         });
 
         it("should return false when block doesn't exist", () => {
@@ -868,43 +920,27 @@ describe("AgreementManager", () => {
         let blocks: BlockStruct[] = [];
         let encodedBlocks: string[] = [];
         let states: string[] = [];
+        let stateSnapshots: StateSnapshotStruct[] = [];
 
         // Signatures structure: signatures[blockIndex][walletIndex]
         let signatures: SignatureLike[][] = [];
 
         before(async () => {
             // Create sequential blocks with different states
-            const block0 = factory.block({
-                transaction: factory.transaction({
-                    header: factory.transactionHeader({
-                        transactionCnt: 0,
-                        participant: address1
-                    })
-                }),
-                previousBlockHash: ethers.keccak256(commonGenesisState)
-            });
-
-            const block1 = factory.block({
-                transaction: factory.transaction({
-                    header: factory.transactionHeader({
-                        transactionCnt: 1,
-                        participant: address1
-                    })
-                }),
-                previousBlockHash: Codec.encode(block0)
-            });
-
-            const block2 = factory.block({
-                transaction: factory.transaction({
-                    header: factory.transactionHeader({
-                        transactionCnt: 2,
-                        participant: address1
-                    })
-                }),
-                previousBlockHash: Codec.encode(block1)
-            });
-
-            blocks = [block0, block1, block2];
+            let prevBlock = commonGenesisState;
+            for (let i = 0; i < 3; i++) {
+                const block = factory.block({
+                    transaction: factory.transaction({
+                        header: factory.transactionHeader({
+                            transactionCnt: i,
+                            participant: address1
+                        })
+                    }),
+                    previousBlockHash: ethers.keccak256(prevBlock)
+                });
+                prevBlock = Codec.encode(block, Type.Block);
+                blocks.push(block);
+            }
 
             encodedBlocks = blocks.map(EvmUtils.encodeBlock);
 
@@ -912,6 +948,11 @@ describe("AgreementManager", () => {
                 commonGenesisState, // Use this directly as state0
                 ethers.keccak256(commonGenesisState), // Use hash of genesis state for state1
                 ethers.keccak256(ethers.concat([commonGenesisState, "0x01"])) // Use another deterministic value for state2
+            ];
+            stateSnapshots = [
+                factory.stateSnapshot({ stateMachineStateHash: states[0] }),
+                factory.stateSnapshot({ stateMachineStateHash: states[1] }),
+                factory.stateSnapshot({ stateMachineStateHash: states[2] })
             ];
 
             signatures = Array(blocks.length)
@@ -949,7 +990,7 @@ describe("AgreementManager", () => {
             );
 
             expect(
-                emptyManager.getFinalizedAndLatestWithVotes(0, address1)
+                emptyManager.getFinalizedAndLatestWithVotes(0)
             ).to.deep.equal({
                 encodedLatestFinalizedState: commonGenesisState,
                 encodedLatestCorrectState: commonGenesisState,
@@ -957,36 +998,36 @@ describe("AgreementManager", () => {
             });
         });
 
-        it("should return the genesis state for a signer with no agreements", () => {
+        it("should return the genesis state for a signer with no agreements", async () => {
             // Add one agreement signed only by wallet1
             const testManager = createInitializedManager();
-            testManager.addBlock(blocks[0], signatures[0][0], states[0]);
+            const signedBlock0 = await EvmUtils.signBlock(blocks[0], signer1);
+            testManager.addBlock(signedBlock0, states[0], stateSnapshots[0]);
             const fork0GenesisState = testManager.getForkGenesisStateEncoded(0);
 
-            expect(
-                testManager.getFinalizedAndLatestWithVotes(
-                    0,
-                    address2 // This wallet hasn't signed anything
-                )
-            ).to.deep.equal({
-                encodedLatestFinalizedState: fork0GenesisState,
-                encodedLatestCorrectState: fork0GenesisState,
-                virtualVotingBlocks: []
-            });
+            expect(testManager.getFinalizedAndLatestWithVotes(0)).to.deep.equal(
+                {
+                    encodedLatestFinalizedState: fork0GenesisState,
+                    encodedLatestCorrectState: fork0GenesisState,
+                    virtualVotingBlocks: []
+                }
+            );
         });
 
         it("should return the latest signed state for a signer when no state is fully finalized", () => {
             const testManager = createInitializedManager();
 
             // Add all three blocks with only wallet1 signatures
-            blocks.forEach((block, idx) => {
-                testManager.addBlock(block, signatures[idx][0], states[idx]);
+            blocks.forEach(async (block, idx) => {
+                const signedBlock = await EvmUtils.signBlock(block, signer1);
+                testManager.addBlock(
+                    signedBlock,
+                    states[idx],
+                    stateSnapshots[idx]
+                );
             });
 
-            const result = testManager.getFinalizedAndLatestWithVotes(
-                0,
-                address1 // Only wallet1 has signed all blocks
-            );
+            const result = testManager.getFinalizedAndLatestWithVotes(0);
 
             // Latest finalized should be genesis (no full consensus)
             expect(result.encodedLatestFinalizedState).to.equal(
@@ -998,26 +1039,28 @@ describe("AgreementManager", () => {
             expect(result.virtualVotingBlocks).to.have.lengthOf(3);
 
             result.virtualVotingBlocks.forEach((vote, idx) => {
-                expect(vote.encodedBlock).to.equal(encodedBlocks[idx]);
+                expect(vote.signedBlock.encodedBlock).to.equal(
+                    encodedBlocks[idx]
+                );
             });
         });
 
-        it("should return a finalized state when all threshold signers have signed it", () => {
+        it("should return a finalized state when all threshold signers have signed it", async () => {
             const testManager = createInitializedManager();
 
             // Block0: Both wallets sign
-            testManager.addBlock(blocks[0], signatures[0][0], states[0]);
+            const signedBlock0 = await EvmUtils.signBlock(blocks[0], signer1);
+            testManager.addBlock(signedBlock0, states[0], stateSnapshots[0]);
             testManager.confirmBlock(blocks[0], signatures[0][1]);
 
             // Block1 and Block2: Only wallet1 signs
-            testManager.addBlock(blocks[1], signatures[1][0], states[1]);
-            testManager.addBlock(blocks[2], signatures[2][0], states[2]);
+            const signedBlock1 = await EvmUtils.signBlock(blocks[1], signer1);
+            testManager.addBlock(signedBlock1, states[1], stateSnapshots[1]);
+            const signedBlock2 = await EvmUtils.signBlock(blocks[2], signer1);
+            testManager.addBlock(signedBlock2, states[2], stateSnapshots[2]);
 
             // Test for wallet1 which signed all blocks
-            const resultWallet1 = testManager.getFinalizedAndLatestWithVotes(
-                0,
-                address1
-            );
+            const resultWallet1 = testManager.getFinalizedAndLatestWithVotes(0);
 
             // Latest finalized should be states[0] (both wallets signed)
             expect(resultWallet1.encodedLatestFinalizedState).to.equal(
@@ -1029,10 +1072,7 @@ describe("AgreementManager", () => {
             expect(resultWallet1.virtualVotingBlocks).to.have.lengthOf(3);
 
             // Test for wallet2 which only signed block0
-            const resultWallet2 = testManager.getFinalizedAndLatestWithVotes(
-                0,
-                address2
-            );
+            const resultWallet2 = testManager.getFinalizedAndLatestWithVotes(0);
 
             // Latest finalized should be states[0] (both wallets signed)
             expect(resultWallet2.encodedLatestFinalizedState).to.equal(
@@ -1042,29 +1082,33 @@ describe("AgreementManager", () => {
             expect(resultWallet2.encodedLatestCorrectState).to.equal(states[0]);
             // Virtual voting blocks should only include block0
             expect(resultWallet2.virtualVotingBlocks).to.have.lengthOf(1);
-            expect(resultWallet2.virtualVotingBlocks[0].encodedBlock).to.equal(
-                encodedBlocks[0]
-            );
+            expect(
+                resultWallet2.virtualVotingBlocks[0].signedBlock.encodedBlock
+            ).to.equal(encodedBlocks[0]);
         });
 
         it("should handle a mix of signatures with partially finalized states", async () => {
             const testManager = createInitializedManager();
 
             // Block0: only wallet1 signs
-            testManager.addBlock(blocks[0], signatures[0][0], states[0]);
+            const signedBlock0 = await EvmUtils.signBlock(blocks[0], signer1);
+            testManager.addBlock(signedBlock0, states[0], stateSnapshots[0]);
 
             // Block1: both wallets sign
-            testManager.addBlock(blocks[1], signatures[1][0], states[1]);
-            testManager.confirmBlock(blocks[1], signatures[1][1]);
+            const signedBlock1 = await EvmUtils.signBlock(blocks[1], signer1);
+            testManager.addBlock(signedBlock1, states[1], stateSnapshots[1]);
+            const signedBlock1_2 = await EvmUtils.signBlock(blocks[1], signer2);
+            testManager.confirmBlock(
+                blocks[1],
+                signedBlock1_2.signature as SignatureLike
+            );
 
             // Block2: only wallet2 signs
-            testManager.addBlock(blocks[2], signatures[2][1], states[2]);
+            const signedBlock2 = await EvmUtils.signBlock(blocks[2], signer2);
+            testManager.addBlock(signedBlock2, states[2], stateSnapshots[2]);
 
             // Test for wallet1
-            const resultWallet1 = testManager.getFinalizedAndLatestWithVotes(
-                0,
-                address1
-            );
+            const resultWallet1 = testManager.getFinalizedAndLatestWithVotes(0);
 
             // Since both wallets signed block2, the latest finalized state should be states[2]
             expect(resultWallet1.encodedLatestFinalizedState).to.equal(
@@ -1074,10 +1118,7 @@ describe("AgreementManager", () => {
             expect(resultWallet1.virtualVotingBlocks).to.have.lengthOf(1);
 
             // Test for wallet2
-            const resultWallet2 = testManager.getFinalizedAndLatestWithVotes(
-                0,
-                address2
-            );
+            const resultWallet2 = testManager.getFinalizedAndLatestWithVotes(0);
 
             // Same finalized state, but for wallet2 the latest correct state is the last one it signed
             expect(resultWallet2.encodedLatestFinalizedState).to.equal(
@@ -1093,7 +1134,9 @@ describe("AgreementManager", () => {
         let testManager: AgreementManager;
         let blocks: BlockStruct[] = [];
         let encodedStates: string[] = [];
+        let stateSnapshots: StateSnapshotStruct[] = [];
         let signatures: SignatureLike[][] = [];
+        let signedBlocks: SignedBlockStruct[] = [];
         let signers_3: Signer[];
 
         let addresses: string[];
@@ -1104,43 +1147,38 @@ describe("AgreementManager", () => {
             addresses = await Promise.all(signers_3.map((s) => s.getAddress()));
 
             // Create sequential blocks
-            const block0 = factory.block({
-                transaction: factory.transaction({
-                    header: factory.transactionHeader({
-                        transactionCnt: 0,
-                        participant: addresses[0]
-                    })
-                }),
-                previousBlockHash: ethers.keccak256(commonGenesisState)
-            });
-
-            const block1 = factory.block({
-                transaction: factory.transaction({
-                    header: factory.transactionHeader({
-                        transactionCnt: 1,
-                        participant: addresses[0]
-                    })
-                }),
-                previousBlockHash: Codec.encode(block0)
-            });
-
-            const block2 = factory.block({
-                transaction: factory.transaction({
-                    header: factory.transactionHeader({
-                        transactionCnt: 2,
-                        participant: addresses[0]
-                    })
-                }),
-                previousBlockHash: Codec.encode(block1)
-            });
-
-            blocks = [block0, block1, block2];
+            let prevBlock = commonGenesisState;
+            for (let i = 0; i < 3; i++) {
+                const block = factory.block({
+                    transaction: factory.transaction({
+                        header: factory.transactionHeader({
+                            transactionCnt: i,
+                            participant: addresses[i]
+                        })
+                    }),
+                    previousBlockHash: ethers.keccak256(prevBlock)
+                });
+                prevBlock = Codec.encode(block, Type.Block);
+                blocks.push(block);
+            }
 
             // Create distinct encoded states
             encodedStates = [
                 ethers.hexlify(ethers.concat([commonGenesisState, "0x01"])),
                 ethers.hexlify(ethers.concat([commonGenesisState, "0x02"])),
                 ethers.hexlify(ethers.concat([commonGenesisState, "0x03"]))
+            ];
+
+            stateSnapshots = [
+                factory.stateSnapshot({
+                    stateMachineStateHash: encodedStates[0]
+                }),
+                factory.stateSnapshot({
+                    stateMachineStateHash: encodedStates[1]
+                }),
+                factory.stateSnapshot({
+                    stateMachineStateHash: encodedStates[2]
+                })
             ];
 
             // Generate signatures for all blocks by all signers
@@ -1163,6 +1201,21 @@ describe("AgreementManager", () => {
                     signatures[blockIdx][signerIdx] = signature;
                 }
             }
+
+            // sign all blocks by all signers
+            for (let blockIdx = 0; blockIdx < blocks.length; blockIdx++) {
+                for (
+                    let signerIdx = 0;
+                    signerIdx < signers_3.length;
+                    signerIdx++
+                ) {
+                    const signedBlock = await EvmUtils.signBlock(
+                        blocks[blockIdx],
+                        signers_3[signerIdx]
+                    );
+                    signedBlocks.push(signedBlock);
+                }
+            }
         });
 
         it("should correctly identify finalized and latest states in scenario 1", async () => {
@@ -1170,24 +1223,36 @@ describe("AgreementManager", () => {
             testManager.newFork(commonGenesisState, addresses, 0, nowTimestamp);
             // Scenario 1:
             // Block 0 signed by all
-            testManager.addBlock(blocks[0], signatures[0][0], encodedStates[0]);
+            const signedBlock0 = await EvmUtils.signBlock(blocks[0], signer1);
+            testManager.addBlock(
+                signedBlock0,
+                encodedStates[0],
+                stateSnapshots[0]
+            );
             testManager.confirmBlock(blocks[0], signatures[0][1]);
             testManager.confirmBlock(blocks[0], signatures[0][2]);
 
             // Block 1 signed by all
-            testManager.addBlock(blocks[1], signatures[1][0], encodedStates[1]);
+            const signedBlock1 = await EvmUtils.signBlock(blocks[1], signer1);
+            testManager.addBlock(
+                signedBlock1,
+                encodedStates[1],
+                stateSnapshots[1]
+            );
             testManager.confirmBlock(blocks[1], signatures[1][1]);
             testManager.confirmBlock(blocks[1], signatures[1][2]);
 
             // Block 2 signed by participants 1 and 3 (not by participant 2)
-            testManager.addBlock(blocks[2], signatures[2][0], encodedStates[2]);
+            const signedBlock2 = await EvmUtils.signBlock(blocks[2], signer1);
+            testManager.addBlock(
+                signedBlock2,
+                encodedStates[2],
+                stateSnapshots[2]
+            );
             testManager.confirmBlock(blocks[2], signatures[2][2]);
 
             // Check from perspective of participant 3
-            const result = testManager.getFinalizedAndLatestWithVotes(
-                0,
-                addresses[2]
-            );
+            const result = testManager.getFinalizedAndLatestWithVotes(0);
 
             // Latest correct state should be from Block 2 (since participant 3 signed it)
             expect(result.encodedLatestCorrectState).to.equal(encodedStates[2]);
@@ -1204,22 +1269,34 @@ describe("AgreementManager", () => {
 
             // Scenario 2:
             // Block 0 signed by all
-            testManager.addBlock(blocks[0], signatures[0][0], encodedStates[0]);
+            const signedBlock0 = await EvmUtils.signBlock(blocks[0], signer1);
+            testManager.addBlock(
+                signedBlock0,
+                encodedStates[0],
+                stateSnapshots[0]
+            );
             testManager.confirmBlock(blocks[0], signatures[0][1]);
             testManager.confirmBlock(blocks[0], signatures[0][2]);
 
             // Block 1 signed by participants 1 and 2 (not by participant 3)
-            testManager.addBlock(blocks[1], signatures[1][0], encodedStates[1]);
+            const signedBlock1 = await EvmUtils.signBlock(blocks[1], signer1);
+            testManager.addBlock(
+                signedBlock1,
+                encodedStates[1],
+                stateSnapshots[1]
+            );
             testManager.confirmBlock(blocks[1], signatures[1][1]);
 
             // Block 2 signed by participant 3 only
-            testManager.addBlock(blocks[2], signatures[2][2], encodedStates[2]);
+            const signedBlock2 = await EvmUtils.signBlock(blocks[2], signer2);
+            testManager.addBlock(
+                signedBlock2,
+                encodedStates[2],
+                stateSnapshots[2]
+            );
 
             // Check from perspective of participant 3
-            const result = testManager.getFinalizedAndLatestWithVotes(
-                0,
-                addresses[2]
-            );
+            const result = testManager.getFinalizedAndLatestWithVotes(0);
 
             // Latest correct state should be from Block 2 (since participant 3 signed it)
             expect(result.encodedLatestCorrectState).to.equal(encodedStates[2]);
@@ -1250,7 +1327,12 @@ describe("AgreementManager", () => {
         });
 
         it("should return DUPLICATE when block is a duplicate", async () => {
-            localManager.addBlock(block, signature, commonEncodedState);
+            const signedBlock = await EvmUtils.signBlock(block, signer1);
+            localManager.addBlock(
+                signedBlock,
+                commonEncodedState,
+                mockStateSnapshot
+            );
 
             expect(localManager.checkBlock(signedBlock)).to.equal(
                 AgreementFlag.DUPLICATE
@@ -1260,7 +1342,12 @@ describe("AgreementManager", () => {
         it("should return DOUBLE_SIGN when same participant tries to sign different block with same coordinates", async () => {
             const manager = createInitializedManager();
 
-            manager.addBlock(block, signature, commonEncodedState);
+            const signedBlock = await EvmUtils.signBlock(block, signer1);
+            manager.addBlock(
+                signedBlock,
+                commonEncodedState,
+                mockStateSnapshot
+            );
 
             // Create a different block with same coordinates but different content
             const secondBlock = factory.block({
@@ -1288,7 +1375,12 @@ describe("AgreementManager", () => {
         it("should return INCORRECT_DATA when previousStateHash doesn't match", async () => {
             const manager = createInitializedManager();
 
-            manager.addBlock(block, signature, commonEncodedState);
+            const signedBlock = await EvmUtils.signBlock(block, signer1);
+            manager.addBlock(
+                signedBlock,
+                commonEncodedState,
+                mockStateSnapshot
+            );
 
             // Create a block for transaction 1 with incorrect previousStateHash
             const blockWithWrongHash = factory.block({
@@ -1338,7 +1430,12 @@ describe("AgreementManager", () => {
         it("should return READY when the block is valid and follows a previous block", async () => {
             const manager = createInitializedManager();
 
-            manager.addBlock(block, signature, commonEncodedState);
+            const signedBlock = await EvmUtils.signBlock(block, signer1);
+            manager.addBlock(
+                signedBlock,
+                commonEncodedState,
+                mockStateSnapshot
+            );
 
             // Create block 1 with correct previousStateHash
             const block1 = factory.block({
@@ -1349,7 +1446,7 @@ describe("AgreementManager", () => {
                         participant: address1
                     })
                 }),
-                previousBlockHash: Codec.encode(block) // Correct hash
+                previousBlockHash: Codec.encode(block, Type.Block) // Correct hash
             });
 
             const signedBlock1 = await EvmUtils.signBlock(block1, signer1);
@@ -1407,7 +1504,8 @@ describe("AgreementManager", () => {
                     })
                 }),
                 previousBlockHash: ethers.keccak256(
-                    manager.forks.forkAt(0)?.forkGenesisStateEncoded ?? ""
+                    manager.forkService.getFork(0)?.forkGenesisStateEncoded ??
+                        ""
                 )
             });
 
@@ -1421,10 +1519,16 @@ describe("AgreementManager", () => {
             expect(manager.didParticipantPostOnChain(0, 0, address1)).to.be
                 .true;
 
-            const chainBlocks = manager.forks.forkAt(0)?.chainBlocks;
+            const chainBlocks = manager.forkService.getFork(0)?.chainBlocks;
             expect(chainBlocks).to.have.lengthOf(1);
-            expect(chainBlocks![0].transactionCnt).to.equal(0);
-            expect(chainBlocks![0].participantAdr).to.equal(address1);
+            expect(
+                EvmUtils.decodeBlock(chainBlocks![0].signedBlock.encodedBlock)
+                    .transaction.header.transactionCnt
+            ).to.equal(0);
+            expect(
+                EvmUtils.decodeBlock(chainBlocks![0].signedBlock.encodedBlock)
+                    .transaction.header.participant
+            ).to.equal(address1);
             expect(chainBlocks![0].timestamp).to.equal(timestamp);
         });
 
@@ -1440,7 +1544,7 @@ describe("AgreementManager", () => {
                 manager.collectOnChainBlock(invalidSignedBlock, timestamp)
             ).to.equal(AgreementFlag.INVALID_SIGNATURE);
 
-            const chainBlocks = manager.forks.forkAt(0)?.chainBlocks;
+            const chainBlocks = manager.forkService.getFork(0)?.chainBlocks;
             expect(chainBlocks).to.have.lengthOf(0);
         });
 
@@ -1454,7 +1558,7 @@ describe("AgreementManager", () => {
 
             expect(result).to.equal(AgreementFlag.DUPLICATE);
 
-            const chainBlocks = manager.forks.forkAt(0)?.chainBlocks;
+            const chainBlocks = manager.forkService.getFork(0)?.chainBlocks;
             expect(chainBlocks).to.have.lengthOf(1);
             expect(chainBlocks![0].timestamp).to.equal(timestamp); // Original timestamp
         });

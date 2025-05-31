@@ -18,47 +18,24 @@ type StructType =
     | TransactionStruct
     | DisputeStruct;
 
-export type StructTypeName =
-    | "Block"
-    | "JoinChannel"
-    | "Transaction"
-    | "Dispute";
+// Enum for better autocomplete and type safety
+export enum Type {
+    Block = "Block",
+    JoinChannel = "JoinChannel",
+    Transaction = "Transaction",
+    Dispute = "Dispute"
+}
 
 export class Codec {
     private static readonly structToEthersType = new Map<string, any>([
-        ["BlockStruct", BlockEthersType],
-        ["JoinChannelStruct", JoinChannelEthersType],
-        ["TransactionStruct", TransactionEthersType],
-        ["DisputeStruct", DisputeEthersType],
-
-        // for convenience when decoding
-        ["Block", BlockEthersType],
-        ["JoinChannel", JoinChannelEthersType],
-        ["Transaction", TransactionEthersType],
-        ["Dispute", DisputeEthersType]
+        [Type.Block, BlockEthersType],
+        [Type.JoinChannel, JoinChannelEthersType],
+        [Type.Transaction, TransactionEthersType],
+        [Type.Dispute, DisputeEthersType]
     ]);
 
-    public static encode(struct: StructType): string {
-        let ethersType: string | undefined;
-
-        const structName = struct.constructor.name;
-        ethersType = this.structToEthersType.get(structName);
-
-        if (!ethersType) {
-            const availableFields = Object.keys(struct || {}).join(", ");
-            const structName = struct.constructor.name;
-            throw new Error(
-                `Cannot encode struct with constructor name "${structName}". Available fields: [${availableFields}]. Consider using explicit type: Codec.encode(struct, "JoinChannel")`
-            );
-        }
-
-        return ethers.AbiCoder.defaultAbiCoder().encode([ethersType], [struct]);
-    }
-
-    public static encodeWithExplicitType(
-        struct: StructType,
-        explicitType: StructTypeName
-    ): string {
+    // Only support explicit type encoding for better reliability
+    public static encode(struct: any, explicitType: Type): string {
         const ethersType = this.structToEthersType.get(explicitType);
         if (!ethersType) {
             throw new Error(`No ethers type mapping found for ${explicitType}`);
@@ -106,17 +83,17 @@ export class Codec {
         return obj;
     }
 
-    // for types
+    // Convenience methods with explicit types
     public static decodeBlock(encoded: BytesLike): BlockStruct {
-        return this.decode(encoded, "Block");
+        return this.decode(encoded, Type.Block);
     }
     public static decodeJoinChannel(encoded: BytesLike): JoinChannelStruct {
-        return this.decode(encoded, "JoinChannel");
+        return this.decode(encoded, Type.JoinChannel);
     }
     public static decodeTransaction(encoded: BytesLike): TransactionStruct {
-        return this.decode(encoded, "Transaction");
+        return this.decode(encoded, Type.Transaction);
     }
     public static decodeDispute(encoded: BytesLike): DisputeStruct {
-        return this.decode(encoded, "Dispute");
+        return this.decode(encoded, Type.Dispute);
     }
 }

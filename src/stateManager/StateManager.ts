@@ -48,7 +48,7 @@ import {
     processConfirmationDecision
 } from "./processConfirmationDecisionHandlers";
 import ValidationService from "./ValidationService";
-import { Codec } from "@/utils/Codec";
+import { Codec, Type } from "@/utils/Codec";
 import { SignatureUtils } from "@/utils/SignatureUtils";
 import * as SetUtils from "@/utils/set";
 
@@ -461,7 +461,7 @@ class StateManager {
         }
 
         // Get output state snapshot data
-        const encodedDispute = Codec.encode(disputeData.dispute);
+        const encodedDispute = Codec.encode(disputeData.dispute, Type.Dispute);
         const commitment = ethers.keccak256(
             ethers.AbiCoder.defaultAbiCoder().encode(
                 ["bytes", "uint256"],
@@ -514,7 +514,7 @@ class StateManager {
 
         const hasThreshold = SignatureUtils.hasSignatureThreshold(
             allowedParticipantsSet,
-            Codec.encode(disputeData.dispute),
+            Codec.encode(disputeData.dispute, Type.Dispute),
             disputeSignatures
         );
 

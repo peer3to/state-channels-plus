@@ -9,7 +9,7 @@ import {
 } from "@typechain-types/contracts/V1/DataTypes";
 
 import { SignatureUtils } from "./SignatureUtils";
-import { Codec } from "./Codec";
+import { Codec, Type } from "./Codec";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 
 export class EvmUtils {
@@ -17,7 +17,7 @@ export class EvmUtils {
         transaction: TransactionStruct,
         signer: ethers.Signer
     ): Promise<{ encodedTransaction: BytesLike; signature: string }> {
-        const { encoded, signature } = await SignatureUtils.sign(
+        const { encoded, signature } = await SignatureUtils.signTransaction(
             transaction,
             signer
         );
@@ -25,7 +25,7 @@ export class EvmUtils {
     }
 
     public static encodeBlock(block: BlockStruct): string {
-        return Codec.encode(block);
+        return Codec.encode(block, Type.Block);
     }
 
     public static decodeBlock(blockEncoded: BytesLike): BlockStruct {
@@ -36,15 +36,18 @@ export class EvmUtils {
         block: BlockStruct,
         signer: ethers.Signer
     ): Promise<SignedBlockStruct> {
-        const { encoded, signature } = await SignatureUtils.sign(block, signer);
+        const { encoded, signature } = await SignatureUtils.signBlock(
+            block,
+            signer
+        );
         return { encodedBlock: encoded, signature };
     }
 
     public static async signDispute(
         dispute: DisputeStruct,
         signer: ethers.Signer
-    ): Promise<SignedDisputeStruct> {
-        const { encoded, signature } = await SignatureUtils.sign(
+    ): Promise<{ encodedDispute: BytesLike; signature: SignatureLike }> {
+        const { encoded, signature } = await SignatureUtils.signDispute(
             dispute,
             signer
         );
@@ -55,10 +58,7 @@ export class EvmUtils {
         block: BlockStruct,
         signature: SignatureLike
     ): string {
-        return SignatureUtils.getSignerAddressFromMsg(
-            Codec.encode(block),
-            signature
-        );
+        return SignatureUtils.getSignerAddressBlock(block, signature);
     }
 
     public static encodeJoinChannel(jc: JoinChannelStruct): string {
@@ -71,14 +71,17 @@ export class EvmUtils {
         jc: JoinChannelStruct,
         signer: ethers.Signer
     ): Promise<SignedJoinChannelStruct> {
-        const { encoded, signature } = await SignatureUtils.sign(jc, signer);
+        const { encoded, signature } = await SignatureUtils.signJoinChannel(
+            jc,
+            signer
+        );
         return { encodedJoinChannel: encoded, signature };
     }
     public static retrieveSignerAddressJoinChannel(
         jc: JoinChannelStruct,
         signature: SignatureLike
     ): string {
-        return SignatureUtils.getSignerAddress(jc, signature);
+        return SignatureUtils.getSignerAddressJoinChannel(jc, signature);
     }
     //empty arrays '[]' can exist but not empty objects {} - Etheres is really bad for this with the Result object
     public static ethersResultToObjectRecursive(result: ethers.Result) {
