@@ -7,7 +7,7 @@ import {
 } from "../../../typechain-types";
 
 const getProviderUrl = require("../tic-tac-toe-vite/getProviderUrl.js").default;
-const PROVIDER_URL = getProviderUrl()|| "http://localhost:8545";
+const PROVIDER_URL = getProviderUrl() || "http://localhost:8545";
 
 const getRandomSigner = () => {
     let randomSinger: Signer = Wallet.createRandom(
