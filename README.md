@@ -58,17 +58,18 @@ The SDK abstracts away most of the complexities of the system and is designed to
 
 ## Configuration
 
-Create a `.env` file in the root of your project (next to `package.json`) with the following structure and set the values per your configuration:
+Create a `config.json` file in the root of your project (next to `package.json`) with the following structure and set the values per your configuration:
 
-```bash
-# Peer3 Configuration
-PROVIDER_URL=http://localhost:8545
-DEBUG_STATE_MANAGER=false
-DEBUG_DISPUTE_HANDLER=false
-DEBUG_P2P_MANAGER=false
-DEBUG_RPC=false
-DEBUG_CHANNEL_CONTRACT=false
-DEBUG_LOCAL_TRANSPORT=false
+```json
+{
+  "PROVIDER_URL": "http://localhost:8545",
+  "DEBUG_STATE_MANAGER": false,
+  "DEBUG_DISPUTE_HANDLER": false,
+  "DEBUG_P2P_MANAGER": false,
+  "DEBUG_RPC": false,
+  "DEBUG_CHANNEL_CONTRACT": false,
+  "DEBUG_LOCAL_TRANSPORT": false
+}
 ```
 
 ## Run Tests

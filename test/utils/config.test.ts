@@ -1,58 +1,54 @@
 import { expect } from "chai";
+import fs from "fs";
+import path from "path";
+import os from "os";
+import { loadConfigFromFile } from "@/utils/config";
 
-describe("Config Integration - Real Usage", () => {
-    const originalEnv = process.env;
+describe("Config - JSON file loading", () => {
+    const tempConfigPath = path.join(os.tmpdir(), "test-config.json");
 
-    before(() => {
-        // Set test environment variables before any imports
-        process.env.PROVIDER_URL = "http://test-provider:8545";
-        process.env.DEBUG_P2P_MANAGER = "true";
-        process.env.DEBUG_RPC = "false";
-        process.env.DEBUG_LOCAL_TRANSPORT = "true";
+    afterEach(() => {
+        // Clean up temp file after each test
+        if (fs.existsSync(tempConfigPath)) {
+            fs.unlinkSync(tempConfigPath);
+        }
+        // Clear require cache to force re-reading
+        delete require.cache[require.resolve("@/utils/config")];
     });
 
-    after(() => {
-        // Restore original environment
-        process.env = originalEnv;
+    it("should use defaults when config file doesn't exist", () => {
+        const config = loadConfigFromFile("/tmp/non-existent.json");
+        expect(config).to.be.an("object");
+        expect(Object.keys(config)).to.have.length(0);
     });
 
-    it("should load config through main entry point", async () => {
-        // Import the main entry point (this calls dotenv.config())
-        const mainModule = await import("@/index");
-        expect(mainModule).to.exist;
+    it("should load configuration from JSON file", () => {
+        const testConfig = {
+            PROVIDER_URL: "http://test:9999",
+            DEBUG_P2P_MANAGER: true,
+            DEBUG_RPC: false
+        };
 
-        // Import config module (should have environment variables loaded)
-        const {
-            PROVIDER_URL,
-            DEBUG_P2P_MANAGER,
-            DEBUG_RPC,
-            DEBUG_LOCAL_TRANSPORT
-        } = await import("@/utils/config");
+        fs.writeFileSync(tempConfigPath, JSON.stringify(testConfig));
+        const config = loadConfigFromFile(tempConfigPath);
 
-        expect(PROVIDER_URL).to.equal("http://test-provider:8545");
-        expect(DEBUG_P2P_MANAGER).to.be.true;
-        expect(DEBUG_RPC).to.be.false;
-        expect(DEBUG_LOCAL_TRANSPORT).to.be.true;
+        expect(config.PROVIDER_URL).to.equal("http://test:9999");
+        expect(config.DEBUG_P2P_MANAGER).to.be.true;
+        expect(config.DEBUG_RPC).to.be.false;
     });
 
-    it("should work when importing P2PManager", async () => {
-        // This should not throw errors and should use the config
-        const P2PManagerModule = await import("@/P2PManager");
-        expect(P2PManagerModule.default).to.exist;
+    it("should handle malformed JSON gracefully", () => {
+        fs.writeFileSync(tempConfigPath, "{ invalid json }");
+        const config = loadConfigFromFile(tempConfigPath);
 
-        const { DEBUG_P2P_MANAGER, DEBUG_LOCAL_TRANSPORT } = await import(
-            "@/utils/config"
-        );
-        expect(DEBUG_P2P_MANAGER).to.be.true;
-        expect(DEBUG_LOCAL_TRANSPORT).to.be.true;
+        expect(config).to.be.an("object");
+        expect(Object.keys(config)).to.have.length(0);
     });
 
-    it("should work when importing MainRpcService", async () => {
-        // This should not throw errors and should use the config
-        const MainRpcServiceModule = await import("@/rpc/MainRpcService");
-        expect(MainRpcServiceModule.default).to.exist;
+    it("should export individual config values with defaults", () => {
+        const { PROVIDER_URL, DEBUG_P2P_MANAGER } = require("@/utils/config");
 
-        const { DEBUG_RPC } = await import("@/utils/config");
-        expect(DEBUG_RPC).to.be.false;
+        expect(PROVIDER_URL).to.equal("http://localhost:8545");
+        expect(DEBUG_P2P_MANAGER).to.be.false;
     });
 });
