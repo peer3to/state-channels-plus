@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 
-const DEFAULT_CONFIG_PATH = path.resolve(process.cwd(), "config.json");
+const DEFAULT_CONFIG_PATH = path.resolve(process.cwd(), "peer3.config.json");
 
 // Helper function to parse boolean values
 function parseBooleanValue(value: any, defaultValue: boolean = false): boolean {

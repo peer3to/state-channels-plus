@@ -5,7 +5,7 @@ import os from "os";
 import { loadConfigFromFile } from "@/utils/config";
 
 describe("Config - JSON file loading", () => {
-    const tempConfigPath = path.join(os.tmpdir(), "test-config.json");
+    const tempConfigPath = path.join(os.tmpdir(), "test-peer3.config.json");
 
     afterEach(() => {
         // Clean up temp file after each test
