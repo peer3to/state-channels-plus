@@ -74,8 +74,6 @@ describe("AgreementManager", () => {
             })
         });
 
-        blockConfirmation = factory.blockConfirmation(signedBlock);
-
         mockStateSnapshot = factory.stateSnapshot();
 
         invalidForkBlock = factory.block({
@@ -103,6 +101,7 @@ describe("AgreementManager", () => {
         });
 
         signedBlock = await EvmUtils.signBlock(block, signer1);
+        blockConfirmation = factory.blockConfirmation(signedBlock);
         signature = signedBlock.signature as SignatureLike;
         wallet2Signature = (await EvmUtils.signBlock(block, signer2))
             .signature as SignatureLike;
