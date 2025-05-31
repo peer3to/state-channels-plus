@@ -1,9 +1,7 @@
 import { ethers } from "hardhat";
 import { Wallet, NonceManager, Signer } from "ethers";
 import { DeployUtils } from "@/utils";
-import peer3Config from "../../peer3config.json";
-
-const PROVIDER_URL = peer3Config.PROVIDER_URL || "http://localhost:8545";
+import { PROVIDER_URL } from "@/utils/config";
 
 const getRandomSigner = () => {
     let randomSinger: Signer = Wallet.createRandom(
