@@ -3,6 +3,5 @@
     "trailingComma": "none",
     "singleQuote": false,
     "printWidth": 80,
-    "tabWidth": 4,
-    "plugins": ["prettier-plugin-solidity"]
+    "tabWidth": 4
 }
