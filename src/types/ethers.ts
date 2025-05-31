@@ -74,7 +74,7 @@ export const ProofEthersType = `tuple(
 export const BlockEthersType = `tuple(
   ${TransactionEthersType} transaction,
   bytes32 stateSnapshotHash,
-  bytes32 previousStateHash
+  bytes32 previousBlockHash
 )`;
 
 export const JoinChannelEthersType = `tuple(
