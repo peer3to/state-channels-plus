@@ -18,9 +18,7 @@ import {
     JoinChannelService,
     WebRTCSetupService
 } from "./services";
-import { getPeer3Config } from "@/utils/getPeer3Config";
-
-let DEBUG_RPC = getPeer3Config().DEBUG_RPC || false;
+import { DEBUG_RPC } from "@/utils/config";
 
 //TODO! refactor this
 type JoinChanenelConfirmation = {

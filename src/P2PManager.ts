@@ -10,10 +10,7 @@ import { ethers } from "ethers";
 import { DebugProxy, LocalDiscoveryServer } from "@/utils";
 import { RpcHandleMethods } from "@/rpc/RpcProxy";
 import { Buffer } from "buffer";
-import { getPeer3Config } from "@/utils/getPeer3Config";
-
-let DEBUG_P2P_MANAGER = false || getPeer3Config().DEBUG_P2P_MANAGER;
-let DEBUG_LOCAL_TRANSPORT = false || getPeer3Config().DEBUG_LOCAL_TRANSPORT;
+import { DEBUG_P2P_MANAGER, DEBUG_LOCAL_TRANSPORT } from "@/utils/config";
 
 class P2PManager implements IOnMessage {
     stateManager: StateManager;
