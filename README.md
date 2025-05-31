@@ -71,11 +71,6 @@ DEBUG_CHANNEL_CONTRACT=false
 DEBUG_LOCAL_TRANSPORT=false
 ```
 
-You can also copy the production template:
-```shell
-cp .env.production .env
-```
-
 ## Run Tests
 Install local dependencies
 ```shell
