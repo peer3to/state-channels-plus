@@ -4,7 +4,8 @@ import {
     TransactionStruct,
     TransactionHeaderStruct,
     TransactionBodyStruct,
-    StateSnapshotStruct
+    StateSnapshotStruct,
+    TimeoutStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import AgreementManager from "@/agreementManager";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
@@ -129,6 +130,26 @@ export function stateSnapshot(overrides: Partial<StateSnapshotStruct> = {}): Sta
 
     return { ...defaultStateSnapshot, ...overrides };
 }
+
+/**
+ * Creates a default TimeoutStruct
+ * @param overrides Optional overrides for the TimeoutStruct
+ * @returns A TimeoutStruct with default values
+ */
+export function timeout(overrides: Partial<TimeoutStruct> = {}): TimeoutStruct {
+    const defaultTimeout: TimeoutStruct = {
+        participant: ethers.ZeroAddress,
+        blockHeight: 0,
+        minTimeStamp: Math.floor(Date.now() / 1000),
+        forkCnt: 0,
+        isForced: false,
+        previousBlockProducer: ethers.ZeroAddress,
+        previousBlockProducerPostedCalldata: false
+    };
+
+    return { ...defaultTimeout, ...overrides };
+}
+
 
 /**
  * Creates a default DisputePairStruct

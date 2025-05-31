@@ -48,4 +48,19 @@ contract DisputeManagerFacetTest is DisputeManagerFacet {
         return disputeData[channelId];
     }
 
+    function clearDisputeData(bytes32 channelId) external {
+        delete disputeData[channelId];
+    }
+
+    function clearStateSnapshot(bytes32 channelId) external {
+        delete stateSnapshots[channelId];
+    }
+    function clearBlockCalldataCommitment(bytes32 channelId, address signer, uint256 forkCnt, uint256 blockHeight) external {
+        delete blockCalldataCommitments[channelId][signer][forkCnt][blockHeight];
+    }
+
+    function getTimeStamp() external view returns (uint256) {
+        return block.timestamp;
+    }
+
 }
