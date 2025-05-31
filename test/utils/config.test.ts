@@ -52,3 +52,14 @@ describe("Config - JSON file loading", () => {
         expect(DEBUG_P2P_MANAGER).to.be.false;
     });
 });
+
+describe("import config variables", () => {
+    it("should successfully import config variables from P2PManager.ts", async () => {
+        const { DEBUG_P2P_MANAGER, DEBUG_LOCAL_TRANSPORT } = await import(
+            "@/utils/config"
+        );
+
+        expect(DEBUG_P2P_MANAGER).to.be.false;
+        expect(DEBUG_LOCAL_TRANSPORT).to.be.false;
+    });
+});
