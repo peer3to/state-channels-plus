@@ -1,8 +1,7 @@
 import Clock from "@/Clock";
 import { EvmStateMachine, P2pSigner } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
-import { EvmUtils } from "@/utils";
-import { DeployUtils } from "@/utils";
+import { EvmUtils, DeployUtils, config } from "@/utils";
 
 export {
     Clock,
@@ -10,7 +9,8 @@ export {
     P2pSigner,
     P2pEventHooks,
     EvmUtils,
-    DeployUtils
+    DeployUtils,
+    config
 };
 
 export * from "../typechain-types";
