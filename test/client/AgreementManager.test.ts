@@ -12,7 +12,7 @@ import sinon from "sinon";
 import AgreementManager from "@/agreementManager";
 import { AgreementFlag } from "@/types";
 import { SignatureLike, Signer } from "ethers";
-import { Codec } from "@/utils";
+import { Codec, Type } from "@/utils";
 
 describe("AgreementManager", () => {
     const commonEncodedState = ethers.hexlify(ethers.randomBytes(32));
@@ -938,7 +938,7 @@ describe("AgreementManager", () => {
                     }),
                     previousBlockHash: ethers.keccak256(prevBlock)
                 });
-                prevBlock = Codec.encode(block);
+                prevBlock = Codec.encode(block, Type.Block);
                 blocks.push(block);
             }
 
@@ -1158,7 +1158,7 @@ describe("AgreementManager", () => {
                     }),
                     previousBlockHash: ethers.keccak256(prevBlock)
                 });
-                prevBlock = Codec.encode(block);
+                prevBlock = Codec.encode(block, Type.Block);
                 blocks.push(block);
             }
 
@@ -1446,7 +1446,7 @@ describe("AgreementManager", () => {
                         participant: address1
                     })
                 }),
-                previousBlockHash: Codec.encode(block) // Correct hash
+                previousBlockHash: Codec.encode(block, Type.Block) // Correct hash
             });
 
             const signedBlock1 = await EvmUtils.signBlock(block1, signer1);

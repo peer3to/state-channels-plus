@@ -1,6 +1,12 @@
 import { AddressLike, BytesLike, ethers, SignatureLike } from "ethers";
+import {
+    BlockStruct,
+    JoinChannelStruct,
+    TransactionStruct
+} from "@typechain-types/contracts/V1/DataTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 
-import { Codec } from "./Codec";
+import { Codec, Type } from "./Codec";
 
 export class SignatureUtils {
     public static signMsg(
@@ -12,7 +18,7 @@ export class SignatureUtils {
         return signer.signMessage(encodedHashBytes);
     }
 
-    public static getSignerAddressFromMsg(
+    public static getSignerAddress(
         msg: BytesLike,
         signature: SignatureLike
     ): string {
@@ -22,18 +28,72 @@ export class SignatureUtils {
         );
     }
 
-    public static getSignerAddress(obj: any, signature: SignatureLike): string {
-        const encoded = Codec.encode(obj);
-        return this.getSignerAddressFromMsg(encoded, signature);
-    }
-
-    public static async sign(
-        obj: any,
+    public static async signBlock(
+        block: BlockStruct,
         signer: ethers.Signer
     ): Promise<{ encoded: BytesLike; signature: string }> {
-        const encoded = Codec.encode(obj);
+        const encoded = Codec.encode(block, Type.Block);
         const signature = await this.signMsg(encoded, signer);
         return { encoded, signature };
+    }
+
+    public static async signJoinChannel(
+        joinChannel: JoinChannelStruct,
+        signer: ethers.Signer
+    ): Promise<{ encoded: BytesLike; signature: string }> {
+        const encoded = Codec.encode(joinChannel, Type.JoinChannel);
+        const signature = await this.signMsg(encoded, signer);
+        return { encoded, signature };
+    }
+
+    public static async signTransaction(
+        transaction: TransactionStruct,
+        signer: ethers.Signer
+    ): Promise<{ encoded: BytesLike; signature: string }> {
+        const encoded = Codec.encode(transaction, Type.Transaction);
+        const signature = await this.signMsg(encoded, signer);
+        return { encoded, signature };
+    }
+
+    public static async signDispute(
+        dispute: DisputeStruct,
+        signer: ethers.Signer
+    ): Promise<{ encoded: BytesLike; signature: string }> {
+        const encoded = Codec.encode(dispute, Type.Dispute);
+        const signature = await this.signMsg(encoded, signer);
+        return { encoded, signature };
+    }
+
+    public static getSignerAddressBlock(
+        block: BlockStruct,
+        signature: SignatureLike
+    ): string {
+        const encoded = Codec.encode(block, Type.Block);
+        return this.getSignerAddress(encoded, signature);
+    }
+
+    public static getSignerAddressJoinChannel(
+        joinChannel: JoinChannelStruct,
+        signature: SignatureLike
+    ): string {
+        const encoded = Codec.encode(joinChannel, Type.JoinChannel);
+        return this.getSignerAddress(encoded, signature);
+    }
+
+    public static getSignerAddressTransaction(
+        transaction: TransactionStruct,
+        signature: SignatureLike
+    ): string {
+        const encoded = Codec.encode(transaction, Type.Transaction);
+        return this.getSignerAddress(encoded, signature);
+    }
+
+    public static getSignerAddressDispute(
+        dispute: DisputeStruct,
+        signature: SignatureLike
+    ): string {
+        const encoded = Codec.encode(dispute, Type.Dispute);
+        return this.getSignerAddress(encoded, signature);
     }
 
     public static hasSignatureThreshold(
@@ -67,10 +127,7 @@ export class SignatureUtils {
 
             try {
                 // Get the signer address
-                const signer = this.getSignerAddressFromMsg(
-                    data,
-                    sig
-                ) as AddressLike;
+                const signer = this.getSignerAddress(data, sig) as AddressLike;
 
                 // Skip if this address should be ignored
                 if (ignoreSet.has(signer)) {
