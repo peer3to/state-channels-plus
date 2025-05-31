@@ -1,8 +1,5 @@
-if yarn prettier --check .; then
-  yarn lint-staged
-  forge fmt
-else
-  yarn prettier --write .
-  git add .
-  forge fmt
-fi
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Run lint-staged which will handle formatting per file type
+yarn lint-staged
