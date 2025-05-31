@@ -14,3 +14,4 @@ export * from "./timestamp";
 export * from "./Codec";
 export * from "./SignatureUtils";
 export * from "./participantUtils";
+export * from "./config";

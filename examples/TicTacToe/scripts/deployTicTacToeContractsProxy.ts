@@ -1,17 +1,15 @@
 import { ethers } from "hardhat";
+import path from "path";
 import { Wallet, NonceManager, Signer } from "ethers";
-import { DeployUtils } from "@peer3/state-channels-plus";
+import { DeployUtils, config } from "@peer3/state-channels-plus";
 import {
     TicTacToeStateChannelManagerProxy,
     TicTacToeStateMachine
 } from "../../../typechain-types";
 
-const getProviderUrl = require("../tic-tac-toe-vite/getProviderUrl.js").default;
-const PROVIDER_URL = getProviderUrl() || "http://localhost:8545";
-
 const getRandomSigner = () => {
     let randomSinger: Signer = Wallet.createRandom(
-        new ethers.JsonRpcProvider(PROVIDER_URL)
+        new ethers.JsonRpcProvider(config.PROVIDER_URL)
     );
 
     randomSinger = new NonceManager(randomSinger);
@@ -24,7 +22,7 @@ export async function deployTicTacToe(): Promise<
     let contractsJSONpath = path.resolve(__dirname, "../contracts.json");
     const deployUtils = new DeployUtils(contractsJSONpath);
 
-    console.log("Provider url:", PROVIDER_URL);
+    console.log("Provider url:", config.PROVIDER_URL);
 
     //Deploy library
     let stateChannelUtilLibraryFactory = await ethers.getContractFactory(
