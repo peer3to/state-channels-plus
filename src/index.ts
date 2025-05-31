@@ -1,6 +1,3 @@
-import dotenv from "dotenv";
-dotenv.config();
-
 import Clock from "@/Clock";
 import { EvmStateMachine, P2pSigner } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
