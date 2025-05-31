@@ -67,7 +67,7 @@
     "build": "yarn compile && rimraf dist && tsc && npm pack && node rename-pack.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "postinstall": "husky"
+    "prepare": "husky"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,json,md}": "prettier --write",
