@@ -45,7 +45,7 @@ export const StateSnapshotEthersType = `tuple(
   uint256 forkCnt,
   bytes32 latestJoinChannelBlockHash,
   bytes32 latestExitChannelBlockHash,
-  tuple(uint256 amount, bytes data) totalDeposits, tuple(uint256 amount, bytesß data) totalWithdrawals
+  tuple(uint256 amount, bytes data) totalDeposits, tuple(uint256 amount, bytes data) totalWithdrawals
 )`;
 
 export const BlockConfirmationEthersType = `tuple(
@@ -80,9 +80,8 @@ export const BlockEthersType = `tuple(
 export const JoinChannelEthersType = `tuple(
   bytes32 channelId,
   address participant,
-  uint amount,
   uint deadlineTimestamp,
-  bytes data
+  tuple(uint amount, bytes data) balance
 )`;
 
 export const JoinChannelBlockEthersType = `tuple(
