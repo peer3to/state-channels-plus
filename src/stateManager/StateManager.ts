@@ -8,8 +8,7 @@ import {
     ExitChannelBlockStruct,
     ExitChannelStruct,
     DisputeProofStruct,
-    SignedDisputeStruct,
-    ExitChannelStruct
+    SignedDisputeStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import {
     AddressLike,
@@ -370,31 +369,6 @@ class StateManager {
         const blockHeight = transaction.header.transactionCnt;
 
         //we first handle the exit channels
-        //TODO: these will come from the state machine, udpate the code once the
-        // state machine code is updated on the dispute branch
-        const exitChannels: ExitChannelStruct[] = [];
-        const previousBlockHash =
-            this.stateSnapshotStorage.getLatestExitChannelBlockHash();
-        const exitChannelBlock: ExitChannelBlockStruct = {
-            exitChannels,
-            previousBlockHash: previousBlockHash as BytesLike
-        };
-        const exitChannelBlockHash =
-            EvmUtils.encodeExitChannelBlock(exitChannelBlock);
-        //TODO: same here, check that these numebr typings are ok or replace by a bigNumberish
-        this.stateSnapshotStorage.storeExitChannelBlockHash(
-            Number(forkCnt),
-            Number(blockHeight),
-            exitChannelBlockHash
-        );
-
-        const forkCnt = transaction.header.forkCnt;
-        const blockHeight = transaction.header.transactionCnt;
-
-        //we first handle the exit channels
-        //TODO: these will come from the state machine, udpate the code once the
-        // state machine code is updated on the dispute branch
-        const exitChannels: ExitChannelStruct[] = [];
         const previousBlockHash =
             this.stateSnapshotStorage.getLatestExitChannelBlockHash();
         const exitChannelBlock: ExitChannelBlockStruct = {
@@ -655,7 +629,7 @@ class StateManager {
         )
             return;
         const response =
-            await this.stateChannelManagerContract.getBlockCallData(
+            await this.stateChannelManagerContract.getBlockCallDataCommitment(
                 this.channelId,
                 forkCnt,
                 transactionCnt,
@@ -797,10 +771,13 @@ class StateManager {
     ): Promise<BlockStruct> {
         const currentStateHash = await this.getEncodedStateKecak256();
 
+        //TODO: check if the previousStateHash is the previousBlockHash
+        // i changed the variable name to previousBlockHash to match the contract
+        // idk if this is correct
         return {
             transaction: tx,
-            stateHash: currentStateHash,
-            previousStateHash
+            stateSnapshotHash: currentStateHash,
+            previousBlockHash: previousStateHash
         };
     }
 
