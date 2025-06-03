@@ -100,7 +100,6 @@ class P2pSigner implements Signer {
                 timestamp: BigInt(Clock.getTimeInSeconds())
             },
             body: {
-                transactionType: 0,
                 encodedData: tx.data!,
                 data: tx.data!
             }
