@@ -10,12 +10,7 @@ import { ethers } from "ethers";
 import { DebugProxy, LocalDiscoveryServer } from "@/utils";
 import { RpcHandleMethods } from "@/rpc/RpcProxy";
 import { Buffer } from "buffer";
-
-let DEBUG_P2P_MANAGER = false;
-let DEBUG_LOCAL_TRANSPORT = false;
-// dotenv.config();
-// DEBUG_P2P_MANAGER = process.env.DEBUG_P2P_MANAGER === "true";
-// DEBUG_LOCAL_TRANSPORT= process.env.DEBUG_LOCAL_TRANSPORT === "true";
+import { DEBUG_P2P_MANAGER, DEBUG_LOCAL_TRANSPORT } from "@/utils/config";
 
 class P2PManager implements IOnMessage {
     stateManager: StateManager;

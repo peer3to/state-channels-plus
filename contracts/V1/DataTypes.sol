@@ -42,6 +42,7 @@ struct Block {
     bytes32 stateSnapshotHash;
     bytes32 previousBlockHash;
 }
+
 struct Transaction {
     TransactionHeader header;
     TransactionBody body;
@@ -50,9 +51,9 @@ struct Transaction {
 struct TransactionHeader {
     bytes32 channelId;
     address participant;
-    uint forkCnt;
-    uint transactionCnt;
-    uint timestamp;
+    uint256 forkCnt;
+    uint256 transactionCnt;
+    uint256 timestamp;
 }
 
 // do this polymorphically later with encoded functions and argument data
@@ -62,13 +63,14 @@ struct TransactionBody {
 }
 
 struct Balance {
-    uint amount;
+    uint256 amount;
     bytes data; //custom data
 }
+
 struct JoinChannel {
     bytes32 channelId;
     address participant;
-    uint deadlineTimestamp;
+    uint256 deadlineTimestamp;
     Balance balance;
 }
 
@@ -104,11 +106,11 @@ struct Timeout {
     /// @dev the participant that is being timed out
     address participant;
     /// @dev the block height at which participant is removed from the channel (fork)
-    uint blockHeight;
+    uint256 blockHeight;
     /// @dev minimum timestamp where this timeout is valid
-    uint minTimeStamp;
+    uint256 minTimeStamp;
     /// @dev the forkCnt at which the participant is timed out
-    uint forkCnt;
+    uint256 forkCnt;
     /// @dev True if timeout checks should ignore race condition checks on-chain - usefull when the participant being tiemdout committed to a wrong block (is not linked to the latestState), but we can't prove deviation - explained more in the docs
     bool isForced;
     // ================== optional ==================
@@ -122,7 +124,7 @@ struct StateSnapshot {
     /// @dev the participants of the channel
     address[] participants;
     /// @dev The fork identifier (count) that the snapshot belongs to
-    uint forkCnt;
+    uint256 forkCnt;
     /// @dev the hash of the lastBlock in the JoinChannel blockchain
     bytes32 latestJoinChannelBlockHash;
     /// @dev the hash of the lastBlock in the ExitChannel blockchain
@@ -136,6 +138,6 @@ struct StateSnapshot {
 struct DisputeProof {
     Dispute dispute;
     StateSnapshot outputStateSnapshot;
-    uint timestamp;
+    uint256 timestamp;
     bytes[] signatures;
 }

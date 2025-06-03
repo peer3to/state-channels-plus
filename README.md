@@ -7,14 +7,18 @@ The repository currently holds a Minimal Feature Set (MFS) as part of our [grant
 We recommend waiting for the Full Feature Set before using it in production.
 
 ## Table of Contents
-- [Videos](#videos)
-- [Installation](#installation)
-- [Getting Started](#getting-started)
-- [Examples](#examples)
-- [Run Tests](#run-tests)
-- [Code Formatting](#code-formatting)
-- [Get In Touch](#contact)
-- [Docs (MFS)](./docs/mfsDocs.md)
+- [Peer3 - State Channels Plus](#peer3---state-channels-plus)
+  - [Table of Contents](#table-of-contents)
+  - [Videos](#videos)
+  - [Installation](#installation)
+  - [Getting Started](#getting-started)
+  - [Examples](#examples)
+  - [Configuration](#configuration)
+  - [Run Tests](#run-tests)
+  - [Code Formatting](#code-formatting)
+    - [Available Commands](#available-commands)
+    - [Automatic Formatting](#automatic-formatting)
+  - [Contact](#contact)
 - [License](#license)
 
 ## Videos
@@ -51,6 +55,22 @@ The SDK abstracts away most of the complexities of the system and is designed to
 [Tic-Tac-Toe](./examples/TicTacToe) - the code used in the [demo video](https://www.youtube.com/watch?v=W_CWPOezjU8)
 
 <b style="color: yellow;">Note: The examples within this repository use the current version of the SDK(this repository) and not the remote package available on npm. This requires to install dependencies and build the SDK locally, before proceeding. </b>
+
+## Configuration
+
+Create a `peer3.config.json` file in the root of your project (next to `package.json`) with the following structure and set the values per your configuration:
+
+```json
+{
+  "PROVIDER_URL": "http://localhost:8545",
+  "DEBUG_STATE_MANAGER": false,
+  "DEBUG_DISPUTE_HANDLER": false,
+  "DEBUG_P2P_MANAGER": false,
+  "DEBUG_RPC": false,
+  "DEBUG_CHANNEL_CONTRACT": false,
+  "DEBUG_LOCAL_TRANSPORT": false
+}
+```
 
 ```shell
 yarn && yarn build

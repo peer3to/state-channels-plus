@@ -6,39 +6,36 @@ import "../../AStateMachine.sol";
 // Uncomment this line to use console.log
 // import "hardhat/console.sol";
 struct MathState {
-    uint number;
+    uint256 number;
     address[] participants;
-    uint[] balances;
+    uint256[] balances;
 }
 
 contract MathStateMachine is AStateMachine {
     MathState state;
 
-    constructor(uint _gasLimit) AStateMachine(_gasLimit) {
+    constructor(uint256 _gasLimit) AStateMachine(_gasLimit) {
         gasLimit = _gasLimit;
     }
 
-    event Addition(uint a, uint b, uint result);
+    event Addition(uint256 a, uint256 b, uint256 result);
     event NextToPlay(address player);
 
-    function add(uint _number) public returns (uint) {
-        require(
-            _tx.header.participant == getNextToWrite(),
-            "MathStateMachine: add only next player can write"
-        );
+    function add(uint256 _number) public returns (uint256) {
+        require(_tx.header.participant == getNextToWrite(), "MathStateMachine: add only next player can write");
         emit Addition(state.number, _number, state.number + _number);
         state.number += _number;
         emit NextToPlay(getNextToWrite());
         return state.number;
     }
 
-    function getSum() public view returns (uint) {
+    function getSum() public view returns (uint256) {
         return state.number;
     }
 
     // Get balance for a specific participant
-    function getBalance(address participant) public view returns (uint) {
-        for (uint i = 0; i < state.participants.length; i++) {
+    function getBalance(address participant) public view returns (uint256) {
+        for (uint256 i = 0; i < state.participants.length; i++) {
             if (state.participants[i] == participant) {
                 return state.balances[i];
             }
@@ -54,13 +51,7 @@ contract MathStateMachine is AStateMachine {
         return abi.encode(state);
     }
 
-    function getParticipants()
-        public
-        view
-        virtual
-        override
-        returns (address[] memory)
-    {
+    function getParticipants() public view virtual override returns (address[] memory) {
         return state.participants;
     }
 
@@ -71,22 +62,18 @@ contract MathStateMachine is AStateMachine {
         return state.participants[state.number % state.participants.length];
     }
 
-    function _slashParticipant(
-        address adr
-    ) internal virtual override returns (bool, ExitChannel memory) {
+    function _slashParticipant(address adr) internal virtual override returns (bool, ExitChannel memory) {
         return _removeParticipant(adr);
     }
 
-    function _removeParticipant(
-        address adr
-    ) internal virtual override returns (bool, ExitChannel memory) {
+    function _removeParticipant(address adr) internal virtual override returns (bool, ExitChannel memory) {
         uint256 length = state.participants.length;
         ExitChannel memory exitChannel;
         for (uint256 i = 0; i < length; i++) {
             if (state.participants[i] == adr) {
                 // Store the participant's balance before removal
-                uint participantBalance = state.balances[i];
-                
+                uint256 participantBalance = state.balances[i];
+
                 // Remove participant and their balance
                 state.participants[i] = state.participants[length - 1];
                 state.participants.pop();
@@ -104,15 +91,10 @@ contract MathStateMachine is AStateMachine {
 
     // Game-specific function: player voluntarily leaves the game
     function leaveGame() public returns (bool) {
-        require(
-            _tx.header.participant == getNextToWrite(),
-            "MathStateMachine: leaveGame only next player can leave"
-        );
+        require(_tx.header.participant == getNextToWrite(), "MathStateMachine: leaveGame only next player can leave");
 
         address leavingPlayer = _tx.header.participant;
-        (bool success, ExitChannel memory exitChannel) = _removeParticipant(
-            leavingPlayer
-        );
+        (bool success, ExitChannel memory exitChannel) = _removeParticipant(leavingPlayer);
 
         if (success) {
             _addExitChannel(exitChannel);
@@ -121,50 +103,43 @@ contract MathStateMachine is AStateMachine {
         return success;
     }
 
-    function _joinChannel(
-        JoinChannel memory joinChannel
-    ) internal virtual override returns (bool) {}
+    function _joinChannel(JoinChannel memory joinChannel) internal virtual override returns (bool) {}
 
-    function addBalance(
-        Balance memory balance1,
-        Balance memory balance2
-    ) public pure override returns (Balance memory sum) {
+    function addBalance(Balance memory balance1, Balance memory balance2)
+        public
+        pure
+        override
+        returns (Balance memory sum)
+    {
         sum.amount = balance1.amount + balance2.amount;
         return sum;
     }
 
-    function subtractBalance(
-        Balance memory balance1,
-        Balance memory balance2
-    ) public pure override returns (Balance memory diff) {
-        require(
-            balance1.amount >= balance2.amount,
-            "MathStateMachine: balance1 < balance2"
-        );
+    function subtractBalance(Balance memory balance1, Balance memory balance2)
+        public
+        pure
+        override
+        returns (Balance memory diff)
+    {
+        require(balance1.amount >= balance2.amount, "MathStateMachine: balance1 < balance2");
         diff.amount = balance1.amount - balance2.amount;
         return diff;
     }
 
-    function areBalancesEqual(
-        Balance memory balance1,
-        Balance memory balance2
-    ) public pure override returns (bool) {
+    function areBalancesEqual(Balance memory balance1, Balance memory balance2) public pure override returns (bool) {
         return balance1.amount == balance2.amount;
     }
 
-    function isBalanceLesserThan(
-        Balance memory balance1,
-        Balance memory balance2
-    ) public pure override returns (bool) {
+    function isBalanceLesserThan(Balance memory balance1, Balance memory balance2)
+        public
+        pure
+        override
+        returns (bool)
+    {
         return balance1.amount < balance2.amount;
     }
 
-    function getTotalStateBalance()
-        public
-        view
-        override
-        returns (Balance memory totalBalance)
-    {
+    function getTotalStateBalance() public view override returns (Balance memory totalBalance) {
         totalBalance.amount = state.number;
         return totalBalance;
     }
