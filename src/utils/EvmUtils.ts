@@ -3,6 +3,7 @@ import {
     BlockStruct,
     JoinChannelStruct,
     SignedBlockStruct,
+    SignedDisputeStruct,
     SignedJoinChannelStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/DataTypes";
@@ -45,12 +46,12 @@ export class EvmUtils {
     public static async signDispute(
         dispute: DisputeStruct,
         signer: ethers.Signer
-    ): Promise<{ encodedDispute: BytesLike; signature: SignatureLike }> {
+    ): Promise<SignedDisputeStruct> {
         const { encoded, signature } = await SignatureUtils.signDispute(
             dispute,
             signer
         );
-        return { encodedDispute: encoded, signature };
+        return { encodedDispute: encoded, signature } as SignedDisputeStruct;
     }
 
     public static retrieveSignerAddressBlock(
