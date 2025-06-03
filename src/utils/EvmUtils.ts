@@ -3,7 +3,6 @@ import {
     BlockStruct,
     JoinChannelStruct,
     SignedBlockStruct,
-    SignedDisputeStruct,
     SignedJoinChannelStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/DataTypes";
@@ -62,7 +61,7 @@ export class EvmUtils {
     }
 
     public static encodeJoinChannel(jc: JoinChannelStruct): string {
-        return Codec.encode(jc);
+        return Codec.encode(jc, Type.JoinChannel);
     }
     public static decodeJoinChannel(jcEncoded: BytesLike): JoinChannelStruct {
         return Codec.decodeJoinChannel(jcEncoded);
