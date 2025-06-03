@@ -1,24 +1,4 @@
-export enum ProofType {
-    // Block related fraud proofs
-    BlockDoubleSign = 0,
-    BlockEmptyBlock = 1,
-    BlockInvalidStateTransition = 2,
-    BlockOutOfGas = 3,
-    BlockInvalidPreviousLink = 4,
-    // Timeout related fraud proofs
-    TimeoutThreshold = 5,
-    TimeoutPriorInvalid = 6,
-    TimeoutParticipantNoNext = 7,
-    // Dispute fraud proofs
-    DisputeNotLatestState = 8,
-    DisputeInvalid = 9,
-    DisputeInvalidRecursive = 10,
-    DisputeOutOfGas = 11,
-    DisputeInvalidOutputState = 12,
-    DisputeInvalidStateProof = 13,
-    DisputeInvalidPreviousRecursive = 14,
-    DisputeInvalidExitChannelBlocks = 15
-}
+import { DisputeEthersType } from "./disputes";
 
 export const BalanceEthersType = `tuple(
   uint256 amount,
@@ -59,24 +39,6 @@ ${SignedBlockEthersType} signedBlock,
 bytes[] signatures
 )`;
 
-export const ForkMilestoneProofEthersType = `tuple(
-${BlockConfirmationEthersType}[] blockConfirmations
-)`;
-
-export const ForkProofEthersType = `tuple(
-${ForkMilestoneProofEthersType}[] forkMilestoneProofs
-)`;
-
-export const StateProofEthersType = `tuple(
-${ForkProofEthersType} forkProof,
-${SignedBlockEthersType}[] signedBlocks
-)`;
-
-export const ProofEthersType = `tuple(
-${ProofType} proofType,
-bytes encodedProof
-)`;
-
 export const BlockEthersType = `tuple(
   ${TransactionEthersType} transaction,
   bytes32 stateSnapshotHash,
@@ -115,24 +77,6 @@ uint256 forkCnt,
 bool isForced,
 address previousBlockProducer,
 bool previousBlockProducerPostedCalldata
-)`;
-
-export const DisputeEthersType = `tuple(
-bytes32 channelId,
-bytes32 genesisStateSnapshotHash,
-bytes32 latestStateSnapshotHash,
-${StateProofEthersType} stateProof,
-${ProofEthersType}[] fraudProofs,
-address[] onChainSlashes,
-bytes32 onChainLatestJoinChannelBlockHash,
-bytes32 outputStateSnapshotHash,
-${ExitChannelBlockEthersType}[] exitChannelBlocks,
-bytes32 disputeAuditingDataHash,
-address disputer,
-uint256 disputeIndex,
-uint256 previousRecursiveDisputeIndex,
-${TimeoutEthersType} timeout,
-bool selfRemoval
 )`;
 
 export const DisputeAuditingDataEthersType = `tuple(

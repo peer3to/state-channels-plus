@@ -5,6 +5,28 @@ import {
     TimeoutEthersType
 } from "./ethers";
 
+export enum FraudProofType {
+    // Block related fraud proofs
+    BlockDoubleSign = 0,
+    BlockEmptyBlock = 1,
+    BlockInvalidStateTransition = 2,
+    BlockOutOfGas = 3,
+    BlockInvalidPreviousLink = 4,
+    // Timeout related fraud proofs
+    TimeoutThreshold = 5,
+    TimeoutPriorInvalid = 6,
+    TimeoutParticipantNoNext = 7,
+    // Dispute fraud proofs
+    DisputeNotLatestState = 8,
+    DisputeInvalid = 9,
+    DisputeInvalidRecursive = 10,
+    DisputeOutOfGas = 11,
+    DisputeInvalidOutputState = 12,
+    DisputeInvalidStateProof = 13,
+    DisputeInvalidPreviousRecursive = 14,
+    DisputeInvalidExitChannelBlocks = 15
+}
+
 export const ForkMilestoneProofEthersType = `tuple(
     ${BlockConfirmationEthersType}[] blockConfirmations
 )`;
@@ -44,7 +66,7 @@ export const DisputeEthersType = `tuple(
 export const FoldRechallengeProofEthersType = `tuple(
     string encodedBlock,
     bytes[] signatures
-    )`;
+)`;
 
 export const DoubleSignProofEthersType = `tuple(
         tuple(${SignedBlockEthersType} block1, ${SignedBlockEthersType} block2)[] doubleSigns
