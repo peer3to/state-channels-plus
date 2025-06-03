@@ -2,13 +2,15 @@ import { BytesLike, ethers } from "ethers";
 import {
     BlockStruct,
     JoinChannelStruct,
-    TransactionStruct
+    TransactionStruct,
+    StateSnapshotStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import {
     BlockEthersType,
     DisputeEthersType,
     JoinChannelEthersType,
-    TransactionEthersType
+    TransactionEthersType,
+    StateSnapshotEthersType
 } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 
@@ -16,14 +18,16 @@ type StructType =
     | BlockStruct
     | JoinChannelStruct
     | TransactionStruct
-    | DisputeStruct;
+    | DisputeStruct
+    | StateSnapshotStruct;
 
 // Enum for better autocomplete and type safety
 export enum Type {
     Block = "Block",
     JoinChannel = "JoinChannel",
     Transaction = "Transaction",
-    Dispute = "Dispute"
+    Dispute = "Dispute",
+    StateSnapshot = "StateSnapshot"
 }
 
 export class Codec {
@@ -31,7 +35,8 @@ export class Codec {
         [Type.Block, BlockEthersType],
         [Type.JoinChannel, JoinChannelEthersType],
         [Type.Transaction, TransactionEthersType],
-        [Type.Dispute, DisputeEthersType]
+        [Type.Dispute, DisputeEthersType],
+        [Type.StateSnapshot, StateSnapshotEthersType]
     ]);
 
     // Only support explicit type encoding for better reliability
@@ -95,5 +100,8 @@ export class Codec {
     }
     public static decodeDispute(encoded: BytesLike): DisputeStruct {
         return this.decode(encoded, Type.Dispute);
+    }
+    public static decodeStateSnapshot(encoded: BytesLike): StateSnapshotStruct {
+        return this.decode(encoded, Type.StateSnapshot);
     }
 }
