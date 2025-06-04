@@ -5,7 +5,8 @@ import {
     ExitChannelBlockStruct,
     ExitChannelStruct,
     TransactionStruct,
-    JoinChannelBlockStruct
+    JoinChannelBlockStruct,
+    StateSnapshotStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import {
     BlockEthersType,
@@ -25,7 +26,8 @@ type StructType =
     | TransactionStruct
     | DisputeStruct
     | ExitChannelBlockStruct
-    | ExitChannelStruct;
+    | ExitChannelStruct
+    | StateSnapshotStruct;
 
 export type StructTypeName =
     | "Block"

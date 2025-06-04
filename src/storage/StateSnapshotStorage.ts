@@ -1,12 +1,11 @@
-import { EvmUtils } from "@/utils";
+import { Codec, EvmUtils } from "@/utils";
 import { BigNumberish, BytesLike, toBeHex, hexlify } from "ethers";
 import {
-    JoinChannelBlockStruct,
     StateSnapshotStruct,
     BalanceStruct,
     BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import { EVM } from "@ethereumjs/evm";
+import { UnrolledBlock, UnrolledSignedBlock } from "@/types/storage";
 
 /**
  * StateSnapshotStorage provides persistent storage for state snapshots
@@ -15,21 +14,19 @@ import { EVM } from "@ethereumjs/evm";
 export default class StateSnapshotStorage {
     //BlockConfirmationStruct => SignedBlockStruct => encodedBlock => BlockStruct
     private blockConfirmationStructsMap: Map<string, BlockConfirmationStruct>;
+    private latestBlockConfirmationKey: string;
 
     // map [fork count, block height] => struct
     // we make the key a string to avoid double mapping
     private stateSnapshotStructsMap: Map<string, StateSnapshotStruct>;
+    //map [stateSnapshotHash] => [fork count, block height]
+    private hashToStateSnapshotKeyMap: Map<BytesLike, string>;
     //could be replaced with a key, but we would need some computation
     private latestOnChainStateSnapshot: {
         stateSnapshot: StateSnapshotStruct;
         timestamp: number;
     };
 
-    //TODO; technically speaking all blockStructs have the hash of the previous one inside
-    // so we could store only the latest one
-    // but then if we want to fetch a specific block hash, we would need to traverse the chain
-    // and that would be inefficient, but at the same time we are not supposed to
-    // have a lot of join/exit channel blocks
     private joinChannelBlockHashesMap: Map<string, BytesLike>;
     private latestJoinChannelBlockHash: BytesLike | undefined;
     private exitChannelBlockHashesMap: Map<string, BytesLike>;
@@ -72,10 +69,58 @@ export default class StateSnapshotStorage {
         };
         this.latestJoinChannelBlockHash = undefined;
         this.latestExitChannelBlockHash = undefined;
+        this.hashToStateSnapshotKeyMap = new Map();
+        this.latestBlockConfirmationKey = "0";
         console.log("StateSnapshotStorage initialized");
     }
 
     //#region Block confirmation management methods
+
+    getLatestBlock(): UnrolledSignedBlock {
+        const latestBlockConfirmation = this.getLatestBlockConfirmation();
+        const latestSignedBlock = latestBlockConfirmation.signedBlock;
+        const latestBlock = EvmUtils.decodeBlock(
+            latestSignedBlock.encodedBlock
+        );
+        const stateSnapshot = this.getStateSnapshotByHash(
+            latestBlock.stateSnapshotHash
+        );
+
+        const unrolledBlock: UnrolledBlock = {
+            transaction: latestBlock.transaction,
+            stateSnapshot: stateSnapshot,
+            previousBlockHash: latestBlock.previousBlockHash
+        };
+
+        return {
+            block: unrolledBlock,
+            signature: latestSignedBlock.signature
+        };
+    }
+
+    getLatestBlockConfirmation(): BlockConfirmationStruct {
+        const confirmation = this.blockConfirmationStructsMap.get(
+            this.latestBlockConfirmationKey
+        );
+        if (!confirmation) {
+            throw new Error("No latest block confirmation found");
+        }
+        return confirmation;
+    }
+
+    getStateSnapshotByHash(hash: BytesLike): StateSnapshotStruct {
+        const key = this.hashToStateSnapshotKeyMap.get(hash);
+        if (!key) {
+            throw new Error("No state snapshot key found for hash");
+        }
+
+        const snapshot = this.stateSnapshotStructsMap.get(key);
+        if (!snapshot) {
+            throw new Error("No state snapshot found for key");
+        }
+
+        return snapshot;
+    }
 
     //#endregion
 
@@ -87,6 +132,8 @@ export default class StateSnapshotStorage {
     store(blockHeight: number, snapshot: StateSnapshotStruct) {
         const key = this.makeKey(Number(snapshot.forkCnt), blockHeight);
         this.stateSnapshotStructsMap.set(key, snapshot);
+        const encodedStateSnapshot = Codec.encode(snapshot);
+        this.hashToStateSnapshotKeyMap.set(encodedStateSnapshot, key);
 
         console.log(
             `Stored snapshot for fork ${snapshot.forkCnt}, height ${blockHeight}`
