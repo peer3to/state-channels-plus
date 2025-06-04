@@ -9,7 +9,11 @@ export class Storage implements IStorage {
     private latestOnChainStateSnapshot: {
         stateSnapshot: StateSnapshotStruct;
         timestamp: number;
-    } | null = null;
+    } = {
+        timestamp: 0,
+        //  junk to keep ts happy, this should be initialized with channel creation with genesis state
+        stateSnapshot: null as unknown as StateSnapshotStruct
+    };
 
     private constructor() {}
 
@@ -55,7 +59,7 @@ export class Storage implements IStorage {
     getLatestOnChainStateSnapshot(): {
         stateSnapshot: StateSnapshotStruct;
         timestamp: number;
-    } | null {
+    } {
         return this.latestOnChainStateSnapshot;
     }
 
