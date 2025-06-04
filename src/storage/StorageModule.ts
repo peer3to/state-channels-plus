@@ -1,4 +1,4 @@
-import { BigNumberish, ethers } from "ethers";
+import { BigNumberish, ethers, BytesLike, toBeHex, hexlify } from "ethers";
 import { IStorageModule } from "./IStorageModule";
 import { ForkId } from "@/types/types";
 
