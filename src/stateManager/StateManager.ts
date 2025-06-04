@@ -359,11 +359,7 @@ class StateManager {
 
         //This is done before the state snapshot is created
         //This is because the exit channels need to be taken into account when creating the state snapshot
-        this.handleExitChannelsStorage(
-            exitChannels,
-            Number(transaction.header.forkCnt),
-            Number(transaction.header.transactionCnt)
-        );
+        this.handleExitChannelsStorage(exitChannels);
 
         this.handleStateSnapshotStorage(
             encodedState,
@@ -583,11 +579,7 @@ class StateManager {
         );
     }
 
-    private handleExitChannelsStorage(
-        exitChannels: ExitChannelStruct[],
-        forkCnt: number,
-        blockHeight: number
-    ) {
+    private handleExitChannelsStorage(exitChannels: ExitChannelStruct[]) {
         const previousBlockHash =
             this.storageModule.getLatestExitChannelBlockHash();
         const exitChannelBlock: ExitChannelBlockStruct = {
@@ -596,11 +588,9 @@ class StateManager {
         };
         const exitChannelBlockHash =
             EvmUtils.encodeExitChannelBlock(exitChannelBlock);
-        //TODO: same here, check that these numebr typings are ok or replace by a bigNumberish
         this.storageModule.storeExitChannelBlockHash(
-            Number(forkCnt),
-            Number(blockHeight),
-            exitChannelBlockHash
+            exitChannelBlockHash,
+            exitChannelBlock
         );
     }
 
