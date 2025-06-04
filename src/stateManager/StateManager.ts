@@ -720,11 +720,11 @@ class StateManager {
         const participants = await this.stateMachine.getParticipants();
 
         const latestJoinChannelBlockHash =
-            this.storageModule.getLatestJoinChannelBlockHash();
+            this.storage.getLatestJoinChannelBlockHash();
         const latestExitChannelBlockHash =
-            this.storageModule.getLatestExitChannelBlockHash();
-        const totalDeposits = this.storageModule.getTotalDeposits();
-        const totalWithdrawals = this.storageModule.getTotalWithdrawals();
+            this.storage.getLatestExitChannelBlockHash();
+        const totalDeposits = this.storage.getTotalDeposits();
+        const totalWithdrawals = this.storage.getTotalWithdrawals();
 
         return {
             stateMachineStateHash: stateMachineStateHash as BytesLike,
@@ -750,7 +750,7 @@ class StateManager {
         const forkCnt = this.getForkCnt();
         const transactionCnt = Number(tx.header.transactionCnt);
 
-        const previousBlockHash = this.storageModule.getPreviousBlockHash(
+        const previousBlockHash = this.storage.getPreviousBlockHash(
             forkCnt,
             transactionCnt - 1
         );

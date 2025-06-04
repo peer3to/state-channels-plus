@@ -4,6 +4,7 @@ import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
+import { Storage } from "@/storage";
 
 //TODO - made a PR to ethers.js to fix Deferred Topic Filter
 
@@ -107,6 +108,19 @@ class StateChannelEventListener {
                 this.stateManager.onOutputStateSnapshotVerified(
                     outputStateSnapshot,
                     disputeCommitment
+                );
+            }
+        },
+        StateSnapshotUpdated: {
+            filterFactory: (channelId: BytesLike) =>
+                this.stateChannelManagerContract.filters.StateSnapshotUpdated(
+                    channelId
+                ),
+            handler: (logObj: any) => {
+                const { stateSnapshot, timestamp } = logObj.args;
+                this.stateManager.onStateSnapshotUpdated(
+                    stateSnapshot,
+                    timestamp
                 );
             }
         }
