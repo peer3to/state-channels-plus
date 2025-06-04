@@ -168,7 +168,6 @@ class StateManager {
             await this.getEncodedStateKecak256(),
             this.getForkCnt()
         );
-        this.p2pEventHooks.onJoinChannel?.(joinChannelBlock);
     }
     //Triggered by the On-chain Event Listener when block calldata is posted on-chain
     public collectOnChainBlock(
@@ -372,6 +371,41 @@ class StateManager {
             successCallback,
             exitChannels
         };
+    }
+
+    private handleExitChannelsStorage(
+        exitChannels: ExitChannelStruct[],
+        forkCnt: number,
+        blockHeight: number
+    ) {
+        const previousBlockHash =
+            this.storageModule.getLatestExitChannelBlockHash();
+        const exitChannelBlock: ExitChannelBlockStruct = {
+            exitChannels,
+            previousBlockHash: previousBlockHash as BytesLike
+        };
+        const exitChannelBlockHash =
+            EvmUtils.encodeExitChannelBlock(exitChannelBlock);
+        //TODO: same here, check that these numebr typings are ok or replace by a bigNumberish
+        this.storageModule.storeExitChannelBlockHash(
+            Number(forkCnt),
+            Number(blockHeight),
+            exitChannelBlockHash
+        );
+    }
+
+    //TODO: check that these storage typings are the best ones to use here
+    // needs to check if its ok to store a number or a BigNumberish
+    private async handleStateSnapshotStorage(
+        encodedState: string,
+        forkCnt: number,
+        blockHeight: number
+    ) {
+        const stateSnapshot = await this.createStateSnapshot(
+            encodedState,
+            forkCnt
+        );
+        this.storageModule.storeStateSnapshot(blockHeight, stateSnapshot);
     }
 
     // Used when authoring a block - Executes the transaction and returns a signed block
