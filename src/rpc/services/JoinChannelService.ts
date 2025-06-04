@@ -1,4 +1,4 @@
-import { ethers, SignatureLike } from "ethers";
+import { SignatureLike } from "ethers";
 import { ARpcService, MainRpcService } from "@/rpc";
 import {
     SignedJoinChannelStruct,
@@ -12,6 +12,8 @@ import Clock from "@/Clock";
 import { getActiveParticipants } from "@/utils/participantUtils";
 import { BytesLike } from "ethers";
 import { Storage } from "@/storage";
+import { AStateChannelManagerProxy } from "@typechain-types/index";
+import { DisputeFactory } from "./DisputeFactory";
 
 enum ValidationFlag {
     VALID,
@@ -24,8 +26,16 @@ class JoinChannelService extends ARpcService {
     // **** part of joinChannel logic ****
     joinChannelMap = new SignatureCollectionMap();
 
+    private readonly scmContract: AStateChannelManagerProxy;
+    private readonly disputeFactory: DisputeFactory;
+    private readonly storage: Storage;
+
     constructor(mainRpcService: MainRpcService) {
         super(mainRpcService);
+        this.scmContract =
+            mainRpcService.p2pManager.stateManager.stateChannelManagerContract;
+        this.disputeFactory = new DisputeFactory(this.scmContract);
+        this.storage = Storage.getInstance();
     }
     public async onJoinChannelRequest(
         signedJoinChannel: SignedJoinChannelStruct,
@@ -205,35 +215,27 @@ class JoinChannelService extends ARpcService {
     private async getActiveParticipants(
         channelId: BytesLike
     ): Promise<Set<string>> {
-        const scmContract =
-            this.mainRpcService.p2pManager.stateManager
-                .stateChannelManagerContract;
-        return await getActiveParticipants(scmContract, channelId);
+        return await getActiveParticipants(this.scmContract, channelId);
     }
 
     private async needsStateSnapshotSubmission(
         _channelId: BytesLike
     ): Promise<boolean> {
-        const storage = Storage.getInstance();
-        const lastestBlock = storage.getLatestBlock();
+        const lastestBlock = this.storage.getLatestBlock();
         if (!lastestBlock) {
             return true;
         }
         const lastestStateSnapshot = lastestBlock.block.stateSnapshot;
         const latestOnChainStateSnapshot =
-            storage.getLatestOnChainStateSnapshot();
+            this.storage.getLatestOnChainStateSnapshot();
         if (!latestOnChainStateSnapshot) {
             return true;
         }
         return (
-            ethers.keccak256(
-                Codec.encode(lastestStateSnapshot, Type.StateSnapshot)
-            ) !==
-            ethers.keccak256(
-                Codec.encode(
-                    latestOnChainStateSnapshot.stateSnapshot,
-                    Type.StateSnapshot
-                )
+            Codec.encode(lastestStateSnapshot, Type.StateSnapshot) !==
+            Codec.encode(
+                latestOnChainStateSnapshot.stateSnapshot,
+                Type.StateSnapshot
             )
         );
     }
@@ -273,11 +275,8 @@ class JoinChannelService extends ARpcService {
                 milestoneSnapshots[milestoneSnapshots.length - 1];
             return latestSnapshot.latestJoinChannelBlockHash as string;
         } else {
-            // Read from chain
-            const scmContract =
-                this.mainRpcService.p2pManager.stateManager
-                    .stateChannelManagerContract;
-            const stateSnapshot = await scmContract.getStateSnapshot(channelId);
+            const { stateSnapshot } =
+                this.storage.getLatestOnChainStateSnapshot();
             return stateSnapshot.latestJoinChannelBlockHash as string;
         }
     }
@@ -324,11 +323,18 @@ class JoinChannelService extends ARpcService {
             previousBlockHash
         };
 
-        // 4. Create the Dispute that will increase the number of participants to include the new participant
-        // currently (23.05.2025) is "under construction". waiting for the TS side machinary to collect the dispute data
-        // to be written by Mrisho
+        const dispute =
+            await this.disputeFactory.createJoinChannelDispute(joinChannel);
 
-        // 5. submit to chain
+        // 5. gossip the dispute and collect signatures of the joiners
+
+        // 6. submit to chain
+        const stateManager = this.mainRpcService.p2pManager.stateManager;
+        // await stateManager.postJoinChannel(
+        //     milestoneProofs,
+        //     milestoneSnapshots,
+        //     joinChannelBlock,
+        // );
     }
 }
 
