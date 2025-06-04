@@ -5,7 +5,8 @@ import {
     ExitChannelBlockStruct,
     DisputeProofStruct,
     SignedDisputeStruct,
-    ExitChannelStruct
+    ExitChannelStruct,
+    JoinChannelBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { ethers } from "ethers";
 import AgreementManager from "../agreementManager/AgreementManager";
@@ -159,6 +160,19 @@ class StateManager {
     public onDisputeUpdate(dispute: DisputeStruct) {
         this.disputeHandler.onDispute(dispute);
         this.p2pEventHooks.onDisputeUpdate?.(dispute);
+    }
+    //Triggered by the On-chain Event Listener when a joinChannelEvent is emitted on-chain
+    public onJoinChannel(joinChannelBlock: JoinChannelBlockStruct) {
+        //TODO: need to do a state snapshot here
+        const forkCnt = this.getForkCnt();
+        const blockHeight = this.getNextBlockHeight();
+        const blockHash = EvmUtils.encodeJoinChannelBlock(joinChannelBlock);
+        this.storageModule.storeJoinChannelBlockHash(
+            forkCnt,
+            blockHeight,
+            blockHash
+        );
+        this.p2pEventHooks.onJoinChannel?.(joinChannelBlock);
     }
     //Triggered by the On-chain Event Listener when block calldata is posted on-chain
     public collectOnChainBlock(
