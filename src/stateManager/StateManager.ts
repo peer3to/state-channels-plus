@@ -571,7 +571,9 @@ class StateManager {
     private handleJoinChannelStorage(joinChannelBlock: JoinChannelBlockStruct) {
         const forkCnt = this.getForkCnt();
         const blockHeight = this.getNextBlockHeight();
-        const blockHash = EvmUtils.encodeJoinChannelBlock(joinChannelBlock);
+        const blockHash = ethers.keccak256(
+            EvmUtils.encodeJoinChannelBlock(joinChannelBlock)
+        );
         this.storageModule.storeJoinChannelBlockHash(
             forkCnt,
             blockHeight,
@@ -586,8 +588,9 @@ class StateManager {
             exitChannels,
             previousBlockHash: previousBlockHash as BytesLike
         };
-        const exitChannelBlockHash =
-            EvmUtils.encodeExitChannelBlock(exitChannelBlock);
+        const exitChannelBlockHash = ethers.keccak256(
+            EvmUtils.encodeExitChannelBlock(exitChannelBlock)
+        );
         this.storageModule.storeExitChannelBlockHash(
             exitChannelBlockHash,
             exitChannelBlock
