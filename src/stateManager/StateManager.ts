@@ -49,7 +49,7 @@ import {
 import ValidationService from "./ValidationService";
 import { Codec, Type } from "@/utils/Codec";
 import { SignatureUtils } from "@/utils/SignatureUtils";
-import { IStorageModule, StorageModule } from "@/storage";
+import { IStorage, Storage } from "@/storage";
 
 let DEBUG_STATE_MANAGER = false;
 class StateManager {
@@ -67,7 +67,7 @@ class StateManager {
     self = DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
     isDisposed: boolean = false;
     validationService: ValidationService;
-    private storageModule: IStorageModule = new StorageModule();
+    private storage: IStorage = new Storage();
 
     // Store latest dispute data
     private latestDisputeData: {
