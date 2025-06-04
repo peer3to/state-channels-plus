@@ -373,41 +373,6 @@ class StateManager {
         };
     }
 
-    private handleExitChannelsStorage(
-        exitChannels: ExitChannelStruct[],
-        forkCnt: number,
-        blockHeight: number
-    ) {
-        const previousBlockHash =
-            this.storageModule.getLatestExitChannelBlockHash();
-        const exitChannelBlock: ExitChannelBlockStruct = {
-            exitChannels,
-            previousBlockHash: previousBlockHash as BytesLike
-        };
-        const exitChannelBlockHash =
-            EvmUtils.encodeExitChannelBlock(exitChannelBlock);
-        //TODO: same here, check that these numebr typings are ok or replace by a bigNumberish
-        this.storageModule.storeExitChannelBlockHash(
-            Number(forkCnt),
-            Number(blockHeight),
-            exitChannelBlockHash
-        );
-    }
-
-    //TODO: check that these storage typings are the best ones to use here
-    // needs to check if its ok to store a number or a BigNumberish
-    private async handleStateSnapshotStorage(
-        encodedState: string,
-        forkCnt: number,
-        blockHeight: number
-    ) {
-        const stateSnapshot = await this.createStateSnapshot(
-            encodedState,
-            forkCnt
-        );
-        this.storageModule.storeStateSnapshot(blockHeight, stateSnapshot);
-    }
-
     // Used when authoring a block - Executes the transaction and returns a signed block
     public async playTransaction(
         tx: TransactionStruct
