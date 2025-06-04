@@ -1,7 +1,25 @@
 import { BigNumberish, ethers } from "ethers";
 import { IStorage } from "./IStorage";
+import { StateSnapshotStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { UnrolledSignedBlock } from "@/types/storage";
 
 export class Storage implements IStorage {
+    private static instance: Storage;
+
+    private latestOnChainStateSnapshot: {
+        stateSnapshot: StateSnapshotStruct;
+        timestamp: number;
+    } | null = null;
+
+    private constructor() {}
+
+    public static getInstance(): Storage {
+        if (!Storage.instance) {
+            Storage.instance = new Storage();
+        }
+        return Storage.instance;
+    }
+
     getLatestJoinChannelBlockHash(): string {
         // TODO
         return ethers.ZeroHash;
@@ -28,5 +46,23 @@ export class Storage implements IStorage {
     ): string | undefined {
         // TODO
         return ethers.ZeroHash;
+    }
+
+    getLatestBlock(): UnrolledSignedBlock {
+        return null as unknown as UnrolledSignedBlock;
+    }
+
+    getLatestOnChainStateSnapshot(): {
+        stateSnapshot: StateSnapshotStruct;
+        timestamp: number;
+    } | null {
+        return this.latestOnChainStateSnapshot;
+    }
+
+    setLatestOnChainStateSnapshot(
+        stateSnapshot: StateSnapshotStruct,
+        timestamp: number
+    ): void {
+        this.latestOnChainStateSnapshot = { stateSnapshot, timestamp };
     }
 }
