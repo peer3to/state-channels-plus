@@ -1,3 +1,4 @@
+import { UnrolledSignedBlock } from "@/types/storage";
 import { StateSnapshotStruct } from "@typechain-types/contracts/V1/DataTypes";
 import { BigNumberish } from "ethers";
 
@@ -19,6 +20,13 @@ export interface IStorage {
         forkCnt: number,
         transactionCnt: number
     ): string | undefined;
+
+    getLatestBlock(): UnrolledSignedBlock;
+
+    getLatestOnChainStateSnapshot(): {
+        stateSnapshot: StateSnapshotStruct;
+        timestamp: number;
+    };
 
     setLatestOnChainStateSnapshot(
         stateSnapshot: StateSnapshotStruct,
