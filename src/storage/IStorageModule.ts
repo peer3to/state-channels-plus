@@ -19,4 +19,10 @@ export interface IStorageModule {
         forkCnt: number,
         transactionCnt: number
     ): string | undefined;
+
+    storeJoinChannelBlockHash(
+        forkCnt: number,
+        blockHeight: number,
+        blockHash: string
+    ): void;
 }

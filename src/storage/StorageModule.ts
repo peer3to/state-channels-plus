@@ -1,6 +1,6 @@
 import { BigNumberish, ethers, BytesLike, toBeHex, hexlify } from "ethers";
 import { IStorageModule } from "./IStorageModule";
-import { Codec, EvmUtils } from "@/utils";
+import { Codec, EvmUtils, Type } from "@/utils";
 import {
     StateSnapshotStruct,
     BalanceStruct,
@@ -140,7 +140,7 @@ export class StorageModule implements IStorageModule {
     store(blockHeight: number, snapshot: StateSnapshotStruct) {
         const key = this.makeKey(Number(snapshot.forkCnt), blockHeight);
         this.stateSnapshotStructsMap.set(key, snapshot);
-        const encodedStateSnapshot = Codec.encode(snapshot);
+        const encodedStateSnapshot = Codec.encode(snapshot, Type.StateSnapshot);
         this.hashToStateSnapshotKeyMap.set(encodedStateSnapshot, key);
 
         console.log(
