@@ -341,6 +341,7 @@ class StateManager {
 
     //Triggered by the On-chain Event Listener when a joinChannelEvent is emitted on-chain
     public onJoinChannel(joinChannelBlock: JoinChannelBlockStruct) {
+        //TODO: need to do a state snapshot here
         const forkCnt = this.getForkCnt();
         const blockHeight = this.getNextBlockHeight();
         const blockHash = EvmUtils.encodeJoinChannelBlock(joinChannelBlock);

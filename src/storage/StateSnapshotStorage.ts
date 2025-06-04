@@ -1,9 +1,10 @@
 import { EvmUtils } from "@/utils";
-import { BigNumberish, BytesLike, toBeHex } from "ethers";
+import { BigNumberish, BytesLike, toBeHex, hexlify } from "ethers";
 import {
     JoinChannelBlockStruct,
     StateSnapshotStruct,
-    BalanceStruct
+    BalanceStruct,
+    BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import { EVM } from "@ethereumjs/evm";
 
@@ -12,9 +13,17 @@ import { EVM } from "@ethereumjs/evm";
  * organized by fork count and block height.
  */
 export default class StateSnapshotStorage {
+    //BlockConfirmationStruct => SignedBlockStruct => encodedBlock => BlockStruct
+    private blockConfirmationStructsMap: Map<string, BlockConfirmationStruct>;
+
     // map [fork count, block height] => struct
     // we make the key a string to avoid double mapping
     private stateSnapshotStructsMap: Map<string, StateSnapshotStruct>;
+    //could be replaced with a key, but we would need some computation
+    private latestOnChainStateSnapshot: {
+        stateSnapshot: StateSnapshotStruct;
+        timestamp: number;
+    };
 
     //TODO; technically speaking all blockStructs have the hash of the previous one inside
     // so we could store only the latest one
@@ -30,6 +39,26 @@ export default class StateSnapshotStorage {
     private totalWithdrawals: BalanceStruct;
 
     constructor() {
+        //TODO: This should be replaced by the actual genesis state snapshot
+        this.latestOnChainStateSnapshot = {
+            stateSnapshot: {
+                stateMachineStateHash: "0x",
+                participants: [],
+                forkCnt: 0,
+                latestJoinChannelBlockHash: "0x",
+                latestExitChannelBlockHash: "0x",
+                totalDeposits: {
+                    amount: BigInt(0),
+                    data: "0x"
+                },
+                totalWithdrawals: {
+                    amount: BigInt(0),
+                    data: "0x"
+                }
+            },
+            timestamp: 0
+        };
+        this.blockConfirmationStructsMap = new Map();
         this.stateSnapshotStructsMap = new Map();
         this.joinChannelBlockHashesMap = new Map();
         this.exitChannelBlockHashesMap = new Map();
@@ -46,7 +75,11 @@ export default class StateSnapshotStorage {
         console.log("StateSnapshotStorage initialized");
     }
 
-    // State snapshot management methods
+    //#region Block confirmation management methods
+
+    //#endregion
+
+    //#region State snapshot management methods
 
     /**
      * Store a state snapshot
@@ -78,7 +111,25 @@ export default class StateSnapshotStorage {
         console.log("Cleared all state snapshots");
     }
 
-    // Join/Exit channel block hash management methods
+    getLatestOnChainStateSnapshot(): {
+        stateSnapshot: StateSnapshotStruct;
+        timestamp: number;
+    } {
+        return this.latestOnChainStateSnapshot;
+    }
+
+    setLatestOnChainStateSnapshot(
+        stateSnapshot: StateSnapshotStruct,
+        timestamp: number
+    ): void {
+        this.latestOnChainStateSnapshot = {
+            stateSnapshot,
+            timestamp
+        };
+    }
+    //#endregion
+
+    //#region Join/Exit channel block hash management methods
 
     /**
      * Store the block hash for a join channel block
@@ -148,8 +199,9 @@ export default class StateSnapshotStorage {
     getLatestExitChannelBlockHash(): BytesLike | undefined {
         return this.latestExitChannelBlockHash;
     }
+    //#endregion
 
-    // Total deposits and withdrawals management methods
+    //#region Total deposits and withdrawals management methods
 
     /**
      * Add to the total deposits
@@ -164,8 +216,11 @@ export default class StateSnapshotStorage {
     /**
      * Get the total deposits
      */
-    getTotalDeposits(): BalanceStruct {
-        return this.totalDeposits;
+    getTotalDeposits(): { amount: BigNumberish; data: string } {
+        return {
+            amount: this.totalDeposits.amount,
+            data: hexlify(this.totalDeposits.data)
+        };
     }
 
     /**
@@ -180,11 +235,15 @@ export default class StateSnapshotStorage {
     /**
      * Get the total withdrawals
      */
-    getTotalWithdrawals(): BalanceStruct {
-        return this.totalWithdrawals;
+    getTotalWithdrawals(): { amount: BigNumberish; data: string } {
+        return {
+            amount: this.totalWithdrawals.amount,
+            data: hexlify(this.totalWithdrawals.data)
+        };
     }
+    //#endregion
 
-    // Helper methods
+    //#region Helper methods
 
     private makeKey(forkCnt: number, blockHeight: number): string {
         return `${forkCnt}-${blockHeight}`;
@@ -205,4 +264,5 @@ export default class StateSnapshotStorage {
 
         return [forkCnt, blockHeight];
     }
+    //#endregion
 }
