@@ -3,14 +3,20 @@ import {
     BlockStruct,
     JoinChannelStruct,
     TransactionStruct,
-    StateSnapshotStruct
+    StateSnapshotStruct,
+    ExitChannelBlockStruct,
+    ExitChannelStruct,
+    JoinChannelBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import {
     BlockEthersType,
     DisputeEthersType,
     JoinChannelEthersType,
     TransactionEthersType,
-    StateSnapshotEthersType
+    StateSnapshotEthersType,
+    JoinChannelBlockEthersType,
+    ExitChannelEthersType,
+    ExitChannelBlockEthersType
 } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 
@@ -19,7 +25,10 @@ type StructType =
     | JoinChannelStruct
     | TransactionStruct
     | DisputeStruct
-    | StateSnapshotStruct;
+    | StateSnapshotStruct
+    | JoinChannelBlockStruct
+    | ExitChannelBlockStruct
+    | ExitChannelStruct;
 
 // Enum for better autocomplete and type safety
 export enum Type {
@@ -27,7 +36,10 @@ export enum Type {
     JoinChannel = "JoinChannel",
     Transaction = "Transaction",
     Dispute = "Dispute",
-    StateSnapshot = "StateSnapshot"
+    StateSnapshot = "StateSnapshot",
+    JoinChannelBlock = "JoinChannelBlock",
+    ExitChannelBlock = "ExitChannelBlock",
+    ExitChannel = "ExitChannel"
 }
 
 export class Codec {
@@ -36,7 +48,10 @@ export class Codec {
         [Type.JoinChannel, JoinChannelEthersType],
         [Type.Transaction, TransactionEthersType],
         [Type.Dispute, DisputeEthersType],
-        [Type.StateSnapshot, StateSnapshotEthersType]
+        [Type.StateSnapshot, StateSnapshotEthersType],
+        [Type.JoinChannelBlock, JoinChannelBlockEthersType],
+        [Type.ExitChannelBlock, ExitChannelBlockEthersType],
+        [Type.ExitChannel, ExitChannelEthersType]
     ]);
 
     // Only support explicit type encoding for better reliability
@@ -94,6 +109,16 @@ export class Codec {
     }
     public static decodeJoinChannel(encoded: BytesLike): JoinChannelStruct {
         return this.decode(encoded, Type.JoinChannel);
+    }
+    public static decodeJoinChannelBlock(
+        encoded: BytesLike
+    ): JoinChannelBlockStruct {
+        return this.decode(encoded, Type.JoinChannelBlock);
+    }
+    public static decodeExitChannelBlock(
+        encoded: BytesLike
+    ): ExitChannelBlockStruct {
+        return this.decode(encoded, Type.ExitChannelBlock);
     }
     public static decodeTransaction(encoded: BytesLike): TransactionStruct {
         return this.decode(encoded, Type.Transaction);
