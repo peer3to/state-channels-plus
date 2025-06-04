@@ -162,8 +162,16 @@ class StateManager {
         this.p2pEventHooks.onDisputeUpdate?.(dispute);
     }
     //Triggered by the On-chain Event Listener when a joinChannelEvent is emitted on-chain
-    public onJoinChannel(joinChannelBlock: JoinChannelBlockStruct) {
-        //TODO: need to do a state snapshot here
+    public async onJoinChannel(joinChannelBlock: JoinChannelBlockStruct) {
+        this.handleJoinChannelStorage(joinChannelBlock);
+        this.handleStateSnapshotStorage(
+            await this.getEncodedStateKecak256(),
+            this.getForkCnt(),
+            this.getNextBlockHeight()
+        );
+        this.p2pEventHooks.onJoinChannel?.(joinChannelBlock);
+    }
+    private handleJoinChannelStorage(joinChannelBlock: JoinChannelBlockStruct) {
         const forkCnt = this.getForkCnt();
         const blockHeight = this.getNextBlockHeight();
         const blockHash = EvmUtils.encodeJoinChannelBlock(joinChannelBlock);
@@ -172,7 +180,6 @@ class StateManager {
             blockHeight,
             blockHash
         );
-        this.p2pEventHooks.onJoinChannel?.(joinChannelBlock);
     }
     //Triggered by the On-chain Event Listener when block calldata is posted on-chain
     public collectOnChainBlock(
@@ -360,6 +367,20 @@ class StateManager {
             await this.stateMachine.stateTransition(transaction);
         const encodedState = await this.stateMachine.getState();
 
+        //This is done before the state snapshot is created
+        //This is because the exit channels need to be taken into account when creating the state snapshot
+        this.handleExitChannelsStorage(
+            exitChannels,
+            Number(transaction.header.forkCnt),
+            Number(transaction.header.transactionCnt)
+        );
+
+        this.handleStateSnapshotStorage(
+            encodedState,
+            Number(transaction.header.forkCnt),
+            Number(transaction.header.transactionCnt)
+        );
+
         return {
             success,
             encodedState,
@@ -367,6 +388,41 @@ class StateManager {
             successCallback,
             exitChannels
         };
+    }
+
+    private handleExitChannelsStorage(
+        exitChannels: ExitChannelStruct[],
+        forkCnt: number,
+        blockHeight: number
+    ) {
+        const previousBlockHash =
+            this.storageModule.getLatestExitChannelBlockHash();
+        const exitChannelBlock: ExitChannelBlockStruct = {
+            exitChannels,
+            previousBlockHash: previousBlockHash as BytesLike
+        };
+        const exitChannelBlockHash =
+            EvmUtils.encodeExitChannelBlock(exitChannelBlock);
+        //TODO: same here, check that these numebr typings are ok or replace by a bigNumberish
+        this.storageModule.storeExitChannelBlockHash(
+            Number(forkCnt),
+            Number(blockHeight),
+            exitChannelBlockHash
+        );
+    }
+
+    //TODO: check that these storage typings are the best ones to use here
+    // needs to check if its ok to store a number or a BigNumberish
+    private async handleStateSnapshotStorage(
+        encodedState: string,
+        forkCnt: number,
+        blockHeight: number
+    ) {
+        const stateSnapshot = await this.createStateSnapshot(
+            encodedState,
+            forkCnt
+        );
+        this.storageModule.storeStateSnapshot(blockHeight, stateSnapshot);
     }
 
     // Used when authoring a block - Executes the transaction and returns a signed block

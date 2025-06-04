@@ -1,5 +1,6 @@
 import { ForkId } from "@/types/types";
 import { BigNumberish } from "ethers";
+import { StateSnapshotStruct } from "@typechain-types/contracts/V1/DataTypes";
 
 /**
  * Interface for storage module that provides access to blockchain data
@@ -25,5 +26,16 @@ export interface IStorageModule {
         forkCnt: number,
         blockHeight: number,
         blockHash: string
+    ): void;
+
+    storeExitChannelBlockHash(
+        forkCnt: number,
+        blockHeight: number,
+        blockHash: string
+    ): void;
+
+    storeStateSnapshot(
+        blockHeight: number,
+        snapshot: StateSnapshotStruct
     ): void;
 }
