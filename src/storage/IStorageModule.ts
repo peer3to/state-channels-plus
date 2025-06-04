@@ -2,7 +2,8 @@ import { ForkId } from "@/types/types";
 import { BigNumberish } from "ethers";
 import {
     StateSnapshotStruct,
-    ExitChannelBlockStruct
+    ExitChannelBlockStruct,
+    JoinChannelBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 
 /**
@@ -26,9 +27,8 @@ export interface IStorageModule {
     ): string | undefined;
 
     storeJoinChannelBlockHash(
-        forkCnt: number,
-        blockHeight: number,
-        blockHash: string
+        blockHash: string,
+        joinChannelBlock: JoinChannelBlockStruct
     ): void;
 
     storeExitChannelBlockHash(
