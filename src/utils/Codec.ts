@@ -3,14 +3,20 @@ import {
     BlockStruct,
     JoinChannelStruct,
     TransactionStruct,
-    StateSnapshotStruct
+    StateSnapshotStruct,
+    ExitChannelBlockStruct,
+    ExitChannelStruct,
+    JoinChannelBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     BlockEthersType,
     DisputeEthersType,
     JoinChannelEthersType,
     TransactionEthersType,
-    StateSnapshotEthersType
+    StateSnapshotEthersType,
+    JoinChannelBlockEthersType,
+    ExitChannelEthersType,
+    ExitChannelBlockEthersType
 } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Bytes } from "@/types/types";
@@ -20,7 +26,10 @@ type StructType =
     | JoinChannelStruct
     | TransactionStruct
     | DisputeStruct
-    | StateSnapshotStruct;
+    | StateSnapshotStruct
+    | JoinChannelBlockStruct
+    | ExitChannelBlockStruct
+    | ExitChannelStruct;
 
 // Enum for better autocomplete and type safety
 export enum Type {
@@ -28,7 +37,10 @@ export enum Type {
     JoinChannel,
     Transaction,
     Dispute,
-    StateSnapshot
+    StateSnapshot,
+    JoinChannelBlock,
+    ExitChannelBlock,
+    ExitChannel
 }
 
 export class Codec {
@@ -37,7 +49,10 @@ export class Codec {
         [Type.JoinChannel, JoinChannelEthersType],
         [Type.Transaction, TransactionEthersType],
         [Type.Dispute, DisputeEthersType],
-        [Type.StateSnapshot, StateSnapshotEthersType]
+        [Type.StateSnapshot, StateSnapshotEthersType],
+        [Type.JoinChannelBlock, JoinChannelBlockEthersType],
+        [Type.ExitChannelBlock, ExitChannelBlockEthersType],
+        [Type.ExitChannel, ExitChannelEthersType]
     ]);
 
     public static encode(struct: StructType, type: Type): Bytes {
@@ -56,6 +71,10 @@ export class Codec {
     ): JoinChannelStruct;
     public static decode(
         encoded: Bytes,
+        type: Type.ExitChannel
+    ): ExitChannelStruct;
+    public static decode(
+        encoded: Bytes,
         type: Type.Transaction
     ): TransactionStruct;
     public static decode(encoded: Bytes, type: Type.Dispute): DisputeStruct;
@@ -63,6 +82,14 @@ export class Codec {
         encoded: Bytes,
         type: Type.StateSnapshot
     ): StateSnapshotStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.JoinChannelBlock
+    ): JoinChannelBlockStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.ExitChannelBlock
+    ): ExitChannelBlockStruct;
 
     public static decode<T extends StructType>(encoded: Bytes, type: Type): T {
         const ethersType = this.structToEthersType.get(type);
