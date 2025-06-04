@@ -33,7 +33,6 @@ import {
     DebugProxy,
     Mutex,
     scheduleTask,
-    difference,
     getActiveParticipants
 } from "@/utils";
 import StateChannelEventListener from "@/StateChannelEventListener";
@@ -48,9 +47,9 @@ import {
     processConfirmationDecision
 } from "./processConfirmationDecisionHandlers";
 import ValidationService from "./ValidationService";
-import { Codec } from "@/utils/Codec";
+import { Codec, Type } from "@/utils/Codec";
 import { SignatureUtils } from "@/utils/SignatureUtils";
-import * as SetUtils from "@/utils/set";
+import { IStorageModule, StorageModule } from "@/storage";
 
 let DEBUG_STATE_MANAGER = false;
 class StateManager {
@@ -68,6 +67,8 @@ class StateManager {
     self = DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
     isDisposed: boolean = false;
     validationService: ValidationService;
+    private storageModule: IStorageModule = new StorageModule();
+
     // Store latest dispute data
     private latestDisputeData: {
         dispute: DisputeStruct;
@@ -378,7 +379,7 @@ class StateManager {
             const {
                 success,
                 encodedState,
-                previousStateHash,
+                previousStateHash: _previousStateHash,
                 successCallback
             } = await this.applyTransaction(tx);
 
@@ -388,7 +389,8 @@ class StateManager {
                 );
             }
 
-            const block = await this.createBlock(tx, previousStateHash);
+            const posteriorStateHash = await this.getEncodedStateKecak256();
+            const block = await this.createBlock(tx, posteriorStateHash);
             const signedBlock = await this.signBlock(block);
 
             this.agreementManager.addBlock(
@@ -461,7 +463,7 @@ class StateManager {
         }
 
         // Get output state snapshot data
-        const encodedDispute = Codec.encode(disputeData.dispute);
+        const encodedDispute = Codec.encode(disputeData.dispute, Type.Dispute);
         const commitment = ethers.keccak256(
             ethers.AbiCoder.defaultAbiCoder().encode(
                 ["bytes", "uint256"],
@@ -514,7 +516,7 @@ class StateManager {
 
         const hasThreshold = SignatureUtils.hasSignatureThreshold(
             allowedParticipantsSet,
-            Codec.encode(disputeData.dispute),
+            Codec.encode(disputeData.dispute, Type.Dispute),
             disputeSignatures
         );
 
@@ -575,7 +577,7 @@ class StateManager {
         )
             return;
         const response =
-            await this.stateChannelManagerContract.getBlockCallData(
+            await this.stateChannelManagerContract.getBlockCallDataCommitment(
                 this.channelId,
                 forkCnt,
                 transactionCnt,
@@ -711,16 +713,61 @@ class StateManager {
         }
     }
 
+    private async createStateSnapshot(
+        stateMachineStateHash: string,
+        forkCnt: number
+    ): Promise<StateSnapshotStruct> {
+        const participants = await this.stateMachine.getParticipants();
+
+        const latestJoinChannelBlockHash =
+            this.storageModule.getLatestJoinChannelBlockHash();
+        const latestExitChannelBlockHash =
+            this.storageModule.getLatestExitChannelBlockHash();
+        const totalDeposits = this.storageModule.getTotalDeposits();
+        const totalWithdrawals = this.storageModule.getTotalWithdrawals();
+
+        return {
+            stateMachineStateHash: stateMachineStateHash as BytesLike,
+            participants,
+            forkCnt,
+            latestJoinChannelBlockHash: latestJoinChannelBlockHash as BytesLike,
+            latestExitChannelBlockHash: latestExitChannelBlockHash as BytesLike,
+            totalDeposits: {
+                amount: totalDeposits.amount,
+                data: totalDeposits.data as BytesLike
+            },
+            totalWithdrawals: {
+                amount: totalWithdrawals.amount,
+                data: totalWithdrawals.data as BytesLike
+            }
+        };
+    }
+
     private async createBlock(
         tx: TransactionStruct,
-        previousStateHash: string
+        posteriorStateHash: string
     ): Promise<BlockStruct> {
-        const currentStateHash = await this.getEncodedStateKecak256();
+        const forkCnt = this.getForkCnt();
+        const transactionCnt = Number(tx.header.transactionCnt);
+
+        const previousBlockHash = this.storageModule.getPreviousBlockHash(
+            forkCnt,
+            transactionCnt - 1
+        );
+
+        const stateSnapshot = await this.createStateSnapshot(
+            posteriorStateHash,
+            forkCnt
+        );
+
+        const stateSnapshotHash = ethers.keccak256(
+            Codec.encode(stateSnapshot, Type.StateSnapshot)
+        );
 
         return {
             transaction: tx,
-            stateHash: currentStateHash,
-            previousStateHash
+            stateSnapshotHash: stateSnapshotHash as BytesLike,
+            previousBlockHash: previousBlockHash as BytesLike
         };
     }
 

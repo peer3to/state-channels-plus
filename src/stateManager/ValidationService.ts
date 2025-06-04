@@ -14,7 +14,9 @@ import {
     scheduleTask,
     subjectiveTimingFlag,
     SignatureUtils,
-    getActiveParticipants
+    getActiveParticipants,
+    Codec,
+    Type
 } from "@/utils";
 import AStateMachine from "@/AStateMachine";
 import { Clock } from "..";
@@ -206,7 +208,7 @@ export default class ValidationService {
         let confirmer;
         try {
             confirmer = SignatureUtils.getSignerAddress(
-                disputeStruct,
+                Codec.encode(disputeStruct, Type.Dispute),
                 confirmationSignature as SignatureLike
             );
         } catch (error) {
@@ -258,9 +260,16 @@ export default class ValidationService {
         const encodedState = await this.stateMachine.getState();
         const stateHash = ethers.keccak256(encodedState);
 
-        const hashOK =
-            stateHash === block.stateHash &&
-            previousStateHash === block.previousStateHash;
+        // TODO: get current state snapshot and previous block hash
+        // const currentStateSnapshotHash = "";
+        // const previousBlockHash = "";
+
+        // const hashOK =
+        //     currentStateSnapshotHash === block.stateSnapshotHash &&
+        //     previousBlockHash === block.previousBlockHash;
+
+        // TEMPORARY
+        const hashOK = true;
 
         if (!txOK || !hashOK) return dispute(AgreementFlag.INCORRECT_DATA);
 

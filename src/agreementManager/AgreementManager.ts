@@ -3,7 +3,10 @@ import {
     SignedBlockStruct,
     BlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import {
+    BlockConfirmationStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/DisputeTypes";
 import { BlockUtils, EvmUtils } from "@/utils";
 import { AgreementFlag } from "@/types";
 import { BlockConfirmation } from "./types";
@@ -258,7 +261,7 @@ class AgreementManager {
     ): {
         encodedLatestFinalizedState: string;
         encodedLatestCorrectState: string;
-        virtualVotingBlocks: ConfirmedBlockStruct[];
+        virtualVotingBlocks: BlockConfirmationStruct[];
     } {
         const fork = this.forks.forkAt(Number(forkCnt));
         if (!fork)
@@ -267,7 +270,7 @@ class AgreementManager {
             );
         let encodedLatestFinalizedState: string | undefined;
         let encodedLatestCorrectState: string | undefined;
-        let virtualVotingBlocks: ConfirmedBlockStruct[] = [];
+        let virtualVotingBlocks: BlockConfirmationStruct[] = [];
         let requiredSignatures = SetUtils.fromArray(fork.addressesInThreshold);
 
         for (const agreement of this.forks.agreementsIterator(
@@ -289,9 +292,15 @@ class AgreementManager {
 
             if (!encodedLatestCorrectState) continue;
 
+            const { originalSignature, confirmationSignatures } =
+                this.separateSignatures(agreement);
+
             virtualVotingBlocks.unshift({
-                encodedBlock: EvmUtils.encodeBlock(agreement.block),
-                signatures: agreement.blockSignatures as string[]
+                signedBlock: {
+                    encodedBlock: EvmUtils.encodeBlock(agreement.block),
+                    signature: originalSignature as string
+                },
+                signatures: confirmationSignatures as string[]
             });
 
             // Remove the signers we found from required signatures
@@ -365,6 +374,42 @@ class AgreementManager {
     // ************************************************
     // *************** Common helpers *****************
     // ************************************************
+
+    /**
+     * Separates the original author signature from confirmation signatures.
+     * This works but isn't pretty - ideally agreement.block (or later, from storage module)
+     * should be a SignedBlockStruct to allow clear separation between original/author signature
+     * and the confirmation signatures.
+     */
+    private separateSignatures(agreement: any): {
+        originalSignature: SignatureLike;
+        confirmationSignatures: SignatureLike[];
+    } {
+        const originalSignature = this.getOriginalSignature(agreement.block);
+        if (!originalSignature) {
+            throw new Error(
+                "AgreementManager - separateSignatures - original signature not found"
+            );
+        }
+
+        // Get all signatures except the author's signature
+        const blockAuthor = BlockUtils.getBlockAuthor(agreement.block);
+        const confirmationSignatures = agreement.blockSignatures.filter(
+            (sig: SignatureLike) => {
+                const { didSign } = BlockUtils.getParticipantSignature(
+                    agreement.block,
+                    [sig],
+                    blockAuthor
+                );
+                return !didSign;
+            }
+        );
+
+        return {
+            originalSignature,
+            confirmationSignatures
+        };
+    }
 
     //both canonical chain and future queue
     //both canonical chain and future queue

@@ -77,7 +77,7 @@ export default class BlockValidator {
             const expectedPrev = ethers.keccak256(
                 this.forks.forkAt(forkCnt)!.forkGenesisStateEncoded
             );
-            return block.previousStateHash === expectedPrev
+            return block.previousBlockHash === expectedPrev
                 ? AgreementFlag.READY
                 : AgreementFlag.INCORRECT_DATA;
         }
@@ -86,7 +86,8 @@ export default class BlockValidator {
         const prev = this.forks.blockAt(forkCnt, height - 1);
         if (!prev) return AgreementFlag.NOT_READY;
 
-        return prev.stateHash === block.previousStateHash
+        const prevBlockHash = ethers.keccak256(EvmUtils.encodeBlock(prev));
+        return prevBlockHash === block.previousBlockHash
             ? AgreementFlag.READY
             : AgreementFlag.INCORRECT_DATA;
     }
