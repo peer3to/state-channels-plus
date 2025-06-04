@@ -36,8 +36,5 @@ export interface IStorageModule {
         exitChannelBlock: ExitChannelBlockStruct
     ): void;
 
-    storeStateSnapshot(
-        blockHeight: number,
-        snapshot: StateSnapshotStruct
-    ): void;
+    storeStateSnapshot(snapshot: StateSnapshotStruct): void;
 }

@@ -166,8 +166,7 @@ class StateManager {
         this.handleJoinChannelStorage(joinChannelBlock);
         this.handleStateSnapshotStorage(
             await this.getEncodedStateKecak256(),
-            this.getForkCnt(),
-            this.getNextBlockHeight()
+            this.getForkCnt()
         );
         this.p2pEventHooks.onJoinChannel?.(joinChannelBlock);
     }
@@ -363,8 +362,7 @@ class StateManager {
 
         this.handleStateSnapshotStorage(
             encodedState,
-            Number(transaction.header.forkCnt),
-            Number(transaction.header.transactionCnt)
+            Number(transaction.header.forkCnt)
         );
 
         return {
@@ -598,14 +596,13 @@ class StateManager {
     // needs to check if its ok to store a number or a BigNumberish
     private async handleStateSnapshotStorage(
         encodedState: string,
-        forkCnt: number,
-        blockHeight: number
+        forkCnt: number
     ) {
         const stateSnapshot = await this.createStateSnapshot(
             encodedState,
             forkCnt
         );
-        this.storageModule.storeStateSnapshot(blockHeight, stateSnapshot);
+        this.storageModule.storeStateSnapshot(stateSnapshot);
     }
 
     // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute
