@@ -118,7 +118,7 @@ class StateChannelEventListener {
                 ),
             handler: (logObj: any) => {
                 const { stateSnapshot, timestamp } = logObj.args;
-                this.stateManager.onStateSnapshotUpdated(
+                Storage.getInstance().setLatestOnChainStateSnapshot(
                     stateSnapshot,
                     timestamp
                 );

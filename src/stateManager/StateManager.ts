@@ -49,7 +49,7 @@ import {
 import ValidationService from "./ValidationService";
 import { Codec, Type } from "@/utils/Codec";
 import { SignatureUtils } from "@/utils/SignatureUtils";
-import { IStorage, Storage } from "@/storage";
+import { Storage } from "@/storage";
 
 let DEBUG_STATE_MANAGER = false;
 class StateManager {
@@ -67,7 +67,6 @@ class StateManager {
     self = DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
     isDisposed: boolean = false;
     validationService: ValidationService;
-    private storage: IStorage = new Storage();
 
     // Store latest dispute data
     private latestDisputeData: {
@@ -718,13 +717,14 @@ class StateManager {
         forkCnt: number
     ): Promise<StateSnapshotStruct> {
         const participants = await this.stateMachine.getParticipants();
+        const storage = Storage.getInstance();
 
         const latestJoinChannelBlockHash =
-            this.storage.getLatestJoinChannelBlockHash();
+            storage.getLatestJoinChannelBlockHash();
         const latestExitChannelBlockHash =
-            this.storage.getLatestExitChannelBlockHash();
-        const totalDeposits = this.storage.getTotalDeposits();
-        const totalWithdrawals = this.storage.getTotalWithdrawals();
+            storage.getLatestExitChannelBlockHash();
+        const totalDeposits = storage.getTotalDeposits();
+        const totalWithdrawals = storage.getTotalWithdrawals();
 
         return {
             stateMachineStateHash: stateMachineStateHash as BytesLike,
@@ -750,7 +750,7 @@ class StateManager {
         const forkCnt = this.getForkCnt();
         const transactionCnt = Number(tx.header.transactionCnt);
 
-        const previousBlockHash = this.storage.getPreviousBlockHash(
+        const previousBlockHash = Storage.getInstance().getPreviousBlockHash(
             forkCnt,
             transactionCnt - 1
         );

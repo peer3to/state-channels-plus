@@ -1,4 +1,4 @@
-import { SignatureLike } from "ethers";
+import { ethers, SignatureLike } from "ethers";
 import { ARpcService, MainRpcService } from "@/rpc";
 import {
     SignedJoinChannelStruct,
@@ -11,6 +11,7 @@ import { Codec, EvmUtils, SignatureCollectionMap, Type } from "@/utils";
 import Clock from "@/Clock";
 import { getActiveParticipants } from "@/utils/participantUtils";
 import { BytesLike } from "ethers";
+import { Storage } from "@/storage";
 
 enum ValidationFlag {
     VALID,
@@ -212,17 +213,30 @@ class JoinChannelService extends ARpcService {
     }
 
     private async needsStateSnapshotSubmission(
-        channelId: BytesLike
+        _channelId: BytesLike
     ): Promise<boolean> {
-        // TODO
-        // right now we are cutting slack and just assume that we need to submit a state snapshot
-        // since that is by far the most common case
-
-        // when we will have a solid storage layer, what needs to be done here is one of two options:
-        // a. the ok option: look at locally sotred latest state snapshot and compare to the one on chain
-        // b. the better option: there is a "onStateSnapshotUpdated" hook (or smimilar name). this should be used to locally store the latest stateSnapshot
-        // that is on chain - this way the comparison will not need to call the chain
-        return true;
+        const storage = Storage.getInstance();
+        const lastestBlock = storage.getLatestBlock();
+        if (!lastestBlock) {
+            return true;
+        }
+        const lastestStateSnapshot = lastestBlock.block.stateSnapshot;
+        const latestOnChainStateSnapshot =
+            storage.getLatestOnChainStateSnapshot();
+        if (!latestOnChainStateSnapshot) {
+            return true;
+        }
+        return (
+            ethers.keccak256(
+                Codec.encode(lastestStateSnapshot, Type.StateSnapshot)
+            ) !==
+            ethers.keccak256(
+                Codec.encode(
+                    latestOnChainStateSnapshot.stateSnapshot,
+                    Type.StateSnapshot
+                )
+            )
+        );
     }
 
     /**
