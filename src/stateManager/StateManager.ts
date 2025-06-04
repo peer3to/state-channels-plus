@@ -171,16 +171,6 @@ class StateManager {
         );
         this.p2pEventHooks.onJoinChannel?.(joinChannelBlock);
     }
-    private handleJoinChannelStorage(joinChannelBlock: JoinChannelBlockStruct) {
-        const forkCnt = this.getForkCnt();
-        const blockHeight = this.getNextBlockHeight();
-        const blockHash = EvmUtils.encodeJoinChannelBlock(joinChannelBlock);
-        this.storageModule.storeJoinChannelBlockHash(
-            forkCnt,
-            blockHeight,
-            blockHash
-        );
-    }
     //Triggered by the On-chain Event Listener when block calldata is posted on-chain
     public collectOnChainBlock(
         signedBlock: SignedBlockStruct,
@@ -390,41 +380,6 @@ class StateManager {
         };
     }
 
-    private handleExitChannelsStorage(
-        exitChannels: ExitChannelStruct[],
-        forkCnt: number,
-        blockHeight: number
-    ) {
-        const previousBlockHash =
-            this.storageModule.getLatestExitChannelBlockHash();
-        const exitChannelBlock: ExitChannelBlockStruct = {
-            exitChannels,
-            previousBlockHash: previousBlockHash as BytesLike
-        };
-        const exitChannelBlockHash =
-            EvmUtils.encodeExitChannelBlock(exitChannelBlock);
-        //TODO: same here, check that these numebr typings are ok or replace by a bigNumberish
-        this.storageModule.storeExitChannelBlockHash(
-            Number(forkCnt),
-            Number(blockHeight),
-            exitChannelBlockHash
-        );
-    }
-
-    //TODO: check that these storage typings are the best ones to use here
-    // needs to check if its ok to store a number or a BigNumberish
-    private async handleStateSnapshotStorage(
-        encodedState: string,
-        forkCnt: number,
-        blockHeight: number
-    ) {
-        const stateSnapshot = await this.createStateSnapshot(
-            encodedState,
-            forkCnt
-        );
-        this.storageModule.storeStateSnapshot(blockHeight, stateSnapshot);
-    }
-
     // Used when authoring a block - Executes the transaction and returns a signed block
     public async playTransaction(
         tx: TransactionStruct
@@ -615,6 +570,52 @@ class StateManager {
 
     public getEncodedStateKecak256(): Promise<Hash> {
         return this.getEncodedState().then(ethers.keccak256);
+    }
+
+    private handleJoinChannelStorage(joinChannelBlock: JoinChannelBlockStruct) {
+        const forkCnt = this.getForkCnt();
+        const blockHeight = this.getNextBlockHeight();
+        const blockHash = EvmUtils.encodeJoinChannelBlock(joinChannelBlock);
+        this.storageModule.storeJoinChannelBlockHash(
+            forkCnt,
+            blockHeight,
+            blockHash
+        );
+    }
+
+    private handleExitChannelsStorage(
+        exitChannels: ExitChannelStruct[],
+        forkCnt: number,
+        blockHeight: number
+    ) {
+        const previousBlockHash =
+            this.storageModule.getLatestExitChannelBlockHash();
+        const exitChannelBlock: ExitChannelBlockStruct = {
+            exitChannels,
+            previousBlockHash: previousBlockHash as BytesLike
+        };
+        const exitChannelBlockHash =
+            EvmUtils.encodeExitChannelBlock(exitChannelBlock);
+        //TODO: same here, check that these numebr typings are ok or replace by a bigNumberish
+        this.storageModule.storeExitChannelBlockHash(
+            Number(forkCnt),
+            Number(blockHeight),
+            exitChannelBlockHash
+        );
+    }
+
+    //TODO: check that these storage typings are the best ones to use here
+    // needs to check if its ok to store a number or a BigNumberish
+    private async handleStateSnapshotStorage(
+        encodedState: string,
+        forkCnt: number,
+        blockHeight: number
+    ) {
+        const stateSnapshot = await this.createStateSnapshot(
+            encodedState,
+            forkCnt
+        );
+        this.storageModule.storeStateSnapshot(blockHeight, stateSnapshot);
     }
 
     // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute
