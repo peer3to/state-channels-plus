@@ -28,8 +28,13 @@ export default class StateSnapshotStorage {
     };
 
     private joinChannelBlockHashesMap: Map<string, BytesLike>;
+    //TODO: check if BytesLike is more efficient than string
+    // we can either store the hash or the key to the joinChannelBlockHashesMap data
     private latestJoinChannelBlockHash: BytesLike | undefined;
+
     private exitChannelBlockHashesMap: Map<string, BytesLike>;
+    //TODO: check if BytesLike is more efficient than string
+    // we can either store the hash or the key to the exitChannelBlockHashesMap data
     private latestExitChannelBlockHash: BytesLike | undefined;
 
     private totalDeposits: BalanceStruct;
