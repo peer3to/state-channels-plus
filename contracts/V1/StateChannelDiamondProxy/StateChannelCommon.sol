@@ -35,6 +35,10 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return disputeData[channelId].pendingParticipants;
     }
 
+    function getOnChainLatestJoinChannelBlockHash(bytes32 channelId) public view virtual returns (bytes32) {
+        return disputeData[channelId].latestJoinChannelBlockHash;
+    }
+
     function getSnapshotForkCnt(bytes32 channelId) public view virtual returns (uint256) {
         return stateSnapshots[channelId].forkCnt;
     }
