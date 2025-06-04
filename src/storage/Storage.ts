@@ -1,7 +1,7 @@
 import { BigNumberish, ethers } from "ethers";
-import { IStorageModule } from "./IStorageModule";
+import { IStorage } from "./IStorage";
 
-export class StorageModule implements IStorageModule {
+export class Storage implements IStorage {
     getLatestJoinChannelBlockHash(): string {
         // TODO
         return ethers.ZeroHash;
