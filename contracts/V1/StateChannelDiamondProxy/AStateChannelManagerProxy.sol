@@ -3,6 +3,7 @@ pragma solidity ^0.8.8;
 import "./StateChannelCommon.sol";
 import "./DisputeManagerFacet.sol";
 import "./FraudProofFacet.sol";
+import "./JoinChannelFacet.sol";
 
 import "./StateChannelUtilLibrary.sol";
 import "./StateSnapshotFacet.sol";
@@ -12,17 +13,20 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
     DisputeManagerFacet disputeManagerFacet;
     FraudProofFacet fraudProofFacet;
     StateSnapshotFacet stateSnapshotFacet;
+    JoinChannelFacet joinChannelFacet;
 
     constructor(
         address _stateMachineImplementation,
         address _disputeManagerFacet,
         address _fraudProofFacet,
-        address _stateSnapshotFacet
+        address _stateSnapshotFacet,
+        address _joinChannelFacet
     ) {
         stateMachineImplementation = AStateMachine(_stateMachineImplementation);
         disputeManagerFacet = DisputeManagerFacet(_disputeManagerFacet);
         fraudProofFacet = FraudProofFacet(_fraudProofFacet);
         stateSnapshotFacet = StateSnapshotFacet(_stateSnapshotFacet);
+        joinChannelFacet = JoinChannelFacet(_joinChannelFacet);
         p2pTime = 15;
         agreementTime = 5;
         chainFallbackTime = 30;
@@ -207,6 +211,22 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         _delegatecall(
             address(disputeManagerFacet),
             abi.encodeCall(disputeManagerFacet.challengeDispute, (dispute, newDispute, disputeAuditingData))
+        );
+    }
+
+    function joinChannel(
+        bytes32 channelId,
+        JoinChannelBlock memory joinChannelBlock,
+        Dispute memory dispute,
+        bytes[] memory disputeSignatures,
+        bytes[][] memory confirmationSignatures
+    ) public override {
+        _delegatecall(
+            address(joinChannelFacet),
+            abi.encodeCall(
+                joinChannelFacet.joinChannel,
+                (channelId, joinChannelBlock, dispute, disputeSignatures, confirmationSignatures)
+            )
         );
     }
 

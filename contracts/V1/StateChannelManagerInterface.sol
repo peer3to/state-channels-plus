@@ -22,6 +22,14 @@ abstract contract StateChannelManagerInterface {
         public
         virtual;
 
+    function joinChannel(
+        bytes32 channelId,
+        JoinChannelBlock memory joinChannelBlock,
+        Dispute memory dispute,
+        bytes[] memory disputeSignatures,
+        bytes[][] memory confirmationSignatures
+    ) public virtual;
+
     function isChannelOpen(bytes32 channelId) public view virtual returns (bool);
 
     function getForkCnt(bytes32 channelId) public view virtual returns (uint256);

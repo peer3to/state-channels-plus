@@ -320,10 +320,31 @@ class JoinChannelService extends ARpcService {
             milestoneSnapshots
         );
 
+        // 4. Get all collected signatures for this join channel request
+        const key = signedJoinChannel.encodedJoinChannel.toString();
+        const signatureMap = this.joinChannelMap.get(key);
+
+        if (!signatureMap) {
+            throw new Error("No signatures found for join channel request");
+        }
+
+        // Filter out the original requester's signature to get confirmation signatures
+        const confirmationSignatures: SignatureLike[] = [];
+        for (const [signerAddress, signature] of signatureMap.entries()) {
+            if (signerAddress !== joinChannel.participant) {
+                confirmationSignatures.push(signature);
+            }
+        }
+
         const joinChannelBlock = {
             joinChannels: [joinChannel],
             previousBlockHash
         };
+
+        // Create 2D array structure: confirmationSignatures[i] = signatures for joinChannels[i]
+        const confirmationSignatures2D: SignatureLike[][] = [
+            confirmationSignatures
+        ];
 
         const dispute =
             await this.disputeFactory.createJoinChannelDispute(joinChannel);
@@ -336,6 +357,9 @@ class JoinChannelService extends ARpcService {
         //     milestoneProofs,
         //     milestoneSnapshots,
         //     joinChannelBlock,
+        //     dispute,
+        //     disputeSignatures,
+        //     confirmationSignatures2D
         // );
     }
 }
