@@ -1,8 +1,5 @@
-import { BigNumberish, BytesLike, hexlify, toBeHex } from "ethers";
-import {
-    ExitChannelBlockStruct,
-    BalanceStruct
-} from "@typechain-types/contracts/V1/DataTypes";
+import { BytesLike, hexlify } from "ethers";
+import { ExitChannelBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
 
 export class ExitChannelStorageModule {
     //map [blockHash] => ExitChannelBlockStruct
@@ -11,15 +8,9 @@ export class ExitChannelStorageModule {
     // we can either store the hash or the key to the exitChannelBlockHashesMap data
     private latestExitChannelBlockHash: BytesLike;
 
-    private totalWithdrawals: BalanceStruct;
-
     constructor() {
         this.exitChannelBlockMap = new Map();
         this.latestExitChannelBlockHash = "0x00";
-        this.totalWithdrawals = {
-            amount: BigInt(0),
-            data: "0x"
-        };
     }
 
     /**
@@ -31,13 +22,6 @@ export class ExitChannelStorageModule {
     ) {
         this.exitChannelBlockMap.set(blockHash, exitChannelBlock);
         this.latestExitChannelBlockHash = blockHash;
-
-        // Update total withdrawals
-        if (exitChannelBlock && exitChannelBlock.exitChannels.length > 0) {
-            this.addToTotalWithdrawals(
-                exitChannelBlock.exitChannels[0].balance
-            );
-        }
     }
 
     /**
@@ -49,24 +33,5 @@ export class ExitChannelStorageModule {
 
     getLatestExitChannelBlockHash(): string {
         return hexlify(this.latestExitChannelBlockHash);
-    }
-
-    /**
-     * Get the total withdrawals
-     */
-    getTotalWithdrawals(): { amount: BigNumberish; data: string } {
-        return {
-            amount: this.totalWithdrawals.amount,
-            data: hexlify(this.totalWithdrawals.data)
-        };
-    }
-
-    /**
-     * Add to the total withdrawals
-     * Doesnt handle data yet, just the amount
-     */
-    private addToTotalWithdrawals(balance: BalanceStruct) {
-        this.totalWithdrawals.amount += toBeHex(balance.amount);
-        console.log(`Total withdrawals updated: ${this.totalWithdrawals}`);
     }
 }

@@ -1,4 +1,4 @@
-import { BigNumberish, BytesLike } from "ethers";
+import { BigNumberish, BytesLike, toBeHex } from "ethers";
 import { IStorageModule } from "./interfaces/IStorageManager";
 import {
     StateSnapshotStruct,
@@ -6,7 +6,8 @@ import {
     ExitChannelBlockStruct,
     JoinChannelBlockStruct,
     SignedBlockStruct,
-    BlockStruct
+    BlockStruct,
+    BalanceStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import { BlockStorageModule } from "./BlockStorage";
 import { JoinChannelStorageModule } from "./JoinChannelStorage";
@@ -18,6 +19,7 @@ import { Type } from "@/utils";
 
 export class StorageModule implements IStorageModule {
     //#region Global variables
+
     private blockStorageModule: BlockStorageModule = new BlockStorageModule();
     private joinChannelStorageModule: JoinChannelStorageModule =
         new JoinChannelStorageModule();
@@ -131,9 +133,6 @@ export class StorageModule implements IStorageModule {
     getLatestJoinChannelBlockHash(): BlockHash {
         return this.joinChannelStorageModule.getLatestJoinChannelBlockHash();
     }
-    getTotalDeposits(): { amount: BigNumberish; data: string } {
-        return this.joinChannelStorageModule.getTotalDeposits();
-    }
 
     //#endregion
 
@@ -156,9 +155,7 @@ export class StorageModule implements IStorageModule {
     getLatestExitChannelBlockHash(): BlockHash {
         return this.exitChannelStorageModule.getLatestExitChannelBlockHash();
     }
-    getTotalWithdrawals(): { amount: BigNumberish; data: string } {
-        return this.exitChannelStorageModule.getTotalWithdrawals();
-    }
+
     getPreviousBlockHash(
         forkCnt: number,
         transactionCnt: number
