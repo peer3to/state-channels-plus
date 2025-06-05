@@ -1,5 +1,8 @@
-import { BytesLike, hexlify } from "ethers";
-import { JoinChannelBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { BigNumberish, BytesLike, hexlify, toBeHex } from "ethers";
+import {
+    JoinChannelBlockStruct,
+    BalanceStruct
+} from "@typechain-types/contracts/V1/DataTypes";
 
 export class JoinChannelStorageModule {
     //map [blockHash] => JoinChannelBlockStruct
@@ -8,9 +11,15 @@ export class JoinChannelStorageModule {
     // we can either store the hash or the key to the joinChannelBlockHashesMap data
     private latestJoinChannelBlockHash: BytesLike;
 
+    private totalDeposits: BalanceStruct;
+
     constructor() {
         this.joinChannelBlockMap = new Map();
         this.latestJoinChannelBlockHash = "0x00";
+        this.totalDeposits = {
+            amount: BigInt(0),
+            data: "0x"
+        };
     }
 
     /**
@@ -22,6 +31,11 @@ export class JoinChannelStorageModule {
     ) {
         this.joinChannelBlockMap.set(blockHash, joinChannelBlock);
         this.latestJoinChannelBlockHash = blockHash;
+
+        // Update total deposits
+        if (joinChannelBlock && joinChannelBlock.joinChannels.length > 0) {
+            this.addToTotalDeposits(joinChannelBlock.joinChannels[0].balance);
+        }
     }
 
     /**
@@ -33,5 +47,25 @@ export class JoinChannelStorageModule {
 
     getLatestJoinChannelBlockHash(): string {
         return hexlify(this.latestJoinChannelBlockHash);
+    }
+
+    /**
+     * Get the total deposits
+     */
+    getTotalDeposits(): { amount: BigNumberish; data: string } {
+        return {
+            amount: this.totalDeposits.amount,
+            data: hexlify(this.totalDeposits.data)
+        };
+    }
+
+    /**
+     * Add to the total deposits
+     * Doesn't handle data yet, just the amount
+     */
+    private addToTotalDeposits(balance: BalanceStruct) {
+        //TODO: create a method to add two balances together
+        this.totalDeposits.amount += toBeHex(balance.amount);
+        console.log(`Total deposits updated: ${this.totalDeposits}`);
     }
 }
