@@ -57,7 +57,7 @@ export class StateSnapshotStorageModule implements IStateSnapshotStorageModule {
         return this.stateSnapshotStructsMap.get(key);
     }
 
-    getLatestOnChainStateSnapshot(): {
+    getCachedOnChainSnapshot(): {
         stateSnapshot: StateSnapshotStruct;
         timestamp: number;
     } {
