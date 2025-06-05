@@ -1,7 +1,7 @@
-import { IBlockStorageModule } from "./IBlockStorageModule";
-import { IJoinChannelStorageModule } from "./IJoinChannelStorageModule";
-import { IExitChannelStorageModule } from "./IExitChannelStorageModule";
-import { IStateSnapshotStorageModule } from "./IStateSnapshotStorageModule";
+import { IBlockStorageModule } from "./IBlockStorage";
+import { IJoinChannelStorageModule } from "./IJoinChannelStorage";
+import { IExitChannelStorageModule } from "./IExitChannelStorage";
+import { IStateSnapshotStorageModule } from "./IStateSnapshotStorage";
 import {
     BlockStruct,
     StateSnapshotStruct

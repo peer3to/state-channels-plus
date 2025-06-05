@@ -3,7 +3,7 @@ import {
     ExitChannelBlockStruct,
     BalanceStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import { IExitChannelStorageModule } from "./interfaces/IExitChannelStorageModule";
+import { IExitChannelStorageModule } from "./interfaces/IExitChannelStorage";
 
 export class ExitChannelStorageModule implements IExitChannelStorageModule {
     //map [blockHash] => ExitChannelBlockStruct
