@@ -3,7 +3,7 @@ import {
     BlockConfirmationStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import { IBlockStorageModule } from "./interfaces/IBlockStorageModule";
+import { IBlockStorageModule } from "./interfaces/IBlockStorage";
 import { BlockHash } from "@/types/storage";
 
 export class BlockStorageModule implements IBlockStorageModule {

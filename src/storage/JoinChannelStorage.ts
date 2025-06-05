@@ -3,7 +3,7 @@ import {
     JoinChannelBlockStruct,
     BalanceStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import { IJoinChannelStorageModule } from "./interfaces/IJoinChannelStorageModule";
+import { IJoinChannelStorageModule } from "./interfaces/IJoinChannelStorage";
 
 export class JoinChannelStorageModule implements IJoinChannelStorageModule {
     //map [blockHash] => JoinChannelBlockStruct

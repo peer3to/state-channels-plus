@@ -1,7 +1,7 @@
 import { ethers } from "ethers";
 import { Codec, Type } from "@/utils";
 import { StateSnapshotStruct } from "@typechain-types/contracts/V1/DataTypes";
-import { IStateSnapshotStorageModule } from "./interfaces/IStateSnapshotStorageModule";
+import { IStateSnapshotStorageModule } from "./interfaces/IStateSnapshotStorage";
 import { StateSnapshotHash } from "@/types/storage";
 
 export class StateSnapshotStorageModule implements IStateSnapshotStorageModule {
