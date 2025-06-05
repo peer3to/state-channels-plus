@@ -9,6 +9,6 @@ export interface IBlockStorageModule {
         forkCnt: number,
         transactionCnt: number
     ): BlockHash | undefined;
-    getLatestBlock(): SignedBlockStruct;
+    getLatestSignedBlock(): SignedBlockStruct;
     getLatestBlockConfirmation(): BlockConfirmationStruct;
 }
