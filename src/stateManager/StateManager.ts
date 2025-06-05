@@ -568,7 +568,7 @@ class StateManager {
 
     private handleJoinChannelStorage(joinChannelBlock: JoinChannelBlockStruct) {
         const blockHash = ethers.keccak256(
-            EvmUtils.encodeJoinChannelBlock(joinChannelBlock)
+            Codec.encode(joinChannelBlock, Type.JoinChannelBlock)
         );
         this.storageModule.storeJoinChannelBlockHash(
             blockHash,
@@ -584,7 +584,7 @@ class StateManager {
             previousBlockHash: previousBlockHash as BytesLike
         };
         const exitChannelBlockHash = ethers.keccak256(
-            EvmUtils.encodeExitChannelBlock(exitChannelBlock)
+            Codec.encode(exitChannelBlock, Type.ExitChannelBlock)
         );
         this.storageModule.storeExitChannelBlockHash(
             exitChannelBlockHash,
