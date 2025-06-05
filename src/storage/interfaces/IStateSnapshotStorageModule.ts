@@ -10,10 +10,12 @@ export interface IStateSnapshotStorageModule {
     getStateSnapshotByHash(
         stateSnapshotHash: StateSnapshotHash
     ): StateSnapshotStruct | undefined;
-    getCachedOnChainStateSnapshot(): {
-        stateSnapshot: StateSnapshotStruct;
-        timestamp: number;
-    };
+    getCachedOnChainStateSnapshot():
+        | {
+              stateSnapshot: StateSnapshotStruct;
+              timestamp: number;
+          }
+        | undefined;
     setCachedOnChainStateSnapshot(
         stateSnapshot: StateSnapshotStruct,
         timestamp: number
