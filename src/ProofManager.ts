@@ -2,7 +2,7 @@ import { ethers, AddressLike, BigNumberish, BytesLike } from "ethers";
 import * as dt from "@typechain-types/contracts/V1/DisputeTypes";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
 import { getEthersTypeForDisputeProof, ProofType } from "@/types/disputes";
-import { EvmUtils } from "@/utils";
+import { Codec, Type } from "@/utils";
 import Clock from "@/Clock";
 import AgreementManager from "@/agreementManager";
 
@@ -35,7 +35,7 @@ class ProofManager {
             [getEthersTypeForDisputeProof(proofType)],
             encodedProof
         );
-        return EvmUtils.ethersResultToObjectRecursive(proofDecoded[0]);
+        return Codec.ethersResultToObjectRecursive(proofDecoded[0]);
     }
 
     // ===== Proof Creation Methods =====
@@ -53,7 +53,7 @@ class ProofManager {
             return undefined;
 
         const foldRechallengeProofStruct: dt.FoldRechallengeProofStruct = {
-            encodedBlock: EvmUtils.encodeBlock(block),
+            encodedBlock: Codec.encode(block, Type.Block),
             signatures: this.agreementManager.getSigantures(
                 block
             ) as BytesLike[]
@@ -105,8 +105,9 @@ class ProofManager {
     public createIncorrectDataProof(
         incorrectBlockSigned: SignedBlockStruct
     ): dt.ProofStruct {
-        const incorrectBlock = EvmUtils.decodeBlock(
-            incorrectBlockSigned.encodedBlock
+        const incorrectBlock = Codec.decode(
+            incorrectBlockSigned.encodedBlock,
+            Type.Block
         );
         const forkCnt = Number(incorrectBlock.transaction.header.forkCnt);
         const transactionCnt = Number(
@@ -159,7 +160,7 @@ class ProofManager {
 
         // Create the proof struct using the newer state
         const newerStateProofStruct: dt.NewerStateProofStruct = {
-            encodedBlock: EvmUtils.encodeBlock(signedBlock.block),
+            encodedBlock: Codec.encode(signedBlock.block, Type.Block),
             confirmationSignature: signedBlock.signature as string
         };
 
@@ -214,7 +215,10 @@ class ProofManager {
             proof.encodedProof
         ) as dt.FoldRechallengeProofStruct;
 
-        const block = EvmUtils.decodeBlock(foldRechallengeProof.encodedBlock);
+        const block = Codec.decode(
+            foldRechallengeProof.encodedBlock,
+            Type.Block
+        );
         const sameTransactionCnt =
             Number(block.transaction.header.transactionCnt) ===
             dispute.foldedTransactionCnt;
@@ -235,7 +239,10 @@ class ProofManager {
         ) as dt.DoubleSignProofStruct;
 
         return doubleSignProof.doubleSigns.some((doubleSign) => {
-            const block1 = EvmUtils.decodeBlock(doubleSign.block1.encodedBlock);
+            const block1 = Codec.decode(
+                doubleSign.block1.encodedBlock,
+                Type.Block
+            );
             return !dispute.slashedParticipants.includes(
                 block1.transaction.header.participant
             );
@@ -251,8 +258,9 @@ class ProofManager {
             proof.encodedProof
         ) as dt.IncorrectDataProofStruct;
 
-        const block2 = EvmUtils.decodeBlock(
-            incorrectDataProof.block2.encodedBlock
+        const block2 = Codec.decode(
+            incorrectDataProof.block2.encodedBlock,
+            Type.Block
         );
 
         return !dispute.slashedParticipants.includes(
@@ -269,13 +277,14 @@ class ProofManager {
             proof.encodedProof
         ) as dt.NewerStateProofStruct;
 
-        const block = EvmUtils.decodeBlock(newerStateProof.encodedBlock);
+        const block = Codec.decode(newerStateProof.encodedBlock, Type.Block);
 
         if (dispute.virtualVotingBlocks.length === 0) return false;
 
-        const latestBlock = EvmUtils.decodeBlock(
+        const latestBlock = Codec.decode(
             dispute.virtualVotingBlocks[dispute.virtualVotingBlocks.length - 1]
-                .encodedBlock
+                .encodedBlock,
+            Type.Block
         );
 
         const latestTransactionCnt = Number(
@@ -319,8 +328,9 @@ class ProofManager {
             proof.encodedProof
         ) as dt.BlockTooFarInFutureProofStruct;
 
-        const block = EvmUtils.decodeBlock(
-            blockTooFarInFutureProof.block1.encodedBlock
+        const block = Codec.decode(
+            blockTooFarInFutureProof.block1.encodedBlock,
+            Type.Block
         );
         const blockTimestamp = Number(block.transaction.header.timestamp);
 
@@ -420,7 +430,7 @@ class ProofManager {
         return {
             block1: incorrectBlockSigned,
             block2: {
-                encodedBlock: EvmUtils.encodeBlock(priorBlock),
+                encodedBlock: Codec.encode(priorBlock, Type.Block),
                 signature: priorBlockOriginalSignature as string
             },
             encodedState: priorEncodedState
