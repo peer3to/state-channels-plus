@@ -4,7 +4,7 @@ import {
     BlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 
-import { BlockUtils, EvmUtils } from "@/utils";
+import { BlockUtils, Codec, EvmUtils, Type } from "@/utils";
 import { AgreementFlag } from "@/types";
 
 import ForkService from "./ForkService";
@@ -47,7 +47,7 @@ export default class BlockValidator {
     }
 
     check(signed: SignedBlockStruct): AgreementFlag {
-        const block = EvmUtils.decodeBlock(signed.encodedBlock);
+        const block = Codec.decode(signed.encodedBlock, Type.Block);
         const { forkCnt, height } = BlockUtils.getCoordinates(block);
         const participant = BlockUtils.getBlockAuthor(block);
 
@@ -86,7 +86,7 @@ export default class BlockValidator {
         const prev = this.forks.blockAt(forkCnt, height - 1);
         if (!prev) return AgreementFlag.NOT_READY;
 
-        const prevBlockHash = ethers.keccak256(EvmUtils.encodeBlock(prev));
+        const prevBlockHash = ethers.keccak256(Codec.encode(prev, Type.Block));
         return prevBlockHash === block.previousBlockHash
             ? AgreementFlag.READY
             : AgreementFlag.INCORRECT_DATA;

@@ -2,6 +2,7 @@ import { BlockStruct } from "@typechain-types/contracts/V1/DataTypes";
 import { EvmUtils } from "./EvmUtils";
 import exp from "constants";
 import { AddressLike, SignatureLike } from "ethers";
+import { Codec, Type } from "./Codec";
 
 export class BlockUtils {
     /**
@@ -44,7 +45,7 @@ export class BlockUtils {
     }
 
     public static areBlocksEqual(b1: BlockStruct, b2: BlockStruct): boolean {
-        return EvmUtils.encodeBlock(b1) === EvmUtils.encodeBlock(b2);
+        return Codec.encode(b1, Type.Block) === Codec.encode(b2, Type.Block);
     }
 
     public static getSignerAddresses(

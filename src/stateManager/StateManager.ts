@@ -165,7 +165,7 @@ class StateManager {
             signedBlock,
             Number(timestamp)
         );
-        let block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
+        let block = Codec.decode(signedBlock.encodedBlock, Type.Block);
         let disputeProof: ProofStruct;
         if (flag == AgreementFlag.DOUBLE_SIGN) {
             console.log("StateManager - collectOnChainBlock - double sign");
@@ -263,7 +263,7 @@ class StateManager {
         let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS;
         let finalAgreementFlag: AgreementFlag | undefined = undefined;
         const decodedBlock =
-            block ?? EvmUtils.decodeBlock(signedBlock.encodedBlock);
+            block ?? Codec.decode(signedBlock.encodedBlock, Type.Block);
 
         try {
             await this.mutex.lock();
@@ -302,7 +302,7 @@ class StateManager {
     ): Promise<ExecutionFlags> {
         let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS; // Default to SUCCESS
         const decodedBlock =
-            block ?? EvmUtils.decodeBlock(signedBlock.encodedBlock);
+            block ?? Codec.decode(signedBlock.encodedBlock, Type.Block);
 
         try {
             const result =
@@ -783,7 +783,7 @@ class StateManager {
 
     // ----- Event handlers -----
     public async onDisputeCommitted(encodedDispute: string, timestamp: number) {
-        const dispute = Codec.decodeDispute(encodedDispute);
+        const dispute = Codec.decode(encodedDispute, Type.Dispute);
 
         // Validate dispute
         const valid = await this.validationService.validateDispute(
@@ -815,7 +815,10 @@ class StateManager {
     public async onDisputeConfirmation(
         signedDispute: SignedDisputeStruct
     ): Promise<ExecutionFlags> {
-        const dispute = Codec.decodeDispute(signedDispute.encodedDispute);
+        const dispute = Codec.decode(
+            signedDispute.encodedDispute,
+            Type.Dispute
+        );
 
         const { success, flag } =
             await this.validationService.validateDisputeConfirmation(
