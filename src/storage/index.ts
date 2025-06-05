@@ -1,2 +1,2 @@
-export { IStorageModule } from "./IStorageModule";
+export { IStorageModule } from "./interfaces/IStorageModule";
 export { StorageModule } from "./StorageModule";
