@@ -9,7 +9,6 @@ import {
 } from "@typechain-types/contracts/V1/DataTypes";
 
 import { SignatureUtils } from "./SignatureUtils";
-import { Codec, Type } from "./Codec";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
 
 export class EvmUtils {
@@ -22,14 +21,6 @@ export class EvmUtils {
             signer
         );
         return { encodedTransaction: encoded, signature };
-    }
-
-    public static encodeBlock(block: BlockStruct): string {
-        return Codec.encode(block, Type.Block);
-    }
-
-    public static decodeBlock(blockEncoded: BytesLike): BlockStruct {
-        return Codec.decodeBlock(blockEncoded);
     }
 
     public static async signBlock(
@@ -61,12 +52,6 @@ export class EvmUtils {
         return SignatureUtils.getSignerAddressBlock(block, signature);
     }
 
-    public static encodeJoinChannel(jc: JoinChannelStruct): string {
-        return Codec.encode(jc, Type.JoinChannel);
-    }
-    public static decodeJoinChannel(jcEncoded: BytesLike): JoinChannelStruct {
-        return Codec.decodeJoinChannel(jcEncoded);
-    }
     public static async signJoinChannel(
         jc: JoinChannelStruct,
         signer: ethers.Signer
@@ -82,9 +67,5 @@ export class EvmUtils {
         signature: SignatureLike
     ): string {
         return SignatureUtils.getSignerAddressJoinChannel(jc, signature);
-    }
-    //empty arrays '[]' can exist but not empty objects {} - Etheres is really bad for this with the Result object
-    public static ethersResultToObjectRecursive(result: ethers.Result) {
-        return Codec.ethersResultToObjectRecursive(result);
     }
 }
