@@ -5,6 +5,7 @@ import {
     TransactionStruct,
     StateSnapshotStruct,
     ExitChannelBlockStruct,
+    BlockConfirmationStruct,
     ExitChannelStruct,
     JoinChannelBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -16,13 +17,15 @@ import {
     StateSnapshotEthersType,
     JoinChannelBlockEthersType,
     ExitChannelEthersType,
-    ExitChannelBlockEthersType
+    ExitChannelBlockEthersType,
+    BlockConfirmationEthersType
 } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Bytes } from "@/types/types";
 
 type StructType =
     | BlockStruct
+    | BlockConfirmationStruct
     | JoinChannelStruct
     | TransactionStruct
     | DisputeStruct
@@ -35,6 +38,7 @@ type StructType =
 export enum Type {
     Block,
     JoinChannel,
+    BlockConfirmation,
     Transaction,
     Dispute,
     StateSnapshot,
@@ -47,6 +51,7 @@ export class Codec {
     private static readonly structToEthersType = new Map<Type, string>([
         [Type.Block, BlockEthersType],
         [Type.JoinChannel, JoinChannelEthersType],
+        [Type.BlockConfirmation, BlockConfirmationEthersType],
         [Type.Transaction, TransactionEthersType],
         [Type.Dispute, DisputeEthersType],
         [Type.StateSnapshot, StateSnapshotEthersType],
