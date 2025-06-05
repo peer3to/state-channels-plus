@@ -27,7 +27,7 @@ export class BlockStorageModule implements IBlockStorageModule {
         return ethers.ZeroHash;
     }
 
-    getLatestBlock(): SignedBlockStruct {
+    getLatestSignedBlock(): SignedBlockStruct {
         return this.getLatestBlockConfirmation().signedBlock;
     }
 

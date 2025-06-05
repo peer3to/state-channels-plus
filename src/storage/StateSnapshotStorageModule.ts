@@ -61,6 +61,12 @@ export class StateSnapshotStorageModule implements IStateSnapshotStorageModule {
         return this.stateSnapshotStructsMap.get(key);
     }
 
+    getStateSnapshotByHash(
+        stateSnapshotHash: StateSnapshotHash
+    ): StateSnapshotStruct | undefined {
+        return this.stateSnapshotStructsMap.get(stateSnapshotHash);
+    }
+
     getCachedOnChainStateSnapshot(): {
         stateSnapshot: StateSnapshotStruct;
         timestamp: number;
