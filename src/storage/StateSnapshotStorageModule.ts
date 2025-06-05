@@ -12,32 +12,17 @@ export class StateSnapshotStorageModule implements IStateSnapshotStorageModule {
         StateSnapshotStruct
     >;
     //could be replaced with a key, but we would need some computation
-    private cachedOnChainStateSnapshot: {
-        stateSnapshot: StateSnapshotStruct;
-        timestamp: number;
-    };
+    private cachedOnChainStateSnapshot:
+        | {
+              stateSnapshot: StateSnapshotStruct;
+              timestamp: number;
+          }
+        | undefined;
 
     constructor() {
         this.stateSnapshotStructsMap = new Map();
         //TODO: This should be replaced by the actual genesis state snapshot
-        this.cachedOnChainStateSnapshot = {
-            stateSnapshot: {
-                stateMachineStateHash: "0x",
-                participants: [],
-                forkCnt: 0,
-                latestJoinChannelBlockHash: "0x",
-                latestExitChannelBlockHash: "0x",
-                totalDeposits: {
-                    amount: BigInt(0),
-                    data: "0x"
-                },
-                totalWithdrawals: {
-                    amount: BigInt(0),
-                    data: "0x"
-                }
-            },
-            timestamp: 0
-        };
+        this.cachedOnChainStateSnapshot = undefined;
     }
 
     /**
@@ -71,6 +56,9 @@ export class StateSnapshotStorageModule implements IStateSnapshotStorageModule {
         stateSnapshot: StateSnapshotStruct;
         timestamp: number;
     } {
+        if (!this.cachedOnChainStateSnapshot) {
+            throw new Error("No cached on chain state snapshot found");
+        }
         return this.cachedOnChainStateSnapshot;
     }
 
@@ -78,6 +66,9 @@ export class StateSnapshotStorageModule implements IStateSnapshotStorageModule {
         stateSnapshot: StateSnapshotStruct,
         timestamp: number
     ): void {
+        if (!this.cachedOnChainStateSnapshot) {
+            throw new Error("No cached on chain state snapshot found");
+        }
         this.cachedOnChainStateSnapshot = {
             stateSnapshot,
             timestamp
