@@ -49,7 +49,7 @@ export default class ValidationService {
         signedBlock: SignedBlockStruct,
         block?: BlockStruct
     ): Promise<ValidationResult> {
-        const blk = block ?? EvmUtils.decodeBlock(signedBlock.encodedBlock);
+        const blk = block ?? Codec.decode(signedBlock.encodedBlock, Type.Block);
         const forkCnt = BlockUtils.getFork(blk);
         const height = BlockUtils.getHeight(blk);
 
@@ -122,7 +122,7 @@ export default class ValidationService {
         confirmationSig: BytesLike,
         block?: BlockStruct
     ): Promise<ValidationResult> {
-        const blk = block ?? EvmUtils.decodeBlock(signed.encodedBlock);
+        const blk = block ?? Codec.decode(signed.encodedBlock, Type.Block);
 
         if (!this.isChannelOpen()) return notReady();
         if (!this.isSignedBlockAuthentic(signed, blk, this.getChannelId()))

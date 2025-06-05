@@ -3,10 +3,12 @@ import {
     BlockStruct,
     TransactionStruct,
     TransactionHeaderStruct,
-    TransactionBodyStruct
+    TransactionBodyStruct,
+    JoinChannelStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import AgreementManager from "@/agreementManager";
 import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import { randomInt } from "crypto";
 
 /**
  * Creates a default transaction header
@@ -121,9 +123,7 @@ export function signature(): string {
  * @param overrides Optional override values for the dispute fields
  * @returns A DisputeStruct with default values and any provided overrides
  */
-export function disputeStruct(
-    overrides: Partial<DisputeStruct> = {}
-): DisputeStruct {
+export function dispute(overrides: Partial<DisputeStruct> = {}): DisputeStruct {
     const defaultDispute: DisputeStruct = {
         channelId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
         genesisStateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
@@ -156,4 +156,20 @@ export function disputeStruct(
     };
 
     return { ...defaultDispute, ...overrides };
+}
+
+export function joinChannel(
+    overrides: Partial<JoinChannelStruct> = {}
+): JoinChannelStruct {
+    const defaultJoinChannel: JoinChannelStruct = {
+        channelId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
+        participant: ethers.Wallet.createRandom().address,
+        balance: {
+            amount: BigInt(randomInt(1, 100)),
+            data: ethers.hexlify(ethers.randomBytes(32))
+        },
+        deadlineTimestamp: BigInt(randomInt(1, 100))
+    };
+
+    return { ...defaultJoinChannel, ...overrides };
 }

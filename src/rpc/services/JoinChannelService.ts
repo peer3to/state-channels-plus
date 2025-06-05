@@ -7,7 +7,7 @@ import {
     StateSnapshotStruct,
     ExitChannelBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import { EvmUtils, SignatureCollectionMap } from "@/utils";
+import { Codec, EvmUtils, SignatureCollectionMap, Type } from "@/utils";
 import Clock from "@/Clock";
 import { getActiveParticipants } from "@/utils/participantUtils";
 import { BytesLike } from "ethers";
@@ -32,8 +32,9 @@ class JoinChannelService extends ARpcService {
     ) {
         try {
             const key = signedJoinChannel.encodedJoinChannel.toString();
-            const joinChannel = EvmUtils.decodeJoinChannel(
-                signedJoinChannel.encodedJoinChannel
+            const joinChannel = Codec.decode(
+                signedJoinChannel.encodedJoinChannel,
+                Type.JoinChannel
             );
 
             // Validate request timeframe
@@ -271,8 +272,9 @@ class JoinChannelService extends ARpcService {
     private async processCompletedJoinRequest(
         signedJoinChannel: SignedJoinChannelStruct
     ): Promise<void> {
-        const joinChannel = EvmUtils.decodeJoinChannel(
-            signedJoinChannel.encodedJoinChannel
+        const joinChannel = Codec.decode(
+            signedJoinChannel.encodedJoinChannel,
+            Type.JoinChannel
         );
 
         // 1. Check if we need to submit a state snapshot

@@ -3,7 +3,7 @@ import {
     BlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import { BlockConfirmation } from "./types";
-import { BlockUtils, EvmUtils } from "@/utils";
+import { BlockUtils, Codec, EvmUtils, Type } from "@/utils";
 
 type ForkCnt = number;
 type Height = number;
@@ -37,7 +37,7 @@ export default class QueueService {
     /*────────── Block queue ─────────*/
 
     queueBlock(sb: SignedBlockStruct): void {
-        const block = EvmUtils.decodeBlock(sb.encodedBlock);
+        const block = Codec.decode(sb.encodedBlock, Type.Block);
         const { forkCnt, height } = BlockUtils.getCoordinates(block);
         const participant = BlockUtils.getBlockAuthor(block);
         insertNestedMapWithOverwrite(
@@ -65,8 +65,9 @@ export default class QueueService {
     /*──────── Confirmation queue ────────*/
 
     queueConfirmation(blockConfirmation: BlockConfirmation): void {
-        const block = EvmUtils.decodeBlock(
-            blockConfirmation.originalSignedBlock.encodedBlock
+        const block = Codec.decode(
+            blockConfirmation.originalSignedBlock.encodedBlock,
+            Type.Block
         );
         const { forkCnt, height } = BlockUtils.getCoordinates(block);
         const confirmationSigner = EvmUtils.retrieveSignerAddressBlock(
@@ -104,7 +105,7 @@ export default class QueueService {
 
         const stored = this.blockQ.get(forkCnt)?.get(height)?.get(participant);
         return stored
-            ? stored.encodedBlock === EvmUtils.encodeBlock(block)
+            ? stored.encodedBlock === Codec.encode(block, Type.Block)
             : false;
     }
 }

@@ -6,7 +6,7 @@ import {
     DisputeStruct
 } from "@typechain-types/contracts/V1/DisputeTypes";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
-import { EvmUtils, DebugProxy, retry } from "@/utils";
+import { DebugProxy, retry, Codec, Type } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ProofManager from "./ProofManager";
 
@@ -77,8 +77,9 @@ class DisputeHandler {
     ): Promise<void> {
         const proof =
             this.proofManager.createDoubleSignProof(conflictingBlocks);
-        const _firstBlock = EvmUtils.decodeBlock(
-            conflictingBlocks[0].encodedBlock
+        const _firstBlock = Codec.decode(
+            conflictingBlocks[0].encodedBlock,
+            Type.Block
         );
         return this.createDispute(
             _firstBlock.transaction.header.forkCnt,
@@ -93,7 +94,10 @@ class DisputeHandler {
     ): Promise<void> {
         const proof =
             this.proofManager.createIncorrectDataProof(incorrectBlockSigned);
-        const _block = EvmUtils.decodeBlock(incorrectBlockSigned.encodedBlock);
+        const _block = Codec.decode(
+            incorrectBlockSigned.encodedBlock,
+            Type.Block
+        );
         return this.createDispute(
             _block.transaction.header.forkCnt,
             NO_PARTICIPANT_TO_FOLD,
@@ -129,7 +133,7 @@ class DisputeHandler {
         BlockSigned: SignedBlockStruct
     ): Promise<void> {
         const proof = ProofManager.createBlockTooFarInFutureProof(BlockSigned);
-        const block = EvmUtils.decodeBlock(BlockSigned.encodedBlock);
+        const block = Codec.decode(BlockSigned.encodedBlock, Type.Block);
         return this.createDispute(
             block.transaction.header.forkCnt,
             NO_PARTICIPANT_TO_FOLD,
@@ -336,8 +340,9 @@ class DisputeHandler {
         if (dispute.virtualVotingBlocks.length === 0) return 0;
 
         // Extract from the last block
-        const lastBlock = EvmUtils.decodeBlock(
-            dispute.virtualVotingBlocks.at(-1)!.encodedBlock
+        const lastBlock = Codec.decode(
+            dispute.virtualVotingBlocks.at(-1)!.encodedBlock,
+            Type.Block
         );
         return Number(lastBlock.transaction.header.transactionCnt);
     }

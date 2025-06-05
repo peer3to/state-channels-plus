@@ -8,6 +8,7 @@ import AgreementManager from "@/agreementManager";
 import P2pEventHooks from "@/P2pEventHooks";
 import { EvmUtils } from "@/utils/EvmUtils";
 import * as factory from "../factory";
+import { Codec, Type } from "@/utils";
 
 describe("DisputeHandler", () => {
     let disputeHandler: DisputeHandler;
@@ -66,7 +67,7 @@ describe("DisputeHandler", () => {
                 })
             });
             const signedBlock: SignedBlockStruct = {
-                encodedBlock: EvmUtils.encodeBlock(mockBlock),
+                encodedBlock: Codec.encode(mockBlock, Type.Block),
                 signature: factory.signature()
             };
 
@@ -92,7 +93,7 @@ describe("DisputeHandler", () => {
                 })
             });
             const signedBlock: SignedBlockStruct = {
-                encodedBlock: EvmUtils.encodeBlock(mockBlock),
+                encodedBlock: Codec.encode(mockBlock, Type.Block),
                 signature: factory.signature()
             };
 

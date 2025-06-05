@@ -7,7 +7,7 @@ import {
     BlockConfirmationStruct,
     DisputeStruct
 } from "@typechain-types/contracts/V1/DisputeTypes";
-import { BlockUtils, EvmUtils } from "@/utils";
+import { BlockUtils, Codec, EvmUtils, Type } from "@/utils";
 import { AgreementFlag } from "@/types";
 import { BlockConfirmation } from "./types";
 import * as SetUtils from "@/utils/set";
@@ -98,7 +98,7 @@ class AgreementManager {
     public getDoubleSignedBlock(
         signedBlock: SignedBlockStruct
     ): SignedBlockStruct | undefined {
-        const block = EvmUtils.decodeBlock(signedBlock.encodedBlock);
+        const block = Codec.decode(signedBlock.encodedBlock, Type.Block);
 
         const agreement = this.forks.agreementByBlock(block);
         if (
@@ -118,7 +118,7 @@ class AgreementManager {
 
         return didSign
             ? {
-                  encodedBlock: EvmUtils.encodeBlock(agreement.block),
+                  encodedBlock: Codec.encode(agreement.block, Type.Block),
                   signature: signature!.toString()
               }
             : undefined;
@@ -297,7 +297,7 @@ class AgreementManager {
 
             virtualVotingBlocks.unshift({
                 signedBlock: {
-                    encodedBlock: EvmUtils.encodeBlock(agreement.block),
+                    encodedBlock: Codec.encode(agreement.block, Type.Block),
                     signature: originalSignature as string
                 },
                 signatures: confirmationSignatures as string[]

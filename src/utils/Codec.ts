@@ -23,15 +23,15 @@ type StructType =
 
 // Enum for better autocomplete and type safety
 export enum Type {
-    Block = "Block",
-    JoinChannel = "JoinChannel",
-    Transaction = "Transaction",
-    Dispute = "Dispute",
-    StateSnapshot = "StateSnapshot"
+    Block,
+    JoinChannel,
+    Transaction,
+    Dispute,
+    StateSnapshot
 }
 
 export class Codec {
-    private static readonly structToEthersType = new Map<string, any>([
+    private static readonly structToEthersType = new Map<Type, string>([
         [Type.Block, BlockEthersType],
         [Type.JoinChannel, JoinChannelEthersType],
         [Type.Transaction, TransactionEthersType],
@@ -39,22 +39,37 @@ export class Codec {
         [Type.StateSnapshot, StateSnapshotEthersType]
     ]);
 
-    // Only support explicit type encoding for better reliability
-    public static encode(struct: any, explicitType: Type): string {
-        const ethersType = this.structToEthersType.get(explicitType);
+    public static encode(struct: StructType, type: Type): string {
+        const ethersType = this.structToEthersType.get(type);
         if (!ethersType) {
-            throw new Error(`No ethers type mapping found for ${explicitType}`);
+            throw new Error(`No ethers type mapping found for ${type}`);
         }
         return ethers.AbiCoder.defaultAbiCoder().encode([ethersType], [struct]);
     }
 
+    // Function overloads for type safety
+    public static decode(encoded: BytesLike, type: Type.Block): BlockStruct;
+    public static decode(
+        encoded: BytesLike,
+        type: Type.JoinChannel
+    ): JoinChannelStruct;
+    public static decode(
+        encoded: BytesLike,
+        type: Type.Transaction
+    ): TransactionStruct;
+    public static decode(encoded: BytesLike, type: Type.Dispute): DisputeStruct;
+    public static decode(
+        encoded: BytesLike,
+        type: Type.StateSnapshot
+    ): StateSnapshotStruct;
+
     public static decode<T extends StructType>(
         encoded: BytesLike,
-        structName: string
+        type: Type
     ): T {
-        const ethersType = this.structToEthersType.get(structName);
+        const ethersType = this.structToEthersType.get(type);
         if (!ethersType) {
-            throw new Error(`No ethers type mapping found for ${structName}`);
+            throw new Error(`No ethers type mapping found for ${type}`);
         }
 
         const decoded = ethers.AbiCoder.defaultAbiCoder().decode(
@@ -86,22 +101,5 @@ export class Codec {
             }
         }
         return obj;
-    }
-
-    // Convenience methods with explicit types
-    public static decodeBlock(encoded: BytesLike): BlockStruct {
-        return this.decode(encoded, Type.Block);
-    }
-    public static decodeJoinChannel(encoded: BytesLike): JoinChannelStruct {
-        return this.decode(encoded, Type.JoinChannel);
-    }
-    public static decodeTransaction(encoded: BytesLike): TransactionStruct {
-        return this.decode(encoded, Type.Transaction);
-    }
-    public static decodeDispute(encoded: BytesLike): DisputeStruct {
-        return this.decode(encoded, Type.Dispute);
-    }
-    public static decodeStateSnapshot(encoded: BytesLike): StateSnapshotStruct {
-        return this.decode(encoded, Type.StateSnapshot);
     }
 }
