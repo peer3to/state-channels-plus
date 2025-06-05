@@ -31,13 +31,6 @@ export class ExitChannelStorageModule {
     ) {
         this.exitChannelBlockMap.set(blockHash, exitChannelBlock);
         this.latestExitChannelBlockHash = blockHash;
-
-        // Update total withdrawals
-        if (exitChannelBlock && exitChannelBlock.exitChannels.length > 0) {
-            this.addToTotalWithdrawals(
-                exitChannelBlock.exitChannels[0].balance
-            );
-        }
     }
 
     /**
@@ -57,7 +50,7 @@ export class ExitChannelStorageModule {
     getTotalWithdrawals(): { amount: BigNumberish; data: string } {
         return {
             amount: this.totalWithdrawals.amount,
-            data: hexlify(this.totalWithdrawals.data)
+            data: this.totalWithdrawals.data.toString()
         };
     }
 
@@ -66,7 +59,7 @@ export class ExitChannelStorageModule {
      * Doesnt handle data yet, just the amount
      */
     private addToTotalWithdrawals(balance: BalanceStruct) {
-        this.totalWithdrawals.amount += toBeHex(balance.amount);
-        console.log(`Total withdrawals updated: ${this.totalWithdrawals}`);
+        this.totalWithdrawals.amount =
+            BigInt(this.totalWithdrawals.amount) + BigInt(balance.amount);
     }
 }

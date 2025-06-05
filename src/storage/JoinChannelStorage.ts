@@ -31,11 +31,6 @@ export class JoinChannelStorageModule {
     ) {
         this.joinChannelBlockMap.set(blockHash, joinChannelBlock);
         this.latestJoinChannelBlockHash = blockHash;
-
-        // Update total deposits
-        if (joinChannelBlock && joinChannelBlock.joinChannels.length > 0) {
-            this.addToTotalDeposits(joinChannelBlock.joinChannels[0].balance);
-        }
     }
 
     /**
@@ -55,17 +50,16 @@ export class JoinChannelStorageModule {
     getTotalDeposits(): { amount: BigNumberish; data: string } {
         return {
             amount: this.totalDeposits.amount,
-            data: hexlify(this.totalDeposits.data)
+            data: this.totalDeposits.data.toString()
         };
     }
 
     /**
      * Add to the total deposits
-     * Doesn't handle data yet, just the amount
+     * Doesnt handle data yet, just the amount
      */
     private addToTotalDeposits(balance: BalanceStruct) {
-        //TODO: create a method to add two balances together
-        this.totalDeposits.amount += toBeHex(balance.amount);
-        console.log(`Total deposits updated: ${this.totalDeposits}`);
+        this.totalDeposits.amount =
+            BigInt(this.totalDeposits.amount) + BigInt(balance.amount);
     }
 }
