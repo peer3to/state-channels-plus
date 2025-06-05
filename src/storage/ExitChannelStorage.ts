@@ -3,9 +3,8 @@ import {
     ExitChannelBlockStruct,
     BalanceStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import { IExitChannelStorageModule } from "./interfaces/IExitChannelStorage";
 
-export class ExitChannelStorageModule implements IExitChannelStorageModule {
+export class ExitChannelStorageModule {
     //map [blockHash] => ExitChannelBlockStruct
     private exitChannelBlockMap: Map<string, ExitChannelBlockStruct>;
     //TODO: check if BytesLike is more efficient than string

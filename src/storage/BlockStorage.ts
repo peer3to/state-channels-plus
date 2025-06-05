@@ -1,13 +1,11 @@
-import { ethers } from "ethers";
 import {
     BlockConfirmationStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import { IBlockStorageModule } from "./interfaces/IBlockStorage";
 import { BlockHash, ForkHeight } from "@/types/storage";
 import { Codec, Type } from "@/utils";
 
-export class BlockStorageModule implements IBlockStorageModule {
+export class BlockStorageModule {
     //BlockConfirmationStruct => SignedBlockStruct => encodedBlock => BlockStruct
     private blockhashToBlockConfirmationStructsMap: Map<
         BlockHash,

@@ -3,9 +3,8 @@ import {
     JoinChannelBlockStruct,
     BalanceStruct
 } from "@typechain-types/contracts/V1/DataTypes";
-import { IJoinChannelStorageModule } from "./interfaces/IJoinChannelStorage";
 
-export class JoinChannelStorageModule implements IJoinChannelStorageModule {
+export class JoinChannelStorageModule {
     //map [blockHash] => JoinChannelBlockStruct
     private joinChannelBlockMap: Map<string, JoinChannelBlockStruct>;
     //TODO: check if BytesLike is more efficient than string
