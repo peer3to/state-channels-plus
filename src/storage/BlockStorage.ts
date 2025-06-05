@@ -12,11 +12,9 @@ export class BlockStorageModule implements IBlockStorageModule {
         BlockHash,
         BlockConfirmationStruct
     >;
-    private latestBlockConfirmationKey: BlockHash;
 
     constructor() {
         this.blockConfirmationStructsMap = new Map();
-        this.latestBlockConfirmationKey = "0";
     }
 
     getPreviousBlockHash(
@@ -25,19 +23,5 @@ export class BlockStorageModule implements IBlockStorageModule {
     ): BlockHash | undefined {
         // TODO
         return ethers.ZeroHash;
-    }
-
-    getLatestSignedBlock(): SignedBlockStruct {
-        return this.getLatestBlockConfirmation().signedBlock;
-    }
-
-    getLatestBlockConfirmation(): BlockConfirmationStruct {
-        const confirmation = this.blockConfirmationStructsMap.get(
-            this.latestBlockConfirmationKey
-        );
-        if (!confirmation) {
-            throw new Error("No latest block confirmation found");
-        }
-        return confirmation;
     }
 }
