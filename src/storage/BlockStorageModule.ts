@@ -4,11 +4,15 @@ import {
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import { IBlockStorageModule } from "./interfaces/IBlockStorageModule";
+import { BlockHash } from "@/types/storage";
 
 export class BlockStorageModule implements IBlockStorageModule {
     //BlockConfirmationStruct => SignedBlockStruct => encodedBlock => BlockStruct
-    private blockConfirmationStructsMap: Map<string, BlockConfirmationStruct>;
-    private latestBlockConfirmationKey: string;
+    private blockConfirmationStructsMap: Map<
+        BlockHash,
+        BlockConfirmationStruct
+    >;
+    private latestBlockConfirmationKey: BlockHash;
 
     constructor() {
         this.blockConfirmationStructsMap = new Map();
@@ -18,7 +22,7 @@ export class BlockStorageModule implements IBlockStorageModule {
     getPreviousBlockHash(
         forkCnt: number,
         transactionCnt: number
-    ): string | undefined {
+    ): BlockHash | undefined {
         // TODO
         return ethers.ZeroHash;
     }
