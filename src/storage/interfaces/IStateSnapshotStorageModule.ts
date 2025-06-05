@@ -5,7 +5,7 @@ export interface IStateSnapshotStorageModule {
         forkCnt: number,
         blockHeight: number
     ): StateSnapshotStruct | undefined;
-    getLatestOnChainStateSnapshot(): {
+    getCachedOnChainSnapshot(): {
         stateSnapshot: StateSnapshotStruct;
         timestamp: number;
     };
