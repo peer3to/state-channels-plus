@@ -11,25 +11,24 @@ contract JoinChannelFacet is StateChannelCommon {
      *
      * @param channelId The channel identifier
      * @param joinChannelBlock The block containing all join channel requests
-     * @param dispute Dispute struct to create new fork commitment
-     * @param disputeSignatures Threshold signatures on the dispute from joining participants
+     * @param disputeConfirmation Signed dispute struct to create new fork commitment
      * @param confirmationSignatures 2D array where confirmationSignatures[i] contains threshold signatures from existing participants for joinChannels[i]
      */
     function joinChannel(
         bytes32 channelId,
         JoinChannelBlock memory joinChannelBlock,
-        Dispute memory dispute,
-        bytes[] memory disputeSignatures,
+        DisputeConfirmation memory disputeConfirmation,
         bytes[][] memory confirmationSignatures // per join channel, per participant
     ) external {
-        bytes memory encodedDispute = abi.encode(dispute);
-
         // VERIFICATION PHASE
 
+        // 1. Validate join channel deadlines
         _validateJoinChannelDeadlines(joinChannelBlock);
 
-        // 2. Verify each joining participant has signed the dispute struct
-        _verifyJoinChannelSignatures(joinChannelBlock, encodedDispute, disputeSignatures);
+        // 2. for each join channel, verify that the joining participant has signed the dispute struct
+        _verifyJoinChannelSignatures(
+            joinChannelBlock, disputeConfirmation.signedDispute.encodedDispute, disputeConfirmation.signatures
+        );
 
         // 3. Verify:
         //    a. threshold signatures from existing participants on each join channel
@@ -49,6 +48,7 @@ contract JoinChannelFacet is StateChannelCommon {
         _updatePendingParticipants(channelId, joinChannelBlock);
 
         // 7. Create dispute - this handles remaining verification and state updates
+        Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         AStateChannelManagerProxy(address(this)).createDispute(dispute);
 
         // 8. Emit events
@@ -72,10 +72,10 @@ contract JoinChannelFacet is StateChannelCommon {
     function _verifyJoinChannelSignatures(
         JoinChannelBlock memory joinChannelBlock,
         bytes memory encodedDispute,
-        bytes[] memory disputeSignatures
+        bytes[] memory confirmationSignatures
     ) internal pure {
         // Track which signatures have been used to avoid double-counting
-        bool[] memory signatureUsed = new bool[](disputeSignatures.length);
+        bool[] memory signatureUsed = new bool[](confirmationSignatures.length);
 
         // Verify each joining participant has signed the dispute
         for (uint256 i = 0; i < joinChannelBlock.joinChannels.length; i++) {
@@ -83,7 +83,7 @@ contract JoinChannelFacet is StateChannelCommon {
 
             // Find the signature from this participant by checking all signatures
             bool foundSignature = false;
-            for (uint256 j = 0; j < disputeSignatures.length; j++) {
+            for (uint256 j = 0; j < confirmationSignatures.length; j++) {
                 // Skip signatures that have already been matched
                 if (signatureUsed[j]) {
                     continue;
@@ -91,7 +91,7 @@ contract JoinChannelFacet is StateChannelCommon {
 
                 // Check if this signature is from the joining participant
                 address recoveredSigner =
-                    StateChannelUtilLibrary.retriveSignerAddress(encodedDispute, disputeSignatures[j]);
+                    StateChannelUtilLibrary.retriveSignerAddress(encodedDispute, confirmationSignatures[j]);
 
                 if (recoveredSigner == participant) {
                     // Mark this signature as used

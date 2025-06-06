@@ -18,7 +18,8 @@ contract DataTypes {
         Timeout memory m,
         StateSnapshot memory n,
         DisputeProof memory o,
-        SignedDispute memory p
+        SignedDispute memory p,
+        DisputeConfirmation memory q
     ) {}
 }
 
@@ -35,6 +36,11 @@ struct BlockConfirmation {
 struct SignedDispute {
     bytes encodedDispute;
     bytes signature;
+}
+
+struct DisputeConfirmation {
+    SignedDispute signedDispute;
+    bytes[] signatures;
 }
 
 struct Block {
