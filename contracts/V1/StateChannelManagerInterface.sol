@@ -25,8 +25,7 @@ abstract contract StateChannelManagerInterface {
     function joinChannel(
         bytes32 channelId,
         JoinChannelBlock memory joinChannelBlock,
-        Dispute memory dispute,
-        bytes[] memory disputeSignatures,
+        DisputeConfirmation memory disputeConfirmation,
         bytes[][] memory confirmationSignatures
     ) public virtual;
 
