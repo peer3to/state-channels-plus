@@ -93,16 +93,13 @@ export class BlockStorageModule {
     deleteBlockConfirmation(blockHash: BlockHash): void;
     deleteBlockConfirmation(fork: number, height: number): void;
     deleteBlockConfirmation(
-        blockHashOrFork?: BlockHash | number,
+        blockHashOrFork: BlockHash | number,
         height?: number
     ): void {
         if (typeof blockHashOrFork === "string") {
             // Called with blockHash
             this.blockhashToBlockConfirmationStructsMap.delete(blockHashOrFork);
-        } else if (
-            typeof blockHashOrFork === "number" &&
-            typeof height === "number"
-        ) {
+        } else if (typeof blockHashOrFork === "number" && height) {
             // Called with fork and height
             const forkHeight: ForkHeight = [blockHashOrFork, height];
             this.forkHeightToBlockConfirmationStructsMap.delete(forkHeight);
