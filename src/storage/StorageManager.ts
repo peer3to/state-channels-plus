@@ -111,10 +111,17 @@ export class StorageModule implements IStorageModule {
     deleteBlockConfirmation(blockHash: BlockHash): void;
     deleteBlockConfirmation(fork: number, height: number): void;
     deleteBlockConfirmation(
-        blockHashOrFork?: BlockHash | number,
+        blockHashOrFork: BlockHash | number,
         height?: number
     ): void {
-        throw new Error("Method not implemented.");
+        if (typeof blockHashOrFork === "string") {
+            this.blockStorageModule.deleteBlockConfirmation(blockHashOrFork);
+        } else if (typeof blockHashOrFork === "number" && height) {
+            this.blockStorageModule.deleteBlockConfirmation(
+                blockHashOrFork,
+                height
+            );
+        }
     }
 
     getLatestBlock(): {
