@@ -42,24 +42,26 @@ export class BlockStorageModule {
         height?: number
     ): void {
         if (this.isBlockConfirmation(blockData)) {
-            if (blockHash) {
-                this.insertBlockConfirmationWithHash(blockData, blockHash);
-            } else if (fork && height) {
-                this.insertBlockConfirmationWithForkAndHeight(
+            if (blockHash && fork && height) {
+                this.insertBlockConfirmationWithKeys(
                     blockData,
+                    blockHash,
                     fork,
                     height
                 );
+            } else {
+                this.insertBlockConfirmation(blockData);
             }
         } else {
-            if (blockHash) {
-                this.insertSignedBlockWithHash(blockData, blockHash);
-            } else if (fork && height) {
-                this.insertSignedBlockWithForkAndHeight(
+            if (blockHash && fork && height) {
+                this.insertSignedBlockWithKeys(
                     blockData,
+                    blockHash,
                     fork,
                     height
                 );
+            } else {
+                this.insertSignedBlock(blockData);
             }
         }
     }
@@ -127,18 +129,16 @@ export class BlockStorageModule {
         return undefined;
     }
 
-    private insertSignedBlockWithHash(
-        signedBlock: SignedBlockStruct,
-        blockHash: BlockHash
-    ): void {
+    private insertSignedBlock(signedBlock: SignedBlockStruct): void {
         const blockConfirmation: BlockConfirmationStruct = {
             signedBlock: signedBlock,
             signatures: []
         };
-        this.insertBlockConfirmationWithHash(blockConfirmation, blockHash);
+        this.insertBlockConfirmation(blockConfirmation);
     }
-    private insertSignedBlockWithForkAndHeight(
+    private insertSignedBlockWithKeys(
         signedBlock: SignedBlockStruct,
+        blockHash: BlockHash,
         fork: number,
         height: number
     ): void {
@@ -146,29 +146,46 @@ export class BlockStorageModule {
             signedBlock: signedBlock,
             signatures: []
         };
-        this.insertBlockConfirmationWithForkAndHeight(
+        this.insertBlockConfirmationWithKeys(
             blockConfirmation,
+            blockHash,
             fork,
             height
         );
     }
-    private insertBlockConfirmationWithHash(
-        blockConfirmation: BlockConfirmationStruct,
-        blockHash: BlockHash
+    private insertBlockConfirmation(
+        blockConfirmation: BlockConfirmationStruct
     ): void {
-        this.blockhashToBlockConfirmationStructsMap.set(
+        const blockHash = Codec.encode(
+            blockConfirmation,
+            Type.BlockConfirmation
+        );
+        const block = Codec.decode(
+            blockConfirmation.signedBlock.encodedBlock,
+            Type.Block
+        );
+        const fork = block.transaction.header.forkCnt;
+        const height = block.transaction.header.transactionCnt;
+        this.insertBlockConfirmationWithKeys(
+            blockConfirmation,
             blockHash,
-            blockConfirmation
+            Number(fork),
+            Number(height)
         );
     }
-    private insertBlockConfirmationWithForkAndHeight(
+    private insertBlockConfirmationWithKeys(
         blockConfirmation: BlockConfirmationStruct,
+        blockHash: BlockHash,
         fork: number,
         height: number
     ): void {
         const forkHeight: ForkHeight = [fork, height];
         this.forkHeightToBlockConfirmationStructsMap.set(
             forkHeight,
+            blockConfirmation
+        );
+        this.blockhashToBlockConfirmationStructsMap.set(
+            blockHash,
             blockConfirmation
         );
     }

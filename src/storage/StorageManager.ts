@@ -59,8 +59,31 @@ export class StorageModule implements IStorageModule {
         fork?: number,
         height?: number
     ): void {
-        throw new Error("Method not implemented.");
+        if ("signedBlock" in blockData && "signatures" in blockData) {
+            if (blockHash && fork && height) {
+                this.blockStorageModule.insertBlock(
+                    blockData,
+                    blockHash,
+                    fork,
+                    height
+                );
+            } else {
+                this.blockStorageModule.insertBlock(blockData);
+            }
+        } else {
+            if (blockHash && fork && height) {
+                this.blockStorageModule.insertBlock(
+                    blockData,
+                    blockHash,
+                    fork,
+                    height
+                );
+            } else {
+                this.blockStorageModule.insertBlock(blockData);
+            }
+        }
     }
+
     getBlockConfirmation(
         blockHash: BlockHash
     ): BlockConfirmationStruct | undefined;
