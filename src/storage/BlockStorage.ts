@@ -74,7 +74,7 @@ export class BlockStorageModule {
         height: number
     ): BlockConfirmationStruct | undefined;
     getBlockConfirmation(
-        blockHashOrFork?: BlockHash | number,
+        blockHashOrFork: BlockHash | number,
         height?: number
     ): BlockConfirmationStruct | undefined {
         if (typeof blockHashOrFork === "string") {
@@ -82,16 +82,14 @@ export class BlockStorageModule {
             return this.blockhashToBlockConfirmationStructsMap.get(
                 blockHashOrFork
             );
-        } else if (
-            typeof blockHashOrFork === "number" &&
-            typeof height === "number"
-        ) {
+        } else if (typeof blockHashOrFork === "number" && height) {
             // Called with fork and height
             const forkHeight: ForkHeight = [blockHashOrFork, height];
             return this.forkHeightToBlockConfirmationStructsMap.get(forkHeight);
         }
         return undefined;
     }
+
     deleteBlockConfirmation(blockHash: BlockHash): void;
     deleteBlockConfirmation(fork: number, height: number): void;
     deleteBlockConfirmation(

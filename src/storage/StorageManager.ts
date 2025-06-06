@@ -92,11 +92,22 @@ export class StorageModule implements IStorageModule {
         height: number
     ): BlockConfirmationStruct | undefined;
     getBlockConfirmation(
-        blockHashOrFork?: BlockHash | number,
+        blockHashOrFork: BlockHash | number,
         height?: number
     ): BlockConfirmationStruct | undefined {
-        throw new Error("Method not implemented.");
+        if (typeof blockHashOrFork === "string") {
+            return this.blockStorageModule.getBlockConfirmation(
+                blockHashOrFork
+            );
+        } else if (typeof blockHashOrFork === "number" && height) {
+            return this.blockStorageModule.getBlockConfirmation(
+                blockHashOrFork,
+                height
+            );
+        }
+        return undefined;
     }
+
     deleteBlockConfirmation(blockHash: BlockHash): void;
     deleteBlockConfirmation(fork: number, height: number): void;
     deleteBlockConfirmation(
