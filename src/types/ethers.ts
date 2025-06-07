@@ -24,7 +24,7 @@ bytes encodedBlock,
 bytes signature
 )`;
 
-export const StateDataEthersType = `tuple(
+export const SnapshotDataEthersType = `tuple(
 bytes32 stateMachineStateHash,
 address[] participants,
 bytes32 latestJoinChannelBlockHash,
@@ -34,7 +34,7 @@ ${BalanceEthersType} totalWithdrawals
 )`;
 
 export const StateSnapshotEthersType = `tuple(
-${StateDataEthersType} stateData,
+${SnapshotDataEthersType} snapshotData,
 bytes32 forkId
 )`;
 

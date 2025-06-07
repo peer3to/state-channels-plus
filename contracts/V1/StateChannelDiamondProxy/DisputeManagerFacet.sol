@@ -20,6 +20,100 @@ contract DisputeManagerFacet is StateChannelCommon {
         emit DisputeCommited(encodedDispute, block.timestamp);
     }
 
+    function reduce(Dispute[] memory disputes, uint256 disputeWindowExpirationTimestamp)
+        public
+        view
+        returns (ReduceOutput memory reducedOutput)
+    {
+        uint256 maxSlashCount;
+        uint256 slashCount;
+        uint256 selfRemovalCount;
+        address[] memory slashParticipants;
+        address[] memory selfRemovalParticipants = new address[](disputes.length);
+        require(disputes.length > 0, ErrorNoDisputesProvided());
+
+        for (uint256 i = 0; i < disputes.length; i++) {
+            Dispute memory dispute = disputes[i];
+
+            // ***** setup and single run *****
+            if (maxSlashCount == 0) {
+                SnapshotData storage snapshotData = stateSnapshots[dispute.channelId].snapshotData;
+                DisputeData storage disputeData = disputeData[dispute.channelId];
+                slashParticipants =
+                    new address[](snapshotData.participants.length + disputeData.pendingParticipants.length);
+
+                //populate initially with on-chain slashes up to the dispute window expiration timestamp
+                for (uint256 j = 0; j < disputeData.onChainSlashes.length; j++) {
+                    if (disputeData.onChainSlashes[j].timestamp <= disputeWindowExpirationTimestamp) {
+                        slashParticipants[slashCount++] = disputeData.onChainSlashes[j].participant;
+                    }
+                }
+                // ***** reducedOutput.latestJoinChannelBlockHash *****
+                // All disputes have the same latestJoinChannelBlockHash - enforced by the chain at creation
+                reducedOutput.latestJoinChannelBlockHash = disputeData.latestJoinChannelBlockHash;
+            }
+
+            // ***** reducedOutput.latestBlock *****
+            // Extract the latest block from the state proof - it's either the last signed block or the last one in milestones
+            StateProof memory stateProof = dispute.stateProof;
+            Block memory disputeLatestBlock = stateProof.signedBlocks.length > 0
+                ? abi.decode(stateProof.signedBlocks[stateProof.signedBlocks.length - 1].encodedBlock, (Block))
+                : abi.decode(
+                    stateProof.forkProof.forkMilestoneProofs[stateProof.forkProof.forkMilestoneProofs.length - 1]
+                        .blockConfirmations[stateProof.forkProof.forkMilestoneProofs[stateProof
+                        .forkProof
+                        .forkMilestoneProofs
+                        .length - 1].blockConfirmations.length - 1].signedBlock.encodedBlock,
+                    (Block)
+                );
+
+            // Take the latest block possible
+            if (
+                disputeLatestBlock.transaction.header.transactionCnt
+                    >= reducedOutput.latestBlock.transaction.header.transactionCnt
+            ) {
+                reducedOutput.latestBlock = disputeLatestBlock;
+            }
+
+            // ***** reducedOutput.slashedParticipants *****
+            for (uint256 j = 0; j < dispute.fraudProofs.length; j++) {
+                Proof memory fraudProof = dispute.fraudProofs[j];
+                bool isAlreadySlashed = false;
+                for (uint256 k = 0; k < slashCount; k++) {
+                    if (slashParticipants[k] == fraudProof.participant) {
+                        isAlreadySlashed = true;
+                        break;
+                    }
+                }
+                if (!isAlreadySlashed) {
+                    slashParticipants[slashCount++] = fraudProof.participant;
+                }
+            }
+
+            // ***** reducedOutput.timeout *****
+            if (
+                reducedOutput.timeout.participant == address(0)
+                    || dispute.timeout.blockHeight < reducedOutput.timeout.blockHeight
+            ) {
+                reducedOutput.timeout = dispute.timeout;
+            }
+
+            // ***** reducedOutput.selfRemovals *****
+            if (dispute.selfRemoval) {
+                selfRemovalParticipants[selfRemovalCount++] = dispute.disputer;
+            }
+        }
+        // allocate correct size arrays
+        reducedOutput.slashedParticipants = new address[](slashCount);
+        for (uint256 i = 0; i < slashCount; i++) {
+            reducedOutput.slashedParticipants[i] = slashParticipants[i];
+        }
+        reducedOutput.selfRemovals = new address[](selfRemovalCount);
+        for (uint256 i = 0; i < selfRemovalCount; i++) {
+            reducedOutput.selfRemovals[i] = selfRemovalParticipants[i];
+        }
+    }
+
     function auditDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         external
         onlySelf

@@ -24,8 +24,6 @@ abstract contract StateChannelManagerInterface {
 
     function isChannelOpen(bytes32 channelId) public view virtual returns (bool);
 
-    function getForkId(bytes32 channelId) public view virtual returns (bytes32);
-
     function getParticipants(bytes32 channelId) public virtual returns (address[] memory);
 
     function getNextToWrite(bytes32 channelId, bytes memory encodedState) public virtual returns (address);

@@ -36,7 +36,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function getSnapshotParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
-        return stateSnapshots[channelId].stateData.participants;
+        return stateSnapshots[channelId].snapshotData.participants;
     }
 
     function getPendingParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
@@ -110,7 +110,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function isChannelOpen(bytes32 channelId) public view virtual returns (bool) {
-        return stateSnapshots[channelId].stateData.participants.length > 0;
+        return stateSnapshots[channelId].snapshotData.participants.length > 0;
     }
 
     function getDisputeCommitment(bytes32 channelId, uint256 disputeIndex)

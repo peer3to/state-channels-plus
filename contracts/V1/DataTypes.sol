@@ -119,12 +119,12 @@ struct Timeout {
 }
 
 struct StateSnapshot {
-    StateData stateData;
+    SnapshotData snapshotData;
     /// @dev The fork identifier (count) that the snapshot belongs to
-    bytes32 forkId; //hash(genesisStateData)
+    bytes32 forkId; //hash(genesisSnapshotData)
 }
 
-struct StateData {
+struct SnapshotData {
     /// @dev the state root of the channel state
     bytes32 stateMachineStateHash;
     /// @dev the participants of the channel

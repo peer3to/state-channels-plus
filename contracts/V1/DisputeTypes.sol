@@ -62,6 +62,21 @@ struct Dispute {
     bool selfRemoval;
 }
 
+struct DisputeWindow {
+    bytes32 forkId;
+    uint256 creationTimestamp;
+    bytes32[] disputeCommitments;
+    mapping(address => bool) hasPosted; // inefficient, occupies a whole storage slot for a single bit - idealy we do a bitmask later as a f(participants) -> makes it also easy to delete the entire bitmask later. For now this is ok.
+}
+
+struct ReduceOutput {
+    Block latestBlock;
+    address[] slashedParticipants;
+    bytes32 latestJoinChannelBlockHash;
+    Timeout timeout;
+    address[] selfRemovals;
+}
+
 struct OnChainSlash {
     address participant;
     uint256 timestamp;
@@ -199,11 +214,11 @@ struct DisputeAuditingData {
 }
 
 struct DisputeData {
-    DisputePair[] disputePairs;
     OnChainSlash[] onChainSlashes;
     address[] pendingParticipants;
     bytes32 latestJoinChannelBlockHash;
-    bytes32[] disputeCommitments; //hash(Dispute Struct, block.timestamp)
+    mapping(bytes32 forkId => DisputeWindow) disputeWindows;
+    bytes32[] disputedForks;
 }
 
 //Experimental - yet to be determined if needed and what should be the context

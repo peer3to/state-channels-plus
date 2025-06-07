@@ -25,6 +25,9 @@ error ErrorSignatureInvalid();
 //Can participate in dispute
 error ErrorCantParticipateInDispute();
 
+//Reduce errors
+error ErrorNoDisputesProvided();
+
 //Auditing errors
 error ErrorDisputeWrongCommitment();
 error ErrorDisputeWrongAuditingData();
