@@ -7,14 +7,22 @@ import "./StateChannelUtilLibrary.sol";
 import "./AStateChannelManagerProxy.sol";
 
 contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEvents {
+    function getOnChainSlashes(bytes32 channelId) public view virtual returns (OnChainSlash[] memory) {
+        return disputeData[channelId].onChainSlashes;
+    }
+
     function getOnChainSlashedParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
-        return disputeData[channelId].onChainSlashedParticipants;
+        address[] memory slashedParticipants = new address[](disputeData[channelId].onChainSlashes.length);
+        for (uint256 i = 0; i < disputeData[channelId].onChainSlashes.length; i++) {
+            slashedParticipants[i] = disputeData[channelId].onChainSlashes[i].participant;
+        }
+        return slashedParticipants;
     }
 
     //This is executed only after sucessful auditing -> can safely add/insert participants without checking for duplicates (otherwise auditing would have failed)
     function addOnChainSlashedParticipants(bytes32 channelId, address[] memory slashedParticipants) internal virtual {
         for (uint256 i = 0; i < slashedParticipants.length; i++) {
-            disputeData[channelId].onChainSlashedParticipants.push(slashedParticipants[i]);
+            disputeData[channelId].onChainSlashes.push(OnChainSlash(slashedParticipants[i], block.timestamp));
         }
     }
 
@@ -28,15 +36,15 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function getSnapshotParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
-        return stateSnapshots[channelId].participants;
+        return stateSnapshots[channelId].stateData.participants;
     }
 
     function getPendingParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
         return disputeData[channelId].pendingParticipants;
     }
 
-    function getSnapshotForkCnt(bytes32 channelId) public view virtual returns (uint256) {
-        return stateSnapshots[channelId].forkCnt;
+    function getSnapshotforkId(bytes32 channelId) public view virtual returns (bytes32) {
+        return stateSnapshots[channelId].forkId;
     }
 
     function getStateSnapshot(bytes32 channelId) public view virtual returns (StateSnapshot memory) {
@@ -78,21 +86,21 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return (p2pTime, agreementTime, chainFallbackTime, challengeTime);
     }
 
-    function getBlockCallDataCommitment(bytes32 channelId, uint256 forkCnt, uint256 blockHeight, address participant)
+    function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
         public
         view
         virtual
         returns (bool found, bytes32 blockCalldataCommitment)
     {
         // fetch the blockCallDataCommitment from storage
-        bytes32 commitment = blockCalldataCommitments[channelId][participant][forkCnt][blockHeight];
+        bytes32 commitment = blockCalldataCommitments[channelId][participant][forkId][blockHeight];
         if (commitment == bytes32(0)) {
             return (false, bytes32(0));
         }
         return (true, commitment);
     }
 
-    function getChainLatestBlockTimestamp(bytes32 channelId, uint256 forkCnt, uint256 maxTransactionCnt)
+    function getChainLatestBlockTimestamp(bytes32 channelId, bytes32 forkId, uint256 maxTransactionCnt)
         public
         view
         virtual
@@ -102,7 +110,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function isChannelOpen(bytes32 channelId) public view virtual returns (bool) {
-        return stateSnapshots[channelId].participants.length > 0;
+        return stateSnapshots[channelId].stateData.participants.length > 0;
     }
 
     function getDisputeCommitment(bytes32 channelId, uint256 disputeIndex)
@@ -133,7 +141,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         StateSnapshot storage stateSnapshot = stateSnapshots[dispute.channelId];
         //Use snapshot as genesis if NOT recursive dispute && on-chain snapshot is from the same fork
         return
-            dispute.previousRecursiveDisputeIndex == type(uint256).max && stateSnapshot.forkCnt == dispute.disputeIndex;
+            dispute.previousRecursiveDisputeIndex == type(uint256).max && stateSnapshot.forkId == dispute.disputeIndex;
     }
 
     function _isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
@@ -208,7 +216,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         bytes memory encodedStateMachineState,
         Proof[] memory fraudProofs,
         FraudProofVerificationContext memory poofContext,
-        address[] memory onChainSlashes,
+        address[] memory onChainSlashedParticipants,
         address selfRemoval,
         address timeoutRemoval,
         JoinChannelBlock[] memory joinChannelBlocks,
@@ -232,7 +240,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         // Apply slashes
         ExitChannel[] memory slashExitChannels;
         (encodedModifiedState, slashExitChannels, slashParticipants) =
-            _applySlashes(encodedModifiedState, fraudProofs, poofContext, onChainSlashes);
+            _applySlashes(encodedModifiedState, fraudProofs, poofContext, onChainSlashedParticipants);
 
         // Apply removals
         ExitChannel[] memory removalExitChannels =
@@ -268,13 +276,14 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         bytes memory encodedStateMachineState,
         Proof[] memory fraudProofs,
         FraudProofVerificationContext memory poofContext,
-        address[] memory onChainSlashes
+        address[] memory onChainSlashedParticipants
     )
         internal
         returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels, address[] memory slashes)
     {
-        slashes =
-            StateChannelUtilLibrary.concatAddressArrays(_verifyFraudProofs(fraudProofs, poofContext), onChainSlashes);
+        slashes = StateChannelUtilLibrary.concatAddressArrays(
+            _verifyFraudProofs(fraudProofs, poofContext), onChainSlashedParticipants
+        );
         (encodedModifiedState, exitChannels) = _applySlashesToStateMachine(encodedStateMachineState, slashes);
     }
 

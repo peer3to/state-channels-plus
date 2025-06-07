@@ -314,7 +314,7 @@
                                 },
                                 {
                                     "internalType": "uint256",
-                                    "name": "forkCnt",
+                                    "name": "forkId",
                                     "type": "uint256"
                                 },
                                 {

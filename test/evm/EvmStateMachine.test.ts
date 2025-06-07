@@ -364,7 +364,7 @@ describe("EvmStateMachine", function () {
                 header: {
                     participant: participant,
                     transactionCnt: transactionCnt,
-                    forkCnt: 1,
+                    forkId: 1,
                     timestamp: Math.floor(Date.now() / 1000),
                     channelId: ethers.id("testChannel")
                 },

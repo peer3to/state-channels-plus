@@ -24,7 +24,7 @@ abstract contract StateChannelManagerInterface {
 
     function isChannelOpen(bytes32 channelId) public view virtual returns (bool);
 
-    function getForkCnt(bytes32 channelId) public view virtual returns (uint256);
+    function getForkId(bytes32 channelId) public view virtual returns (bytes32);
 
     function getParticipants(bytes32 channelId) public virtual returns (address[] memory);
 
@@ -40,7 +40,7 @@ abstract contract StateChannelManagerInterface {
 
     function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256);
 
-    function getChainLatestBlockTimestamp(bytes32 channelId, uint256 forkCnt, uint256 maxTransactionCnt)
+    function getChainLatestBlockTimestamp(bytes32 channelId, bytes32 forkId, uint256 maxTransactionCnt)
         public
         view
         virtual
@@ -53,7 +53,7 @@ abstract contract StateChannelManagerInterface {
 
     function postBlockCalldata(SignedBlock memory signedBlock, uint256 maxTimestamp) public virtual;
 
-    function getBlockCallDataCommitment(bytes32 channelId, uint256 forkCnt, uint256 blockHeight, address participant)
+    function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
         public
         view
         virtual

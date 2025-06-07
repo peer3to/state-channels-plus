@@ -147,16 +147,16 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
 
         // Extract values for better readability
         bytes32 channelId = _block.transaction.header.channelId;
-        uint256 forkCnt = _block.transaction.header.forkCnt;
+        bytes32 forkId = _block.transaction.header.forkId;
         uint256 transactionCnt = _block.transaction.header.transactionCnt;
 
         //Don't allow overwriting the blockCalldataCommitment if it already exists
         require(
-            blockCalldataCommitments[channelId][msg.sender][forkCnt][transactionCnt] == bytes32(0),
+            blockCalldataCommitments[channelId][msg.sender][forkId][transactionCnt] == bytes32(0),
             ErrorBlockCalldataAlreadyPosted()
         );
 
-        blockCalldataCommitments[channelId][msg.sender][forkCnt][transactionCnt] = commitment;
+        blockCalldataCommitments[channelId][msg.sender][forkId][transactionCnt] = commitment;
 
         emit BlockCalldataPosted(_block.transaction.header.channelId, msg.sender, signedBlock, block.timestamp);
     }
@@ -222,10 +222,6 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         return abi.decode(slashedParticipants, (address[]));
     }
 
-    function getForkCnt(bytes32 channelId) public view override(StateChannelManagerInterface) returns (uint256) {
-        return disputeData[channelId].disputeCommitments.length;
-    }
-
     function getParticipants(bytes32 channelId)
         public
         view
@@ -283,22 +279,22 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         return StateChannelCommon.getAllTimes();
     }
 
-    function getBlockCallDataCommitment(bytes32 channelId, uint256 forkCnt, uint256 blockHeight, address participant)
+    function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
         public
         view
         override(StateChannelCommon, StateChannelManagerInterface)
         returns (bool found, bytes32 blockCalldataCommitment)
     {
-        return StateChannelCommon.getBlockCallDataCommitment(channelId, forkCnt, blockHeight, participant);
+        return StateChannelCommon.getBlockCallDataCommitment(channelId, forkId, blockHeight, participant);
     }
 
-    function getChainLatestBlockTimestamp(bytes32 channelId, uint256 forkCnt, uint256 maxTransactionCnt)
+    function getChainLatestBlockTimestamp(bytes32 channelId, bytes32 forkId, uint256 maxTransactionCnt)
         public
         view
         override(StateChannelCommon, StateChannelManagerInterface)
         returns (uint256)
     {
-        return StateChannelCommon.getChainLatestBlockTimestamp(channelId, forkCnt, maxTransactionCnt);
+        return StateChannelCommon.getChainLatestBlockTimestamp(channelId, forkId, maxTransactionCnt);
     }
 
     function isChannelOpen(bytes32 channelId)

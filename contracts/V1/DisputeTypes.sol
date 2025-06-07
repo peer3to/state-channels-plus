@@ -62,6 +62,11 @@ struct Dispute {
     bool selfRemoval;
 }
 
+struct OnChainSlash {
+    address participant;
+    uint256 timestamp;
+}
+
 struct ForkMilestoneProof {
     BlockConfirmation[] blockConfirmations;
 }
@@ -82,6 +87,7 @@ struct StateProof {
 
 struct Proof {
     ProofType proofType;
+    address participant; // The participant that is being slashed - encoded proof returns the same address when run.
     bytes encodedProof;
 }
 
@@ -194,7 +200,7 @@ struct DisputeAuditingData {
 
 struct DisputeData {
     DisputePair[] disputePairs;
-    address[] onChainSlashedParticipants;
+    OnChainSlash[] onChainSlashes;
     address[] pendingParticipants;
     bytes32 latestJoinChannelBlockHash;
     bytes32[] disputeCommitments; //hash(Dispute Struct, block.timestamp)

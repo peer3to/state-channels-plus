@@ -1,5 +1,6 @@
 import { BigNumberish, ethers } from "ethers";
 import { IStorageModule } from "./IStorageModule";
+import { ForkId } from "@/types/types";
 
 export class StorageModule implements IStorageModule {
     getLatestJoinChannelBlockHash(): string {
@@ -23,7 +24,7 @@ export class StorageModule implements IStorageModule {
     }
 
     getPreviousBlockHash(
-        forkCnt: number,
+        forkId: ForkId,
         transactionCnt: number
     ): string | undefined {
         // TODO

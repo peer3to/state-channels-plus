@@ -63,7 +63,7 @@ describe("DisputeHandler", () => {
             // Arrange
             const mockBlock = factory.block({
                 transaction: factory.transaction({
-                    header: factory.transactionHeader({ forkCnt: 0 })
+                    header: factory.transactionHeader({ forkId: 0 })
                 })
             });
             const signedBlock: SignedBlockStruct = {
@@ -89,7 +89,7 @@ describe("DisputeHandler", () => {
             // Arrange
             const mockBlock = factory.block({
                 transaction: factory.transaction({
-                    header: factory.transactionHeader({ forkCnt: 0 })
+                    header: factory.transactionHeader({ forkId: 0 })
                 })
             });
             const signedBlock: SignedBlockStruct = {
@@ -114,11 +114,11 @@ describe("DisputeHandler", () => {
 
     describe("Dispute management", () => {
         it("should mark a fork as disputed", () => {
-            const forkCnt = 2;
+            const forkId = 2;
 
-            disputeHandler.setForkDisputed(forkCnt);
+            disputeHandler.setForkDisputed(forkId);
 
-            expect(disputeHandler.isForkDisputed(forkCnt)).to.be.true;
+            expect(disputeHandler.isForkDisputed(forkId)).to.be.true;
             expect(disputeHandler.isForkDisputed(3)).to.be.false; // Different fork
         });
 
@@ -127,7 +127,7 @@ describe("DisputeHandler", () => {
 
     describe("createDispute", () => {
         it("should throw error when no dispute is created", async () => {
-            const forkCnt = 0;
+            const forkId = 0;
 
             // Make getDispute return an invalid dispute (zero hash)
             stateChannelManagerContract.getDispute = sinon.stub().resolves({
@@ -135,7 +135,7 @@ describe("DisputeHandler", () => {
             });
 
             await expect(
-                disputeHandler.createDispute(forkCnt, "0x00", 0, [])
+                disputeHandler.createDispute(forkId, "0x00", 0, [])
             ).to.be.rejectedWith(
                 "DisputeHandler - createDispute - no dispute created"
             );

@@ -62,7 +62,7 @@ contract FraudProofFacet is StateChannelCommon {
 
         if (
             !(
-                block1.transaction.header.forkCnt == block2.transaction.header.forkCnt
+                block1.transaction.header.forkId == block2.transaction.header.forkId
                     && block1.transaction.header.transactionCnt == block2.transaction.header.transactionCnt
                     && keccak256(abi.encode(block1)) != keccak256(abi.encode(block2))
             )
@@ -155,7 +155,7 @@ contract FraudProofFacet is StateChannelCommon {
         StateSnapshot memory newStateSnapshot = StateSnapshot({
             stateMachineStateHash: keccak256(encodedModifiedState),
             participants: getStatemachineParticipants(encodedModifiedState),
-            forkCnt: previousStateSnapshot.forkCnt,
+            forkId: previousStateSnapshot.forkId,
             latestJoinChannelBlockHash: previousStateSnapshot.latestJoinChannelBlockHash,
             latestExitChannelBlockHash: previousStateSnapshot.latestExitChannelBlockHash,
             totalDeposits: previousStateSnapshot.totalDeposits,
@@ -191,7 +191,7 @@ contract FraudProofFacet is StateChannelCommon {
             abi.decode(timeoutThresholdProof.latestStateSnapshot, (StateSnapshot)).participants;
 
         if (
-            thresholdBlock.transaction.header.forkCnt != originalTimedOutDispute.timeout.forkCnt
+            thresholdBlock.transaction.header.forkId != originalTimedOutDispute.timeout.forkId
                 && thresholdBlock.transaction.header.transactionCnt != originalTimedOutDispute.timeout.blockHeight
         ) {
             revert ErrorInvalidBlock();
@@ -334,7 +334,7 @@ contract FraudProofFacet is StateChannelCommon {
 
         (bool found, bytes32 blockCalldataCommitment) = getBlockCallDataCommitment(
             fraudProofVerificationContext.channelId,
-            invalidRecursiveDisputeLastBlock.transaction.header.forkCnt,
+            invalidRecursiveDisputeLastBlock.transaction.header.forkId,
             invalidRecursiveDisputeLastBlock.transaction.header.transactionCnt,
             signer
         );

@@ -20,17 +20,6 @@ contract DisputeManagerFacet is StateChannelCommon {
         emit DisputeCommited(encodedDispute, block.timestamp);
     }
 
-    /// @dev This function is used to audit the dispute data and assert if the output state is correct
-    // Should be callable onlfy from the Diamond (Proxy) as a low level delegatecall with a gas limit -> external onlySelf
-    // 1. Verify all data against commitments
-    // 2. Check state proofs
-    // 3. Verify fraud proofs
-    // 4. Validate output state
-
-    /// Returns:
-    /// - bool: success/failure
-    /// - bytes: error reason if failed
-    /// - address[]: slashed participants if successful
     function auditDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         external
         onlySelf
@@ -74,7 +63,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             latestExitChannelBlockHash: keccak256(abi.encode(exitBlock)),
             totalDeposits: totalDeposits,
             totalWithdrawals: totalWithdrawals,
-            forkCnt: disputeData[dispute.channelId].disputeCommitments.length
+            forkId: disputeData[dispute.channelId].disputeCommitments.length
         });
 
         //verify outputStateSnapshot commitment
@@ -454,10 +443,10 @@ contract DisputeManagerFacet is StateChannelCommon {
             if (!isParticipant) return false;
         }
 
-        DisputeData storage _disputeData = disputeData[channelId];
+        address[] memory onChainSlashedParticipants = getOnChainSlashedParticipants(channelId);
         //check if slashed on-chain -> slashed participants can't participate in disputes
-        for (uint256 i = 0; i < _disputeData.onChainSlashedParticipants.length; i++) {
-            if (_disputeData.onChainSlashedParticipants[i] == participant) {
+        for (uint256 i = 0; i < onChainSlashedParticipants.length; i++) {
+            if (onChainSlashedParticipants[i] == participant) {
                 return false; //is slashed -> can't participate
             }
         }
@@ -482,22 +471,11 @@ contract DisputeManagerFacet is StateChannelCommon {
             }
         }
 
-        // *********** 2. on-chain slashes should match *************
-        address[] memory onChainSlashes = getOnChainSlashedParticipants(dispute.channelId);
-        if (!StateChannelUtilLibrary.areAddressArraysEqual(onChainSlashes, dispute.onChainSlashes)) {
-            revert ErrorDisputeOnChainSlashedParticipantsMismatch();
-        }
-
-        // *********** 3. should be the expected i-th dispute *************
-        if (_disputeData.disputeCommitments.length != dispute.disputeIndex) {
-            revert ErrorDisputeNotExpectedIndex();
-        }
-
-        // *********** 4. Timeout *************
+        // *********** 2. Timeout *************
         if (dispute.timeout.participant != address(0) && !dispute.timeout.isForced) {
             //check if participant posted calldata commitment
             (bool found, bytes32 blockCalldataCommitment) = getBlockCallDataCommitment(
-                dispute.channelId, dispute.timeout.forkCnt, dispute.timeout.blockHeight, dispute.timeout.participant
+                dispute.channelId, dispute.timeout.forkId, dispute.timeout.blockHeight, dispute.timeout.participant
             );
             if (found) {
                 revert ErrorDisputeTimeoutCalldataPosted();
@@ -507,7 +485,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             if (dispute.timeout.previousBlockProducer != address(0)) {
                 (bool found, bytes32 blockCalldataCommitment) = getBlockCallDataCommitment(
                     dispute.channelId,
-                    dispute.timeout.forkCnt,
+                    dispute.timeout.forkId,
                     dispute.timeout.blockHeight - 1,
                     dispute.timeout.previousBlockProducer
                 );
@@ -520,7 +498,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             }
         }
 
-        // *********** 5. onChainLatestJoinChannelBlockHash should match *************
+        // *********** 3. onChainLatestJoinChannelBlockHash should match *************
         require(
             dispute.onChainLatestJoinChannelBlockHash == _disputeData.latestJoinChannelBlockHash,
             ErrorDisputeOnChainLatestJoinChannelBlockHashMismatch()

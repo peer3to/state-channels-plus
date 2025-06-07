@@ -128,18 +128,4 @@ abstract contract AStateMachine {
         _;
         _nonreentrant = false;
     }
-
-    // function stateTransition(bytes memory encodedState, Move memory move) public pure virtual returns (bool,bytes memory);
-    // function joinChannelDelegateCall(bytes memory encodedState, Move memory move) public virtual returns (bool,bytes memory); //Not pure - can move assets -> modify state
-    // function exitChannelDelegateCall(bytes memory encodedState, Move memory move) public virtual returns (bool,bytes memory); //Not pure - can move assets -> modify state
-    // function slashParticipant(bytes memory encodedState, address adr) public pure virtual returns (bool,bytes memory);
-    // function removeParticipant(bytes memory encodedState, address adr) public pure virtual returns (bool,bytes memory);
-    // function getParticipants(bytes memory encodedState) public pure virtual returns (address[] memory);
-    // function getNextToWrite(bytes memory encodedState) public pure virtual returns (address);
-
-    // function setTimestamp(bytes memory encodedState, uint timestamp) public pure virtual returns (bytes memory);
-    // function getTimestamp(bytes memory encodedState) public pure virtual returns (uint);
-    // function setForkCnt(bytes memory encodedState, uint forkCnt) public pure virtual returns (bytes memory);
-    // function getForkCnt(bytes memory encodedState) public pure virtual returns (uint);
-    // function getMoveCnt(bytes memory encodedState) public pure virtual returns (uint);
 }

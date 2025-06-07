@@ -19,7 +19,7 @@ export function transactionHeader(
 ): TransactionHeaderStruct {
     return {
         channelId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
-        forkCnt: 0,
+        forkId: 0,
         transactionCnt: 0,
         participant: ethers.Wallet.createRandom().address,
         timestamp: Math.floor(Date.now() / 1000),
@@ -147,7 +147,7 @@ export function dispute(overrides: Partial<DisputeStruct> = {}): DisputeStruct {
             participant: ethers.ZeroAddress,
             blockHeight: 0,
             minTimeStamp: Math.floor(Date.now() / 1000),
-            forkCnt: 0,
+            forkId: 0,
             isForced: false,
             previousBlockProducer: ethers.ZeroAddress,
             previousBlockProducerPostedCalldata: false

@@ -1,3 +1,4 @@
+import { ForkId } from "@/types/types";
 import { BigNumberish } from "ethers";
 
 /**
@@ -16,7 +17,7 @@ export interface IStorageModule {
     getTotalWithdrawals(): { amount: BigNumberish; data: string };
 
     getPreviousBlockHash(
-        forkCnt: number,
+        forkId: ForkId,
         transactionCnt: number
     ): string | undefined;
 }

@@ -9,23 +9,22 @@ import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
 import { DebugProxy, retry, Codec, Type } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ProofManager from "./ProofManager";
+import { ForkId } from "./types/types";
 
 let DEBUG_DISPUTE_HANDLER = true;
 
 // Constants for commonly used values
 const NO_PARTICIPANT_TO_FOLD = "0x00";
 const INITIAL_TRANSACTION_COUNT = 0;
-
-type ForkCnt = number;
 class DisputeHandler {
     signer: ethers.Signer;
     signerAddress: AddressLike;
     agreementManager: AgreementManager;
     stateChannelManagerContract: AStateChannelManagerProxy;
     channelId: BytesLike;
-    localProofs: Map<ForkCnt, ProofStruct[]> = new Map();
-    disputes: Map<ForkCnt, DisputeStruct> = new Map();
-    disputedForks: Map<ForkCnt, boolean> = new Map();
+    localProofs: Map<ForkId, ProofStruct[]> = new Map();
+    disputes: Map<ForkId, DisputeStruct> = new Map();
+    disputedForks: Map<ForkId, boolean> = new Map();
     p2pEventHooks: P2pEventHooks;
     self = DEBUG_DISPUTE_HANDLER ? DebugProxy.createProxy(this) : this;
     proofManager: ProofManager;
@@ -56,16 +55,16 @@ class DisputeHandler {
         this.channelId = channelId;
     }
     public async disputeFoldRechallenge(
-        forkCnt: BigNumberish,
+        forkId: ForkId,
         transactionCnt: BigNumberish
     ): Promise<void> {
         const proof = this.proofManager.createFoldRechallengeProof(
-            forkCnt,
+            forkId,
             transactionCnt
         );
         return proof
             ? this.createDispute(
-                  forkCnt,
+                  forkId,
                   NO_PARTICIPANT_TO_FOLD,
                   INITIAL_TRANSACTION_COUNT,
                   [proof]
@@ -82,7 +81,7 @@ class DisputeHandler {
             Type.Block
         );
         return this.createDispute(
-            _firstBlock.transaction.header.forkCnt,
+            _firstBlock.transaction.header.forkId,
             NO_PARTICIPANT_TO_FOLD,
             INITIAL_TRANSACTION_COUNT,
             [proof]
@@ -99,30 +98,20 @@ class DisputeHandler {
             Type.Block
         );
         return this.createDispute(
-            _block.transaction.header.forkCnt,
+            _block.transaction.header.forkId,
             NO_PARTICIPANT_TO_FOLD,
             INITIAL_TRANSACTION_COUNT,
             [proof]
         );
     }
 
-    // Not needed publicly - just internaly
-    // public async disputeNewerState(
-    //     forkCnt: number,
-    //     participantAdr: AddressLike
-    // ): Promise<void> {
-    //     let proof = this.createNewerStateProof(forkCnt, participantAdr, );
-    //     if (!proof) return;
-    //     await this.createDispute(forkCnt, participantAdr, 0, [proof]);
-    // }
-
     public async disputeFoldPriorBlock(
-        forkCnt: BigNumberish,
+        forkId: ForkId,
         transactionCnt: number
     ): Promise<void> {
         const proof = ProofManager.createFoldPriorBlockProof(transactionCnt);
         return this.createDispute(
-            forkCnt,
+            forkId,
             NO_PARTICIPANT_TO_FOLD,
             INITIAL_TRANSACTION_COUNT,
             [proof]
@@ -135,7 +124,7 @@ class DisputeHandler {
         const proof = ProofManager.createBlockTooFarInFutureProof(BlockSigned);
         const block = Codec.decode(BlockSigned.encodedBlock, Type.Block);
         return this.createDispute(
-            block.transaction.header.forkCnt,
+            block.transaction.header.forkId,
             NO_PARTICIPANT_TO_FOLD,
             INITIAL_TRANSACTION_COUNT,
             [proof]
@@ -143,13 +132,13 @@ class DisputeHandler {
     }
 
     public onDispute(dispute: DisputeStruct): Promise<void> {
-        this.setForkDisputed(Number(dispute.forkCnt));
+        this.setForkDisputed(dispute.forkId);
         return this.rechallengeRecursive(dispute);
     }
 
     //Creates a dispute based on the generated proofs or optimistically timeouts (folds) the provided participant
     public async createDispute(
-        forkCnt: BigNumberish,
+        forkId: ForkId,
         foldedParticipant: AddressLike,
         foldedTransactionCnt: BigNumberish,
         proofs: ProofStruct[]
@@ -158,14 +147,13 @@ class DisputeHandler {
             console.log("DisputeHandler - createDispute - Timeout");
         }
 
-        const forkCntNumber = Number(forkCnt);
         //TODO! stop signing for the current fork
-        this.setForkDisputed(forkCntNumber);
-        proofs.forEach((proof) => this.addProof(forkCntNumber, proof));
-        const _dispute = this.disputes.get(forkCntNumber);
+        this.setForkDisputed(forkId);
+        proofs.forEach((proof) => this.addProof(forkId, proof));
+        const _dispute = this.disputes.get(forkId);
         if (!_dispute) {
             await this.createNewDispute(
-                forkCnt,
+                forkId,
                 foldedParticipant,
                 foldedTransactionCnt,
                 proofs
@@ -185,7 +173,7 @@ class DisputeHandler {
     }
 
     private async createNewDispute(
-        forkCnt: BigNumberish,
+        forkId: ForkId,
         foldedParticipant: AddressLike,
         foldedTransactionCnt: BigNumberish,
         proofs: ProofStruct[]
@@ -195,7 +183,7 @@ class DisputeHandler {
             encodedLatestCorrectState,
             virtualVotingBlocks
         } = this.agreementManager.getFinalizedAndLatestWithVotes(
-            forkCnt,
+            forkId,
             this.signerAddress
         );
 
@@ -205,7 +193,7 @@ class DisputeHandler {
                 const txResponse =
                     await this.stateChannelManagerContract.createDispute(
                         this.channelId,
-                        forkCnt,
+                        forkId,
                         encodedLatestFinalizedState,
                         encodedLatestCorrectState,
                         virtualVotingBlocks,
@@ -231,21 +219,21 @@ class DisputeHandler {
         );
     }
 
-    public setForkDisputed(forkCnt: number): void {
-        this.disputedForks.set(forkCnt, true);
+    public setForkDisputed(forkId: ForkId): void {
+        this.disputedForks.set(forkId, true);
     }
-    public isForkDisputed(forkCnt: number): boolean {
-        return this.disputedForks.get(forkCnt) ?? false;
+    public isForkDisputed(forkId: ForkId): boolean {
+        return this.disputedForks.get(forkId) ?? false;
     }
-    private addProof(forkCnt: number, proof: ProofStruct): void {
-        const proofs = this.localProofs.get(forkCnt) || [];
+    private addProof(forkId: ForkId, proof: ProofStruct): void {
+        const proofs = this.localProofs.get(forkId) || [];
         proofs.push(proof);
-        this.localProofs.set(forkCnt, proofs);
+        this.localProofs.set(forkId, proofs);
     }
 
     private shouldUpdateDispute(dispute: DisputeStruct): boolean {
-        const forkCnt = Number(dispute.forkCnt);
-        const existingDispute = this.disputes.get(forkCnt);
+        const forkId = dispute.forkId;
+        const existingDispute = this.disputes.get(forkId);
 
         return (
             !existingDispute ||
@@ -255,8 +243,8 @@ class DisputeHandler {
 
     private updateDisputeIfNewer(dispute: DisputeStruct): boolean {
         if (this.shouldUpdateDispute(dispute)) {
-            const forkCnt = Number(dispute.forkCnt);
-            this.disputes.set(forkCnt, dispute);
+            const forkId = dispute.forkId;
+            this.disputes.set(forkId, dispute);
             return true;
         }
 
@@ -277,14 +265,14 @@ class DisputeHandler {
                 encodedLatestCorrectState,
                 virtualVotingBlocks
             } = this.agreementManager.getFinalizedAndLatestWithVotes(
-                dispute.forkCnt,
+                dispute.forkId,
                 this.signerAddress
             );
             this.p2pEventHooks.onInitiatingDispute?.();
             const _txReceipt = await this.stateChannelManagerContract
                 .challengeDispute(
                     this.channelId,
-                    dispute.forkCnt,
+                    dispute.forkId,
                     Number(dispute.challengeCnt) + 1,
                     proofs,
                     virtualVotingBlocks,
@@ -309,28 +297,28 @@ class DisputeHandler {
 
     // Extracts dispute proofs to be tracked locally
     private extractProofs(dispute: DisputeStruct): ProofStruct[] {
-        const forkCnt = Number(dispute.forkCnt);
+        const forkId = dispute.forkId;
         const transactionCnt = Number(dispute.foldedTransactionCnt);
 
         // Can challenge timeout?
         if (dispute.timedoutParticipant !== ethers.ZeroAddress) {
             const timeoutProof = this.proofManager.createFoldRechallengeProof(
-                forkCnt,
+                forkId,
                 transactionCnt
             );
             if (timeoutProof) {
-                this.addProof(forkCnt, timeoutProof);
+                this.addProof(forkId, timeoutProof);
             }
         }
         // Handle newer state proof
         const lastTransactionCnt = this.getLastTransactionCount(dispute);
         const newerStateProof = this.proofManager.createNewerStateProof(
-            forkCnt,
+            forkId,
             dispute.postedStateDisputer,
             lastTransactionCnt
         );
 
-        if (newerStateProof) this.addProof(forkCnt, newerStateProof);
+        if (newerStateProof) this.addProof(forkId, newerStateProof);
 
         // Return filtered proofs
         return this.filterProofs(dispute);
@@ -351,7 +339,7 @@ class DisputeHandler {
     private filterProofs(dispute: DisputeStruct): ProofStruct[] {
         return ProofManager.filterValidProofs(
             dispute,
-            this.localProofs.get(Number(dispute.forkCnt))
+            this.localProofs.get(dispute.forkId)
         );
     }
 }

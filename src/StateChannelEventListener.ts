@@ -49,10 +49,10 @@ class StateChannelEventListener {
             filterFactory: (channelId: BytesLike) =>
                 this.stateChannelManagerContract.filters.SetState(channelId),
             handler: (logObj: any) => {
-                const { encodedState, forkCnt, timestamp } = logObj.args;
+                const { encodedState, forkId, timestamp } = logObj.args;
                 return this.stateManager.setState(
                     encodedState,
-                    forkCnt,
+                    forkId,
                     timestamp
                 );
             }

@@ -5,6 +5,7 @@ import { getEthersTypeForDisputeProof, ProofType } from "@/types/disputes";
 import { Codec, Type } from "@/utils";
 import Clock from "@/Clock";
 import AgreementManager from "@/agreementManager";
+import { ForkId } from "./types/types";
 
 class ProofManager {
     readonly agreementManager: AgreementManager;
@@ -41,11 +42,11 @@ class ProofManager {
     // ===== Proof Creation Methods =====
 
     public createFoldRechallengeProof(
-        forkCnt: BigNumberish,
+        forkId: ForkId,
         transactionCnt: BigNumberish
     ): dt.ProofStruct | undefined {
         const block = this.agreementManager.getBlock(
-            Number(forkCnt),
+            forkId,
             Number(transactionCnt)
         );
         if (!block) return undefined;
@@ -109,7 +110,7 @@ class ProofManager {
             incorrectBlockSigned.encodedBlock,
             Type.Block
         );
-        const forkCnt = Number(incorrectBlock.transaction.header.forkCnt);
+        const forkId = incorrectBlock.transaction.header.forkId;
         const transactionCnt = Number(
             incorrectBlock.transaction.header.transactionCnt
         );
@@ -119,11 +120,11 @@ class ProofManager {
         const incorrectDataProofStruct = isGenesisBlock
             ? this.createGenesisBlockIncorrectDataProof(
                   incorrectBlockSigned,
-                  forkCnt
+                  forkId
               )
             : this.createRegularBlockIncorrectDataProof(
                   incorrectBlockSigned,
-                  forkCnt,
+                  forkId,
                   transactionCnt
               );
 
@@ -137,14 +138,14 @@ class ProofManager {
     }
 
     public createNewerStateProof(
-        forkCnt: number,
+        forkId: ForkId,
         participantAdr: AddressLike,
         currentTransactionCnt: number
     ): dt.ProofStruct | undefined {
         // Get the latest block signed by the participant
         const signedBlock =
             this.agreementManager.getLatestSignedBlockByParticipant(
-                forkCnt,
+                forkId,
                 participantAdr
             );
 
@@ -376,7 +377,7 @@ class ProofManager {
 
     private createGenesisBlockIncorrectDataProof(
         incorrectBlockSigned: SignedBlockStruct,
-        forkCnt: number
+        forkId: ForkId
     ): dt.IncorrectDataProofStruct {
         // For genesis blocks, we use the genesis state
         //TODO! - this only checks current (disputed fork) - prior and future forks are ignored for now
@@ -385,25 +386,24 @@ class ProofManager {
             block1: incorrectBlockSigned,
             block2: incorrectBlockSigned,
             encodedState:
-                this.agreementManager.getForkGenesisStateEncoded(forkCnt) ??
-                "0x"
+                this.agreementManager.getForkGenesisStateEncoded(forkId) ?? "0x"
         };
     }
 
     private createRegularBlockIncorrectDataProof(
         incorrectBlockSigned: SignedBlockStruct,
-        forkCnt: number,
+        forkId: ForkId,
         transactionCnt: number
     ): dt.IncorrectDataProofStruct {
         // For non-genesis blocks, we need to reference the prior block
         const priorBlock = this.agreementManager.getBlock(
-            forkCnt,
+            forkId,
             transactionCnt - 1
         );
 
         if (!priorBlock) {
             throw new Error(
-                `Prior block not found for fork ${forkCnt}, transaction ${transactionCnt - 1}`
+                `Prior block not found for fork ${forkId}, transaction ${transactionCnt - 1}`
             );
         }
 
@@ -412,18 +412,18 @@ class ProofManager {
 
         if (!priorBlockOriginalSignature) {
             throw new Error(
-                `Prior block signature not found for fork ${forkCnt}, transaction ${transactionCnt - 1}`
+                `Prior block signature not found for fork ${forkId}, transaction ${transactionCnt - 1}`
             );
         }
 
         const priorEncodedState = this.agreementManager.getEncodedState(
-            forkCnt,
+            forkId,
             transactionCnt
         );
 
         if (!priorEncodedState) {
             throw new Error(
-                `Prior encoded state not found for fork ${forkCnt}, transaction ${transactionCnt}`
+                `Prior encoded state not found for fork ${forkId}, transaction ${transactionCnt}`
             );
         }
 

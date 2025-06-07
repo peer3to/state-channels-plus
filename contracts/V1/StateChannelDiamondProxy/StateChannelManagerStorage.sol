@@ -26,12 +26,12 @@ contract StateChannelManagerStorage {
     // =================== Block on chain storage ==================
 
     /// @notice BlockCalldata Commitment
-    /// @dev blockCalldataCommitments[channelId][signerAddress][forkCnt][blockHeight] => hash(off-chain block, on-chain block.timestamp)
+    /// @dev blockCalldataCommitments[channelId][signerAddress][forkId][blockHeight] => hash(off-chain block, on-chain block.timestamp)
     mapping(
         bytes32 channelId
             => mapping(
                 address signerAddress
-                    => mapping(uint256 forkCnt => mapping(uint256 blockHeight => bytes32 blockCallDataCommitment))
+                    => mapping(bytes32 forkId => mapping(uint256 blockHeight => bytes32 blockCallDataCommitment))
             )
     ) blockCalldataCommitments;
 

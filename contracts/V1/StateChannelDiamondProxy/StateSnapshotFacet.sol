@@ -15,7 +15,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         ExitChannelBlock[] memory exitChannelBlocks
     ) external onlySelf {
         // resolve genesis state snapshot source
-        // - if stateSnapshot(on-chain).forkCnt == disputeProof.forkCnt, then the genesis state snapshot is the on-chain stateSnapshot
+        // - if stateSnapshot(on-chain).forkId == disputeProof.forkId, then the genesis state snapshot is the on-chain stateSnapshot
         // - otherwise, the dispute is validated and the genesis state snapshot is disputeProof.outputStateSnapshot
         StateSnapshot memory genesisStateSnapshot = _resolveGenesisSnapshot(channelId, disputeProof);
 
@@ -28,7 +28,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot[] memory milestoneSnapshots,
         ExitChannelBlock[] memory exitChannelBlocks
     ) external onlySelf {
-        require(getDisputeLength(channelId) == getSnapshotForkCnt(channelId), ErrorDisputeProofRequired());
+        require(getDisputeLength(channelId) == getSnapshotforkId(channelId), ErrorDisputeProofRequired());
         StateSnapshot memory onChainStateSnapshot = stateSnapshots[channelId];
 
         _updateStateSnapshot(channelId, milestoneProofs, milestoneSnapshots, exitChannelBlocks, onChainStateSnapshot);
@@ -39,7 +39,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         view
         returns (StateSnapshot memory)
     {
-        if (getDisputeLength(channelId) == getSnapshotForkCnt(channelId)) {
+        if (getDisputeLength(channelId) == getSnapshotforkId(channelId)) {
             return stateSnapshots[channelId];
         }
         Dispute memory dispute = disputeProof.dispute;
@@ -76,8 +76,8 @@ contract StateSnapshotFacet is StateChannelCommon {
         // Update the state snapshot
         stateSnapshots[channelId] = lastProovenSnapshot;
 
-        // clear onChainSlashedParticipants
-        delete disputeData[channelId].onChainSlashedParticipants;
+        // clear onChainSlashes
+        delete disputeData[channelId].onChainSlashes;
         // clear pendingParticipants
         delete disputeData[channelId].pendingParticipants;
 
@@ -154,7 +154,6 @@ contract StateSnapshotFacet is StateChannelCommon {
     function _getAddressesInThreshold(bytes32 channelId) internal view returns (address[] memory) {
         address[] memory snapshotParticipants = getSnapshotParticipants(channelId);
         address[] memory slashedParticipants = getOnChainSlashedParticipants(channelId);
-
         address[] memory pendingParticpants = getPendingParticipants(channelId);
 
         // Merge participants with deduplication

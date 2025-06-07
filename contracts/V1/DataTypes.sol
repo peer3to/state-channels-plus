@@ -51,7 +51,7 @@ struct Transaction {
 struct TransactionHeader {
     bytes32 channelId;
     address participant;
-    uint256 forkCnt;
+    bytes32 forkId;
     uint256 transactionCnt;
     uint256 timestamp;
 }
@@ -109,8 +109,8 @@ struct Timeout {
     uint256 blockHeight;
     /// @dev minimum timestamp where this timeout is valid
     uint256 minTimeStamp;
-    /// @dev the forkCnt at which the participant is timed out
-    uint256 forkCnt;
+    /// @dev the forkId at which the participant is timed out
+    bytes32 forkId;
     /// @dev True if timeout checks should ignore race condition checks on-chain - usefull when the participant being tiemdout committed to a wrong block (is not linked to the latestState), but we can't prove deviation - explained more in the docs
     bool isForced;
     // ================== optional ==================
@@ -119,12 +119,16 @@ struct Timeout {
 }
 
 struct StateSnapshot {
+    StateData stateData;
+    /// @dev The fork identifier (count) that the snapshot belongs to
+    bytes32 forkId; //hash(genesisStateData)
+}
+
+struct StateData {
     /// @dev the state root of the channel state
     bytes32 stateMachineStateHash;
     /// @dev the participants of the channel
     address[] participants;
-    /// @dev The fork identifier (count) that the snapshot belongs to
-    uint256 forkCnt;
     /// @dev the hash of the lastBlock in the JoinChannel blockchain
     bytes32 latestJoinChannelBlockHash;
     /// @dev the hash of the lastBlock in the ExitChannel blockchain

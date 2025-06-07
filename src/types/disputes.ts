@@ -42,6 +42,7 @@ export const StateProofEthersType = `tuple(
 
 export const ProofEthersType = `tuple(
     uint8 proofType,
+    address participant,
     bytes encodedProof
 )`;
 
@@ -57,8 +58,6 @@ export const DisputeEthersType = `tuple(
     ${ExitChannelBlockEthersType}[] exitChannelBlocks,
     bytes32 disputeAuditingDataHash,
     address disputer,
-    uint256 disputeIndex,
-    uint256 previousRecursiveDisputeIndex,
     ${TimeoutEthersType} timeout,
     bool selfRemoval
 )`;

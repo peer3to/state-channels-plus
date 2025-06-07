@@ -94,7 +94,7 @@ class P2pSigner implements Signer {
             header: {
                 channelId: this.p2pManager.stateManager.getChannelId(),
                 participant: this.p2pManager.stateManager.getSignerAddress(),
-                forkCnt: this.p2pManager.stateManager.getForkCnt(),
+                forkId: this.p2pManager.stateManager.getforkId(),
                 transactionCnt:
                     this.p2pManager.stateManager.getNextBlockHeight(),
                 timestamp: BigInt(Clock.getTimeInSeconds())
