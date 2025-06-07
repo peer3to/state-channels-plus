@@ -35,12 +35,12 @@ contract DisputeManagerFacet is StateChannelCommon {
         for (uint256 i = 0; i < disputes.length; i++) {
             Dispute memory dispute = disputes[i];
 
-            // ***** setup and single run *****
+            // ***** setup / first run *****
             if (maxSlashCount == 0) {
                 SnapshotData storage snapshotData = stateSnapshots[dispute.channelId].snapshotData;
                 DisputeData storage disputeData = disputeData[dispute.channelId];
-                slashParticipants =
-                    new address[](snapshotData.participants.length + disputeData.pendingParticipants.length);
+                maxSlashCount == snapshotData.participants.length + disputeData.pendingParticipants.length;
+                slashParticipants = new address[](maxSlashCount);
 
                 //populate initially with on-chain slashes up to the dispute window expiration timestamp
                 for (uint256 j = 0; j < disputeData.onChainSlashes.length; j++) {
