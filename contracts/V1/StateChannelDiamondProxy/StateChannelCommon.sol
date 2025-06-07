@@ -26,6 +26,17 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         }
     }
 
+    function getOnChainThresholdSet(bytes32 channelId) public view virtual returns (address[] memory) {
+        SnapshotData storage snapshotData = stateSnapshots[channelId].snapshotData;
+        DisputeData storage _disputeData = disputeData[channelId];
+        return StateChannelUtilLibrary.subtractAddressArrays(
+            StateChannelUtilLibrary.concatAddressArrays(
+                getSnapshotParticipants(channelId), getPendingParticipants(channelId)
+            ),
+            getOnChainSlashedParticipants(channelId)
+        );
+    }
+
     function getDisputeLength(bytes32 channelId) public view virtual returns (uint256) {
         return disputeData[channelId].disputeCommitments.length;
     }
@@ -137,13 +148,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return true;
     }
 
-    function _shouldUseSnapshotAsGenesis(Dispute memory dispute) internal view returns (bool) {
-        StateSnapshot storage stateSnapshot = stateSnapshots[dispute.channelId];
-        //Use snapshot as genesis if NOT recursive dispute && on-chain snapshot is from the same fork
-        return
-            dispute.previousRecursiveDisputeIndex == type(uint256).max && stateSnapshot.forkId == dispute.disputeIndex;
-    }
-
     function _isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         internal
         view
@@ -154,7 +158,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             return false;
         }
         //check dispute commits to genesisStateSnapshot
-        if (dispute.genesisStateSnapshotHash != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshot))) {
+        if (dispute.genesisSnapshotDataHash != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshot))) {
             return false;
         }
         //check latestStateSnapshot
@@ -168,36 +172,25 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         ) {
             return false;
         }
-        // *************** check previous dispute ***************
-        // 1) should it be used or snapshot should be used as genesis
-        // 2) if true (should be used) => is set correctly and commitment exists
-        if (_shouldUseSnapshotAsGenesis(dispute)) {
-            //Should be unset -> won't be used either way -> timestamp will have default value 0
-            //This check is not needed, since _shouldUseGenesis will again return true when actually checking the genesis commitment later - for now leaving it like this since easier to understand mentally
-            if (disputeAuditingData.previousDisputeTimestamp != 0) {
-                return false;
-            }
-        } else {
-            // Previous dispute should be set and will be used to check genesis
-            if (
-                !_isCorrectDisputeCommitment(
-                    disputeAuditingData.previousDispute, disputeAuditingData.previousDisputeTimestamp
-                )
-            ) {
-                return false;
-            }
-            //Commitment exists - check if it's the right one
-            //if disputing latest fork -> should be previous (this -1) dispute
-            if (
-                dispute.previousRecursiveDisputeIndex == type(uint256).max
-                    && (dispute.disputeIndex - 1) != disputeAuditingData.previousDispute.disputeIndex
-            ) {
-                return false;
-            }
-            //if disputing recursive dispute - should be linked
-            if (dispute.previousRecursiveDisputeIndex != disputeAuditingData.previousDispute.disputeIndex) {
-                return false;
-            }
+        // Previous dispute should be set and will be used to check genesis
+        if (
+            !_isCorrectDisputeCommitment(
+                disputeAuditingData.previousDispute, disputeAuditingData.previousDisputeTimestamp
+            )
+        ) {
+            return false;
+        }
+        //Commitment exists - check if it's the right one
+        //if disputing latest fork -> should be previous (this -1) dispute
+        if (
+            dispute.previousRecursiveDisputeIndex == type(uint256).max
+                && (dispute.disputeIndex - 1) != disputeAuditingData.previousDispute.disputeIndex
+        ) {
+            return false;
+        }
+        //if disputing recursive dispute - should be linked
+        if (dispute.previousRecursiveDisputeIndex != disputeAuditingData.previousDispute.disputeIndex) {
+            return false;
         }
 
         //check joinChannelBlocks (linked to latestSateSnapshot, chained internally and outputStateSnapshot commits to the head)

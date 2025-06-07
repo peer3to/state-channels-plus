@@ -48,7 +48,7 @@ export const ProofEthersType = `tuple(
 
 export const DisputeEthersType = `tuple(
     bytes32 channelId,
-    bytes32 genesisStateSnapshotHash,
+    bytes32 genesisSnapshotDataHash,
     bytes32 latestStateSnapshotHash,
     ${StateProofEthersType} stateProof,
     ${ProofEthersType}[] fraudProofs,
@@ -60,6 +60,16 @@ export const DisputeEthersType = `tuple(
     address disputer,
     ${TimeoutEthersType} timeout,
     bool selfRemoval
+)`;
+
+export const SignedDisputeEthersType = `tuple(
+    bytes encodedDispute,
+    bytes signature
+)`;
+
+export const DisputeConfirmationEthersType = `tuple(
+        ${SignedDisputeEthersType} signedDispute,
+        bytes[] signatures
 )`;
 
 export const FoldRechallengeProofEthersType = `tuple(

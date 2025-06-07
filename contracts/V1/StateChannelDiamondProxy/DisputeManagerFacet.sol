@@ -6,18 +6,44 @@ import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
 
 contract DisputeManagerFacet is StateChannelCommon {
-    function createDispute(Dispute memory dispute) public {
+    function createDispute(DisputeConfirmation memory disputeConfirmation) public {
+        Dispute memory dispute = abi.decode(disputeConfirmation.encodedDispute, (Dispute));
         require(msg.sender == dispute.disputer, ErrorDisputerNotMsgSender());
         require(_canParticipateInDisputes(dispute.channelId, msg.sender), ErrorCantParticipateInDispute());
 
         // race condition checks
         _disputeRaceConditionCheck(dispute);
 
-        // commit to dispute struct
-        bytes memory encodedDispute = abi.encode(dispute);
-        bytes32 disputeCommitment = keccak256(abi.encode(encodedDispute, block.timestamp));
-        disputeData[dispute.channelId].disputeCommitments.push(disputeCommitment);
-        emit DisputeCommited(encodedDispute, block.timestamp);
+        DisputeData storage disputeData = disputeData[dispute.channelId];
+        DisputeData storage disputeWindowMap = disputeData.disputeWindowMap;
+        bytes32 forkId = dispute.genesisSnapshotDataHash;
+        DisputeWindow storage disputeWindow = disputeWindowMap[forkId];
+        bool isThresholdFinal = _isDisputeThresholdFinal(disputeConfirmation);
+        bool isAuditingRequired;
+        if (!isThresholdFinal) {
+            require(!_isAuditingRequired(disputeConfirmation), ErrorDisputeAuditingRequired());
+        }
+
+        //check if dispute window is created/opened for the disputed fork, otherwise create/open it
+        if (disputeWindow.createdTimestamp == 0) {
+            //create the dispute window
+            disputeWindow.forkId = forkId;
+            disputeWindow.createdTimestamp = block.timestamp; //challenge period started
+        } else {
+            require(
+                block.timestamp <= disputeWindow.createdTimestamp + getChallengeTime(),
+                ErrorDisputeChallengePeriodExpired()
+            );
+            require(!disputeWindow.hasPosted(dispute.disputer), ErrorDisputeAlreadyPosted());
+        }
+
+        if (isThresholdFinal) {
+            disputeWindow.createdTimestamp = block.timestamp - getChallengeTime() - 1;
+            delete disputeWindow.disputeCommitments; //delete all previous commitments
+        }
+        disputeWindow.disputeCommitments.push(keccak256(abi.encode(dispute)));
+        disputeWindow.hasPosted(dispute.disputer) = true; //disputer has posted the dispute
+        emit DisputeCommited(dispute.channelId, dispute, isThresholdFinal, disputeWindow.createdTimestamp);
     }
 
     function reduce(Dispute[] memory disputes, uint256 disputeWindowExpirationTimestamp)
@@ -230,11 +256,11 @@ contract DisputeManagerFacet is StateChannelCommon {
         if (lastBlockEncoded.length == 0) {
             if (dispute.stateProof.signedBlocks.length == 0) {
                 //no blocks at all => genesis == latest
-                if (dispute.genesisStateSnapshotHash != dispute.latestStateSnapshotHash) return false;
+                if (dispute.genesisSnapshotDataHash != dispute.latestStateSnapshotHash) return false;
             } else {
                 //check if signedBlocks are linked, signed and build on genesis
                 if (
-                    !_areSignedBlocksLinkedAndVerified(dispute.stateProof.signedBlocks, dispute.genesisStateSnapshotHash)
+                    !_areSignedBlocksLinkedAndVerified(dispute.stateProof.signedBlocks, dispute.genesisSnapshotDataHash)
                 ) return false;
 
                 Block memory lastBlock = abi.decode(
@@ -424,14 +450,7 @@ contract DisputeManagerFacet is StateChannelCommon {
     {
         StateSnapshot storage stateSnapshot = stateSnapshots[dispute.channelId];
         //check genesis commitment - this should always be true
-        if (dispute.genesisStateSnapshotHash != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshot))) {
-            return false;
-        }
-        //check should use snapshot as genesis
-        if (
-            _shouldUseSnapshotAsGenesis(dispute)
-                && dispute.genesisStateSnapshotHash != keccak256(abi.encode(stateSnapshot))
-        ) {
+        if (dispute.genesisSnapshotDataHash != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshot))) {
             return false;
         }
         // Some dispute is geneisis => disputeAuditingData.previousDispute should be set correclty
@@ -445,13 +464,13 @@ contract DisputeManagerFacet is StateChannelCommon {
         //if disputing latest fork (not recursive) -> disputeAuditingData.previousDispute should be previous (this -1) dispute && previous outputSnapshot should be genesisSnapshot
         if (dispute.previousRecursiveDisputeIndex == type(uint256).max) {
             if ((dispute.disputeIndex - 1) != disputeAuditingData.previousDispute.disputeIndex) return false;
-            if (disputeAuditingData.previousDispute.outputStateSnapshotHash != dispute.genesisStateSnapshotHash) {
+            if (disputeAuditingData.previousDispute.outputStateSnapshotHash != dispute.genesisSnapshotDataHash) {
                 return false;
             }
         } else {
             //disputing recursive dispute - disputeAuditingData.previousDispute should be linked && previous genesisSnapshot should be genesisSnapshot && previous should not be expired
             if (dispute.previousRecursiveDisputeIndex != disputeAuditingData.previousDispute.disputeIndex) return false;
-            if (disputeAuditingData.previousDispute.genesisStateSnapshotHash != dispute.genesisStateSnapshotHash) {
+            if (disputeAuditingData.previousDispute.genesisSnapshotDataHash != dispute.genesisSnapshotDataHash) {
                 return false;
             }
             if (_isExpired(disputeAuditingData.previousDisputeTimestamp)) {
@@ -557,15 +576,8 @@ contract DisputeManagerFacet is StateChannelCommon {
     function _disputeRaceConditionCheck(Dispute memory dispute) internal view {
         StateSnapshot storage stateSnapshot = stateSnapshots[dispute.channelId];
         DisputeData storage _disputeData = disputeData[dispute.channelId];
-        // *********** 1. should on-chain snapshot be genesis for dispute *************
-        if (_shouldUseSnapshotAsGenesis(dispute)) {
-            //should use stateSnapshot as genesis
-            if (keccak256(abi.encode(stateSnapshot)) != dispute.genesisStateSnapshotHash) {
-                revert ErrorDisputeShouldUseSnapshotAsGenesisState();
-            }
-        }
 
-        // *********** 2. Timeout *************
+        // *********** 1. Timeout *************
         if (dispute.timeout.participant != address(0) && !dispute.timeout.isForced) {
             //check if participant posted calldata commitment
             (bool found, bytes32 blockCalldataCommitment) = getBlockCallDataCommitment(
@@ -592,10 +604,51 @@ contract DisputeManagerFacet is StateChannelCommon {
             }
         }
 
-        // *********** 3. onChainLatestJoinChannelBlockHash should match *************
+        // *********** 2. onChainLatestJoinChannelBlockHash should match *************
         require(
             dispute.onChainLatestJoinChannelBlockHash == _disputeData.latestJoinChannelBlockHash,
             ErrorDisputeOnChainLatestJoinChannelBlockHashMismatch()
         );
+    }
+
+    function _isDisputeThresholdFinal(DisputeConfirmation memory disputeConfirmation)
+        internal
+        view
+        returns (bool isFinal)
+    {
+        Dispute memory dispute = abi.decode(disputeConfirmation.encodedDispute, (Dispute));
+        DisputeData storage disputeData = disputeData[dispute.channelId];
+        SnapshotData storage snapshotData = stateSnapshots[dispute.channelId].snapshotData;
+        uint256 thresholdCount = snapshotData.participants.length + disputeData.pendingParticipants.length
+            - disputeData.onChainSlashes.length;
+        if (
+            disputeConfirmation.signatures.length + 1
+                < snapshotData.participants.length + disputeData.pendingParticipants.length
+                    - disputeData.onChainSlashes.length
+        ) return false;
+        address[] memory thresholdSet = getOnChainThresholdSet(dispute.channelId);
+        bytes[] memory signatures = StateChannelUtilLibrary.insertBytesInByteArray(
+            disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures
+        );
+        (bool isThresholdFinal,) =
+            StateChannelUtilLibrary.verifyThresholdSigned(thresholdSet, disputeConfirmation.encodedDispute, signatures);
+        return isThresholdFinal;
+    }
+
+    function _isAuditingRequired(DisputeConfirmation memory disputeConfirmation)
+        internal
+        view
+        returns (bool isRequired)
+    {
+        Dispute memory dispute = abi.decode(disputeConfirmation.encodedDispute, (Dispute));
+        DisputeData storage disputeData = disputeData[dispute.channelId];
+        SnapshotData storage snapshotData = stateSnapshots[dispute.channelId].snapshotData;
+        uint256 thresholdCount = disputeData.pendingParticipants.length;
+        if (disputeConfirmation.signatures.length < disputeData.pendingParticipants.length) return true;
+
+        (bool isThresholdFinal,) = StateChannelUtilLibrary.verifyThresholdSigned(
+            disputeData.pendingParticipants, disputeConfirmation.encodedDispute, disputeConfirmation.signatures
+        );
+        return !isThresholdFinal;
     }
 }

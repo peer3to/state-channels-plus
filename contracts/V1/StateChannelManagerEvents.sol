@@ -6,18 +6,16 @@ import "./DataTypes.sol";
 interface StateChannelManagerEvents {
     event BlockCalldataPosted(bytes32 indexed channelId, address sender, SignedBlock signedBlock, uint256 timestamp);
     event SetState(bytes32 indexed channelId, bytes encodedState, bytes32 forkId, uint256 timestamp);
-    event DisputeUpdated(bytes32 indexed channelId, Dispute dispute);
-
-    event DisputeCommited(bytes encodedDispute, uint256 timestamp);
+    event DisputeCommited(bytes32 indexed channelId, Dispute dispute, bool isFinal, uint256 windowCreationTimestamp);
 
     event DisputeChallengeResultWithDisputePair(
-        bytes32 channelId, DisputePair disputePair, bool isSuccess, address[] slashParticipants
+        bytes32 indexed channelId, DisputePair disputePair, bool isSuccess, address[] slashParticipants
     );
 
-    event DisputeChallengeResult(bytes32 channelId, bool isSuccess, address[] slashParticipants);
+    event DisputeChallengeResult(bytes32 indexed channelId, bool isSuccess, address[] slashParticipants);
 
     event DisputeChallengeResultWithError(
-        bytes32 channelId, bool isSuccess, address[] slashParticipants, bytes fraudProofErrorResult
+        bytes32 indexed channelId, bool isSuccess, address[] slashParticipants, bytes fraudProofErrorResult
     );
 
     event StateSnapshotUpdated(bytes32 indexed channelId, StateSnapshot stateSnapshot, uint256 timestamp);

@@ -126,7 +126,7 @@ export function signature(): string {
 export function dispute(overrides: Partial<DisputeStruct> = {}): DisputeStruct {
     const defaultDispute: DisputeStruct = {
         channelId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
-        genesisStateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
+        genesisSnapshotDataHash: ethers.hexlify(ethers.randomBytes(32)),
         latestStateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
         stateProof: {
             forkProof: { forkMilestoneProofs: [] },

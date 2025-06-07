@@ -30,7 +30,7 @@ struct Dispute {
     bytes32 channelId;
     /// @notice Hash of genesis state (previous dispute output or latest on-chain state)
     /// @dev Used for state verification and fork creation
-    bytes32 genesisStateSnapshotHash;
+    bytes32 genesisSnapshotDataHash;
     /// @notice encoded latest state (latest on-chain state)
     bytes32 latestStateSnapshotHash;
     /// @notice State proof for the dispute
@@ -60,6 +60,16 @@ struct Dispute {
     Timeout timeout;
     /// @notice Self removal for the dispute
     bool selfRemoval;
+}
+
+struct SignedDispute {
+    bytes encodedDispute;
+    bytes signature;
+}
+
+struct DisputeConfirmation {
+    SignedDispute signedDispute;
+    bytes[] signatures;
 }
 
 struct DisputeWindow {
@@ -217,7 +227,7 @@ struct DisputeData {
     OnChainSlash[] onChainSlashes;
     address[] pendingParticipants;
     bytes32 latestJoinChannelBlockHash;
-    mapping(bytes32 forkId => DisputeWindow) disputeWindows;
+    mapping(bytes32 forkId => DisputeWindow) disputeWindowMap;
     bytes32[] disputedForks;
 }
 

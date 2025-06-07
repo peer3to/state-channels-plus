@@ -91,6 +91,15 @@ library StateChannelUtilLibrary {
         return currentThresholdCount;
     }
 
+    function insertBytesInByteArray(bytes memory b, bytes[] memory array) internal pure returns (bytes[] memory) {
+        bytes[] memory result = new bytes[](array.length + 1);
+        for (uint256 i = 0; i < array.length; i++) {
+            result[i] = array[i];
+        }
+        result[array.length] = b;
+        return result;
+    }
+
     function concatAddressArrays(address[] memory array1, address[] memory array2)
         internal
         pure
@@ -104,6 +113,32 @@ library StateChannelUtilLibrary {
             result[array1.length + i] = array2[i];
         }
         return result;
+    }
+
+    function subtractAddressArrays(address[] memory array1, address[] memory array2)
+        internal
+        pure
+        returns (address[] memory)
+    {
+        address[] memory result = new address[](array1.length);
+        uint256 actualCount = 0;
+        for (uint256 i = 0; i < array1.length; i++) {
+            bool found = false;
+            for (uint256 j = 0; j < array2.length; j++) {
+                if (array1[i] == array2[j]) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                result[actualCount++] = array1[i];
+            }
+        }
+        address[] memory finalResult = new address[](actualCount);
+        for (uint256 i = 0; i < actualCount; i++) {
+            finalResult[i] = result[i];
+        }
+        return finalResult;
     }
 
     function concatBytesArrays(bytes[] memory array1, bytes[] memory array2) internal pure returns (bytes[] memory) {

@@ -21,7 +21,8 @@ error ErrorSlashedParticipantCantDispute();
 error ErrorChannelIdMismatch();
 error ErrorTransactionCountMismatch();
 error ErrorSignatureInvalid();
-
+error ErrorDisputeChallengePeriodExpired();
+error ErrorDisputeAlreadyPosted();
 //Can participate in dispute
 error ErrorCantParticipateInDispute();
 
@@ -29,6 +30,7 @@ error ErrorCantParticipateInDispute();
 error ErrorNoDisputesProvided();
 
 //Auditing errors
+error ErrorDisputeAuditingRequired();
 error ErrorDisputeWrongCommitment();
 error ErrorDisputeWrongAuditingData();
 error ErrorDisputeCommitmentNotAvailable();

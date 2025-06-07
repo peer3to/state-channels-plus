@@ -32,11 +32,6 @@ struct BlockConfirmation {
     bytes[] signatures;
 }
 
-struct SignedDispute {
-    bytes encodedDispute;
-    bytes signature;
-}
-
 struct Block {
     Transaction transaction;
     bytes32 stateSnapshotHash;
