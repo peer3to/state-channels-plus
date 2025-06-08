@@ -6,7 +6,7 @@ import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
 
 contract DisputeManagerFacet is StateChannelCommon {
-    function createDispute(DisputeConfirmation memory disputeConfirmation) public {
+    function uploadDispute(DisputeConfirmation memory disputeConfirmation) public {
         Dispute memory dispute = abi.decode(disputeConfirmation.encodedDispute, (Dispute));
         require(msg.sender == dispute.disputer, ErrorDisputerNotMsgSender());
         require(_canParticipateInDisputes(dispute.channelId, msg.sender), ErrorCantParticipateInDispute());
@@ -25,25 +25,27 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
 
         //check if dispute window is created/opened for the disputed fork, otherwise create/open it
-        if (disputeWindow.createdTimestamp == 0) {
+        if (disputeWindow.creationTimestamp == 0) {
             //create the dispute window
             disputeWindow.forkId = forkId;
-            disputeWindow.createdTimestamp = block.timestamp; //challenge period started
+            disputeWindow.creationTimestamp = block.timestamp; //challenge period started
         } else {
             require(
-                block.timestamp <= disputeWindow.createdTimestamp + getChallengeTime(),
+                block.timestamp <= disputeWindow.creationTimestamp + getChallengeTime(),
                 ErrorDisputeChallengePeriodExpired()
             );
             require(!disputeWindow.hasPosted(dispute.disputer), ErrorDisputeAlreadyPosted());
         }
 
         if (isThresholdFinal) {
-            disputeWindow.createdTimestamp = block.timestamp - getChallengeTime() - 1;
+            disputeWindow.creationTimestamp = block.timestamp - getChallengeTime() - 1;
             delete disputeWindow.disputeCommitments; //delete all previous commitments
         }
-        disputeWindow.disputeCommitments.push(keccak256(abi.encode(dispute)));
+        disputeWindow.disputeCommitments.push(keccak256(abi.encode(dispute, block.timestamp)));
         disputeWindow.hasPosted(dispute.disputer) = true; //disputer has posted the dispute
-        emit DisputeCommited(dispute.channelId, dispute, isThresholdFinal, disputeWindow.createdTimestamp);
+        emit DisputeCommited(
+            dispute.channelId, dispute, block.timestamp, isThresholdFinal, disputeWindow.creationTimestamp
+        );
     }
 
     function reduce(Dispute[] memory disputes, uint256 disputeWindowExpirationTimestamp)
@@ -208,7 +210,7 @@ contract DisputeManagerFacet is StateChannelCommon {
     //    - New dispute is ignored
     function challengeDispute(
         Dispute memory dispute,
-        Dispute memory newDispute,
+        DisputeConfirmation memory newDispute,
         DisputeAuditingData memory disputeAuditingData
     ) public {
         uint256 gasLimit = getGasLimit();
@@ -220,7 +222,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             slashParticipants[0] = dispute.disputer;
             addOnChainSlashedParticipants(dispute.channelId, slashParticipants);
             address[] memory returnedSlashParticipants = getOnChainSlashedParticipants(dispute.channelId);
-            createDispute(newDispute);
+            uploadDispute(newDispute);
             emit DisputeChallengeResult(dispute.channelId, success, returnedSlashParticipants);
         } else {
             // slash the challenger

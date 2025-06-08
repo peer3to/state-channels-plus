@@ -57,7 +57,7 @@ abstract contract StateChannelManagerInterface {
         virtual
         returns (bool found, bytes32 blockCalldataCommitment);
 
-    function createDispute(Dispute memory dispute) public virtual;
+    function uploadDispute(DisputeConfirmation memory disputeConfirmation) public virtual;
 
     function auditDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         public

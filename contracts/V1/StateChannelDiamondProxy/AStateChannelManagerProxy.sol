@@ -175,8 +175,10 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         return result;
     }
 
-    function createDispute(Dispute memory dispute) public override {
-        _delegatecall(address(disputeManagerFacet), abi.encodeCall(disputeManagerFacet.createDispute, (dispute)));
+    function uploadDispute(DisputeConfirmation memory disputeConfirmation) public override {
+        _delegatecall(
+            address(disputeManagerFacet), abi.encodeCall(disputeManagerFacet.uploadDispute, (disputeConfirmation))
+        );
     }
 
     function auditDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
