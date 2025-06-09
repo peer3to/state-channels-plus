@@ -47,6 +47,10 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return stateSnapshots[channelId];
     }
 
+    function isSnapshotLatest(bytes32 channelId) public view virtual returns (bool) {
+        return getSnapshotForkCnt(channelId) == getDisputeLength(channelId);
+    }
+
     function getStatemachineParticipants(bytes memory encodedState) public virtual returns (address[] memory) {
         stateMachineImplementation.setState(encodedState);
         return stateMachineImplementation.getParticipants();

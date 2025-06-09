@@ -216,14 +216,13 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
 
     function joinChannel(
         bytes32 channelId,
-        JoinChannelBlock memory joinChannelBlock,
-        DisputeConfirmation memory disputeConfirmation,
-        bytes[][] memory confirmationSignatures
+        JoinChannelConfirmation[] memory joinChannelConfirmations,
+        DisputeAuditBundleConfirmation memory disputeAuditBundleConfirmation
     ) public override {
         _delegatecall(
             address(joinChannelFacet),
             abi.encodeCall(
-                joinChannelFacet.joinChannel, (channelId, joinChannelBlock, disputeConfirmation, confirmationSignatures)
+                joinChannelFacet.joinChannel, (channelId, joinChannelConfirmations, disputeAuditBundleConfirmation)
             )
         );
     }

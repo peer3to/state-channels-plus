@@ -24,9 +24,8 @@ abstract contract StateChannelManagerInterface {
 
     function joinChannel(
         bytes32 channelId,
-        JoinChannelBlock memory joinChannelBlock,
-        DisputeConfirmation memory disputeConfirmation,
-        bytes[][] memory confirmationSignatures
+        JoinChannelConfirmation[] memory joinChannelConfirmations,
+        DisputeAuditBundleConfirmation memory disputeAuditBundleConfirmation
     ) public virtual;
 
     function isChannelOpen(bytes32 channelId) public view virtual returns (bool);

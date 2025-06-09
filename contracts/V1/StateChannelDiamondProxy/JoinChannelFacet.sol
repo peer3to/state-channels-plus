@@ -10,34 +10,93 @@ contract JoinChannelFacet is StateChannelCommon {
      * @notice Joins participants to the channel by submitting a complete join channel request
      *
      * @param channelId The channel identifier
-     * @param joinChannelBlock The block containing all join channel requests
-     * @param disputeConfirmation Signed dispute struct to create new fork commitment
-     * @param confirmationSignatures 2D array where confirmationSignatures[i] contains threshold signatures from existing participants for joinChannels[i]
+     * @param joinChannelConfirmations Array of join channel confirmations to process
+     * @param disputeAuditBundleConfirmation Signed dispute audit bundle to create new fork commitment
      */
     function joinChannel(
         bytes32 channelId,
-        JoinChannelBlock memory joinChannelBlock,
-        DisputeConfirmation memory disputeConfirmation,
-        bytes[][] memory confirmationSignatures // per join channel, per participant
+        JoinChannelConfirmation[] memory joinChannelConfirmations,
+        DisputeAuditBundleConfirmation memory disputeAuditBundleConfirmation
     ) external {
-        // VERIFICATION PHASE
+        if (!isSnapshotLatest(channelId)) {
+            revert ErrorSnapshotNotLatest();
+        }
 
-        // 1. Validate join channel deadlines
-        _validateJoinChannelDeadlines(joinChannelBlock);
+        // SETUP PHASE
+        // make a list of join channels
+        JoinChannel[] memory joinChannels = new JoinChannel[](joinChannelConfirmations.length);
+        for (uint256 i = 0; i < joinChannelConfirmations.length; i++) {
+            joinChannels[i] =
+                abi.decode(joinChannelConfirmations[i].signedJoinChannel.encodedJoinChannel, (JoinChannel));
+        }
+        // make a list of joining participants
+        address[] memory joiningParticipants = new address[](joinChannels.length);
+        for (uint256 i = 0; i < joinChannels.length; i++) {
+            joiningParticipants[i] = joinChannels[i].participant;
+        }
 
-        // 2. for each join channel, verify that the joining participant has signed the dispute struct
-        _verifyJoinChannelSignatures(
-            joinChannelBlock, disputeConfirmation.signedDispute.encodedDispute, disputeConfirmation.signatures
-        );
+        // Create validity tracking arrays
+        bool[] memory isValid = new bool[](joinChannelConfirmations.length);
+        uint256 validCount = 0;
 
-        // 3. Verify:
-        //    a. threshold signatures from existing participants on each join channel
-        //    b. that the block is properly linked
+        // VALIDATION PHASE - Filter out invalid join channels
 
-        _verifyJoinChannelBlock(channelId, joinChannelBlock, confirmationSignatures);
+        // 1. Filter by join channel deadlines
+        for (uint256 i = 0; i < joinChannels.length; i++) {
+            if (joinChannels[i].deadlineTimestamp > block.timestamp) {
+                isValid[i] = true;
+                validCount++;
+            }
+        }
 
-        // 4. Verify balance invariants
-        _verifyJoinChannelBalanceInvariants(channelId);
+        // 2. Filter by threshold signatures from existing participants
+        address[] memory participants = getSnapshotParticipants(channelId);
+        for (uint256 i = 0; i < joinChannelConfirmations.length; i++) {
+            if (!isValid[i]) continue; // Skip already invalid ones
+
+            bytes memory encodedJoinChannel = joinChannelConfirmations[i].signedJoinChannel.encodedJoinChannel;
+            bytes[] memory confirmationSignatures = joinChannelConfirmations[i].signatures;
+
+            (bool isValidSignature,) =
+                StateChannelUtilLibrary.verifyThresholdSigned(participants, encodedJoinChannel, confirmationSignatures);
+
+            if (!isValidSignature) {
+                isValid[i] = false;
+                validCount--;
+            }
+        }
+
+        // 3. Filter by joining participant signatures on dispute
+        for (uint256 i = 0; i < joinChannels.length; i++) {
+            if (!isValid[i]) continue; // Skip already invalid ones
+
+            bool hasValidSignature =
+                _didJoinerApproveDisputeAuditBundle(joiningParticipants[i], disputeAuditBundleConfirmation);
+
+            if (!hasValidSignature) {
+                isValid[i] = false;
+                validCount--;
+            }
+        }
+
+        // Terminate early if no valid join channels
+        require(validCount > 0, ErrorNoValidJoinChannels());
+
+        // Create arrays with only valid join channels
+        JoinChannel[] memory validJoinChannels = new JoinChannel[](validCount);
+        uint256 validIndex = 0;
+        for (uint256 i = 0; i < joinChannels.length; i++) {
+            if (isValid[i]) {
+                validJoinChannels[validIndex] = joinChannels[i];
+                validIndex++;
+            }
+        }
+
+        // Create JoinChannelBlock from successful join channels
+        JoinChannelBlock memory joinChannelBlock = JoinChannelBlock({
+            previousBlockHash: getOnChainLatestJoinChannelBlockHash(channelId),
+            joinChannels: validJoinChannels
+        });
 
         // PROCESSING PHASE - Execute state changes after all verifications pass
 
@@ -48,8 +107,10 @@ contract JoinChannelFacet is StateChannelCommon {
         _updatePendingParticipants(channelId, joinChannelBlock);
 
         // 7. Create dispute - this handles remaining verification and state updates
-        Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
-        AStateChannelManagerProxy(address(this)).createDispute(dispute);
+        DisputeAuditBundle memory disputeAuditBundle = abi.decode(
+            disputeAuditBundleConfirmation.signedDisputeAuditBundle.encodedDisputeAuditBundle, (DisputeAuditBundle)
+        );
+        AStateChannelManagerProxy(address(this)).createDispute(disputeAuditBundle.dispute);
 
         // 8. Emit events
         emit JoinChannelProcessed(channelId, joinChannelBlock, block.timestamp);
@@ -58,106 +119,24 @@ contract JoinChannelFacet is StateChannelCommon {
     // ############### Verification Functions ###############
 
     /**
-     * @dev Validates that all join channel requests have not expired
+     * @dev Checks if a joining participant has a valid signature on the dispute
      */
-    function _validateJoinChannelDeadlines(JoinChannelBlock memory joinChannelBlock) internal view {
-        for (uint256 i = 0; i < joinChannelBlock.joinChannels.length; i++) {
-            require(joinChannelBlock.joinChannels[i].deadlineTimestamp > block.timestamp, ErrorJoinChannelExpired());
-        }
-    }
-
-    /**
-     * @dev Verifies that each joining participant has signed the dispute struct
-     */
-    function _verifyJoinChannelSignatures(
-        JoinChannelBlock memory joinChannelBlock,
-        bytes memory encodedDispute,
-        bytes[] memory confirmationSignatures
-    ) internal pure {
-        // Track which signatures have been used to avoid double-counting
-        bool[] memory signatureUsed = new bool[](confirmationSignatures.length);
-
-        // Verify each joining participant has signed the dispute
-        for (uint256 i = 0; i < joinChannelBlock.joinChannels.length; i++) {
-            address participant = joinChannelBlock.joinChannels[i].participant;
-
-            // Find the signature from this participant by checking all signatures
-            bool foundSignature = false;
-            for (uint256 j = 0; j < confirmationSignatures.length; j++) {
-                // Skip signatures that have already been matched
-                if (signatureUsed[j]) {
-                    continue;
-                }
-
-                // Check if this signature is from the joining participant
-                address recoveredSigner =
-                    StateChannelUtilLibrary.retriveSignerAddress(encodedDispute, confirmationSignatures[j]);
-
-                if (recoveredSigner == participant) {
-                    // Mark this signature as used
-                    signatureUsed[j] = true;
-                    foundSignature = true;
-                    break;
-                }
-            }
-
-            require(foundSignature, ErrorSignatureInvalid());
-        }
-    }
-
-    /**
-     * @dev Verifies the JoinChannelBlock is valid by checking:
-     * 1. The block is properly linked to the previous join channel block
-     * 2. Each join channel has valid threshold signatures from all current participants
-     * This ensures all existing participants agree to expand the channel and the block chain is intact
-     *
-     */
-    function _verifyJoinChannelBlock(
-        bytes32 channelId,
-        JoinChannelBlock memory joinChannelBlock,
-        bytes[][] memory confirmationSignatures
-    ) internal view {
-        address[] memory participants = getSnapshotParticipants(channelId);
-
-        // Verify join channel block is properly linked
-        StateSnapshot memory currentSnapshot = stateSnapshots[channelId];
-        require(
-            joinChannelBlock.previousBlockHash == currentSnapshot.latestJoinChannelBlockHash,
-            ErrorLinkingPreviousBlock()
-        );
-
-        // Verify each join channel has threshold signatures from existing participants
-        for (uint256 i = 0; i < joinChannelBlock.joinChannels.length; i++) {
-            bytes memory encodedJoinChannel = abi.encode(joinChannelBlock.joinChannels[i]);
-
-            // Verify threshold signatures from existing participants on this join channel request
-            (bool isValid,) = StateChannelUtilLibrary.verifyThresholdSigned(
-                participants, encodedJoinChannel, confirmationSignatures[i]
+    function _didJoinerApproveDisputeAuditBundle(
+        address joiningParticipant,
+        DisputeAuditBundleConfirmation memory disputeAuditBundleConfirmation
+    ) internal pure returns (bool) {
+        // Find the signature from this participant
+        for (uint256 j = 0; j < disputeAuditBundleConfirmation.signatures.length; j++) {
+            address recoveredSigner = StateChannelUtilLibrary.retriveSignerAddress(
+                disputeAuditBundleConfirmation.signedDisputeAuditBundle.encodedDisputeAuditBundle,
+                disputeAuditBundleConfirmation.signatures[j]
             );
-            require(isValid, ErrorSignatureInvalid());
+
+            if (recoveredSigner == joiningParticipant) {
+                return true;
+            }
         }
-    }
-
-    /**
-     * @dev Verifies balance invariants for join channel operations
-     */
-    function _verifyJoinChannelBalanceInvariants(bytes32 channelId) internal view {
-        // Get current on-chain balance (deposits - withdrawals)
-        Balance memory currentOnChainDeposits = totalOnChainProcessedDeposits[channelId];
-        Balance memory currentOnChainWithdrawals = totalOnChainProcessedWithdrawals[channelId];
-
-        // Get current state machine total balance
-        Balance memory currentStateBalance = stateMachineImplementation.getTotalStateBalance();
-
-        // Calculate expected balance (deposits - withdrawals)
-        Balance memory expectedBalance =
-            stateMachineImplementation.subtractBalance(currentOnChainDeposits, currentOnChainWithdrawals);
-
-        // Verify balance invariant: state machine balance should equal on-chain balance
-        require(
-            stateMachineImplementation.areBalancesEqual(currentStateBalance, expectedBalance),
-            ErrorJoinChannelBalanceInvariantFailed()
-        );
+        return false;
     }
 
     // ############### Processing Functions ###############

@@ -135,3 +135,7 @@ error ErrorFirstExitChannelBlockInvalid();
 error ErrorExitChannelBlocksNotLinked();
 error ErrorLastSnapshotInvalid();
 error ErrorLastSnapshotDoesNotMatchGenesis();
+
+// JoinChannel
+error ErrorNoValidJoinChannels();
+error ErrorSnapshotNotLatest();

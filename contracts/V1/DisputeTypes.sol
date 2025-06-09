@@ -21,7 +21,10 @@ contract DisputeTypes {
         ForkProof memory n,
         StateProof memory o,
         Proof memory p,
-        ProofType q
+        ProofType q,
+        DisputeAuditBundle memory r,
+        SignedDisputeAuditBundle memory s,
+        DisputeAuditBundleConfirmation memory t
     ) {}
 }
 
@@ -190,6 +193,21 @@ struct DisputeAuditingData {
     // ========================== optional ===============================
     Dispute previousDispute; // (optional) needed to verify 'this' dispute genesis against the previous dispute outputSnapshot or genesisSnapshot (in the case of a recursive dispute) - if not present, genesis is the latest on-chain Snapshot
     uint256 previousDisputeTimestamp; // (optional) needed to verify the commitment of the previous dispute
+}
+
+struct DisputeAuditBundle {
+    Dispute dispute;
+    DisputeAuditingData disputeAuditingData;
+}
+
+struct SignedDisputeAuditBundle {
+    bytes encodedDisputeAuditBundle;
+    bytes signature;
+}
+
+struct DisputeAuditBundleConfirmation {
+    SignedDisputeAuditBundle signedDisputeAuditBundle;
+    bytes[] signatures;
 }
 
 struct DisputeData {
