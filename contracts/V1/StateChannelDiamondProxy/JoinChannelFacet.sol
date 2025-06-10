@@ -50,17 +50,31 @@ contract JoinChannelFacet is StateChannelCommon {
         }
 
         // 2. Filter by threshold signatures from existing participants
-        address[] memory participants = getSnapshotParticipants(channelId);
+
+        address[] memory allParticipants = StateChannelUtilLibrary.concatenateWithoutDuplicates(
+            getSnapshotParticipants(channelId), getPendingParticipants(channelId)
+        );
         for (uint256 i = 0; i < joinChannelConfirmations.length; i++) {
             if (!isValid[i]) continue; // Skip already invalid ones
 
             bytes memory encodedJoinChannel = joinChannelConfirmations[i].signedJoinChannel.encodedJoinChannel;
             bytes[] memory confirmationSignatures = joinChannelConfirmations[i].signatures;
+            // valiadte joiner's own signature
+            bool isValidJoinerSignature = StateChannelUtilLibrary.verifySignature(
+                joiningParticipants[i], encodedJoinChannel, joinChannelConfirmations[i].signedJoinChannel.signature
+            );
 
-            (bool isValidSignature,) =
-                StateChannelUtilLibrary.verifyThresholdSigned(participants, encodedJoinChannel, confirmationSignatures);
+            if (!isValidJoinerSignature) {
+                isValid[i] = false;
+                validCount--;
+            }
 
-            if (!isValidSignature) {
+            // validate threshold signatures from existing participants
+            (bool hasThreshold,) = StateChannelUtilLibrary.verifyThresholdSigned(
+                allParticipants, encodedJoinChannel, confirmationSignatures
+            );
+
+            if (!hasThreshold) {
                 isValid[i] = false;
                 validCount--;
             }

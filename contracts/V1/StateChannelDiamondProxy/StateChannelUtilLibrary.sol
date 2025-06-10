@@ -64,6 +64,14 @@ library StateChannelUtilLibrary {
         return ECDSA.recover(signedHash, signature);
     }
 
+    function verifySignature(address expectedSigner, bytes memory encodedData, bytes memory signature)
+        public
+        pure
+        returns (bool)
+    {
+        return retriveSignerAddress(encodedData, signature) == expectedSigner;
+    }
+
     function isAddressInArray(address[] memory array, address adr) public pure returns (bool) {
         for (uint256 i = 0; i < array.length; i++) {
             if (array[i] == adr) return true;
@@ -144,7 +152,7 @@ library StateChannelUtilLibrary {
         return true;
     }
 
-    function concatAddressArraysNoDuplicates(address[] memory array1, address[] memory array2)
+    function concatenateWithoutDuplicates(address[] memory array1, address[] memory array2)
         internal
         pure
         returns (address[] memory)
