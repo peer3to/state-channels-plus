@@ -166,4 +166,39 @@ describe("SignatureCollectionMap", () => {
         // Should not cause issues when timeout would have fired
         clock.tick(6000);
     });
+
+    it("should initialize key without adding signatures", () => {
+        map.initializeKey(testKey);
+
+        expect(map.has(testKey)).to.be.true;
+        expect(map.getSignatures(testKey)).to.have.lengthOf(0);
+    });
+
+    it("should initialize key with timeout", () => {
+        map.initializeKey(testKey, { timeoutMs: 5000 });
+
+        expect(map.has(testKey)).to.be.true;
+        expect(map.getSignatures(testKey)).to.have.lengthOf(0);
+
+        clock.tick(4999);
+        expect(map.has(testKey)).to.be.true;
+
+        clock.tick(2);
+        expect(map.has(testKey)).to.be.false;
+    });
+
+    it("should not recreate key if it already exists", () => {
+        map.tryInsert(testKey, {
+            signerAddress: address1,
+            signature: signature1
+        });
+
+        expect(map.getSignatures(testKey)).to.have.lengthOf(1);
+
+        map.initializeKey(testKey);
+
+        // Should still have the existing signature
+        expect(map.getSignatures(testKey)).to.have.lengthOf(1);
+        expect(map.hasSignature(testKey, address1)).to.be.true;
+    });
 });

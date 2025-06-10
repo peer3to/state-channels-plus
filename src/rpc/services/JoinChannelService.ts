@@ -5,7 +5,8 @@ import {
     JoinChannelStruct,
     ForkMilestoneProofStruct,
     StateSnapshotStruct,
-    ExitChannelBlockStruct
+    ExitChannelBlockStruct,
+    JoinChannelConfirmationStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import { Codec, EvmUtils, SignatureCollectionMap, Type } from "@/utils";
 import Clock from "@/Clock";
@@ -87,9 +88,21 @@ class JoinChannelService extends ARpcService {
                 joinChannel.channelId
             );
             const activeParticipants = Array.from(activeParticipantsSet);
-            if (this.joinChannelMap.didEveryoneSign(key, activeParticipants)) {
+
+            // Exclude the original participant since their signature is handled separately
+            const confirmationParticipants = activeParticipants.filter(
+                (participant) => participant !== joinChannel.participant
+            );
+
+            if (
+                this.joinChannelMap.didEveryoneSign(
+                    key,
+                    confirmationParticipants
+                )
+            ) {
                 await this.processCompletedJoinRequest(
                     joinChannel,
+                    signedJoinChannel.signature,
                     this.joinChannelMap.get(key) as Map<string, SignatureLike>
                 );
             }
@@ -134,15 +147,10 @@ class JoinChannelService extends ARpcService {
         const timeRemaining =
             Number(joinChannel.deadlineTimestamp) - Clock.getTimeInSeconds();
 
-        // Add requester's signature with timeout
-        this.joinChannelMap.tryInsert(
-            key,
-            {
-                signerAddress: joinChannel.participant.toString(),
-                signature: signedJoinChannel.signature as SignatureLike
-            },
-            { timeoutMs: timeRemaining * 1000 } // Convert to milliseconds
-        );
+        // Initialize the key with timeout
+        this.joinChannelMap.initializeKey(key, {
+            timeoutMs: timeRemaining * 1000
+        });
 
         return true;
     }
@@ -340,6 +348,7 @@ class JoinChannelService extends ARpcService {
 
     private async processCompletedJoinRequest(
         joinChannel: JoinChannelStruct,
+        joinerSignature: BytesLike,
         signatureMap: Map<string, SignatureLike>
     ): Promise<void> {
         // 1. Check if we need to submit a state snapshot
@@ -365,54 +374,32 @@ class JoinChannelService extends ARpcService {
             );
         }
 
-        // 3. Create JoinChannelBlock with the completed join channel request
-        const previousBlockHash = await this.getPreviousJoinChannelBlockHash(
-            joinChannel.channelId,
-            needsStateSnapshotSubmission,
-            milestoneSnapshots
+        // 4. Get all confirmation signatures from the map (original signature is not in the map)
+        const confirmationSignatures: SignatureLike[] = Array.from(
+            signatureMap.values()
         );
 
-        // 4. Get all collected signatures for this join channel request
-
-        // Filter out the original requester's signature to get confirmation signatures
-        const confirmationSignatures: SignatureLike[] = [];
-        for (const [signerAddress, signature] of signatureMap.entries()) {
-            if (signerAddress !== joinChannel.participant) {
-                confirmationSignatures.push(signature);
-            }
-        }
-
-        const joinChannelBlock = {
-            joinChannels: [joinChannel],
-            previousBlockHash
+        // Create join channel confirmation structure
+        const joinChannelConfirmation: JoinChannelConfirmationStruct = {
+            signedJoinChannel: {
+                encodedJoinChannel: Codec.encode(joinChannel, Type.JoinChannel),
+                signature: joinerSignature.toString()
+            },
+            signatures: confirmationSignatures.map((signature) =>
+                signature.toString()
+            )
         };
-
-        // Create 2D array structure: confirmationSignatures[i] = signatures for joinChannels[i]
-        const confirmationSignatures2D: BytesLike[][] = [
-            confirmationSignatures.map((signature) => signature.toString())
-        ];
 
         const dispute =
             await this.disputeFactory.createJoinChannelDispute(joinChannel);
 
         // 5. gossip the dispute and collect signatures of the joiners
 
-        const signedDispute = await EvmUtils.signDispute(
-            dispute,
-            this.mainRpcService.p2pManager.p2pSigner
-        );
-
-        const disputeConfirmation = {
-            signedDispute: signedDispute,
-            signatures: ["0x00"] // TODO: add signatures
-        };
-
         // 6. submit to chain
         this.scmContract.joinChannel(
             joinChannel.channelId,
-            joinChannelBlock,
-            disputeConfirmation,
-            confirmationSignatures2D
+            [joinChannelConfirmation],
+            dispute
         );
     }
 }

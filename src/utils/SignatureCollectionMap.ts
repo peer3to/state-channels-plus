@@ -47,6 +47,16 @@ export class SignatureCollectionMap {
         this.timeouts.set(key, timeoutId);
     }
 
+    public initializeKey(key: string, options?: options): void {
+        if (!this.map.has(key)) {
+            this.map.set(key, new Map());
+        }
+
+        if (options?.timeoutMs) {
+            this.setTimeout(key, options.timeoutMs);
+        }
+    }
+
     private clearTimeout(key: string): void {
         const existingTimeout = this.timeouts.get(key);
         if (existingTimeout) {
