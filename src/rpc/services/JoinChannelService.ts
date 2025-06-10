@@ -13,7 +13,7 @@ import { getActiveParticipants } from "@/utils/participantUtils";
 import { BytesLike } from "ethers";
 import { Storage } from "@/storage";
 import { AStateChannelManagerProxy } from "@typechain-types/index";
-import { DisputeFactory } from "./DisputeFactory";
+import { DisputeFactory } from "../../DisputeFactory";
 
 enum ValidationFlag {
     VALID,
