@@ -59,31 +59,29 @@ export class StorageModule implements IStorageModule {
         fork?: number,
         height?: number
     ): void {
+        const hasKeys =
+            blockHash !== undefined &&
+            fork !== undefined &&
+            height !== undefined;
         if ("signedBlock" in blockData && "signatures" in blockData) {
-            if (blockHash && fork && height) {
-                this.blockStorageModule.insertBlock(
-                    blockData,
-                    blockHash,
-                    fork,
-                    height
-                );
-                return;
-            } else {
-                this.blockStorageModule.insertBlock(blockData);
-                return;
-            }
+            return hasKeys
+                ? this.blockStorageModule.insertBlock(
+                      blockData,
+                      blockHash,
+                      fork,
+                      height
+                  )
+                : this.blockStorageModule.insertBlock(blockData);
         }
 
-        if (blockHash && fork && height) {
-            this.blockStorageModule.insertBlock(
-                blockData,
-                blockHash,
-                fork,
-                height
-            );
-        } else {
-            this.blockStorageModule.insertBlock(blockData);
-        }
+        return hasKeys
+            ? this.blockStorageModule.insertBlock(
+                  blockData,
+                  blockHash,
+                  fork,
+                  height
+              )
+            : this.blockStorageModule.insertBlock(blockData);
     }
 
     getBlockConfirmation(
