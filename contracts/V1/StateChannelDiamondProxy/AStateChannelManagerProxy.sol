@@ -367,4 +367,18 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         );
         return abi.decode(result, (bool, bytes));
     }
+
+    function multicall(bytes[] calldata calls) external override returns (bytes[] memory results) {
+        results = new bytes[](calls.length);
+        for (uint256 i = 0; i < calls.length; i++) {
+            (bool success, bytes memory result) = address(this).delegatecall(calls[i]);
+            if (!success) {
+                // Bubble up the revert reason
+                assembly {
+                    revert(add(result, 32), mload(result))
+                }
+            }
+            results[i] = result;
+        }
+    }
 }

@@ -6,7 +6,9 @@ import {
     ForkMilestoneProofStruct,
     StateSnapshotStruct,
     ExitChannelBlockStruct,
-    JoinChannelConfirmationStruct
+    JoinChannelConfirmationStruct,
+    DisputeProofStruct,
+    DisputeStruct
 } from "@typechain-types/contracts/V1/DataTypes";
 import { Codec, EvmUtils, SignatureCollectionMap, Type } from "@/utils";
 import Clock from "@/Clock";
@@ -329,23 +331,6 @@ class JoinChannelService extends ARpcService {
         };
     }
 
-    private async getPreviousJoinChannelBlockHash(
-        channelId: BytesLike,
-        needsStateSnapshotSubmission: boolean,
-        milestoneSnapshots: StateSnapshotStruct[]
-    ): Promise<string> {
-        if (needsStateSnapshotSubmission) {
-            // We have milestone snapshots, use the latest one
-            const latestSnapshot =
-                milestoneSnapshots[milestoneSnapshots.length - 1];
-            return latestSnapshot.latestJoinChannelBlockHash as string;
-        } else {
-            const { stateSnapshot } =
-                this.storage.getLatestOnChainStateSnapshot();
-            return stateSnapshot.latestJoinChannelBlockHash as string;
-        }
-    }
-
     private async processCompletedJoinRequest(
         joinChannel: JoinChannelStruct,
         joinerSignature: BytesLike,
@@ -355,23 +340,54 @@ class JoinChannelService extends ARpcService {
         const needsStateSnapshotSubmission =
             await this.needsStateSnapshotSubmission(joinChannel.channelId);
 
-        let milestoneSnapshots: StateSnapshotStruct[] = [];
+        // 2. Prepare multicall array
+        const calls: string[] = [];
 
-        // 2. If state snapshot submission is needed, prepare and submit
+        const dispute =
+            await this.disputeFactory.createJoinChannelDispute(joinChannel);
+
+        // 3. If state snapshot submission is needed, add it to the multicall
         if (needsStateSnapshotSubmission) {
-            const {
-                milestoneProofs,
-                milestoneSnapshots: snapshots,
-                exitChannelBlocks
-            } = await this.prepareStateSnapshotData();
+            const { milestoneProofs, milestoneSnapshots, exitChannelBlocks } =
+                await this.prepareStateSnapshotData();
 
-            milestoneSnapshots = snapshots;
-
-            await this.mainRpcService.p2pManager.stateManager.postStateSnapshot(
-                milestoneProofs,
-                milestoneSnapshots,
-                exitChannelBlocks
+            // Determine if we need dispute proof
+            const onChainForkCnt = await this.scmContract.getForkCnt(
+                joinChannel.channelId
             );
+            const onChainDisputeLength =
+                await this.scmContract.getDisputeLength(joinChannel.channelId);
+
+            if (onChainDisputeLength !== onChainForkCnt) {
+                // Need dispute proof - call updateStateSnapshotWithDispute
+                const disputeProof = await this.prepareDisputeProof(dispute);
+
+                calls.push(
+                    this.scmContract.interface.encodeFunctionData(
+                        "updateStateSnapshotWithDispute",
+                        [
+                            joinChannel.channelId,
+                            milestoneProofs,
+                            milestoneSnapshots,
+                            disputeProof,
+                            exitChannelBlocks
+                        ]
+                    )
+                );
+            } else {
+                // No dispute proof needed - call updateStateSnapshotWithoutDispute
+                calls.push(
+                    this.scmContract.interface.encodeFunctionData(
+                        "updateStateSnapshotWithoutDispute",
+                        [
+                            joinChannel.channelId,
+                            milestoneProofs,
+                            milestoneSnapshots,
+                            exitChannelBlocks
+                        ]
+                    )
+                );
+            }
         }
 
         // 4. Get all confirmation signatures from the map (original signature is not in the map)
@@ -390,17 +406,43 @@ class JoinChannelService extends ARpcService {
             )
         };
 
-        const dispute =
-            await this.disputeFactory.createJoinChannelDispute(joinChannel);
-
-        // 5. gossip the dispute and collect signatures of the joiners
-
-        // 6. submit to chain
-        this.scmContract.joinChannel(
-            joinChannel.channelId,
-            [joinChannelConfirmation],
-            dispute
+        // 5. Add join channel call to multicall
+        calls.push(
+            this.scmContract.interface.encodeFunctionData("joinChannel", [
+                joinChannel.channelId,
+                [joinChannelConfirmation],
+                dispute
+            ])
         );
+
+        // 6. Execute multicall
+
+        try {
+            const tx = await this.scmContract.multicall(calls);
+            const receipt = await tx.wait();
+
+            if (receipt?.status !== 1) {
+                throw new Error("Multicall transaction failed");
+            }
+        } catch (error) {
+            console.error("Atomic multicall failed:", error);
+        }
+    }
+
+    /**
+     * Prepare dispute proof for state snapshot update
+     */
+    private async prepareDisputeProof(
+        disputeData: DisputeStruct
+    ): Promise<DisputeProofStruct> {
+        const disputeProof: DisputeProofStruct = {
+            dispute: disputeData,
+            outputStateSnapshot: {} as StateSnapshotStruct,
+            timestamp: 0,
+            signatures: []
+        };
+
+        return disputeProof;
     }
 }
 
