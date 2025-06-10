@@ -41,28 +41,29 @@ export class BlockStorageModule {
         fork?: number,
         height?: number
     ): void {
+        const hasKeys =
+            blockHash !== undefined &&
+            fork !== undefined &&
+            height !== undefined;
+
         if (this.isBlockConfirmation(blockData)) {
-            if (blockHash && fork && height) {
-                this.insertBlockConfirmationWithKeys(
-                    blockData,
-                    blockHash,
-                    fork,
-                    height
-                );
-            } else {
-                this.insertBlockConfirmation(blockData);
-            }
+            return hasKeys
+                ? this.insertBlockConfirmationWithKeys(
+                      blockData,
+                      blockHash,
+                      fork,
+                      height
+                  )
+                : this.insertBlockConfirmation(blockData);
         } else {
-            if (blockHash && fork && height) {
-                this.insertSignedBlockWithKeys(
-                    blockData,
-                    blockHash,
-                    fork,
-                    height
-                );
-            } else {
-                this.insertSignedBlock(blockData);
-            }
+            return hasKeys
+                ? this.insertSignedBlockWithKeys(
+                      blockData,
+                      blockHash,
+                      fork,
+                      height
+                  )
+                : this.insertSignedBlock(blockData);
         }
     }
 
@@ -82,11 +83,14 @@ export class BlockStorageModule {
             return this.blockhashToBlockConfirmationStructsMap.get(
                 blockHashOrFork
             );
-        } else if (typeof blockHashOrFork === "number" && height) {
+        }
+
+        if (typeof blockHashOrFork === "number" && height) {
             // Called with fork and height
             const forkHeight: ForkHeight = [blockHashOrFork, height];
             return this.forkHeightToBlockConfirmationStructsMap.get(forkHeight);
         }
+
         return undefined;
     }
 

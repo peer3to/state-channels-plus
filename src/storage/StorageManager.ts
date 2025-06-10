@@ -67,20 +67,22 @@ export class StorageModule implements IStorageModule {
                     fork,
                     height
                 );
+                return;
             } else {
                 this.blockStorageModule.insertBlock(blockData);
+                return;
             }
+        }
+
+        if (blockHash && fork && height) {
+            this.blockStorageModule.insertBlock(
+                blockData,
+                blockHash,
+                fork,
+                height
+            );
         } else {
-            if (blockHash && fork && height) {
-                this.blockStorageModule.insertBlock(
-                    blockData,
-                    blockHash,
-                    fork,
-                    height
-                );
-            } else {
-                this.blockStorageModule.insertBlock(blockData);
-            }
+            this.blockStorageModule.insertBlock(blockData);
         }
     }
 
@@ -99,12 +101,15 @@ export class StorageModule implements IStorageModule {
             return this.blockStorageModule.getBlockConfirmation(
                 blockHashOrFork
             );
-        } else if (typeof blockHashOrFork === "number" && height) {
+        }
+
+        if (typeof blockHashOrFork === "number" && height) {
             return this.blockStorageModule.getBlockConfirmation(
                 blockHashOrFork,
                 height
             );
         }
+
         return undefined;
     }
 
@@ -116,7 +121,10 @@ export class StorageModule implements IStorageModule {
     ): void {
         if (typeof blockHashOrFork === "string") {
             this.blockStorageModule.deleteBlockConfirmation(blockHashOrFork);
-        } else if (typeof blockHashOrFork === "number" && height) {
+            return;
+        }
+
+        if (typeof blockHashOrFork === "number" && height) {
             this.blockStorageModule.deleteBlockConfirmation(
                 blockHashOrFork,
                 height
