@@ -159,7 +159,7 @@ contract StateSnapshotFacet is StateChannelCommon {
 
         // Merge participants with deduplication
         address[] memory uniqueParticipants =
-            StateChannelUtilLibrary.concatAddressArraysNoDuplicates(snapshotParticipants, pendingParticpants);
+            StateChannelUtilLibrary.concatenateWithoutDuplicates(snapshotParticipants, pendingParticpants);
 
         // Pre-allocate maximum possible size
         address[] memory result = new address[](uniqueParticipants.length);
