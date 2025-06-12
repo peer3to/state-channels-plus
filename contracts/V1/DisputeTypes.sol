@@ -217,7 +217,6 @@ struct DisputeAuditingData {
     StateSnapshot[] milestoneSnapshots; //for K milestones there will be K-1 snapshots, since the first milestone is the genesisSnapshot
     bytes latestStateStateMachineState;
     JoinChannelBlock[] joinChannelBlocks;
-    uint256 timestamp;
     // ========================== optional ===============================
     Dispute previousDispute; // (optional) needed to verify 'this' dispute genesis against the previous dispute outputSnapshot or genesisSnapshot (in the case of a recursive dispute) - if not present, genesis is the latest on-chain Snapshot
     uint256 previousDisputeTimestamp; // (optional) needed to verify the commitment of the previous dispute
@@ -234,4 +233,11 @@ struct DisputeData {
 //Experimental - yet to be determined if needed and what should be the context
 struct FraudProofVerificationContext {
     bytes32 channelId;
+}
+
+struct DisputeOutputState {
+    bytes encodedModifiedState;
+    ExitChannelBlock exitBlock;
+    Balance totalDeposits;
+    Balance totalWithdrawals;
 }
