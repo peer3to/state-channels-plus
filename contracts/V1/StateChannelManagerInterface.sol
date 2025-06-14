@@ -38,12 +38,6 @@ abstract contract StateChannelManagerInterface {
 
     function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256);
 
-    function getChainLatestBlockTimestamp(bytes32 channelId, bytes32 forkId, uint256 maxTransactionCnt)
-        public
-        view
-        virtual
-        returns (uint256);
-
     function executeStateTransitionOnState(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
         public
         virtual
@@ -77,7 +71,7 @@ abstract contract StateChannelManagerInterface {
 
     function updateStateSnapshotWithDispute(
         bytes32 channelId,
-        ForkMilestoneProof[] memory milestoneProofs,
+        MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         DisputeProof memory disputeProof,
         ExitChannelBlock[] memory exitChannelBlocks
@@ -85,7 +79,7 @@ abstract contract StateChannelManagerInterface {
 
     function updateStateSnapshotWithoutDispute(
         bytes32 channelId,
-        ForkMilestoneProof[] memory milestoneProofs,
+        MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         ExitChannelBlock[] memory exitChannelBlocks
     ) public virtual;

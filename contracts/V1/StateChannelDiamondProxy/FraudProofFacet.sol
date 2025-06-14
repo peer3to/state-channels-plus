@@ -342,7 +342,7 @@ contract FraudProofFacet is StateChannelCommon {
 
         // check if the recursive dispute extend the lashes
         require(
-            invalidRecursiveDispute.outputStateSnapshotHash == keccak256(invalidRecursiveDisputeOutputState),
+            invalidRecursiveDispute.outputSnapshotDataHash == keccak256(invalidRecursiveDisputeOutputState.snapshotData),
             ErrorInvalidDisputeOutputState()
         );
 
@@ -357,13 +357,12 @@ contract FraudProofFacet is StateChannelCommon {
 
     function _getLatestHeight(StateProof memory stateProof) internal pure returns (uint256) {
         if (stateProof.signedBlocks.length == 0) {
-            uint256 lastMilestoneBlockConfirmationIndex = stateProof.forkProof.forkMilestoneProofs[stateProof
-                .forkProof
-                .forkMilestoneProofs
-                .length - 1].blockConfirmations.length - 1;
+            uint256 lastMilestoneBlockConfirmationIndex =
+                stateProof.milestones[stateProof.milestones.length - 1].blockConfirmations.length - 1;
             Block memory lastMilestoneBlockConfirmation = abi.decode(
-                stateProof.forkProof.forkMilestoneProofs[stateProof.forkProof.forkMilestoneProofs.length - 1]
-                    .blockConfirmations[lastMilestoneBlockConfirmationIndex].signedBlock.encodedBlock,
+                stateProof.milestones[stateProof.milestones.length - 1].blockConfirmations[lastMilestoneBlockConfirmationIndex]
+                    .signedBlock
+                    .encodedBlock,
                 (Block)
             );
             return lastMilestoneBlockConfirmation.transaction.header.transactionCnt;

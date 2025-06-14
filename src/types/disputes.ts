@@ -27,16 +27,12 @@ export enum FraudProofType {
     DisputeInvalidExitChannelBlocks = 15
 }
 
-export const ForkMilestoneProofEthersType = `tuple(
+export const MilestoneProofEthersType = `tuple(
     ${BlockConfirmationEthersType}[] blockConfirmations
 )`;
 
-export const ForkProofEthersType = `tuple(
-    ${ForkMilestoneProofEthersType}[] forkMilestoneProofs
-)`;
-
 export const StateProofEthersType = `tuple(
-    ${ForkProofEthersType} forkProof,
+    ${MilestoneProofEthersType}[] milestones,
     ${SignedBlockEthersType}[] signedBlocks
 )`;
 
@@ -54,7 +50,7 @@ export const DisputeEthersType = `tuple(
     ${ProofEthersType}[] fraudProofs,
     address[] onChainSlashes,
     bytes32 onChainLatestJoinChannelBlockHash,
-    bytes32 outputStateSnapshotHash,
+    bytes32 outputSnapshotDataHash,
     ${ExitChannelBlockEthersType}[] exitChannelBlocks,
     bytes32 disputeAuditingDataHash,
     address disputer,

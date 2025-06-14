@@ -9,7 +9,7 @@ import "./StateChannelUtilLibrary.sol";
 contract StateSnapshotFacet is StateChannelCommon {
     function updateStateSnapshotWithDispute(
         bytes32 channelId,
-        ForkMilestoneProof[] memory milestoneProofs,
+        MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         DisputeProof memory disputeProof,
         ExitChannelBlock[] memory exitChannelBlocks
@@ -24,7 +24,7 @@ contract StateSnapshotFacet is StateChannelCommon {
 
     function updateStateSnapshotWithoutDispute(
         bytes32 channelId,
-        ForkMilestoneProof[] memory milestoneProofs,
+        MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         ExitChannelBlock[] memory exitChannelBlocks
     ) external onlySelf {
@@ -57,13 +57,13 @@ contract StateSnapshotFacet is StateChannelCommon {
 
     function _updateStateSnapshot(
         bytes32 channelId,
-        ForkMilestoneProof[] memory milestoneProofs,
+        MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         ExitChannelBlock[] memory exitChannelBlocks,
         StateSnapshot memory genesisStateSnapshot
     ) internal {
         // verify state proof within the fork
-        bool isStateValid = _verifyForkProof(milestoneProofs, milestoneSnapshots, genesisStateSnapshot);
+        bool isStateValid = _verifyMilestones(milestoneProofs, milestoneSnapshots, genesisStateSnapshot);
         require(isStateValid, ErrorInvalidStateProof());
 
         StateSnapshot memory onChainStateSnapshot = stateSnapshots[channelId];
@@ -84,12 +84,12 @@ contract StateSnapshotFacet is StateChannelCommon {
         emit StateSnapshotUpdated(channelId, lastProovenSnapshot, block.timestamp);
     }
 
-    function _verifyForkProof(
-        ForkMilestoneProof[] memory milestoneProofs,
+    function _verifyMilestones(
+        MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         StateSnapshot memory genesisSnapshot
     ) internal returns (bool) {
-        (bool isValid,) = AStateChannelManagerProxy(address(this)).verifyForkProof(
+        (bool isValid,) = AStateChannelManagerProxy(address(this)).verifyMilestones(
             milestoneProofs, milestoneSnapshots, genesisSnapshot
         );
         return isValid;
@@ -208,6 +208,6 @@ contract StateSnapshotFacet is StateChannelCommon {
         pure
         returns (bool)
     {
-        return keccak256(abi.encode(outputStateSnapshot)) == dispute.outputStateSnapshotHash;
+        return keccak256(abi.encode(outputStateSnapshot.snapshotData)) == dispute.outputSnapshotDataHash;
     }
 }

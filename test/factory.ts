@@ -129,7 +129,7 @@ export function dispute(overrides: Partial<DisputeStruct> = {}): DisputeStruct {
         genesisSnapshotDataHash: ethers.hexlify(ethers.randomBytes(32)),
         latestStateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
         stateProof: {
-            forkProof: { forkMilestoneProofs: [] },
+            milestones: [],
             signedBlocks: []
         },
         fraudProofs: [],
@@ -137,7 +137,7 @@ export function dispute(overrides: Partial<DisputeStruct> = {}): DisputeStruct {
         onChainLatestJoinChannelBlockHash: ethers.hexlify(
             ethers.randomBytes(32)
         ),
-        outputStateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
+        outputSnapshotDataHash: ethers.hexlify(ethers.randomBytes(32)),
         exitChannelBlocks: [],
         disputeAuditingDataHash: ethers.hexlify(ethers.randomBytes(32)),
         disputer: ethers.ZeroAddress,

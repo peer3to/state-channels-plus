@@ -17,8 +17,7 @@ contract DisputeTypes {
         DisputeInvalidStateProof memory j,
         DisputeInvalidPreviousRecursiveProof memory k,
         DisputeInvalidExitChannelBlocksProof memory l,
-        ForkMilestoneProof memory m,
-        ForkProof memory n,
+        MilestoneProof memory m,
         StateProof memory o,
         Proof memory p,
         ProofType q
@@ -43,7 +42,7 @@ struct Dispute {
     bytes32 onChainLatestJoinChannelBlockHash;
     /// @notice Hash of output state (latest on-chain state)
     /// @dev created after from dispute resolution
-    bytes32 outputStateSnapshotHash;
+    bytes32 outputSnapshotDataHash;
     /// @notice Stores all exits since genesis
     /// @dev the time range of the exit is from genesis to the challenge deadline (new fork)
     ExitChannelBlock[] exitChannelBlocks;
@@ -74,9 +73,20 @@ struct DisputeConfirmation {
 
 struct DisputeWindow {
     bytes32 forkId;
+    DisputeWindowEvidence evidence;
+    DisputeWindowReducedResult reducedResult;
+}
+
+struct DisputeWindowEvidence {
     uint256 creationTimestamp;
     bytes32[] disputeCommitments;
     mapping(address => bool) hasPosted; // inefficient, occupies a whole storage slot for a single bit - idealy we do a bitmask later as a f(participants) -> makes it also easy to delete the entire bitmask later. For now this is ok.
+}
+
+struct DisputeWindowReducedResult {
+    bytes32 reducedForkId;
+    uint256 reductionTimestamp;
+    address reducer;
 }
 
 struct ReduceOutput {
@@ -92,19 +102,15 @@ struct OnChainSlash {
     uint256 timestamp;
 }
 
-struct ForkMilestoneProof {
+struct MilestoneProof {
     BlockConfirmation[] blockConfirmations;
-}
-
-struct ForkProof {
-    ForkMilestoneProof[] forkMilestoneProofs;
 }
 
 /// @notice Proof of state finality within a fork
 struct StateProof {
     /// @dev proves the last finalized block in the fork
-    ForkProof forkProof;
-    /// @dev a list of signed blocks that cryptographically connect the last milestone in the forkProof
+    MilestoneProof[] milestones;
+    /// @dev a list of signed blocks that cryptographically connect the last milestone in the milestones
     SignedBlock[] signedBlocks;
 }
 
@@ -217,9 +223,6 @@ struct DisputeAuditingData {
     StateSnapshot[] milestoneSnapshots; //for K milestones there will be K-1 snapshots, since the first milestone is the genesisSnapshot
     bytes latestStateStateMachineState;
     JoinChannelBlock[] joinChannelBlocks;
-    // ========================== optional ===============================
-    Dispute previousDispute; // (optional) needed to verify 'this' dispute genesis against the previous dispute outputSnapshot or genesisSnapshot (in the case of a recursive dispute) - if not present, genesis is the latest on-chain Snapshot
-    uint256 previousDisputeTimestamp; // (optional) needed to verify the commitment of the previous dispute
 }
 
 struct DisputeData {
@@ -240,4 +243,11 @@ struct DisputeOutputState {
     ExitChannelBlock exitBlock;
     Balance totalDeposits;
     Balance totalWithdrawals;
+}
+
+struct DisputeProof {
+    Dispute dispute;
+    StateSnapshot outputStateSnapshot;
+    uint256 timestamp;
+    bytes[] signatures;
 }

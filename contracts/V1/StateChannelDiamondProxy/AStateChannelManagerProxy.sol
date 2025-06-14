@@ -302,15 +302,6 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         return StateChannelCommon.getBlockCallDataCommitment(channelId, forkId, blockHeight, participant);
     }
 
-    function getChainLatestBlockTimestamp(bytes32 channelId, bytes32 forkId, uint256 maxTransactionCnt)
-        public
-        view
-        override(StateChannelCommon, StateChannelManagerInterface)
-        returns (uint256)
-    {
-        return StateChannelCommon.getChainLatestBlockTimestamp(channelId, forkId, maxTransactionCnt);
-    }
-
     function isChannelOpen(bytes32 channelId)
         public
         view
@@ -322,7 +313,7 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
 
     function updateStateSnapshotWithDispute(
         bytes32 channelId,
-        ForkMilestoneProof[] memory milestoneProofs,
+        MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         DisputeProof memory disputeProof,
         ExitChannelBlock[] memory exitChannelBlocks
@@ -338,7 +329,7 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
 
     function updateStateSnapshotWithoutDispute(
         bytes32 channelId,
-        ForkMilestoneProof[] memory milestoneProofs,
+        MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         ExitChannelBlock[] memory exitChannelBlocks
     ) public override {
@@ -351,14 +342,14 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         );
     }
 
-    function verifyForkProof(
-        ForkMilestoneProof[] memory milestoneProofs,
+    function verifyMilestones(
+        MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         StateSnapshot memory genesisSnapshot
     ) public returns (bool isValid, bytes memory lastBlockEncoded) {
         bytes memory result = _delegatecall(
             address(disputeManagerFacet),
-            abi.encodeCall(disputeManagerFacet.verifyForkProof, (milestoneProofs, milestoneSnapshots, genesisSnapshot))
+            abi.encodeCall(disputeManagerFacet.verifyMilestones, (milestoneProofs, milestoneSnapshots, genesisSnapshot))
         );
         return abi.decode(result, (bool, bytes));
     }

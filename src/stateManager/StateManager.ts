@@ -3,7 +3,7 @@ import {
     SignedBlockStruct,
     BlockStruct,
     StateSnapshotStruct,
-    ForkMilestoneProofStruct,
+    MilestoneProofStruct,
     ExitChannelBlockStruct,
     DisputeProofStruct,
     SignedDisputeStruct,
@@ -435,7 +435,7 @@ class StateManager {
     }
 
     public async postStateSnapshot(
-        milestoneProofs: ForkMilestoneProofStruct[],
+        milestoneProofs: MilestoneProofStruct[],
         milestoneSnapshots: StateSnapshotStruct[],
         exitChannelBlocks: ExitChannelBlockStruct[] = []
     ) {

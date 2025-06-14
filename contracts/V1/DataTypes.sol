@@ -16,9 +16,7 @@ contract DataTypes {
         ExitChannel memory k,
         ExitChannelBlock memory l,
         Timeout memory m,
-        StateSnapshot memory n,
-        DisputeProof memory o,
-        SignedDispute memory p
+        StateSnapshot memory n
     ) {}
 }
 
@@ -132,11 +130,4 @@ struct SnapshotData {
     Balance totalDeposits;
     /// @dev sum of all the amounts in the exitChannel blockchain
     Balance totalWithdrawals;
-}
-
-struct DisputeProof {
-    Dispute dispute;
-    StateSnapshot outputStateSnapshot;
-    uint256 timestamp;
-    bytes[] signatures;
 }

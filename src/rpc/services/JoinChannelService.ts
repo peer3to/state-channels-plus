@@ -3,7 +3,7 @@ import { ARpcService, MainRpcService } from "@/rpc";
 import {
     SignedJoinChannelStruct,
     JoinChannelStruct,
-    ForkMilestoneProofStruct,
+    MilestoneProofStruct,
     StateSnapshotStruct,
     ExitChannelBlockStruct
 } from "@typechain-types/contracts/V1/DataTypes";
@@ -231,7 +231,7 @@ class JoinChannelService extends ARpcService {
      * also, this function does not belong here, probably belongs to the state manager or maybe the agreement manager
      */
     private async prepareStateSnapshotData(): Promise<{
-        milestoneProofs: ForkMilestoneProofStruct[];
+        milestoneProofs: MilestoneProofStruct[];
         milestoneSnapshots: StateSnapshotStruct[];
         exitChannelBlocks: ExitChannelBlockStruct[];
     }> {

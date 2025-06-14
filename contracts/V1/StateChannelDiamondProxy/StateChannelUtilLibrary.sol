@@ -217,4 +217,26 @@ library StateChannelUtilLibrary {
 
         return finalResult;
     }
+
+    function insertIntoAddressArrayNoDuplicates(address[] memory array, address newAddress)
+        internal
+        pure
+        returns (address[] memory)
+    {
+        // Check if the address is already in the array
+        for (uint256 i = 0; i < array.length; i++) {
+            if (array[i] == newAddress) {
+                return array; // Address already exists, return the original array
+            }
+        }
+
+        // If not found, create a new array with one additional slot
+        address[] memory newArray = new address[](array.length + 1);
+        for (uint256 i = 0; i < array.length; i++) {
+            newArray[i] = array[i];
+        }
+        newArray[array.length] = newAddress; // Add the new address at the end
+
+        return newArray;
+    }
 }

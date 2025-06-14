@@ -28,6 +28,9 @@ error ErrorCantParticipateInDispute();
 
 //Reduce errors
 error ErrorNoDisputesProvided();
+error ErrorDisputesLenghtMismatch();
+error ErrorDisputeKillPeriodNotExpired();
+error ErrorDisputeAlreadyReduced();
 
 //Auditing errors
 error ErrorDisputeAuditingRequired();

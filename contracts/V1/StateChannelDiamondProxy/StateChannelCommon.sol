@@ -19,7 +19,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return slashedParticipants;
     }
 
-    //This is executed only after sucessful auditing -> can safely add/insert participants without checking for duplicates (otherwise auditing would have failed)
     function addOnChainSlashedParticipants(bytes32 channelId, address slashedParticipant) internal virtual {
         disputeData[channelId].onChainSlashes.push(OnChainSlash(slashedParticipant, block.timestamp));
     }
@@ -33,15 +32,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             ),
             getOnChainSlashedParticipants(channelId)
         );
-    }
-
-    function getDisputeLength(bytes32 channelId) public view virtual returns (uint256) {
-        return disputeData[channelId].disputeCommitments.length;
-    }
-
-    function getLatestDisputeCommitment(bytes32 channelId) public view virtual returns (bytes32) {
-        uint256 index = getDisputeLength(channelId) - 1;
-        return disputeData[channelId].disputeCommitments[index];
     }
 
     function getSnapshotParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
@@ -109,15 +99,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return (true, commitment);
     }
 
-    function getChainLatestBlockTimestamp(bytes32 channelId, bytes32 forkId, uint256 maxTransactionCnt)
-        public
-        view
-        virtual
-        returns (uint256)
-    {
-        //TODO
-    }
-
     function isChannelOpen(bytes32 channelId) public view virtual returns (bool) {
         return stateSnapshots[channelId].snapshotData.participants.length > 0;
     }
@@ -131,110 +112,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             return (false, bytes32(0));
         }
         return (true, disputeData[channelId].disputeCommitments[disputeIndex]);
-    }
-
-    function _isCorrectDisputeCommitment(Dispute memory dispute, uint256 timestamp) internal view returns (bool) {
-        bytes32 channelId = dispute.channelId;
-        bytes32 commitment = keccak256(abi.encode(dispute, timestamp));
-        DisputeData storage _disputeData = disputeData[channelId];
-        if (dispute.disputeIndex >= _disputeData.disputeCommitments.length) {
-            return false;
-        }
-        if (commitment != _disputeData.disputeCommitments[dispute.disputeIndex]) {
-            return false;
-        }
-        return true;
-    }
-
-    function _isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        internal
-        view
-        returns (bool)
-    {
-        //check dispute commits to disputeData
-        if (dispute.disputeAuditingDataHash != keccak256(abi.encode(disputeAuditingData))) {
-            return false;
-        }
-        //check dispute commits to genesisStateSnapshot
-        if (dispute.genesisSnapshotDataHash != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshot))) {
-            return false;
-        }
-        //check latestStateSnapshot
-        if (dispute.latestStateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))) {
-            return false;
-        }
-        //check latestStateStateMachineState
-        if (
-            disputeAuditingData.latestStateSnapshot.stateMachineStateHash
-                != keccak256(disputeAuditingData.latestStateStateMachineState)
-        ) {
-            return false;
-        }
-        // Previous dispute should be set and will be used to check genesis
-        if (
-            !_isCorrectDisputeCommitment(
-                disputeAuditingData.previousDispute, disputeAuditingData.previousDisputeTimestamp
-            )
-        ) {
-            return false;
-        }
-        //Commitment exists - check if it's the right one
-        //if disputing latest fork -> should be previous (this -1) dispute
-        if (
-            dispute.previousRecursiveDisputeIndex == type(uint256).max
-                && (dispute.disputeIndex - 1) != disputeAuditingData.previousDispute.disputeIndex
-        ) {
-            return false;
-        }
-        //if disputing recursive dispute - should be linked
-        if (dispute.previousRecursiveDisputeIndex != disputeAuditingData.previousDispute.disputeIndex) {
-            return false;
-        }
-
-        //check joinChannelBlocks (linked to latestSateSnapshot, chained internally and outputStateSnapshot commits to the head)
-        bytes32 previousJoinChannelBlockHash = disputeAuditingData.latestStateSnapshot.latestJoinChannelBlockHash;
-        for (uint256 i = 0; i < disputeAuditingData.joinChannelBlocks.length; i++) {
-            if (previousJoinChannelBlockHash != disputeAuditingData.joinChannelBlocks[i].previousBlockHash) {
-                return false;
-            }
-            previousJoinChannelBlockHash = keccak256(abi.encode(disputeAuditingData.joinChannelBlocks[i]));
-        }
-        return previousJoinChannelBlockHash == disputeAuditingData.outputStateSnapshot.latestExitChannelBlockHash;
-    }
-
-    // Doesn't do any checks and just applies all slashes, removals and joins to a specific stateMachineState and generates the outputStateMachineState - similar logic to playTransaction in the typescript code - this is done to help the backer generate a correct output state while forging the dispute
-    function generateDisputeOutputState(
-        bytes memory encodedStateMachineState,
-        address[] memory slashParticipants,
-        address[] memory removeParticipants,
-        JoinChannelBlock[] memory joinChannelBlocks,
-        StateSnapshot memory latestStateSnapshot
-    ) public returns (DisputeOutputState memory outputState) {
-        outputState.totalDeposits = latestStateSnapshot.totalDeposits;
-        outputState.totalWithdrawals = latestStateSnapshot.totalWithdrawals;
-
-        // Apply joins
-        outputState.encodedModifiedState =
-            _applyJoins(encodedStateMachineState, joinChannelBlocks, outputState.totalDeposits);
-
-        // Apply slashes
-        ExitChannel[] memory slashExitChannels;
-        (outputState.encodedModifiedState, slashExitChannels) =
-            _applySlashes(outputState.encodedModifiedState, slashParticipants);
-
-        // Apply removals
-        ExitChannel[] memory removalExitChannels;
-        (outputState.encodedModifiedState, removalExitChannels) =
-            _applyRemovals(outputState.encodedModifiedState, removeParticipants);
-
-        // Combine exit channels and calculate totals
-        ExitChannel[] memory allExitChannels =
-            StateChannelUtilLibrary.concatExitChannelArrays(slashExitChannels, removalExitChannels);
-        outputState.totalWithdrawals = _calculateTotalWithdrawals(outputState.totalWithdrawals, allExitChannels);
-
-        outputState.exitBlock = _formExitChannelBlock(latestStateSnapshot.latestExitChannelBlockHash, allExitChannels);
-
-        return outputState;
     }
 
     function _applyJoins(
