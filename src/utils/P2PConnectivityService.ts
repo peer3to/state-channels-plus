@@ -65,7 +65,6 @@ export class P2PConnectivityService {
         }
     }
 
-    // Browser-specific detection using WebRTC
     private async detectExternalNetworkAddress(): Promise<
         Array<{ ip: string; port: number; server: string }>
     > {
