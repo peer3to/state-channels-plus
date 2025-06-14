@@ -1,3 +1,6 @@
+// @ts-ignore - get-webrtc doesn't have TypeScript declarations
+import { RTCPeerConnection } from "get-webrtc";
+
 export interface P2PConnectivityInfo {
     canHolePunch: boolean;
     connectivityType:
@@ -12,30 +15,6 @@ export interface P2PConnectivityInfo {
     isUDPBlocked: boolean;
     hasIPv6: boolean;
     details: string; // Human readable explanation
-}
-
-export enum PeerEnvironment {
-    BROWSER,
-    NODE,
-    UNSUPPORTED
-}
-
-function detectEnvironment(): PeerEnvironment {
-    if (typeof window !== "undefined") {
-        if (typeof window.RTCPeerConnection !== "undefined") {
-            return PeerEnvironment.BROWSER;
-        } else {
-            return PeerEnvironment.UNSUPPORTED;
-        }
-    } else if (
-        typeof process !== "undefined" &&
-        process.versions &&
-        process.versions.node
-    ) {
-        return PeerEnvironment.NODE;
-    } else {
-        return PeerEnvironment.UNSUPPORTED;
-    }
 }
 
 export class P2PConnectivityService {
@@ -71,22 +50,9 @@ export class P2PConnectivityService {
         const allResults: Array<{ ip: string; port: number; server: string }> =
             [];
 
-        const environment = detectEnvironment();
-
-        if (environment === PeerEnvironment.UNSUPPORTED) {
-            throw new Error(
-                "Unsupported environment - cannot perform NAT detection"
-            );
-        }
-
-        const detectionFunction =
-            environment === PeerEnvironment.BROWSER
-                ? this.testSTUNBrowser.bind(this)
-                : this.testSTUNNode.bind(this);
-
         for (const stunServer of this.stunServers) {
             try {
-                const result = await detectionFunction(stunServer);
+                const result = await this.testSTUN(stunServer);
                 if (result) {
                     allResults.push({ ...result, server: stunServer });
                 }
@@ -97,8 +63,7 @@ export class P2PConnectivityService {
         return allResults;
     }
 
-    // Browser STUN testing using WebRTC
-    private async testSTUNBrowser(
+    private async testSTUN(
         stunServer: string
     ): Promise<{ ip: string; port: number } | null> {
         return new Promise((resolve) => {
@@ -110,7 +75,7 @@ export class P2PConnectivityService {
 
             const cleanup = () => pc.close();
 
-            pc.onicecandidate = (event) => {
+            pc.onicecandidate = (event: any) => {
                 if (event.candidate) {
                     const c = event.candidate;
                     if (c.type === "srflx" && c.address && c.port && !result) {
@@ -127,7 +92,7 @@ export class P2PConnectivityService {
 
             pc.createDataChannel("singleTest");
             pc.createOffer()
-                .then((offer) => pc.setLocalDescription(offer))
+                .then((offer: any) => pc.setLocalDescription(offer))
                 .catch(() => {
                     if (!done) {
                         done = true;
@@ -144,25 +109,6 @@ export class P2PConnectivityService {
                 }
             }, 5000);
         });
-    }
-
-    // Node.js STUN testing
-    private async testSTUNNode(
-        stunServer: string
-    ): Promise<{ ip: string; port: number } | null> {
-        try {
-            const stun = require("stun");
-
-            const response = await stun.request(stunServer);
-            const { address, port } = response.getXorAddress();
-            return {
-                ip: address,
-                port: port
-            };
-        } catch (error) {
-            console.warn(`STUN library test failed for ${stunServer}:`, error);
-            return null;
-        }
     }
 
     private isIPv6(ip: string): boolean {
