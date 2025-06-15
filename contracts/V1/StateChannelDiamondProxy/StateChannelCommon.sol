@@ -85,6 +85,10 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return (p2pTime, agreementTime, chainFallbackTime, challengeTime);
     }
 
+    function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow) internal view returns (bool) {
+        return block.timestamp > disputeWindow.reducedResult.reductionTimestamp + getChallengeTime();
+    }
+
     function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
         public
         view
@@ -101,17 +105,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
 
     function isChannelOpen(bytes32 channelId) public view virtual returns (bool) {
         return stateSnapshots[channelId].snapshotData.participants.length > 0;
-    }
-
-    function getDisputeCommitment(bytes32 channelId, uint256 disputeIndex)
-        public
-        view
-        returns (bool found, bytes32 disputeCommitment)
-    {
-        if (disputeIndex >= disputeData[channelId].disputeCommitments.length) {
-            return (false, bytes32(0));
-        }
-        return (true, disputeData[channelId].disputeCommitments[disputeIndex]);
     }
 
     function _applyJoins(

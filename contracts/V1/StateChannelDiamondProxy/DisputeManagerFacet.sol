@@ -7,7 +7,7 @@ import "./Errors.sol";
 
 contract DisputeManagerFacet is StateChannelCommon {
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public {
-        Dispute memory dispute = abi.decode(disputeConfirmation.encodedDispute, (Dispute));
+        Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         require(msg.sender == dispute.disputer, ErrorDisputerNotMsgSender());
         require(_canParticipateInDisputes(dispute.channelId, msg.sender), ErrorCantParticipateInDispute());
 
@@ -15,7 +15,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         _disputeRaceConditionCheck(dispute);
 
         DisputeData storage disputeData = disputeData[dispute.channelId];
-        DisputeData storage disputeWindowMap = disputeData.disputeWindowMap;
+        mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
         bytes32 forkId = dispute.genesisSnapshotDataHash;
         DisputeWindow storage disputeWindow = disputeWindowMap[forkId];
         bool isThresholdFinal = _isDisputeThresholdFinal(disputeConfirmation);
@@ -47,7 +47,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         disputeWindow.evidence.disputeCommitments.push(keccak256(abi.encode(dispute, block.timestamp)));
         disputeWindow.evidence.hasPosted[dispute.disputer] = true; //disputer has posted the dispute
         emit DisputeCommited(
-            dispute.channelId, dispute, block.timestamp, isThresholdFinal, disputeWindow.creationTimestamp
+            dispute.channelId, dispute, block.timestamp, isThresholdFinal, disputeWindow.evidence.creationTimestamp
         );
     }
 
@@ -56,7 +56,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         DisputeAuditingData memory disputeAuditingData
     ) public {
         uploadDispute(disputeConfirmation);
-        Dispute memory dispute = abi.decode(disputeConfirmation.encodedDispute, (Dispute));
+        Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         address[] memory slashes = AStateChannelManagerProxy(address(this)).auditDispute(dispute, disputeAuditingData);
         for (uint256 i = 0; i < slashes.length; i++) {
             addOnChainSlashedParticipants(dispute.channelId, slashes[i]);
@@ -161,7 +161,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         StateSnapshot memory stateSnapshot,
         bytes memory encodedStateMachineState,
         JoinChannelBlock[] memory joinChannelBlocks
-    ) public pure returns (SnapshotData memory outputSnapshotData) {
+    ) public returns (SnapshotData memory outputSnapshotData) {
         //verify snapshot linked to reducedOutput.latestBlock
         Block memory latestBlock = reducedOutput.latestBlock;
         require(latestBlock.stateSnapshotHash == keccak256(abi.encode(stateSnapshot)), ErrorInvalidStateSnapshot());
@@ -210,7 +210,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         require(_verifyStateProof(dispute, disputeAuditingData), ErrorDisputeStateProofInvalid());
         require(
             _verifyJoinChannelBlocks(
-                disputeAuditingData.latestStateSnapshot.latestJoinChannelBlockHash,
+                disputeAuditingData.latestStateSnapshot.snapshotData.latestJoinChannelBlockHash,
                 dispute.onChainLatestJoinChannelBlockHash,
                 disputeAuditingData.joinChannelBlocks
             ),
@@ -241,7 +241,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         SnapshotData memory outputSnapshotData = SnapshotData({
             stateMachineStateHash: keccak256(disputeOutputState.encodedModifiedState),
             participants: getStatemachineParticipants(disputeOutputState.encodedModifiedState),
-            latestJoinChannelBlockHash: disputeAuditingData.outputStateSnapshot.latestJoinChannelBlockHash, // This has been verified in _verifyJoinChannelBlocks
+            latestJoinChannelBlockHash: disputeAuditingData.outputStateSnapshot.snapshotData.latestJoinChannelBlockHash, // This has been verified in _verifyJoinChannelBlocks
             latestExitChannelBlockHash: keccak256(abi.encode(disputeOutputState.exitBlock)),
             totalDeposits: disputeOutputState.totalDeposits,
             totalWithdrawals: disputeOutputState.totalWithdrawals
@@ -275,7 +275,7 @@ contract DisputeManagerFacet is StateChannelCommon {
 
     function challengeDisputeReduction(
         Dispute[] memory disputes,
-        uint256[] disputeCreationTimestamps,
+        uint256[] memory disputeCreationTimestamps,
         uint256 disputeWindowExpirationTimestamp,
         StateSnapshot memory stateSnapshot,
         bytes memory encodedStateMachineState,
@@ -320,8 +320,8 @@ contract DisputeManagerFacet is StateChannelCommon {
         JoinChannelBlock[] memory joinChannelBlocks,
         StateSnapshot memory latestStateSnapshot
     ) public returns (DisputeOutputState memory outputState) {
-        outputState.totalDeposits = latestStateSnapshot.totalDeposits;
-        outputState.totalWithdrawals = latestStateSnapshot.totalWithdrawals;
+        outputState.totalDeposits = latestStateSnapshot.snapshotData.totalDeposits;
+        outputState.totalWithdrawals = latestStateSnapshot.snapshotData.totalWithdrawals;
 
         // Apply joins
         outputState.encodedModifiedState =
@@ -342,7 +342,8 @@ contract DisputeManagerFacet is StateChannelCommon {
             StateChannelUtilLibrary.concatExitChannelArrays(slashExitChannels, removalExitChannels);
         outputState.totalWithdrawals = _calculateTotalWithdrawals(outputState.totalWithdrawals, allExitChannels);
 
-        outputState.exitBlock = _formExitChannelBlock(latestStateSnapshot.latestExitChannelBlockHash, allExitChannels);
+        outputState.exitBlock =
+            _formExitChannelBlock(latestStateSnapshot.snapshotData.latestExitChannelBlockHash, allExitChannels);
 
         return outputState;
     }
@@ -376,7 +377,7 @@ contract DisputeManagerFacet is StateChannelCommon {
 
         // remove the dispute commitment
         disputeWindow.evidence.disputeCommitments[foundIndex] =
-            disputeWindow.evidence.disputeCommitments[disputeWindow.disputeCommitments.length - 1];
+            disputeWindow.evidence.disputeCommitments[disputeWindow.evidence.disputeCommitments.length - 1];
         disputeWindow.evidence.disputeCommitments.pop();
 
         //if dispute window is empty, delete it
@@ -450,7 +451,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
         //check commitment to latestStateStateMachineState
         if (
-            disputeAuditingData.latestStateSnapshot.stateMachineStateHash
+            disputeAuditingData.latestStateSnapshot.snapshotData.stateMachineStateHash
                 != keccak256(disputeAuditingData.latestStateStateMachineState)
         ) return false;
         return true;
@@ -511,18 +512,19 @@ contract DisputeManagerFacet is StateChannelCommon {
         StateSnapshot[] memory milestoneSnapshots,
         StateSnapshot memory genesisSnapshot
     ) public returns (bool isValid, bytes memory lastBlockEncoded) {
-        address[] memory participants = genesisSnapshot.participants;
+        address[] memory participants = genesisSnapshot.snapshotData.participants;
         StateSnapshot memory snapshot = genesisSnapshot;
         lastBlockEncoded = "";
-        // Every milestone (the final block) commits to a snapshot, that's needed to prove the next milestone => for K milestones K-1 snapshots are needed
-        if (milestoneProofs.length != milestoneSnapshots.length + 1) {
+
+        // For K milestones, K-1 snapshots are needed to prove the last milestone is final, but for cleaner code we include the K-th snapshot too, even though it doesn't have to be used
+        if (milestoneProofs.length != milestoneSnapshots.length) {
             return (false, "");
         }
 
         for (uint256 i = 0; i < milestoneProofs.length; i++) {
             MilestoneProof memory milestone = milestoneProofs[i];
             (bool isFinal, bytes32 finalizedSnapshotHash) =
-                _isMilestoneFinal(milestone, participants, snapshot.stateMachineStateHash);
+                _isMilestoneFinal(milestone, participants, snapshot.snapshotData.stateMachineStateHash);
             if (!isFinal) {
                 return (false, "");
             }
@@ -530,7 +532,7 @@ contract DisputeManagerFacet is StateChannelCommon {
                 return (false, "");
             }
             snapshot = milestoneSnapshots[i];
-            participants = milestoneSnapshots[i].participants;
+            participants = milestoneSnapshots[i].snapshotData.participants;
 
             if (i == milestoneProofs.length - 1 && milestone.blockConfirmations.length > 0) {
                 lastBlockEncoded =
@@ -576,14 +578,16 @@ contract DisputeManagerFacet is StateChannelCommon {
         returns (bool)
     {
         //check joinChannelBlocks (linked to latestSateSnapshot, chained internally and outputStateSnapshot commits to the head)
-        bytes32 previousExitChannelBlockHash = disputeAuditingData.genesisStateSnapshot.latestExitChannelBlockHash;
+        bytes32 previousExitChannelBlockHash =
+            disputeAuditingData.genesisStateSnapshot.snapshotData.latestExitChannelBlockHash;
         for (uint256 i = 0; i < dispute.exitChannelBlocks.length; i++) {
             if (previousExitChannelBlockHash != dispute.exitChannelBlocks[i].previousBlockHash) {
                 return false;
             }
             previousExitChannelBlockHash = keccak256(abi.encode(dispute.exitChannelBlocks[i]));
         }
-        return previousExitChannelBlockHash == disputeAuditingData.latestStateSnapshot.latestExitChannelBlockHash;
+        return previousExitChannelBlockHash
+            == disputeAuditingData.latestStateSnapshot.snapshotData.latestExitChannelBlockHash;
     }
 
     function _verifyBalanceInvariantCheck(
@@ -611,8 +615,8 @@ contract DisputeManagerFacet is StateChannelCommon {
         StateSnapshot storage stateSnapshot = stateSnapshots[channelId];
         bool isParticipant = false;
         //Check if normal participant
-        for (uint256 i = 0; i < stateSnapshot.participants.length; i++) {
-            if (stateSnapshot.participants[i] == participant) {
+        for (uint256 i = 0; i < stateSnapshot.snapshotData.participants.length; i++) {
+            if (stateSnapshot.snapshotData.participants[i] == participant) {
                 isParticipant = true;
                 break;
             }
@@ -662,7 +666,7 @@ contract DisputeManagerFacet is StateChannelCommon {
                     dispute.timeout.previousBlockProducer
                 );
                 if (found != dispute.timeout.previousBlockProducerPostedCalldata) {
-                    revert ErrorDisputeTimeoutPreviousBlockProducerPostedCalldataMissmatch();
+                    revert ErrorDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch();
                 }
             }
             if (block.timestamp > dispute.timeout.minTimeStamp) {
@@ -682,7 +686,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         view
         returns (bool isFinal)
     {
-        Dispute memory dispute = abi.decode(disputeConfirmation.encodedDispute, (Dispute));
+        Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         DisputeData storage disputeData = disputeData[dispute.channelId];
         SnapshotData storage snapshotData = stateSnapshots[dispute.channelId].snapshotData;
         uint256 thresholdCount = snapshotData.participants.length + disputeData.pendingParticipants.length
@@ -696,8 +700,9 @@ contract DisputeManagerFacet is StateChannelCommon {
         bytes[] memory signatures = StateChannelUtilLibrary.insertBytesInByteArray(
             disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures
         );
-        (bool isThresholdFinal,) =
-            StateChannelUtilLibrary.verifyThresholdSigned(thresholdSet, disputeConfirmation.encodedDispute, signatures);
+        (bool isThresholdFinal,) = StateChannelUtilLibrary.verifyThresholdSigned(
+            thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures
+        );
         return isThresholdFinal;
     }
 
@@ -706,14 +711,16 @@ contract DisputeManagerFacet is StateChannelCommon {
         view
         returns (bool isRequired)
     {
-        Dispute memory dispute = abi.decode(disputeConfirmation.encodedDispute, (Dispute));
+        Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         DisputeData storage disputeData = disputeData[dispute.channelId];
         SnapshotData storage snapshotData = stateSnapshots[dispute.channelId].snapshotData;
         uint256 thresholdCount = disputeData.pendingParticipants.length;
         if (disputeConfirmation.signatures.length < disputeData.pendingParticipants.length) return true;
 
         (bool isThresholdFinal,) = StateChannelUtilLibrary.verifyThresholdSigned(
-            disputeData.pendingParticipants, disputeConfirmation.encodedDispute, disputeConfirmation.signatures
+            disputeData.pendingParticipants,
+            disputeConfirmation.signedDispute.encodedDispute,
+            disputeConfirmation.signatures
         );
         return !isThresholdFinal;
     }
@@ -726,9 +733,9 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
         if (
             dispute.fraudProofs.length == 0 && dispute.onChainSlashes.length == 0
-                && dispute.timmeout.participant != address(0)
+                && dispute.timeout.participant != address(0)
         ) {
-            _removals[removalCount++] = dispute.timmeout.participant;
+            _removals[removalCount++] = dispute.timeout.participant;
         }
 
         removals = new address[](removalCount);
@@ -768,21 +775,23 @@ contract DisputeManagerFacet is StateChannelCommon {
 
         //check latestStateStateMachineState
         if (
-            disputeAuditingData.latestStateSnapshot.stateMachineStateHash
+            disputeAuditingData.latestStateSnapshot.snapshotData.stateMachineStateHash
                 != keccak256(disputeAuditingData.latestStateStateMachineState)
         ) {
             return false;
         }
 
         //check joinChannelBlocks (linked to latestSateSnapshot, chained internally and outputStateSnapshot commits to the head)
-        bytes32 previousJoinChannelBlockHash = disputeAuditingData.latestStateSnapshot.latestJoinChannelBlockHash;
+        bytes32 previousJoinChannelBlockHash =
+            disputeAuditingData.latestStateSnapshot.snapshotData.latestJoinChannelBlockHash;
         for (uint256 i = 0; i < disputeAuditingData.joinChannelBlocks.length; i++) {
             if (previousJoinChannelBlockHash != disputeAuditingData.joinChannelBlocks[i].previousBlockHash) {
                 return false;
             }
             previousJoinChannelBlockHash = keccak256(abi.encode(disputeAuditingData.joinChannelBlocks[i]));
         }
-        return previousJoinChannelBlockHash == disputeAuditingData.outputStateSnapshot.latestExitChannelBlockHash;
+        return previousJoinChannelBlockHash
+            == disputeAuditingData.outputStateSnapshot.snapshotData.latestExitChannelBlockHash;
     }
 
     function _commitToDisputeReducedResult(
@@ -805,14 +814,10 @@ contract DisputeManagerFacet is StateChannelCommon {
         return block.timestamp > disputeWindow.evidence.creationTimestamp + 2 * getChallengeTime();
     }
 
-    function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow) internal view returns (bool) {
-        return block.timestamp > disputeWindow.reducedResult.reductionTimestamp + getChallengeTime();
-    }
-
     function areDisputesCommitted(
         DisputeWindow storage disputeWindow,
         Dispute[] memory disputes,
-        uint256[] disputeCreationTimestamps
+        uint256[] memory disputeCreationTimestamps
     ) internal view returns (bool) {
         if (disputes.length != disputeWindow.evidence.disputeCommitments.length) {
             return false;

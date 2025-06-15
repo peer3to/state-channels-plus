@@ -58,7 +58,7 @@ error ErrorDisputeShouldUseSnapshotAsGenesisState();
 error ErrorDisputeOnChainSlashedParticipantsMismatch();
 error ErrorDisputeNotExpectedIndex();
 error ErrorDisputeTimeoutCalldataPosted();
-error ErrorDisputeTimeoutPreviousBlockProducerPostedCalldataMissmatch();
+error ErrorDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch();
 error ErrorDisputeTimeoutNotMinTimestamp();
 error ErrorDisputeOnChainLatestJoinChannelBlockHashMismatch();
 
@@ -142,3 +142,5 @@ error ErrorFirstExitChannelBlockInvalid();
 error ErrorExitChannelBlocksNotLinked();
 error ErrorLastSnapshotInvalid();
 error ErrorLastSnapshotDoesNotMatchGenesis();
+error ErrorSnapshotsNotProvided();
+error ErrorStanpshotForkMismatch();

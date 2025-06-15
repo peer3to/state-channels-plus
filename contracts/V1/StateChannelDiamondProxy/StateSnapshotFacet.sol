@@ -7,81 +7,66 @@ import "./Errors.sol";
 import "./StateChannelUtilLibrary.sol";
 
 contract StateSnapshotFacet is StateChannelCommon {
-    function updateStateSnapshotWithDispute(
+    function updateStateSnapshotFork(
         bytes32 channelId,
-        MilestoneProof[] memory milestoneProofs,
-        StateSnapshot[] memory milestoneSnapshots,
-        DisputeProof memory disputeProof,
+        StateSnapshot memory newStateSnapshot,
         ExitChannelBlock[] memory exitChannelBlocks
     ) external onlySelf {
-        // resolve genesis state snapshot source
-        // - if stateSnapshot(on-chain).forkId == disputeProof.forkId, then the genesis state snapshot is the on-chain stateSnapshot
-        // - otherwise, the dispute is validated and the genesis state snapshot is disputeProof.outputStateSnapshot
-        StateSnapshot memory genesisStateSnapshot = _resolveGenesisSnapshot(channelId, disputeProof);
+        StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
+        DisputeData storage disputeData = disputeData[channelId];
+        bytes32 targetForkId = newStateSnapshot.forkId;
+        require(keccak256(abi.encode(newStateSnapshot.snapshotData)) != targetForkId, ErrorInvalidStateSnapshot());
+        mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
+        DisputeWindow storage disputeWindow = disputeWindowMap[currentStateSnapshot.forkId];
+        bool updated = false;
 
-        _updateStateSnapshot(channelId, milestoneProofs, milestoneSnapshots, exitChannelBlocks, genesisStateSnapshot);
-    }
-
-    function updateStateSnapshotWithoutDispute(
-        bytes32 channelId,
-        MilestoneProof[] memory milestoneProofs,
-        StateSnapshot[] memory milestoneSnapshots,
-        ExitChannelBlock[] memory exitChannelBlocks
-    ) external onlySelf {
-        require(getDisputeLength(channelId) == getSnapshotforkId(channelId), ErrorDisputeProofRequired());
-        StateSnapshot memory onChainStateSnapshot = stateSnapshots[channelId];
-
-        _updateStateSnapshot(channelId, milestoneProofs, milestoneSnapshots, exitChannelBlocks, onChainStateSnapshot);
-    }
-
-    function _resolveGenesisSnapshot(bytes32 channelId, DisputeProof memory disputeProof)
-        internal
-        view
-        returns (StateSnapshot memory)
-    {
-        if (getDisputeLength(channelId) == getSnapshotforkId(channelId)) {
-            return stateSnapshots[channelId];
+        while (
+            disputeWindow.reducedResult.reducedForkId != bytes32(0) && _isReduceChallengePeriodExpired(disputeWindow)
+        ) {
+            if (disputeWindow.reducedResult.reducedForkId == targetForkId) {
+                _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, exitChannelBlocks);
+                updated = true;
+                break;
+            }
+            disputeWindow = disputeWindowMap[disputeWindow.reducedResult.reducedForkId];
         }
-        Dispute memory dispute = disputeProof.dispute;
-        uint256 disputeTimestamp = disputeProof.timestamp;
+        require(updated, ErrorStateSnapshotNotValid());
+    }
 
-        require(_isDisputeCommitmentValid(dispute, disputeTimestamp, channelId), ErrorDisputeProofNotValid());
+    function updateStateSnapshotSameFork(
+        bytes32 channelId,
+        MilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        ExitChannelBlock[] memory exitChannelBlocks
+    ) external onlySelf {
+        require(milestoneSnapshots.length > 0, ErrorSnapshotsNotProvided());
 
-        address[] memory addressesInThreshold = _getAddressesInThreshold(channelId);
+        StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
+        StateSnapshot memory newStateSnapshot = milestoneSnapshots[milestoneSnapshots.length - 1];
 
-        require(_isDisputeFinalized(disputeProof, addressesInThreshold), ErrorDisputeNotFinalized());
-        require(_isStateSnapshotValid(disputeProof.outputStateSnapshot, dispute), ErrorStateSnapshotNotValid());
+        require(currentStateSnapshot.forkId == newStateSnapshot.forkId, ErrorStanpshotForkMismatch());
+        require(_verifyMilestones(milestoneProofs, milestoneSnapshots, currentStateSnapshot), ErrorInvalidStateProof());
 
-        return disputeProof.outputStateSnapshot;
+        _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, exitChannelBlocks);
     }
 
     function _updateStateSnapshot(
         bytes32 channelId,
-        MilestoneProof[] memory milestoneProofs,
-        StateSnapshot[] memory milestoneSnapshots,
-        ExitChannelBlock[] memory exitChannelBlocks,
-        StateSnapshot memory genesisStateSnapshot
+        StateSnapshot memory currentOnChainSnapshot,
+        StateSnapshot memory newSnapshot,
+        ExitChannelBlock[] memory exitChannelBlocks
     ) internal {
-        // verify state proof within the fork
-        bool isStateValid = _verifyMilestones(milestoneProofs, milestoneSnapshots, genesisStateSnapshot);
-        require(isStateValid, ErrorInvalidStateProof());
-
-        StateSnapshot memory onChainStateSnapshot = stateSnapshots[channelId];
-        StateSnapshot memory lastProovenSnapshot = milestoneSnapshots[milestoneSnapshots.length - 1];
-
-        _validateExitChannelBlocks(exitChannelBlocks, onChainStateSnapshot, lastProovenSnapshot);
-
+        _validateExitChannelBlocks(exitChannelBlocks, currentOnChainSnapshot, newSnapshot);
         _applyExitChannelBlocks(channelId, exitChannelBlocks);
 
         // Update the state snapshot
-        stateSnapshots[channelId] = lastProovenSnapshot;
+        stateSnapshots[channelId] = newSnapshot;
 
-        // clear onChainSlashes
-        delete disputeData[channelId].onChainSlashes;
-        // clear pendingParticipants
-        delete disputeData[channelId].pendingParticipants;
-
-        emit StateSnapshotUpdated(channelId, lastProovenSnapshot, block.timestamp);
+        //check if last fork -> clearDisputeData
+        if (disputeData[channelId].disputeWindowMap[newSnapshot.forkId].evidence.creationTimestamp == 0) {
+            _clearDisputeData(channelId);
+        }
+        emit StateSnapshotUpdated(channelId, newSnapshot, block.timestamp);
     }
 
     function _verifyMilestones(
@@ -104,7 +89,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         if (exitChannelBlocks.length > 0) {
             // Check first block points to genesis state
             require(
-                exitChannelBlocks[0].previousBlockHash == onChainStateSnapshot.latestExitChannelBlockHash,
+                exitChannelBlocks[0].previousBlockHash == onChainStateSnapshot.snapshotData.latestExitChannelBlockHash,
                 ErrorFirstExitChannelBlockInvalid()
             );
 
@@ -118,14 +103,15 @@ contract StateSnapshotFacet is StateChannelCommon {
 
             // Verify last snapshot points to last block
             require(
-                lastProovenSnapshot.latestExitChannelBlockHash
+                lastProovenSnapshot.snapshotData.latestExitChannelBlockHash
                     == keccak256(abi.encode(exitChannelBlocks[exitChannelBlocks.length - 1])),
                 ErrorLastSnapshotInvalid()
             );
         } else {
             // If no exit blocks, verify the snapshot points to the genesis state's latest block hash
             require(
-                lastProovenSnapshot.latestExitChannelBlockHash == onChainStateSnapshot.latestExitChannelBlockHash,
+                lastProovenSnapshot.snapshotData.latestExitChannelBlockHash
+                    == onChainStateSnapshot.snapshotData.latestExitChannelBlockHash,
                 ErrorLastSnapshotDoesNotMatchGenesis()
             );
         }
@@ -141,73 +127,15 @@ contract StateSnapshotFacet is StateChannelCommon {
         }
     }
 
-    function _isDisputeCommitmentValid(Dispute memory dispute, uint256 disputeTimestamp, bytes32 channelId)
-        internal
-        view
-        returns (bool)
-    {
-        bytes32 onChainDisputeCommitment = getLatestDisputeCommitment(channelId);
-        bytes32 providedDisputeCommitment = keccak256(abi.encode(abi.encode(dispute), disputeTimestamp));
-        return providedDisputeCommitment == onChainDisputeCommitment;
-    }
-
-    function _getAddressesInThreshold(bytes32 channelId) internal view returns (address[] memory) {
-        address[] memory snapshotParticipants = getSnapshotParticipants(channelId);
-        address[] memory slashedParticipants = getOnChainSlashedParticipants(channelId);
-        address[] memory pendingParticpants = getPendingParticipants(channelId);
-
-        // Merge participants with deduplication
-        address[] memory uniqueParticipants =
-            StateChannelUtilLibrary.concatAddressArraysNoDuplicates(snapshotParticipants, pendingParticpants);
-
-        // Pre-allocate maximum possible size
-        address[] memory result = new address[](uniqueParticipants.length);
-        uint256 validCount = 0;
-
-        for (uint256 i = 0; i < uniqueParticipants.length; i++) {
-            // Skip if participant is slashed
-            if (StateChannelUtilLibrary.isAddressInArray(slashedParticipants, uniqueParticipants[i])) {
-                continue;
-            }
-
-            // Add to result immediately
-            result[validCount] = uniqueParticipants[i];
-            validCount++;
+    function _clearDisputeData(bytes32 channelId) internal {
+        DisputeData storage disputeData = disputeData[channelId];
+        delete disputeData.onChainSlashes; //TODO! Check should we clear this since things happen in 'parallel' now
+        delete disputeData.pendingParticipants;
+        mapping(bytes32 => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
+        for (uint256 i = 0; i < disputeData.disputedForks.length; i++) {
+            delete disputeWindowMap[disputeData.disputedForks[i]];
         }
-
-        // If we used all slots, return as is
-        if (validCount == uniqueParticipants.length) {
-            return result;
-        }
-
-        // Otherwise create a properly sized copy
-        address[] memory finalResult = new address[](validCount);
-        for (uint256 i = 0; i < validCount; i++) {
-            finalResult[i] = result[i];
-        }
-
-        return finalResult;
-    }
-
-    function _isDisputeFinalized(DisputeProof memory disputeProof, address[] memory addressesInThreshold)
-        internal
-        view
-        returns (bool)
-    {
-        if (block.timestamp >= disputeProof.timestamp + getChallengeTime()) {
-            return true;
-        }
-        bytes memory encodedDispute = abi.encode(disputeProof.dispute);
-        (bool isValid,) =
-            StateChannelUtilLibrary.verifyThresholdSigned(addressesInThreshold, encodedDispute, disputeProof.signatures);
-        return isValid;
-    }
-
-    function _isStateSnapshotValid(StateSnapshot memory outputStateSnapshot, Dispute memory dispute)
-        internal
-        pure
-        returns (bool)
-    {
-        return keccak256(abi.encode(outputStateSnapshot.snapshotData)) == dispute.outputSnapshotDataHash;
+        delete disputeData.disputedForks;
+        delete disputeData.latestJoinChannelBlockHash;
     }
 }
