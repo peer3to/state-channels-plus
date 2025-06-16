@@ -118,7 +118,7 @@ error BlockInvalidConfirmation();
 error BlockInvalidSignature();
 error BlockInvalidChannelId();
 error BlockInvalidTransactionCount();
-error BlockInvalidStateSnapsotHash();
+error BlockInvalidStateSnapshotHash();
 error BlockInvalidLink();
 error BlockInvalidStateTransition();
 error BlockOutOfGas();

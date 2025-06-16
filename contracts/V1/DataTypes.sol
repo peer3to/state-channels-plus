@@ -115,6 +115,7 @@ struct StateSnapshot {
     SnapshotData snapshotData;
     /// @dev The fork identifier (count) that the snapshot belongs to
     bytes32 forkId; //hash(genesisSnapshotData)
+    uint256 timestamp;
 }
 
 struct SnapshotData {

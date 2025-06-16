@@ -161,8 +161,11 @@ contract FraudProofFacet is StateChannelCommon {
             totalWithdrawals: previousStateSnapshot.snapshotData.totalWithdrawals
         });
 
-        StateSnapshot memory newStateSnapshot =
-            StateSnapshot({snapshotData: newSnapshotData, forkId: previousStateSnapshot.forkId});
+        StateSnapshot memory newStateSnapshot = StateSnapshot({
+            snapshotData: newSnapshotData,
+            forkId: previousStateSnapshot.forkId,
+            timestamp: fraudBlock.transaction.header.timestamp
+        });
         require(fraudBlock.stateSnapshotHash == keccak256(abi.encode(newStateSnapshot)), ErrorValidStateTransition());
 
         return signer;

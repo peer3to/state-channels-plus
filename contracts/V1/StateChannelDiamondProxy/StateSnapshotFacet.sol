@@ -15,7 +15,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
         DisputeData storage disputeData = disputeData[channelId];
         bytes32 targetForkId = newStateSnapshot.forkId;
-        require(keccak256(abi.encode(newStateSnapshot.snapshotData)) != targetForkId, ErrorInvalidStateSnapshot());
+        require(keccak256(abi.encode(newStateSnapshot.snapshotData)) == targetForkId, ErrorInvalidStateSnapshot());
         mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
         DisputeWindow storage disputeWindow = disputeWindowMap[currentStateSnapshot.forkId];
         bool updated = false;
@@ -24,6 +24,10 @@ contract StateSnapshotFacet is StateChannelCommon {
             disputeWindow.reducedResult.reducedForkId != bytes32(0) && _isReduceChallengePeriodExpired(disputeWindow)
         ) {
             if (disputeWindow.reducedResult.reducedForkId == targetForkId) {
+                require(
+                    newStateSnapshot.timestamp == disputeWindow.reducedResult.forkGenesisTimestamp,
+                    ErrorInvalidStateSnapshot()
+                );
                 _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, exitChannelBlocks);
                 updated = true;
                 break;

@@ -63,11 +63,7 @@ abstract contract StateChannelManagerInterface {
         DisputeAuditingData memory disputeAuditingData
     ) public virtual;
 
-    function challengeDispute(
-        Dispute memory dispute,
-        uint256 disputeCreationTimestamp,
-        DisputeAuditingData memory disputeAuditingData
-    ) public virtual;
+    function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public virtual;
 
     function updateStateSnapshotFork(
         bytes32 channelId,
