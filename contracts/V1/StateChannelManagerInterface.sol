@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
-import "./DataTypes.sol";
-import "./DisputeTypes.sol";
+import "./types/DataTypes.sol";
+import "./types/DisputeTypes.sol";
 
 abstract contract StateChannelManagerInterface {
     function openChannel(bytes32 channelId, bytes[] calldata openChannelData, bytes[] calldata signatures)

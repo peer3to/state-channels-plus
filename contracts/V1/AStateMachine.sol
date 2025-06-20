@@ -1,6 +1,6 @@
 pragma solidity ^0.8.8;
 
-import "./DataTypes.sol";
+import "./types/DataTypes.sol";
 
 abstract contract AStateMachine {
     Transaction _tx; // This should be used instead of msg.sender at least for now

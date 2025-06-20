@@ -3,6 +3,7 @@ pragma solidity ^0.8.8;
 import "./StateChannelCommon.sol";
 import "./DisputeManagerFacet.sol";
 import "./FraudProofFacet.sol";
+import "./DisputeFraudProofFacet.sol";
 
 import "./StateChannelUtilLibrary.sol";
 import "./StateSnapshotFacet.sol";
@@ -11,17 +12,20 @@ import "../StateChannelManagerInterface.sol";
 abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, StateChannelCommon {
     DisputeManagerFacet disputeManagerFacet;
     FraudProofFacet fraudProofFacet;
+    DisputeFraudProofFacet disputeFraudProofFacet;
     StateSnapshotFacet stateSnapshotFacet;
 
     constructor(
         address _stateMachineImplementation,
         address _disputeManagerFacet,
         address _fraudProofFacet,
+        address _disputeFraudProofFacet,
         address _stateSnapshotFacet
     ) {
         stateMachineImplementation = AStateMachine(_stateMachineImplementation);
         disputeManagerFacet = DisputeManagerFacet(_disputeManagerFacet);
         fraudProofFacet = FraudProofFacet(_fraudProofFacet);
+        disputeFraudProofFacet = DisputeFraudProofFacet(_disputeFraudProofFacet);
         stateSnapshotFacet = StateSnapshotFacet(_stateSnapshotFacet);
         p2pTime = 15;
         agreementTime = 5;
@@ -219,7 +223,7 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
     }
 
     function verifyFraudProofs(
-        Proof[] memory fraudProofs,
+        FraudProof[] memory fraudProofs,
         FraudProofVerificationContext memory fraudProofVerificationContext
     ) public returns (address[] memory slashParticipants) {
         bytes memory slashedParticipants = _delegatecall(
@@ -228,6 +232,16 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         );
 
         return abi.decode(slashedParticipants, (address[]));
+    }
+
+    function verifyDisputeFraudProofs(DisputeFraudProof[] memory disputeFraudProofs)
+        public
+        returns (bytes memory maliciousDisputesEncoded)
+    {
+        return _delegatecall(
+            address(disputeFraudProofFacet),
+            abi.encodeCall(disputeFraudProofFacet.verifyDisputeFraudProofs, (disputeFraudProofs))
+        );
     }
 
     function getParticipants(bytes32 channelId)

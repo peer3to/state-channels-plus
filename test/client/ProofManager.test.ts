@@ -2,15 +2,15 @@
 // import sinon from "sinon";
 // import { ethers } from "hardhat";
 // import * as factory from "../factory";
-// import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+// import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 // import {
 //     ProofStruct,
 //     DisputeStruct,
 //     BlockDoubleSignProofStruct
-// } from "@typechain-types/contracts/V1/DisputeTypes";
+// } from "@typechain-types/contracts/V1/types/DisputeTypes";
 // import ProofManager from "@/ProofManager";
 // import AgreementManager from "@/agreementManager";
-// import { ProofType } from "@/types/disputes";
+// import { FraudProofType } from "@/types/disputes";
 // import { EvmUtils } from "@/utils";
 // import { AddressLike, Signer } from "ethers";
 
@@ -35,13 +35,13 @@
 //             };
 
 //             const encoded = ProofManager.encodeProof(
-//                 ProofType.FoldRechallenge,
+//                 FraudProofType.FoldRechallenge,
 //                 mockProof
 //             );
 //             expect(encoded).to.not.be.undefined;
 
 //             const decoded = ProofManager.decodeProof(
-//                 ProofType.FoldRechallenge,
+//                 FraudProofType.FoldRechallenge,
 //                 encoded!
 //             );
 
@@ -97,11 +97,11 @@
 //                 const proof = proofManager.createFoldRechallengeProof(1, 2);
 
 //                 expect(proof).to.not.be.undefined;
-//                 expect(proof!.proofType).to.equal(ProofType.FoldRechallenge);
+//                 expect(proof!.proofType).to.equal(FraudProofType.FoldRechallenge);
 //                 expect(proof!.encodedProof).to.be.a("string");
 
 //                 const decodedProof = ProofManager.decodeProof(
-//                     ProofType.FoldRechallenge,
+//                     FraudProofType.FoldRechallenge,
 //                     proof!.encodedProof
 //                 );
 //                 expect(decodedProof.encodedBlock).to.equal(
@@ -130,9 +130,9 @@
 //                     signedBlock1
 //                 ]);
 
-//                 expect(proof.proofType).to.equal(ProofType.DoubleSign);
+//                 expect(proof.proofType).to.equal(FraudProofType.DoubleSign);
 //                 const decodedProof = ProofManager.decodeProof(
-//                     ProofType.DoubleSign,
+//                     FraudProofType.DoubleSign,
 //                     proof.encodedProof
 //                 );
 //                 expect(decodedProof.doubleSigns).to.be.an("array").that.is
@@ -167,7 +167,7 @@
 //                 ]);
 
 //                 const decodedProof = ProofManager.decodeProof(
-//                     ProofType.DoubleSign,
+//                     FraudProofType.DoubleSign,
 //                     proof.encodedProof
 //                 ) as { doubleSigns: BlockDoubleSignProofStruct[] };
 //                 expect(decodedProof.doubleSigns).to.have.lengthOf(1);
@@ -212,9 +212,9 @@
 //                 };
 
 //                 const proof: ProofStruct = {
-//                     proofType: ProofType.FoldRechallenge,
+//                     proofType: FraudProofType.FoldRechallenge,
 //                     encodedProof: ProofManager.encodeProof(
-//                         ProofType.FoldRechallenge,
+//                         FraudProofType.FoldRechallenge,
 //                         foldRechallengeProofStruct
 //                     )!
 //                 };
@@ -246,9 +246,9 @@
 //                 };
 
 //                 const proof: ProofStruct = {
-//                     proofType: ProofType.FoldRechallenge,
+//                     proofType: FraudProofType.FoldRechallenge,
 //                     encodedProof: ProofManager.encodeProof(
-//                         ProofType.FoldRechallenge,
+//                         FraudProofType.FoldRechallenge,
 //                         foldRechallengeProofStruct
 //                     )!
 //                 };
@@ -280,9 +280,9 @@
 //                 };
 
 //                 const proof: ProofStruct = {
-//                     proofType: ProofType.FoldRechallenge,
+//                     proofType: FraudProofType.FoldRechallenge,
 //                     encodedProof: ProofManager.encodeProof(
-//                         ProofType.FoldRechallenge,
+//                         FraudProofType.FoldRechallenge,
 //                         foldRechallengeProofStruct
 //                     )!
 //                 };
@@ -316,12 +316,12 @@
 //                 const mockDispute = factory.disputeStruct({});
 
 //                 const validDoubleSignProof: ProofStruct = {
-//                     proofType: ProofType.DoubleSign,
+//                     proofType: FraudProofType.DoubleSign,
 //                     encodedProof: "0x1234" // Content doesn't matter for this test
 //                 };
 
 //                 const invalidDoubleSignProof: ProofStruct = {
-//                     proofType: ProofType.DoubleSign,
+//                     proofType: FraudProofType.DoubleSign,
 //                     encodedProof: "0x5678" // Content doesn't matter for this test
 //                 };
 

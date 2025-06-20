@@ -40,7 +40,6 @@ error ErrorDisputeCommitmentNotAvailable();
 error ErrorDisputeExpired();
 error ErrorDisputeGenesisInvalid();
 error ErrorDisputeStateProofInvalid();
-error ErrorDisptuteFraudProofDidntSlash(uint256 proofIndex);
 error ErrorDisputeStateMachineJoiningFailed();
 error ErrorDisputeStateMachineSlashingFailed();
 error ErrorDisputeStateMachineRemovingFailed();
@@ -67,6 +66,9 @@ error ErrorFinalizedAndLatestNotSignedByParticipant();
 error ErrorFinalizedAndLatestFirstBlockNotVotingForFinalizedState();
 error ErrorFinalizedAndLatestSecondBlocksNotLinked();
 error ErrorFinalizedAndLatestLastBlockNotVoringForLatestState();
+
+//FraudProofs
+error ErrorInvalidFraudProof();
 
 //Double sign
 error ErrorDoubleSignBlocksNotSame();

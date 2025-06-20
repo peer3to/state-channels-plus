@@ -55,12 +55,13 @@ contract DisputeManagerFacet is StateChannelCommon {
         DisputeConfirmation memory disputeConfirmation,
         DisputeAuditingData memory disputeAuditingData
     ) public {
-        uploadDispute(disputeConfirmation);
+        //first audit -> update on-chain slashes -> reduced threshold
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         address[] memory slashes = AStateChannelManagerProxy(address(this)).auditDispute(dispute, disputeAuditingData);
         for (uint256 i = 0; i < slashes.length; i++) {
-            addOnChainSlashedParticipants(dispute.channelId, slashes[i]);
+            addOnChainSlashedParticipant(dispute.channelId, slashes[i]);
         }
+        uploadDispute(disputeConfirmation);
     }
 
     function commitToReducedResult(
@@ -129,7 +130,7 @@ contract DisputeManagerFacet is StateChannelCommon {
 
             // ***** reducedOutput.slashedParticipants *****
             for (uint256 j = 0; j < dispute.fraudProofs.length; j++) {
-                Proof memory fraudProof = dispute.fraudProofs[j];
+                FraudProof memory fraudProof = dispute.fraudProofs[j];
                 bool isAlreadySlashed = false;
                 for (uint256 k = 0; k < slashCount; k++) {
                     if (slashParticipants[k] == fraudProof.participant) {
@@ -191,7 +192,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         );
 
         address[] memory removals = reducedOutput.selfRemovals;
-        if (reducedOutput.timeout.participant != address(0)) {
+        if (reducedOutput.timeout.participant != address(0) && reducedOutput.slashedParticipants.length == 0) {
             removals =
                 StateChannelUtilLibrary.insertIntoAddressArrayNoDuplicates(removals, reducedOutput.timeout.participant);
         }
@@ -228,9 +229,10 @@ contract DisputeManagerFacet is StateChannelCommon {
         );
         require(_verifyExitChannelBlocks(dispute, disputeAuditingData), ErrorDisputeExitChannelBlocksInvalid());
 
-        FraudProofVerificationContext memory poofContext = FraudProofVerificationContext({channelId: dispute.channelId});
-        address[] memory slashes = _verifyFraudProofs(dispute.fraudProofs, poofContext);
-        slashes = StateChannelUtilLibrary.concatAddressArrays(slashes, dispute.onChainSlashes);
+        FraudProofVerificationContext memory proofContext =
+            FraudProofVerificationContext({channelId: dispute.channelId});
+        address[] memory slashes = _verifyFraudProofs(dispute.fraudProofs, proofContext);
+        slashes = StateChannelUtilLibrary.concatAddressArraysNoDuplicates(slashes, dispute.onChainSlashes);
         address[] memory removals = _calculateRemovals(dispute);
 
         DisputeOutputState memory disputeOutputState = generateDisputeOutputState(
@@ -269,13 +271,21 @@ contract DisputeManagerFacet is StateChannelCommon {
         uint256 gasLimit = getGasLimit();
         bytes memory data = abi.encodeCall(DisputeManagerFacet.auditDispute, (dispute, disputeAuditingData));
         (bool success, bytes memory returnData) = address(this).call{gas: gasLimit}(data);
-        if (!success) {
-            _killDispute(dispute);
-        } else {
-            // slash the challenger
+        if (success) {
+            // auditing passed - dispute is correct, slash the challenger
             if (_canParticipateInDisputes(dispute.channelId, msg.sender)) {
-                addOnChainSlashedParticipants(dispute.channelId, msg.sender);
+                addOnChainSlashedParticipant(dispute.channelId, msg.sender);
             }
+        } else {
+            // auditing failed - dispute is invalid, kill it
+            _killDispute(dispute);
+        }
+    }
+
+    function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public {
+        Dispute[] memory maliciousDisputes = _verifyDisputeFraudProofs(proofs);
+        for (uint256 i = 0; i < maliciousDisputes.length; i++) {
+            _killDispute(maliciousDisputes[i]);
         }
     }
 
@@ -309,7 +319,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             winingForkId != disputeWindow.reducedResult.reducedForkId
                 || reducedOutput.forkGenesisTimestamp != disputeWindow.reducedResult.forkGenesisTimestamp
         ) {
-            addOnChainSlashedParticipants(channelId, disputeWindow.reducedResult.reducer);
+            addOnChainSlashedParticipant(channelId, disputeWindow.reducedResult.reducer);
             disputeWindow.reducedResult.reducedForkId = bytes32(0); // unset
             _commitToDisputeReducedResult(
                 disputeWindow,
@@ -318,7 +328,7 @@ contract DisputeManagerFacet is StateChannelCommon {
                 reducedOutput.forkGenesisTimestamp
             );
         } else {
-            addOnChainSlashedParticipants(channelId, msg.sender);
+            addOnChainSlashedParticipant(channelId, msg.sender);
         }
     }
 
@@ -383,7 +393,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         require(isFound, ErrorDisputeCommitmentNotAvailable());
 
         // add the disputer to on-chain slashes
-        addOnChainSlashedParticipants(dispute.channelId, dispute.disputer);
+        addOnChainSlashedParticipant(dispute.channelId, dispute.disputer);
 
         // remove the dispute commitment
         disputeWindow.evidence.disputeCommitments[foundIndex] =
@@ -590,11 +600,11 @@ contract DisputeManagerFacet is StateChannelCommon {
         //check joinChannelBlocks (linked to latestSateSnapshot, chained internally and outputStateSnapshot commits to the head)
         bytes32 previousExitChannelBlockHash =
             disputeAuditingData.genesisStateSnapshot.snapshotData.latestExitChannelBlockHash;
-        for (uint256 i = 0; i < dispute.exitChannelBlocks.length; i++) {
-            if (previousExitChannelBlockHash != dispute.exitChannelBlocks[i].previousBlockHash) {
+        for (uint256 i = 0; i < disputeAuditingData.exitChannelBlocks.length; i++) {
+            if (previousExitChannelBlockHash != disputeAuditingData.exitChannelBlocks[i].previousBlockHash) {
                 return false;
             }
-            previousExitChannelBlockHash = keccak256(abi.encode(dispute.exitChannelBlocks[i]));
+            previousExitChannelBlockHash = keccak256(abi.encode(disputeAuditingData.exitChannelBlocks[i]));
         }
         return previousExitChannelBlockHash
             == disputeAuditingData.latestStateSnapshot.snapshotData.latestExitChannelBlockHash;
@@ -736,11 +746,14 @@ contract DisputeManagerFacet is StateChannelCommon {
     }
 
     function _calculateRemovals(Dispute memory dispute) internal view returns (address[] memory removals) {
+        //Try and combine timeout and selfRemova -> max 2 removals per dispute
         uint256 removalCount = 0;
         address[] memory _removals = new address[](2);
+        // Always apply selfRemoval if set
         if (dispute.selfRemoval) {
             _removals[removalCount++] = dispute.disputer;
         }
+        // Ignore timeout if unset or if there are slashes
         if (
             dispute.fraudProofs.length == 0 && dispute.onChainSlashes.length == 0
                 && dispute.timeout.participant != address(0)

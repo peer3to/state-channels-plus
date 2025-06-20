@@ -1,5 +1,5 @@
 import { ExecutionFlags } from "@/types";
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { SignatureLike } from "ethers";
 
 export interface ConfirmationDecisionContext {

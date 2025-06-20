@@ -14,4 +14,4 @@ export {
 };
 
 export * from "../typechain-types";
-export * from "../typechain-types/contracts/V1/DisputeTypes";
+export * from "../typechain-types/contracts/V1/types/DisputeTypes";

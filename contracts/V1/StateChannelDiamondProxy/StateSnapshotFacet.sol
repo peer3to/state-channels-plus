@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
-import "../DataTypes.sol";
+import "../types/DataTypes.sol";
 import "./AStateChannelManagerProxy.sol";
 import "./Errors.sol";
 import "./StateChannelUtilLibrary.sol";

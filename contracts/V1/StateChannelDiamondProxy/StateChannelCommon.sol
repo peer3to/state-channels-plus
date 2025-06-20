@@ -19,7 +19,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return slashedParticipants;
     }
 
-    function addOnChainSlashedParticipants(bytes32 channelId, address slashedParticipant) internal virtual {
+    function addOnChainSlashedParticipant(bytes32 channelId, address slashedParticipant) internal virtual {
         disputeData[channelId].onChainSlashes.push(OnChainSlash(slashedParticipant, block.timestamp));
     }
 
@@ -149,11 +149,20 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return totalWithdrawals;
     }
 
-    function _verifyFraudProofs(Proof[] memory fraudProofs, FraudProofVerificationContext memory poofContext)
-        public
+    function _verifyFraudProofs(FraudProof[] memory fraudProofs, FraudProofVerificationContext memory proofContext)
+        internal
         returns (address[] memory slashParticipants)
     {
-        return AStateChannelManagerProxy(address(this)).verifyFraudProofs(fraudProofs, poofContext);
+        return AStateChannelManagerProxy(address(this)).verifyFraudProofs(fraudProofs, proofContext);
+    }
+
+    function _verifyDisputeFraudProofs(DisputeFraudProof[] memory disputeFraudProofs)
+        internal
+        returns (Dispute[] memory maliciousDisputes)
+    {
+        return abi.decode(
+            AStateChannelManagerProxy(address(this)).verifyDisputeFraudProofs(disputeFraudProofs), (Dispute[])
+        );
     }
 
     function _removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
@@ -211,5 +220,19 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
     {
         return AStateChannelManagerProxy(address(this)).applySlashesToStateMachine(encodedState, slashedParticipants);
+    }
+
+    function isDisputeCommitted(Dispute memory dispute) internal view returns (bool) {
+        bytes32 channelId = dispute.channelId;
+        DisputeData storage disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[dispute.genesisSnapshotDataHash];
+        bytes32 commitment = keccak256(abi.encode(dispute));
+
+        for (uint256 i = 0; i < disputeWindow.evidence.disputeCommitments.length; i++) {
+            if (disputeWindow.evidence.disputeCommitments[i] != commitment) {
+                return true;
+            }
+        }
+        return false;
     }
 }

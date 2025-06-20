@@ -1,0 +1,55 @@
+pragma solidity ^0.8.8;
+
+import "./DataTypes.sol";
+import "./DisputeTypes.sol";
+
+struct MilestoneProof {
+    BlockConfirmation[] blockConfirmations;
+}
+
+/// @notice FraudProof of state finality within a fork
+struct StateProof {
+    /// @dev proves the last finalized block in the fork
+    MilestoneProof[] milestones;
+    /// @dev a list of signed blocks that cryptographically connect the last milestone in the milestones
+    SignedBlock[] signedBlocks;
+}
+
+//Fraud FraudProof Types:
+
+struct FraudProof {
+    FraudProofType proofType;
+    address participant; // The participant that is being slashed - encoded proof returns the same address when run.
+    bytes encodedProof;
+}
+
+enum FraudProofType {
+    // Block releated fraud proofs
+    BlockDoubleSign,
+    BlockEmptyBlock,
+    BlockInvalidStateTransition,
+    BlockOutOfGas
+}
+
+struct DisputeFraudProof {
+    DisputeFraudProofType proofType;
+    address participant; // The participant that is being slashed - encoded proof returns the same address when run.
+    Dispute dispute;
+    bytes encodedProof;
+}
+
+enum DisputeFraudProofType {
+    // Timeout related fraud proofs
+    TimeoutThreshold,
+    TimeoutPriorInvalid,
+    TimeoutParticipantNoNext,
+    // Dispute fraud proofs
+    DisputeNotLatestState,
+    DisputeInvalid,
+    DisputeInvalidRecursive,
+    DisputeOutOfGas,
+    DisputeInvalidOutputState,
+    DisputeInvalidStateProof,
+    DisputeInvalidPreviousRecursive,
+    DisputeInvalidExitChannelBlocks
+}

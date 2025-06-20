@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
-import "../DisputeTypes.sol";
-import "../DataTypes.sol";
+import "../types/DisputeTypes.sol";
+import "../types/DataTypes.sol";
 import "../AStateMachine.sol";
 
 contract StateChannelManagerStorage {
