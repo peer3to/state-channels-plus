@@ -34,9 +34,11 @@ abstract contract StateChannelManagerInterface {
 
     function getChainFallbackTime() public view virtual returns (uint256);
 
-    function getChallengeTime() public view virtual returns (uint256);
+    function getEvidenceTime() public view virtual returns (uint256);
 
-    function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256);
+    function getKillTime() public view virtual returns (uint256);
+
+    function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256, uint256);
 
     function executeStateTransitionOnState(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
         public

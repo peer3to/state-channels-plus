@@ -20,10 +20,8 @@ contract StateSnapshotFacet is StateChannelCommon {
         DisputeWindow storage disputeWindow = disputeWindowMap[currentStateSnapshot.forkId];
         bool updated = false;
 
-        while (
-            disputeWindow.reducedResult.reducedForkId != bytes32(0) && _isReduceChallengePeriodExpired(disputeWindow)
-        ) {
-            if (disputeWindow.reducedResult.reducedForkId == targetForkId) {
+        while (disputeWindow.reducedResult.forkId != bytes32(0) && _isReduceChallengePeriodExpired(disputeWindow)) {
+            if (disputeWindow.reducedResult.forkId == targetForkId) {
                 require(
                     newStateSnapshot.timestamp == disputeWindow.reducedResult.forkGenesisTimestamp,
                     ErrorInvalidStateSnapshot()
@@ -32,7 +30,7 @@ contract StateSnapshotFacet is StateChannelCommon {
                 updated = true;
                 break;
             }
-            disputeWindow = disputeWindowMap[disputeWindow.reducedResult.reducedForkId];
+            disputeWindow = disputeWindowMap[disputeWindow.reducedResult.forkId];
         }
         require(updated, ErrorStateSnapshotNotValid());
     }

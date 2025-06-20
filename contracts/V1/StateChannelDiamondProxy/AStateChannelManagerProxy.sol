@@ -30,7 +30,8 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         p2pTime = 15;
         agreementTime = 5;
         chainFallbackTime = 30;
-        challengeTime = 60;
+        evidenceTime = 30;
+        killTime = 60;
     }
 
     function _addParticipantComposable(JoinChannel memory joinChannel) internal virtual returns (bool);
@@ -283,20 +284,24 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         return StateChannelCommon.getChainFallbackTime();
     }
 
-    function getChallengeTime()
+    function getEvidenceTime()
         public
         view
         override(StateChannelCommon, StateChannelManagerInterface)
         returns (uint256)
     {
-        return StateChannelCommon.getChallengeTime();
+        return StateChannelCommon.getEvidenceTime();
+    }
+
+    function getKillTime() public view override(StateChannelCommon, StateChannelManagerInterface) returns (uint256) {
+        return StateChannelCommon.getKillTime();
     }
 
     function getAllTimes()
         public
         view
         override(StateChannelCommon, StateChannelManagerInterface)
-        returns (uint256, uint256, uint256, uint256)
+        returns (uint256, uint256, uint256, uint256, uint256)
     {
         return StateChannelCommon.getAllTimes();
     }

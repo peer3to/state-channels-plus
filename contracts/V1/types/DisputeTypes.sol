@@ -77,9 +77,11 @@ struct DisputeWindowEvidence {
 }
 
 struct DisputeWindowReducedResult {
-    bytes32 reducedForkId;
+    /// @dev reduced forkId
+    bytes32 forkId;
     uint256 forkGenesisTimestamp;
-    uint256 reductionTimestamp;
+    /// @dev reduction timestamp
+    uint256 timestamp;
     address reducer;
 }
 

@@ -9,7 +9,10 @@ contract StateChannelManagerStorage {
     uint256 public p2pTime;
     uint256 public agreementTime;
     uint256 public chainFallbackTime;
-    uint256 public challengeTime;
+    // Time within more dispute can be submitted during the challenge period
+    uint256 public evidenceTime;
+    /// @dev Time within the dispute cam be killed during the challenge period
+    uint256 public killTime;
     uint256 public gasLimit;
 
     AStateMachine stateMachineImplementation;

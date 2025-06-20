@@ -73,20 +73,24 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return chainFallbackTime;
     }
 
-    function getChallengeTime() public view virtual returns (uint256) {
-        return challengeTime;
+    function getEvidenceTime() public view virtual returns (uint256) {
+        return evidenceTime;
+    }
+
+    function getKillTime() public view virtual returns (uint256) {
+        return killTime;
     }
 
     function getGasLimit() public view virtual returns (uint256) {
         return gasLimit;
     }
 
-    function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256) {
-        return (p2pTime, agreementTime, chainFallbackTime, challengeTime);
+    function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256, uint256) {
+        return (p2pTime, agreementTime, chainFallbackTime, evidenceTime, killTime);
     }
 
     function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow) internal view returns (bool) {
-        return block.timestamp > disputeWindow.reducedResult.reductionTimestamp + getChallengeTime();
+        return block.timestamp > disputeWindow.reducedResult.timestamp + getEvidenceTime();
     }
 
     function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)

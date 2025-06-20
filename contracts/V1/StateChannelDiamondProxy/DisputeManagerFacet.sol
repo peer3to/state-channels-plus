@@ -31,17 +31,20 @@ contract DisputeManagerFacet is StateChannelCommon {
             disputeWindow.evidence.creationTimestamp = block.timestamp; //challenge period started
         } else {
             require(
-                block.timestamp <= disputeWindow.evidence.creationTimestamp + getChallengeTime(),
+                block.timestamp <= disputeWindow.evidence.creationTimestamp + getEvidenceTime(),
                 ErrorDisputeChallengePeriodExpired()
             );
             require(!disputeWindow.evidence.hasPosted[dispute.disputer], ErrorDisputeAlreadyPosted());
         }
 
         if (isThresholdFinal) {
-            disputeWindow.evidence.creationTimestamp = block.timestamp - 2 * getChallengeTime() - 1;
-            delete disputeWindow.evidence.disputeCommitments; //delete all previous commitments
+            //finalize the dispute windown by making the kill period expired
+            disputeWindow.evidence.creationTimestamp = block.timestamp - getKillTime() - 1;
+            //delete all previous commitments - free up storage (gas refund)
+            delete disputeWindow.evidence.disputeCommitments;
+            //The reduced result is this dispute output. Finalize it by making it expired.
             _commitToDisputeReducedResult(
-                disputeWindow, dispute.outputSnapshotDataHash, block.timestamp - getChallengeTime() - 1, block.timestamp
+                disputeWindow, dispute.outputSnapshotDataHash, block.timestamp - getEvidenceTime() - 1, block.timestamp
             );
         }
         disputeWindow.evidence.disputeCommitments.push(keccak256(abi.encode(dispute)));
@@ -87,8 +90,8 @@ contract DisputeManagerFacet is StateChannelCommon {
         uint256 selfRemovalCount;
         address[] memory slashParticipants;
         address[] memory selfRemovalParticipants = new address[](disputes.length);
-        reducedOutput.forkGenesisTimestamp = disputeWindowCreationTimestamp + getChallengeTime(); //expiration of evidence time
-        uint256 disputeWindowExpirationTimestamp = disputeWindowCreationTimestamp + 2 * getChallengeTime();
+        reducedOutput.forkGenesisTimestamp = disputeWindowCreationTimestamp + getEvidenceTime(); //expiration of evidence time
+        uint256 disputeWindowExpirationTimestamp = disputeWindowCreationTimestamp + getKillTime();
         require(disputes.length > 0, ErrorNoDisputesProvided());
 
         for (uint256 i = 0; i < disputes.length; i++) {
@@ -288,6 +291,12 @@ contract DisputeManagerFacet is StateChannelCommon {
             _killDispute(maliciousDisputes[i]);
         }
     }
+    /**
+     * @notice Challenges a dispute reduction by providing disputes and verification data
+     * @dev IMPORTANT: The disputes array must be provided in the same order as they were committed
+     *      to the dispute window. The off-chain client is responsible for ensuring disputes are
+     *      ordered correctly to save on gas during verification.
+     */
 
     function challengeDisputeReduction(
         Dispute[] memory disputes,
@@ -305,7 +314,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         //rquire all disputes are part of commitment
 
         require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
-        //require reduce challenge period is not expired - this also ashures it's commited
+        //require reduce challenge period is not expired - this also assures it's commited
         require(!_isReduceChallengePeriodExpired(disputeWindow), ErrorDisputeChallengePeriodExpired());
 
         ReduceOutput memory reducedOutput = reduce(disputes, disputeWindowCreationTimestamp);
@@ -316,16 +325,13 @@ contract DisputeManagerFacet is StateChannelCommon {
         bytes32 winingForkId = keccak256(abi.encode(snapshotData));
 
         if (
-            winingForkId != disputeWindow.reducedResult.reducedForkId
+            winingForkId != disputeWindow.reducedResult.forkId
                 || reducedOutput.forkGenesisTimestamp != disputeWindow.reducedResult.forkGenesisTimestamp
         ) {
             addOnChainSlashedParticipant(channelId, disputeWindow.reducedResult.reducer);
-            disputeWindow.reducedResult.reducedForkId = bytes32(0); // unset
+            disputeWindow.reducedResult.forkId = bytes32(0); // unset
             _commitToDisputeReducedResult(
-                disputeWindow,
-                winingForkId,
-                block.timestamp - getChallengeTime() - 1,
-                reducedOutput.forkGenesisTimestamp
+                disputeWindow, winingForkId, block.timestamp - getEvidenceTime() - 1, reducedOutput.forkGenesisTimestamp
             );
         } else {
             addOnChainSlashedParticipant(channelId, msg.sender);
@@ -375,7 +381,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         // require that the dispute window exists and is not expired
         require(
             disputeWindow.evidence.creationTimestamp != 0
-                && block.timestamp < disputeWindow.evidence.creationTimestamp + getChallengeTime(),
+                && block.timestamp < disputeWindow.evidence.creationTimestamp + getEvidenceTime(),
             ErrorDisputeExpired()
         );
 
@@ -824,19 +830,19 @@ contract DisputeManagerFacet is StateChannelCommon {
         uint256 forkGenesisTimestamp
     ) internal {
         require(_isKillPeriodExpired(disputeWindow), ErrorDisputeKillPeriodNotExpired());
-        require(disputeWindow.reducedResult.reducedForkId == bytes32(0), ErrorDisputeAlreadyReduced());
-        disputeWindow.reducedResult.reducedForkId = reducedForkId;
+        require(disputeWindow.reducedResult.forkId == bytes32(0), ErrorDisputeAlreadyReduced());
+        disputeWindow.reducedResult.forkId = reducedForkId;
         disputeWindow.reducedResult.forkGenesisTimestamp = forkGenesisTimestamp;
-        disputeWindow.reducedResult.reductionTimestamp = reductionTimestamp;
+        disputeWindow.reducedResult.timestamp = reductionTimestamp;
         disputeWindow.reducedResult.reducer = msg.sender; //calling function should check that msg.sender is part of channel 'can participate'
     }
 
     function _isEvedincePeriodExpired(DisputeWindow storage disputeWindow) internal view returns (bool) {
-        return block.timestamp > disputeWindow.evidence.creationTimestamp + getChallengeTime();
+        return block.timestamp > disputeWindow.evidence.creationTimestamp + getEvidenceTime();
     }
 
     function _isKillPeriodExpired(DisputeWindow storage disputeWindow) internal view returns (bool) {
-        return block.timestamp > disputeWindow.evidence.creationTimestamp + 2 * getChallengeTime();
+        return block.timestamp > disputeWindow.evidence.creationTimestamp + getKillTime();
     }
 
     function areDisputesCommitted(DisputeWindow storage disputeWindow, Dispute[] memory disputes)
