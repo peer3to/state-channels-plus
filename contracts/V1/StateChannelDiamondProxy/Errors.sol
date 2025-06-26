@@ -104,6 +104,7 @@ error ErrorJoinChannelNotMyTurn();
 error ErrorJoinChannelAlreadyInChannel();
 error ErrorJoinChannelExpired();
 error ErrorJoinChannelAlreadyAdded();
+error ErrorJoinChannelInvalidSignature();
 
 // ========================== DisputeManagerFacet ==========================
 

@@ -79,4 +79,8 @@ abstract contract StateChannelManagerInterface {
         StateSnapshot[] memory milestoneSnapshots,
         ExitChannelBlock[] memory exitChannelBlocks
     ) public virtual;
+
+    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations) public virtual;
+
+    function multicall(bytes[] calldata calls) external virtual returns (bytes[] memory results);
 }

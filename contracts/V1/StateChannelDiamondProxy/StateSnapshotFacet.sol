@@ -132,12 +132,13 @@ contract StateSnapshotFacet is StateChannelCommon {
     function _clearDisputeData(bytes32 channelId) internal {
         DisputeData storage disputeData = disputeData[channelId];
         delete disputeData.onChainSlashes; //TODO! Check should we clear this since things happen in 'parallel' now
+        delete disputeData.onChainJoinChannels;
         delete disputeData.pendingParticipants;
         mapping(bytes32 => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
         for (uint256 i = 0; i < disputeData.disputedForks.length; i++) {
             delete disputeWindowMap[disputeData.disputedForks[i]];
         }
         delete disputeData.disputedForks;
-        delete disputeData.latestJoinChannelBlockHash;
+        // delete disputeData.latestJoinChannelBlockHash; // safe to delete this, since snapshot contains the same, but for convinience we don't delete it so we can continue 'chaining'/buidling on top with a clean itnerface
     }
 }

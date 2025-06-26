@@ -15,14 +15,16 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
         address disputeManagerFacet,
         address fraudProofFacet,
         address disputeFraudProofFacet,
-        address stateSnapshotFacet
+        address stateSnapshotFacet,
+        address joinChannelFacet
     )
         AStateChannelManagerProxy(
             aStateMachineAddress,
             disputeManagerFacet,
             fraudProofFacet,
             disputeFraudProofFacet,
-            stateSnapshotFacet
+            stateSnapshotFacet,
+            joinChannelFacet
         )
     {
         p2pTime = 5;

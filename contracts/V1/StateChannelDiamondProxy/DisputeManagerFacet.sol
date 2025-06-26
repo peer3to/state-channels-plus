@@ -108,14 +108,19 @@ contract DisputeManagerFacet is StateChannelCommon {
                 for (uint256 j = 0; j < disputeData.onChainSlashes.length; j++) {
                     if (disputeData.onChainSlashes[j].timestamp <= disputeWindowExpirationTimestamp) {
                         slashParticipants[slashCount++] = disputeData.onChainSlashes[j].participant;
+                        //if on-chain slash happened after evidnece period expired (during the kill period), take that timestamp as genesis
                         if (disputeData.onChainSlashes[j].timestamp > reducedOutput.forkGenesisTimestamp) {
                             reducedOutput.forkGenesisTimestamp = disputeData.onChainSlashes[j].timestamp;
                         }
                     }
                 }
                 // ***** reducedOutput.latestJoinChannelBlockHash *****
-                // All disputes have the same latestJoinChannelBlockHash - enforced by the chain at creation
-                reducedOutput.latestJoinChannelBlockHash = disputeData.latestJoinChannelBlockHash;
+                for (uint256 j = 0; j < disputeData.onChainJoinChannels.length; j++) {
+                    if (disputeData.onChainJoinChannels[j].timestamp <= disputeWindowExpirationTimestamp) {
+                        reducedOutput.latestJoinChannelBlockHash =
+                            disputeData.onChainJoinChannels[j].joinChannelBlockHash;
+                    }
+                }
             }
 
             // ***** reducedOutput.latestBlock *****
@@ -699,12 +704,6 @@ contract DisputeManagerFacet is StateChannelCommon {
                 revert ErrorDisputeTimeoutNotMinTimestamp();
             }
         }
-
-        // *********** 2. onChainLatestJoinChannelBlockHash should match *************
-        require(
-            dispute.onChainLatestJoinChannelBlockHash == _disputeData.latestJoinChannelBlockHash,
-            ErrorDisputeOnChainLatestJoinChannelBlockHashMismatch()
-        );
     }
 
     function _isDisputeThresholdFinal(DisputeConfirmation memory disputeConfirmation)

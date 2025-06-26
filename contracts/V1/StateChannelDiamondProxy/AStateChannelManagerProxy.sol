@@ -8,25 +8,29 @@ import "./DisputeFraudProofFacet.sol";
 import "./StateChannelUtilLibrary.sol";
 import "./StateSnapshotFacet.sol";
 import "../StateChannelManagerInterface.sol";
+import "./JoinChannelFacet.sol";
 
 abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, StateChannelCommon {
     DisputeManagerFacet disputeManagerFacet;
     FraudProofFacet fraudProofFacet;
     DisputeFraudProofFacet disputeFraudProofFacet;
     StateSnapshotFacet stateSnapshotFacet;
+    JoinChannelFacet joinChannelFacet;
 
     constructor(
         address _stateMachineImplementation,
         address _disputeManagerFacet,
         address _fraudProofFacet,
         address _disputeFraudProofFacet,
-        address _stateSnapshotFacet
+        address _stateSnapshotFacet,
+        address _joinChannelFacet
     ) {
         stateMachineImplementation = AStateMachine(_stateMachineImplementation);
         disputeManagerFacet = DisputeManagerFacet(_disputeManagerFacet);
         fraudProofFacet = FraudProofFacet(_fraudProofFacet);
         disputeFraudProofFacet = DisputeFraudProofFacet(_disputeFraudProofFacet);
         stateSnapshotFacet = StateSnapshotFacet(_stateSnapshotFacet);
+        joinChannelFacet = JoinChannelFacet(_joinChannelFacet);
         p2pTime = 15;
         agreementTime = 5;
         chainFallbackTime = 30;
@@ -360,5 +364,25 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
             abi.encodeCall(disputeManagerFacet.verifyMilestones, (milestoneProofs, milestoneSnapshots, genesisSnapshot))
         );
         return abi.decode(result, (bool, bytes));
+    }
+
+    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations) public override {
+        _delegatecall(
+            address(joinChannelFacet), abi.encodeCall(joinChannelFacet.joinChannel, (joinChannelConfirmations))
+        );
+    }
+
+    function multicall(bytes[] calldata calls) external override returns (bytes[] memory results) {
+        results = new bytes[](calls.length);
+        for (uint256 i = 0; i < calls.length; i++) {
+            (bool success, bytes memory result) = address(this).delegatecall(calls[i]);
+            if (!success) {
+                // Bubble up the revert reason
+                assembly {
+                    revert(add(result, 32), mload(result))
+                }
+            }
+            results[i] = result;
+        }
     }
 }
