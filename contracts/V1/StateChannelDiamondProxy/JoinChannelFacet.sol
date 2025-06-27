@@ -88,6 +88,4 @@ contract JoinChannelFacet is StateChannelCommon {
     }
 
     // ############### Events ###############
-
-    event JoinChannelProcessed(bytes32 indexed channelId, JoinChannelBlock joinChannelBlock, uint256 timestamp);
 }

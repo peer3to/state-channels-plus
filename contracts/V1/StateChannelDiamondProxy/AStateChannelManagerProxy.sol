@@ -1,13 +1,13 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
+import "../StateChannelManagerInterface.sol";
+import "./StateChannelUtilLibrary.sol";
+
 import "./DisputeManagerFacet.sol";
 import "./FraudProofFacet.sol";
 import "./DisputeFraudProofFacet.sol";
-
-import "./StateChannelUtilLibrary.sol";
 import "./StateSnapshotFacet.sol";
-import "../StateChannelManagerInterface.sol";
 import "./JoinChannelFacet.sol";
 
 abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, StateChannelCommon {
@@ -38,16 +38,7 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         killTime = 60;
     }
 
-    function _addParticipantComposable(JoinChannel memory joinChannel) internal virtual returns (bool);
-
-    function _removeParticipantComposable(bytes32 channelId, ExitChannel memory exitChannel)
-        internal
-        virtual
-        returns (bool);
-
-    function addParticipantComposable(JoinChannel memory joinChannel) public onlySelf returns (bool) {
-        return _addParticipantComposable(joinChannel);
-    }
+    // ********** public/external functions **********
 
     function removeParticipantComposable(bytes32 channelId, ExitChannel memory exitChannel)
         public
@@ -82,49 +73,8 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         return _removeParticipantsFromStateMachine(encodedState, participants);
     }
 
-    function _applyJoinChannelToStateMachine(bytes memory encodedState, JoinChannel[] memory joinCahnnels)
-        internal
-        returns (bytes memory encodedModifiedState)
-    {
-        stateMachineImplementation.setState(encodedState);
-        for (uint256 i = 0; i < joinCahnnels.length; i++) {
-            bool success = stateMachineImplementation.joinChannel(joinCahnnels[i]);
-            // require(success, "Slash failed");
-            require(success, ErrorDisputeStateMachineJoiningFailed());
-        }
-        return (stateMachineImplementation.getState());
-    }
-
-    function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
-        internal
-        override
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
-    {
-        exitChannels = new ExitChannel[](slashedParticipants.length);
-        stateMachineImplementation.setState(encodedState);
-        for (uint256 i = 0; i < slashedParticipants.length; i++) {
-            bool success;
-            (success, exitChannels[i]) = stateMachineImplementation.slashParticipant(slashedParticipants[i]);
-            // require(success, "Slash failed");
-            require(success, ErrorDisputeStateMachineSlashingFailed());
-        }
-        return (stateMachineImplementation.getState(), exitChannels);
-    }
-
-    function _removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
-        internal
-        override
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory)
-    {
-        ExitChannel[] memory exitChannels = new ExitChannel[](participants.length);
-        stateMachineImplementation.setState(encodedState);
-        for (uint256 i = 0; i < participants.length; i++) {
-            bool success;
-            (success, exitChannels[i]) = stateMachineImplementation.removeParticipant(participants[i]);
-            // require(success, "Remove failed");
-            require(success, ErrorDisputeStateMachineRemovingFailed());
-        }
-        return (stateMachineImplementation.getState(), exitChannels);
+    function addParticipantComposable(JoinChannel memory joinChannel) public onlySelf returns (bool) {
+        return _addParticipantComposable(joinChannel);
     }
 
     function executeStateTransitionOnState(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
@@ -168,20 +118,6 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         blockCalldataCommitments[channelId][msg.sender][forkId][transactionCnt] = commitment;
 
         emit BlockCalldataPosted(_block.transaction.header.channelId, msg.sender, signedBlock, block.timestamp);
-    }
-
-    function _delegatecall(address target, bytes memory data) internal returns (bytes memory) {
-        (bool success, bytes memory result) = target.delegatecall(data);
-        if (!success) {
-            if (result.length == 0) {
-                revert("AStateChannelManagerProxy - Delegatecall failed");
-            }
-            assembly ("memory-safe") {
-                let returndata_size := mload(result)
-                revert(add(32, result), returndata_size)
-            }
-        }
-        return result;
     }
 
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public override {
@@ -384,5 +320,73 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
             }
             results[i] = result;
         }
+    }
+
+    // ********** private/internal functions **********
+
+    function _addParticipantComposable(JoinChannel memory joinChannel) internal virtual returns (bool);
+
+    function _removeParticipantComposable(bytes32 channelId, ExitChannel memory exitChannel)
+        internal
+        virtual
+        returns (bool);
+
+    function _applyJoinChannelToStateMachine(bytes memory encodedState, JoinChannel[] memory joinCahnnels)
+        internal
+        returns (bytes memory encodedModifiedState)
+    {
+        stateMachineImplementation.setState(encodedState);
+        for (uint256 i = 0; i < joinCahnnels.length; i++) {
+            bool success = stateMachineImplementation.joinChannel(joinCahnnels[i]);
+            // require(success, "Slash failed");
+            require(success, ErrorDisputeStateMachineJoiningFailed());
+        }
+        return (stateMachineImplementation.getState());
+    }
+
+    function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
+        internal
+        override
+        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
+    {
+        exitChannels = new ExitChannel[](slashedParticipants.length);
+        stateMachineImplementation.setState(encodedState);
+        for (uint256 i = 0; i < slashedParticipants.length; i++) {
+            bool success;
+            (success, exitChannels[i]) = stateMachineImplementation.slashParticipant(slashedParticipants[i]);
+            // require(success, "Slash failed");
+            require(success, ErrorDisputeStateMachineSlashingFailed());
+        }
+        return (stateMachineImplementation.getState(), exitChannels);
+    }
+
+    function _removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
+        internal
+        override
+        returns (bytes memory encodedModifiedState, ExitChannel[] memory)
+    {
+        ExitChannel[] memory exitChannels = new ExitChannel[](participants.length);
+        stateMachineImplementation.setState(encodedState);
+        for (uint256 i = 0; i < participants.length; i++) {
+            bool success;
+            (success, exitChannels[i]) = stateMachineImplementation.removeParticipant(participants[i]);
+            // require(success, "Remove failed");
+            require(success, ErrorDisputeStateMachineRemovingFailed());
+        }
+        return (stateMachineImplementation.getState(), exitChannels);
+    }
+
+    function _delegatecall(address target, bytes memory data) internal returns (bytes memory) {
+        (bool success, bytes memory result) = target.delegatecall(data);
+        if (!success) {
+            if (result.length == 0) {
+                revert("AStateChannelManagerProxy - Delegatecall failed");
+            }
+            assembly ("memory-safe") {
+                let returndata_size := mload(result)
+                revert(add(32, result), returndata_size)
+            }
+        }
+        return result;
     }
 }
