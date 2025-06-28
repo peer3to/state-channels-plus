@@ -99,10 +99,6 @@ struct OnChainSlash {
     uint256 timestamp;
 }
 
-struct OnChainJoinChannel {
-    bytes32 joinChannelBlockHash;
-    uint256 timestamp;
-}
 /// @dev data for dispute auditing
 
 struct DisputeAuditingData {
@@ -119,9 +115,7 @@ struct DisputeAuditingData {
 
 struct DisputeData {
     OnChainSlash[] onChainSlashes;
-    OnChainJoinChannel[] onChainJoinChannels;
     address[] pendingParticipants;
-    bytes32 latestJoinChannelBlockHash;
     mapping(bytes32 forkId => DisputeWindow) disputeWindowMap;
     bytes32[] disputedForks;
 }

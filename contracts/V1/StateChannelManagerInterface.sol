@@ -16,8 +16,6 @@ abstract contract StateChannelManagerInterface {
         public
         virtual;
 
-    function processExitChannel(bytes32 channelId, ExitChannel calldata exitChannel) public virtual;
-
     function addParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
         public
         virtual;
@@ -25,8 +23,6 @@ abstract contract StateChannelManagerInterface {
     function isChannelOpen(bytes32 channelId) public view virtual returns (bool);
 
     function getParticipants(bytes32 channelId) public virtual returns (address[] memory);
-
-    function getNextToWrite(bytes32 channelId, bytes memory encodedState) public virtual returns (address);
 
     function getP2pTime() public view virtual returns (uint256);
 

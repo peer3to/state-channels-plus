@@ -108,20 +108,13 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
         override
     {}
 
-    function processExitChannel(bytes32 channelId, ExitChannel calldata exitChannel) public virtual override {}
-
     function addParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
         public
         virtual
         override
     {}
 
-    function _addParticipantComposable(JoinChannel memory joinChannel) internal virtual override returns (bool) {}
+    function _depositAssetsComposable(JoinChannel memory joinChannel) internal virtual override returns (bool) {}
 
-    function _removeParticipantComposable(bytes32 channelId, ExitChannel memory exitChannel)
-        internal
-        virtual
-        override
-        returns (bool)
-    {}
+    function _withdrawAssetsComposable(ExitChannel memory exitChannel) internal virtual override returns (bool) {}
 }

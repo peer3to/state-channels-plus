@@ -115,12 +115,12 @@ contract DisputeManagerFacet is StateChannelCommon {
                     }
                 }
                 // ***** reducedOutput.latestJoinChannelBlockHash *****
-                for (uint256 j = 0; j < disputeData.onChainJoinChannels.length; j++) {
-                    if (disputeData.onChainJoinChannels[j].timestamp <= disputeWindowExpirationTimestamp) {
-                        reducedOutput.latestJoinChannelBlockHash =
-                            disputeData.onChainJoinChannels[j].joinChannelBlockHash;
-                    }
+                ChannelBalance storage cb = channelBalances[dispute.channelId];
+                bytes32 jcbHash = cb.latestJoinChannelBlockHash;
+                while (cb.onChainJoinChannelMap[jcbHash].timestamp > disputeWindowExpirationTimestamp) {
+                    jcbHash = cb.onChainJoinChannelMap[jcbHash].prebiousJoinChannelBlockHash;
                 }
+                reducedOutput.latestJoinChannelBlockHash = jcbHash;
             }
 
             // ***** reducedOutput.latestBlock *****
@@ -250,9 +250,13 @@ contract DisputeManagerFacet is StateChannelCommon {
             disputeAuditingData.joinChannelBlocks,
             disputeAuditingData.latestStateSnapshot
         );
+        SnapshotData memory latestSnapshotData = disputeAuditingData.latestStateSnapshot.snapshotData;
         require(
             _verifyBalanceInvariantCheck(
-                dispute.channelId, disputeOutputState.totalDeposits, disputeOutputState.totalWithdrawals
+                dispute.channelId,
+                latestSnapshotData.totalDeposits,
+                latestSnapshotData.totalWithdrawals,
+                latestSnapshotData.latestJoinChannelBlockHash
             ),
             ErrorDisputeBalanceInvariantInvalid()
         );
@@ -621,16 +625,19 @@ contract DisputeManagerFacet is StateChannelCommon {
             == disputeAuditingData.latestStateSnapshot.snapshotData.latestExitChannelBlockHash;
     }
 
+    /// @dev Verify latestState balance invariant - output state is calculated with correct state transition that's audited -> if input is ok -> output is ok
     function _verifyBalanceInvariantCheck(
         bytes32 channelId,
         Balance memory totalDeposits,
-        Balance memory totalWithdrawals
+        Balance memory totalWithdrawals,
+        bytes32 latestJoinChannelBlockHash
     ) internal view returns (bool) {
-        Balance memory onChainDeposits = totalOnChainProcessedDeposits[channelId];
-        Balance memory onChainWithdrawals = totalOnChainProcessedWithdrawals[channelId];
-        //on-chain deposits have to match outputState deposits since deposits only happen on-chain
+        ChannelBalance storage channelBalance = channelBalances[channelId];
+        Balance memory onChainDeposits = channelBalance.onChainJoinChannelMap[latestJoinChannelBlockHash].totalDeposits;
+        Balance memory onChainWithdrawals = channelBalance.totalOnChainWithdrawals;
+        //on-chain deposits have to match latestState deposits since deposits only happen on-chain
         if (!stateMachineImplementation.areBalancesEqual(totalDeposits, onChainDeposits)) return false;
-        //total withdrawals can not be less than on-chain withdrawals since on-chain withdrawals are already processed
+        //total withdrawals >= on-chain withdrawals since on-chain withdrawals are already processed
         if (stateMachineImplementation.isBalanceLesserThan(totalWithdrawals, onChainWithdrawals)) return false;
         Balance memory stateMachineBalance = stateMachineImplementation.getTotalStateBalance(); // The state is already set
         // totalDeposits == totalWithdrawals + stateMachineBalance

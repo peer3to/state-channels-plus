@@ -40,56 +40,6 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
 
     // ********** public/external functions **********
 
-    function removeParticipantComposable(bytes32 channelId, ExitChannel memory exitChannel)
-        public
-        onlySelf
-        returns (bool)
-    {
-        return _removeParticipantComposable(channelId, exitChannel);
-    }
-
-    function applyJoinChannelToStateMachine(bytes memory encodedState, JoinChannel[] memory joinCahnnels)
-        public
-        override
-        onlySelf
-        returns (bytes memory encodedModifiedState)
-    {
-        return _applyJoinChannelToStateMachine(encodedState, joinCahnnels);
-    }
-
-    function applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
-        public
-        onlySelf
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory)
-    {
-        return _applySlashesToStateMachine(encodedState, slashedParticipants);
-    }
-
-    function removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
-        public
-        onlySelf
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory)
-    {
-        return _removeParticipantsFromStateMachine(encodedState, participants);
-    }
-
-    function addParticipantComposable(JoinChannel memory joinChannel) public onlySelf returns (bool) {
-        return _addParticipantComposable(joinChannel);
-    }
-
-    function executeStateTransitionOnState(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
-        public
-        override
-        returns (bool, bytes memory)
-    {
-        //channelId not used currenlty since all channels have the same SM - later they can be mapped to different ones
-        stateMachineImplementation.setState(encodedState);
-        (bool success,) =
-            address(stateMachineImplementation).call(abi.encodeCall(stateMachineImplementation.stateTransition, _tx));
-        return (success, stateMachineImplementation.getState());
-        // return (success, abi.decode(encodedReturnValue, (bytes)));
-    }
-
     /**
      * Posting calldata is lightweight, since it persists a signle hash/commitment.
      *     It's enough to check just the maxTimestamp safety guard that protects against race conditions, since everything else is committed in the block.
@@ -163,6 +113,78 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         );
     }
 
+    function updateStateSnapshotFork(
+        bytes32 channelId,
+        StateSnapshot memory newStateSnapshot,
+        ExitChannelBlock[] memory exitChannelBlocks
+    ) public override {
+        _delegatecall(
+            address(stateSnapshotFacet),
+            abi.encodeCall(stateSnapshotFacet.updateStateSnapshotFork, (channelId, newStateSnapshot, exitChannelBlocks))
+        );
+    }
+
+    function updateStateSnapshotSameFork(
+        bytes32 channelId,
+        MilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        ExitChannelBlock[] memory exitChannelBlocks
+    ) public override {
+        _delegatecall(
+            address(stateSnapshotFacet),
+            abi.encodeCall(
+                stateSnapshotFacet.updateStateSnapshotSameFork,
+                (channelId, milestoneProofs, milestoneSnapshots, exitChannelBlocks)
+            )
+        );
+    }
+
+    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations) public override {
+        _delegatecall(
+            address(joinChannelFacet), abi.encodeCall(joinChannelFacet.joinChannel, (joinChannelConfirmations))
+        );
+    }
+
+    // ********** public/external DIAMOND functions **********
+
+    /// @dev Callable only by diamond facets - performs the deposit of the specific assets by interpeting `joinChannel` - returns bool success
+    function depositAssetsComposable(JoinChannel memory joinChannel) public onlySelf returns (bool) {
+        return _depositAssetsComposable(joinChannel);
+    }
+
+    /// @dev Callable only by diamond facets - performs the withdrawal of the specific assets by interpeting `exitChannel` - returns bool success
+    function withdrawAssetsComposable(ExitChannel memory exitChannel) public onlySelf returns (bool) {
+        return _withdrawAssetsComposable(exitChannel);
+    }
+
+    function applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
+        public
+        onlySelf
+        returns (bytes memory encodedModifiedState, ExitChannel[] memory)
+    {
+        return _applySlashesToStateMachine(encodedState, slashedParticipants);
+    }
+
+    function removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
+        public
+        onlySelf
+        returns (bytes memory encodedModifiedState, ExitChannel[] memory)
+    {
+        return _removeParticipantsFromStateMachine(encodedState, participants);
+    }
+
+    function executeStateTransitionOnState(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
+        public
+        override
+        returns (bool, bytes memory encodedModifiedState)
+    {
+        //channelId not used currenlty since all channels have the same SM - later they can be mapped to different ones
+        stateMachineImplementation.setState(encodedState);
+        (bool success,) =
+            address(stateMachineImplementation).call(abi.encodeCall(stateMachineImplementation.stateTransition, _tx));
+        return (success, stateMachineImplementation.getState());
+    }
+
     function verifyFraudProofs(
         FraudProof[] memory fraudProofs,
         FraudProofVerificationContext memory fraudProofVerificationContext
@@ -192,14 +214,6 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         returns (address[] memory)
     {
         return getSnapshotParticipants(channelId);
-    }
-
-    function getNextToWrite(bytes32 channelId, bytes memory encodedState)
-        public
-        override(StateChannelCommon, StateChannelManagerInterface)
-        returns (address)
-    {
-        return StateChannelCommon.getNextToWrite(channelId, encodedState);
     }
 
     function getP2pTime() public view override(StateChannelCommon, StateChannelManagerInterface) returns (uint256) {
@@ -264,32 +278,6 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         return StateChannelCommon.isChannelOpen(channelId);
     }
 
-    function updateStateSnapshotFork(
-        bytes32 channelId,
-        StateSnapshot memory newStateSnapshot,
-        ExitChannelBlock[] memory exitChannelBlocks
-    ) public override {
-        _delegatecall(
-            address(stateSnapshotFacet),
-            abi.encodeCall(stateSnapshotFacet.updateStateSnapshotFork, (channelId, newStateSnapshot, exitChannelBlocks))
-        );
-    }
-
-    function updateStateSnapshotSameFork(
-        bytes32 channelId,
-        MilestoneProof[] memory milestoneProofs,
-        StateSnapshot[] memory milestoneSnapshots,
-        ExitChannelBlock[] memory exitChannelBlocks
-    ) public override {
-        _delegatecall(
-            address(stateSnapshotFacet),
-            abi.encodeCall(
-                stateSnapshotFacet.updateStateSnapshotSameFork,
-                (channelId, milestoneProofs, milestoneSnapshots, exitChannelBlocks)
-            )
-        );
-    }
-
     function verifyMilestones(
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
@@ -300,12 +288,6 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
             abi.encodeCall(disputeManagerFacet.verifyMilestones, (milestoneProofs, milestoneSnapshots, genesisSnapshot))
         );
         return abi.decode(result, (bool, bytes));
-    }
-
-    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations) public override {
-        _delegatecall(
-            address(joinChannelFacet), abi.encodeCall(joinChannelFacet.joinChannel, (joinChannelConfirmations))
-        );
     }
 
     function multicall(bytes[] calldata calls) external override returns (bytes[] memory results) {
@@ -324,25 +306,9 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
 
     // ********** private/internal functions **********
 
-    function _addParticipantComposable(JoinChannel memory joinChannel) internal virtual returns (bool);
+    function _depositAssetsComposable(JoinChannel memory joinChannel) internal virtual returns (bool);
 
-    function _removeParticipantComposable(bytes32 channelId, ExitChannel memory exitChannel)
-        internal
-        virtual
-        returns (bool);
-
-    function _applyJoinChannelToStateMachine(bytes memory encodedState, JoinChannel[] memory joinCahnnels)
-        internal
-        returns (bytes memory encodedModifiedState)
-    {
-        stateMachineImplementation.setState(encodedState);
-        for (uint256 i = 0; i < joinCahnnels.length; i++) {
-            bool success = stateMachineImplementation.joinChannel(joinCahnnels[i]);
-            // require(success, "Slash failed");
-            require(success, ErrorDisputeStateMachineJoiningFailed());
-        }
-        return (stateMachineImplementation.getState());
-    }
+    function _withdrawAssetsComposable(ExitChannel memory exitChannel) internal virtual returns (bool);
 
     function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
         internal

@@ -18,6 +18,10 @@ error ErrorStanpshotForkMismatch();
 error ErrorJoinChannelExpired();
 error ErrorJoinChannelInvalidSignature();
 
+//Exit channel
+error ErrorWithdrawalFailed();
+error CantWithdrawMoreThanDeposits();
+
 //Dispute errors
 error ErrorDisputerNotMsgSender();
 error ErrorTimeoutNotLinkedToPreviousBlock();
