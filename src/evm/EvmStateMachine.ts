@@ -1,4 +1,4 @@
-import { EVM } from "@ethereumjs/evm";
+import { createEVM } from "@ethereumjs/evm";
 import { BytesLike, ethers, Signer, hexlify } from "ethers";
 import {
     AStateChannelManagerProxy,
@@ -176,7 +176,7 @@ class EvmStateMachine extends AStateMachine {
         deployStateMachineTx: any,
         contractInterface: ethers.Interface
     ): Promise<EvmStateMachine> {
-        const evm = await EVM.create();
+        const evm = await createEVM();
 
         // Deploy the state machine contract
         const deploymentResult = await evm.runCall({
