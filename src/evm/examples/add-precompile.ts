@@ -28,11 +28,11 @@ function to32Bytes(n: number, bytes_size = 4): Uint8Array {
     return new Uint8Array(buf);
 }
 
-export function createAddPrecompile(): CustomPrecompile {
+export async function createAddPrecompile(): Promise<CustomPrecompile> {
+    await initAddWasm();
     return {
         address: ADD_PRECOMPILE_ADDRESS,
         function: ({ data, gasLimit }) => {
-            // Validate input length - must be exactly 64 bytes (2 x 32 bytes)
             if (!data || data.length !== 64) {
                 throw new Error(
                     `Invalid input length: expected 64 bytes, got ${data?.length ?? 0} bytes`

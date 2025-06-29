@@ -1,6 +1,6 @@
 import { EVM, createEVM } from "@ethereumjs/evm";
 import { Hardfork, Common, Mainnet } from "@ethereumjs/common";
-import { createAddPrecompile, initAddWasm } from "./examples/add-precompile";
+import { createAddPrecompile } from "./examples/add-precompile";
 
 export class CustomEVM extends EVM {
     static async create(): Promise<CustomEVM> {
@@ -9,11 +9,11 @@ export class CustomEVM extends EVM {
             hardfork: Hardfork.Prague
         });
 
-        await initAddWasm();
+        const addPrecompile = await createAddPrecompile();
 
         const evm = await createEVM({
             common,
-            customPrecompiles: [createAddPrecompile()]
+            customPrecompiles: [addPrecompile]
         });
 
         return evm as CustomEVM;

@@ -12,7 +12,6 @@ describe("Add Precompile", () => {
     });
 
     it("should add two numbers correctly", async () => {
-        // Test values
         const a = randomInt(0, 4096);
         const b = randomInt(0, 4096);
         const expectedSum = a + b;
@@ -22,7 +21,6 @@ describe("Add Precompile", () => {
         const bBytes = toBeHex(b, 32);
         const inputData = aBytes.slice(2) + bBytes.slice(2);
 
-        // Call the precompile
         const {
             execResult: { exceptionError, returnValue }
         } = await evm.runCall({
@@ -30,7 +28,6 @@ describe("Add Precompile", () => {
             data: Buffer.from(inputData, "hex")
         });
 
-        // Check there were no errors
         expect(exceptionError).to.be.undefined;
 
         // Convert result to number (it's left-aligned in 32 bytes)
