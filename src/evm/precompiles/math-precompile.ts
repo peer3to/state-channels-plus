@@ -60,7 +60,6 @@ export async function createMathPrecompile(): Promise<CustomPrecompile> {
                     0xffffffffn
             );
 
-            // Call the WASM function
             const func =
                 Wasm.getExport<(a: number, b: number) => number>(funcName);
             const result = func(a, b);

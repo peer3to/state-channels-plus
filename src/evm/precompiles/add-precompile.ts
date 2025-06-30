@@ -38,7 +38,6 @@ export async function createAddPrecompile(): Promise<CustomPrecompile> {
                 "0x" + Buffer.from(data.slice(32, 64)).toString("hex")
             );
 
-            // Get the add function from WASM
             const add = Wasm.getExport<(a: number, b: number) => number>("add");
 
             const result = add(

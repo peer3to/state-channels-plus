@@ -16,7 +16,6 @@ describe("Add Precompile", () => {
         const b = randomInt(0, 4096);
         const expectedSum = a + b;
 
-        // Create input data: two 32-byte numbers
         const aBytes = toBeHex(a, 32);
         const bBytes = toBeHex(b, 32);
         const inputData = aBytes.slice(2) + bBytes.slice(2);
