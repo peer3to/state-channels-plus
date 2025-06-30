@@ -7,50 +7,19 @@ import "./Errors.sol";
 
 contract DisputeManagerFacet is StateChannelCommon {
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public {
+        _uploadDispute(disputeConfirmation, false);
+    }
+
+    function uploadDisputeWithCalldata(
+        DisputeConfirmation memory disputeConfirmation,
+        DisputeAuditingData memory disputeAuditingData
+    ) public {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
-        require(msg.sender == dispute.disputer, ErrorDisputerNotMsgSender());
-        require(_canParticipateInDisputes(dispute.channelId, msg.sender), ErrorCantParticipateInDispute());
-
-        // race condition checks
-        _disputeRaceConditionCheck(dispute);
-
-        DisputeData storage disputeData = disputeData[dispute.channelId];
-        mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
-        bytes32 forkId = dispute.genesisSnapshotDataHash;
-        DisputeWindow storage disputeWindow = disputeWindowMap[forkId];
-        bool isThresholdFinal = _isDisputeThresholdFinal(disputeConfirmation);
-        bool isAuditingRequired;
-        if (!isThresholdFinal) {
-            require(!_isAuditingRequired(disputeConfirmation), ErrorDisputeAuditingRequired());
-        }
-
-        //check if dispute window is created/opened for the disputed fork, otherwise create/open it
-        if (disputeWindow.evidence.creationTimestamp == 0) {
-            //create the dispute window
-            disputeWindow.forkId = forkId;
-            disputeWindow.evidence.creationTimestamp = block.timestamp; //challenge period started
-        } else {
-            require(
-                block.timestamp <= disputeWindow.evidence.creationTimestamp + getEvidenceTime(),
-                ErrorDisputeChallengePeriodExpired()
-            );
-            require(!disputeWindow.evidence.hasPosted[dispute.disputer], ErrorDisputeAlreadyPosted());
-        }
-
-        if (isThresholdFinal) {
-            //finalize the dispute windown by making the kill period expired
-            disputeWindow.evidence.creationTimestamp = block.timestamp - getKillTime() - 1;
-            //delete all previous commitments - free up storage (gas refund)
-            delete disputeWindow.evidence.disputeCommitments;
-            //The reduced result is this dispute output. Finalize it by making it expired.
-            _commitToDisputeReducedResult(
-                disputeWindow, dispute.outputSnapshotDataHash, block.timestamp - getEvidenceTime() - 1, block.timestamp
-            );
-        }
-        disputeWindow.evidence.disputeCommitments.push(keccak256(abi.encode(dispute)));
-        disputeWindow.evidence.hasPosted[dispute.disputer] = true; //disputer has posted the dispute
-        emit DisputeCommited(
-            dispute.channelId, dispute, block.timestamp, isThresholdFinal, disputeWindow.evidence.creationTimestamp
+        bytes32 disputeAuditingDataHash = keccak256(abi.encode(disputeAuditingData));
+        require(dispute.disputeAuditingDataHash == disputeAuditingDataHash, ErrorAuditingDataHashMismatch());
+        _uploadDispute(disputeConfirmation, true);
+        emit DisputeAuditingDataPosted(
+            dispute.channelId, keccak256(disputeConfirmation.signedDispute.encodedDispute), disputeAuditingData
         );
     }
 
@@ -64,20 +33,10 @@ contract DisputeManagerFacet is StateChannelCommon {
         for (uint256 i = 0; i < slashes.length; i++) {
             addOnChainSlashedParticipant(dispute.channelId, slashes[i]);
         }
-        uploadDispute(disputeConfirmation);
-    }
-
-    function commitToReducedResult(
-        bytes32 channelId,
-        bytes32 disputedForkId,
-        bytes32 reducedForkId,
-        uint256 reducedForkGenesisTimestamps
-    ) public {
-        DisputeData storage disputeData = disputeData[channelId];
-        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputedForkId];
-        require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
-        _commitToDisputeReducedResult(disputeWindow, reducedForkId, block.timestamp, reducedForkGenesisTimestamps);
-        //TODO - emit event
+        _uploadDispute(disputeConfirmation, true);
+        emit DisputeAuditingDataPosted(
+            dispute.channelId, keccak256(disputeConfirmation.signedDispute.encodedDispute), disputeAuditingData
+        );
     }
 
     function reduce(Dispute[] memory disputes, uint256 disputeWindowCreationTimestamp)
@@ -175,50 +134,6 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
     }
 
-    function reduceOutputToSnapshotData(
-        ReduceOutput memory reducedOutput,
-        StateSnapshot memory stateSnapshot,
-        bytes memory encodedStateMachineState,
-        JoinChannelBlock[] memory joinChannelBlocks
-    ) public returns (SnapshotData memory outputSnapshotData) {
-        //verify snapshot linked to reducedOutput.latestBlock
-        Block memory latestBlock = reducedOutput.latestBlock;
-        require(latestBlock.stateSnapshotHash == keccak256(abi.encode(stateSnapshot)), ErrorInvalidStateSnapshot());
-        //verify encodedStateMachineState linked to snapshot
-        require(
-            stateSnapshot.snapshotData.stateMachineStateHash == keccak256(encodedStateMachineState),
-            ErrorInvalidLatestState()
-        );
-        //verify JoinChannelBlocks
-        require(
-            _verifyJoinChannelBlocks(
-                stateSnapshot.snapshotData.latestJoinChannelBlockHash,
-                reducedOutput.latestJoinChannelBlockHash,
-                joinChannelBlocks
-            ),
-            ErrorDisputeJoinChannelBlocksInvalid()
-        );
-
-        address[] memory removals = reducedOutput.selfRemovals;
-        if (reducedOutput.timeout.participant != address(0) && reducedOutput.slashedParticipants.length == 0) {
-            removals =
-                StateChannelUtilLibrary.insertIntoAddressArrayNoDuplicates(removals, reducedOutput.timeout.participant);
-        }
-
-        DisputeOutputState memory outputState = generateDisputeOutputState(
-            encodedStateMachineState, reducedOutput.slashedParticipants, removals, joinChannelBlocks, stateSnapshot
-        );
-
-        return SnapshotData({
-            stateMachineStateHash: keccak256(outputState.encodedModifiedState),
-            participants: getStatemachineParticipants(outputState.encodedModifiedState),
-            latestJoinChannelBlockHash: reducedOutput.latestJoinChannelBlockHash, // This has been verified in _verifyJoinChannelBlocks
-            latestExitChannelBlockHash: keccak256(abi.encode(outputState.exitBlock)),
-            totalDeposits: outputState.totalDeposits,
-            totalWithdrawals: outputState.totalWithdrawals
-        });
-    }
-
     function auditDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         external
         onlySelf
@@ -294,19 +209,25 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
     }
 
-    function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public {
-        Dispute[] memory maliciousDisputes = _verifyDisputeFraudProofs(proofs);
-        for (uint256 i = 0; i < maliciousDisputes.length; i++) {
-            _killDispute(maliciousDisputes[i]);
-        }
+    function commitToReducedResult(
+        bytes32 channelId,
+        bytes32 disputedForkId,
+        bytes32 reducedForkId,
+        uint256 reducedForkGenesisTimestamps
+    ) public {
+        DisputeData storage disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputedForkId];
+        require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
+        _commitToDisputeReducedResult(disputeWindow, reducedForkId, block.timestamp, reducedForkGenesisTimestamps);
+        //TODO - emit event
     }
+
     /**
      * @notice Challenges a dispute reduction by providing disputes and verification data
      * @dev IMPORTANT: The disputes array must be provided in the same order as they were committed
      *      to the dispute window. The off-chain client is responsible for ensuring disputes are
      *      ordered correctly to save on gas during verification.
      */
-
     function challengeDisputeReduction(
         Dispute[] memory disputes,
         uint256 disputeWindowCreationTimestamp,
@@ -347,6 +268,63 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
     }
 
+    function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public {
+        Dispute[] memory maliciousDisputes = _verifyDisputeFraudProofs(proofs);
+        for (uint256 i = 0; i < maliciousDisputes.length; i++) {
+            _killDispute(maliciousDisputes[i]);
+        }
+    }
+
+    function reduceOutputToSnapshotData(
+        ReduceOutput memory reducedOutput,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory encodedStateMachineState,
+        JoinChannelBlock[] memory joinChannelBlocks
+    ) public returns (SnapshotData memory outputSnapshotData) {
+        //verify snapshot linked to reducedOutput.latestBlock
+        Block memory latestBlock = reducedOutput.latestBlock;
+        require(
+            latestBlock.stateSnapshotHash == keccak256(abi.encode(latestStateSnapshot)), ErrorInvalidStateSnapshot()
+        );
+        //verify encodedStateMachineState linked to snapshot
+        require(
+            latestStateSnapshot.snapshotData.stateMachineStateHash == keccak256(encodedStateMachineState),
+            ErrorInvalidLatestState()
+        );
+        //verify JoinChannelBlocks
+        require(
+            _verifyJoinChannelBlocks(
+                latestStateSnapshot.snapshotData.latestJoinChannelBlockHash,
+                reducedOutput.latestJoinChannelBlockHash,
+                joinChannelBlocks
+            ),
+            ErrorDisputeJoinChannelBlocksInvalid()
+        );
+
+        address[] memory removals = reducedOutput.selfRemovals;
+        if (reducedOutput.timeout.participant != address(0) && reducedOutput.slashedParticipants.length == 0) {
+            removals =
+                StateChannelUtilLibrary.insertIntoAddressArrayNoDuplicates(removals, reducedOutput.timeout.participant);
+        }
+
+        DisputeOutputState memory outputState = generateDisputeOutputState(
+            encodedStateMachineState,
+            reducedOutput.slashedParticipants,
+            removals,
+            joinChannelBlocks,
+            latestStateSnapshot
+        );
+
+        return SnapshotData({
+            stateMachineStateHash: keccak256(outputState.encodedModifiedState),
+            participants: getStatemachineParticipants(outputState.encodedModifiedState),
+            latestJoinChannelBlockHash: reducedOutput.latestJoinChannelBlockHash, // This has been verified in _verifyJoinChannelBlocks
+            latestExitChannelBlockHash: keccak256(abi.encode(outputState.exitBlock)),
+            totalDeposits: outputState.totalDeposits,
+            totalWithdrawals: outputState.totalWithdrawals
+        });
+    }
+
     // Doesn't do any checks and just applies all slashes, removals and joins to a specific stateMachineState and generates the outputStateMachineState - similar logic to playTransaction in the typescript code - this is done to help the backer generate a correct output state while forging the dispute
     function generateDisputeOutputState(
         bytes memory encodedStateMachineState,
@@ -381,6 +359,55 @@ contract DisputeManagerFacet is StateChannelCommon {
             _formExitChannelBlock(latestStateSnapshot.snapshotData.latestExitChannelBlockHash, allExitChannels);
 
         return outputState;
+    }
+
+    // ********************** Internal/private functions
+
+    function _uploadDispute(DisputeConfirmation memory disputeConfirmation, bool isAuditingCalldataProvided) internal {
+        Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
+        require(msg.sender == dispute.disputer, ErrorDisputerNotMsgSender());
+        require(_canParticipateInDisputes(dispute.channelId, msg.sender), ErrorCantParticipateInDispute());
+
+        // race condition checks
+        _disputeRaceConditionCheck(dispute);
+
+        DisputeData storage disputeData = disputeData[dispute.channelId];
+        mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
+        bytes32 forkId = dispute.genesisSnapshotDataHash;
+        DisputeWindow storage disputeWindow = disputeWindowMap[forkId];
+        bool isThresholdFinal = _isDisputeThresholdFinal(disputeConfirmation);
+        if (!isAuditingCalldataProvided && !isThresholdFinal) {
+            require(!_isAuditingCalldataRequired(disputeConfirmation), ErrorDisputeAuditingRequired());
+        }
+
+        //check if dispute window is created/opened for the disputed fork, otherwise create/open it
+        if (disputeWindow.evidence.creationTimestamp == 0) {
+            //create the dispute window
+            disputeWindow.forkId = forkId;
+            disputeWindow.evidence.creationTimestamp = block.timestamp; //challenge period started
+        } else {
+            require(
+                block.timestamp <= disputeWindow.evidence.creationTimestamp + getEvidenceTime(),
+                ErrorDisputeChallengePeriodExpired()
+            );
+            require(!disputeWindow.evidence.hasPosted[dispute.disputer], ErrorDisputeAlreadyPosted());
+        }
+
+        if (isThresholdFinal) {
+            //finalize the dispute windown by making the kill period expired
+            disputeWindow.evidence.creationTimestamp = block.timestamp - getKillTime() - 1;
+            //delete all previous commitments - free up storage (gas refund)
+            delete disputeWindow.evidence.disputeCommitments;
+            //The reduced result is this dispute output. Finalize it by making it expired.
+            _commitToDisputeReducedResult(
+                disputeWindow, dispute.outputSnapshotDataHash, block.timestamp - getEvidenceTime() - 1, block.timestamp
+            );
+        }
+        disputeWindow.evidence.disputeCommitments.push(keccak256(abi.encode(dispute)));
+        disputeWindow.evidence.hasPosted[dispute.disputer] = true; //disputer has posted the dispute
+        emit DisputeCommited(
+            dispute.channelId, dispute, block.timestamp, isThresholdFinal, disputeWindow.evidence.creationTimestamp
+        );
     }
 
     function _killDispute(Dispute memory dispute) internal {
@@ -492,11 +519,13 @@ contract DisputeManagerFacet is StateChannelCommon {
         return true;
     }
 
-    function _isMilestoneFinal(
-        MilestoneProof memory milestone,
-        address[] memory expectedParticipants,
-        bytes32 genesisSnapshotHash
-    ) internal pure returns (bool isFinal, bytes32 finalizedSnapshotHash) {
+    function _isMilestoneFinal(StateSnapshot memory genesisSnapshot, MilestoneProof memory milestone)
+        internal
+        pure
+        returns (bool isFinal, bytes32 finalizedSnapshotHash)
+    {
+        bytes32 genesisForkId = genesisSnapshot.forkId;
+        address[] memory expectedParticipants = genesisSnapshot.snapshotData.participants;
         address[] memory thresholdSet = new address[](expectedParticipants.length);
         uint256 thresholdCount = 0;
         bytes memory previousEncodedBlock;
@@ -509,6 +538,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         for (uint256 i = 0; i < milestone.blockConfirmations.length; i++) {
             currentBlockConfirmation = milestone.blockConfirmations[i];
             currentBlock = abi.decode(currentBlockConfirmation.signedBlock.encodedBlock, (Block));
+            if (currentBlock.transaction.header.forkId != genesisForkId) return (false, bytes32(0));
             //check linked
             if (i != 0) {
                 if (currentBlock.previousBlockHash != keccak256(previousEncodedBlock)) {
@@ -547,7 +577,6 @@ contract DisputeManagerFacet is StateChannelCommon {
         StateSnapshot[] memory milestoneSnapshots,
         StateSnapshot memory genesisSnapshot
     ) public returns (bool isValid, bytes memory lastBlockEncoded) {
-        address[] memory participants = genesisSnapshot.snapshotData.participants;
         StateSnapshot memory snapshot = genesisSnapshot;
         lastBlockEncoded = "";
 
@@ -558,8 +587,7 @@ contract DisputeManagerFacet is StateChannelCommon {
 
         for (uint256 i = 0; i < milestoneProofs.length; i++) {
             MilestoneProof memory milestone = milestoneProofs[i];
-            (bool isFinal, bytes32 finalizedSnapshotHash) =
-                _isMilestoneFinal(milestone, participants, snapshot.snapshotData.stateMachineStateHash);
+            (bool isFinal, bytes32 finalizedSnapshotHash) = _isMilestoneFinal(snapshot, milestone);
             if (!isFinal) {
                 return (false, "");
             }
@@ -567,8 +595,6 @@ contract DisputeManagerFacet is StateChannelCommon {
                 return (false, "");
             }
             snapshot = milestoneSnapshots[i];
-            participants = milestoneSnapshots[i].snapshotData.participants;
-
             if (i == milestoneProofs.length - 1 && milestone.blockConfirmations.length > 0) {
                 lastBlockEncoded =
                     milestone.blockConfirmations[milestone.blockConfirmations.length - 1].signedBlock.encodedBlock;
@@ -738,15 +764,13 @@ contract DisputeManagerFacet is StateChannelCommon {
         return isThresholdFinal;
     }
 
-    function _isAuditingRequired(DisputeConfirmation memory disputeConfirmation)
+    function _isAuditingCalldataRequired(DisputeConfirmation memory disputeConfirmation)
         internal
         view
         returns (bool isRequired)
     {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         DisputeData storage disputeData = disputeData[dispute.channelId];
-        SnapshotData storage snapshotData = stateSnapshots[dispute.channelId].snapshotData;
-        uint256 thresholdCount = disputeData.pendingParticipants.length;
         if (disputeConfirmation.signatures.length < disputeData.pendingParticipants.length) return true;
 
         (bool isThresholdFinal,) = StateChannelUtilLibrary.verifyThresholdSigned(
@@ -758,7 +782,7 @@ contract DisputeManagerFacet is StateChannelCommon {
     }
 
     function _calculateRemovals(Dispute memory dispute) internal view returns (address[] memory removals) {
-        //Try and combine timeout and selfRemova -> max 2 removals per dispute
+        //Try and combine timeout and selfRemoval -> max 2 removals per dispute
         uint256 removalCount = 0;
         address[] memory _removals = new address[](2);
         // Always apply selfRemoval if set

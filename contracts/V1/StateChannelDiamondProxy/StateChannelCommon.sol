@@ -89,7 +89,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow) internal view returns (bool) {
-        return block.timestamp > disputeWindow.reducedResult.timestamp + getEvidenceTime();
+        return block.timestamp > disputeWindow.reducedResult.timestamp + evidenceTime;
     }
 
     function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
@@ -217,7 +217,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         stateMachineImplementation.setState(encodedState);
         for (uint256 i = 0; i < joinCahnnels.length; i++) {
             bool success = stateMachineImplementation.joinChannel(joinCahnnels[i]);
-            // require(success, "Slash failed");
             require(success, ErrorDisputeStateMachineJoiningFailed());
         }
         return (stateMachineImplementation.getState());
@@ -239,7 +238,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         bytes32 commitment = keccak256(abi.encode(dispute));
 
         for (uint256 i = 0; i < disputeWindow.evidence.disputeCommitments.length; i++) {
-            if (disputeWindow.evidence.disputeCommitments[i] != commitment) {
+            if (disputeWindow.evidence.disputeCommitments[i] == commitment) {
                 return true;
             }
         }

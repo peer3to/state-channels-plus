@@ -96,6 +96,16 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         return slashedParticipants;
     }
 
+    function uploadDisputeWithCalldata(
+        DisputeConfirmation memory disputeConfirmation,
+        DisputeAuditingData memory disputeAuditingData
+    ) public override {
+        _delegatecall(
+            address(disputeManagerFacet),
+            abi.encodeCall(disputeManagerFacet.uploadDisputeWithCalldata, (disputeConfirmation, disputeAuditingData))
+        );
+    }
+
     function uploadDisputeAndAudit(
         DisputeConfirmation memory disputeConfirmation,
         DisputeAuditingData memory disputeAuditingData
@@ -110,6 +120,12 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         _delegatecall(
             address(disputeManagerFacet),
             abi.encodeCall(disputeManagerFacet.challengeDispute, (dispute, disputeAuditingData))
+        );
+    }
+
+    function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public override {
+        _delegatecall(
+            address(disputeManagerFacet), abi.encodeCall(disputeManagerFacet.applyDisputeFraudProofs, (proofs))
         );
     }
 
@@ -173,7 +189,7 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         return _removeParticipantsFromStateMachine(encodedState, participants);
     }
 
-    function executeStateTransitionOnState(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
+    function executeStateTransition(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
         public
         override
         returns (bool, bytes memory encodedModifiedState)
@@ -320,7 +336,6 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         for (uint256 i = 0; i < slashedParticipants.length; i++) {
             bool success;
             (success, exitChannels[i]) = stateMachineImplementation.slashParticipant(slashedParticipants[i]);
-            // require(success, "Slash failed");
             require(success, ErrorDisputeStateMachineSlashingFailed());
         }
         return (stateMachineImplementation.getState(), exitChannels);

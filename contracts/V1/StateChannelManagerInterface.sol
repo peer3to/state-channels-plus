@@ -36,7 +36,7 @@ abstract contract StateChannelManagerInterface {
 
     function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256, uint256);
 
-    function executeStateTransitionOnState(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
+    function executeStateTransition(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
         public
         virtual
         returns (bool, bytes memory);
@@ -51,6 +51,11 @@ abstract contract StateChannelManagerInterface {
 
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public virtual;
 
+    function uploadDisputeWithCalldata(
+        DisputeConfirmation memory disputeConfirmation,
+        DisputeAuditingData memory disputeAuditingData
+    ) public virtual;
+
     function auditDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         public
         virtual
@@ -62,6 +67,8 @@ abstract contract StateChannelManagerInterface {
     ) public virtual;
 
     function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public virtual;
+
+    function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public virtual;
 
     function updateStateSnapshotFork(
         bytes32 channelId,
