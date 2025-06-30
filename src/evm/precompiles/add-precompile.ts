@@ -9,18 +9,18 @@ export const ADD_PRECOMPILE_ADDRESS = createAddressFromString(
     "0x0000000000000000000000000000000000000123"
 );
 
-export async function initAddWasm(): Promise<void> {
+export async function initAddWasm(): Promise<Wasm> {
     const wasmPath = path.resolve(__dirname, "./add.wasm");
     try {
         const wasmSource = fs.readFileSync(wasmPath);
-        await Wasm.init(wasmSource);
+        return Wasm.init(wasmSource);
     } catch (err) {
         throw new Error(`Failed to read WASM file at ${wasmPath}: ${err}`);
     }
 }
 
 export async function createAddPrecompile(): Promise<CustomPrecompile> {
-    await initAddWasm();
+    const wasm = await initAddWasm();
     return {
         address: ADD_PRECOMPILE_ADDRESS,
         function: ({ data, gasLimit }) => {
@@ -38,7 +38,7 @@ export async function createAddPrecompile(): Promise<CustomPrecompile> {
                 "0x" + Buffer.from(data.slice(32, 64)).toString("hex")
             );
 
-            const add = Wasm.getExport<(a: number, b: number) => number>("add");
+            const add = wasm.getExport<(a: number, b: number) => number>("add");
 
             const result = add(
                 Number(a & 0xffffffffn),

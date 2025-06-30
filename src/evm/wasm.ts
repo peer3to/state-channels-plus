@@ -1,16 +1,17 @@
 export class Wasm {
-    private static instance: WebAssembly.Instance | undefined;
+    private readonly instance: WebAssembly.Instance;
 
-    static async init(wasmBytes: Uint8Array) {
-        if (this.instance) return;
-        const mod = await WebAssembly.compile(wasmBytes);
-        this.instance = await WebAssembly.instantiate(mod);
+    private constructor(instance: WebAssembly.Instance) {
+        this.instance = instance;
     }
 
-    static getExport<T extends Function>(name: string): T {
-        if (!this.instance) {
-            throw new Error("WASM module not initialized. Call init() first.");
-        }
+    static async init(wasmBytes: Uint8Array): Promise<Wasm> {
+        const mod = await WebAssembly.compile(wasmBytes);
+        const instance = await WebAssembly.instantiate(mod);
+        return new Wasm(instance);
+    }
+
+    getExport<T extends Function>(name: string): T {
         const exportedFunc = this.instance.exports[name];
         if (typeof exportedFunc !== "function") {
             throw new Error(`Export '${name}' not found or not a function`);
@@ -18,18 +19,11 @@ export class Wasm {
         return exportedFunc as T;
     }
 
-    static hasExport(name: string): boolean {
-        return this.instance?.exports[name] !== undefined;
+    hasExport(name: string): boolean {
+        return this.instance.exports[name] !== undefined;
     }
 
-    static getExports(): string[] {
-        if (!this.instance) {
-            throw new Error("WASM module not initialized. Call init() first.");
-        }
+    getExports(): string[] {
         return Object.keys(this.instance.exports);
-    }
-
-    static reset(): void {
-        this.instance = undefined;
     }
 }

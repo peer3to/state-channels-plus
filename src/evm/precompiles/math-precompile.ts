@@ -10,11 +10,11 @@ export const MATH_PRECOMPILE_ADDRESS = createAddressFromString(
 );
 
 // Initialize WASM module
-export async function initMathWasm(): Promise<void> {
+export function initMathWasm(): Promise<Wasm> {
     const wasmPath = path.resolve(__dirname, "./math.wasm");
     try {
         const wasmSource = fs.readFileSync(wasmPath);
-        await Wasm.init(wasmSource);
+        return Wasm.init(wasmSource);
     } catch (err) {
         throw new Error(
             `Failed to read or initialize WASM file at ${wasmPath}: ${err}`
@@ -23,7 +23,7 @@ export async function initMathWasm(): Promise<void> {
 }
 
 export async function createMathPrecompile(): Promise<CustomPrecompile> {
-    await initMathWasm();
+    const mathWasm = await initMathWasm();
 
     return {
         address: MATH_PRECOMPILE_ADDRESS,
@@ -61,7 +61,7 @@ export async function createMathPrecompile(): Promise<CustomPrecompile> {
             );
 
             const func =
-                Wasm.getExport<(a: number, b: number) => number>(funcName);
+                mathWasm.getExport<(a: number, b: number) => number>(funcName);
             const result = func(a, b);
 
             return {
