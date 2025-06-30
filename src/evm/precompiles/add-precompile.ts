@@ -3,6 +3,7 @@ import { createAddressFromString } from "@ethereumjs/util";
 import { Wasm } from "../wasm";
 import fs from "fs";
 import path from "path";
+import { to32Bytes } from "./util";
 
 export const ADD_PRECOMPILE_ADDRESS = createAddressFromString(
     "0x0000000000000000000000000000000000000123"
@@ -16,16 +17,6 @@ export async function initAddWasm(): Promise<void> {
     } catch (err) {
         throw new Error(`Failed to read WASM file at ${wasmPath}: ${err}`);
     }
-}
-
-/**
- * Converts a 32-bit number to a 32-byte Uint8Array (big-endian, right-aligned).
- * EVM precompiles expect 32-byte return values, so this pads with zeros and puts the 4-byte value at the end.
- */
-function to32Bytes(n: number, bytes_size = 4): Uint8Array {
-    const buf = Buffer.alloc(bytes_size * 8);
-    buf.writeUInt32BE(n, 32 - bytes_size); // Write as big-endian at the last 4 bytes
-    return new Uint8Array(buf);
 }
 
 export async function createAddPrecompile(): Promise<CustomPrecompile> {

@@ -1,6 +1,6 @@
 import { expect } from "chai";
-import { CustomEVM } from "../../src/evm/CustomEVM";
-import { ADD_PRECOMPILE_ADDRESS } from "../../src/evm/examples/add-precompile";
+import { CustomEVM } from "@/evm/CustomEVM";
+import { ADD_PRECOMPILE_ADDRESS } from "@/evm/precompiles";
 import { toBeHex } from "ethers";
 import { randomInt } from "crypto";
 

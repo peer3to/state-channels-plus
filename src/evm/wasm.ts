@@ -21,4 +21,15 @@ export class Wasm {
     static hasExport(name: string): boolean {
         return this.instance?.exports[name] !== undefined;
     }
+
+    static getExports(): string[] {
+        if (!this.instance) {
+            throw new Error("WASM module not initialized. Call init() first.");
+        }
+        return Object.keys(this.instance.exports);
+    }
+
+    static reset(): void {
+        this.instance = undefined;
+    }
 }
