@@ -139,6 +139,6 @@ contract StateSnapshotFacet is StateChannelCommon {
             delete disputeWindowMap[disputeData.disputedForks[i]];
         }
         delete disputeData.disputedForks;
-        // delete disputeData.latestJoinChannelBlockHash; // safe to delete this, since snapshot contains the same, but for convinience we don't delete it so we can continue 'chaining'/buidling on top with a clean itnerface
+        // delete disputeData.latestJoinChannelBlockHash; // safe to delete this, since snapshot contains the same, but for convinience we don't delete it so we can continue 'chaining'/buidling on top with a clean interface
     }
 }
