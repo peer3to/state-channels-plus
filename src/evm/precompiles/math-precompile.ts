@@ -7,7 +7,6 @@ export const MATH_PRECOMPILE_ADDRESS = createAddressFromString(
     "0x0000000000000000000000000000000000000124"
 );
 
-// Initialize WASM module
 export function initMathWasm(): Promise<Wasm> {
     const wasmPath = path.resolve(__dirname, "./math.wasm");
     return Wasm.load(wasmPath);

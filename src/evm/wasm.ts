@@ -32,7 +32,7 @@ export class Wasm {
                 wasmBytes = fs.readFileSync(resolvedPath);
             }
 
-            return await this.init(wasmBytes);
+            return this.init(wasmBytes);
         } catch (err) {
             throw new Error(`Failed to load WASM module: ${err}`);
         }
