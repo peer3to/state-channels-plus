@@ -6,6 +6,7 @@ import "../StateChannelManagerEvents.sol";
 import "./StateChannelUtilLibrary.sol";
 import "./AStateChannelManagerProxy.sol";
 import "./Errors.sol";
+import "./utils/DisputeUtils.sol";
 
 contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEvents {
     function getOnChainSlashes(bytes32 channelId) public view virtual returns (OnChainSlash[] memory) {
@@ -234,7 +235,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     function isDisputeCommitted(Dispute memory dispute) internal view returns (bool) {
         bytes32 channelId = dispute.channelId;
         DisputeData storage disputeData = disputeData[channelId];
-        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[dispute.genesisSnapshotDataHash];
+        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[_getDisputeFork(dispute)];
         bytes32 commitment = keccak256(abi.encode(dispute));
 
         for (uint256 i = 0; i < disputeWindow.evidence.disputeCommitments.length; i++) {

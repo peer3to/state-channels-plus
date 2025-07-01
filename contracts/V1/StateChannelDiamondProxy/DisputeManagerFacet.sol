@@ -4,6 +4,7 @@ import "./StateChannelCommon.sol";
 import "./AStateChannelManagerProxy.sol";
 import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
+import "./utils/DisputeUtils.sol";
 
 contract DisputeManagerFacet is StateChannelCommon {
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public {
@@ -373,7 +374,7 @@ contract DisputeManagerFacet is StateChannelCommon {
 
         DisputeData storage disputeData = disputeData[dispute.channelId];
         mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
-        bytes32 forkId = dispute.genesisSnapshotDataHash;
+        bytes32 forkId = _getDisputeFork(dispute);
         DisputeWindow storage disputeWindow = disputeWindowMap[forkId];
         bool isThresholdFinal = _isDisputeThresholdFinal(disputeConfirmation);
         if (!isAuditingCalldataProvided && !isThresholdFinal) {
@@ -412,7 +413,7 @@ contract DisputeManagerFacet is StateChannelCommon {
 
     function _killDispute(Dispute memory dispute) internal {
         DisputeData storage disputeData = disputeData[dispute.channelId];
-        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[dispute.genesisSnapshotDataHash];
+        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[_getDisputeFork(dispute)];
 
         // require that the dispute window exists and is not expired
         require(
@@ -444,10 +445,10 @@ contract DisputeManagerFacet is StateChannelCommon {
 
         //if dispute window is empty, delete it
         if (disputeWindow.evidence.disputeCommitments.length == 0) {
-            delete disputeData.disputeWindowMap[dispute.genesisSnapshotDataHash];
+            delete disputeData.disputeWindowMap[_getDisputeFork(dispute)];
 
             for (uint256 i = 0; i < disputeData.disputedForks.length; i++) {
-                if (disputeData.disputedForks[i] == dispute.genesisSnapshotDataHash) {
+                if (disputeData.disputedForks[i] == _getDisputeFork(dispute)) {
                     //remove disputed fork from the list
                     disputeData.disputedForks[i] = disputeData.disputedForks[disputeData.disputedForks.length - 1];
                     disputeData.disputedForks.pop();
@@ -464,6 +465,9 @@ contract DisputeManagerFacet is StateChannelCommon {
     {
         //This runs after verifying auditingData and genesisStateSnapshot => we can skip those checks here
 
+        bytes32 latestSnapshotDataHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData));
+        bytes32 latestSnanpshotHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot));
+
         // Milestone checking
         (bool isValid, bytes memory lastBlockEncoded) = verifyMilestones(
             dispute.stateProof.milestones,
@@ -477,7 +481,10 @@ contract DisputeManagerFacet is StateChannelCommon {
         if (lastBlockEncoded.length == 0) {
             if (dispute.stateProof.signedBlocks.length == 0) {
                 //no blocks at all => genesis == latest
-                if (dispute.genesisSnapshotDataHash != dispute.latestStateSnapshotHash) return false;
+                if (
+                    dispute.genesisSnapshotDataHash != latestSnapshotDataHash
+                        || dispute.latestStateSnapshotHash != latestSnanpshotHash
+                ) return false;
             } else {
                 //check if signedBlocks are linked, signed and build on genesis
                 if (
@@ -603,20 +610,8 @@ contract DisputeManagerFacet is StateChannelCommon {
         return (true, lastBlockEncoded);
     }
 
-    function _getLatestBlock(StateProof memory stateProof) internal pure returns (Block memory) {
-        return stateProof.signedBlocks.length > 0
-            ? abi.decode(stateProof.signedBlocks[stateProof.signedBlocks.length - 1].encodedBlock, (Block))
-            : abi.decode(
-                stateProof.milestones[stateProof.milestones.length - 1].blockConfirmations[stateProof.milestones[stateProof
-                    .milestones
-                    .length - 1].blockConfirmations.length - 1].signedBlock.encodedBlock,
-                (Block)
-            );
-    }
-
     function _isCorrectGenesis(Dispute memory dispute) internal view returns (bool) {
-        Block memory latestBlock = _getLatestBlock(dispute.stateProof);
-        return latestBlock.transaction.header.forkId == dispute.genesisSnapshotDataHash;
+        return _areDisputeAndBlockSameFork(dispute, _getLatestBlock(dispute.stateProof));
     }
 
     function _verifyJoinChannelBlocks(
@@ -708,14 +703,11 @@ contract DisputeManagerFacet is StateChannelCommon {
     }
 
     function _disputeRaceConditionCheck(Dispute memory dispute) internal view {
-        StateSnapshot storage stateSnapshot = stateSnapshots[dispute.channelId];
-        DisputeData storage _disputeData = disputeData[dispute.channelId];
-
         // *********** 1. Timeout *************
         if (dispute.timeout.participant != address(0) && !dispute.timeout.isForced) {
             //check if participant posted calldata commitment
             (bool found, bytes32 blockCalldataCommitment) = getBlockCallDataCommitment(
-                dispute.channelId, dispute.timeout.forkId, dispute.timeout.blockHeight, dispute.timeout.participant
+                dispute.channelId, _getDisputeFork(dispute), dispute.timeout.blockHeight, dispute.timeout.participant
             );
             if (found) {
                 revert ErrorDisputeTimeoutCalldataPosted();
@@ -723,9 +715,9 @@ contract DisputeManagerFacet is StateChannelCommon {
 
             //check if previous block producer posted blockCalldata and if the expectation matches
             if (dispute.timeout.previousBlockProducer != address(0)) {
-                (bool found, bytes32 blockCalldataCommitment) = getBlockCallDataCommitment(
+                (found, blockCalldataCommitment) = getBlockCallDataCommitment(
                     dispute.channelId,
-                    dispute.timeout.forkId,
+                    _getDisputeFork(dispute),
                     dispute.timeout.blockHeight - 1,
                     dispute.timeout.previousBlockProducer
                 );
