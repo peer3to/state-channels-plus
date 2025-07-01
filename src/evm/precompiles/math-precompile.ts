@@ -2,7 +2,6 @@ import { CustomPrecompile } from "@ethereumjs/evm/dist/cjs/precompiles";
 import { createAddressFromString } from "@ethereumjs/util";
 import { Wasm } from "../wasm";
 import path from "path";
-import { to32Bytes } from "./util";
 
 export const MATH_PRECOMPILE_ADDRESS = createAddressFromString(
     "0x0000000000000000000000000000000000000124"
@@ -16,50 +15,29 @@ export function initMathWasm(): Promise<Wasm> {
 
 export async function createMathPrecompile(): Promise<CustomPrecompile> {
     const mathWasm = await initMathWasm();
+    const math =
+        mathWasm.getExport<(ptr: number, len: number) => number>("math");
+
+    const offset = 1024;
 
     return {
         address: MATH_PRECOMPILE_ADDRESS,
         function: ({ data }) => {
-            if (!data || data.length !== 96) {
-                throw new Error(
-                    `Invalid input length: expected 96 bytes (32 selector + 64 params), got ${data?.length ?? 0} bytes`
-                );
-            }
+            // Copy data into wasm memory at offset
+            const memoryView = new Uint8Array(mathWasm.memory.buffer);
+            memoryView.set(data, offset);
 
-            // First 32 bytes are function selector
-            const selector = Number(
-                BigInt("0x" + Buffer.from(data.slice(0, 32)).toString("hex"))
+            // get pointer to result in wasm memory
+            const resultPtr = math(offset, data.length);
+
+            // read result from wasm memory
+            const result = new Uint8Array(
+                memoryView.slice(resultPtr, resultPtr + 32)
             );
-
-            // Map selector to WASM function name
-            const funcName = {
-                0: "add",
-                1: "multiply",
-                2: "divide"
-            }[selector];
-
-            if (!funcName) {
-                throw new Error(`Invalid function selector: ${selector}`);
-            }
-
-            // Get parameters from remaining bytes
-            const a = Number(
-                BigInt("0x" + Buffer.from(data.slice(32, 64)).toString("hex")) &
-                    0xffffffffn
-            );
-            const b = Number(
-                BigInt("0x" + Buffer.from(data.slice(64, 96)).toString("hex")) &
-                    0xffffffffn
-            );
-
-            const func =
-                mathWasm.getExport<(a: number, b: number) => number>(funcName);
-            const result = func(a, b);
 
             return {
-                returnValue: to32Bytes(result),
-                gasUsed: 1000n,
-                executionGasUsed: 1000n
+                returnValue: result,
+                executionGasUsed: 1n
             };
         }
     };

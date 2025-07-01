@@ -38,10 +38,18 @@ export class Wasm {
         }
     }
 
+    get exports(): WebAssembly.Exports {
+        return this.instance.exports;
+    }
+
     getExport<T extends Function>(name: string): T {
+        if (!this.hasExport(name)) {
+            throw new Error(`Export '${name}' not found`);
+        }
+
         const exportedFunc = this.instance.exports[name];
         if (typeof exportedFunc !== "function") {
-            throw new Error(`Export '${name}' not found or not a function`);
+            throw new Error(`Export '${name}' is not a function`);
         }
         return exportedFunc as T;
     }
@@ -50,7 +58,11 @@ export class Wasm {
         return this.instance.exports[name] !== undefined;
     }
 
-    getExports(): string[] {
-        return Object.keys(this.instance.exports);
+    get memory(): WebAssembly.Memory {
+        const mem = this.instance.exports.memory;
+        if (!(mem instanceof WebAssembly.Memory)) {
+            throw new Error("WASM module does not export memory");
+        }
+        return mem;
     }
 }

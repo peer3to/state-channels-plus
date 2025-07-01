@@ -18,23 +18,23 @@ describe("Wasm", () => {
 
     describe("initialization", () => {
         it("should initialize WASM module successfully", () => {
-            expect(wasm.hasExport("add")).to.be.true;
+            expect(wasm.hasExport("math")).to.be.true;
         });
 
         it("should allow multiple instances with same source", async () => {
             const wasm1 = await Wasm.init(wasmBytes);
             const wasm2 = await Wasm.init(wasmBytes);
 
-            expect(wasm1.hasExport("add")).to.be.true;
-            expect(wasm2.hasExport("add")).to.be.true;
+            expect(wasm1.hasExport("math")).to.be.true;
+            expect(wasm2.hasExport("math")).to.be.true;
         });
     });
 
     describe("getExport", () => {
         it("should get exported function successfully", () => {
-            const add = wasm.getExport<(a: number, b: number) => number>("add");
-            expect(add).to.be.a("function");
-            expect(add(2, 3)).to.equal(5);
+            const math =
+                wasm.getExport<(a: number, b: number) => number>("math");
+            expect(math).to.be.a("function");
         });
 
         it("should throw error for non-existent export", () => {
@@ -46,7 +46,7 @@ describe("Wasm", () => {
 
     describe("hasExport", () => {
         it("should return true for existing export", () => {
-            expect(wasm.hasExport("add")).to.be.true;
+            expect(wasm.hasExport("math")).to.be.true;
         });
 
         it("should return false for non-existent export", () => {
@@ -56,11 +56,9 @@ describe("Wasm", () => {
 
     describe("getExports", () => {
         it("should return list of exports", () => {
-            const exports = wasm.getExports();
-            expect(exports).to.be.an("array");
-            expect(exports).to.include("add");
-            expect(exports).to.include("multiply");
-            expect(exports).to.include("divide");
+            const exports = wasm.exports;
+            expect(exports).to.be.an("object");
+            expect(exports).to.have.property("math");
         });
     });
 });
