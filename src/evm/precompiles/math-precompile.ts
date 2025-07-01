@@ -1,7 +1,6 @@
 import { CustomPrecompile } from "@ethereumjs/evm/dist/cjs/precompiles";
 import { createAddressFromString } from "@ethereumjs/util";
 import { Wasm } from "../wasm";
-import fs from "fs";
 import path from "path";
 import { to32Bytes } from "./util";
 
@@ -12,14 +11,7 @@ export const MATH_PRECOMPILE_ADDRESS = createAddressFromString(
 // Initialize WASM module
 export function initMathWasm(): Promise<Wasm> {
     const wasmPath = path.resolve(__dirname, "./math.wasm");
-    try {
-        const wasmSource = fs.readFileSync(wasmPath);
-        return Wasm.init(wasmSource);
-    } catch (err) {
-        throw new Error(
-            `Failed to read or initialize WASM file at ${wasmPath}: ${err}`
-        );
-    }
+    return Wasm.load(wasmPath);
 }
 
 export async function createMathPrecompile(): Promise<CustomPrecompile> {

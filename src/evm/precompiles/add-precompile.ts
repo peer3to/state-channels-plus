@@ -1,7 +1,6 @@
 import { CustomPrecompile } from "@ethereumjs/evm/dist/cjs/precompiles";
 import { createAddressFromString } from "@ethereumjs/util";
 import { Wasm } from "../wasm";
-import fs from "fs";
 import path from "path";
 import { to32Bytes } from "./util";
 
@@ -11,12 +10,7 @@ export const ADD_PRECOMPILE_ADDRESS = createAddressFromString(
 
 export async function initAddWasm(): Promise<Wasm> {
     const wasmPath = path.resolve(__dirname, "./add.wasm");
-    try {
-        const wasmSource = fs.readFileSync(wasmPath);
-        return Wasm.init(wasmSource);
-    } catch (err) {
-        throw new Error(`Failed to read WASM file at ${wasmPath}: ${err}`);
-    }
+    return Wasm.load(wasmPath);
 }
 
 export async function createAddPrecompile(): Promise<CustomPrecompile> {
