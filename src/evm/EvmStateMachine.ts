@@ -1,4 +1,4 @@
-import { createEVM } from "@ethereumjs/evm";
+import { createEVM } from "@/evm";
 import { BytesLike, ethers, Signer, hexlify } from "ethers";
 import {
     AStateChannelManagerProxy,
@@ -12,6 +12,7 @@ import { DebugProxy } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import AStateMachine from "@/AStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
+import { CustomPrecompile } from "@ethereumjs/evm/dist/cjs/precompiles";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 
@@ -174,9 +175,10 @@ class EvmStateMachine extends AStateMachine {
      */
     public static async createStandalone(
         deployStateMachineTx: any,
-        contractInterface: ethers.Interface
+        contractInterface: ethers.Interface,
+        precompiles: CustomPrecompile[] = []
     ): Promise<EvmStateMachine> {
-        const evm = await createEVM();
+        const evm = await createEVM(precompiles);
 
         // Deploy the state machine contract
         const deploymentResult = await evm.runCall({
@@ -213,7 +215,8 @@ class EvmStateMachine extends AStateMachine {
         deployStateMachineTx: any,
         deployedStateChannelContractInstance: AStateChannelManagerProxy,
         stateMachineContractInstance: T,
-        p2pEventHooks?: P2pEventHooks
+        p2pEventHooks?: P2pEventHooks,
+        precompiles: CustomPrecompile[] = []
     ): Promise<P2pInstance<T>> {
         // Sync clock to DLT
         await Clock.init(signer.provider!);
@@ -233,7 +236,8 @@ class EvmStateMachine extends AStateMachine {
         // Create the EvmStateMachine instance (which extends AStateMachine)
         const evmStateMachine = await EvmStateMachine.createStandalone(
             deployStateMachineTx,
-            stateMachineContractInstance.interface
+            stateMachineContractInstance.interface,
+            precompiles
         );
 
         // Get time configuration

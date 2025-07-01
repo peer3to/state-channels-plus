@@ -1,14 +1,16 @@
 import { expect } from "chai";
-import { CustomEVM } from "@/evm/CustomEVM";
-import { ADD_PRECOMPILE_ADDRESS } from "@/evm/precompiles";
+import { createEVM } from "@/evm";
+import { ADD_PRECOMPILE_ADDRESS, createAddPrecompile } from "@/evm/precompiles";
 import { toBeHex } from "ethers";
 import { randomInt } from "crypto";
+import { EVM } from "@ethereumjs/evm";
 
 describe("Add Precompile", () => {
-    let evm: CustomEVM;
+    let evm: EVM;
 
     before(async () => {
-        evm = await CustomEVM.create();
+        const addPrecompile = await createAddPrecompile();
+        evm = await createEVM([addPrecompile]);
     });
 
     it("should add two numbers correctly", async () => {

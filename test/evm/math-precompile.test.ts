@@ -1,8 +1,12 @@
 import { expect } from "chai";
-import { CustomEVM } from "@/evm/CustomEVM";
-import { MATH_PRECOMPILE_ADDRESS } from "@/evm/precompiles";
+import { createEVM } from "@/evm";
+import {
+    MATH_PRECOMPILE_ADDRESS,
+    createMathPrecompile
+} from "@/evm/precompiles";
 import { toBeHex } from "ethers";
 import { randomInt } from "crypto";
+import { EVM } from "@ethereumjs/evm";
 
 const selector = {
     add: 0,
@@ -11,10 +15,11 @@ const selector = {
 };
 
 describe("Math Precompile", () => {
-    let evm: CustomEVM;
+    let evm: EVM;
 
     before(async () => {
-        evm = await CustomEVM.create();
+        const mathPrecompile = await createMathPrecompile();
+        evm = await createEVM([mathPrecompile]);
     });
 
     function createInputData(selector: number, a: number, b: number): string {
