@@ -3,11 +3,12 @@ pragma solidity ^0.8.8;
 import "./DataTypes.sol";
 
 // ========================== Dispute related fraud proofs ==========================
+// This is sematically equivalent to SignedBlock, but logically it's any signature not only from the original block author
+
 struct DisputeNotLatestStateProof {
     bytes encodedBlock;
     bytes signature;
 }
-// This is sematically equivalent to SignedBlock, but logically it's any signature not only from the original block author
 
 struct DisputeOutOfGasProof {
     Dispute dispute;
