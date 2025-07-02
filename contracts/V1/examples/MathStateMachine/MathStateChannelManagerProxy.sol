@@ -14,12 +14,24 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
         address aStateMachineAddress,
         address disputeManagerFacet,
         address fraudProofFacet,
-        address stateSnapshotFacet
-    ) AStateChannelManagerProxy(aStateMachineAddress, disputeManagerFacet, fraudProofFacet, stateSnapshotFacet) {
+        address disputeFraudProofFacet,
+        address stateSnapshotFacet,
+        address joinChannelFacet
+    )
+        AStateChannelManagerProxy(
+            aStateMachineAddress,
+            disputeManagerFacet,
+            fraudProofFacet,
+            disputeFraudProofFacet,
+            stateSnapshotFacet,
+            joinChannelFacet
+        )
+    {
         p2pTime = 5;
         agreementTime = 5;
         chainFallbackTime = 5;
-        challengeTime = 5;
+        evidenceTime = 5;
+        killTime = 10;
     }
 
     function openChannel(bytes32 channelId, bytes[] calldata openChannelData, bytes[] calldata signatures)
@@ -96,20 +108,13 @@ contract MathStateChannelManagerProxy is AStateChannelManagerProxy {
         override
     {}
 
-    function processExitChannel(bytes32 channelId, ExitChannel calldata exitChannel) public virtual override {}
-
     function addParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
         public
         virtual
         override
     {}
 
-    function _addParticipantComposable(JoinChannel memory joinChannel) internal virtual override returns (bool) {}
+    function _depositAssetsComposable(JoinChannel memory joinChannel) internal virtual override returns (bool) {}
 
-    function _removeParticipantComposable(bytes32 channelId, ExitChannel memory exitChannel)
-        internal
-        virtual
-        override
-        returns (bool)
-    {}
+    function _withdrawAssetsComposable(ExitChannel memory exitChannel) internal virtual override returns (bool) {}
 }

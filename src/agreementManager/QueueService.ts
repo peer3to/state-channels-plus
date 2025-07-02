@@ -1,7 +1,7 @@
 import {
     SignedBlockStruct,
     BlockStruct
-} from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import { BlockConfirmation } from "./types";
 import { BlockUtils, Codec, EvmUtils, Type } from "@/utils";
 import { BytesLike } from "ethers";

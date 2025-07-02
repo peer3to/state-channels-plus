@@ -15,7 +15,7 @@ export enum FraudProofType {
     // Timeout related fraud proofs
     TimeoutThreshold = 5,
     TimeoutPriorInvalid = 6,
-    TimeoutParticipantNoNext = 7,
+    TimeoutParticipantNotNext = 7,
     // Dispute fraud proofs
     DisputeNotLatestState = 8,
     DisputeInvalid = 9,
@@ -92,7 +92,7 @@ export const BlockTooFarInFutureProofEthersType = `tuple(
     ${SignedBlockEthersType} block1
     )`;
 
-export enum ProofType {
+export enum FraudProofType {
     FoldRechallenge,
     DoubleSign,
     IncorrectData,
@@ -101,15 +101,17 @@ export enum ProofType {
     BlockTooFarInFuture
 }
 
-const DISPUTE_PROOF_ETHERS_TYPES: Record<ProofType, string> = {
-    [ProofType.FoldRechallenge]: FoldRechallengeProofEthersType,
-    [ProofType.DoubleSign]: DoubleSignProofEthersType,
-    [ProofType.IncorrectData]: IncorrectDataProofEthersType,
-    [ProofType.NewerState]: NewerStateProofEthersType,
-    [ProofType.FoldPriorBlock]: FoldPriorBlockProofEthersType,
-    [ProofType.BlockTooFarInFuture]: BlockTooFarInFutureProofEthersType
+const DISPUTE_PROOF_ETHERS_TYPES: Record<FraudProofType, string> = {
+    [FraudProofType.FoldRechallenge]: FoldRechallengeProofEthersType,
+    [FraudProofType.DoubleSign]: DoubleSignProofEthersType,
+    [FraudProofType.IncorrectData]: IncorrectDataProofEthersType,
+    [FraudProofType.NewerState]: NewerStateProofEthersType,
+    [FraudProofType.FoldPriorBlock]: FoldPriorBlockProofEthersType,
+    [FraudProofType.BlockTooFarInFuture]: BlockTooFarInFutureProofEthersType
 };
 
-export const getEthersTypeForDisputeProof = (proofType: ProofType): string => {
+export const getEthersTypeForDisputeProof = (
+    proofType: FraudProofType
+): string => {
     return DISPUTE_PROOF_ETHERS_TYPES[proofType];
 };

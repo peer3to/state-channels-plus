@@ -5,9 +5,9 @@ import {
     TransactionHeaderStruct,
     TransactionBodyStruct,
     JoinChannelStruct
-} from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import AgreementManager from "@/agreementManager";
-import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { randomInt } from "crypto";
 
 /**
@@ -142,7 +142,6 @@ export function dispute(overrides: Partial<DisputeStruct> = {}): DisputeStruct {
         disputeAuditingDataHash: ethers.hexlify(ethers.randomBytes(32)),
         disputer: ethers.ZeroAddress,
         disputeIndex: 0,
-        previousRecursiveDisputeIndex: 0,
         timeout: {
             participant: ethers.ZeroAddress,
             blockHeight: 0,

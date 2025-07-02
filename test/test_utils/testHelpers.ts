@@ -6,7 +6,7 @@ import {
     StateChannelUtilLibrary
 } from "@typechain-types";
 
-import { JoinChannelStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import P2pEventHooks from "@/P2pEventHooks";
 

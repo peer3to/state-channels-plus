@@ -60,7 +60,7 @@ Returns the next participant whose turn is to progress (mutate) the state machin
 function _joinChannel(JoinChannel memory joinChannel) internal virtual returns (bool);
 ```
 
-Triggered when someone joins the state channel. Used to modify the state machine to incorporate the addition into the state. (type [JoinChannel](../contracts/V1/DataTypes.sol#L80)) ([Example](../examples/TicTacToe/contracts/TicTacToe/TicTacToeStateMachine.sol#L165))
+Triggered when someone joins the state channel. Used to modify the state machine to incorporate the addition into the state. (type [JoinChannel](../contracts/V1/types/DataTypes.sol#L80)) ([Example](../examples/TicTacToe/contracts/TicTacToe/TicTacToeStateMachine.sol#L165))
 
 ```solidity
 function _slashParticipant(address adr) internal virtual returns (bool, ProcessExit memory);
@@ -90,7 +90,7 @@ Executed on-chain once for every unique channelId. Performs all the composable o
 
 - channelId - unique identifier of the channel
 
-- openChannelData - array of bytes for every participant in the channel - bytes hold commitment data (eg. amount of tokens to deposit). - usually the bytes are interpreted as [JoinChannel](../contracts/V1/DataTypes.sol#L80), but you can use your own custom types and have a fully custom verification logic.
+- openChannelData - array of bytes for every participant in the channel - bytes hold commitment data (eg. amount of tokens to deposit). - usually the bytes are interpreted as [JoinChannel](../contracts/V1/types/DataTypes.sol#L80), but you can use your own custom types and have a fully custom verification logic.
 
 - signatures - array of sigantures - signed openChannelData by each participant in the channel.
 

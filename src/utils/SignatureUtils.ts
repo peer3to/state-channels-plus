@@ -3,8 +3,8 @@ import {
     BlockStruct,
     JoinChannelStruct,
     TransactionStruct
-} from "@typechain-types/contracts/V1/DataTypes";
-import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 import { Codec, Type } from "./Codec";
 

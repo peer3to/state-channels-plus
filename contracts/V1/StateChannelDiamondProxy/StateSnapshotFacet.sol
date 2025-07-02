@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
-import "../DataTypes.sol";
+import "../types/DataTypes.sol";
 import "./AStateChannelManagerProxy.sol";
 import "./Errors.sol";
 import "./StateChannelUtilLibrary.sol";
@@ -20,10 +20,8 @@ contract StateSnapshotFacet is StateChannelCommon {
         DisputeWindow storage disputeWindow = disputeWindowMap[currentStateSnapshot.forkId];
         bool updated = false;
 
-        while (
-            disputeWindow.reducedResult.reducedForkId != bytes32(0) && _isReduceChallengePeriodExpired(disputeWindow)
-        ) {
-            if (disputeWindow.reducedResult.reducedForkId == targetForkId) {
+        while (disputeWindow.reducedResult.forkId != bytes32(0) && _isReduceChallengePeriodExpired(disputeWindow)) {
+            if (disputeWindow.reducedResult.forkId == targetForkId) {
                 require(
                     newStateSnapshot.timestamp == disputeWindow.reducedResult.forkGenesisTimestamp,
                     ErrorInvalidStateSnapshot()
@@ -32,7 +30,7 @@ contract StateSnapshotFacet is StateChannelCommon {
                 updated = true;
                 break;
             }
-            disputeWindow = disputeWindowMap[disputeWindow.reducedResult.reducedForkId];
+            disputeWindow = disputeWindowMap[disputeWindow.reducedResult.forkId];
         }
         require(updated, ErrorStateSnapshotNotValid());
     }
@@ -61,14 +59,14 @@ contract StateSnapshotFacet is StateChannelCommon {
         ExitChannelBlock[] memory exitChannelBlocks
     ) internal {
         _validateExitChannelBlocks(exitChannelBlocks, currentOnChainSnapshot, newSnapshot);
-        _applyExitChannelBlocks(channelId, exitChannelBlocks);
+        _applyExitChannelBlocks(channelId, exitChannelBlocks, newSnapshot.snapshotData.latestJoinChannelBlockHash);
 
         // Update the state snapshot
         stateSnapshots[channelId] = newSnapshot;
 
-        //check if last fork -> clearDisputeData
+        //check if last fork -> clearStorage
         if (disputeData[channelId].disputeWindowMap[newSnapshot.forkId].evidence.creationTimestamp == 0) {
-            _clearDisputeData(channelId);
+            _clearStorage(channelId, newSnapshot.snapshotData.latestJoinChannelBlockHash);
         }
         emit StateSnapshotUpdated(channelId, newSnapshot, block.timestamp);
     }
@@ -121,14 +119,36 @@ contract StateSnapshotFacet is StateChannelCommon {
         }
     }
 
-    function _applyExitChannelBlocks(bytes32 channelId, ExitChannelBlock[] memory exitChannelBlocks) internal {
+    function _applyExitChannelBlocks(
+        bytes32 channelId,
+        ExitChannelBlock[] memory exitChannelBlocks,
+        bytes32 joinChannelBlockHash
+    ) internal {
+        ChannelBalance storage cb = channelBalances[channelId];
+        Balance memory totalDeposits = cb.onChainJoinChannelMap[joinChannelBlockHash].totalDeposits;
+        Balance memory totalWithdrawals = cb.totalOnChainWithdrawals;
         for (uint256 i = 0; i < exitChannelBlocks.length; i++) {
             for (uint256 j = 0; j < exitChannelBlocks[i].exitChannels.length; j++) {
-                AStateChannelManagerProxy(address(this)).processExitChannel(
-                    channelId, exitChannelBlocks[i].exitChannels[j]
+                bool success = AStateChannelManagerProxy(address(this)).withdrawAssetsComposable(
+                    exitChannelBlocks[i].exitChannels[j]
                 );
+                require(success, ErrorWithdrawalFailed());
+
+                totalWithdrawals = stateMachineImplementation.addBalance(
+                    totalWithdrawals, exitChannelBlocks[i].exitChannels[j].balance
+                );
+                //require withdrawals <= deposits
+                bool isLessThan = stateMachineImplementation.isBalanceLesserThan(totalWithdrawals, totalDeposits);
+                bool isEqual = stateMachineImplementation.areBalancesEqual(totalWithdrawals, totalDeposits);
+                require(isLessThan || isEqual, CantWithdrawMoreThanDeposits());
             }
         }
+        cb.totalOnChainWithdrawals = totalWithdrawals;
+    }
+
+    function _clearStorage(bytes32 channelId, bytes32 snapshotLatestJoinChannelBlockHash) internal {
+        _clearDisputeData(channelId);
+        _clearOldJoinChannels(channelId, snapshotLatestJoinChannelBlockHash);
     }
 
     function _clearDisputeData(bytes32 channelId) internal {
@@ -140,6 +160,17 @@ contract StateSnapshotFacet is StateChannelCommon {
             delete disputeWindowMap[disputeData.disputedForks[i]];
         }
         delete disputeData.disputedForks;
-        delete disputeData.latestJoinChannelBlockHash;
+    }
+
+    function _clearOldJoinChannels(bytes32 channelId, bytes32 snapshotLatestJoinChannelBlockHash) internal {
+        ChannelBalance storage cb = channelBalances[channelId];
+        //start from the previous block hash (keep the current blockHash in storage for easy access even though it's in the snapshot)
+        bytes32 keyToDelete = cb.onChainJoinChannelMap[snapshotLatestJoinChannelBlockHash].prebiousJoinChannelBlockHash;
+        bytes32 prev;
+        while (keyToDelete != bytes32(0)) {
+            prev = cb.onChainJoinChannelMap[keyToDelete].prebiousJoinChannelBlockHash;
+            delete cb.onChainJoinChannelMap[keyToDelete];
+            keyToDelete = prev;
+        }
     }
 }

@@ -1,141 +1,10 @@
 pragma solidity ^0.8.8;
 
-error ErrorDisputeInProgrees();
-error ErrorDisputerNotMsgSender();
-error ErrorDisputeForkMismatch();
-error ErrorNotParticipant();
-error ErrorLatestFinalizedBlock();
-error ErrorTimeoutNotLinkedToPreviousBlock();
-error ErrorTimeoutParticipantNotNextToWrite();
-error ErrorTimeoutInvalid();
-error ErrorTimeoutSelf();
-error ErrorLinkingPreviousBlock();
-error ErrorDisputeInvalid();
-error ErrorDisputeDoesntExist();
-error ErrorDisputeChallengeMismatch();
-// error ErrorDisputeExpired();
-error ErrorParticipantAlredySlashed();
-error ErrorChallengeNewFinalizedBeforeOldFinalized();
-error ErrorJoinChannelFailed();
-error ErrorSlashedParticipantCantDispute();
-error ErrorChannelIdMismatch();
-error ErrorTransactionCountMismatch();
-error ErrorSignatureInvalid();
-error ErrorDisputeChallengePeriodExpired();
-error ErrorDisputeAlreadyPosted();
-//Can participate in dispute
-error ErrorCantParticipateInDispute();
-
-//Reduce errors
-error ErrorNoDisputesProvided();
-error ErrorDisputesLenghtMismatch();
-error ErrorDisputeKillPeriodNotExpired();
-error ErrorDisputeAlreadyReduced();
-
-//Auditing errors
-error ErrorDisputeAuditingRequired();
-error ErrorDisputeWrongCommitment();
-error ErrorDisputeWrongAuditingData();
-error ErrorDisputeCommitmentNotAvailable();
-error ErrorDisputeExpired();
-error ErrorDisputeGenesisInvalid();
-error ErrorDisputeStateProofInvalid();
-error ErrorDisptuteFraudProofDidntSlash(uint256 proofIndex);
-error ErrorDisputeStateMachineJoiningFailed();
-error ErrorDisputeStateMachineSlashingFailed();
-error ErrorDisputeStateMachineRemovingFailed();
-error ErrorDisputeOutputStateSnapshotInvalid();
-error ErrorDisputeJoinChannelBlocksInvalid();
-error ErrorDisputeExitChannelBlocksInvalid();
-error ErrorDisputeBalanceInvariantInvalid();
-error ErrorWithinChallengePeriod();
-error ErrorInvalidSignedBlocks();
-error ErrorInvalidLatestState();
-error ErrorInvalidDisputeOutputState();
-error ErrorRecursiveDisputeNotExtendingSlashes();
-//Race conditions
-error ErrorDisputeShouldUseSnapshotAsGenesisState();
-error ErrorDisputeOnChainSlashedParticipantsMismatch();
-error ErrorDisputeNotExpectedIndex();
-error ErrorDisputeTimeoutCalldataPosted();
-error ErrorDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch();
-error ErrorDisputeTimeoutNotMinTimestamp();
-error ErrorDisputeOnChainLatestJoinChannelBlockHashMismatch();
-
-//Finalized and latest
-error ErrorFinalizedAndLatestNotSignedByParticipant();
-error ErrorFinalizedAndLatestFirstBlockNotVotingForFinalizedState();
-error ErrorFinalizedAndLatestSecondBlocksNotLinked();
-error ErrorFinalizedAndLatestLastBlockNotVoringForLatestState();
-
-//Double sign
-error ErrorDoubleSignBlocksNotSame();
-error ErrorDoubleSignSignersNotSame();
-error ErrorNotEmptyBlockFraud();
-error ErrorNotSameChannelId();
-error ErrorInvalidBlockStateTransition();
-error ErrorValidBlockStateTransition();
-error ErrorInvalidBlockState();
-error ErrorInvalidStateSnapshot();
-error ErrorInvalidBlock();
-error ErrorInvalidStateSnapshotHash();
-error ErrorValidStateTransition();
-//Incorrect data
-error ErrorIncorrectDataStateHashNotLinkedToBlock(uint256 blockNumber);
-error ErrorIncorrectDataBlocksNotLinked();
-error ErrorIncorrectLatestStateSnapshot();
-
-//Newer state
-error ErrorNewerStateConfirmationInvalid();
-
-//Timeout prior
-error ErrorTimeoutPriorBlockNotInVirtualVotes();
-error ErrorTimeoutPriorBlockNotPrior();
-error ErrorTimeoutPriorCalldataExists();
-error ErrorInvalidTimeoutParticipant();
-
-//Block to far in the future
-error ErrorBlockToFarInTheFutureActuallyNotInTheFuture();
-
-//Join channel
-error ErrorJoinChannelNotMyTurn();
-error ErrorJoinChannelAlreadyInChannel();
-error ErrorJoinChannelExpired();
-error ErrorJoinChannelAlreadyAdded();
-
-// ========================== DisputeManagerFacet ==========================
-
-error CreateDisputeInvalidOnChainSlashedParticipants();
-error CreateDisputeInvalidSignature();
-
-error AuditMissingDisputeCommitment();
-error AuditInvalidStateProof();
-error AuditInvalidMilestone();
-error AuditInvalidFraudProof();
-error AuditInvalidOutputState();
-
-error BlockInvalidConfirmation();
-error BlockInvalidSignature();
-error BlockInvalidChannelId();
-error BlockInvalidTransactionCount();
-error BlockInvalidStateSnapshotHash();
-error BlockInvalidLink();
-error BlockInvalidStateTransition();
-error BlockOutOfGas();
-error BlockNotLatestState();
-
-error DisputeInvalidRecursive();
-error DisputeInvalidPreviousRecursive();
-error DisputeInvalidExitChannelBlocks();
-
-//Posting block calldata
+//Calldata errors
 error ErrorBlockCalldataTimestampTooLate();
 error ErrorBlockCalldataAlreadyPosted();
 
 //StateSnapshot errors
-error ErrorDisputeProofRequired();
-error ErrorDisputeProofNotValid();
-error ErrorDisputeNotFinalized();
 error ErrorStateSnapshotNotValid();
 error ErrorInvalidStateProof();
 error ErrorFirstExitChannelBlockInvalid();
@@ -144,3 +13,64 @@ error ErrorLastSnapshotInvalid();
 error ErrorLastSnapshotDoesNotMatchGenesis();
 error ErrorSnapshotsNotProvided();
 error ErrorStanpshotForkMismatch();
+
+//Join channel
+error ErrorJoinChannelExpired();
+error ErrorJoinChannelInvalidSignature();
+
+//Exit channel
+error ErrorWithdrawalFailed();
+error CantWithdrawMoreThanDeposits();
+
+//Dispute errors
+error ErrorDisputerNotMsgSender();
+error ErrorTimeoutNotLinkedToPreviousBlock();
+error ErrorLinkingPreviousBlock();
+error ErrorJoinChannelFailed();
+error ErrorDisputeChallengePeriodExpired();
+error ErrorDisputeAlreadyPosted();
+error ErrorCantParticipateInDispute();
+error ErrorAuditingDataHashMismatch();
+
+//Reduce errors
+error ErrorNoDisputesProvided();
+error ErrorDisputeKillPeriodNotExpired();
+error ErrorDisputeAlreadyReduced();
+
+//Auditing errors
+error ErrorDisputeAuditingRequired();
+error ErrorDisputeWrongAuditingData();
+error ErrorDisputeCommitmentNotAvailable();
+error ErrorDisputeExpired();
+error ErrorDisputeGenesisInvalid();
+error ErrorDisputeStateProofInvalid();
+error ErrorDisputeStateMachineJoiningFailed();
+error ErrorDisputeStateMachineSlashingFailed();
+error ErrorDisputeStateMachineRemovingFailed();
+error ErrorDisputeOutputStateSnapshotInvalid();
+error ErrorDisputeJoinChannelBlocksInvalid();
+error ErrorDisputeExitChannelBlocksInvalid();
+error ErrorDisputeBalanceInvariantInvalid();
+error ErrorInvalidLatestState();
+
+//Race conditions
+error ErrorDisputeTimeoutCalldataPosted();
+error ErrorDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch();
+error ErrorDisputeTimeoutNotMinTimestamp();
+
+//FraudProofs
+error ErrorInvalidFraudProof();
+
+//Double sign
+error ErrorDoubleSignBlocksNotSame();
+error ErrorNotEmptyBlockFraud();
+error ErrorNotSameChannelId();
+error ErrorInvalidStateSnapshot();
+error ErrorInvalidBlock();
+error ErrorInvalidStateSnapshotHash();
+error ErrorValidStateTransition();
+
+//Incorrect data
+error ErrorIncorrectLatestStateSnapshot();
+
+// ========================== DisputeManagerFacet ==========================
