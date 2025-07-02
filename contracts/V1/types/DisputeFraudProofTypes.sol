@@ -3,10 +3,11 @@ pragma solidity ^0.8.8;
 import "./DataTypes.sol";
 
 // ========================== Dispute related fraud proofs ==========================
+// This is sematically equivalent to SignedBlock, but logically it's any signature not only from the original block author
+
 struct DisputeNotLatestStateProof {
-    BlockConfirmation newerBlock;
-    Dispute originalDispute;
-    uint256 originalDisputeTimestamp;
+    bytes encodedBlock;
+    bytes signature;
 }
 
 struct DisputeOutOfGasProof {
@@ -37,13 +38,15 @@ struct DisputeInvalidExitChannelBlocksProof {
 // ========================== Timeout related fraud proofs ==========================
 
 struct TimeoutThresholdProof {
-    BlockConfirmation thresholdBlock;
-    Dispute timedOutDispute;
-    uint256 timedOutDisputeTimestamp;
-    bytes latestStateSnapshot;
+    BlockConfirmation thresholdBlock; // only N/N on single block - no virtual voting
+    StateSnapshot latestStateSnapshot;
 }
 
-struct TimeoutPriorInvalidProof {
+struct TimeoutCalldataPostedProof {
+    Block postedBlock;
+}
+
+struct TimeoutParticipantNotNextProof {
     Dispute originalDispute;
     Dispute recursiveDispute;
     uint256 originalDisputeTimestamp;

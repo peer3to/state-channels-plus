@@ -147,7 +147,7 @@ contract FraudProofFacet is StateChannelCommon {
         }
 
         (bool isSuccess, bytes memory encodedModifiedState) = AStateChannelManagerProxy(address(this))
-            .executeStateTransitionOnState(
+            .executeStateTransition(
             fraudProofVerificationContext.channelId, previousStateStateMachineState, fraudBlock.transaction
         );
         if (!isSuccess) {

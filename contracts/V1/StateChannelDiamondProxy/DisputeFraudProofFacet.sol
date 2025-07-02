@@ -5,6 +5,7 @@ import "./AStateChannelManagerProxy.sol";
 import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
 import "../types/DisputeFraudProofTypes.sol";
+import "./utils/DisputeUtils.sol";
 
 contract DisputeFraudProofFacet is StateChannelCommon {
     mapping(
@@ -15,8 +16,17 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     constructor() {
         //If we endup having too many fraud proofs, we'll refactor them into a seperate 'facet' (ERC-2535)
         proofHandlers[DisputeFraudProofType.TimeoutThreshold] = _handleTimeoutThreshold;
-        proofHandlers[DisputeFraudProofType.TimeoutPriorInvalid] = _handleTimeoutPriorInvalid;
+        proofHandlers[DisputeFraudProofType.TimeoutCalldataPosted] = _handleTimeoutCalldataPosted;
+        proofHandlers[DisputeFraudProofType.TimeoutParticipantNotNext] = _handleTimeoutParticipantNotNext;
+        proofHandlers[DisputeFraudProofType.TimeoutTooEarly] = _handleTimeoutTooEarly;
+        proofHandlers[DisputeFraudProofType.DisputeNotLatestState] = _handleDisputeNotLatestState;
+        proofHandlers[DisputeFraudProofType.DisputeInvalid] = _handleDisputeInvalid;
+        proofHandlers[DisputeFraudProofType.DisputeInvalidRecursive] = _handleDisputeInvalidRecursive;
+        proofHandlers[DisputeFraudProofType.DisputeOutOfGas] = _handleDisputeOutOfGas;
+        proofHandlers[DisputeFraudProofType.DisputeInvalidOutputState] = _handleDisputeInvalidOutputState;
+        proofHandlers[DisputeFraudProofType.DisputeInvalidStateProof] = _handleDisputeInvalidStateProof;
         proofHandlers[DisputeFraudProofType.DisputeInvalidPreviousRecursive] = _handleDisputeInvalidPreviousRecursive;
+        proofHandlers[DisputeFraudProofType.DisputeInvalidExitChannelBlocks] = _handleDisputeInvalidExitChannelBlocks;
     }
 
     //This is a bit inefficient, since public/external functions always do a deep copy unlike internal/private that pas by reference, but this shares the context
@@ -51,11 +61,155 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         view
         returns (address)
     {
+        TimeoutThresholdProof memory timeoutThresholdProof = abi.decode(encodedFraudProof, (TimeoutThresholdProof));
+        SignedBlock memory signedBlock = timeoutThresholdProof.thresholdBlock.signedBlock;
+        bytes memory encodedBlock = signedBlock.encodedBlock;
+        Block memory thresholdBlock = abi.decode(encodedBlock, (Block));
+
+        // Check channelId
+        if (!_areDisputeAndBlockSameChannel(dispute, thresholdBlock)) revert();
+
+        // Check forkId
+        if (!_areDisputeAndBlockSameFork(dispute, thresholdBlock)) revert();
+
+        // Check timeout == thresholdBlock
+        if (dispute.timeout.blockHeight != _getBlockHeight(thresholdBlock)) revert();
+
+        //check correct snapshot
+        if (!_doesBlockCommitToSnapshot(thresholdBlock, timeoutThresholdProof.latestStateSnapshot)) revert();
+
+        //check threshold
+        address[] memory thresholdParticipants = timeoutThresholdProof.latestStateSnapshot.snapshotData.participants;
+        bytes[] memory signatures = StateChannelUtilLibrary.insertBytesInByteArray(
+            signedBlock.signature, timeoutThresholdProof.thresholdBlock.signatures
+        );
+        (bool isValid,) = StateChannelUtilLibrary.verifyThresholdSigned(thresholdParticipants, encodedBlock, signatures);
+        if (!isValid) revert();
+
+        return dispute.disputer;
+    }
+
+    function _handleTimeoutCalldataPosted(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
+        TimeoutCalldataPostedProof memory timeoutCalldataPostedProof =
+            abi.decode(encodedFraudProof, (TimeoutCalldataPostedProof));
+        Block memory postedBlock = timeoutCalldataPostedProof.postedBlock;
+
+        // Check channelId
+        if (!_areDisputeAndBlockSameChannel(dispute, postedBlock)) revert();
+
+        // Check forkId
+        if (!_areDisputeAndBlockSameFork(dispute, postedBlock)) revert();
+
+        // Check timeout == postedBlock
+        if (dispute.timeout.blockHeight != _getBlockHeight(postedBlock)) revert();
+
+        // Check timeout participant == block author
+        if (dispute.timeout.participant != _getBlockAuthor(postedBlock)) revert();
+
+        // Check block calldata posted
+        (bool isFound,) = getBlockCallDataCommitment(
+            _getDisputeChannel(dispute),
+            _getDisputeFork(dispute),
+            dispute.timeout.blockHeight,
+            dispute.timeout.participant
+        );
+        if (!isFound) revert();
+
+        return dispute.disputer;
+    }
+
+    function _handleTimeoutParticipantNotNext(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
+        //Can be part of auditing instead of doing it here
+        Block memory latestBlock = _getLatestBlock(dispute.stateProof);
+        if (_getBlockAuthor(latestBlock) == dispute.timeout.participant) revert();
+
+        return dispute.disputer;
+    }
+
+    function _handleTimeoutTooEarly(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
         //TODO
         return dispute.disputer;
     }
 
-    function _handleTimeoutPriorInvalid(bytes memory encodedFraudProof, Dispute memory dispute)
+    function _handleDisputeNotLatestState(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
+        DisputeNotLatestStateProof memory disputeNotLatestStateProof =
+            abi.decode(encodedFraudProof, (DisputeNotLatestStateProof));
+        Block memory newerBlock = abi.decode(disputeNotLatestStateProof.encodedBlock, (Block));
+        Block memory latestBlock = _getLatestBlock(dispute.stateProof);
+
+        // Check channelId
+        if (!_areDisputeAndBlockSameChannel(dispute, newerBlock) || !_areBlocksSameChannel(newerBlock, latestBlock)) {
+            revert();
+        }
+
+        // Check forkId
+        if (!_areDisputeAndBlockSameFork(dispute, newerBlock) || !_areBlocksSameFork(newerBlock, latestBlock)) revert();
+
+        // Check is block newer
+        if (_getBlockHeight(newerBlock) <= _getBlockHeight(latestBlock)) revert();
+
+        // Check siganture
+        address retrivedAddress = StateChannelUtilLibrary.retriveSignerAddress(
+            disputeNotLatestStateProof.encodedBlock, disputeNotLatestStateProof.signature
+        );
+        if (retrivedAddress != dispute.disputer) revert();
+
+        return dispute.disputer;
+    }
+
+    function _handleDisputeInvalid(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
+        //TODO
+        return dispute.disputer;
+    }
+
+    function _handleDisputeInvalidRecursive(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
+        //TODO
+        return dispute.disputer;
+    }
+
+    function _handleDisputeOutOfGas(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
+        //TODO
+        return dispute.disputer;
+    }
+
+    function _handleDisputeInvalidOutputState(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
+        //TODO
+        return dispute.disputer;
+    }
+
+    function _handleDisputeInvalidStateProof(bytes memory encodedFraudProof, Dispute memory dispute)
         internal
         view
         returns (address)
@@ -65,6 +219,15 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     }
 
     function _handleDisputeInvalidPreviousRecursive(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
+        //TODO
+        return dispute.disputer;
+    }
+
+    function _handleDisputeInvalidExitChannelBlocks(bytes memory encodedFraudProof, Dispute memory dispute)
         internal
         view
         returns (address)
@@ -123,54 +286,6 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     //     }
     //     // If calldata check also fails, return false with the last error message
     //     return originalTimedOutDispute.disputer;
-    // }
-
-    // function _handleTimeoutPriorInvalid(
-    //     bytes memory encodedProof,
-    //     FraudProofVerificationContext memory fraudProofVerificationContext
-    // ) internal view returns (address) {
-    //     TimeoutPriorInvalidProof memory timeoutPriorInvalidProof = abi.decode(encodedProof, (TimeoutPriorInvalidProof));
-    //     Dispute memory originalDispute = timeoutPriorInvalidProof.originalDispute;
-    //     Dispute memory recursiveDispute = timeoutPriorInvalidProof.recursiveDispute;
-
-    //     if (
-    //         recursiveDispute.channelId != originalDispute.channelId
-    //             && recursiveDispute.channelId != fraudProofVerificationContext.channelId
-    //     ) {
-    //         revert ErrorNotSameChannelId();
-    //     }
-    //     // check if the recursive dispute is available
-    //     bytes32 recursiveDisputeCommitment =
-    //         keccak256(abi.encode(recursiveDispute, timeoutPriorInvalidProof.recursiveDisputeTimestamp));
-    //     bytes32 originalDisputeCommitment =
-    //         keccak256(abi.encode(originalDispute, timeoutPriorInvalidProof.originalDisputeTimestamp));
-
-    //     (bool isAvailable, bytes32 commitment) =
-    //         getDisputeCommitment(fraudProofVerificationContext.channelId, recursiveDispute.disputeIndex);
-
-    //     if (!isAvailable && commitment != recursiveDisputeCommitment) {
-    //         revert ErrorDisputeCommitmentNotAvailable();
-    //     }
-    //     if (
-    //         recursiveDispute.previousRecursiveDisputeIndex == type(uint256).max
-    //             || recursiveDispute.previousRecursiveDisputeIndex == originalDispute.disputeIndex
-    //     ) {
-    //         revert ErrorDisputeCommitmentNotAvailable();
-    //     }
-
-    //     // check if the previous recursive dispute is available
-    //     (bool isOriginalDisputeAvailable, bytes32 originalCommitment) =
-    //         getDisputeCommitment(fraudProofVerificationContext.channelId, originalDispute.disputeIndex);
-    //     if (!isOriginalDisputeAvailable && originalCommitment != originalDisputeCommitment) {
-    //         revert ErrorDisputeCommitmentNotAvailable();
-    //     }
-
-    //     // check if the original timeout is greater than the recursive timeout
-    //     if (originalDispute.timeout.blockHeight <= recursiveDispute.timeout.blockHeight) {
-    //         revert ErrorInvalidBlock();
-    //     }
-
-    //     return recursiveDispute.disputer;
     // }
 
     // ------------------------------------ Dispute Fraud Proofs ------------------------------------

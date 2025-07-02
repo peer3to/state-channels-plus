@@ -30,6 +30,7 @@ error ErrorJoinChannelFailed();
 error ErrorDisputeChallengePeriodExpired();
 error ErrorDisputeAlreadyPosted();
 error ErrorCantParticipateInDispute();
+error ErrorAuditingDataHashMismatch();
 
 //Reduce errors
 error ErrorNoDisputesProvided();

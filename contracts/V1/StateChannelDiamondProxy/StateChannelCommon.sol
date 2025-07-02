@@ -6,6 +6,7 @@ import "../StateChannelManagerEvents.sol";
 import "./StateChannelUtilLibrary.sol";
 import "./AStateChannelManagerProxy.sol";
 import "./Errors.sol";
+import "./utils/DisputeUtils.sol";
 
 contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEvents {
     function getOnChainSlashes(bytes32 channelId) public view virtual returns (OnChainSlash[] memory) {
@@ -89,7 +90,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow) internal view returns (bool) {
-        return block.timestamp > disputeWindow.reducedResult.timestamp + getEvidenceTime();
+        return block.timestamp > disputeWindow.reducedResult.timestamp + evidenceTime;
     }
 
     function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
@@ -217,7 +218,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         stateMachineImplementation.setState(encodedState);
         for (uint256 i = 0; i < joinCahnnels.length; i++) {
             bool success = stateMachineImplementation.joinChannel(joinCahnnels[i]);
-            // require(success, "Slash failed");
             require(success, ErrorDisputeStateMachineJoiningFailed());
         }
         return (stateMachineImplementation.getState());
@@ -235,11 +235,11 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     function isDisputeCommitted(Dispute memory dispute) internal view returns (bool) {
         bytes32 channelId = dispute.channelId;
         DisputeData storage disputeData = disputeData[channelId];
-        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[dispute.genesisSnapshotDataHash];
+        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[_getDisputeFork(dispute)];
         bytes32 commitment = keccak256(abi.encode(dispute));
 
         for (uint256 i = 0; i < disputeWindow.evidence.disputeCommitments.length; i++) {
-            if (disputeWindow.evidence.disputeCommitments[i] != commitment) {
+            if (disputeWindow.evidence.disputeCommitments[i] == commitment) {
                 return true;
             }
         }
