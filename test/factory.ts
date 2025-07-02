@@ -7,7 +7,8 @@ import {
     JoinChannelStruct,
     SignedBlockStruct,
     BlockConfirmationStruct,
-    ExitChannelBlockStruct
+    ExitChannelBlockStruct,
+    JoinChannelBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import AgreementManager from "@/agreementManager";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -172,6 +173,17 @@ export function joinChannel(
     };
 
     return { ...defaultJoinChannel, ...overrides };
+}
+
+export function joinChannelBlock(
+    overrides: Partial<JoinChannelBlockStruct> = {}
+): JoinChannelBlockStruct {
+    const defaultJoinChannelBlock: JoinChannelBlockStruct = {
+        previousBlockHash: ethers.hexlify(ethers.randomBytes(32)),
+        joinChannels: [joinChannel()]
+    };
+
+    return { ...defaultJoinChannelBlock, ...overrides };
 }
 
 export function signedBlock(

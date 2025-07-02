@@ -9,7 +9,7 @@ import {
     BlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { BlockStorage } from "./BlockStorage";
-import { JoinChannelStorage } from "./JoinChannelStorage";
+import { JoinChannelStorage } from "./JoinChannelBlockStorage";
 import { ExitChannelBlockStorage } from "./ExitChannelBlockStorage";
 import { StateSnapshotStorageModule } from "./StateSnapshotStorage";
 import { BlockHash, StateSnapshotHash } from "@/types/storage";
