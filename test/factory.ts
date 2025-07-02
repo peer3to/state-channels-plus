@@ -8,7 +8,8 @@ import {
     SignedBlockStruct,
     BlockConfirmationStruct,
     ExitChannelBlockStruct,
-    JoinChannelBlockStruct
+    JoinChannelBlockStruct,
+    StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import AgreementManager from "@/agreementManager";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -228,4 +229,32 @@ export function exitChannelBlock(
     };
 
     return { ...defaultExitChannelBlock, ...overrides };
+}
+
+export function stateSnapshot(
+    overrides: Partial<StateSnapshotStruct> = {}
+): StateSnapshotStruct {
+    const defaultStateSnapshot: StateSnapshotStruct = {
+        snapshotData: {
+            stateMachineStateHash: ethers.hexlify(ethers.randomBytes(32)),
+            participants: [
+                ethers.Wallet.createRandom().address,
+                ethers.Wallet.createRandom().address
+            ],
+            latestJoinChannelBlockHash: ethers.hexlify(ethers.randomBytes(32)),
+            latestExitChannelBlockHash: ethers.hexlify(ethers.randomBytes(32)),
+            totalDeposits: {
+                amount: BigInt(randomInt(1, 1000)),
+                data: "0x"
+            },
+            totalWithdrawals: {
+                amount: BigInt(randomInt(1, 500)),
+                data: "0x"
+            }
+        },
+        forkId: ethers.hexlify(ethers.randomBytes(32)),
+        timestamp: Math.floor(Date.now() / 1000)
+    };
+
+    return { ...defaultStateSnapshot, ...overrides };
 }
