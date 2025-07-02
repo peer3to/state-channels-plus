@@ -37,12 +37,6 @@ contract JoinChannelFacet is StateChannelCommon {
         // Deposit funds
         isValid = _processJoinChannelDeposits(jc);
         require(isValid, ErrorJoinChannelFailed());
-
-        // Create and apply JoinChannelBlock
-        _insertJoinChannelBlock(jc);
-
-        // Uupdate pendingParticipants
-        _updatePendingParticipants(jc);
     }
 
     // ############### Processing Functions ###############
@@ -54,40 +48,50 @@ contract JoinChannelFacet is StateChannelCommon {
         bytes32 channelId = jc.channelId;
 
         // Process the deposit for the specific StateChannelManager
-        success = AStateChannelManagerProxy(address(this)).addParticipantComposable(jc);
+        success = AStateChannelManagerProxy(address(this)).depositAssetsComposable(jc);
+        if (!success) return false;
 
-        // Update on-chain total deposits
-        if (success) {
-            totalOnChainProcessedDeposits[channelId] =
-                stateMachineImplementation.addBalance(totalOnChainProcessedDeposits[channelId], jc.balance);
-        }
-        return success;
+        // Create JoinChannelBlock
+        JoinChannelBlock memory jcb = _createJoinChannelBlock(jc);
+        bytes32 blockHash = keccak256(abi.encode(jcb));
+
+        // Update on-chain balance
+        ChannelBalance storage channelBalance = channelBalances[channelId];
+        // Get previous total deposits
+        Balance memory previousTotalDeposits =
+            channelBalance.onChainJoinChannelMap[channelBalance.latestJoinChannelBlockHash].totalDeposits;
+        // Calculate new totalDeposits
+        Balance memory newTotalDeposits = stateMachineImplementation.addBalance(previousTotalDeposits, jc.balance);
+
+        // Persist the onChainJoinChannel in the map
+        channelBalance.onChainJoinChannelMap[blockHash] = OnChainJoinChannel({
+            prebiousJoinChannelBlockHash: channelBalance.latestJoinChannelBlockHash,
+            timestamp: block.timestamp,
+            totalDeposits: newTotalDeposits
+        });
+        // Update the latestJoinChannelBlockHash;
+        channelBalance.latestJoinChannelBlockHash = blockHash;
+
+        // Update pending participants
+        _updatePendingParticipants(jc);
+
+        // Emit the event
+        emit JoinChannelProcessed(channelId, jcb, block.timestamp);
+        return true;
     }
 
     function _updatePendingParticipants(JoinChannel memory jc) internal {
         disputeData[jc.channelId].pendingParticipants.push(jc.participant);
     }
 
-    function _insertJoinChannelBlock(JoinChannel memory jc) internal {
-        bytes32 channelId = jc.channelId;
+    function _createJoinChannelBlock(JoinChannel memory jc) internal returns (JoinChannelBlock memory) {
         JoinChannel[] memory jcs = new JoinChannel[](1);
+        ChannelBalance storage channelBalance = channelBalances[jc.channelId];
         jcs[0] = jc;
-        JoinChannelBlock memory joinChannelBlock = JoinChannelBlock({
-            previousBlockHash: disputeData[jc.channelId].latestJoinChannelBlockHash,
-            joinChannels: jcs
-        });
-
-        bytes32 blockHash = keccak256(abi.encode(joinChannelBlock));
-
-        disputeData[jc.channelId].latestJoinChannelBlockHash = blockHash;
-        disputeData[jc.channelId].onChainJoinChannels.push(
-            OnChainJoinChannel({joinChannelBlockHash: blockHash, timestamp: block.timestamp})
-        );
-
-        emit JoinChannelProcessed(channelId, joinChannelBlock, block.timestamp);
+        bytes32 latestBlockHash = channelBalance.latestJoinChannelBlockHash;
+        bytes32 previousBlockHash = channelBalance.onChainJoinChannelMap[latestBlockHash].prebiousJoinChannelBlockHash;
+        JoinChannelBlock memory joinChannelBlock =
+            JoinChannelBlock({previousBlockHash: previousBlockHash, joinChannels: jcs});
+        return joinChannelBlock;
     }
-
-    // ############### Events ###############
-
-    event JoinChannelProcessed(bytes32 indexed channelId, JoinChannelBlock joinChannelBlock, uint256 timestamp);
 }

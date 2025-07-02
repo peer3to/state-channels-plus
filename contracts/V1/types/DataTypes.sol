@@ -116,3 +116,15 @@ struct SnapshotData {
     /// @dev sum of all the amounts in the exitChannel blockchain
     Balance totalWithdrawals;
 }
+
+struct OnChainJoinChannel {
+    bytes32 prebiousJoinChannelBlockHash;
+    Balance totalDeposits;
+    uint256 timestamp;
+}
+
+struct ChannelBalance {
+    mapping(bytes32 joinChannelBlockHash => OnChainJoinChannel) onChainJoinChannelMap;
+    bytes32 latestJoinChannelBlockHash;
+    Balance totalOnChainWithdrawals;
+}

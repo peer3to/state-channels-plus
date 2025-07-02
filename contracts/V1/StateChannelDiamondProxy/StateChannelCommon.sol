@@ -5,6 +5,8 @@ import "./StateChannelManagerStorage.sol";
 import "../StateChannelManagerEvents.sol";
 import "./StateChannelUtilLibrary.sol";
 import "./AStateChannelManagerProxy.sol";
+import "./Errors.sol";
+import "./utils/DisputeUtils.sol";
 
 contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEvents {
     function getOnChainSlashes(bytes32 channelId) public view virtual returns (OnChainSlash[] memory) {
@@ -24,8 +26,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function getOnChainThresholdSet(bytes32 channelId) public view virtual returns (address[] memory) {
-        SnapshotData storage snapshotData = stateSnapshots[channelId].snapshotData;
-        DisputeData storage _disputeData = disputeData[channelId];
         return StateChannelUtilLibrary.subtractAddressArrays(
             StateChannelUtilLibrary.concatAddressArrays(
                 getSnapshotParticipants(channelId), getPendingParticipants(channelId)
@@ -90,7 +90,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow) internal view returns (bool) {
-        return block.timestamp > disputeWindow.reducedResult.timestamp + getEvidenceTime();
+        return block.timestamp > disputeWindow.reducedResult.timestamp + evidenceTime;
     }
 
     function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
@@ -209,15 +209,21 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return ExitChannelBlock({exitChannels: exitChannels, previousBlockHash: previousBlockHash});
     }
 
+    /// @dev Callable only by diamond facets - applies the join to the given state of the state machine and returns the modified state
     function applyJoinChannelToStateMachine(bytes memory encodedState, JoinChannel[] memory joinCahnnels)
         public
-        virtual
+        onlySelf
         returns (bytes memory encodedModifiedState)
     {
-        return AStateChannelManagerProxy(address(this)).applyJoinChannelToStateMachine(encodedState, joinCahnnels);
+        stateMachineImplementation.setState(encodedState);
+        for (uint256 i = 0; i < joinCahnnels.length; i++) {
+            bool success = stateMachineImplementation.joinChannel(joinCahnnels[i]);
+            require(success, ErrorDisputeStateMachineJoiningFailed());
+        }
+        return (stateMachineImplementation.getState());
     }
-
     //stateless
+
     function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
         internal
         virtual
@@ -229,11 +235,11 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     function isDisputeCommitted(Dispute memory dispute) internal view returns (bool) {
         bytes32 channelId = dispute.channelId;
         DisputeData storage disputeData = disputeData[channelId];
-        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[dispute.genesisSnapshotDataHash];
+        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[_getDisputeFork(dispute)];
         bytes32 commitment = keccak256(abi.encode(dispute));
 
         for (uint256 i = 0; i < disputeWindow.evidence.disputeCommitments.length; i++) {
-            if (disputeWindow.evidence.disputeCommitments[i] != commitment) {
+            if (disputeWindow.evidence.disputeCommitments[i] == commitment) {
                 return true;
             }
         }

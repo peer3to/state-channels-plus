@@ -15,7 +15,7 @@ export enum FraudProofType {
     // Timeout related fraud proofs
     TimeoutThreshold = 5,
     TimeoutPriorInvalid = 6,
-    TimeoutParticipantNoNext = 7,
+    TimeoutParticipantNotNext = 7,
     // Dispute fraud proofs
     DisputeNotLatestState = 8,
     DisputeInvalid = 9,
