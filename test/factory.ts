@@ -4,11 +4,14 @@ import {
     TransactionStruct,
     TransactionHeaderStruct,
     TransactionBodyStruct,
-    JoinChannelStruct
+    JoinChannelStruct,
+    SignedBlockStruct,
+    BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import AgreementManager from "@/agreementManager";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { randomInt } from "crypto";
+import { Codec, Type } from "@/utils";
 
 /**
  * Creates a default transaction header
@@ -19,7 +22,7 @@ export function transactionHeader(
 ): TransactionHeaderStruct {
     return {
         channelId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
-        forkId: 0,
+        forkId: ethers.hexlify(ethers.zeroPadBytes("0x01", 32)),
         transactionCnt: 0,
         participant: ethers.Wallet.createRandom().address,
         timestamp: Math.floor(Date.now() / 1000),
@@ -82,7 +85,7 @@ export function agreementManager(addresses: string[] = []): AgreementManager {
     manager.newFork(
         genesisState,
         participants,
-        0,
+        ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
         Math.floor(Date.now() / 1000)
     );
     return manager;
@@ -138,15 +141,12 @@ export function dispute(overrides: Partial<DisputeStruct> = {}): DisputeStruct {
             ethers.randomBytes(32)
         ),
         outputSnapshotDataHash: ethers.hexlify(ethers.randomBytes(32)),
-        exitChannelBlocks: [],
         disputeAuditingDataHash: ethers.hexlify(ethers.randomBytes(32)),
         disputer: ethers.ZeroAddress,
-        disputeIndex: 0,
         timeout: {
             participant: ethers.ZeroAddress,
             blockHeight: 0,
             minTimeStamp: Math.floor(Date.now() / 1000),
-            forkId: 0,
             isForced: false,
             previousBlockProducer: ethers.ZeroAddress,
             previousBlockProducerPostedCalldata: false
@@ -171,4 +171,32 @@ export function joinChannel(
     };
 
     return { ...defaultJoinChannel, ...overrides };
+}
+
+export function signedBlock(
+    overrides: Partial<SignedBlockStruct> = {}
+): SignedBlockStruct {
+    const mockBlock = block();
+    const defaultSignedBlock: SignedBlockStruct = {
+        encodedBlock: Codec.encode(mockBlock, Type.Block),
+        signature: signature()
+    };
+
+    return { ...defaultSignedBlock, ...overrides };
+}
+
+/**
+ * Creates a mock BlockConfirmationStruct for testing
+ * @param overrides Optional override values for the block confirmation fields
+ * @returns A BlockConfirmationStruct with default values and any provided overrides
+ */
+export function blockConfirmation(
+    overrides: Partial<BlockConfirmationStruct> = {}
+): BlockConfirmationStruct {
+    const defaultBlockConfirmation: BlockConfirmationStruct = {
+        signedBlock: signedBlock(),
+        signatures: [signature(), signature()]
+    };
+
+    return { ...defaultBlockConfirmation, ...overrides };
 }

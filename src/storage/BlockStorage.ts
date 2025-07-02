@@ -2,192 +2,280 @@ import {
     BlockConfirmationStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { BlockHash, ForkHeight } from "@/types/storage";
-import { Codec, Type } from "@/utils";
+import { Hash, ForkId, BlockHeight } from "@/types/types";
+import { Codec, Type, BlockUtils } from "@/utils";
+import { ethers } from "ethers";
+
+type ForkCoordinates = [ForkId, BlockHeight];
+type CoordinateKey = string;
 
 export class BlockStorageModule {
-    //BlockConfirmationStruct => SignedBlockStruct => encodedBlock => BlockStruct
-    private blockhashToBlockConfirmationStructsMap: Map<
-        BlockHash,
-        BlockConfirmationStruct
-    >;
-    private forkHeightToBlockConfirmationStructsMap: Map<
-        ForkHeight,
-        BlockConfirmationStruct
-    >;
+    // ====================================
+    // STORAGE MAPS
+    // ====================================
+    private hashToBlockMap: Map<Hash, BlockConfirmationStruct>;
+    private coordinatesToBlockMap: Map<CoordinateKey, BlockConfirmationStruct>;
 
     constructor() {
-        this.blockhashToBlockConfirmationStructsMap = new Map();
-        this.forkHeightToBlockConfirmationStructsMap = new Map();
+        this.hashToBlockMap = new Map();
+        this.coordinatesToBlockMap = new Map();
     }
 
-    insertBlock(signedBlock: SignedBlockStruct): void;
+    // ====================================
+    // CREATE - throw if entry exists
+    // ====================================
+
+    /*────────────────────────────────────────────────────────────────────────────
+      OVERLOAD SIGNATURES
+    ────────────────────────────────────────────────────────────────────────────*/
+
+    /** [OVERLOAD 1] Insert signed block with auto-computed keys */
+    insertBlock(signedBlock: SignedBlockStruct): Hash;
+
+    /** [OVERLOAD 2] Insert signed block with provided keys */
     insertBlock(
         signedBlock: SignedBlockStruct,
-        blockHash: BlockHash,
-        fork: number,
-        height: number
-    ): void;
-    insertBlock(blockConfirmation: BlockConfirmationStruct): void;
+        blockHash: Hash,
+        forkId: ForkId,
+        height: BlockHeight
+    ): Hash;
+
+    /** [OVERLOAD 3] Insert block confirmation with auto-computed keys */
+    insertBlock(blockConfirmation: BlockConfirmationStruct): Hash;
+
+    /** [OVERLOAD 4] Insert block confirmation with provided keys */
     insertBlock(
         blockConfirmation: BlockConfirmationStruct,
-        blockHash: BlockHash,
-        fork: number,
-        height: number
-    ): void;
+        blockHash: Hash,
+        forkId: ForkId,
+        height: BlockHeight
+    ): Hash;
+
+    /*────────────────────────────────────────────────────────────────────────────
+      IMPLEMENTATION
+    ────────────────────────────────────────────────────────────────────────────*/
     insertBlock(
         blockData: SignedBlockStruct | BlockConfirmationStruct,
-        blockHash?: BlockHash,
-        fork?: number,
-        height?: number
-    ): void {
+        blockHash?: Hash,
+        forkId?: ForkId,
+        height?: BlockHeight
+    ): Hash {
         const hasKeys =
             blockHash !== undefined &&
-            fork !== undefined &&
+            forkId !== undefined &&
             height !== undefined;
 
         if (this.isBlockConfirmation(blockData)) {
+            // ┌─ ROUTES TO: [OVERLOAD 3] or [OVERLOAD 4]
             return hasKeys
-                ? this.insertBlockConfirmationWithKeys(
-                      blockData,
-                      blockHash,
-                      fork,
+                ? this.storeBlockConfirmationWithKeys(blockData, blockHash, [
+                      forkId,
                       height
-                  )
-                : this.insertBlockConfirmation(blockData);
+                  ])
+                : this.storeBlockConfirmation(blockData);
         } else {
+            // ┌─ ROUTES TO: [OVERLOAD 1] or [OVERLOAD 2]
+            // │  TYPE CONVERSION: SignedBlock → BlockConfirmation (empty signatures)
+            const blockConfirmation: BlockConfirmationStruct = {
+                signedBlock: blockData,
+                signatures: [] // ← Starts empty, ready for peer confirmations
+            };
+
             return hasKeys
-                ? this.insertSignedBlockWithKeys(
-                      blockData,
+                ? this.storeBlockConfirmationWithKeys(
+                      blockConfirmation,
                       blockHash,
-                      fork,
-                      height
+                      [forkId, height]
                   )
-                : this.insertSignedBlock(blockData);
+                : this.storeBlockConfirmation(blockConfirmation);
         }
     }
 
+    // ====================================
+    // READ
+    // ====================================
+
+    /*────────────────────────────────────────────────────────────────────────────
+      OVERLOAD SIGNATURES
+    ────────────────────────────────────────────────────────────────────────────*/
+
+    /** [OVERLOAD 1] Get block confirmation by hash */
+    getBlockConfirmation(blockHash: Hash): BlockConfirmationStruct | undefined;
+
+    /** [OVERLOAD 2] Get block confirmation by coordinates */
     getBlockConfirmation(
-        blockHash: BlockHash
+        forkId: ForkId,
+        height: BlockHeight
     ): BlockConfirmationStruct | undefined;
+
+    /*────────────────────────────────────────────────────────────────────────────
+      IMPLEMENTATION
+    ────────────────────────────────────────────────────────────────────────────*/
     getBlockConfirmation(
-        fork: number,
-        height: number
-    ): BlockConfirmationStruct | undefined;
-    getBlockConfirmation(
-        blockHashOrFork: BlockHash | number,
-        height?: number
+        hashOrForkId: Hash | ForkId,
+        height?: BlockHeight
     ): BlockConfirmationStruct | undefined {
-        if (typeof blockHashOrFork === "string") {
-            // Called with blockHash
-            return this.blockhashToBlockConfirmationStructsMap.get(
-                blockHashOrFork
-            );
+        if (height === undefined) {
+            // ┌─ ROUTES TO: [OVERLOAD 1] - by hash
+            return this.hashToBlockMap.get(hashOrForkId as Hash);
         }
+        // ┌─ ROUTES TO: [OVERLOAD 2] - by coordinates
+        const coordinateKey = this.coordinatesToKey([
+            hashOrForkId as ForkId,
+            height
+        ]);
+        return this.coordinatesToBlockMap.get(coordinateKey);
+    }
 
-        if (typeof blockHashOrFork === "number" && height) {
-            // Called with fork and height
-            const forkHeight: ForkHeight = [blockHashOrFork, height];
-            return this.forkHeightToBlockConfirmationStructsMap.get(forkHeight);
+    // ====================================
+    // UPDATE - Only signature insertion
+    // ====================================
+
+    /*────────────────────────────────────────────────────────────────────────────
+      OVERLOAD SIGNATURES
+    ────────────────────────────────────────────────────────────────────────────*/
+
+    /** [OVERLOAD 1] Insert signature by hash */
+    insertSignature(
+        signature: string,
+        blockHash: Hash
+    ): BlockConfirmationStruct | undefined;
+
+    /** [OVERLOAD 2] Insert signature by coordinates */
+    insertSignature(
+        signature: string,
+        forkId: ForkId,
+        height: BlockHeight
+    ): BlockConfirmationStruct | undefined;
+
+    /*────────────────────────────────────────────────────────────────────────────
+      IMPLEMENTATION
+    ────────────────────────────────────────────────────────────────────────────*/
+    insertSignature(
+        signature: string,
+        hashOrForkId: Hash | ForkId,
+        height?: BlockHeight
+    ): BlockConfirmationStruct | undefined {
+        const blockConfirmation =
+            height === undefined
+                ? this.hashToBlockMap.get(hashOrForkId as Hash)
+                : this.coordinatesToBlockMap.get(
+                      this.coordinatesToKey([hashOrForkId as ForkId, height])
+                  );
+
+        if (blockConfirmation) {
+            blockConfirmation.signatures.push(signature);
+            return blockConfirmation;
         }
-
         return undefined;
     }
 
-    deleteBlockConfirmation(blockHash: BlockHash): void;
-    deleteBlockConfirmation(fork: number, height: number): void;
-    deleteBlockConfirmation(
-        blockHashOrFork: BlockHash | number,
-        height?: number
-    ): void {
-        if (typeof blockHashOrFork === "string") {
-            // Called with blockHash
-            this.blockhashToBlockConfirmationStructsMap.delete(blockHashOrFork);
-        } else if (typeof blockHashOrFork === "number" && height) {
-            // Called with fork and height
-            const forkHeight: ForkHeight = [blockHashOrFork, height];
-            this.forkHeightToBlockConfirmationStructsMap.delete(forkHeight);
-        }
-    }
+    // ====================================
+    // DELETE
+    // ====================================
 
-    getPreviousBlockHash(
-        forkCnt: number,
-        transactionCnt: number
-    ): BlockHash | undefined {
-        const blockConfirmation = this.getBlockConfirmation(
-            forkCnt,
-            transactionCnt
-        );
-        if (blockConfirmation) {
+    /*────────────────────────────────────────────────────────────────────────────
+      OVERLOAD SIGNATURES
+    ────────────────────────────────────────────────────────────────────────────*/
+
+    /** [OVERLOAD 1] Delete block confirmation by hash */
+    deleteBlock(blockHash: Hash): boolean;
+
+    /** [OVERLOAD 2] Delete block confirmation by coordinates */
+    deleteBlock(forkId: ForkId, height: BlockHeight): boolean;
+
+    /*────────────────────────────────────────────────────────────────────────────
+      IMPLEMENTATION
+    ────────────────────────────────────────────────────────────────────────────*/
+    deleteBlock(hashOrForkId: Hash | ForkId, height?: BlockHeight): boolean {
+        if (height === undefined) {
+            // ┌─ ROUTES TO: [OVERLOAD 1] - delete by hash
+            const blockConfirmation = this.hashToBlockMap.get(
+                hashOrForkId as Hash
+            );
+            if (!blockConfirmation) return false;
+
+            // Need to find and delete from coordinates map too
             const block = Codec.decode(
                 blockConfirmation.signedBlock.encodedBlock,
                 Type.Block
             );
-            return block.previousBlockHash as BlockHash;
+            const { forkId, height } = BlockUtils.getCoordinates(block);
+            const coordinateKey = this.coordinatesToKey([forkId, height]);
+
+            this.hashToBlockMap.delete(hashOrForkId as Hash);
+            this.coordinatesToBlockMap.delete(coordinateKey);
+            return true;
         }
-        return undefined;
+
+        // ┌─ ROUTES TO: [OVERLOAD 2] - delete by coordinates
+        const coordinateKey = this.coordinatesToKey([
+            hashOrForkId as ForkId,
+            height
+        ]);
+        const blockConfirmation = this.coordinatesToBlockMap.get(coordinateKey);
+        if (!blockConfirmation) return false;
+
+        // Need to find and delete from hash map too
+        const blockHash = ethers.keccak256(
+            blockConfirmation.signedBlock.encodedBlock
+        );
+
+        this.coordinatesToBlockMap.delete(coordinateKey);
+        this.hashToBlockMap.delete(blockHash);
+        return true;
     }
 
-    private insertSignedBlock(signedBlock: SignedBlockStruct): void {
-        const blockConfirmation: BlockConfirmationStruct = {
-            signedBlock: signedBlock,
-            signatures: []
-        };
-        this.insertBlockConfirmation(blockConfirmation);
+    // ====================================
+    // PRIVATE HELPERS
+    // ====================================
+
+    private coordinatesToKey(coordinates: ForkCoordinates): CoordinateKey {
+        const [forkId, height] = coordinates;
+        return `${forkId}:${height}`;
     }
-    private insertSignedBlockWithKeys(
-        signedBlock: SignedBlockStruct,
-        blockHash: BlockHash,
-        fork: number,
-        height: number
-    ): void {
-        const blockConfirmation: BlockConfirmationStruct = {
-            signedBlock: signedBlock,
-            signatures: []
-        };
-        this.insertBlockConfirmationWithKeys(
-            blockConfirmation,
-            blockHash,
-            fork,
-            height
-        );
-    }
-    private insertBlockConfirmation(
+
+    private storeBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct
-    ): void {
-        const blockHash = Codec.encode(
-            blockConfirmation,
-            Type.BlockConfirmation
+    ): Hash {
+        const blockHash = ethers.keccak256(
+            blockConfirmation.signedBlock.encodedBlock
         );
         const block = Codec.decode(
             blockConfirmation.signedBlock.encodedBlock,
             Type.Block
         );
-        const fork = block.transaction.header.forkId;
-        const height = block.transaction.header.transactionCnt;
-        this.insertBlockConfirmationWithKeys(
+        const { forkId, height } = BlockUtils.getCoordinates(block);
+
+        return this.storeBlockConfirmationWithKeys(
             blockConfirmation,
             blockHash,
-            Number(fork),
-            Number(height)
+            [forkId, height]
         );
     }
-    private insertBlockConfirmationWithKeys(
+
+    private storeBlockConfirmationWithKeys(
         blockConfirmation: BlockConfirmationStruct,
-        blockHash: BlockHash,
-        fork: number,
-        height: number
-    ): void {
-        const forkHeight: ForkHeight = [fork, height];
-        this.forkHeightToBlockConfirmationStructsMap.set(
-            forkHeight,
-            blockConfirmation
-        );
-        this.blockhashToBlockConfirmationStructsMap.set(
-            blockHash,
-            blockConfirmation
-        );
+        blockHash: Hash,
+        coordinates: ForkCoordinates
+    ): Hash {
+        const coordinateKey = this.coordinatesToKey(coordinates);
+
+        // Check for duplicates - throw if exists
+        if (this.hashToBlockMap.has(blockHash)) {
+            throw new Error(`Block with hash ${blockHash} already exists`);
+        }
+        if (this.coordinatesToBlockMap.has(coordinateKey)) {
+            throw new Error(
+                `Block at fork ${coordinates[0]}, height ${coordinates[1]} already exists`
+            );
+        }
+
+        this.hashToBlockMap.set(blockHash, blockConfirmation);
+        this.coordinatesToBlockMap.set(coordinateKey, blockConfirmation);
+        return blockHash;
     }
+
     private isBlockConfirmation(
         blockData: SignedBlockStruct | BlockConfirmationStruct
     ): blockData is BlockConfirmationStruct {
