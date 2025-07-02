@@ -5,7 +5,18 @@ import "./ProofTypes.sol";
 
 //Just so typechain generates types for the structs bellow
 contract DisputeTypes {
-    constructor(Dispute memory a, MilestoneProof memory b, StateProof memory c, FraudProof memory d, FraudProofType e) {}
+    constructor(
+        Dispute memory a,
+        SignedDispute memory b,
+        DisputeConfirmation memory c,
+        Timeout memory d,
+        DisputeWindowReducedResult memory e,
+        ReduceOutput memory f,
+        OnChainSlash memory g,
+        DisputeAuditingData memory h,
+        FraudProofVerificationContext memory i,
+        DisputeOutputState memory j
+    ) {}
 }
 
 struct Dispute {

@@ -8,16 +8,26 @@ contract DataTypes {
         Block memory a,
         SignedBlock memory b,
         BlockConfirmation memory c,
-        Transaction memory d,
-        JoinChannel memory g,
-        JoinChannelBlock memory h,
-        SignedJoinChannel memory i,
-        JoinChannelConfirmation memory j,
-        ExitChannel memory k,
-        ExitChannelBlock memory l,
-        Timeout memory m,
-        StateSnapshot memory n
+        TransactionHeader memory d,
+        TransactionBody memory e,
+        Transaction memory f,
+        Balance memory g,
+        JoinChannel memory h,
+        JoinChannelBlock memory i,
+        SignedJoinChannel memory j,
+        JoinChannelConfirmation memory k,
+        ExitChannel memory l,
+        ExitChannelBlock memory m,
+        StateSnapshot memory n,
+        SnapshotData memory o,
+        OnChainJoinChannel memory p
     ) {}
+}
+
+struct Block {
+    Transaction transaction;
+    bytes32 stateSnapshotHash;
+    bytes32 previousBlockHash;
 }
 
 struct SignedBlock {
@@ -28,17 +38,6 @@ struct SignedBlock {
 struct BlockConfirmation {
     SignedBlock signedBlock;
     bytes[] signatures;
-}
-
-struct Block {
-    Transaction transaction;
-    bytes32 stateSnapshotHash;
-    bytes32 previousBlockHash;
-}
-
-struct Transaction {
-    TransactionHeader header;
-    TransactionBody body;
 }
 
 struct TransactionHeader {
@@ -53,6 +52,11 @@ struct TransactionHeader {
 struct TransactionBody {
     bytes encodedData;
     bytes data; //evm transaction data
+}
+
+struct Transaction {
+    TransactionHeader header;
+    TransactionBody body;
 }
 
 struct Balance {
