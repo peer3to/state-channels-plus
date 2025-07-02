@@ -95,26 +95,11 @@ struct ExitChannelBlock {
     bytes32 previousBlockHash;
 }
 
-struct Timeout {
-    /// @dev the participant that is being timed out
-    address participant;
-    /// @dev the block height at which participant is removed from the channel (fork)
-    uint256 blockHeight;
-    /// @dev minimum timestamp where this timeout is valid
-    uint256 minTimeStamp;
-    /// @dev the forkId at which the participant is timed out
-    bytes32 forkId;
-    /// @dev True if timeout checks should ignore race condition checks on-chain - usefull when the participant being tiemdout committed to a wrong block (is not linked to the latestState), but we can't prove deviation - explained more in the docs
-    bool isForced;
-    // ================== optional ==================
-    address previousBlockProducer;
-    bool previousBlockProducerPostedCalldata;
-}
-
 struct StateSnapshot {
     SnapshotData snapshotData;
     /// @dev The fork identifier (count) that the snapshot belongs to
     bytes32 forkId; //hash(genesisSnapshotData)
+    uint256 timestamp;
 }
 
 struct SnapshotData {
@@ -130,4 +115,16 @@ struct SnapshotData {
     Balance totalDeposits;
     /// @dev sum of all the amounts in the exitChannel blockchain
     Balance totalWithdrawals;
+}
+
+struct OnChainJoinChannel {
+    bytes32 prebiousJoinChannelBlockHash;
+    Balance totalDeposits;
+    uint256 timestamp;
+}
+
+struct ChannelBalance {
+    mapping(bytes32 joinChannelBlockHash => OnChainJoinChannel) onChainJoinChannelMap;
+    bytes32 latestJoinChannelBlockHash;
+    Balance totalOnChainWithdrawals;
 }

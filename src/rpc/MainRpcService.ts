@@ -2,8 +2,8 @@ import { AddressLike, BytesLike, SignatureLike } from "ethers";
 import {
     SignedBlockStruct,
     SignedJoinChannelStruct
-} from "@typechain-types/contracts/V1/DataTypes";
-import { SignedDisputeStruct } from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import { SignedDisputeStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 import P2PManager from "@/P2PManager";
 import RpcProxy from "./RpcProxy";

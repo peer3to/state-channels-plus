@@ -13,8 +13,8 @@ import {
     SignedBlockStruct,
     SignedJoinChannelStruct,
     TransactionStruct
-} from "@typechain-types/contracts/V1/DataTypes";
-import { DisputeStruct } from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import P2PManager from "@/P2PManager";
 import { EvmUtils, Codec, SignatureUtils, Type } from "@/utils";

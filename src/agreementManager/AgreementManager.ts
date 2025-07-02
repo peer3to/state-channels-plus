@@ -2,11 +2,11 @@ import { AddressLike, BigNumberish, BytesLike, SignatureLike } from "ethers";
 import {
     SignedBlockStruct,
     BlockStruct
-} from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     BlockConfirmationStruct,
     DisputeStruct
-} from "@typechain-types/contracts/V1/DisputeTypes";
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { BlockUtils, Codec, EvmUtils, Type } from "@/utils";
 import { AgreementFlag } from "@/types";
 import { BlockConfirmation } from "./types";

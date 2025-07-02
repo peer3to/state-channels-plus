@@ -6,7 +6,7 @@ import {
     MilestoneProofStruct,
     StateSnapshotStruct,
     ExitChannelBlockStruct
-} from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import { Codec, EvmUtils, SignatureCollectionMap, Type } from "@/utils";
 import Clock from "@/Clock";
 import { getActiveParticipants } from "@/utils/participantUtils";

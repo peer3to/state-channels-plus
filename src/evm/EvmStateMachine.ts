@@ -4,7 +4,7 @@ import {
     AStateChannelManagerProxy,
     AStateMachine as AStateMachineContract
 } from "@typechain-types";
-import { TransactionStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import StateManager from "@/stateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";

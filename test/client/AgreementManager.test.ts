@@ -7,7 +7,7 @@
 //     BlockStruct,
 //     SignedBlockStruct,
 //     StateSnapshotStruct
-// } from "@typechain-types/contracts/V1/DataTypes";
+// } from "@typechain-types/contracts/V1/types/DataTypes";
 // import sinon from "sinon";
 // import AgreementManager from "@/agreementManager";
 // import { AgreementFlag } from "@/types";
