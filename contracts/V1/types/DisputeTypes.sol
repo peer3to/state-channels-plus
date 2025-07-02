@@ -55,8 +55,6 @@ struct Timeout {
     uint256 blockHeight;
     /// @dev minimum timestamp where this timeout is valid
     uint256 minTimeStamp;
-    /// @dev the forkId at which the participant is timed out
-    bytes32 forkId;
     /// @dev True if timeout checks should ignore race condition checks on-chain - usefull when the participant being tiemdout committed to a wrong block (is not linked to the latestState), but we can't prove deviation - explained more in the docs
     bool isForced;
     // ================== optional ==================
@@ -100,6 +98,7 @@ struct OnChainSlash {
 }
 
 /// @dev data for dispute auditing
+
 struct DisputeAuditingData {
     StateSnapshot genesisStateSnapshot;
     StateSnapshot latestStateSnapshot;
@@ -115,7 +114,6 @@ struct DisputeAuditingData {
 struct DisputeData {
     OnChainSlash[] onChainSlashes;
     address[] pendingParticipants;
-    bytes32 latestJoinChannelBlockHash;
     mapping(bytes32 forkId => DisputeWindow) disputeWindowMap;
     bytes32[] disputedForks;
 }
