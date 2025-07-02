@@ -1,19 +1,12 @@
 import { expect } from "chai";
 import { Wasm } from "@/evm/wasm";
-import fs from "fs";
-import path from "path";
+import { wasmBase64 } from "@/evm/precompiles/math";
 
 describe("Wasm", () => {
-    const mathWasmPath = path.resolve(
-        __dirname,
-        "../../src/evm/precompiles/math.wasm"
-    );
-    let wasmBytes: Uint8Array;
     let wasm: Wasm;
 
     before(async () => {
-        wasmBytes = fs.readFileSync(mathWasmPath);
-        wasm = await Wasm.init(wasmBytes);
+        wasm = await Wasm.fromBase64(wasmBase64);
     });
 
     describe("initialization", () => {
@@ -22,8 +15,8 @@ describe("Wasm", () => {
         });
 
         it("should allow multiple instances with same source", async () => {
-            const wasm1 = await Wasm.init(wasmBytes);
-            const wasm2 = await Wasm.init(wasmBytes);
+            const wasm1 = await Wasm.fromBase64(wasmBase64);
+            const wasm2 = await Wasm.fromBase64(wasmBase64);
 
             expect(wasm1.hasExport("math")).to.be.true;
             expect(wasm2.hasExport("math")).to.be.true;

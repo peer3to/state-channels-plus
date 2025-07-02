@@ -68,7 +68,8 @@
     "testc": "yarn compile && yarn hardhat test",
     "test": "yarn hardhat test",
     "test:coverage": "nyc --reporter=html yarn testts",
-    "build": "yarn compile && rimraf dist && tsc && tsc-alias --project tsconfig.json && npm pack && node rename-pack.js",
+    "embed-wasm": "node wasm/embed_wasm.js",
+    "build": "yarn embed-wasm && yarn compile && rimraf dist && tsc && tsc-alias --project tsconfig.json && npm pack && node rename-pack.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky install"

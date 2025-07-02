@@ -1,6 +1,3 @@
-import fs from "fs";
-import path from "path";
-
 export class Wasm {
     private readonly instance: WebAssembly.Instance;
 
@@ -8,34 +5,15 @@ export class Wasm {
         this.instance = instance;
     }
 
-    static async init(wasmBytes: Uint8Array): Promise<Wasm> {
-        const mod = await WebAssembly.compile(wasmBytes);
-        const instance = await WebAssembly.instantiate(mod);
+    static async fromBytes(bytes: Uint8Array): Promise<Wasm> {
+        const module = await WebAssembly.compile(bytes);
+        const instance = await WebAssembly.instantiate(module);
         return new Wasm(instance);
     }
 
-    static async load(wasmPathOrUrl: string): Promise<Wasm> {
-        try {
-            let wasmBytes: Uint8Array;
-
-            if (typeof window !== "undefined") {
-                const response = await fetch(wasmPathOrUrl);
-                if (!response.ok) {
-                    throw new Error(
-                        `Failed to fetch WASM file: ${response.statusText}`
-                    );
-                }
-                const buffer = await response.arrayBuffer();
-                wasmBytes = new Uint8Array(buffer);
-            } else {
-                const resolvedPath = path.resolve(wasmPathOrUrl);
-                wasmBytes = fs.readFileSync(resolvedPath);
-            }
-
-            return this.init(wasmBytes);
-        } catch (err) {
-            throw new Error(`Failed to load WASM module: ${err}`);
-        }
+    static async fromBase64(base64: string): Promise<Wasm> {
+        const binary = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+        return this.fromBytes(binary);
     }
 
     get exports(): WebAssembly.Exports {

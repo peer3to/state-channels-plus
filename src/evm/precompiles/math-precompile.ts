@@ -1,19 +1,14 @@
 import { CustomPrecompile } from "@ethereumjs/evm/dist/cjs/precompiles";
 import { createAddressFromString } from "@ethereumjs/util";
 import { Wasm } from "../wasm";
-import path from "path";
+import { wasmBase64 } from "./math";
 
 export const MATH_PRECOMPILE_ADDRESS = createAddressFromString(
     "0x0000000000000000000000000000000000000124"
 );
 
-export function initMathWasm(): Promise<Wasm> {
-    const wasmPath = path.resolve(__dirname, "./math.wasm");
-    return Wasm.load(wasmPath);
-}
-
 export async function createMathPrecompile(): Promise<CustomPrecompile> {
-    const mathWasm = await initMathWasm();
+    const mathWasm = await Wasm.fromBase64(wasmBase64);
     const math =
         mathWasm.getExport<(ptr: number, len: number) => number>("math");
 
