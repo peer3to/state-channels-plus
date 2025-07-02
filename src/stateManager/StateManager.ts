@@ -3,12 +3,12 @@ import {
     SignedBlockStruct,
     BlockStruct,
     StateSnapshotStruct,
-    ForkMilestoneProofStruct,
+    MilestoneProofStruct,
     ExitChannelBlockStruct,
     DisputeProofStruct,
     SignedDisputeStruct,
     ExitChannelStruct
-} from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     AddressLike,
     BigNumberish,
@@ -22,7 +22,7 @@ import { AStateChannelManagerProxy } from "@typechain-types";
 import {
     ProofStruct,
     DisputeStruct
-} from "@typechain-types/contracts/V1/DisputeTypes";
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "@/Clock";
 import DisputeHandler from "@/DisputeHandler";
 import P2PManager from "@/P2PManager";
@@ -435,7 +435,7 @@ class StateManager {
     }
 
     public async postStateSnapshot(
-        milestoneProofs: ForkMilestoneProofStruct[],
+        milestoneProofs: MilestoneProofStruct[],
         milestoneSnapshots: StateSnapshotStruct[],
         exitChannelBlocks: ExitChannelBlockStruct[] = []
     ) {

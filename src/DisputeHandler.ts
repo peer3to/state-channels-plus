@@ -4,8 +4,8 @@ import { AStateChannelManagerProxy } from "@typechain-types";
 import {
     ProofStruct,
     DisputeStruct
-} from "@typechain-types/contracts/V1/DisputeTypes";
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DebugProxy, retry, Codec, Type } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ProofManager from "./ProofManager";

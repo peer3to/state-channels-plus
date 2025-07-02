@@ -1,4 +1,4 @@
-import { BlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { EvmUtils } from "./EvmUtils";
 import exp from "constants";
 import { AddressLike, BytesLike, SignatureLike } from "ethers";
