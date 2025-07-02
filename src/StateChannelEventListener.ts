@@ -1,7 +1,7 @@
 import { BigNumberish, BytesLike } from "ethers";
 import { AStateChannelManagerProxy } from "@typechain-types";
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
-import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
 
@@ -49,10 +49,10 @@ class StateChannelEventListener {
             filterFactory: (channelId: BytesLike) =>
                 this.stateChannelManagerContract.filters.SetState(channelId),
             handler: (logObj: any) => {
-                const { encodedState, forkCnt, timestamp } = logObj.args;
+                const { encodedState, forkId, timestamp } = logObj.args;
                 return this.stateManager.setState(
                     encodedState,
-                    forkCnt,
+                    forkId,
                     timestamp
                 );
             }

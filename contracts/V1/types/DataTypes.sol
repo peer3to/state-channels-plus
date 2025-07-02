@@ -16,9 +16,7 @@ contract DataTypes {
         ExitChannel memory k,
         ExitChannelBlock memory l,
         Timeout memory m,
-        StateSnapshot memory n,
-        DisputeProof memory o,
-        SignedDispute memory p
+        StateSnapshot memory n
     ) {}
 }
 
@@ -30,11 +28,6 @@ struct SignedBlock {
 struct BlockConfirmation {
     SignedBlock signedBlock;
     bytes[] signatures;
-}
-
-struct SignedDispute {
-    bytes encodedDispute;
-    bytes signature;
 }
 
 struct Block {
@@ -51,7 +44,7 @@ struct Transaction {
 struct TransactionHeader {
     bytes32 channelId;
     address participant;
-    uint256 forkCnt;
+    bytes32 forkId;
     uint256 transactionCnt;
     uint256 timestamp;
 }
@@ -102,29 +95,18 @@ struct ExitChannelBlock {
     bytes32 previousBlockHash;
 }
 
-struct Timeout {
-    /// @dev the participant that is being timed out
-    address participant;
-    /// @dev the block height at which participant is removed from the channel (fork)
-    uint256 blockHeight;
-    /// @dev minimum timestamp where this timeout is valid
-    uint256 minTimeStamp;
-    /// @dev the forkCnt at which the participant is timed out
-    uint256 forkCnt;
-    /// @dev True if timeout checks should ignore race condition checks on-chain - usefull when the participant being tiemdout committed to a wrong block (is not linked to the latestState), but we can't prove deviation - explained more in the docs
-    bool isForced;
-    // ================== optional ==================
-    address previousBlockProducer;
-    bool previousBlockProducerPostedCalldata;
+struct StateSnapshot {
+    SnapshotData snapshotData;
+    /// @dev The fork identifier (count) that the snapshot belongs to
+    bytes32 forkId; //hash(genesisSnapshotData)
+    uint256 timestamp;
 }
 
-struct StateSnapshot {
+struct SnapshotData {
     /// @dev the state root of the channel state
     bytes32 stateMachineStateHash;
     /// @dev the participants of the channel
     address[] participants;
-    /// @dev The fork identifier (count) that the snapshot belongs to
-    uint256 forkCnt;
     /// @dev the hash of the lastBlock in the JoinChannel blockchain
     bytes32 latestJoinChannelBlockHash;
     /// @dev the hash of the lastBlock in the ExitChannel blockchain
@@ -135,9 +117,14 @@ struct StateSnapshot {
     Balance totalWithdrawals;
 }
 
-struct DisputeProof {
-    Dispute dispute;
-    StateSnapshot outputStateSnapshot;
+struct OnChainJoinChannel {
+    bytes32 prebiousJoinChannelBlockHash;
+    Balance totalDeposits;
     uint256 timestamp;
-    bytes[] signatures;
+}
+
+struct ChannelBalance {
+    mapping(bytes32 joinChannelBlockHash => OnChainJoinChannel) onChainJoinChannelMap;
+    bytes32 latestJoinChannelBlockHash;
+    Balance totalOnChainWithdrawals;
 }

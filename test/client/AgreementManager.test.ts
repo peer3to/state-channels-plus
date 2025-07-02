@@ -7,7 +7,7 @@
 //     BlockStruct,
 //     SignedBlockStruct,
 //     StateSnapshotStruct
-// } from "@typechain-types/contracts/V1/DataTypes";
+// } from "@typechain-types/contracts/V1/types/DataTypes";
 // import sinon from "sinon";
 // import AgreementManager from "@/agreementManager";
 // import { AgreementFlag } from "@/types";
@@ -81,7 +81,7 @@
 //         invalidForkBlock = factory.block({
 //             transaction: factory.transaction({
 //                 header: factory.transactionHeader({
-//                     forkCnt: 99
+//                     forkId: 99
 //                 })
 //             })
 //         });
@@ -121,12 +121,12 @@
 //             addresses = [address1, address2];
 //         });
 
-//         it("should create a new fork when forkCnt matches current length", () => {
-//             const forkCnt = 0;
+//         it("should create a new fork when forkId matches current length", () => {
+//             const forkId = 0;
 //             localAgreementManager.newFork(
 //                 commonGenesisState,
 //                 addresses,
-//                 forkCnt,
+//                 forkId,
 //                 nowTimestamp
 //             );
 
@@ -144,18 +144,18 @@
 //             expect(fork?.agreements).to.deep.equal([]);
 //         });
 
-//         it("should not create a new fork when forkCnt doesn't match current length", () => {
+//         it("should not create a new fork when forkId doesn't match current length", () => {
 //             const freshManager = new AgreementManager();
-//             const incorrectForkCnt = 1;
+//             const incorrectforkId = 1;
 
 //             freshManager.newFork(
 //                 commonGenesisState,
 //                 addresses,
-//                 incorrectForkCnt,
+//                 incorrectforkId,
 //                 nowTimestamp
 //             );
 
-//             expect(freshManager.forkService.latestForkCnt()).to.equal(0);
+//             expect(freshManager.forkService.latestforkId()).to.equal(0);
 //         });
 
 //         it("should allow multiple forks to be created sequentially", () => {
@@ -293,7 +293,7 @@
 //                 const differentForkBlock = factory.block({
 //                     transaction: factory.transaction({
 //                         header: factory.transactionHeader({
-//                             forkCnt: 1
+//                             forkId: 1
 //                         })
 //                     })
 //                 });
@@ -378,7 +378,7 @@
 //                     encodedState,
 //                     mockStateSnapshot
 //                 )
-//             ).to.throw("AgreementManager - addBlock - forkCnt is not correct");
+//             ).to.throw("AgreementManager - addBlock - forkId is not correct");
 //         });
 
 //         it("should throw error when agreement already exists", () => {
@@ -402,10 +402,10 @@
 //             const freshManager = createInitializedManager();
 //             freshManager.addBlock(signedBlock, encodedState, mockStateSnapshot);
 
-//             const forkCnt = Number(block.transaction.header.forkCnt);
+//             const forkId = Number(block.transaction.header.forkId);
 //             const txCnt = Number(block.transaction.header.transactionCnt);
 //             const agreement = freshManager.forkService.getAgreement(
-//                 forkCnt,
+//                 forkId,
 //                 txCnt
 //             );
 
@@ -470,10 +470,10 @@
 //             freshManager.addBlock(signedBlock, encodedState, mockStateSnapshot);
 //             freshManager.confirmBlock(block, wallet2Signature);
 
-//             const forkCnt = Number(block.transaction.header.forkCnt);
+//             const forkId = Number(block.transaction.header.forkId);
 //             const txCnt = Number(block.transaction.header.transactionCnt);
 //             const agreement = freshManager.forkService.getAgreement(
-//                 forkCnt,
+//                 forkId,
 //                 txCnt
 //             );
 
@@ -484,15 +484,15 @@
 //         });
 //     });
 
-//     describe("getLatestForkCnt", () => {
+//     describe("getLatestforkId", () => {
 //         it("should return -1 when there are no forks", () => {
 //             const emptyManager = new AgreementManager();
-//             expect(emptyManager.getLatestForkCnt()).to.equal(0);
+//             expect(emptyManager.getLatestforkId()).to.equal(0);
 //         });
 
 //         it("should return the correct index of the latest fork", () => {
 //             const localManager = createInitializedManager();
-//             expect(localManager.getLatestForkCnt()).to.equal(0);
+//             expect(localManager.getLatestforkId()).to.equal(0);
 
 //             // Add another fork
 //             localManager.newFork(
@@ -502,7 +502,7 @@
 //                 nowTimestamp
 //             );
 
-//             expect(localManager.forkService.latestForkCnt()).to.equal(1);
+//             expect(localManager.forkService.latestforkId()).to.equal(1);
 //         });
 //     });
 
@@ -553,29 +553,29 @@
 //         });
 
 //         it("should return undefined for invalid fork count", () => {
-//             const invalidForkCnt = 99;
+//             const invalidforkId = 99;
 //             const transactionCnt = 0;
 
-//             expect(localManager.getBlock(invalidForkCnt, transactionCnt)).to.be
+//             expect(localManager.getBlock(invalidforkId, transactionCnt)).to.be
 //                 .undefined;
 //         });
 
 //         it("should return undefined for invalid transaction count", () => {
-//             const forkCnt = 0;
+//             const forkId = 0;
 //             const invalidTransactionCnt = 99;
 
-//             expect(localManager.getBlock(forkCnt, invalidTransactionCnt)).to.be
+//             expect(localManager.getBlock(forkId, invalidTransactionCnt)).to.be
 //                 .undefined;
 //         });
 
 //         it("should return the correct block when it exists", () => {
-//             const forkCnt = Number(block.transaction.header.forkCnt);
+//             const forkId = Number(block.transaction.header.forkId);
 //             const transactionCnt = Number(
 //                 block.transaction.header.transactionCnt
 //             );
 
 //             const retrievedBlock = localManager.getBlock(
-//                 forkCnt,
+//                 forkId,
 //                 transactionCnt
 //             );
 
@@ -672,23 +672,23 @@
 //         });
 
 //         it("should return undefined for invalid fork count", () => {
-//             const invalidForkCnt = 99;
+//             const invalidforkId = 99;
 
 //             expect(
 //                 localManager.getLatestSignedBlockByParticipant(
-//                     invalidForkCnt,
+//                     invalidforkId,
 //                     address1
 //                 )
 //             ).to.be.undefined;
 //         });
 
 //         it("should return undefined when participant hasn't signed any blocks", () => {
-//             const forkCnt = 0;
+//             const forkId = 0;
 
 //             // Check for a different participant
 //             expect(
 //                 localManager.getLatestSignedBlockByParticipant(
-//                     forkCnt,
+//                     forkId,
 //                     nonParticipantAddress
 //                 )
 //             ).to.be.undefined;
@@ -713,7 +713,7 @@
 //             const invalidForkBlock = factory.block({
 //                 transaction: factory.transaction({
 //                     header: factory.transactionHeader({
-//                         forkCnt: 99
+//                         forkId: 99
 //                     })
 //                 })
 //             });
@@ -1351,7 +1351,7 @@
 //             const secondBlock = factory.block({
 //                 transaction: factory.transaction({
 //                     header: factory.transactionHeader({
-//                         forkCnt: 0,
+//                         forkId: 0,
 //                         transactionCnt: 0,
 //                         participant: address1
 //                     })
@@ -1384,7 +1384,7 @@
 //             const blockWithWrongHash = factory.block({
 //                 transaction: factory.transaction({
 //                     header: factory.transactionHeader({
-//                         forkCnt: 0,
+//                         forkId: 0,
 //                         transactionCnt: 1,
 //                         participant: address1
 //                     })
@@ -1408,7 +1408,7 @@
 //             const futureBlock = factory.block({
 //                 transaction: factory.transaction({
 //                     header: factory.transactionHeader({
-//                         forkCnt: 0,
+//                         forkId: 0,
 //                         transactionCnt: 1, // Future transaction count
 //                         participant: address1
 //                     })
@@ -1439,7 +1439,7 @@
 //             const block1 = factory.block({
 //                 transaction: factory.transaction({
 //                     header: factory.transactionHeader({
-//                         forkCnt: 0,
+//                         forkId: 0,
 //                         transactionCnt: 1,
 //                         participant: address1
 //                     })
@@ -1466,7 +1466,7 @@
 //             const blockWithCorrectHash = factory.block({
 //                 transaction: factory.transaction({
 //                     header: factory.transactionHeader({
-//                         forkCnt: 0,
+//                         forkId: 0,
 //                         transactionCnt: 0,
 //                         participant: address1
 //                     })
@@ -1496,7 +1496,7 @@
 //             validBlock = factory.block({
 //                 transaction: factory.transaction({
 //                     header: factory.transactionHeader({
-//                         forkCnt: 0,
+//                         forkId: 0,
 //                         transactionCnt: 0,
 //                         participant: address1
 //                     })

@@ -1,10 +1,11 @@
 import { ethers, AddressLike, BigNumberish, BytesLike } from "ethers";
-import * as dt from "@typechain-types/contracts/V1/DisputeTypes";
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
-import { getEthersTypeForDisputeProof, ProofType } from "@/types/disputes";
+import * as dt from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { getEthersTypeForDisputeProof, FraudProofType } from "@/types/disputes";
 import { Codec, Type } from "@/utils";
 import Clock from "@/Clock";
 import AgreementManager from "@/agreementManager";
+import { ForkId } from "./types/types";
 
 class ProofManager {
     readonly agreementManager: AgreementManager;
@@ -16,7 +17,7 @@ class ProofManager {
     // ===== Static Encoding/Decoding Methods =====
 
     public static encodeProof(
-        proofType: ProofType,
+        proofType: FraudProofType,
         proofToEncode: any
     ): string | undefined {
         if (!proofToEncode) return undefined;
@@ -28,7 +29,7 @@ class ProofManager {
     }
 
     public static decodeProof(
-        proofType: ProofType,
+        proofType: FraudProofType,
         encodedProof: BytesLike
     ): any {
         const proofDecoded = ethers.AbiCoder.defaultAbiCoder().decode(
@@ -38,14 +39,14 @@ class ProofManager {
         return Codec.ethersResultToObjectRecursive(proofDecoded[0]);
     }
 
-    // ===== Proof Creation Methods =====
+    // ===== FraudProof Creation Methods =====
 
     public createFoldRechallengeProof(
-        forkCnt: BigNumberish,
+        forkId: ForkId,
         transactionCnt: BigNumberish
     ): dt.ProofStruct | undefined {
         const block = this.agreementManager.getBlock(
-            Number(forkCnt),
+            forkId,
             Number(transactionCnt)
         );
         if (!block) return undefined;
@@ -60,9 +61,9 @@ class ProofManager {
         };
 
         return {
-            proofType: ProofType.FoldRechallenge,
+            proofType: FraudProofType.FoldRechallenge,
             encodedProof: ProofManager.encodeProof(
-                ProofType.FoldRechallenge,
+                FraudProofType.FoldRechallenge,
                 foldRechallengeProofStruct
             )!
         };
@@ -94,9 +95,9 @@ class ProofManager {
         };
 
         return {
-            proofType: ProofType.DoubleSign,
+            proofType: FraudProofType.DoubleSign,
             encodedProof: ProofManager.encodeProof(
-                ProofType.DoubleSign,
+                FraudProofType.DoubleSign,
                 doubleSignProofStruct
             )!
         };
@@ -109,7 +110,7 @@ class ProofManager {
             incorrectBlockSigned.encodedBlock,
             Type.Block
         );
-        const forkCnt = Number(incorrectBlock.transaction.header.forkCnt);
+        const forkId = incorrectBlock.transaction.header.forkId;
         const transactionCnt = Number(
             incorrectBlock.transaction.header.transactionCnt
         );
@@ -119,32 +120,32 @@ class ProofManager {
         const incorrectDataProofStruct = isGenesisBlock
             ? this.createGenesisBlockIncorrectDataProof(
                   incorrectBlockSigned,
-                  forkCnt
+                  forkId
               )
             : this.createRegularBlockIncorrectDataProof(
                   incorrectBlockSigned,
-                  forkCnt,
+                  forkId,
                   transactionCnt
               );
 
         return {
-            proofType: ProofType.IncorrectData,
+            proofType: FraudProofType.IncorrectData,
             encodedProof: ProofManager.encodeProof(
-                ProofType.IncorrectData,
+                FraudProofType.IncorrectData,
                 incorrectDataProofStruct
             )!
         };
     }
 
     public createNewerStateProof(
-        forkCnt: number,
+        forkId: ForkId,
         participantAdr: AddressLike,
         currentTransactionCnt: number
     ): dt.ProofStruct | undefined {
         // Get the latest block signed by the participant
         const signedBlock =
             this.agreementManager.getLatestSignedBlockByParticipant(
-                forkCnt,
+                forkId,
                 participantAdr
             );
 
@@ -166,9 +167,9 @@ class ProofManager {
 
         // Return the complete proof
         return {
-            proofType: ProofType.NewerState,
+            proofType: FraudProofType.NewerState,
             encodedProof: ProofManager.encodeProof(
-                ProofType.NewerState,
+                FraudProofType.NewerState,
                 newerStateProofStruct
             )!
         };
@@ -179,10 +180,13 @@ class ProofManager {
         transactionCnt: number
     ): dt.ProofStruct {
         return {
-            proofType: ProofType.FoldPriorBlock,
-            encodedProof: ProofManager.encodeProof(ProofType.FoldPriorBlock, {
-                transactionCnt
-            })!
+            proofType: FraudProofType.FoldPriorBlock,
+            encodedProof: ProofManager.encodeProof(
+                FraudProofType.FoldPriorBlock,
+                {
+                    transactionCnt
+                }
+            )!
         };
     }
 
@@ -196,22 +200,22 @@ class ProofManager {
             };
 
         return {
-            proofType: ProofType.BlockTooFarInFuture,
+            proofType: FraudProofType.BlockTooFarInFuture,
             encodedProof: ProofManager.encodeProof(
-                ProofType.BlockTooFarInFuture,
+                FraudProofType.BlockTooFarInFuture,
                 blockTooFarInFutureProofStruct
             )!
         };
     }
 
-    // ===== Static Proof Validation Methods =====
+    // ===== Static FraudProof Validation Methods =====
 
     public static isFoldRechallengeValid(
         proof: dt.ProofStruct,
         dispute: dt.DisputeStruct
     ): boolean {
         const foldRechallengeProof = ProofManager.decodeProof(
-            ProofType.FoldRechallenge,
+            FraudProofType.FoldRechallenge,
             proof.encodedProof
         ) as dt.FoldRechallengeProofStruct;
 
@@ -234,7 +238,7 @@ class ProofManager {
         dispute: dt.DisputeStruct
     ): boolean {
         const doubleSignProof = ProofManager.decodeProof(
-            ProofType.DoubleSign,
+            FraudProofType.DoubleSign,
             proof.encodedProof
         ) as dt.DoubleSignProofStruct;
 
@@ -254,7 +258,7 @@ class ProofManager {
         dispute: dt.DisputeStruct
     ): boolean {
         const incorrectDataProof = ProofManager.decodeProof(
-            ProofType.IncorrectData,
+            FraudProofType.IncorrectData,
             proof.encodedProof
         ) as dt.IncorrectDataProofStruct;
 
@@ -273,7 +277,7 @@ class ProofManager {
         dispute: dt.DisputeStruct
     ): boolean {
         const newerStateProof = ProofManager.decodeProof(
-            ProofType.NewerState,
+            FraudProofType.NewerState,
             proof.encodedProof
         ) as dt.NewerStateProofStruct;
 
@@ -309,7 +313,7 @@ class ProofManager {
         dispute: dt.DisputeStruct
     ): boolean {
         const foldPriorBlockProof = ProofManager.decodeProof(
-            ProofType.FoldPriorBlock,
+            FraudProofType.FoldPriorBlock,
             proof.encodedProof
         ) as dt.FoldPriorBlockProofStruct;
 
@@ -324,7 +328,7 @@ class ProofManager {
         dispute: dt.DisputeStruct
     ): boolean {
         const blockTooFarInFutureProof = ProofManager.decodeProof(
-            ProofType.BlockTooFarInFuture,
+            FraudProofType.BlockTooFarInFuture,
             proof.encodedProof
         ) as dt.BlockTooFarInFutureProofStruct;
 
@@ -354,17 +358,18 @@ class ProofManager {
         if (!proofs || proofs.length === 0) return [];
 
         const validatorMap = {
-            [ProofType.FoldRechallenge]: ProofManager.isFoldRechallengeValid,
-            [ProofType.DoubleSign]: ProofManager.isDoubleSignValid,
-            [ProofType.IncorrectData]: ProofManager.isIncorrectDataValid,
-            [ProofType.NewerState]: ProofManager.isNewerStateValid,
-            [ProofType.FoldPriorBlock]: ProofManager.isFoldPriorBlockValid,
-            [ProofType.BlockTooFarInFuture]:
+            [FraudProofType.FoldRechallenge]:
+                ProofManager.isFoldRechallengeValid,
+            [FraudProofType.DoubleSign]: ProofManager.isDoubleSignValid,
+            [FraudProofType.IncorrectData]: ProofManager.isIncorrectDataValid,
+            [FraudProofType.NewerState]: ProofManager.isNewerStateValid,
+            [FraudProofType.FoldPriorBlock]: ProofManager.isFoldPriorBlockValid,
+            [FraudProofType.BlockTooFarInFuture]:
                 ProofManager.isBlockTooFarInFutureValid
         };
 
         return proofs.filter((proof) => {
-            const validator = validatorMap[proof.proofType as ProofType];
+            const validator = validatorMap[proof.proofType as FraudProofType];
             if (!validator) {
                 throw new Error("Unknown proof type: " + proof.proofType);
             }
@@ -376,7 +381,7 @@ class ProofManager {
 
     private createGenesisBlockIncorrectDataProof(
         incorrectBlockSigned: SignedBlockStruct,
-        forkCnt: number
+        forkId: ForkId
     ): dt.IncorrectDataProofStruct {
         // For genesis blocks, we use the genesis state
         //TODO! - this only checks current (disputed fork) - prior and future forks are ignored for now
@@ -385,25 +390,24 @@ class ProofManager {
             block1: incorrectBlockSigned,
             block2: incorrectBlockSigned,
             encodedState:
-                this.agreementManager.getForkGenesisStateEncoded(forkCnt) ??
-                "0x"
+                this.agreementManager.getForkGenesisStateEncoded(forkId) ?? "0x"
         };
     }
 
     private createRegularBlockIncorrectDataProof(
         incorrectBlockSigned: SignedBlockStruct,
-        forkCnt: number,
+        forkId: ForkId,
         transactionCnt: number
     ): dt.IncorrectDataProofStruct {
         // For non-genesis blocks, we need to reference the prior block
         const priorBlock = this.agreementManager.getBlock(
-            forkCnt,
+            forkId,
             transactionCnt - 1
         );
 
         if (!priorBlock) {
             throw new Error(
-                `Prior block not found for fork ${forkCnt}, transaction ${transactionCnt - 1}`
+                `Prior block not found for fork ${forkId}, transaction ${transactionCnt - 1}`
             );
         }
 
@@ -412,18 +416,18 @@ class ProofManager {
 
         if (!priorBlockOriginalSignature) {
             throw new Error(
-                `Prior block signature not found for fork ${forkCnt}, transaction ${transactionCnt - 1}`
+                `Prior block signature not found for fork ${forkId}, transaction ${transactionCnt - 1}`
             );
         }
 
         const priorEncodedState = this.agreementManager.getEncodedState(
-            forkCnt,
+            forkId,
             transactionCnt
         );
 
         if (!priorEncodedState) {
             throw new Error(
-                `Prior encoded state not found for fork ${forkCnt}, transaction ${transactionCnt}`
+                `Prior encoded state not found for fork ${forkId}, transaction ${transactionCnt}`
             );
         }
 

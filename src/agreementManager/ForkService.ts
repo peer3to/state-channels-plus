@@ -1,11 +1,12 @@
 // Owns the array of forks + all direct lookups.
 // No knowledge about signatures, queues, or on-chain events.
-import { BlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { AddressLike, SignatureLike } from "ethers";
 import { BlockUtils } from "@/utils";
 import { Agreement, AgreementFork } from "./types";
-import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { SignatureUtils } from "@/utils/SignatureUtils";
+import { ForkId } from "@/types/types";
 
 export enum Direction {
     FORWARD = "forward",
@@ -26,10 +27,10 @@ export default class ForkService {
     newFork(
         forkGenesisStateEncoded: string,
         addressesInThreshold: AddressLike[],
-        forkCnt: number,
+        forkId: ForkId,
         genesisTimestamp: number
     ): void {
-        if (this.forks.length !== forkCnt) return;
+        if (this.forks.length !== forkId) return;
         this.forks.push({
             forkGenesisStateEncoded,
             addressesInThreshold,
@@ -84,8 +85,8 @@ export default class ForkService {
         });
     }
 
-    private addAgreement(forkCnt: number, agreement: Agreement): void {
-        this.forks[forkCnt].agreements.push(agreement);
+    private addAgreement(forkId: number, agreement: Agreement): void {
+        this.forks[forkId].agreements.push(agreement);
     }
 
     //After succesfull verification and execution
@@ -94,12 +95,12 @@ export default class ForkService {
         originalSignature: SignatureLike,
         encodedState: string
     ) {
-        const forkCnt = BlockUtils.getFork(block);
+        const forkId = BlockUtils.getFork(block);
 
-        if (!this.isValidForkCnt(forkCnt))
+        if (!this.isValidforkId(forkId))
             // this should never happen since checks are done before
             throw new Error(
-                "AgreementManager - addBlock - forkCnt is not correct"
+                "AgreementManager - addBlock - forkId is not correct"
             );
 
         const agreement = this.agreementByBlock(block);
@@ -109,7 +110,7 @@ export default class ForkService {
                 "AgreementManager - addBlock - double sign or incorrect data"
             );
 
-        this.addAgreement(forkCnt, {
+        this.addAgreement(forkId, {
             block,
             blockSignatures: [originalSignature],
             encodedState
@@ -120,16 +121,16 @@ export default class ForkService {
      * Adds a transaction record to the chainBlocks array for a specific fork
      */
     public addChainBlock(
-        forkCnt: number,
+        forkId: ForkId,
         transactionCnt: number,
         participantAdr: string,
         timestamp: number
     ): void {
-        if (!this.isValidForkCnt(forkCnt)) {
+        if (!this.isValidforkId(forkId)) {
             throw new Error("ForkService - addChainBlock - Invalid fork count");
         }
 
-        this.forks[forkCnt].chainBlocks.push({
+        this.forks[forkId].chainBlocks.push({
             transactionCnt,
             participantAdr,
             timestamp
@@ -137,7 +138,7 @@ export default class ForkService {
     }
 
     /*────────── getters ──────────*/
-    latestForkCnt(): number {
+    latestforkId(): ForkId {
         return Math.max(0, this.forks.length - 1);
     }
     nextForkIndex(): number {
@@ -146,40 +147,40 @@ export default class ForkService {
     nextBlockHeight(): number {
         return this.forks.at(-1)?.agreements.length ?? 0;
     }
-    forkGenesis(forkCnt: number): string {
-        return this.forks[forkCnt].forkGenesisStateEncoded;
+    forkGenesis(forkId: ForkId): string {
+        return this.forks[forkId].forkGenesisStateEncoded;
     }
-    forkAt(forkCnt: number) {
-        return this.isValidForkCnt(forkCnt) ? this.forks[forkCnt] : undefined;
+    forkAt(forkId: ForkId) {
+        return this.isValidforkId(forkId) ? this.forks[forkId] : undefined;
     }
 
     latestFork() {
         return this.forks.at(-1);
     }
-    isValidForkCnt(forkCnt: number) {
-        return forkCnt < this.forks.length;
+    isValidforkId(forkId: ForkId) {
+        return forkId < this.forks.length;
     }
 
     isParticipantInLatestFork(p: string) {
         return new Set(this.forks.at(-1)!.addressesInThreshold).has(p);
     }
 
-    agreement(forkCnt: number, txCnt: number): Agreement | undefined {
-        return this.isValidForkCnt(forkCnt)
-            ? this.forks[forkCnt].agreements[txCnt]
+    agreement(forkId: ForkId, txCnt: number): Agreement | undefined {
+        return this.isValidforkId(forkId)
+            ? this.forks[forkId].agreements[txCnt]
             : undefined;
     }
-    blockAt(forkCnt: number, txCnt: number): BlockStruct | undefined {
-        return this.agreement(forkCnt, txCnt)?.block;
+    blockAt(forkId: number, txCnt: number): BlockStruct | undefined {
+        return this.agreement(forkId, txCnt)?.block;
     }
 
     agreementByBlock(block: BlockStruct): Agreement | undefined {
-        const { forkCnt, height } = BlockUtils.getCoordinates(block);
-        return this.agreement(forkCnt, height);
+        const { forkId, height } = BlockUtils.getCoordinates(block);
+        return this.agreement(forkId, height);
     }
 
-    latestAgreement(forkCnt: number): Agreement | undefined {
-        return this.forks[forkCnt]?.agreements.at(-1);
+    latestAgreement(forkId: number): Agreement | undefined {
+        return this.forks[forkId]?.agreements.at(-1);
     }
 
     getLatestDispute(): StoredDispute | undefined {
@@ -192,12 +193,12 @@ export default class ForkService {
 
     /*────────── iterator ──────────*/
     *agreementsIterator(
-        forkCnt: number,
+        forkId: ForkId,
         direction: Direction = Direction.FORWARD
     ): Generator<Agreement, void, unknown> {
-        if (!this.isValidForkCnt(forkCnt)) return;
+        if (!this.isValidforkId(forkId)) return;
 
-        const agreements = this.forks[forkCnt].agreements;
+        const agreements = this.forks[forkId].agreements;
         if (direction === Direction.FORWARD) {
             for (let i = 0; i < agreements.length; i++) {
                 yield agreements[i];
@@ -210,9 +211,9 @@ export default class ForkService {
     }
 
     /*────────── timestamp helpers ─────────*/
-    latestBlockTimestamp(forkCnt: number): number {
-        const fork = this.forks[forkCnt];
-        const latestBlock = this.latestAgreement(forkCnt)?.block;
+    latestBlockTimestamp(forkId: ForkId): number {
+        const fork = this.forks[forkId];
+        const latestBlock = this.latestAgreement(forkId)?.block;
         const latestTimestamp = latestBlock
             ? BlockUtils.getTimestamp(latestBlock)
             : 0;

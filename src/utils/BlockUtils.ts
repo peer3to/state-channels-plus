@@ -1,7 +1,7 @@
-import { BlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { EvmUtils } from "./EvmUtils";
 import exp from "constants";
-import { AddressLike, SignatureLike } from "ethers";
+import { AddressLike, BytesLike, SignatureLike } from "ethers";
 import { Codec, Type } from "./Codec";
 
 export class BlockUtils {
@@ -10,7 +10,7 @@ export class BlockUtils {
      */
     public static getCoordinates(block: BlockStruct) {
         return {
-            forkCnt: Number(block.transaction.header.forkCnt),
+            forkId: block.transaction.header.forkId,
             height: Number(block.transaction.header.transactionCnt)
         };
     }
@@ -25,8 +25,8 @@ export class BlockUtils {
     /**
      * Get the fork number from a block
      */
-    public static getFork(block: BlockStruct): number {
-        return Number(block.transaction.header.forkCnt);
+    public static getFork(block: BlockStruct): ForkId {
+        return block.transaction.header.forkId;
     }
 
     /**

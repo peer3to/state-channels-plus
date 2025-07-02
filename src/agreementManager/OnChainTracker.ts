@@ -2,12 +2,13 @@ import { AddressLike } from "ethers";
 import {
     SignedBlockStruct,
     BlockStruct
-} from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import { BlockUtils, Codec, EvmUtils, Type } from "@/utils";
 import { AgreementFlag } from "@/types";
 
 import ForkService from "./ForkService";
 import QueueService from "./QueueService";
+import { ForkId } from "@/types/types";
 
 export type BlockChecker = (sb: SignedBlockStruct) => AgreementFlag;
 
@@ -32,18 +33,18 @@ export default class OnChainTracker {
         }
 
         const blk: BlockStruct = Codec.decode(signed.encodedBlock, Type.Block);
-        const { forkCnt, height } = BlockUtils.getCoordinates(blk);
+        const { forkId, height } = BlockUtils.getCoordinates(blk);
         const participant = BlockUtils.getBlockAuthor(blk);
 
-        if (!this.hasPosted(forkCnt, height, participant)) {
-            this.forks.addChainBlock(forkCnt, height, participant, timestamp);
+        if (!this.hasPosted(forkId, height, participant)) {
+            this.forks.addChainBlock(forkId, height, participant, timestamp);
         }
         return flag;
     }
 
     /** Highest timestamp recorded for fork ≤ maxTxCnt */
-    latestTimestamp(forkCnt: number, maxHeight: number): number {
-        const fork = this.forks.forkAt(forkCnt);
+    latestTimestamp(forkId: ForkId, maxHeight: number): number {
+        const fork = this.forks.forkAt(forkId);
         if (!fork) throw new Error("OnChainTracker - fork not found");
 
         let latest = 0;
@@ -54,8 +55,8 @@ export default class OnChainTracker {
         return latest;
     }
 
-    hasPosted(forkCnt: number, height: number, address: AddressLike): boolean {
-        const fork = this.forks.forkAt(forkCnt);
+    hasPosted(forkId: ForkId, height: number, address: AddressLike): boolean {
+        const fork = this.forks.forkAt(forkId);
         return (
             !!fork &&
             fork.chainBlocks.some(

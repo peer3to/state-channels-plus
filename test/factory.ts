@@ -5,9 +5,9 @@ import {
     TransactionHeaderStruct,
     TransactionBodyStruct,
     JoinChannelStruct
-} from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import AgreementManager from "@/agreementManager";
-import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { randomInt } from "crypto";
 
 /**
@@ -19,7 +19,7 @@ export function transactionHeader(
 ): TransactionHeaderStruct {
     return {
         channelId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
-        forkCnt: 0,
+        forkId: 0,
         transactionCnt: 0,
         participant: ethers.Wallet.createRandom().address,
         timestamp: Math.floor(Date.now() / 1000),
@@ -126,10 +126,10 @@ export function signature(): string {
 export function dispute(overrides: Partial<DisputeStruct> = {}): DisputeStruct {
     const defaultDispute: DisputeStruct = {
         channelId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
-        genesisStateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
+        genesisSnapshotDataHash: ethers.hexlify(ethers.randomBytes(32)),
         latestStateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
         stateProof: {
-            forkProof: { forkMilestoneProofs: [] },
+            milestones: [],
             signedBlocks: []
         },
         fraudProofs: [],
@@ -137,17 +137,16 @@ export function dispute(overrides: Partial<DisputeStruct> = {}): DisputeStruct {
         onChainLatestJoinChannelBlockHash: ethers.hexlify(
             ethers.randomBytes(32)
         ),
-        outputStateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
+        outputSnapshotDataHash: ethers.hexlify(ethers.randomBytes(32)),
         exitChannelBlocks: [],
         disputeAuditingDataHash: ethers.hexlify(ethers.randomBytes(32)),
         disputer: ethers.ZeroAddress,
         disputeIndex: 0,
-        previousRecursiveDisputeIndex: 0,
         timeout: {
             participant: ethers.ZeroAddress,
             blockHeight: 0,
             minTimeStamp: Math.floor(Date.now() / 1000),
-            forkCnt: 0,
+            forkId: 0,
             isForced: false,
             previousBlockProducer: ethers.ZeroAddress,
             previousBlockProducerPostedCalldata: false

@@ -3,12 +3,12 @@ import {
     SignedBlockStruct,
     BlockStruct,
     StateSnapshotStruct,
-    ForkMilestoneProofStruct,
+    MilestoneProofStruct,
     ExitChannelBlockStruct,
     DisputeProofStruct,
     SignedDisputeStruct,
     ExitChannelStruct
-} from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     AddressLike,
     BigNumberish,
@@ -22,7 +22,7 @@ import { AStateChannelManagerProxy } from "@typechain-types";
 import {
     ProofStruct,
     DisputeStruct
-} from "@typechain-types/contracts/V1/DisputeTypes";
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "@/Clock";
 import DisputeHandler from "@/DisputeHandler";
 import P2PManager from "@/P2PManager";
@@ -50,6 +50,7 @@ import ValidationService from "./ValidationService";
 import { Codec, Type } from "@/utils/Codec";
 import { SignatureUtils } from "@/utils/SignatureUtils";
 import { IStorageModule, StorageModule } from "@/storage";
+import { ForkId } from "@/types/types";
 
 let DEBUG_STATE_MANAGER = false;
 class StateManager {
@@ -144,8 +145,10 @@ class StateManager {
         //TODO? this can be done through the AgreementManager for the given fork or thought the stateMachine
         return this.stateMachine.getParticipants();
     }
-    public getForkCnt(): number {
-        return this.agreementManager.getLatestForkCnt();
+    public getforkId(): ForkId {
+        throw new Error(
+            "StateManager - getforkId - Not implemented - will be implemented with TS logic"
+        );
     }
     public getNextBlockHeight(): number {
         return this.agreementManager.getNextBlockHeight();
@@ -174,7 +177,7 @@ class StateManager {
                     signedBlock
                 ]);
             this.disputeHandler.createDispute(
-                block.transaction.header.forkCnt,
+                block.transaction.header.forkId,
                 "0x00",
                 0,
                 [disputeProof]
@@ -186,7 +189,7 @@ class StateManager {
                     signedBlock
                 );
             this.disputeHandler.createDispute(
-                block.transaction.header.forkCnt,
+                block.transaction.header.forkId,
                 "0x00",
                 0,
                 [disputeProof]
@@ -197,7 +200,7 @@ class StateManager {
     }
     private async tryExecuteFromQueue() {
         let signedBlocks = this.agreementManager.tryDequeueBlocks(
-            this.getForkCnt(),
+            this.getforkId(),
             this.getNextBlockHeight()
         );
 
@@ -214,7 +217,7 @@ class StateManager {
     private async tryConfirmFromQueue(): Promise<void> {
         //TODO! race condition and skipping a txCount
         let confirmations = this.agreementManager.tryDequeueConfirmations(
-            this.getForkCnt(),
+            this.getforkId(),
             this.getNextBlockHeight()
         );
 
@@ -232,20 +235,20 @@ class StateManager {
     /**
      * Triggered by the On-chain Event Listener when a new state is set on-chain
      * @param encodedState - Encoded state of the state machine
-     * @param _forkCnt - new fork count
+     * @param _forkId - new fork count
      * @param _timestamp - on-chain timestamp
      */
     public async setState(
         encodedState: string,
-        _forkCnt: BigNumberish,
+        _forkId: ForkId,
         _timestamp: BigNumberish
     ): Promise<void> {
-        console.log("StateManager - SetState", _forkCnt, _timestamp);
+        console.log("StateManager - SetState", _forkId, _timestamp);
         await this.stateMachine.setState(encodedState);
         this.agreementManager.newFork(
             encodedState,
             await this.stateMachine.getParticipants(),
-            Number(_forkCnt),
+            _forkId,
             Number(_timestamp)
         );
 
@@ -365,7 +368,7 @@ class StateManager {
         await this.mutex.lock();
 
         try {
-            console.log("Play Transaction", this.getForkCnt());
+            console.log("Play Transaction", this.getforkId());
             if (!this.isChannelOpen()) {
                 throw new Error("Channel not open");
             }
@@ -432,19 +435,20 @@ class StateManager {
     }
 
     public async postStateSnapshot(
-        milestoneProofs: ForkMilestoneProofStruct[],
+        milestoneProofs: MilestoneProofStruct[],
         milestoneSnapshots: StateSnapshotStruct[],
         exitChannelBlocks: ExitChannelBlockStruct[] = []
     ) {
         // Get on-chain state
-        const onChainForkCnt =
-            await this.stateChannelManagerContract.getForkCnt(this.channelId);
+        const onChainforkId = await this.stateChannelManagerContract.getforkId(
+            this.channelId
+        );
         const onChainDisputeLength =
             await this.stateChannelManagerContract.getDisputeLength(
                 this.channelId
             );
 
-        if (onChainDisputeLength == onChainForkCnt) {
+        if (onChainDisputeLength == onChainforkId) {
             // Call contract without dispute
             return this.stateChannelManagerContract.updateStateSnapshotWithoutDispute(
                 this.channelId,
@@ -549,19 +553,19 @@ class StateManager {
 
     // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute
     private async tryTimeoutParticipant(
-        forkCnt: number,
+        forkId: ForkId,
         transactionCnt: number,
         participantAdr: string
     ) {
         if (participantAdr == this.signerAddress) return;
-        const block = this.agreementManager.getBlock(forkCnt, transactionCnt);
+        const block = this.agreementManager.getBlock(forkId, transactionCnt);
         if (block) {
             if (this.agreementManager.didEveryoneSignBlock(block)) return;
         }
         //if there is no block -> check if player posted on chain and try timeout
         if (
             this.agreementManager.didParticipantPostOnChain(
-                forkCnt,
+                forkId,
                 transactionCnt,
                 participantAdr
             )
@@ -570,7 +574,7 @@ class StateManager {
         if (
             Clock.getTimeInSeconds() <
             this.agreementManager.getChainLatestBlockTimestamp(
-                forkCnt,
+                forkId,
                 transactionCnt
             ) +
                 this.getTimeoutWaitTimeSeconds()
@@ -579,7 +583,7 @@ class StateManager {
         const response =
             await this.stateChannelManagerContract.getBlockCallDataCommitment(
                 this.channelId,
-                forkCnt,
+                forkId,
                 transactionCnt,
                 participantAdr
             );
@@ -588,10 +592,10 @@ class StateManager {
         const delayTimeSeconds =
             this.getTimeoutWaitTimeSeconds() -
             (Clock.getTimeInSeconds() -
-                this.agreementManager.getLatestBlockTimestamp(forkCnt));
+                this.agreementManager.getLatestBlockTimestamp(forkId));
         if (delayTimeSeconds < 0) {
             this.disputeHandler.createDispute(
-                forkCnt,
+                forkId,
                 participantAdr,
                 transactionCnt,
                 []
@@ -601,7 +605,7 @@ class StateManager {
             scheduleTask(
                 async () => {
                     this.disputeHandler.createDispute(
-                        forkCnt,
+                        forkId,
                         participantAdr,
                         transactionCnt,
                         []
@@ -629,7 +633,7 @@ class StateManager {
         );
 
         // Identify the fork/tx counts for the next participant
-        const forkCnt = this.getForkCnt();
+        const forkId = this.getforkId();
         const nextTransactionCnt = this.getNextBlockHeight();
         const nextToWrite = await this.stateMachine.getNextToWrite();
 
@@ -640,7 +644,7 @@ class StateManager {
         scheduleTask(
             () =>
                 this.tryTimeoutParticipant(
-                    forkCnt,
+                    forkId,
                     nextTransactionCnt,
                     nextToWrite
                 ),
@@ -659,7 +663,7 @@ class StateManager {
             agreementManager: this.agreementManager,
             disputeHandler: this.disputeHandler,
             onSuccessCb: this.onSuccessCommon.bind(this),
-            forkCount: this.getForkCnt()
+            forkId: this.getforkId()
         };
 
         return processExecutionDecision(
@@ -707,7 +711,7 @@ class StateManager {
 
     private adjustTimestampIfNeeded(tx: TransactionStruct): void {
         const latestBlockTimestamp =
-            this.agreementManager.getLatestBlockTimestamp(this.getForkCnt());
+            this.agreementManager.getLatestBlockTimestamp(this.getforkId());
         if (Number(tx.header.timestamp) < latestBlockTimestamp) {
             tx.header.timestamp = latestBlockTimestamp + 1;
         }
@@ -715,7 +719,7 @@ class StateManager {
 
     private async createStateSnapshot(
         stateMachineStateHash: string,
-        forkCnt: number
+        forkId: ForkId
     ): Promise<StateSnapshotStruct> {
         const participants = await this.stateMachine.getParticipants();
 
@@ -729,7 +733,7 @@ class StateManager {
         return {
             stateMachineStateHash: stateMachineStateHash as BytesLike,
             participants,
-            forkCnt,
+            forkId,
             latestJoinChannelBlockHash: latestJoinChannelBlockHash as BytesLike,
             latestExitChannelBlockHash: latestExitChannelBlockHash as BytesLike,
             totalDeposits: {
@@ -747,17 +751,17 @@ class StateManager {
         tx: TransactionStruct,
         posteriorStateHash: string
     ): Promise<BlockStruct> {
-        const forkCnt = this.getForkCnt();
+        const forkId = this.getforkId();
         const transactionCnt = Number(tx.header.transactionCnt);
 
         const previousBlockHash = this.storageModule.getPreviousBlockHash(
-            forkCnt,
+            forkId,
             transactionCnt - 1
         );
 
         const stateSnapshot = await this.createStateSnapshot(
             posteriorStateHash,
-            forkCnt
+            forkId
         );
 
         const stateSnapshotHash = ethers.keccak256(
@@ -778,7 +782,7 @@ class StateManager {
     // ----- Private validation helper methods -----
 
     private isChannelOpen(): boolean {
-        return this.getForkCnt() !== -1;
+        return this.getforkId() !== -1;
     }
 
     // ----- Event handlers -----

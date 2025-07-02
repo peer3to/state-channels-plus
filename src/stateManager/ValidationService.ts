@@ -3,8 +3,8 @@ import { ExecutionFlags, TimeConfig, AgreementFlag } from "@/types";
 import {
     BlockStruct,
     SignedBlockStruct
-} from "@typechain-types/contracts/V1/DataTypes";
-import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import DisputeHandler from "@/DisputeHandler";
 import { AddressLike, BytesLike, ethers, SignatureLike } from "ethers";
 import { AStateChannelManagerProxy } from "@typechain-types/contracts/V1/StateChannelDiamondProxy";
@@ -21,6 +21,7 @@ import {
 import AStateMachine from "@/AStateMachine";
 import { Clock } from "..";
 import ProofManager from "@/ProofManager";
+import { ForkId } from "@/types/types";
 
 interface ValidationResult {
     success: boolean;
@@ -50,7 +51,7 @@ export default class ValidationService {
         block?: BlockStruct
     ): Promise<ValidationResult> {
         const blk = block ?? Codec.decode(signedBlock.encodedBlock, Type.Block);
-        const forkCnt = BlockUtils.getFork(blk);
+        const forkId = BlockUtils.getFork(blk);
         const height = BlockUtils.getHeight(blk);
 
         if (!this.isChannelOpen()) return notReady();
@@ -61,8 +62,8 @@ export default class ValidationService {
 
         // Check fork status
         if (
-            this.isPastFork(forkCnt) ||
-            this.disputeHandler.isForkDisputed(forkCnt)
+            this.isPastFork(forkId) ||
+            this.disputeHandler.isForkDisputed(forkId)
         )
             return pastFork();
 
@@ -70,7 +71,7 @@ export default class ValidationService {
         if (this.agreementManager.isBlockDuplicate(blk)) return duplicate();
 
         // Check for future blocks
-        const isFutureFork = forkCnt > this.getForkCnt();
+        const isFutureFork = forkId > this.getforkId();
         const isFutureTransaction = height > this.getNextHeight();
         if (isFutureFork || isFutureTransaction) return notReady();
 
@@ -295,7 +296,7 @@ export default class ValidationService {
         );
         if (flag === ExecutionFlags.DISPUTE) {
             const proof = ProofManager.createBlockTooFarInFutureProof(signed);
-            this.disputeHandler.createDispute(this.getForkCnt(), "0x00", 0, [
+            this.disputeHandler.createDispute(this.getforkId(), "0x00", 0, [
                 proof
             ]);
         }
@@ -304,14 +305,14 @@ export default class ValidationService {
 
     /* objective / chain timestamp */
     private async isGoodTimestamp(blk: BlockStruct): Promise<boolean> {
-        const forkCnt = BlockUtils.getFork(blk);
+        const forkId = BlockUtils.getFork(blk);
         const blockHeight = BlockUtils.getHeight(blk);
         const blockTimestamp = BlockUtils.getTimestamp(blk);
 
         const latestTxTs =
-            this.agreementManager.getLatestBlockTimestamp(forkCnt);
+            this.agreementManager.getLatestBlockTimestamp(forkId);
         const initialReferenceTime = this.agreementManager.getLatestTimestamp(
-            forkCnt,
+            forkId,
             blockHeight
         );
 
@@ -321,7 +322,7 @@ export default class ValidationService {
             const chainTs = Number(
                 await this.scmContract.getChainLatestBlockTimestamp(
                     this.getChannelId(),
-                    forkCnt,
+                    forkId,
                     blockHeight
                 )
             );
@@ -337,14 +338,14 @@ export default class ValidationService {
     }
 
     /* one-liners */
-    private getForkCnt(): number {
-        return this.agreementManager.getLatestForkCnt();
+    private getforkId(): ForkId {
+        return this.agreementManager.getLatestforkId();
     }
     private isChannelOpen(): boolean {
-        return this.getForkCnt() >= 0;
+        return this.getforkId() >= 0;
     }
-    private isPastFork(f: number): boolean {
-        return f < this.getForkCnt();
+    private isPastFork(f: ForkId): boolean {
+        return f < this.getforkId();
     }
     private getNextHeight(): number {
         return this.agreementManager.getNextBlockHeight();

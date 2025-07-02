@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
-import "../DisputeTypes.sol";
-import "../DataTypes.sol";
+import "../types/DisputeTypes.sol";
+import "../types/DataTypes.sol";
 import "../AStateMachine.sol";
 
 contract StateChannelManagerStorage {
@@ -9,16 +9,17 @@ contract StateChannelManagerStorage {
     uint256 public p2pTime;
     uint256 public agreementTime;
     uint256 public chainFallbackTime;
-    uint256 public challengeTime;
+    // Time within more dispute can be submitted during the challenge period
+    uint256 public evidenceTime;
+    /// @dev Time within the dispute can be killed during the challenge period (killTime > evidenceTime)
+    uint256 public killTime;
     uint256 public gasLimit;
 
     AStateMachine stateMachineImplementation;
 
     // =================== State on chain storage ==================
-    /// @dev Total on-chain processed deposits
-    mapping(bytes32 channelId => Balance) totalOnChainProcessedDeposits;
-    /// @dev Total on-chain processed withdraws
-    mapping(bytes32 channelId => Balance) totalOnChainProcessedWithdrawals;
+    /// @dev Channel balance tracker
+    mapping(bytes32 channelId => ChannelBalance) channelBalances;
 
     /// @dev stateSnapshot Data
     mapping(bytes32 channelId => StateSnapshot) stateSnapshots;
@@ -26,12 +27,12 @@ contract StateChannelManagerStorage {
     // =================== Block on chain storage ==================
 
     /// @notice BlockCalldata Commitment
-    /// @dev blockCalldataCommitments[channelId][signerAddress][forkCnt][blockHeight] => hash(off-chain block, on-chain block.timestamp)
+    /// @dev blockCalldataCommitments[channelId][signerAddress][forkId][blockHeight] => hash(off-chain block, on-chain block.timestamp)
     mapping(
         bytes32 channelId
             => mapping(
                 address signerAddress
-                    => mapping(uint256 forkCnt => mapping(uint256 blockHeight => bytes32 blockCallDataCommitment))
+                    => mapping(bytes32 forkId => mapping(uint256 blockHeight => bytes32 blockCallDataCommitment))
             )
     ) blockCalldataCommitments;
 

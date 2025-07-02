@@ -9,7 +9,7 @@ export const TransactionEthersType = `tuple(
 tuple(
   bytes32 channelId,
   address participant,
-  uint forkCnt,
+  bytes32 forkId,
   uint transactionCnt,
   uint timestamp
 ) header,
@@ -24,14 +24,18 @@ bytes encodedBlock,
 bytes signature
 )`;
 
-export const StateSnapshotEthersType = `tuple(
+export const SnapshotDataEthersType = `tuple(
 bytes32 stateMachineStateHash,
 address[] participants,
-uint256 forkCnt,
 bytes32 latestJoinChannelBlockHash,
 bytes32 latestExitChannelBlockHash,
 ${BalanceEthersType} totalDeposits,
 ${BalanceEthersType} totalWithdrawals
+)`;
+
+export const StateSnapshotEthersType = `tuple(
+${SnapshotDataEthersType} snapshotData,
+bytes32 forkId
 )`;
 
 export const BlockConfirmationEthersType = `tuple(
@@ -73,7 +77,7 @@ export const TimeoutEthersType = `tuple(
 address participant,
 uint256 blockHeight,
 uint256 minTimeStamp,
-uint256 forkCnt,
+bytes32 forkId,
 bool isForced,
 address previousBlockProducer,
 bool previousBlockProducerPostedCalldata
@@ -85,7 +89,5 @@ ${StateSnapshotEthersType} latestStateSnapshot,
 ${StateSnapshotEthersType} outputStateSnapshot,
 ${StateSnapshotEthersType}[] milestoneSnapshots,
 bytes latestStateStateMachineState,
-${JoinChannelBlockEthersType}[] joinChannelBlocks,
-${DisputeEthersType} previousDispute,
-uint previousDisputeTimestamp
+${JoinChannelBlockEthersType}[] joinChannelBlocks
 )`;

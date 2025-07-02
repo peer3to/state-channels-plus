@@ -2,7 +2,7 @@ import { ethers, SignatureLike } from "ethers";
 import {
     SignedBlockStruct,
     BlockStruct
-} from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 
 import { BlockUtils, Codec, EvmUtils, Type } from "@/utils";
 import { AgreementFlag } from "@/types";
@@ -10,6 +10,7 @@ import { AgreementFlag } from "@/types";
 import ForkService from "./ForkService";
 import QueueService from "./QueueService";
 import OnChainTracker from "./OnChainTracker";
+import { ForkId } from "@/types/types";
 
 export default class BlockValidator {
     constructor(
@@ -29,26 +30,26 @@ export default class BlockValidator {
     }
 
     /** Canonical chain: latest timestamp in this fork           */
-    latestBlockTimestamp(forkCnt: number): number {
-        const fork = this.forks.forkAt(forkCnt);
+    latestBlockTimestamp(forkId: ForkId): number {
+        const fork = this.forks.forkAt(forkId);
         if (!fork) throw new Error("BlockValidator - fork not found");
         const genesis = fork.genesisTimestamp;
-        const lastAg = this.forks.latestAgreement(forkCnt);
+        const lastAg = this.forks.latestAgreement(forkId);
         const lastTs = Number(lastAg?.block.transaction.header.timestamp ?? 0);
         return Math.max(genesis, lastTs);
     }
 
     /** Max(latest-chain, latest-on-chain) — used for subjective rules */
-    latestRelevantTimestamp(forkCnt: number, maxTxCnt: number): number {
+    latestRelevantTimestamp(forkId: ForkId, maxTxCnt: number): number {
         return Math.max(
-            this.latestBlockTimestamp(forkCnt),
-            this.chain.latestTimestamp(forkCnt, maxTxCnt)
+            this.latestBlockTimestamp(forkId),
+            this.chain.latestTimestamp(forkId, maxTxCnt)
         );
     }
 
     check(signed: SignedBlockStruct): AgreementFlag {
         const block = Codec.decode(signed.encodedBlock, Type.Block);
-        const { forkCnt, height } = BlockUtils.getCoordinates(block);
+        const { forkId, height } = BlockUtils.getCoordinates(block);
         const participant = BlockUtils.getBlockAuthor(block);
 
         /* 1 – valid signature? */
@@ -62,10 +63,10 @@ export default class BlockValidator {
         if (this.isBlockDuplicate(block)) return AgreementFlag.DUPLICATE;
 
         /* 3 – known fork? */
-        if (!this.forks.isValidForkCnt(forkCnt)) return AgreementFlag.NOT_READY;
+        if (!this.forks.isValidforkId(forkId)) return AgreementFlag.NOT_READY;
 
         /* 4 – double sign / incorrect data vs existing agmt */
-        const existing = this.forks.blockAt(forkCnt, height);
+        const existing = this.forks.blockAt(forkId, height);
         if (existing) {
             return BlockUtils.getBlockAuthor(existing) === participant
                 ? AgreementFlag.DOUBLE_SIGN
@@ -75,7 +76,7 @@ export default class BlockValidator {
         /* 5 – first block of fork genesis? */
         if (height === 0) {
             const expectedPrev = ethers.keccak256(
-                this.forks.forkAt(forkCnt)!.forkGenesisStateEncoded
+                this.forks.forkAt(forkId)!.forkGenesisStateEncoded
             );
             return block.previousBlockHash === expectedPrev
                 ? AgreementFlag.READY
@@ -83,7 +84,7 @@ export default class BlockValidator {
         }
 
         /* 6 – compare with previous block in chain */
-        const prev = this.forks.blockAt(forkCnt, height - 1);
+        const prev = this.forks.blockAt(forkId, height - 1);
         if (!prev) return AgreementFlag.NOT_READY;
 
         const prevBlockHash = ethers.keccak256(Codec.encode(prev, Type.Block));

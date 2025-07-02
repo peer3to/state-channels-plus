@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "../DataTypes.sol";
+import "../types/DataTypes.sol";
 
 library StateChannelUtilLibrary {
     /**
@@ -91,6 +91,15 @@ library StateChannelUtilLibrary {
         return currentThresholdCount;
     }
 
+    function insertBytesInByteArray(bytes memory b, bytes[] memory array) internal pure returns (bytes[] memory) {
+        bytes[] memory result = new bytes[](array.length + 1);
+        for (uint256 i = 0; i < array.length; i++) {
+            result[i] = array[i];
+        }
+        result[array.length] = b;
+        return result;
+    }
+
     function concatAddressArrays(address[] memory array1, address[] memory array2)
         internal
         pure
@@ -104,6 +113,32 @@ library StateChannelUtilLibrary {
             result[array1.length + i] = array2[i];
         }
         return result;
+    }
+
+    function subtractAddressArrays(address[] memory array1, address[] memory array2)
+        internal
+        pure
+        returns (address[] memory)
+    {
+        address[] memory result = new address[](array1.length);
+        uint256 actualCount = 0;
+        for (uint256 i = 0; i < array1.length; i++) {
+            bool found = false;
+            for (uint256 j = 0; j < array2.length; j++) {
+                if (array1[i] == array2[j]) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                result[actualCount++] = array1[i];
+            }
+        }
+        address[] memory finalResult = new address[](actualCount);
+        for (uint256 i = 0; i < actualCount; i++) {
+            finalResult[i] = result[i];
+        }
+        return finalResult;
     }
 
     function concatBytesArrays(bytes[] memory array1, bytes[] memory array2) internal pure returns (bytes[] memory) {
@@ -181,5 +216,27 @@ library StateChannelUtilLibrary {
         }
 
         return finalResult;
+    }
+
+    function insertIntoAddressArrayNoDuplicates(address[] memory array, address newAddress)
+        internal
+        pure
+        returns (address[] memory)
+    {
+        // Check if the address is already in the array
+        for (uint256 i = 0; i < array.length; i++) {
+            if (array[i] == newAddress) {
+                return array; // Address already exists, return the original array
+            }
+        }
+
+        // If not found, create a new array with one additional slot
+        address[] memory newArray = new address[](array.length + 1);
+        for (uint256 i = 0; i < array.length; i++) {
+            newArray[i] = array[i];
+        }
+        newArray[array.length] = newAddress; // Add the new address at the end
+
+        return newArray;
     }
 }

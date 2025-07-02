@@ -1,23 +1,20 @@
 pragma solidity ^0.8.8;
 
-import "./DisputeTypes.sol";
-import "./DataTypes.sol";
+import "./types/DisputeTypes.sol";
+import "./types/DataTypes.sol";
 
 interface StateChannelManagerEvents {
     event BlockCalldataPosted(bytes32 indexed channelId, address sender, SignedBlock signedBlock, uint256 timestamp);
-    event SetState(bytes32 indexed channelId, bytes encodedState, uint256 forkCnt, uint256 timestamp);
-    event DisputeUpdated(bytes32 indexed channelId, Dispute dispute);
-
-    event DisputeCommited(bytes encodedDispute, uint256 timestamp);
-
-    event DisputeChallengeResultWithDisputePair(
-        bytes32 channelId, DisputePair disputePair, bool isSuccess, address[] slashParticipants
+    event SetState(bytes32 indexed channelId, bytes encodedState, bytes32 forkId, uint256 timestamp);
+    event DisputeCommited(
+        bytes32 indexed channelId,
+        Dispute dispute,
+        uint256 disputeCreationTimestamp,
+        bool isFinal,
+        uint256 windowCreationTimestamp
     );
-
-    event DisputeChallengeResult(bytes32 channelId, bool isSuccess, address[] slashParticipants);
-
-    event DisputeChallengeResultWithError(
-        bytes32 channelId, bool isSuccess, address[] slashParticipants, bytes fraudProofErrorResult
+    event DisputeAuditingDataPosted(
+        bytes32 indexed channelId, bytes32 disputeHash, DisputeAuditingData disputeAuditingData
     );
 
     event StateSnapshotUpdated(bytes32 indexed channelId, StateSnapshot stateSnapshot, uint256 timestamp);
@@ -25,4 +22,6 @@ interface StateChannelManagerEvents {
     event OutputStateSnapshotVerified(
         bytes32 indexed channelId, StateSnapshot stateSnapshot, bytes32 disputeCommitment
     );
+
+    event JoinChannelProcessed(bytes32 indexed channelId, JoinChannelBlock joinChannelBlock, uint256 timestamp);
 }
