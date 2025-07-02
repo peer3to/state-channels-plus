@@ -1,7 +1,7 @@
 import {
     BlockStruct,
     StateSnapshotStruct
-} from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import { BytesLike } from "ethers";
 
 export interface IStorageModule {

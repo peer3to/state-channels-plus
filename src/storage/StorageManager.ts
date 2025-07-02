@@ -7,7 +7,7 @@ import {
     JoinChannelBlockStruct,
     SignedBlockStruct,
     BlockStruct
-} from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import { BlockStorageModule } from "./BlockStorage";
 import { JoinChannelStorageModule } from "./JoinChannelStorage";
 import { ExitChannelStorageModule } from "./ExitChannelStorage";

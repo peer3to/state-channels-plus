@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import { Codec, Type } from "@/utils";
-import { StateSnapshotStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { StateSnapshotHash } from "@/types/storage";
 
 export class StateSnapshotStorageModule {

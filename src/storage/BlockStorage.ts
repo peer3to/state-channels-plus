@@ -1,7 +1,7 @@
 import {
     BlockConfirmationStruct,
     SignedBlockStruct
-} from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import { BlockHash, ForkHeight } from "@/types/storage";
 import { Codec, Type } from "@/utils";
 
@@ -163,7 +163,7 @@ export class BlockStorageModule {
             blockConfirmation.signedBlock.encodedBlock,
             Type.Block
         );
-        const fork = block.transaction.header.forkCnt;
+        const fork = block.transaction.header.forkId;
         const height = block.transaction.header.transactionCnt;
         this.insertBlockConfirmationWithKeys(
             blockConfirmation,

@@ -2,7 +2,7 @@ import { BigNumberish, BytesLike, hexlify, toBeHex } from "ethers";
 import {
     ExitChannelBlockStruct,
     BalanceStruct
-} from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 
 export class ExitChannelStorageModule {
     //map [blockHash] => ExitChannelBlockStruct
