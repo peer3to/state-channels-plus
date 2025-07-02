@@ -1,7 +1,7 @@
 import { expect } from "chai";
 import { describe, it, beforeEach } from "mocha";
 import { ethers } from "ethers";
-import { BlockStorageModule } from "@/storage/BlockStorage";
+import { BlockStorage } from "@/storage/BlockStorage";
 import {
     BlockConfirmationStruct,
     SignedBlockStruct
@@ -10,8 +10,8 @@ import { Hash } from "@/types/types";
 import * as factory from "../factory";
 import { Codec, Type, BlockUtils } from "@/utils";
 
-describe("BlockStorageModule", () => {
-    let storage: BlockStorageModule;
+describe("BlockStorage", () => {
+    let storage: BlockStorage;
     let mockSignedBlock: SignedBlockStruct;
     let mockBlockConfirmation: BlockConfirmationStruct;
     let mockBlockHash: Hash;
@@ -19,7 +19,7 @@ describe("BlockStorageModule", () => {
     let mockHeight: number;
 
     beforeEach(() => {
-        storage = new BlockStorageModule();
+        storage = new BlockStorage();
 
         mockSignedBlock = factory.signedBlock();
         mockBlockConfirmation = factory.blockConfirmation({

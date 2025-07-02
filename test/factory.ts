@@ -6,7 +6,8 @@ import {
     TransactionBodyStruct,
     JoinChannelStruct,
     SignedBlockStruct,
-    BlockConfirmationStruct
+    BlockConfirmationStruct,
+    ExitChannelBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import AgreementManager from "@/agreementManager";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -199,4 +200,20 @@ export function blockConfirmation(
     };
 
     return { ...defaultBlockConfirmation, ...overrides };
+}
+
+/**
+ * Creates a mock ExitChannelBlockStruct for testing
+ * @param overrides Optional override values for the exit channel block fields
+ * @returns An ExitChannelBlockStruct with default values and any provided overrides
+ */
+export function exitChannelBlock(
+    overrides: Partial<ExitChannelBlockStruct> = {}
+): ExitChannelBlockStruct {
+    const defaultExitChannelBlock: ExitChannelBlockStruct = {
+        exitChannels: [],
+        previousBlockHash: ethers.hexlify(ethers.randomBytes(32))
+    };
+
+    return { ...defaultExitChannelBlock, ...overrides };
 }

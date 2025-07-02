@@ -9,7 +9,7 @@ import { ethers } from "ethers";
 type ForkCoordinates = [ForkId, BlockHeight];
 type CoordinateKey = string;
 
-export class BlockStorageModule {
+export class BlockStorage {
     // ====================================
     // STORAGE MAPS
     // ====================================

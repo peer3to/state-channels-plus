@@ -8,9 +8,9 @@ import {
     SignedBlockStruct,
     BlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { BlockStorageModule } from "./BlockStorage";
-import { JoinChannelStorageModule } from "./JoinChannelStorage";
-import { ExitChannelStorageModule } from "./ExitChannelStorage";
+import { BlockStorage } from "./BlockStorage";
+import { JoinChannelStorage } from "./JoinChannelStorage";
+import { ExitChannelBlockStorage } from "./ExitChannelBlockStorage";
 import { StateSnapshotStorageModule } from "./StateSnapshotStorage";
 import { BlockHash, StateSnapshotHash } from "@/types/storage";
 import { Codec } from "@/utils";
