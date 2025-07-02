@@ -1,4 +1,4 @@
-import { ExitChannelStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { ExitChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 type TransitionResponse = {
     success: boolean;
     exitChannels: ExitChannelStruct[];

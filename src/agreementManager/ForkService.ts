@@ -1,10 +1,10 @@
 // Owns the array of forks + all direct lookups.
 // No knowledge about signatures, queues, or on-chain events.
-import { BlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { AddressLike, SignatureLike } from "ethers";
 import { BlockUtils } from "@/utils";
 import { Agreement, AgreementFork } from "./types";
-import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { SignatureUtils } from "@/utils/SignatureUtils";
 import { ForkId } from "@/types/types";
 

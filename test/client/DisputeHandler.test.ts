@@ -1,7 +1,7 @@
 import { expect } from "chai";
 import sinon from "sinon";
 import { ethers } from "hardhat";
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 import DisputeHandler from "@/DisputeHandler";
 import AgreementManager from "@/agreementManager";

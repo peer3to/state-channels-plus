@@ -19,3 +19,7 @@ typechain-types
 .nyc_output
 peer3.config.json
 
+# foundry stuff
+lib
+out
+cache_forge

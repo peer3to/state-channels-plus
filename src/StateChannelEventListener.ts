@@ -1,7 +1,7 @@
 import { BigNumberish, BytesLike } from "ethers";
 import { AStateChannelManagerProxy } from "@typechain-types";
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
-import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
 
