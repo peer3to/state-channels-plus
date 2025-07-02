@@ -2,7 +2,7 @@ import { ExecutionFlags, AgreementFlag } from "@/types";
 import AgreementManager from "@/agreementManager";
 import P2PManager from "@/P2PManager";
 import DisputeHandler from "@/DisputeHandler";
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { ForkId } from "@/types/types";
 
 export interface DecisionContext {

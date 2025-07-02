@@ -89,7 +89,5 @@ ${StateSnapshotEthersType} latestStateSnapshot,
 ${StateSnapshotEthersType} outputStateSnapshot,
 ${StateSnapshotEthersType}[] milestoneSnapshots,
 bytes latestStateStateMachineState,
-${JoinChannelBlockEthersType}[] joinChannelBlocks,
-${DisputeEthersType} previousDispute,
-uint previousDisputeTimestamp
+${JoinChannelBlockEthersType}[] joinChannelBlocks
 )`;

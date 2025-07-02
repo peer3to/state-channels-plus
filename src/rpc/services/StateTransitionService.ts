@@ -2,7 +2,7 @@ import { BytesLike } from "ethers";
 import {
     SignedBlockStruct,
     SignedDisputeStruct
-} from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import { ExecutionFlags } from "@/types";
 import { ARpcService, MainRpcService } from "@/rpc";
 import { retry } from "@/utils/retry";

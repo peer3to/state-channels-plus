@@ -4,7 +4,7 @@ import {
     JoinChannelStruct,
     TransactionStruct,
     StateSnapshotStruct
-} from "@typechain-types/contracts/V1/DataTypes";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     BlockEthersType,
     DisputeEthersType,
@@ -12,7 +12,7 @@ import {
     TransactionEthersType,
     StateSnapshotEthersType
 } from "@/types";
-import { DisputeStruct } from "@typechain-types/contracts/V1/DisputeTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 type StructType =
     | BlockStruct

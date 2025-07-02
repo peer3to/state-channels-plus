@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
-import "./DataTypes.sol";
-import "./DisputeTypes.sol";
+import "./types/DataTypes.sol";
+import "./types/DisputeTypes.sol";
 
 abstract contract StateChannelManagerInterface {
     function openChannel(bytes32 channelId, bytes[] calldata openChannelData, bytes[] calldata signatures)
@@ -16,8 +16,6 @@ abstract contract StateChannelManagerInterface {
         public
         virtual;
 
-    function processExitChannel(bytes32 channelId, ExitChannel calldata exitChannel) public virtual;
-
     function addParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
         public
         virtual;
@@ -26,25 +24,19 @@ abstract contract StateChannelManagerInterface {
 
     function getParticipants(bytes32 channelId) public virtual returns (address[] memory);
 
-    function getNextToWrite(bytes32 channelId, bytes memory encodedState) public virtual returns (address);
-
     function getP2pTime() public view virtual returns (uint256);
 
     function getAgreementTime() public view virtual returns (uint256);
 
     function getChainFallbackTime() public view virtual returns (uint256);
 
-    function getChallengeTime() public view virtual returns (uint256);
+    function getEvidenceTime() public view virtual returns (uint256);
 
-    function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256);
+    function getKillTime() public view virtual returns (uint256);
 
-    function getChainLatestBlockTimestamp(bytes32 channelId, bytes32 forkId, uint256 maxTransactionCnt)
-        public
-        view
-        virtual
-        returns (uint256);
+    function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256, uint256);
 
-    function executeStateTransitionOnState(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
+    function executeStateTransition(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
         public
         virtual
         returns (bool, bytes memory);
@@ -59,29 +51,39 @@ abstract contract StateChannelManagerInterface {
 
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public virtual;
 
+    function uploadDisputeWithCalldata(
+        DisputeConfirmation memory disputeConfirmation,
+        DisputeAuditingData memory disputeAuditingData
+    ) public virtual;
+
     function auditDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         public
         virtual
         returns (address[] memory slashParticipants);
 
-    function challengeDispute(
-        Dispute memory dispute,
-        Dispute memory newDispute,
+    function uploadDisputeAndAudit(
+        DisputeConfirmation memory disputeConfirmation,
         DisputeAuditingData memory disputeAuditingData
     ) public virtual;
 
-    function updateStateSnapshotWithDispute(
+    function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public virtual;
+
+    function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public virtual;
+
+    function updateStateSnapshotFork(
         bytes32 channelId,
-        ForkMilestoneProof[] memory milestoneProofs,
-        StateSnapshot[] memory milestoneSnapshots,
-        DisputeProof memory disputeProof,
+        StateSnapshot memory newStateSnapshot,
         ExitChannelBlock[] memory exitChannelBlocks
     ) public virtual;
 
-    function updateStateSnapshotWithoutDispute(
+    function updateStateSnapshotSameFork(
         bytes32 channelId,
-        ForkMilestoneProof[] memory milestoneProofs,
+        MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         ExitChannelBlock[] memory exitChannelBlocks
     ) public virtual;
+
+    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations) public virtual;
+
+    function multicall(bytes[] calldata calls) external virtual returns (bytes[] memory results);
 }
