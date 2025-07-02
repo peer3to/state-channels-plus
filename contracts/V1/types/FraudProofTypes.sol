@@ -2,7 +2,11 @@ pragma solidity ^0.8.8;
 
 import "./DataTypes.sol";
 
+contract FraudProofTypes {
+    constructor(BlockEmptyProof memory a, BlockInvalidStateTransitionProof memory b, BlockDoubleSignProof memory c) {}
+}
 // ========================== Block related fraud proofs ==========================
+
 struct BlockEmptyProof {
     SignedBlock emptyBlock;
     SignedBlock previousBlock;

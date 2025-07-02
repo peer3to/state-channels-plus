@@ -2,6 +2,20 @@ pragma solidity ^0.8.8;
 
 import "./DataTypes.sol";
 
+contract DisputeFraudProofTypes {
+    constructor(
+        DisputeNotLatestStateProof memory a,
+        DisputeOutOfGasProof memory b,
+        DisputeInvalidOutputStateProof memory c,
+        DisputeInvalidStateProof memory d,
+        DisputeInvalidPreviousRecursiveProof memory e,
+        DisputeInvalidExitChannelBlocksProof memory f,
+        TimeoutThresholdProof memory g,
+        TimeoutCalldataPostedProof memory h,
+        TimeoutParticipantNotNextProof memory i
+    ) {}
+}
+
 // ========================== Dispute related fraud proofs ==========================
 // This is sematically equivalent to SignedBlock, but logically it's any signature not only from the original block author
 

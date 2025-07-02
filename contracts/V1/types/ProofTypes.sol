@@ -3,6 +3,10 @@ pragma solidity ^0.8.8;
 import "./DataTypes.sol";
 import "./DisputeTypes.sol";
 
+contract ProofTypes {
+    constructor(MilestoneProof memory a, StateProof memory b, FraudProof memory c, DisputeFraudProof memory d) {}
+}
+
 struct MilestoneProof {
     BlockConfirmation[] blockConfirmations;
 }
