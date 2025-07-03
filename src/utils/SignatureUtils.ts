@@ -1,11 +1,10 @@
 import { AddressLike, BytesLike, ethers, SignatureLike } from "ethers";
 import {
-    BlockStruct,
     JoinChannelStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-
+import { Block } from "@/Block";
 import { Codec, Type } from "./Codec";
 
 export class SignatureUtils {
@@ -29,10 +28,10 @@ export class SignatureUtils {
     }
 
     public static async signBlock(
-        block: BlockStruct,
+        block: Block,
         signer: ethers.Signer
     ): Promise<{ encoded: BytesLike; signature: string }> {
-        const encoded = Codec.encode(block, Type.Block);
+        const encoded = block.encode();
         const signature = await this.signMsg(encoded, signer);
         return { encoded, signature };
     }
@@ -65,10 +64,10 @@ export class SignatureUtils {
     }
 
     public static getSignerAddressBlock(
-        block: BlockStruct,
+        block: Block,
         signature: SignatureLike
     ): string {
-        const encoded = Codec.encode(block, Type.Block);
+        const encoded = block.encode();
         return this.getSignerAddress(encoded, signature);
     }
 

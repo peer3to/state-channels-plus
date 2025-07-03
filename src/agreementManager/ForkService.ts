@@ -1,8 +1,7 @@
 // Owns the array of forks + all direct lookups.
 // No knowledge about signatures, queues, or on-chain events.
-import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { Block } from "@/Block";
 import { AddressLike, SignatureLike } from "ethers";
-import { BlockUtils } from "@/utils";
 import { Agreement, AgreementFork } from "./types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { SignatureUtils } from "@/utils/SignatureUtils";
@@ -91,11 +90,11 @@ export default class ForkService {
 
     //After succesfull verification and execution
     public addBlock(
-        block: BlockStruct,
+        block: Block,
         originalSignature: SignatureLike,
         encodedState: string
     ) {
-        const forkId = BlockUtils.getFork(block);
+        const forkId = block.forkId;
 
         if (!this.isValidforkId(forkId))
             // this should never happen since checks are done before
@@ -170,12 +169,12 @@ export default class ForkService {
             ? this.forks[forkId].agreements[txCnt]
             : undefined;
     }
-    blockAt(forkId: number, txCnt: number): BlockStruct | undefined {
+    blockAt(forkId: number, txCnt: number): Block | undefined {
         return this.agreement(forkId, txCnt)?.block;
     }
 
-    agreementByBlock(block: BlockStruct): Agreement | undefined {
-        const { forkId, height } = BlockUtils.getCoordinates(block);
+    agreementByBlock(block: Block): Agreement | undefined {
+        const { forkId, height } = block.coordinates;
         return this.agreement(forkId, height);
     }
 
@@ -214,9 +213,7 @@ export default class ForkService {
     latestBlockTimestamp(forkId: ForkId): number {
         const fork = this.forks[forkId];
         const latestBlock = this.latestAgreement(forkId)?.block;
-        const latestTimestamp = latestBlock
-            ? BlockUtils.getTimestamp(latestBlock)
-            : 0;
+        const latestTimestamp = latestBlock ? latestBlock.timestamp : 0;
         return Math.max(fork.genesisTimestamp, latestTimestamp);
     }
 }

@@ -1,5 +1,4 @@
 export * from "./BarrierLocal";
-export * from "./BlockUtils";
 export * from "./BroadcastLocal";
 export * from "./DebugProxy";
 export * from "./DeployUtils";

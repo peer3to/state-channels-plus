@@ -1,10 +1,7 @@
-import {
-    SignedBlockStruct,
-    BlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { BlockConfirmation } from "./types";
-import { BlockUtils, Codec, EvmUtils, Type } from "@/utils";
 import { BytesLike } from "ethers";
+import { Block } from "@/Block";
 
 type forkId = BytesLike;
 type Height = number;
@@ -38,9 +35,9 @@ export default class QueueService {
     /*────────── Block queue ─────────*/
 
     queueBlock(sb: SignedBlockStruct): void {
-        const block = Codec.decode(sb.encodedBlock, Type.Block);
-        const { forkId, height } = BlockUtils.getCoordinates(block);
-        const participant = BlockUtils.getBlockAuthor(block);
+        const block = Block.decode(sb.encodedBlock);
+        const { forkId, height } = block.coordinates;
+        const participant = block.author;
         insertNestedMapWithOverwrite(
             this.blockQ,
             forkId,
@@ -66,13 +63,11 @@ export default class QueueService {
     /*──────── Confirmation queue ────────*/
 
     queueConfirmation(blockConfirmation: BlockConfirmation): void {
-        const block = Codec.decode(
-            blockConfirmation.originalSignedBlock.encodedBlock,
-            Type.Block
+        const block = Block.decode(
+            blockConfirmation.originalSignedBlock.encodedBlock
         );
-        const { forkId, height } = BlockUtils.getCoordinates(block);
-        const confirmationSigner = EvmUtils.retrieveSignerAddressBlock(
-            block,
+        const { forkId, height } = block.coordinates;
+        const confirmationSigner = block.getSignerAddress(
             blockConfirmation.confirmationSignature
         );
         insertNestedMapWithOverwrite(
@@ -100,13 +95,11 @@ export default class QueueService {
         return blockConfirmations;
     }
 
-    isBlockQueued(block: BlockStruct): boolean {
-        const { forkId, height } = BlockUtils.getCoordinates(block);
-        const participant = BlockUtils.getBlockAuthor(block);
+    isBlockQueued(block: Block): boolean {
+        const { forkId, height } = block.coordinates;
+        const participant = block.author;
 
         const stored = this.blockQ.get(forkId)?.get(height)?.get(participant);
-        return stored
-            ? stored.encodedBlock === Codec.encode(block, Type.Block)
-            : false;
+        return stored ? stored.encodedBlock === block.encode() : false;
     }
 }

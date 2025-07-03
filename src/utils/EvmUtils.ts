@@ -1,6 +1,5 @@
 import { BytesLike, ethers, SignatureLike } from "ethers";
 import {
-    BlockStruct,
     JoinChannelStruct,
     SignedBlockStruct,
     SignedDisputeStruct,
@@ -10,6 +9,7 @@ import {
 
 import { SignatureUtils } from "./SignatureUtils";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { Block } from "@/Block";
 
 export class EvmUtils {
     public static async signTransaction(
@@ -24,7 +24,7 @@ export class EvmUtils {
     }
 
     public static async signBlock(
-        block: BlockStruct,
+        block: Block,
         signer: ethers.Signer
     ): Promise<SignedBlockStruct> {
         const { encoded, signature } = await SignatureUtils.signBlock(
@@ -43,13 +43,6 @@ export class EvmUtils {
             signer
         );
         return { encodedDispute: encoded, signature } as SignedDisputeStruct;
-    }
-
-    public static retrieveSignerAddressBlock(
-        block: BlockStruct,
-        signature: SignatureLike
-    ): string {
-        return SignatureUtils.getSignerAddressBlock(block, signature);
     }
 
     public static async signJoinChannel(

@@ -1,22 +1,19 @@
-import { AddressLike, BigNumberish, BytesLike, SignatureLike } from "ethers";
-import {
-    SignedBlockStruct,
-    BlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { AddressLike, SignatureLike } from "ethers";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     BlockConfirmationStruct,
     DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { BlockUtils, Codec, EvmUtils, Type } from "@/utils";
 import { AgreementFlag } from "@/types";
-import { BlockConfirmation } from "./types";
+import { Agreement, BlockConfirmation } from "./types";
 import * as SetUtils from "@/utils/set";
 import SignatureService from "./SignatureService";
 import ForkService, { Direction } from "./ForkService";
 import QueueService from "./QueueService";
 import OnChainTracker from "./OnChainTracker";
 import BlockValidator from "./BlockValidator";
-import { ForkId } from "@/types/types";
+import { Address, ForkId } from "@/types/types";
+import { Block } from "@/Block";
 
 class AgreementManager {
     forks = new ForkService();
@@ -51,17 +48,14 @@ class AgreementManager {
     }
     //After succesfull verification and execution
     public addBlock(
-        block: BlockStruct,
+        block: Block,
         originalSignature: SignatureLike,
         encodedState: string
     ) {
         this.forks.addBlock(block, originalSignature, encodedState);
     }
     //Doesn't check signature - just stores it
-    public confirmBlock(
-        block: BlockStruct,
-        confirmationSignature: SignatureLike
-    ) {
+    public confirmBlock(block: Block, confirmationSignature: SignatureLike) {
         const agreement = this.forks.agreementByBlock(block);
         if (!agreement)
             //should never trigger because of checks before confirming
@@ -69,7 +63,7 @@ class AgreementManager {
                 "AgreementManager - confirmBlock - block doesn't exist"
             );
 
-        if (!BlockUtils.areBlocksEqual(agreement.block, block))
+        if (agreement.block.equals(block))
             throw new Error("AgreementManager - confirmBlock - conflict");
 
         if (
@@ -90,36 +84,31 @@ class AgreementManager {
     public getNextBlockHeight(): number {
         return this.forks.nextBlockHeight();
     }
-    public getBlock(
-        forkId: ForkId,
-        transactionCnt: number
-    ): BlockStruct | undefined {
+    public getBlock(forkId: ForkId, transactionCnt: number): Block | undefined {
         return this.forks.agreement(forkId, transactionCnt)?.block;
     }
     public getDoubleSignedBlock(
         signedBlock: SignedBlockStruct
     ): SignedBlockStruct | undefined {
-        const block = Codec.decode(signedBlock.encodedBlock, Type.Block);
+        const block = Block.decode(signedBlock.encodedBlock);
 
         const agreement = this.forks.agreementByBlock(block);
         if (
             !agreement ||
-            BlockUtils.areBlocksEqual(agreement.block, block) ||
-            BlockUtils.getBlockAuthor(agreement.block) !==
-                BlockUtils.getBlockAuthor(block)
+            agreement.block.equals(block) ||
+            agreement.block.author !== block.author
         ) {
             return undefined;
         }
 
-        const { didSign, signature } = BlockUtils.getParticipantSignature(
-            agreement.block,
-            agreement.blockSignatures,
-            BlockUtils.getBlockAuthor(block)
+        const { didSign, signature } = SignatureService.getParticipantSignature(
+            agreement,
+            block.author
         );
 
         return didSign
             ? {
-                  encodedBlock: Codec.encode(agreement.block, Type.Block),
+                  encodedBlock: agreement.block.encode(),
                   signature: signature!.toString()
               }
             : undefined;
@@ -128,18 +117,18 @@ class AgreementManager {
     public getLatestSignedBlockByParticipant(
         forkId: ForkId,
         participantAdr: AddressLike
-    ): { block: BlockStruct; signature: SignatureLike } | undefined {
+    ): { block: Block; signature: SignatureLike } | undefined {
         if (!this.forks.isValidforkId(forkId)) return undefined;
 
         for (const agreement of this.forks.agreementsIterator(
             forkId,
             Direction.BACKWARD
         )) {
-            const { didSign, signature } = BlockUtils.getParticipantSignature(
-                agreement.block,
-                agreement.blockSignatures,
-                participantAdr
-            );
+            const { didSign, signature } =
+                SignatureService.getParticipantSignature(
+                    agreement,
+                    participantAdr
+                );
 
             if (didSign)
                 return {
@@ -149,21 +138,15 @@ class AgreementManager {
         }
         return undefined;
     }
-    public didEveryoneSignBlock(block: BlockStruct): boolean {
-        const forkId = BlockUtils.getFork(block);
+    public didEveryoneSignBlock(block: Block): boolean {
+        const forkId = block.forkId;
         const fork = this.forks.forkAt(forkId);
         const agreement = this.forks.agreementByBlock(block);
 
-        if (
-            !agreement ||
-            !fork ||
-            !BlockUtils.areBlocksEqual(agreement.block, block)
-        )
-            return false;
+        if (!agreement || !fork || !agreement.block.equals(block)) return false;
 
         // Check if all threshold addresses have signed
-        const signersSet = BlockUtils.getSignerAddresses(
-            block,
+        const signersSet = agreement.block.getSignersSet(
             agreement.blockSignatures
         );
 
@@ -173,59 +156,47 @@ class AgreementManager {
         // All threshold addresses must be in the signers set
         return SetUtils.isSubset(addressesSet, signersSet);
     }
-    public getSigantures(block: BlockStruct): SignatureLike[] {
+    public getSigantures(block: Block): SignatureLike[] {
         return this.forks.agreementByBlock(block)?.blockSignatures || [];
     }
     // Returns the signature of the block author
-    public getOriginalSignature(block: BlockStruct): SignatureLike | undefined {
-        const participant = BlockUtils.getBlockAuthor(block);
+    public getOriginalSignature(block: Block): SignatureLike | undefined {
+        const participant = block.author;
 
         const agreement = this.forks.agreementByBlock(block);
         if (!agreement) return undefined;
 
-        const { didSign: _, signature } = BlockUtils.getParticipantSignature(
-            agreement.block,
-            agreement.blockSignatures,
-            participant
-        );
+        const { didSign: _, signature } =
+            SignatureService.getParticipantSignature(agreement, participant);
 
         return signature;
     }
     //Probably return boolean, error flag -> dipute
-    public doesSignatureExist(
-        block: BlockStruct,
-        signature: SignatureLike
-    ): boolean {
+    public doesSignatureExist(block: Block, signature: SignatureLike): boolean {
         const agreement = this.forks.agreementByBlock(block);
 
         if (!agreement) return false;
 
-        if (!BlockUtils.areBlocksEqual(agreement.block, block))
+        if (!agreement.block.equals(block))
             throw new Error("AgreementManager - doesSignatureExist - conflict");
 
         return SignatureService.doesSignatureExist(agreement, signature);
     }
 
     public didParticipantSign(
-        block: BlockStruct,
+        block: Block,
         participant: AddressLike
     ): { didSign: boolean; signature: SignatureLike | undefined } {
         const agreement = this.forks.agreementByBlock(block);
 
-        if (!agreement || !BlockUtils.areBlocksEqual(agreement.block, block))
+        if (!agreement || !agreement.block.equals(block))
             return { didSign: false, signature: undefined };
 
-        return BlockUtils.getParticipantSignature(
-            agreement.block,
-            agreement.blockSignatures,
-            participant
-        );
+        return SignatureService.getParticipantSignature(agreement, participant);
     }
 
-    public getParticipantsWhoHaventSignedBlock(
-        block: BlockStruct
-    ): AddressLike[] {
-        const forkId = BlockUtils.getFork(block);
+    public getParticipantsWhoHaventSignedBlock(block: Block): AddressLike[] {
+        const forkId = block.forkId;
         const agreement = this.forks.agreementByBlock(block);
         const fork = this.forks.forkAt(forkId);
         if (!fork || !agreement) return [];
@@ -278,15 +249,14 @@ class AgreementManager {
             forkId,
             Direction.BACKWARD
         )) {
-            const signersAddresses = BlockUtils.getSignerAddresses(
-                agreement.block,
+            const signersAddresses = agreement.block.getSignersSet(
                 agreement.blockSignatures
-            ) as Set<AddressLike>;
+            );
 
             // Check if this block is signed by our target signer
             if (
                 !encodedLatestCorrectState &&
-                signersAddresses.has(signerAddress)
+                signersAddresses.has(signerAddress as Address)
             ) {
                 encodedLatestCorrectState = agreement.encodedState;
             }
@@ -298,7 +268,7 @@ class AgreementManager {
 
             virtualVotingBlocks.unshift({
                 signedBlock: {
-                    encodedBlock: Codec.encode(agreement.block, Type.Block),
+                    encodedBlock: agreement.block.encode(),
                     signature: originalSignature as string
                 },
                 signatures: confirmationSignatures as string[]
@@ -382,7 +352,7 @@ class AgreementManager {
      * should be a SignedBlockStruct to allow clear separation between original/author signature
      * and the confirmation signatures.
      */
-    private separateSignatures(agreement: any): {
+    private separateSignatures(agreement: Agreement): {
         originalSignature: SignatureLike;
         confirmationSignatures: SignatureLike[];
     } {
@@ -394,13 +364,11 @@ class AgreementManager {
         }
 
         // Get all signatures except the author's signature
-        const blockAuthor = BlockUtils.getBlockAuthor(agreement.block);
         const confirmationSignatures = agreement.blockSignatures.filter(
             (sig: SignatureLike) => {
-                const { didSign } = BlockUtils.getParticipantSignature(
-                    agreement.block,
-                    [sig],
-                    blockAuthor
+                const { didSign } = agreement.block.getParticipantSignature(
+                    agreement.block.author,
+                    [sig]
                 );
                 return !didSign;
             }
@@ -414,10 +382,10 @@ class AgreementManager {
 
     //both canonical chain and future queue
     //both canonical chain and future queue
-    public isBlockInChain(block: BlockStruct): boolean {
+    public isBlockInChain(block: Block): boolean {
         return this.validator.isBlockInChain(block);
     }
-    public isBlockDuplicate(block: BlockStruct): boolean {
+    public isBlockDuplicate(block: Block): boolean {
         return this.validator.isBlockDuplicate(block);
     }
     public checkBlock(signedBlock: SignedBlockStruct): AgreementFlag {

@@ -1,14 +1,11 @@
 import { AddressLike } from "ethers";
-import {
-    SignedBlockStruct,
-    BlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
-import { BlockUtils, Codec, EvmUtils, Type } from "@/utils";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { AgreementFlag } from "@/types";
 
 import ForkService from "./ForkService";
 import QueueService from "./QueueService";
 import { ForkId } from "@/types/types";
+import { Block } from "@/Block";
 
 export type BlockChecker = (sb: SignedBlockStruct) => AgreementFlag;
 
@@ -32,9 +29,9 @@ export default class OnChainTracker {
             this.queues.queueBlock(signed);
         }
 
-        const blk: BlockStruct = Codec.decode(signed.encodedBlock, Type.Block);
-        const { forkId, height } = BlockUtils.getCoordinates(blk);
-        const participant = BlockUtils.getBlockAuthor(blk);
+        const blk: Block = Block.decode(signed.encodedBlock);
+        const { forkId, height } = blk.coordinates;
+        const participant = blk.author;
 
         if (!this.hasPosted(forkId, height, participant)) {
             this.forks.addChainBlock(forkId, height, participant, timestamp);

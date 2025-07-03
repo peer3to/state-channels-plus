@@ -1,26 +1,16 @@
 import { AddressLike, SignatureLike } from "ethers";
 
 import * as SetUtils from "@/utils/set";
-import { EvmUtils, BlockUtils } from "@/utils";
 import { Agreement, AgreementFork } from "./types";
 
 export default class SignatureService {
-    static getSignerAddresses(agreement: Agreement): Set<string> {
-        return BlockUtils.getSignerAddresses(
-            agreement.block,
-            agreement.blockSignatures
-        );
-    }
-
     static getParticipantSignature(
         agreement: Agreement,
         participant: AddressLike
     ): { didSign: boolean; signature: SignatureLike | undefined } {
+        const block = agreement.block;
         for (const sig of agreement.blockSignatures) {
-            if (
-                EvmUtils.retrieveSignerAddressBlock(agreement.block, sig) ===
-                participant
-            ) {
+            if (block.getSignerAddress(sig) === participant) {
                 return { didSign: true, signature: sig };
             }
         }
@@ -38,7 +28,9 @@ export default class SignatureService {
         fork: AgreementFork,
         agreement: Agreement
     ): AddressLike[] {
-        const signerSet = this.getSignerAddresses(agreement);
+        const signerSet = agreement.block.getSignersSet(
+            agreement.blockSignatures
+        );
         return SetUtils.excludeFromArray(fork.addressesInThreshold, signerSet);
     }
 }

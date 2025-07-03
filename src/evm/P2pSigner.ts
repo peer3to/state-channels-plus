@@ -17,7 +17,8 @@ import {
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import P2PManager from "@/P2PManager";
-import { EvmUtils, Codec, SignatureUtils, Type } from "@/utils";
+import { EvmUtils, Codec, Type } from "@/utils";
+import { Block } from "@/Block";
 
 class P2pSigner implements Signer {
     signer: Signer;
@@ -127,11 +128,8 @@ class P2pSigner implements Signer {
         this.p2pManager.stateManager.setChannelId(channelId);
     }
     public async confirmBlock(signedBlock: SignedBlockStruct) {
-        let block = Codec.decode(signedBlock.encodedBlock, Type.Block);
-        let signature = await SignatureUtils.signMsg(
-            signedBlock.encodedBlock,
-            this.signer
-        );
+        let block = Block.decode(signedBlock.encodedBlock);
+        let signature = await block.sign(this.signer);
         this.p2pManager.stateManager.agreementManager.confirmBlock(
             block,
             signature as SignatureLike

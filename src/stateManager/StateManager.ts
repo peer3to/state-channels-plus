@@ -1,7 +1,6 @@
 import {
     TransactionStruct,
     SignedBlockStruct,
-    BlockStruct,
     StateSnapshotStruct,
     MilestoneProofStruct,
     ExitChannelBlockStruct,
@@ -29,13 +28,13 @@ import P2PManager from "@/P2PManager";
 
 import AStateMachine from "@/AStateMachine";
 import {
-    EvmUtils,
     DebugProxy,
     Mutex,
     scheduleTask,
     getActiveParticipants
 } from "@/utils";
 import StateChannelEventListener from "@/StateChannelEventListener";
+import { Block } from "@/Block";
 
 import P2pEventHooks from "@/P2pEventHooks";
 import {
@@ -168,7 +167,7 @@ class StateManager {
             signedBlock,
             Number(timestamp)
         );
-        let block = Codec.decode(signedBlock.encodedBlock, Type.Block);
+        let block = Block.decode(signedBlock.encodedBlock);
         let disputeProof: ProofStruct;
         if (flag == AgreementFlag.DOUBLE_SIGN) {
             console.log("StateManager - collectOnChainBlock - double sign");
@@ -176,24 +175,18 @@ class StateManager {
                 this.disputeHandler.proofManager.createDoubleSignProof([
                     signedBlock
                 ]);
-            this.disputeHandler.createDispute(
-                block.transaction.header.forkId,
-                "0x00",
-                0,
-                [disputeProof]
-            );
+            this.disputeHandler.createDispute(block.forkId, "0x00", 0, [
+                disputeProof
+            ]);
         } else if (flag == AgreementFlag.INCORRECT_DATA) {
             console.log("StateManager - collectOnChainBlock - incorrect data");
             disputeProof =
                 this.disputeHandler.proofManager.createIncorrectDataProof(
                     signedBlock
                 );
-            this.disputeHandler.createDispute(
-                block.transaction.header.forkId,
-                "0x00",
-                0,
-                [disputeProof]
-            );
+            this.disputeHandler.createDispute(block.forkId, "0x00", 0, [
+                disputeProof
+            ]);
         }
         console.log("StateManager - collectOnChainBlock - done");
         this.onSuccessCommon();
@@ -260,13 +253,12 @@ class StateManager {
     // Passes the signedBlock through a verification pipeline and returns an execution flag based on the outcome
     public async onSignedBlock(
         signedBlock: SignedBlockStruct,
-        block?: BlockStruct
+        block?: Block
     ): Promise<ExecutionFlags> {
         // Default everything to SUCCESS + no AgreementFlag
         let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS;
         let finalAgreementFlag: AgreementFlag | undefined = undefined;
-        const decodedBlock =
-            block ?? Codec.decode(signedBlock.encodedBlock, Type.Block);
+        const decodedBlock = block ?? Block.decode(signedBlock.encodedBlock);
 
         try {
             await this.mutex.lock();
@@ -301,11 +293,10 @@ class StateManager {
     public async onBlockConfirmation(
         signedBlock: SignedBlockStruct,
         confirmationSignature: BytesLike,
-        block?: BlockStruct
+        block?: Block
     ): Promise<ExecutionFlags> {
         let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS; // Default to SUCCESS
-        const decodedBlock =
-            block ?? Codec.decode(signedBlock.encodedBlock, Type.Block);
+        const decodedBlock = block ?? Block.decode(signedBlock.encodedBlock);
 
         try {
             const result =
@@ -394,7 +385,9 @@ class StateManager {
 
             const posteriorStateHash = await this.getEncodedStateKecak256();
             const block = await this.createBlock(tx, posteriorStateHash);
-            const signedBlock = await this.signBlock(block);
+            const signedBlock = await block.signedBlock(
+                this.p2pManager.p2pSigner
+            );
 
             this.agreementManager.addBlock(
                 block,
@@ -418,7 +411,7 @@ class StateManager {
     }
 
     private async maybePostBlockOnChain(
-        block: BlockStruct,
+        block: Block,
         signedBlock: SignedBlockStruct
     ): Promise<void> {
         // If not everyone has signed, do the on-chain post
@@ -750,7 +743,7 @@ class StateManager {
     private async createBlock(
         tx: TransactionStruct,
         posteriorStateHash: string
-    ): Promise<BlockStruct> {
+    ): Promise<Block> {
         const forkId = this.getforkId();
         const transactionCnt = Number(tx.header.transactionCnt);
 
@@ -768,15 +761,11 @@ class StateManager {
             Codec.encode(stateSnapshot, Type.StateSnapshot)
         );
 
-        return {
+        return Block.from({
             transaction: tx,
             stateSnapshotHash: stateSnapshotHash as BytesLike,
             previousBlockHash: previousBlockHash as BytesLike
-        };
-    }
-
-    private async signBlock(block: BlockStruct): Promise<SignedBlockStruct> {
-        return EvmUtils.signBlock(block, this.p2pManager.p2pSigner);
+        });
     }
 
     // ----- Private validation helper methods -----
