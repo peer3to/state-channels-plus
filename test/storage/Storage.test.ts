@@ -385,28 +385,18 @@ describe("Storage", () => {
 
     describe("State Snapshot Operations", () => {
         describe("storeStateSnapshot()", () => {
-            const mockBlockHash = ethers.hexlify(ethers.randomBytes(32));
-
             it("should store snapshot with auto-computed hash", () => {
-                const hash = storage.storeStateSnapshot(
-                    mockStateSnapshot,
-                    mockBlockHash
-                );
+                const hash = storage.storeStateSnapshot(mockStateSnapshot);
                 expect(hash).to.equal(mockStateSnapshotHash);
 
                 const stored = storage.getStateSnapshotByHash(hash);
                 expect(stored).to.deep.equal(mockStateSnapshot);
-
-                const posterior =
-                    storage.getPosteriorStateSnapshot(mockBlockHash);
-                expect(posterior).to.deep.equal(mockStateSnapshot);
             });
 
             it("should store snapshot with provided hash", () => {
                 const customHash = ethers.hexlify(ethers.randomBytes(32));
                 const hash = storage.storeStateSnapshot(
                     mockStateSnapshot,
-                    mockBlockHash,
                     customHash
                 );
                 expect(hash).to.equal(customHash);
@@ -414,38 +404,10 @@ describe("Storage", () => {
                 const stored = storage.getStateSnapshotByHash(customHash);
                 expect(stored).to.deep.equal(mockStateSnapshot);
             });
-        });
-
-        describe("getStateSnapshotByHash() and getPosteriorStateSnapshot()", () => {
-            const mockBlockHash = ethers.hexlify(ethers.randomBytes(32));
-            let storedHash: Hash;
-
-            beforeEach(() => {
-                storedHash = storage.storeStateSnapshot(
-                    mockStateSnapshot,
-                    mockBlockHash
-                );
-            });
-
-            it("should get snapshot by hash", () => {
-                const result = storage.getStateSnapshotByHash(storedHash);
-                expect(result).to.deep.equal(mockStateSnapshot);
-            });
-
-            it("should get posterior state snapshot", () => {
-                const result = storage.getPosteriorStateSnapshot(mockBlockHash);
-                expect(result).to.deep.equal(mockStateSnapshot);
-            });
 
             it("should return undefined for non-existent snapshot hash", () => {
                 const nonExistentHash = ethers.hexlify(ethers.randomBytes(32));
                 expect(storage.getStateSnapshotByHash(nonExistentHash)).to.be
-                    .undefined;
-            });
-
-            it("should return undefined for non-existent block hash", () => {
-                const nonExistentHash = ethers.hexlify(ethers.randomBytes(32));
-                expect(storage.getPosteriorStateSnapshot(nonExistentHash)).to.be
                     .undefined;
             });
         });

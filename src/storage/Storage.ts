@@ -155,10 +155,6 @@ export class Storage {
         this.stateSnapshotStorage.getStateSnapshotByHash.bind(
             this.stateSnapshotStorage
         );
-    getPosteriorStateSnapshot =
-        this.stateSnapshotStorage.getPosteriorStateSnapshot.bind(
-            this.stateSnapshotStorage
-        );
 
     // ====================================
     // Cached on chain state snapshot
