@@ -302,9 +302,13 @@ describe("Storage", () => {
     });
 
     describe("Exit Channel Operations", () => {
-        describe("storeExitChannelBlock()", () => {
+        describe("recordExitChannelBlock()", () => {
             it("should store block with auto-computed hash", () => {
-                const hash = storage.storeExitChannelBlock(mockExitBlock);
+                const hash = storage.recordExitChannelBlock(
+                    mockExitBlock,
+                    mockForkId,
+                    mockHeight
+                );
                 const expectedHash = ethers.keccak256(
                     Codec.encode(mockExitBlock, Type.ExitChannelBlock)
                 );
@@ -314,23 +318,27 @@ describe("Storage", () => {
                 expect(stored).to.deep.equal(mockExitBlock);
             });
 
-            it("should store block with provided hash", () => {
-                const customHash = ethers.hexlify(ethers.randomBytes(32));
-                const hash = storage.storeExitChannelBlock(
+            it("should store block and record exit point", () => {
+                const hash = storage.recordExitChannelBlock(
                     mockExitBlock,
-                    customHash
+                    mockForkId,
+                    mockHeight
                 );
-                expect(hash).to.equal(customHash);
 
-                const stored = storage.getExitChannelBlock(customHash);
+                // Verify block is stored
+                const stored = storage.getExitChannelBlock(hash);
                 expect(stored).to.deep.equal(mockExitBlock);
-            });
 
-            it("should throw on duplicate hash", () => {
-                const hash = storage.storeExitChannelBlock(mockExitBlock);
-                expect(() => {
-                    storage.storeExitChannelBlock(mockExitBlock, hash);
-                }).to.throw(/already exists/);
+                // Verify exit point is recorded
+                const exitPoints = storage.getExitPoints(
+                    { forkId: mockForkId, blockHeight: mockHeight },
+                    { forkId: mockForkId, blockHeight: mockHeight }
+                );
+                expect(exitPoints).to.have.length(1);
+                expect(exitPoints[0]).to.deep.equal({
+                    forkId: mockForkId,
+                    blockHeight: mockHeight
+                });
             });
         });
 
@@ -338,7 +346,11 @@ describe("Storage", () => {
             let storedHash: Hash;
 
             beforeEach(() => {
-                storedHash = storage.storeExitChannelBlock(mockExitBlock);
+                storedHash = storage.recordExitChannelBlock(
+                    mockExitBlock,
+                    mockForkId,
+                    mockHeight
+                );
             });
 
             it("should get block by hash", () => {
@@ -357,7 +369,11 @@ describe("Storage", () => {
             let storedHash: Hash;
 
             beforeEach(() => {
-                storedHash = storage.storeExitChannelBlock(mockExitBlock);
+                storedHash = storage.recordExitChannelBlock(
+                    mockExitBlock,
+                    mockForkId,
+                    mockHeight
+                );
             });
 
             it("should get latest exit channel block", () => {
@@ -379,6 +395,69 @@ describe("Storage", () => {
                 };
                 storage.setTotalWithdrawals(newBalance);
                 expect(storage.getTotalWithdrawals()).to.deep.equal(newBalance);
+            });
+        });
+
+        describe("Exit Points Operations", () => {
+            let mockForkId1: string;
+            let mockForkId2: string;
+            let mockExitBlock1: ExitChannelBlockStruct;
+            let mockExitBlock2: ExitChannelBlockStruct;
+            let mockExitBlock3: ExitChannelBlockStruct;
+
+            beforeEach(() => {
+                mockForkId1 = ethers.hexlify(ethers.randomBytes(32));
+                mockForkId2 = ethers.hexlify(ethers.randomBytes(32));
+                mockExitBlock1 = factory.exitChannelBlock();
+                mockExitBlock2 = factory.exitChannelBlock();
+                mockExitBlock3 = factory.exitChannelBlock();
+            });
+
+            it("should record exit points when storing exit channel blocks", () => {
+                // Record three exit points across two forks
+                storage.recordExitChannelBlock(mockExitBlock1, mockForkId1, 1);
+                storage.recordExitChannelBlock(mockExitBlock2, mockForkId1, 5);
+                storage.recordExitChannelBlock(mockExitBlock3, mockForkId2, 3);
+
+                // Get exit points between first and second point in fork1
+                const exitPointsFork1 = storage.getExitPoints(
+                    { forkId: mockForkId1, blockHeight: 1 },
+                    { forkId: mockForkId1, blockHeight: 5 }
+                );
+                expect(exitPointsFork1).to.have.length(2);
+                expect(exitPointsFork1[0]).to.deep.equal({
+                    forkId: mockForkId1,
+                    blockHeight: 1
+                });
+                expect(exitPointsFork1[1]).to.deep.equal({
+                    forkId: mockForkId1,
+                    blockHeight: 5
+                });
+
+                // Get non-existent range should return empty array
+                const nonExistentRange = storage.getExitPoints(
+                    { forkId: mockForkId2, blockHeight: 1 },
+                    { forkId: mockForkId2, blockHeight: 2 }
+                );
+                expect(nonExistentRange).to.have.length(0);
+            });
+
+            it("should handle invalid ranges for exit points", () => {
+                storage.recordExitChannelBlock(mockExitBlock1, mockForkId1, 1);
+
+                // Start point doesn't exist
+                const invalidStart = storage.getExitPoints(
+                    { forkId: "nonexistent", blockHeight: 0 },
+                    { forkId: mockForkId1, blockHeight: 1 }
+                );
+                expect(invalidStart).to.have.length(0);
+
+                // End point doesn't exist
+                const invalidEnd = storage.getExitPoints(
+                    { forkId: mockForkId1, blockHeight: 1 },
+                    { forkId: "nonexistent", blockHeight: 999 }
+                );
+                expect(invalidEnd).to.have.length(0);
             });
         });
     });

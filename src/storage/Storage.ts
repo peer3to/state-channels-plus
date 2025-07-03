@@ -12,11 +12,19 @@ import { StateSnapshotStorage } from "./StateSnapshotStorage";
 
 import { Hash, BlockHeight, ForkId } from "@/types/types";
 
+type Coordinate = {
+    forkId: ForkId;
+    blockHeight: BlockHeight;
+};
+
+type ExitPoint = Coordinate;
+
 export class Storage {
     private blockStorage = new BlockStorage();
     private joinChannelBlockStorage = new JoinChannelBlockStorage();
     private exitChannelBlockStorage = new ExitChannelBlockStorage();
     private stateSnapshotStorage = new StateSnapshotStorage();
+    private exitPoints: ExitPoint[] = [];
 
     private _cachedOnChainStateSnapshot:
         | {
@@ -105,10 +113,22 @@ export class Storage {
     // ====================================
 
     // C
-    storeExitChannelBlock =
-        this.exitChannelBlockStorage.storeExitChannelBlock.bind(
-            this.exitChannelBlockStorage
-        );
+    recordExitChannelBlock(
+        block: ExitChannelBlockStruct,
+        forkId: ForkId,
+        blockHeight: BlockHeight
+    ): Hash {
+        const blockHash =
+            this.exitChannelBlockStorage.storeExitChannelBlock(block);
+
+        this.exitPoints.push({
+            forkId,
+            blockHeight
+        });
+
+        return blockHash;
+    }
+
     setTotalWithdrawals = this.exitChannelBlockStorage.setTotalWithdrawals.bind(
         this.exitChannelBlockStorage
     );
@@ -128,6 +148,26 @@ export class Storage {
     getTotalWithdrawals = this.exitChannelBlockStorage.getTotalWithdrawals.bind(
         this.exitChannelBlockStorage
     );
+
+    getExitPoints = (start: Coordinate, end: Coordinate): ExitPoint[] => {
+        const startIndex = this.exitPoints.findIndex(
+            (point) =>
+                point.forkId === start.forkId &&
+                point.blockHeight === start.blockHeight
+        );
+        if (startIndex === -1) {
+            return [];
+        }
+        const endIndex = this.exitPoints.findIndex(
+            (point) =>
+                point.forkId === end.forkId &&
+                point.blockHeight === end.blockHeight
+        );
+        if (endIndex === -1) {
+            return [];
+        }
+        return this.exitPoints.slice(startIndex, endIndex + 1);
+    };
 
     // getPreviousBlockHash(
     //     forkCnt: number,
