@@ -451,34 +451,18 @@ describe("Storage", () => {
         });
     });
 
-    describe("Latest Block and Cached State Operations", () => {
-        it("should throw when getting latest block without setting it", () => {
-            expect(() => storage.getLatestBlock()).to.throw(
-                "No latest signed block found"
-            );
-        });
+    describe("Cached State Operations", () => {
+        it("should handle cached on-chain state snapshot", () => {
+            expect(storage.getCachedOnChainStateSnapshot()).to.be.undefined;
 
-        // it("should handle cached on-chain state snapshot", () => {
-        //     expect(storage.getCachedOnChainStateSnapshot()).to.be.undefined;
-
-        //     const timestamp = Math.floor(Date.now() / 1000);
-        //     storage.setCachedOnChainStateSnapshot(mockStateSnapshot, timestamp);
-
-        //     const cached = storage.getCachedOnChainStateSnapshot();
-        //     expect(cached).to.deep.equal({
-        //         stateSnapshot: mockStateSnapshot,
-        //         timestamp
-        //     });
-        // });
-
-        it("should throw when setting cached state without existing snapshot", () => {
             const timestamp = Math.floor(Date.now() / 1000);
-            expect(() =>
-                storage.setCachedOnChainStateSnapshot(
-                    mockStateSnapshot,
-                    timestamp
-                )
-            ).to.throw("No cached on chain state snapshot found");
+            storage.setCachedOnChainStateSnapshot(mockStateSnapshot, timestamp);
+
+            const cached = storage.getCachedOnChainStateSnapshot();
+            expect(cached).to.deep.equal({
+                stateSnapshot: mockStateSnapshot,
+                timestamp
+            });
         });
     });
 });

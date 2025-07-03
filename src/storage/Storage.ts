@@ -1,4 +1,3 @@
-import { BytesLike } from "ethers";
 import {
     StateSnapshotStruct,
     BlockConfirmationStruct,
@@ -21,7 +20,7 @@ export class Storage {
     private exitChannelBlockStorage = new ExitChannelBlockStorage();
     private stateSnapshotStorage = new StateSnapshotStorage();
 
-    private cachedOnChainStateSnapshot:
+    private _cachedOnChainStateSnapshot:
         | {
               stateSnapshot: StateSnapshotStruct;
               timestamp: number;
@@ -48,31 +47,31 @@ export class Storage {
     // D
     deleteBlock = this.blockStorage.deleteBlock.bind(this.blockStorage);
 
-    getLatestBlock(): {
-        stateSnapshot: StateSnapshotStruct;
-        block: BlockStruct;
-        signature: BytesLike;
-    } {
-        if (!this.latestSignedBlock) {
-            throw new Error("No latest signed block found");
-        }
-        const block = Codec.decode(
-            this.latestSignedBlock.encodedBlock,
-            Type.Block
-        );
-        const stateSnapshotHash = block.stateSnapshotHash;
-        const stateSnapshot = this.getStateSnapshotByHash(
-            stateSnapshotHash as Hash
-        );
-        if (!stateSnapshot) {
-            throw new Error("State snapshot not found");
-        }
-        return {
-            stateSnapshot,
-            block,
-            signature: this.latestSignedBlock.signature
-        };
-    }
+    // getLatestBlock(): {
+    //     stateSnapshot: StateSnapshotStruct;
+    //     block: BlockStruct;
+    //     signature: BytesLike;
+    // } {
+    //     if (!this.latestSignedBlock) {
+    //         throw new Error("No latest signed block found");
+    //     }
+    //     const block = Codec.decode(
+    //         this.latestSignedBlock.encodedBlock,
+    //         Type.Block
+    //     );
+    //     const stateSnapshotHash = block.stateSnapshotHash;
+    //     const stateSnapshot = this.getStateSnapshotByHash(
+    //         stateSnapshotHash as Hash
+    //     );
+    //     if (!stateSnapshot) {
+    //         throw new Error("State snapshot not found");
+    //     }
+    //     return {
+    //         stateSnapshot,
+    //         block,
+    //         signature: this.latestSignedBlock.signature
+    //     };
+    // }
 
     // ====================================
     // JoinChannelBlockStorage
@@ -165,23 +164,15 @@ export class Storage {
     // Cached on chain state snapshot
     // ====================================
 
-    getCachedOnChainStateSnapshot():
-        | {
-              stateSnapshot: StateSnapshotStruct;
-              timestamp: number;
-          }
-        | undefined {
-        return this.cachedOnChainStateSnapshot;
+    getCachedOnChainStateSnapshot() {
+        return this._cachedOnChainStateSnapshot;
     }
 
     setCachedOnChainStateSnapshot(
         stateSnapshot: StateSnapshotStruct,
         timestamp: number
     ): void {
-        if (!this.cachedOnChainStateSnapshot) {
-            throw new Error("No cached on chain state snapshot found");
-        }
-        this.cachedOnChainStateSnapshot = {
+        this._cachedOnChainStateSnapshot = {
             stateSnapshot,
             timestamp
         };
