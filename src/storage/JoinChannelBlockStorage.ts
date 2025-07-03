@@ -56,7 +56,7 @@ export class JoinChannelBlockStorage {
 
     // Total Deposits
 
-    set totalDeposits(value: BalanceStruct) {
+    setTotalDeposits(value: BalanceStruct) {
         this._totalDeposits = value;
     }
 
@@ -68,15 +68,15 @@ export class JoinChannelBlockStorage {
         return this.blockMap.get(blockHash);
     }
 
-    get latestBlockHash(): Hash {
+    getLatestJoinChannelBlockHash(): Hash {
         return this._latestBlockHash;
     }
 
-    get latestBlock(): JoinChannelBlockStruct | undefined {
+    getLatestJoinChannelBlock(): JoinChannelBlockStruct | undefined {
         return this.blockMap.get(this._latestBlockHash);
     }
 
-    get totalDeposits(): BalanceStruct {
+    getTotalDeposits(): BalanceStruct {
         return this._totalDeposits;
     }
 }

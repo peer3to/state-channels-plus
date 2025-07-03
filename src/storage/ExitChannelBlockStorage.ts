@@ -56,7 +56,7 @@ export class ExitChannelBlockStorage {
 
     // Total Withdrawals
 
-    set totalWithdrawals(value: BalanceStruct) {
+    setTotalWithdrawals(value: BalanceStruct) {
         this._totalWithdrawals = value;
     }
 
@@ -68,15 +68,15 @@ export class ExitChannelBlockStorage {
         return this.blockMap.get(blockHash);
     }
 
-    get latestBlockHash(): Hash {
+    getLatestExitChannelBlockHash(): Hash {
         return this._latestBlockHash;
     }
 
-    get latestBlock(): ExitChannelBlockStruct | undefined {
+    getLatestExitChannelBlock(): ExitChannelBlockStruct | undefined {
         return this.blockMap.get(this._latestBlockHash);
     }
 
-    get totalWithdrawals(): BalanceStruct {
+    getTotalWithdrawals(): BalanceStruct {
         return this._totalWithdrawals;
     }
 }

@@ -53,12 +53,12 @@ describe("JoinChannelBlockStorage", () => {
 
         it("should update latest block hash", () => {
             const hash = storage.storeJoinChannelBlock(mockJoinBlock);
-            expect(storage.latestBlockHash).to.equal(hash);
+            expect(storage.getLatestJoinChannelBlockHash()).to.equal(hash);
 
             // Store another block
             const newBlock = factory.joinChannelBlock();
             const newHash = storage.storeJoinChannelBlock(newBlock);
-            expect(storage.latestBlockHash).to.equal(newHash);
+            expect(storage.getLatestJoinChannelBlockHash()).to.equal(newHash);
         });
     });
 
@@ -79,17 +79,19 @@ describe("JoinChannelBlockStorage", () => {
         });
 
         it("should get latest block", () => {
-            expect(storage.latestBlock).to.equal(mockJoinBlock);
+            expect(storage.getLatestJoinChannelBlock()).to.equal(mockJoinBlock);
         });
 
         it("should get latest block hash", () => {
-            expect(storage.latestBlockHash).to.equal(mockBlockHash);
+            expect(storage.getLatestJoinChannelBlockHash()).to.equal(
+                mockBlockHash
+            );
         });
     });
 
     describe("Total Deposits", () => {
         it("should initialize with zero balance", () => {
-            expect(storage.totalDeposits).to.deep.equal({
+            expect(storage.getTotalDeposits()).to.deep.equal({
                 amount: BigInt(0),
                 data: "0x"
             });
@@ -100,8 +102,8 @@ describe("JoinChannelBlockStorage", () => {
                 amount: BigInt(1000),
                 data: "0x1234"
             };
-            storage.totalDeposits = newBalance;
-            expect(storage.totalDeposits).to.deep.equal(newBalance);
+            storage.setTotalDeposits(newBalance);
+            expect(storage.getTotalDeposits()).to.deep.equal(newBalance);
         });
     });
 });

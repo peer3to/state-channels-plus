@@ -53,12 +53,12 @@ describe("ExitChannelStorage", () => {
 
         it("should update latest block hash", () => {
             const hash = storage.storeExitChannelBlock(mockExitBlock);
-            expect(storage.latestBlockHash).to.equal(hash);
+            expect(storage.getLatestExitChannelBlockHash()).to.equal(hash);
 
             // Store another block
             const newBlock = factory.exitChannelBlock();
             const newHash = storage.storeExitChannelBlock(newBlock);
-            expect(storage.latestBlockHash).to.equal(newHash);
+            expect(storage.getLatestExitChannelBlockHash()).to.equal(newHash);
         });
     });
 
@@ -79,17 +79,19 @@ describe("ExitChannelStorage", () => {
         });
 
         it("should get latest block", () => {
-            expect(storage.latestBlock).to.equal(mockExitBlock);
+            expect(storage.getLatestExitChannelBlock()).to.equal(mockExitBlock);
         });
 
         it("should get latest block hash", () => {
-            expect(storage.latestBlockHash).to.equal(mockBlockHash);
+            expect(storage.getLatestExitChannelBlockHash()).to.equal(
+                mockBlockHash
+            );
         });
     });
 
     describe("Total Withdrawals", () => {
         it("should initialize with zero balance", () => {
-            expect(storage.totalWithdrawals).to.deep.equal({
+            expect(storage.getTotalWithdrawals()).to.deep.equal({
                 amount: BigInt(0),
                 data: "0x"
             });
@@ -100,8 +102,8 @@ describe("ExitChannelStorage", () => {
                 amount: BigInt(1000),
                 data: "0x1234"
             };
-            storage.totalWithdrawals = newBalance;
-            expect(storage.totalWithdrawals).to.deep.equal(newBalance);
+            storage.setTotalWithdrawals(newBalance);
+            expect(storage.getTotalWithdrawals()).to.deep.equal(newBalance);
         });
     });
 });
