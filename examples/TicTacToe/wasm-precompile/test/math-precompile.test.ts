@@ -1,9 +1,9 @@
 import { expect } from "chai";
-import { createEVM } from "@/evm";
+import { createEVM } from "../src/evm/create";
 import {
-    MATH_PRECOMPILE_ADDRESS,
-    createMathPrecompile
-} from "@/evm/precompiles";
+    CALCULATOR_PRECOMPILE_ADDRESS,
+    createCalculatorPrecompile
+} from "../src/precompiles/calculator-precompile";
 import { randomInt } from "crypto";
 import { EVM } from "@ethereumjs/evm";
 
@@ -17,8 +17,8 @@ describe("Math Precompile", () => {
     let evm: EVM;
 
     before(async () => {
-        const mathPrecompile = await createMathPrecompile();
-        evm = await createEVM([mathPrecompile]);
+        const calculatorPrecompile = await createCalculatorPrecompile();
+        evm = await createEVM([calculatorPrecompile]);
     });
 
     function createInputData(
@@ -53,7 +53,7 @@ describe("Math Precompile", () => {
             const {
                 execResult: { returnValue }
             } = await evm.runCall({
-                to: MATH_PRECOMPILE_ADDRESS,
+                to: CALCULATOR_PRECOMPILE_ADDRESS,
                 data: inputData
             });
 
@@ -70,7 +70,7 @@ describe("Math Precompile", () => {
             const {
                 execResult: { returnValue }
             } = await evm.runCall({
-                to: MATH_PRECOMPILE_ADDRESS,
+                to: CALCULATOR_PRECOMPILE_ADDRESS,
                 data: inputData
             });
 
@@ -89,7 +89,7 @@ describe("Math Precompile", () => {
             const {
                 execResult: { returnValue }
             } = await evm.runCall({
-                to: MATH_PRECOMPILE_ADDRESS,
+                to: CALCULATOR_PRECOMPILE_ADDRESS,
                 data: inputData
             });
 
@@ -108,7 +108,7 @@ describe("Math Precompile", () => {
             const {
                 execResult: { returnValue }
             } = await evm.runCall({
-                to: MATH_PRECOMPILE_ADDRESS,
+                to: CALCULATOR_PRECOMPILE_ADDRESS,
                 data: inputData
             });
 
@@ -121,7 +121,7 @@ describe("Math Precompile", () => {
             const {
                 execResult: { returnValue }
             } = await evm.runCall({
-                to: MATH_PRECOMPILE_ADDRESS,
+                to: CALCULATOR_PRECOMPILE_ADDRESS,
                 data: inputData
             });
 
@@ -136,7 +136,7 @@ describe("Math Precompile", () => {
             const {
                 execResult: { returnValue }
             } = await evm.runCall({
-                to: MATH_PRECOMPILE_ADDRESS,
+                to: CALCULATOR_PRECOMPILE_ADDRESS,
                 data: inputData
             });
 
@@ -149,7 +149,7 @@ describe("Math Precompile", () => {
             const {
                 execResult: { returnValue }
             } = await evm.runCall({
-                to: MATH_PRECOMPILE_ADDRESS,
+                to: CALCULATOR_PRECOMPILE_ADDRESS,
                 data: invalidData
             });
 
