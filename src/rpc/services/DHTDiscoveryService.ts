@@ -1,4 +1,4 @@
-import { AddressLike, BytesLike } from "ethers";
+import { Address, ChannelId } from "@/types/types";
 import { ARpcService, MainRpcService } from "@/rpc";
 
 class DHTDiscoveryService extends ARpcService {
@@ -21,8 +21,8 @@ class DHTDiscoveryService extends ARpcService {
     }
 
     public async onCanJoinLeaderResponse(
-        channelId: BytesLike,
-        participants: AddressLike[]
+        channelId: ChannelId,
+        participants: Address[]
     ) {
         // //TODO! reuqire init handshake
         // let amILeader = this.p2pManager.p2pSigner.getIsLeader();

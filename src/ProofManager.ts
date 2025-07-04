@@ -1,11 +1,11 @@
-import { ethers, AddressLike, BigNumberish, BytesLike } from "ethers";
+import { ethers } from "ethers";
 import * as dt from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { getEthersTypeForDisputeProof, FraudProofType } from "@/types/disputes";
 import { Codec } from "@/utils";
 import Clock from "@/Clock";
 import AgreementManager from "@/agreementManager";
-import { ForkId } from "./types/types";
+import { Address, BlockHeight, Bytes, ForkId } from "./types/types";
 import { Block } from "./models";
 
 class ProofManager {
@@ -31,7 +31,7 @@ class ProofManager {
 
     public static decodeProof(
         proofType: FraudProofType,
-        encodedProof: BytesLike
+        encodedProof: Bytes
     ): any {
         const proofDecoded = ethers.AbiCoder.defaultAbiCoder().decode(
             [getEthersTypeForDisputeProof(proofType)],
@@ -44,7 +44,7 @@ class ProofManager {
 
     public createFoldRechallengeProof(
         forkId: ForkId,
-        transactionCnt: BigNumberish
+        transactionCnt: BlockHeight
     ): dt.ProofStruct | undefined {
         const block = this.agreementManager.getBlock(
             forkId,
@@ -56,9 +56,7 @@ class ProofManager {
 
         const foldRechallengeProofStruct: dt.FoldRechallengeProofStruct = {
             encodedBlock: block.encode(),
-            signatures: this.agreementManager.getSigantures(
-                block
-            ) as BytesLike[]
+            signatures: this.agreementManager.getSigantures(block)
         };
 
         return {
@@ -133,8 +131,8 @@ class ProofManager {
 
     public createNewerStateProof(
         forkId: ForkId,
-        participantAdr: AddressLike,
-        currentTransactionCnt: number
+        participantAdr: Address,
+        currentTransactionCnt: BlockHeight
     ): dt.ProofStruct | undefined {
         // Get the latest block signed by the participant
         const signedBlock =
@@ -156,7 +154,7 @@ class ProofManager {
         // Create the proof struct using the newer state
         const newerStateProofStruct: dt.NewerStateProofStruct = {
             encodedBlock: signedBlock.block.encode(),
-            confirmationSignature: signedBlock.signature as string
+            confirmationSignature: signedBlock.signature
         };
 
         // Return the complete proof
@@ -171,7 +169,7 @@ class ProofManager {
 
     // TODO - think more about this
     public static createFoldPriorBlockProof(
-        transactionCnt: number
+        transactionCnt: BlockHeight
     ): dt.ProofStruct {
         return {
             proofType: FraudProofType.FoldPriorBlock,
@@ -360,7 +358,7 @@ class ProofManager {
     private createRegularBlockIncorrectDataProof(
         incorrectBlockSigned: SignedBlockStruct,
         forkId: ForkId,
-        transactionCnt: number
+        transactionCnt: BlockHeight
     ): dt.IncorrectDataProofStruct {
         // For non-genesis blocks, we need to reference the prior block
         const priorBlock = this.agreementManager.getBlock(
@@ -398,7 +396,7 @@ class ProofManager {
             block1: incorrectBlockSigned,
             block2: {
                 encodedBlock: priorBlock.encode(),
-                signature: priorBlockOriginalSignature as string
+                signature: priorBlockOriginalSignature
             },
             encodedState: priorEncodedState
         };

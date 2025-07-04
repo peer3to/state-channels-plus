@@ -1,4 +1,3 @@
-import { BytesLike } from "ethers";
 import {
     SignedBlockStruct,
     SignedDisputeStruct
@@ -6,6 +5,7 @@ import {
 import { ExecutionFlags } from "@/types";
 import { ARpcService, MainRpcService } from "@/rpc";
 import { retry } from "@/utils/retry";
+import { Signature } from "@/types/types";
 
 class StateTransitionService extends ARpcService {
     constructor(mainRpcService: MainRpcService) {
@@ -31,7 +31,7 @@ class StateTransitionService extends ARpcService {
 
     public async onBlockConfirmation(
         originalSignedBlock: SignedBlockStruct,
-        confirmationSignature: BytesLike
+        confirmationSignature: Signature
     ) {
         let flag =
             await this.mainRpcService.p2pManager.stateManager.onBlockConfirmation(

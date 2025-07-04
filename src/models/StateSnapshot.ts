@@ -1,12 +1,11 @@
-import { BytesLike } from "ethers";
+import { ethers } from "ethers";
 import {
     StateSnapshotStruct,
     StateSnapshotStructOutput
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Codec, Type } from "../utils/Codec";
 
-import { ethers } from "hardhat";
-import { Hash } from "@/types/types";
+import { Bytes, Hash } from "@/types/types";
 
 export default class StateSnapshot {
     private constructor(private readonly snapshot: StateSnapshotStruct) {}
@@ -19,7 +18,7 @@ export default class StateSnapshot {
         return new StateSnapshot(snapshot);
     }
 
-    static decode(encoded: BytesLike): StateSnapshot {
+    static decode(encoded: Bytes): StateSnapshot {
         const snapshot = Codec.decode(encoded, Type.StateSnapshot);
         return StateSnapshot.from(snapshot);
     }
@@ -28,7 +27,7 @@ export default class StateSnapshot {
         return this.snapshot;
     }
 
-    encode(): string {
+    encode(): Bytes {
         return Codec.encode(this.snapshot, Type.StateSnapshot);
     }
 

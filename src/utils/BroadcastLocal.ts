@@ -1,12 +1,9 @@
-import { AddressLike } from "ethers";
 import IOnMessage from "@/IOnMessage";
+import { Address } from "@/types/types";
 class BroadcastLocal {
     private static instance: BroadcastLocal;
 
-    private map: Map<AddressLike, IOnMessage> = new Map<
-        AddressLike,
-        IOnMessage
-    >();
+    private map: Map<Address, IOnMessage> = new Map<Address, IOnMessage>();
 
     private constructor() {}
 
@@ -17,7 +14,7 @@ class BroadcastLocal {
         return BroadcastLocal.instance;
     }
 
-    public register(address: AddressLike, listener: IOnMessage) {
+    public register(address: Address, listener: IOnMessage) {
         this.map.set(address, listener);
     }
 

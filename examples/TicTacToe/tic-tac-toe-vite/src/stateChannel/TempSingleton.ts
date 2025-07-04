@@ -3,8 +3,7 @@ import {
     Clock,
     P2pSigner,
     AStateChannelManagerProxy,
-    EvmUtils,
-    P2pEventHooks
+    SignatureUtils
 } from "@peer3/state-channels-plus";
 import { Signer } from "ethers";
 import {
@@ -80,11 +79,14 @@ class TempSingleton {
             deadlineTimestamp: Clock.getTimeInSeconds() + 120,
             data: "0x00"
         };
-        let signedJoinChannel = await EvmUtils.signJoinChannel(
+        let { encoded, signature } = await SignatureUtils.signJoinChannel(
             this.joinChanel,
             this.signer
         );
-
+        let signedJoinChannel = {
+            encodedJoinChannel: encoded,
+            signature
+        };
         let contracts = await getDltContracts(this.signer);
         let p2p = await p2pSetup(
             contracts.TicTacToeStateChannelManagerInstance,
