@@ -17,7 +17,7 @@ import AStateMachine from "@/AStateMachine";
 import { Clock } from "..";
 import ProofManager from "@/ProofManager";
 import { ForkId } from "@/types/types";
-import { Block } from "@/Block";
+import { Block } from "@/models";
 
 interface ValidationResult {
     success: boolean;

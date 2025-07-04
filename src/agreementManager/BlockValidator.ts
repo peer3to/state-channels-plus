@@ -7,7 +7,7 @@ import ForkService from "./ForkService";
 import QueueService from "./QueueService";
 import OnChainTracker from "./OnChainTracker";
 import { ForkId } from "@/types/types";
-import { Block } from "@/Block";
+import { Block } from "@/models";
 
 export default class BlockValidator {
     constructor(

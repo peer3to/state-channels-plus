@@ -5,7 +5,7 @@ import { AgreementFlag } from "@/types";
 import ForkService from "./ForkService";
 import QueueService from "./QueueService";
 import { ForkId } from "@/types/types";
-import { Block } from "@/Block";
+import { Block } from "@/models";
 
 export type BlockChecker = (sb: SignedBlockStruct) => AgreementFlag;
 

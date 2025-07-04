@@ -9,7 +9,7 @@ import {
 
 import { SignatureUtils } from "./SignatureUtils";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { Block } from "@/Block";
+import { Block } from "@/models";
 
 export class EvmUtils {
     public static async signTransaction(

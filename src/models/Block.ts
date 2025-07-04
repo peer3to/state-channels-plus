@@ -1,6 +1,6 @@
 import { BytesLike, SignatureLike, Signer, ethers } from "ethers";
 import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Codec, Type } from "./utils/Codec";
+import { Codec, Type } from "../utils/Codec";
 import {
     ForkId,
     BlockHeight,
@@ -12,7 +12,7 @@ import {
 } from "@/types/types";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
-export class Block {
+export default class Block {
     private constructor(private readonly block: BlockStruct) {}
 
     static from(block: BlockStruct): Block {

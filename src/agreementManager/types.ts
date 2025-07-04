@@ -1,6 +1,6 @@
 import { AddressLike, SignatureLike } from "ethers";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Block } from "@/Block";
+import { Block } from "@/models";
 // A fork is created by a DLT by disputing someone or asking the DLT to enforce a state.
 // The user initiating the process submits:
 // 1) Last known state with full threshold signatures

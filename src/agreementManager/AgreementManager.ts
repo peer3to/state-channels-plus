@@ -13,7 +13,7 @@ import QueueService from "./QueueService";
 import OnChainTracker from "./OnChainTracker";
 import BlockValidator from "./BlockValidator";
 import { Address, ForkId } from "@/types/types";
-import { Block } from "@/Block";
+import { Block } from "@/models";
 
 class AgreementManager {
     forks = new ForkService();

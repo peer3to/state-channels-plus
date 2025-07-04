@@ -1,7 +1,7 @@
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { BlockConfirmation } from "./types";
 import { BytesLike } from "ethers";
-import { Block } from "@/Block";
+import { Block } from "@/models";
 
 type forkId = BytesLike;
 type Height = number;

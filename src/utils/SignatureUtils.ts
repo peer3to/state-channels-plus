@@ -4,7 +4,7 @@ import {
     TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { Block } from "@/Block";
+import { Block } from "@/models";
 import { Codec, Type } from "./Codec";
 
 export class SignatureUtils {

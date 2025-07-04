@@ -18,7 +18,7 @@ import { DisputeStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import P2PManager from "@/P2PManager";
 import { EvmUtils, Codec, Type } from "@/utils";
-import { Block } from "@/Block";
+import { Block } from "@/models";
 
 class P2pSigner implements Signer {
     signer: Signer;

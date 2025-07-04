@@ -34,7 +34,7 @@ import {
     getActiveParticipants
 } from "@/utils";
 import StateChannelEventListener from "@/StateChannelEventListener";
-import { Block } from "@/Block";
+import { Block } from "@/models";
 
 import P2pEventHooks from "@/P2pEventHooks";
 import {
