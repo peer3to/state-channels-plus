@@ -4,7 +4,7 @@ import { Codec, Type } from "../utils/Codec";
 import {
     ForkId,
     BlockHeight,
-    BlockTimestamp,
+    Timestamp,
     Address,
     ChannelId,
     Hash,
@@ -51,7 +51,7 @@ export default class Block {
         return this.block.transaction.header.forkId as ForkId;
     }
 
-    get timestamp(): BlockTimestamp {
+    get timestamp(): Timestamp {
         return Number(this.block.transaction.header.timestamp);
     }
 
