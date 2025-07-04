@@ -2,10 +2,11 @@ import { ethers, AddressLike, BigNumberish, BytesLike } from "ethers";
 import * as dt from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { getEthersTypeForDisputeProof, FraudProofType } from "@/types/disputes";
-import { Codec, Type } from "@/utils";
+import { Codec } from "@/utils";
 import Clock from "@/Clock";
 import AgreementManager from "@/agreementManager";
 import { ForkId } from "./types/types";
+import { Block } from "./models";
 
 class ProofManager {
     readonly agreementManager: AgreementManager;
@@ -54,7 +55,7 @@ class ProofManager {
             return undefined;
 
         const foldRechallengeProofStruct: dt.FoldRechallengeProofStruct = {
-            encodedBlock: Codec.encode(block, Type.Block),
+            encodedBlock: block.encode(),
             signatures: this.agreementManager.getSigantures(
                 block
             ) as BytesLike[]
@@ -106,26 +107,19 @@ class ProofManager {
     public createIncorrectDataProof(
         incorrectBlockSigned: SignedBlockStruct
     ): dt.ProofStruct {
-        const incorrectBlock = Codec.decode(
-            incorrectBlockSigned.encodedBlock,
-            Type.Block
-        );
-        const forkId = incorrectBlock.transaction.header.forkId;
-        const transactionCnt = Number(
-            incorrectBlock.transaction.header.transactionCnt
-        );
+        const incorrectBlock = Block.decode(incorrectBlockSigned.encodedBlock);
 
-        const isGenesisBlock = transactionCnt <= 0;
+        const isGenesisBlock = incorrectBlock.height <= 0;
 
         const incorrectDataProofStruct = isGenesisBlock
             ? this.createGenesisBlockIncorrectDataProof(
                   incorrectBlockSigned,
-                  forkId
+                  incorrectBlock.forkId
               )
             : this.createRegularBlockIncorrectDataProof(
                   incorrectBlockSigned,
-                  forkId,
-                  transactionCnt
+                  incorrectBlock.forkId,
+                  incorrectBlock.height
               );
 
         return {
@@ -161,7 +155,7 @@ class ProofManager {
 
         // Create the proof struct using the newer state
         const newerStateProofStruct: dt.NewerStateProofStruct = {
-            encodedBlock: Codec.encode(signedBlock.block, Type.Block),
+            encodedBlock: signedBlock.block.encode(),
             confirmationSignature: signedBlock.signature as string
         };
 
@@ -219,16 +213,10 @@ class ProofManager {
             proof.encodedProof
         ) as dt.FoldRechallengeProofStruct;
 
-        const block = Codec.decode(
-            foldRechallengeProof.encodedBlock,
-            Type.Block
-        );
+        const block = Block.decode(foldRechallengeProof.encodedBlock);
         const sameTransactionCnt =
-            Number(block.transaction.header.transactionCnt) ===
-            dispute.foldedTransactionCnt;
-        const sameParticipant =
-            block.transaction.header.participant ===
-            dispute.timedoutParticipant;
+            block.height === dispute.foldedTransactionCnt;
+        const sameParticipant = block.author === dispute.timedoutParticipant;
 
         return sameTransactionCnt && sameParticipant;
     }
@@ -243,13 +231,8 @@ class ProofManager {
         ) as dt.DoubleSignProofStruct;
 
         return doubleSignProof.doubleSigns.some((doubleSign) => {
-            const block1 = Codec.decode(
-                doubleSign.block1.encodedBlock,
-                Type.Block
-            );
-            return !dispute.slashedParticipants.includes(
-                block1.transaction.header.participant
-            );
+            const block1 = Block.decode(doubleSign.block1.encodedBlock);
+            return !dispute.slashedParticipants.includes(block1.author);
         });
     }
 
@@ -262,14 +245,9 @@ class ProofManager {
             proof.encodedProof
         ) as dt.IncorrectDataProofStruct;
 
-        const block2 = Codec.decode(
-            incorrectDataProof.block2.encodedBlock,
-            Type.Block
-        );
+        const block2 = Block.decode(incorrectDataProof.block2.encodedBlock);
 
-        return !dispute.slashedParticipants.includes(
-            block2.transaction.header.participant
-        );
+        return !dispute.slashedParticipants.includes(block2.author);
     }
 
     public static isNewerStateValid(
@@ -281,30 +259,19 @@ class ProofManager {
             proof.encodedProof
         ) as dt.NewerStateProofStruct;
 
-        const block = Codec.decode(newerStateProof.encodedBlock, Type.Block);
+        const block = Block.decode(newerStateProof.encodedBlock);
 
         if (dispute.virtualVotingBlocks.length === 0) return false;
 
-        const latestBlock = Codec.decode(
+        const latestBlock = Block.decode(
             dispute.virtualVotingBlocks[dispute.virtualVotingBlocks.length - 1]
-                .encodedBlock,
-            Type.Block
-        );
-
-        const latestTransactionCnt = Number(
-            latestBlock.transaction.header.transactionCnt
-        );
-        const currentTransactionCnt = Number(
-            block.transaction.header.transactionCnt
+                .encodedBlock
         );
 
         return (
-            !dispute.slashedParticipants.includes(
-                block.transaction.header.participant
-            ) &&
-            block.transaction.header.participant ===
-                dispute.postedStateDisputer &&
-            currentTransactionCnt > latestTransactionCnt
+            !dispute.slashedParticipants.includes(block.author) &&
+            block.author === dispute.postedStateDisputer &&
+            block.height > latestBlock.height
         );
     }
 
@@ -332,17 +299,13 @@ class ProofManager {
             proof.encodedProof
         ) as dt.BlockTooFarInFutureProofStruct;
 
-        const block = Codec.decode(
-            blockTooFarInFutureProof.block1.encodedBlock,
-            Type.Block
+        const block = Block.decode(
+            blockTooFarInFutureProof.block1.encodedBlock
         );
-        const blockTimestamp = Number(block.transaction.header.timestamp);
 
         return (
-            blockTimestamp > Clock.getTimeInSeconds() &&
-            !dispute.slashedParticipants.includes(
-                block.transaction.header.participant
-            )
+            block.timestamp > Clock.getTimeInSeconds() &&
+            !dispute.slashedParticipants.includes(block.author)
         );
     }
 
@@ -434,7 +397,7 @@ class ProofManager {
         return {
             block1: incorrectBlockSigned,
             block2: {
-                encodedBlock: Codec.encode(priorBlock, Type.Block),
+                encodedBlock: priorBlock.encode(),
                 signature: priorBlockOriginalSignature as string
             },
             encodedState: priorEncodedState
