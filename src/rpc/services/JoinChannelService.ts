@@ -4,13 +4,13 @@ import {
     SignedJoinChannelStruct,
     JoinChannelStruct,
     MilestoneProofStruct,
-    StateSnapshotStruct,
     ExitChannelBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Codec, EvmUtils, SignatureCollectionMap, Type } from "@/utils";
 import Clock from "@/Clock";
 import { getActiveParticipants } from "@/utils/participantUtils";
 import { BytesLike } from "ethers";
+import { StateSnapshot } from "@/models";
 
 enum ValidationFlag {
     VALID,
@@ -232,7 +232,7 @@ class JoinChannelService extends ARpcService {
      */
     private async prepareStateSnapshotData(): Promise<{
         milestoneProofs: MilestoneProofStruct[];
-        milestoneSnapshots: StateSnapshotStruct[];
+        milestoneSnapshots: StateSnapshot[];
         exitChannelBlocks: ExitChannelBlockStruct[];
     }> {
         // TODO: Implement actual logic
@@ -252,20 +252,23 @@ class JoinChannelService extends ARpcService {
     private async getPreviousJoinChannelBlockHash(
         channelId: BytesLike,
         needsStateSnapshotSubmission: boolean,
-        milestoneSnapshots: StateSnapshotStruct[]
+        milestoneSnapshots: StateSnapshot[]
     ): Promise<string> {
         if (needsStateSnapshotSubmission) {
             // We have milestone snapshots, use the latest one
             const latestSnapshot =
                 milestoneSnapshots[milestoneSnapshots.length - 1];
-            return latestSnapshot.latestJoinChannelBlockHash as string;
+            return latestSnapshot.latestJoinBlockHash;
         } else {
             // Read from chain
             const scmContract =
                 this.mainRpcService.p2pManager.stateManager
                     .stateChannelManagerContract;
-            const stateSnapshot = await scmContract.getStateSnapshot(channelId);
-            return stateSnapshot.latestJoinChannelBlockHash as string;
+            const stateSnapshot = StateSnapshot.from(
+                await scmContract.getStateSnapshot(channelId)
+            );
+
+            return stateSnapshot.latestJoinBlockHash;
         }
     }
 
@@ -281,7 +284,7 @@ class JoinChannelService extends ARpcService {
         const needsStateSnapshotSubmission =
             await this.needsStateSnapshotSubmission(joinChannel.channelId);
 
-        let milestoneSnapshots: StateSnapshotStruct[] = [];
+        let milestoneSnapshots: StateSnapshot[] = [];
 
         // 2. If state snapshot submission is needed, prepare and submit
         if (needsStateSnapshotSubmission) {

@@ -1,7 +1,6 @@
 import {
     TransactionStruct,
     SignedBlockStruct,
-    StateSnapshotStruct,
     MilestoneProofStruct,
     ExitChannelBlockStruct,
     DisputeProofStruct,
@@ -34,7 +33,7 @@ import {
     getActiveParticipants
 } from "@/utils";
 import StateChannelEventListener from "@/StateChannelEventListener";
-import { Block } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 
 import P2pEventHooks from "@/P2pEventHooks";
 import {
@@ -49,7 +48,8 @@ import ValidationService from "./ValidationService";
 import { Codec, Type } from "@/utils/Codec";
 import { SignatureUtils } from "@/utils/SignatureUtils";
 import { IStorageModule, StorageModule } from "@/storage";
-import { ForkId } from "@/types/types";
+import { ForkId, Hash } from "@/types/types";
+import { StateSnapshotStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 let DEBUG_STATE_MANAGER = false;
 class StateManager {
@@ -77,7 +77,7 @@ class StateManager {
     } | null = null;
 
     // Store output state snapshots data
-    private readonly outputStateSnapshotData: Map<string, StateSnapshotStruct> =
+    private readonly outputStateSnapshotData: Map<string, StateSnapshot> =
         new Map();
 
     constructor(
@@ -429,7 +429,7 @@ class StateManager {
 
     public async postStateSnapshot(
         milestoneProofs: MilestoneProofStruct[],
-        milestoneSnapshots: StateSnapshotStruct[],
+        milestoneSnapshots: StateSnapshot[],
         exitChannelBlocks: ExitChannelBlockStruct[] = []
     ) {
         // Get on-chain state
@@ -713,7 +713,7 @@ class StateManager {
     private async createStateSnapshot(
         stateMachineStateHash: string,
         forkId: ForkId
-    ): Promise<StateSnapshotStruct> {
+    ): Promise<StateSnapshot> {
         const participants = await this.stateMachine.getParticipants();
 
         const latestJoinChannelBlockHash =
@@ -723,21 +723,26 @@ class StateManager {
         const totalDeposits = this.storageModule.getTotalDeposits();
         const totalWithdrawals = this.storageModule.getTotalWithdrawals();
 
-        return {
-            stateMachineStateHash: stateMachineStateHash as BytesLike,
-            participants,
+        const snapshotData: StateSnapshotStruct = {
             forkId,
-            latestJoinChannelBlockHash: latestJoinChannelBlockHash as BytesLike,
-            latestExitChannelBlockHash: latestExitChannelBlockHash as BytesLike,
-            totalDeposits: {
-                amount: totalDeposits.amount,
-                data: totalDeposits.data as BytesLike
-            },
-            totalWithdrawals: {
-                amount: totalWithdrawals.amount,
-                data: totalWithdrawals.data as BytesLike
+            timestamp: Clock.getTimeInSeconds(),
+            snapshotData: {
+                stateMachineStateHash: stateMachineStateHash as Hash,
+                participants,
+                latestJoinChannelBlockHash: latestJoinChannelBlockHash as Hash,
+                latestExitChannelBlockHash: latestExitChannelBlockHash as Hash,
+                totalDeposits: {
+                    amount: totalDeposits.amount,
+                    data: totalDeposits.data as BytesLike
+                },
+                totalWithdrawals: {
+                    amount: totalWithdrawals.amount,
+                    data: totalWithdrawals.data as BytesLike
+                }
             }
         };
+
+        return StateSnapshot.from(snapshotData);
     }
 
     private async createBlock(
@@ -757,9 +762,7 @@ class StateManager {
             forkId
         );
 
-        const stateSnapshotHash = ethers.keccak256(
-            Codec.encode(stateSnapshot, Type.StateSnapshot)
-        );
+        const stateSnapshotHash = stateSnapshot.hash;
 
         return Block.from({
             transaction: tx,
@@ -800,7 +803,7 @@ class StateManager {
     }
 
     public onOutputStateSnapshotVerified(
-        outputStateSnapshot: StateSnapshotStruct,
+        outputStateSnapshot: StateSnapshot,
         commitment: string
     ) {
         this.outputStateSnapshotData.set(commitment, outputStateSnapshot);
