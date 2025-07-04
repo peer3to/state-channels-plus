@@ -6,10 +6,11 @@ import {
     DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { DebugProxy, retry, Codec, Type } from "@/utils";
+import { DebugProxy, retry } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ProofManager from "./ProofManager";
 import { ForkId } from "./types/types";
+import { Block } from "./models";
 
 let DEBUG_DISPUTE_HANDLER = true;
 
@@ -76,12 +77,9 @@ class DisputeHandler {
     ): Promise<void> {
         const proof =
             this.proofManager.createDoubleSignProof(conflictingBlocks);
-        const _firstBlock = Codec.decode(
-            conflictingBlocks[0].encodedBlock,
-            Type.Block
-        );
+        const _firstBlock = Block.decode(conflictingBlocks[0].encodedBlock);
         return this.createDispute(
-            _firstBlock.transaction.header.forkId,
+            _firstBlock.forkId,
             NO_PARTICIPANT_TO_FOLD,
             INITIAL_TRANSACTION_COUNT,
             [proof]
@@ -93,12 +91,9 @@ class DisputeHandler {
     ): Promise<void> {
         const proof =
             this.proofManager.createIncorrectDataProof(incorrectBlockSigned);
-        const _block = Codec.decode(
-            incorrectBlockSigned.encodedBlock,
-            Type.Block
-        );
+        const _block = Block.decode(incorrectBlockSigned.encodedBlock);
         return this.createDispute(
-            _block.transaction.header.forkId,
+            _block.forkId,
             NO_PARTICIPANT_TO_FOLD,
             INITIAL_TRANSACTION_COUNT,
             [proof]
@@ -122,9 +117,9 @@ class DisputeHandler {
         BlockSigned: SignedBlockStruct
     ): Promise<void> {
         const proof = ProofManager.createBlockTooFarInFutureProof(BlockSigned);
-        const block = Codec.decode(BlockSigned.encodedBlock, Type.Block);
+        const block = Block.decode(BlockSigned.encodedBlock);
         return this.createDispute(
-            block.transaction.header.forkId,
+            block.forkId,
             NO_PARTICIPANT_TO_FOLD,
             INITIAL_TRANSACTION_COUNT,
             [proof]
@@ -328,11 +323,10 @@ class DisputeHandler {
         if (dispute.virtualVotingBlocks.length === 0) return 0;
 
         // Extract from the last block
-        const lastBlock = Codec.decode(
-            dispute.virtualVotingBlocks.at(-1)!.encodedBlock,
-            Type.Block
+        const lastBlock = Block.decode(
+            dispute.virtualVotingBlocks.at(-1)!.encodedBlock
         );
-        return Number(lastBlock.transaction.header.transactionCnt);
+        return lastBlock.height;
     }
 
     // Filters valid proofs
