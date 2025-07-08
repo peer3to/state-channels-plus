@@ -3,15 +3,13 @@ import {
     BlockConfirmationStruct,
     ExitChannelBlockStruct,
     JoinChannelBlockStruct,
-    SignedBlockStruct,
-    BlockStruct
+    SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { BlockStorage } from "./BlockStorage";
 import { JoinChannelBlockStorage } from "./JoinChannelBlockStorage";
 import { ExitChannelBlockStorage } from "./ExitChannelBlockStorage";
 import { StateSnapshotStorage } from "./StateSnapshotStorage";
-import { Codec } from "@/utils";
-import { Type } from "@/utils";
+
 import { Hash, BlockHeight, ForkId } from "@/types/types";
 
 export class Storage {

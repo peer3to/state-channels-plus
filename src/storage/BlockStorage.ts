@@ -3,10 +3,9 @@ import {
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Hash, ForkId, BlockHeight } from "@/types/types";
-import { Codec, Type, BlockUtils } from "@/utils";
 import { ethers } from "ethers";
+import { Block, BlockCoordinates } from "@/models";
 
-type ForkCoordinates = [ForkId, BlockHeight];
 type CoordinateKey = string;
 
 export class BlockStorage {
@@ -68,10 +67,10 @@ export class BlockStorage {
         if (this.isBlockConfirmation(blockData)) {
             // ┌─ ROUTES TO: [OVERLOAD 3] or [OVERLOAD 4]
             return hasKeys
-                ? this.storeBlockConfirmationWithKeys(blockData, blockHash, [
+                ? this.storeBlockConfirmationWithKeys(blockData, blockHash, {
                       forkId,
                       height
-                  ])
+                  })
                 : this.storeBlockConfirmation(blockData);
         } else {
             // ┌─ ROUTES TO: [OVERLOAD 1] or [OVERLOAD 2]
@@ -85,7 +84,7 @@ export class BlockStorage {
                 ? this.storeBlockConfirmationWithKeys(
                       blockConfirmation,
                       blockHash,
-                      [forkId, height]
+                      { forkId, height }
                   )
                 : this.storeBlockConfirmation(blockConfirmation);
         }
@@ -120,10 +119,10 @@ export class BlockStorage {
             return this.hashToBlockMap.get(hashOrForkId as Hash);
         }
         // ┌─ ROUTES TO: [OVERLOAD 2] - by coordinates
-        const coordinateKey = this.coordinatesToKey([
-            hashOrForkId as ForkId,
+        const coordinateKey = this.coordinatesToKey({
+            forkId: hashOrForkId as ForkId,
             height
-        ]);
+        });
         return this.coordinatesToBlockMap.get(coordinateKey);
     }
 
@@ -160,7 +159,10 @@ export class BlockStorage {
             height === undefined
                 ? this.hashToBlockMap.get(hashOrForkId as Hash)
                 : this.coordinatesToBlockMap.get(
-                      this.coordinatesToKey([hashOrForkId as ForkId, height])
+                      this.coordinatesToKey({
+                          forkId: hashOrForkId as ForkId,
+                          height
+                      })
                   );
 
         if (blockConfirmation) {
@@ -196,12 +198,10 @@ export class BlockStorage {
             if (!blockConfirmation) return false;
 
             // Need to find and delete from coordinates map too
-            const block = Codec.decode(
-                blockConfirmation.signedBlock.encodedBlock,
-                Type.Block
+            const block = Block.decode(
+                blockConfirmation.signedBlock.encodedBlock
             );
-            const { forkId, height } = BlockUtils.getCoordinates(block);
-            const coordinateKey = this.coordinatesToKey([forkId, height]);
+            const coordinateKey = this.coordinatesToKey(block.coordinates);
 
             this.hashToBlockMap.delete(hashOrForkId as Hash);
             this.coordinatesToBlockMap.delete(coordinateKey);
@@ -209,10 +209,10 @@ export class BlockStorage {
         }
 
         // ┌─ ROUTES TO: [OVERLOAD 2] - delete by coordinates
-        const coordinateKey = this.coordinatesToKey([
-            hashOrForkId as ForkId,
+        const coordinateKey = this.coordinatesToKey({
+            forkId: hashOrForkId as ForkId,
             height
-        ]);
+        });
         const blockConfirmation = this.coordinatesToBlockMap.get(coordinateKey);
         if (!blockConfirmation) return false;
 
@@ -230,9 +230,8 @@ export class BlockStorage {
     // PRIVATE HELPERS
     // ====================================
 
-    private coordinatesToKey(coordinates: ForkCoordinates): CoordinateKey {
-        const [forkId, height] = coordinates;
-        return `${forkId}:${height}`;
+    private coordinatesToKey(coordinates: BlockCoordinates): CoordinateKey {
+        return `${coordinates.forkId}:${coordinates.height}`;
     }
 
     private storeBlockConfirmation(
@@ -241,23 +240,19 @@ export class BlockStorage {
         const blockHash = ethers.keccak256(
             blockConfirmation.signedBlock.encodedBlock
         );
-        const block = Codec.decode(
-            blockConfirmation.signedBlock.encodedBlock,
-            Type.Block
-        );
-        const { forkId, height } = BlockUtils.getCoordinates(block);
+        const block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
 
         return this.storeBlockConfirmationWithKeys(
             blockConfirmation,
             blockHash,
-            [forkId, height]
+            block.coordinates
         );
     }
 
     private storeBlockConfirmationWithKeys(
         blockConfirmation: BlockConfirmationStruct,
         blockHash: Hash,
-        coordinates: ForkCoordinates
+        coordinates: BlockCoordinates
     ): Hash {
         const coordinateKey = this.coordinatesToKey(coordinates);
 
@@ -267,7 +262,7 @@ export class BlockStorage {
         }
         if (this.coordinatesToBlockMap.has(coordinateKey)) {
             throw new Error(
-                `Block at fork ${coordinates[0]}, height ${coordinates[1]} already exists`
+                `Block at fork ${coordinates.forkId}, height ${coordinates.height} already exists`
             );
         }
 
