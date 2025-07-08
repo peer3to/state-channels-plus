@@ -5,6 +5,7 @@ import Clock from "@/Clock";
 import { TransportType } from "@/transport/TransportType";
 import ATransport from "@/transport/ATransport";
 import PeerProfile from "@/PeerProfile";
+import { Hash, Signature, Timestamp } from "@/types/types";
 
 type ConnectionChallenge = {
     randomChallengeHash: string;
@@ -30,7 +31,7 @@ class InitHandshakeService extends ARpcService {
             .sendOne(transport);
     }
 
-    public async onInitHandshakeRequest(challengeHash: string, time: number) {
+    public async onInitHandshakeRequest(challengeHash: Hash, time: Timestamp) {
         let localTime = Clock.getTimeInSeconds();
         if (
             Math.abs(time - localTime) >
@@ -67,8 +68,8 @@ class InitHandshakeService extends ARpcService {
     }
 
     public async onInitHandshakeResponse(
-        signature: string,
-        responseTime: number,
+        signature: Signature,
+        responseTime: Timestamp,
         preferredTransport: TransportType
     ) {
         console.log(`onInitHandshakeRESPONSE - start`);

@@ -1,6 +1,7 @@
 import { EVM, EVMResult, ExecResult } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
-import { BytesLike, ethers } from "ethers";
+import { ethers } from "ethers";
+import { Bytes } from "@/types/types";
 
 export default class ContractExecuter {
     private readonly evm: EVM;
@@ -11,7 +12,7 @@ export default class ContractExecuter {
         this.contractAddress = contractAddress;
     }
 
-    async executeCall(data: BytesLike): Promise<ExecResult> {
+    async executeCall(data: Bytes): Promise<ExecResult> {
         const result = await this.evm.runCall({
             data: ethers.getBytes(data),
             to: this.contractAddress

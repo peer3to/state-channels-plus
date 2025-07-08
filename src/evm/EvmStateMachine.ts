@@ -1,5 +1,5 @@
 import { EVM } from "@ethereumjs/evm";
-import { BytesLike, ethers, Signer, hexlify } from "ethers";
+import { ethers, Signer, hexlify } from "ethers";
 import {
     AStateChannelManagerProxy,
     AStateMachine as AStateMachineContract
@@ -13,6 +13,8 @@ import { DebugProxy } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import AStateMachine from "@/AStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
+import { Address, Bytes } from "@/types/types";
+import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 
@@ -70,8 +72,8 @@ class EvmStateMachine extends AStateMachine {
         if (!logs || logs.length === 0) return;
 
         for (const log of logs) {
-            const topics = log[1].map((topic: any) => ethers.hexlify(topic));
-            const data = ethers.hexlify(log[2]);
+            const topics = log[1].map((topic: any) => hexlify(topic));
+            const data = hexlify(log[2]);
             const parsedLog = { topics, data };
 
             try {
@@ -92,7 +94,7 @@ class EvmStateMachine extends AStateMachine {
         try {
             const result = await this.contractExecuter.executeCall(encodedData);
             // Decode the return values: (bool success, ExitChannel[] exitChannels)
-            const hexResult = ethers.hexlify(result.returnValue);
+            const hexResult = hexlify(result.returnValue);
             const [success, exitChannels] =
                 ethers.AbiCoder.defaultAbiCoder().decode(
                     ["bool", `${ExitChannelEthersType}[]`],
@@ -115,7 +117,7 @@ class EvmStateMachine extends AStateMachine {
     async runView(tx: ethers.TransactionRequest): Promise<string> {
         try {
             const result = await this.contractExecuter.executeCall(
-                tx.data as BytesLike
+                tx.data as Bytes
             );
             return hexlify(result.returnValue);
         } catch (error) {
@@ -123,11 +125,11 @@ class EvmStateMachine extends AStateMachine {
         }
     }
 
-    async getParticipants(): Promise<string[]> {
+    async getParticipants(): Promise<Address[]> {
         const callData = this.getEncodedCalldata("getParticipants");
 
         let result = await this.contractExecuter.executeCall(callData);
-        const hexResult = ethers.hexlify(result.returnValue);
+        const hexResult = hexlify(result.returnValue);
         const [addresses] = ethers.AbiCoder.defaultAbiCoder().decode(
             ["address[]"],
             hexResult
@@ -135,19 +137,19 @@ class EvmStateMachine extends AStateMachine {
         return addresses.toArray();
     }
 
-    async getExitChannels(): Promise<any[]> {
+    async getExitChannels(): Promise<ExitChannelStruct[]> {
         const callData = this.getEncodedCalldata("getExitChannels");
 
         let result = await this.contractExecuter.executeCall(callData);
-        const hexResult = ethers.hexlify(result.returnValue);
+        const hexResult = hexlify(result.returnValue);
         const [exitChannels] = ethers.AbiCoder.defaultAbiCoder().decode(
             [`${ExitChannelEthersType}[]`],
             hexResult
         );
-        return exitChannels.toArray();
+        return exitChannels;
     }
 
-    async getNextToWrite(): Promise<string> {
+    async getNextToWrite(): Promise<Address> {
         const callData = this.getEncodedCalldata("getNextToWrite");
         try {
             let result = await this.contractExecuter.executeCall(callData);
@@ -162,7 +164,7 @@ class EvmStateMachine extends AStateMachine {
         }
     }
 
-    async setState(serializedState: BytesLike): Promise<boolean> {
+    async setState(serializedState: Bytes): Promise<boolean> {
         const encodedData = this.getEncodedCalldata("setState", [
             serializedState
         ]);
@@ -175,12 +177,12 @@ class EvmStateMachine extends AStateMachine {
         }
     }
 
-    async getState(): Promise<string> {
+    async getState(): Promise<Bytes> {
         const callData = this.getEncodedCalldata("getState");
 
         try {
             let result = await this.contractExecuter.executeCall(callData);
-            const hexResult = ethers.hexlify(result.returnValue);
+            const hexResult = hexlify(result.returnValue);
             const [encodedBytes] = ethers.AbiCoder.defaultAbiCoder().decode(
                 ["bytes"],
                 hexResult

@@ -1,4 +1,3 @@
-import { SignatureLike } from "ethers";
 import { ARpcService, MainRpcService } from "@/rpc";
 import {
     SignedJoinChannelStruct,
@@ -6,11 +5,11 @@ import {
     MilestoneProofStruct,
     ExitChannelBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Codec, EvmUtils, SignatureCollectionMap, Type } from "@/utils";
+import { Codec, SignatureCollectionMap, SignatureUtils, Type } from "@/utils";
 import Clock from "@/Clock";
 import { getActiveParticipants } from "@/utils/participantUtils";
-import { BytesLike } from "ethers";
 import { StateSnapshot } from "@/models";
+import { Address, Bytes, ChannelId, Hash, Signature } from "@/types/types";
 
 enum ValidationFlag {
     VALID,
@@ -28,10 +27,10 @@ class JoinChannelService extends ARpcService {
     }
     public async onJoinChannelRequest(
         signedJoinChannel: SignedJoinChannelStruct,
-        confirmationSignature?: SignatureLike
+        confirmationSignature?: Signature
     ) {
         try {
-            const key = signedJoinChannel.encodedJoinChannel.toString();
+            const key = signedJoinChannel.encodedJoinChannel;
             const joinChannel = Codec.decode(
                 signedJoinChannel.encodedJoinChannel,
                 Type.JoinChannel
@@ -52,7 +51,7 @@ class JoinChannelService extends ARpcService {
                 // Validate the request
                 const validationResult = await this.validateOriginalRequest(
                     joinChannel,
-                    signedJoinChannel.signature as SignatureLike
+                    signedJoinChannel.signature
                 );
                 if (validationResult !== ValidationFlag.VALID) {
                     console.warn(
@@ -66,7 +65,7 @@ class JoinChannelService extends ARpcService {
                     key,
                     {
                         signerAddress: joinChannel.participant.toString(),
-                        signature: signedJoinChannel.signature as SignatureLike
+                        signature: signedJoinChannel.signature
                     },
                     { timeoutMs: timeRemaining * 1000 } // Convert to milliseconds
                 );
@@ -89,7 +88,7 @@ class JoinChannelService extends ARpcService {
                 }
 
                 const confirmerAddress =
-                    EvmUtils.retrieveSignerAddressJoinChannel(
+                    SignatureUtils.getSignerAddressJoinChannel(
                         joinChannel,
                         confirmationSignature
                     );
@@ -114,7 +113,7 @@ class JoinChannelService extends ARpcService {
                 await this.mainRpcService.p2pManager.p2pSigner.getAddress();
             if (!this.joinChannelMap.hasSignature(key, myAddress)) {
                 // Sign it ourselves
-                const mySignedJC = await EvmUtils.signJoinChannel(
+                const mySignedJC = await SignatureUtils.signJoinChannel(
                     joinChannel,
                     this.mainRpcService.p2pManager.p2pSigner
                 );
@@ -122,14 +121,14 @@ class JoinChannelService extends ARpcService {
                 // Add our signature
                 this.joinChannelMap.tryInsert(key, {
                     signerAddress: myAddress,
-                    signature: mySignedJC.signature as SignatureLike
+                    signature: mySignedJC.signature
                 });
 
                 // Broadcast with our signature
                 this.mainRpcService.rpcProxy
                     .onJoinChannelRequest(
                         signedJoinChannel,
-                        mySignedJC.signature as SignatureLike
+                        mySignedJC.signature as Signature
                     )
                     .broadcast();
             }
@@ -149,12 +148,12 @@ class JoinChannelService extends ARpcService {
 
     private async validateConfirmationSignature(
         joinChannel: JoinChannelStruct,
-        confirmationSignature: SignatureLike
+        confirmationSignature: Signature
     ): Promise<ValidationFlag> {
-        let confirmerAddress: string;
+        let confirmerAddress: Address;
         try {
             // Verify the signature itself is well-formed
-            confirmerAddress = EvmUtils.retrieveSignerAddressJoinChannel(
+            confirmerAddress = SignatureUtils.getSignerAddressJoinChannel(
                 joinChannel,
                 confirmationSignature
             );
@@ -181,12 +180,12 @@ class JoinChannelService extends ARpcService {
 
     private async validateOriginalRequest(
         joinChannel: JoinChannelStruct,
-        signature: SignatureLike
+        signature: Signature | Bytes
     ): Promise<ValidationFlag> {
         // Validate the signature matches the participant
-        let signerAddress: string;
+        let signerAddress: Address;
         try {
-            signerAddress = EvmUtils.retrieveSignerAddressJoinChannel(
+            signerAddress = SignatureUtils.getSignerAddressJoinChannel(
                 joinChannel,
                 signature
             );
@@ -203,8 +202,8 @@ class JoinChannelService extends ARpcService {
     }
 
     private async getActiveParticipants(
-        channelId: BytesLike
-    ): Promise<Set<string>> {
+        channelId: ChannelId
+    ): Promise<Set<Address>> {
         const scmContract =
             this.mainRpcService.p2pManager.stateManager
                 .stateChannelManagerContract;
@@ -212,7 +211,7 @@ class JoinChannelService extends ARpcService {
     }
 
     private async needsStateSnapshotSubmission(
-        channelId: BytesLike
+        channelId: ChannelId
     ): Promise<boolean> {
         // TODO
         // right now we are cutting slack and just assume that we need to submit a state snapshot
@@ -250,10 +249,10 @@ class JoinChannelService extends ARpcService {
     }
 
     private async getPreviousJoinChannelBlockHash(
-        channelId: BytesLike,
+        channelId: ChannelId,
         needsStateSnapshotSubmission: boolean,
         milestoneSnapshots: StateSnapshot[]
-    ): Promise<string> {
+    ): Promise<Hash> {
         if (needsStateSnapshotSubmission) {
             // We have milestone snapshots, use the latest one
             const latestSnapshot =
