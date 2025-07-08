@@ -13,6 +13,11 @@ import {
 } from "@/types/types";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
+export type BlockCoordinates = {
+    forkId: ForkId;
+    height: BlockHeight;
+};
+
 export default class Block {
     private constructor(private readonly block: BlockStruct) {}
 

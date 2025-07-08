@@ -5,7 +5,8 @@ import {
     ExitChannelBlockStruct,
     DisputeProofStruct,
     SignedDisputeStruct,
-    ExitChannelStruct
+    ExitChannelStruct,
+    JoinChannelBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { ethers } from "ethers";
 import AgreementManager from "../agreementManager/AgreementManager";
@@ -159,6 +160,15 @@ class StateManager {
     public onDisputeUpdate(dispute: DisputeStruct) {
         this.disputeHandler.onDispute(dispute);
         this.p2pEventHooks.onDisputeUpdate?.(dispute);
+    }
+    //Triggered by the On-chain Event Listener when a joinChannelEvent is emitted on-chain
+    public async onJoinChannel(joinChannelBlock: JoinChannelBlockStruct) {
+        this.handleJoinChannelStorage(joinChannelBlock);
+        this.handleStateSnapshotStorage(
+            await this.getEncodedStateKecak256(),
+            this.getForkCnt()
+        );
+        this.p2pEventHooks.onJoinChannel?.(joinChannelBlock);
     }
     //Triggered by the On-chain Event Listener when block calldata is posted on-chain
     public collectOnChainBlock(
@@ -345,6 +355,15 @@ class StateManager {
         let { success, successCallback, exitChannels } =
             await this.stateMachine.stateTransition(transaction);
         const encodedState = await this.stateMachine.getState();
+
+        //This is done before the state snapshot is created
+        //This is because the exit channels need to be taken into account when creating the state snapshot
+        this.handleExitChannelsStorage(exitChannels);
+
+        this.handleStateSnapshotStorage(
+            encodedState,
+            Number(transaction.header.forkCnt)
+        );
 
         return {
             success,
@@ -545,6 +564,45 @@ class StateManager {
 
     public getEncodedStateKecak256(): Promise<Hash> {
         return this.getEncodedState().then(ethers.keccak256);
+    }
+
+    private handleJoinChannelStorage(joinChannelBlock: JoinChannelBlockStruct) {
+        const blockHash = ethers.keccak256(
+            Codec.encode(joinChannelBlock, Type.JoinChannelBlock)
+        );
+        this.storageModule.storeJoinChannelBlockHash(
+            blockHash,
+            joinChannelBlock
+        );
+    }
+
+    private handleExitChannelsStorage(exitChannels: ExitChannelStruct[]) {
+        const previousBlockHash =
+            this.storageModule.getLatestExitChannelBlockHash();
+        const exitChannelBlock: ExitChannelBlockStruct = {
+            exitChannels,
+            previousBlockHash: previousBlockHash as BytesLike
+        };
+        const exitChannelBlockHash = ethers.keccak256(
+            Codec.encode(exitChannelBlock, Type.ExitChannelBlock)
+        );
+        this.storageModule.storeExitChannelBlockHash(
+            exitChannelBlockHash,
+            exitChannelBlock
+        );
+    }
+
+    //TODO: check that these storage typings are the best ones to use here
+    // needs to check if its ok to store a number or a BigNumberish
+    private async handleStateSnapshotStorage(
+        encodedState: string,
+        forkCnt: number
+    ) {
+        const stateSnapshot = await this.createStateSnapshot(
+            encodedState,
+            forkCnt
+        );
+        this.storageModule.storeStateSnapshot(stateSnapshot);
     }
 
     // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute

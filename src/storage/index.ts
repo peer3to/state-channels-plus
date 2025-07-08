@@ -1,2 +1,3 @@
-export { IStorageModule } from "./IStorageModule";
-export { StorageModule } from "./StorageModule";
+import { Storage } from "./Storage";
+
+export default Storage;
