@@ -27,9 +27,10 @@ describe("BlockStorage", () => {
         mockBlockConfirmation = factory.blockConfirmation({
             signedBlock: mockSignedBlock
         });
-        mockBlockHash = ethers.keccak256(mockSignedBlock.encodedBlock);
 
         const block = Block.decode(mockSignedBlock.encodedBlock);
+        mockBlockHash = block.hash;
+
         const { forkId, height } = block.coordinates;
         mockForkId = forkId;
         mockHeight = height;
