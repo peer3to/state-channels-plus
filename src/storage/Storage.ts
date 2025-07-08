@@ -10,7 +10,7 @@ import { JoinChannelBlockStorage } from "./JoinChannelBlockStorage";
 import { ExitChannelBlockStorage } from "./ExitChannelBlockStorage";
 import { StateSnapshotStorage } from "./StateSnapshotStorage";
 
-import { Hash, BlockHeight, ForkId } from "@/types/types";
+import { Hash, BlockHeight, ForkId, Timestamp } from "@/types/types";
 
 export class Storage {
     private blockStorage = new BlockStorage();
@@ -21,7 +21,7 @@ export class Storage {
     private _cachedOnChainStateSnapshot:
         | {
               stateSnapshot: StateSnapshotStruct;
-              timestamp: number;
+              timestamp: Timestamp;
           }
         | undefined;
 
@@ -167,7 +167,7 @@ export class Storage {
 
     setCachedOnChainStateSnapshot(
         stateSnapshot: StateSnapshotStruct,
-        timestamp: number
+        timestamp: Timestamp
     ): void {
         this._cachedOnChainStateSnapshot = {
             stateSnapshot,

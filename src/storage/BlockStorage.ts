@@ -2,7 +2,7 @@ import {
     BlockConfirmationStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Hash, ForkId, BlockHeight } from "@/types/types";
+import { Hash, ForkId, BlockHeight, Signature, Bytes } from "@/types/types";
 import { ethers } from "ethers";
 import { Block, BlockCoordinates } from "@/models";
 
@@ -155,13 +155,13 @@ export class BlockStorage {
 
     /** [OVERLOAD 1] Insert signature by hash */
     insertSignature(
-        signature: string,
+        signature: Signature,
         blockHash: Hash
     ): BlockConfirmationStruct | undefined;
 
     /** [OVERLOAD 2] Insert signature by coordinates */
     insertSignature(
-        signature: string,
+        signature: Signature,
         forkId: ForkId,
         height: BlockHeight
     ): BlockConfirmationStruct | undefined;
@@ -170,7 +170,7 @@ export class BlockStorage {
       IMPLEMENTATION
     ────────────────────────────────────────────────────────────────────────────*/
     insertSignature(
-        signature: string,
+        signature: Signature,
         hashOrForkId: Hash | ForkId,
         height?: BlockHeight
     ): BlockConfirmationStruct | undefined {
@@ -185,7 +185,10 @@ export class BlockStorage {
                   );
 
         if (blockConfirmation) {
-            blockConfirmation.signatures.push(signature);
+            // Check for duplicate signature before adding
+            if (!blockConfirmation.signatures.includes(signature as Bytes)) {
+                blockConfirmation.signatures.push(signature as Bytes);
+            }
             return blockConfirmation;
         }
         return undefined;

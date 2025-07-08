@@ -6,7 +6,7 @@ import {
     BlockConfirmationStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Hash, ForkId, BlockHeight } from "@/types/types";
+import { Hash, ForkId, BlockHeight, Signature } from "@/types/types";
 import * as factory from "../factory";
 import { Block } from "@/models";
 
@@ -219,6 +219,64 @@ describe("BlockStorage", () => {
             // Verify via coordinates
             const block = storage.getBlockConfirmation(mockForkId, mockHeight);
             expect(block?.signatures).to.include(newSig);
+        });
+
+        it("should prevent duplicate signatures", () => {
+            const newSig = ethers.hexlify(ethers.randomBytes(65));
+            const prevNumSignatures = mockBlockConfirmation.signatures.length;
+            const expectedNumSignatures = prevNumSignatures + 1;
+
+            // Insert signature first time
+            const result1 = storage.insertSignature(newSig, mockBlockHash);
+            expect(result1?.signatures).to.have.lengthOf(expectedNumSignatures);
+            expect(result1?.signatures).to.include(newSig);
+
+            // Insert same signature again
+            const result2 = storage.insertSignature(newSig, mockBlockHash);
+            expect(result2?.signatures).to.have.lengthOf(expectedNumSignatures);
+            expect(result2?.signatures).to.include(newSig);
+        });
+
+        it("should prevent duplicate signatures by coordinates", () => {
+            const newSig = ethers.hexlify(ethers.randomBytes(65));
+            const prevNumSignatures = mockBlockConfirmation.signatures.length;
+            const expectedNumSignatures = prevNumSignatures + 1;
+
+            // Insert signature first time
+            const result1 = storage.insertSignature(
+                newSig,
+                mockForkId,
+                mockHeight
+            );
+            expect(result1?.signatures).to.have.lengthOf(expectedNumSignatures);
+            expect(result1?.signatures).to.include(newSig);
+
+            // Insert same signature again
+            const result2 = storage.insertSignature(
+                newSig,
+                mockForkId,
+                mockHeight
+            );
+            expect(result2?.signatures).to.have.lengthOf(expectedNumSignatures);
+            expect(result2?.signatures).to.include(newSig);
+        });
+
+        it("should allow multiple unique signatures", () => {
+            const sig = () => ethers.hexlify(ethers.randomBytes(65));
+            const prevNumSignatures = mockBlockConfirmation.signatures.length;
+            const expectedNumSignatures = prevNumSignatures + 3;
+            expect(
+                storage.getBlockConfirmation(mockBlockHash)?.signatures
+            ).to.have.lengthOf(prevNumSignatures);
+
+            // Insert three different signatures
+            storage.insertSignature(sig(), mockBlockHash);
+            storage.insertSignature(sig(), mockBlockHash);
+            storage.insertSignature(sig(), mockBlockHash);
+
+            expect(
+                storage.getBlockConfirmation(mockBlockHash)?.signatures
+            ).to.have.lengthOf(expectedNumSignatures);
         });
     });
 
