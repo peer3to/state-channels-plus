@@ -15,6 +15,7 @@ import AgreementManager from "@/agreementManager";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { randomInt } from "crypto";
 import { Codec, Type } from "@/utils";
+import { SignedDisputeStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 /**
  * Creates a default transaction header
@@ -197,6 +198,17 @@ export function signedBlock(
     };
 
     return { ...defaultSignedBlock, ...overrides };
+}
+
+export function signedDispute(
+    overrides: Partial<SignedDisputeStruct> = {}
+): SignedDisputeStruct {
+    const defaultSignedDispute: SignedDisputeStruct = {
+        encodedDispute: Codec.encode(dispute(), Type.Dispute),
+        signature: signature()
+    };
+
+    return { ...defaultSignedDispute, ...overrides };
 }
 
 /**
