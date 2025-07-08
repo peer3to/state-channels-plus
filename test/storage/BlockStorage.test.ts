@@ -6,17 +6,17 @@ import {
     BlockConfirmationStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Hash } from "@/types/types";
+import { Hash, ForkId, BlockHeight } from "@/types/types";
 import * as factory from "../factory";
-import { Codec, Type, BlockUtils } from "@/utils";
+import { Block } from "@/models";
 
 describe("BlockStorage", () => {
     let storage: BlockStorage;
     let mockSignedBlock: SignedBlockStruct;
     let mockBlockConfirmation: BlockConfirmationStruct;
     let mockBlockHash: Hash;
-    let mockForkId: string;
-    let mockHeight: number;
+    let mockForkId: ForkId;
+    let mockHeight: BlockHeight;
 
     beforeEach(() => {
         storage = new BlockStorage();
@@ -27,16 +27,16 @@ describe("BlockStorage", () => {
         });
         mockBlockHash = ethers.keccak256(mockSignedBlock.encodedBlock);
 
-        const block = Codec.decode(mockSignedBlock.encodedBlock, Type.Block);
-        const { forkId, height } = BlockUtils.getCoordinates(block);
+        const block = Block.decode(mockSignedBlock.encodedBlock);
+        const { forkId, height } = block.coordinates;
         mockForkId = forkId;
         mockHeight = height;
     });
 
-    describe("CREATE - insertBlock()", () => {
+    describe("CREATE - storeBlock()", () => {
         it("should throw on duplicate insert by hash", () => {
             // First insert succeeds
-            storage.insertBlock(
+            storage.storeBlock(
                 mockSignedBlock,
                 mockBlockHash,
                 mockForkId,
@@ -45,7 +45,7 @@ describe("BlockStorage", () => {
 
             // Second insert should throw
             expect(() => {
-                storage.insertBlock(
+                storage.storeBlock(
                     mockSignedBlock,
                     mockBlockHash,
                     "fork2",
@@ -56,7 +56,7 @@ describe("BlockStorage", () => {
 
         it("should throw on duplicate insert by coordinates", () => {
             // First insert succeeds
-            storage.insertBlock(
+            storage.storeBlock(
                 mockSignedBlock,
                 mockBlockHash,
                 mockForkId,
@@ -66,7 +66,7 @@ describe("BlockStorage", () => {
             // Different hash, same coordinates should throw
             const differentHash = ethers.hexlify(ethers.randomBytes(32));
             expect(() => {
-                storage.insertBlock(
+                storage.storeBlock(
                     mockSignedBlock,
                     differentHash,
                     mockForkId,
@@ -77,7 +77,7 @@ describe("BlockStorage", () => {
 
         it("should convert SignedBlock to BlockConfirmation with empty signatures", () => {
             // Insert SignedBlock
-            const hash = storage.insertBlock(
+            const hash = storage.storeBlock(
                 mockSignedBlock,
                 mockBlockHash,
                 mockForkId,
@@ -91,9 +91,50 @@ describe("BlockStorage", () => {
         });
     });
 
+    describe("CREATE - insertBlockConfirmation()", () => {
+        it("should throw on duplicate insert by hash", () => {
+            // First insert succeeds
+            storage.storeBlockConfirmation(
+                mockBlockConfirmation,
+                mockBlockHash,
+                mockForkId,
+                mockHeight
+            );
+
+            // Second insert should throw
+            expect(() => {
+                storage.storeBlockConfirmation(
+                    mockBlockConfirmation,
+                    mockBlockHash,
+                    "fork2",
+                    100
+                );
+            }).to.throw(/already exists/);
+        });
+
+        it("should insert block confirmation with auto-computed keys", () => {
+            const hash = storage.storeBlockConfirmation(mockBlockConfirmation);
+
+            const stored = storage.getBlockConfirmation(hash);
+            expect(stored).to.equal(mockBlockConfirmation);
+        });
+
+        it("should insert block confirmation with provided keys", () => {
+            const hash = storage.storeBlockConfirmation(
+                mockBlockConfirmation,
+                mockBlockHash,
+                mockForkId,
+                mockHeight
+            );
+
+            const stored = storage.getBlockConfirmation(hash);
+            expect(stored).to.equal(mockBlockConfirmation);
+        });
+    });
+
     describe("READ - getBlockConfirmation()", () => {
         beforeEach(() => {
-            storage.insertBlock(
+            storage.storeBlockConfirmation(
                 mockBlockConfirmation,
                 mockBlockHash,
                 mockForkId,
@@ -133,7 +174,7 @@ describe("BlockStorage", () => {
 
     describe("UPDATE - insertSignature()", () => {
         beforeEach(() => {
-            storage.insertBlock(
+            storage.storeBlockConfirmation(
                 mockBlockConfirmation,
                 mockBlockHash,
                 mockForkId,
@@ -183,7 +224,7 @@ describe("BlockStorage", () => {
 
     describe("DELETE - deleteBlock()", () => {
         beforeEach(() => {
-            storage.insertBlock(
+            storage.storeBlockConfirmation(
                 mockBlockConfirmation,
                 mockBlockHash,
                 mockForkId,

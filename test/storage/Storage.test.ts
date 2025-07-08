@@ -13,7 +13,8 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Hash } from "@/types/types";
 import * as factory from "../factory";
-import { Codec, Type, BlockUtils } from "@/utils";
+import { Codec, Type } from "@/utils";
+import { Block } from "@/models";
 
 describe("Storage", () => {
     let storage: Storage;
@@ -37,10 +38,10 @@ describe("Storage", () => {
         });
         mockBlockHash = ethers.keccak256(mockSignedBlock.encodedBlock);
 
-        const block = Codec.decode(mockSignedBlock.encodedBlock, Type.Block);
-        const { forkId, height } = BlockUtils.getCoordinates(block);
-        mockForkId = forkId;
-        mockHeight = height;
+        const block = Block.decode(mockSignedBlock.encodedBlock);
+        const { forkId, height } = block.coordinates;
+        mockForkId = forkId as string;
+        mockHeight = height as number;
 
         mockJoinBlock = factory.joinChannelBlock();
         mockExitBlock = factory.exitChannelBlock();
@@ -51,9 +52,9 @@ describe("Storage", () => {
     });
 
     describe("Block Storage Operations", () => {
-        describe("insertBlock()", () => {
+        describe("storeBlock()", () => {
             it("should insert SignedBlock with coordinates", () => {
-                const hash = storage.insertBlock(
+                const hash = storage.storeBlock(
                     mockSignedBlock,
                     mockBlockHash,
                     mockForkId,
@@ -66,8 +67,47 @@ describe("Storage", () => {
                 expect(stored?.signatures).to.deep.equal([]);
             });
 
+            it("should throw on duplicate insert by hash", () => {
+                storage.storeBlock(
+                    mockSignedBlock,
+                    mockBlockHash,
+                    mockForkId,
+                    mockHeight
+                );
+
+                expect(() => {
+                    storage.storeBlock(
+                        mockSignedBlock,
+                        mockBlockHash,
+                        "fork2",
+                        100
+                    );
+                }).to.throw(/already exists/);
+            });
+
+            it("should throw on duplicate insert by coordinates", () => {
+                storage.storeBlock(
+                    mockSignedBlock,
+                    mockBlockHash,
+                    mockForkId,
+                    mockHeight
+                );
+
+                const differentHash = ethers.hexlify(ethers.randomBytes(32));
+                expect(() => {
+                    storage.storeBlock(
+                        mockSignedBlock,
+                        differentHash,
+                        mockForkId,
+                        mockHeight
+                    );
+                }).to.throw(/already exists/);
+            });
+        });
+
+        describe("storeBlockConfirmation()", () => {
             it("should insert BlockConfirmation with coordinates", () => {
-                const hash = storage.insertBlock(
+                const hash = storage.storeBlockConfirmation(
                     mockBlockConfirmation,
                     mockBlockHash,
                     mockForkId,
@@ -80,38 +120,19 @@ describe("Storage", () => {
             });
 
             it("should throw on duplicate insert by hash", () => {
-                storage.insertBlock(
-                    mockSignedBlock,
+                storage.storeBlockConfirmation(
+                    mockBlockConfirmation,
                     mockBlockHash,
                     mockForkId,
                     mockHeight
                 );
 
                 expect(() => {
-                    storage.insertBlock(
-                        mockSignedBlock,
+                    storage.storeBlockConfirmation(
+                        mockBlockConfirmation,
                         mockBlockHash,
                         "fork2",
                         100
-                    );
-                }).to.throw(/already exists/);
-            });
-
-            it("should throw on duplicate insert by coordinates", () => {
-                storage.insertBlock(
-                    mockSignedBlock,
-                    mockBlockHash,
-                    mockForkId,
-                    mockHeight
-                );
-
-                const differentHash = ethers.hexlify(ethers.randomBytes(32));
-                expect(() => {
-                    storage.insertBlock(
-                        mockSignedBlock,
-                        differentHash,
-                        mockForkId,
-                        mockHeight
                     );
                 }).to.throw(/already exists/);
             });
@@ -119,7 +140,7 @@ describe("Storage", () => {
 
         describe("getBlockConfirmation()", () => {
             beforeEach(() => {
-                storage.insertBlock(
+                storage.storeBlockConfirmation(
                     mockBlockConfirmation,
                     mockBlockHash,
                     mockForkId,
@@ -153,8 +174,8 @@ describe("Storage", () => {
 
         describe("deleteBlock()", () => {
             beforeEach(() => {
-                storage.insertBlock(
-                    mockBlockConfirmation,
+                storage.storeBlock(
+                    mockSignedBlock,
                     mockBlockHash,
                     mockForkId,
                     mockHeight
@@ -181,8 +202,8 @@ describe("Storage", () => {
 
         describe("insertSignature()", () => {
             beforeEach(() => {
-                storage.insertBlock(
-                    mockBlockConfirmation,
+                storage.storeBlock(
+                    mockSignedBlock,
                     mockBlockHash,
                     mockForkId,
                     mockHeight
@@ -326,11 +347,37 @@ describe("Storage", () => {
                 expect(stored).to.deep.equal(mockExitBlock);
             });
 
-            it("should throw on duplicate hash", () => {
-                const hash = storage.storeExitChannelBlock(mockExitBlock);
-                expect(() => {
-                    storage.storeExitChannelBlock(mockExitBlock, hash);
-                }).to.throw(/already exists/);
+            it("should return existing hash on duplicate and not modify storage", () => {
+                const firstHash = storage.storeExitChannelBlock(mockExitBlock);
+                const originalStored = storage.getExitChannelBlock(firstHash);
+
+                // Create a different block
+                const differentBlock = factory.exitChannelBlock({
+                    previousBlockHash: ethers.hexlify(ethers.randomBytes(32)),
+                    exitChannels: [
+                        {
+                            participant: ethers.hexlify(ethers.randomBytes(20)),
+                            balance: {
+                                amount: BigInt(9999),
+                                data: "0xdifferent"
+                            }
+                        }
+                    ]
+                });
+
+                // Attempt to store the different block under the same hash
+                const secondHash = storage.storeExitChannelBlock(
+                    differentBlock,
+                    firstHash
+                );
+
+                expect(secondHash).to.equal(firstHash);
+
+                // didn't alter the sorage, maning the differentBlock was not stored
+                // firstHash still points to the original block
+                const stillStored = storage.getExitChannelBlock(firstHash);
+                expect(stillStored).to.deep.equal(originalStored);
+                expect(stillStored).to.not.deep.equal(differentBlock);
             });
         });
 
