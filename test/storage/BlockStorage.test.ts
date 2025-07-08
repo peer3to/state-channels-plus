@@ -10,6 +10,8 @@ import { Hash, ForkId, BlockHeight, Signature } from "@/types/types";
 import * as factory from "../factory";
 import { Block } from "@/models";
 
+const sig = () => ethers.hexlify(ethers.randomBytes(65));
+
 describe("BlockStorage", () => {
     let storage: BlockStorage;
     let mockSignedBlock: SignedBlockStruct;
@@ -34,49 +36,7 @@ describe("BlockStorage", () => {
     });
 
     describe("CREATE - storeBlock()", () => {
-        it("should throw on duplicate insert by hash", () => {
-            // First insert succeeds
-            storage.storeBlock(
-                mockSignedBlock,
-                mockBlockHash,
-                mockForkId,
-                mockHeight
-            );
-
-            // Second insert should throw
-            expect(() => {
-                storage.storeBlock(
-                    mockSignedBlock,
-                    mockBlockHash,
-                    "fork2",
-                    100
-                );
-            }).to.throw(/already exists/);
-        });
-
-        it("should throw on duplicate insert by coordinates", () => {
-            // First insert succeeds
-            storage.storeBlock(
-                mockSignedBlock,
-                mockBlockHash,
-                mockForkId,
-                mockHeight
-            );
-
-            // Different hash, same coordinates should throw
-            const differentHash = ethers.hexlify(ethers.randomBytes(32));
-            expect(() => {
-                storage.storeBlock(
-                    mockSignedBlock,
-                    differentHash,
-                    mockForkId,
-                    mockHeight
-                );
-            }).to.throw(/already exists/);
-        });
-
-        it("should convert SignedBlock to BlockConfirmation with empty signatures", () => {
-            // Insert SignedBlock
+        it("should store SignedBlock and return same hash with empty signatures", () => {
             const hash = storage.storeBlock(
                 mockSignedBlock,
                 mockBlockHash,
@@ -84,32 +44,62 @@ describe("BlockStorage", () => {
                 mockHeight
             );
 
-            // Verify conversion
+            expect(hash).to.equal(mockBlockHash);
             const stored = storage.getBlockConfirmation(hash);
             expect(stored?.signedBlock).to.equal(mockSignedBlock);
             expect(stored?.signatures).to.deep.equal([]);
         });
     });
 
-    describe("CREATE - insertBlockConfirmation()", () => {
-        it("should throw on duplicate insert by hash", () => {
-            // First insert succeeds
-            storage.storeBlockConfirmation(
-                mockBlockConfirmation,
+    describe("CREATE - storeBlockConfirmation()", () => {
+        it("should merge signatures with deduplication on duplicate insert", () => {
+            // Create shared and unique signatures
+            const sharedSignature = sig();
+            const uniqueSignature1 = sig();
+            const uniqueSignature2 = sig();
+
+            // First block confirmation with shared + unique signature
+            const firstBlockConfirmation = {
+                ...mockBlockConfirmation,
+                signatures: [sharedSignature, uniqueSignature1]
+            };
+
+            const hash1 = storage.storeBlockConfirmation(
+                firstBlockConfirmation,
                 mockBlockHash,
                 mockForkId,
                 mockHeight
             );
 
-            // Second insert should throw
-            expect(() => {
-                storage.storeBlockConfirmation(
-                    mockBlockConfirmation,
-                    mockBlockHash,
-                    "fork2",
-                    100
-                );
-            }).to.throw(/already exists/);
+            // Second block confirmation with same shared signature + different unique signature
+            const secondBlockConfirmation = {
+                ...mockBlockConfirmation,
+                signatures: [sharedSignature, uniqueSignature2]
+            };
+
+            const hash2 = storage.storeBlockConfirmation(
+                secondBlockConfirmation,
+                mockBlockHash,
+                mockForkId,
+                mockHeight
+            );
+
+            // Should return same hash
+            expect(hash1).to.equal(hash2);
+
+            const stored = storage.getBlockConfirmation(hash1);
+
+            // Should have 3 unique signatures (shared signature not duplicated)
+            expect(stored?.signatures).to.have.lengthOf(3);
+            expect(stored?.signatures).to.include.members([
+                sharedSignature,
+                uniqueSignature1,
+                uniqueSignature2
+            ]);
+
+            // Verify no duplicates
+            const signatureSet = new Set(stored?.signatures);
+            expect(signatureSet.size).to.equal(stored?.signatures.length);
         });
 
         it("should insert block confirmation with auto-computed keys", () => {
@@ -183,7 +173,7 @@ describe("BlockStorage", () => {
         });
 
         it("should insert signature by hash", () => {
-            const newSig = ethers.hexlify(ethers.randomBytes(65));
+            const newSig = sig();
             const result = storage.insertSignature(newSig, mockBlockHash);
 
             expect(result).to.exist;
@@ -191,7 +181,7 @@ describe("BlockStorage", () => {
         });
 
         it("should insert signature by coordinates", () => {
-            const newSig = ethers.hexlify(ethers.randomBytes(65));
+            const newSig = sig();
             const result = storage.insertSignature(
                 newSig,
                 mockForkId,
@@ -203,7 +193,7 @@ describe("BlockStorage", () => {
         });
 
         it("should return undefined for non-existent blocks", () => {
-            const newSig = ethers.hexlify(ethers.randomBytes(65));
+            const newSig = sig();
             expect(storage.insertSignature(newSig, "nonexistent")).to.be
                 .undefined;
             expect(storage.insertSignature(newSig, "nonexistent", 999)).to.be
@@ -211,7 +201,7 @@ describe("BlockStorage", () => {
         });
 
         it("should modify same object regardless of lookup method", () => {
-            const newSig = ethers.hexlify(ethers.randomBytes(65));
+            const newSig = sig();
 
             // Insert via hash
             storage.insertSignature(newSig, mockBlockHash);
@@ -222,7 +212,7 @@ describe("BlockStorage", () => {
         });
 
         it("should prevent duplicate signatures", () => {
-            const newSig = ethers.hexlify(ethers.randomBytes(65));
+            const newSig = sig();
             const prevNumSignatures = mockBlockConfirmation.signatures.length;
             const expectedNumSignatures = prevNumSignatures + 1;
 
@@ -238,7 +228,7 @@ describe("BlockStorage", () => {
         });
 
         it("should prevent duplicate signatures by coordinates", () => {
-            const newSig = ethers.hexlify(ethers.randomBytes(65));
+            const newSig = sig();
             const prevNumSignatures = mockBlockConfirmation.signatures.length;
             const expectedNumSignatures = prevNumSignatures + 1;
 
@@ -262,7 +252,6 @@ describe("BlockStorage", () => {
         });
 
         it("should allow multiple unique signatures", () => {
-            const sig = () => ethers.hexlify(ethers.randomBytes(65));
             const prevNumSignatures = mockBlockConfirmation.signatures.length;
             const expectedNumSignatures = prevNumSignatures + 3;
             expect(

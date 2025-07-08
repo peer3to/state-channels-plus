@@ -21,7 +21,7 @@ export class BlockStorage {
     }
 
     // ====================================
-    // CREATE - throw if entry exists
+    // CREATE
     // ====================================
 
     /*────────────────────────────────────────────────────────────────────────────
@@ -277,16 +277,19 @@ export class BlockStorage {
         coordinates: BlockCoordinates
     ): Hash {
         const coordinateKey = this.coordinatesToKey(coordinates);
+        const existingBlock = this.hashToBlockMap.get(blockHash);
 
-        // Check for duplicates - throw if exists
-        if (this.hashToBlockMap.has(blockHash)) {
-            throw new Error(`Block with hash ${blockHash} already exists`);
+        if (!!existingBlock) {
+            // Merge signatures
+            const signaturesSet = new Set(existingBlock.signatures);
+            for (const newSignature of blockConfirmation.signatures) {
+                signaturesSet.add(newSignature);
+            }
+            existingBlock.signatures = Array.from(signaturesSet);
+
+            return blockHash;
         }
-        if (this.coordinatesToBlockMap.has(coordinateKey)) {
-            throw new Error(
-                `Block at fork ${coordinates.forkId}, height ${coordinates.height} already exists`
-            );
-        }
+        // If no existing block, store new block
 
         this.hashToBlockMap.set(blockHash, blockConfirmation);
         this.coordinatesToBlockMap.set(coordinateKey, blockConfirmation);
