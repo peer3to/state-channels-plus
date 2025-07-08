@@ -78,7 +78,7 @@ contract DisputeManagerFacet is StateChannelCommon {
                 ChannelBalance storage cb = channelBalances[dispute.channelId];
                 bytes32 jcbHash = cb.latestJoinChannelBlockHash;
                 while (cb.onChainJoinChannelMap[jcbHash].timestamp > disputeWindowExpirationTimestamp) {
-                    jcbHash = cb.onChainJoinChannelMap[jcbHash].prebiousJoinChannelBlockHash;
+                    jcbHash = cb.onChainJoinChannelMap[jcbHash].previousJoinChannelBlockHash;
                 }
                 reducedOutput.latestJoinChannelBlockHash = jcbHash;
             }

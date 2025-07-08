@@ -122,7 +122,7 @@ struct SnapshotData {
 }
 
 struct OnChainJoinChannel {
-    bytes32 prebiousJoinChannelBlockHash;
+    bytes32 previousJoinChannelBlockHash;
     Balance totalDeposits;
     uint256 timestamp;
 }
