@@ -1,25 +1,26 @@
-import { BytesLike, SignatureLike, Signer, ethers } from "ethers";
+import { Signer, ethers } from "ethers";
 import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Codec, Type } from "./utils/Codec";
+import { Codec, Type } from "../utils/Codec";
 import {
     ForkId,
     BlockHeight,
-    BlockTimestamp,
+    Timestamp,
     Address,
     ChannelId,
     Hash,
-    Signature
+    Signature,
+    Bytes
 } from "@/types/types";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
-export class Block {
+export default class Block {
     private constructor(private readonly block: BlockStruct) {}
 
     static from(block: BlockStruct): Block {
         return new Block(block);
     }
 
-    static decode(encodedBlock: BytesLike): Block {
+    static decode(encodedBlock: Bytes): Block {
         const block = Codec.decode(encodedBlock, Type.Block);
         return new Block(block);
     }
@@ -28,7 +29,7 @@ export class Block {
         return this.block;
     }
 
-    encode(): string {
+    encode(): Bytes {
         return Codec.encode(this.block, Type.Block);
     }
 
@@ -51,7 +52,7 @@ export class Block {
         return this.block.transaction.header.forkId as ForkId;
     }
 
-    get timestamp(): BlockTimestamp {
+    get timestamp(): Timestamp {
         return Number(this.block.transaction.header.timestamp);
     }
 
@@ -79,18 +80,21 @@ export class Block {
         return this.encode() === other.encode();
     }
 
-    getSignerAddress(signature: SignatureLike): Address {
-        return ethers.verifyMessage(ethers.getBytes(this.hash), signature);
+    getSignerAddress(signature: Signature | Bytes): Address {
+        return ethers.verifyMessage(
+            ethers.getBytes(this.hash),
+            signature as Signature
+        );
     }
 
-    getSignersSet(signatures: SignatureLike[]): Set<Address> {
+    getSignersSet(signatures: Signature[]): Set<Address> {
         return new Set(signatures.map(this.getSignerAddress));
     }
 
     getParticipantSignature(
         participant: Address,
-        signatures: SignatureLike[]
-    ): { didSign: boolean; signature: SignatureLike | undefined } {
+        signatures: Signature[]
+    ): { didSign: boolean; signature: Signature | undefined } {
         for (const sig of signatures) {
             if (this.getSignerAddress(sig) === participant) {
                 return { didSign: true, signature: sig };
@@ -106,7 +110,7 @@ export class Block {
     async signedBlock(signer: Signer): Promise<SignedBlockStruct> {
         return {
             encodedBlock: this.encode(),
-            signature: await this.sign(signer)
+            signature: (await this.sign(signer)) as Bytes
         };
     }
 }

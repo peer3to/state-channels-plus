@@ -1,11 +1,17 @@
 // Owns the array of forks + all direct lookups.
 // No knowledge about signatures, queues, or on-chain events.
-import { Block } from "@/Block";
-import { AddressLike, SignatureLike } from "ethers";
+import { Block } from "@/models";
 import { Agreement, AgreementFork } from "./types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { SignatureUtils } from "@/utils/SignatureUtils";
-import { ForkId } from "@/types/types";
+import {
+    ForkId,
+    Timestamp,
+    Signature,
+    Bytes,
+    Address,
+    BlockHeight
+} from "@/types/types";
 
 export enum Direction {
     FORWARD = "forward",
@@ -14,8 +20,8 @@ export enum Direction {
 
 interface StoredDispute {
     dispute: DisputeStruct;
-    timestamp: number;
-    signatures: SignatureLike[];
+    timestamp: Timestamp;
+    signatures: Signature[];
 }
 
 export default class ForkService {
@@ -24,10 +30,10 @@ export default class ForkService {
 
     /*────────── mutators ──────────*/
     newFork(
-        forkGenesisStateEncoded: string,
-        addressesInThreshold: AddressLike[],
+        forkGenesisStateEncoded: Bytes,
+        addressesInThreshold: Address[],
         forkId: ForkId,
-        genesisTimestamp: number
+        genesisTimestamp: Timestamp
     ): void {
         if (this.forks.length !== forkId) return;
         this.forks.push({
@@ -39,7 +45,7 @@ export default class ForkService {
         });
     }
 
-    addDispute(dispute: DisputeStruct, timestamp: number): void {
+    addDispute(dispute: DisputeStruct, timestamp: Timestamp): void {
         this.disputes.push({
             dispute,
             timestamp,
@@ -47,10 +53,7 @@ export default class ForkService {
         });
     }
 
-    addDisputeSignature(
-        dispute: DisputeStruct,
-        signature: SignatureLike
-    ): void {
+    addDisputeSignature(dispute: DisputeStruct, signature: Signature): void {
         const storedDispute = this.disputes[Number(dispute.disputeIndex)];
 
         storedDispute.signatures.push(signature);
@@ -60,13 +63,13 @@ export default class ForkService {
         return this.disputes[Number(dispute.disputeIndex)]?.dispute === dispute;
     }
 
-    getDisputeSignatures(dispute: DisputeStruct): SignatureLike[] {
+    getDisputeSignatures(dispute: DisputeStruct): Signature[] {
         return this.disputes[Number(dispute.disputeIndex)]?.signatures || [];
     }
 
     hasParticipantSignedDispute(
         dispute: DisputeStruct,
-        participant: AddressLike
+        participant: Address
     ): boolean {
         const storedDispute = this.disputes[Number(dispute.disputeIndex)];
         if (!storedDispute) return false;
@@ -84,15 +87,15 @@ export default class ForkService {
         });
     }
 
-    private addAgreement(forkId: number, agreement: Agreement): void {
+    private addAgreement(forkId: ForkId, agreement: Agreement): void {
         this.forks[forkId].agreements.push(agreement);
     }
 
     //After succesfull verification and execution
     public addBlock(
         block: Block,
-        originalSignature: SignatureLike,
-        encodedState: string
+        originalSignature: Signature | Bytes,
+        encodedState: Bytes
     ) {
         const forkId = block.forkId;
 
@@ -111,7 +114,7 @@ export default class ForkService {
 
         this.addAgreement(forkId, {
             block,
-            blockSignatures: [originalSignature],
+            blockSignatures: [originalSignature as Signature],
             encodedState
         });
     }
@@ -121,9 +124,9 @@ export default class ForkService {
      */
     public addChainBlock(
         forkId: ForkId,
-        transactionCnt: number,
-        participantAdr: string,
-        timestamp: number
+        transactionCnt: BlockHeight,
+        participantAdr: Address,
+        timestamp: Timestamp
     ): void {
         if (!this.isValidforkId(forkId)) {
             throw new Error("ForkService - addChainBlock - Invalid fork count");
@@ -143,10 +146,10 @@ export default class ForkService {
     nextForkIndex(): number {
         return this.forks.length;
     }
-    nextBlockHeight(): number {
+    nextBlockHeight(): BlockHeight {
         return this.forks.at(-1)?.agreements.length ?? 0;
     }
-    forkGenesis(forkId: ForkId): string {
+    forkGenesis(forkId: ForkId): Bytes {
         return this.forks[forkId].forkGenesisStateEncoded;
     }
     forkAt(forkId: ForkId) {
@@ -160,16 +163,16 @@ export default class ForkService {
         return forkId < this.forks.length;
     }
 
-    isParticipantInLatestFork(p: string) {
+    isParticipantInLatestFork(p: Address) {
         return new Set(this.forks.at(-1)!.addressesInThreshold).has(p);
     }
 
-    agreement(forkId: ForkId, txCnt: number): Agreement | undefined {
+    agreement(forkId: ForkId, txCnt: BlockHeight): Agreement | undefined {
         return this.isValidforkId(forkId)
             ? this.forks[forkId].agreements[txCnt]
             : undefined;
     }
-    blockAt(forkId: number, txCnt: number): Block | undefined {
+    blockAt(forkId: ForkId, txCnt: BlockHeight): Block | undefined {
         return this.agreement(forkId, txCnt)?.block;
     }
 
@@ -178,7 +181,7 @@ export default class ForkService {
         return this.agreement(forkId, height);
     }
 
-    latestAgreement(forkId: number): Agreement | undefined {
+    latestAgreement(forkId: ForkId): Agreement | undefined {
         return this.forks[forkId]?.agreements.at(-1);
     }
 
@@ -210,7 +213,7 @@ export default class ForkService {
     }
 
     /*────────── timestamp helpers ─────────*/
-    latestBlockTimestamp(forkId: ForkId): number {
+    latestBlockTimestamp(forkId: ForkId): Timestamp {
         const fork = this.forks[forkId];
         const latestBlock = this.latestAgreement(forkId)?.block;
         const latestTimestamp = latestBlock ? latestBlock.timestamp : 0;

@@ -1,13 +1,12 @@
-import { AddressLike, SignatureLike } from "ethers";
-
 import * as SetUtils from "@/utils/set";
 import { Agreement, AgreementFork } from "./types";
+import { Address, Signature } from "@/types/types";
 
 export default class SignatureService {
     static getParticipantSignature(
         agreement: Agreement,
-        participant: AddressLike
-    ): { didSign: boolean; signature: SignatureLike | undefined } {
+        participant: Address
+    ): { didSign: boolean; signature: Signature | undefined } {
         const block = agreement.block;
         for (const sig of agreement.blockSignatures) {
             if (block.getSignerAddress(sig) === participant) {
@@ -19,7 +18,7 @@ export default class SignatureService {
 
     static doesSignatureExist(
         agreement: Agreement,
-        target: SignatureLike
+        target: Signature
     ): boolean {
         return agreement.blockSignatures.includes(target);
     }
@@ -27,7 +26,7 @@ export default class SignatureService {
     static getParticipantsWhoDidntSign(
         fork: AgreementFork,
         agreement: Agreement
-    ): AddressLike[] {
+    ): Address[] {
         const signerSet = agreement.block.getSignersSet(
             agreement.blockSignatures
         );

@@ -1,11 +1,11 @@
-import { BytesLike } from "ethers";
 import { AStateChannelManagerProxy } from "@typechain-types";
 import { difference, union } from "./set";
+import { Address, ChannelId } from "@/types/types";
 
 export async function getActiveParticipants(
     contract: AStateChannelManagerProxy,
-    channelId: BytesLike
-): Promise<Set<string>> {
+    channelId: ChannelId
+): Promise<Set<Address>> {
     const snapshotParticipants = new Set(
         await contract.getSnapshotParticipants(channelId)
     );

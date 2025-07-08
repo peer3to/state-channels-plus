@@ -1,19 +1,15 @@
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { BlockConfirmation } from "./types";
-import { BytesLike } from "ethers";
-import { Block } from "@/Block";
+import { Block } from "@/models";
+import { ForkId, BlockHeight, Address } from "@/types/types";
 
-type forkId = BytesLike;
-type Height = number;
-type Adr = string;
-
-export type Queue<T> = Map<forkId, Map<Height, Map<Adr, T>>>;
+export type Queue<T> = Map<ForkId, Map<BlockHeight, Map<Address, T>>>;
 
 function insertNestedMapWithOverwrite<T>(
     forkMap: Queue<T>,
-    forkId: forkId,
-    height: Height,
-    address: Adr,
+    forkId: ForkId,
+    height: BlockHeight,
+    address: Address,
     element: T
 ) {
     if (!forkMap.has(forkId)) {
@@ -47,7 +43,7 @@ export default class QueueService {
         );
     }
 
-    tryDequeueBlocks(forkId: forkId, height: Height): SignedBlockStruct[] {
+    tryDequeueBlocks(forkId: ForkId, height: BlockHeight): SignedBlockStruct[] {
         const heightMap = this.blockQ.get(forkId);
         if (!heightMap) return [];
 
@@ -80,8 +76,8 @@ export default class QueueService {
     }
 
     tryDequeueConfirmations(
-        forkId: forkId,
-        height: Height
+        forkId: ForkId,
+        height: BlockHeight
     ): BlockConfirmation[] {
         const heightMap = this.confQ.get(forkId);
         if (!heightMap) return [];

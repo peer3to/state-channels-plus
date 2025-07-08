@@ -1,4 +1,4 @@
-import { BytesLike, ethers } from "ethers";
+import { ethers } from "ethers";
 import {
     BlockStruct,
     JoinChannelStruct,
@@ -13,6 +13,7 @@ import {
     StateSnapshotEthersType
 } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { Bytes } from "@/types/types";
 
 type StructType =
     | BlockStruct
@@ -39,7 +40,7 @@ export class Codec {
         [Type.StateSnapshot, StateSnapshotEthersType]
     ]);
 
-    public static encode(struct: StructType, type: Type): string {
+    public static encode(struct: StructType, type: Type): Bytes {
         const ethersType = this.structToEthersType.get(type);
         if (!ethersType) {
             throw new Error(`No ethers type mapping found for ${type}`);
@@ -48,25 +49,22 @@ export class Codec {
     }
 
     // Function overloads for type safety
-    public static decode(encoded: BytesLike, type: Type.Block): BlockStruct;
+    public static decode(encoded: Bytes, type: Type.Block): BlockStruct;
     public static decode(
-        encoded: BytesLike,
+        encoded: Bytes,
         type: Type.JoinChannel
     ): JoinChannelStruct;
     public static decode(
-        encoded: BytesLike,
+        encoded: Bytes,
         type: Type.Transaction
     ): TransactionStruct;
-    public static decode(encoded: BytesLike, type: Type.Dispute): DisputeStruct;
+    public static decode(encoded: Bytes, type: Type.Dispute): DisputeStruct;
     public static decode(
-        encoded: BytesLike,
+        encoded: Bytes,
         type: Type.StateSnapshot
     ): StateSnapshotStruct;
 
-    public static decode<T extends StructType>(
-        encoded: BytesLike,
-        type: Type
-    ): T {
+    public static decode<T extends StructType>(encoded: Bytes, type: Type): T {
         const ethersType = this.structToEthersType.get(type);
         if (!ethersType) {
             throw new Error(`No ethers type mapping found for ${type}`);

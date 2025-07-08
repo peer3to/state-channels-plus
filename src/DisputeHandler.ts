@@ -1,4 +1,4 @@
-import { AddressLike, BigNumberish, BytesLike, ethers } from "ethers";
+import { ethers } from "ethers";
 import AgreementManager from "./agreementManager";
 import { AStateChannelManagerProxy } from "@typechain-types";
 import {
@@ -6,10 +6,11 @@ import {
     DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { DebugProxy, retry, Codec, Type } from "@/utils";
+import { DebugProxy, retry } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ProofManager from "./ProofManager";
-import { ForkId } from "./types/types";
+import { Address, BlockHeight, ChannelId, ForkId } from "./types/types";
+import { Block } from "./models";
 
 let DEBUG_DISPUTE_HANDLER = true;
 
@@ -18,10 +19,10 @@ const NO_PARTICIPANT_TO_FOLD = "0x00";
 const INITIAL_TRANSACTION_COUNT = 0;
 class DisputeHandler {
     signer: ethers.Signer;
-    signerAddress: AddressLike;
+    signerAddress: Address;
     agreementManager: AgreementManager;
     stateChannelManagerContract: AStateChannelManagerProxy;
-    channelId: BytesLike;
+    channelId: ChannelId;
     localProofs: Map<ForkId, ProofStruct[]> = new Map();
     disputes: Map<ForkId, DisputeStruct> = new Map();
     disputedForks: Map<ForkId, boolean> = new Map();
@@ -30,9 +31,9 @@ class DisputeHandler {
     proofManager: ProofManager;
 
     constructor(
-        channelId: BytesLike,
+        channelId: ChannelId,
         signer: ethers.Signer,
-        signerAddress: AddressLike,
+        signerAddress: Address,
         agreementManager: AgreementManager,
         stateChannelManagerContract: AStateChannelManagerProxy,
         p2pEventHooks: P2pEventHooks
@@ -51,12 +52,12 @@ class DisputeHandler {
         this.p2pEventHooks = p2pEventHooks;
     }
 
-    public setChannelId(channelId: BytesLike): void {
+    public setChannelId(channelId: ChannelId): void {
         this.channelId = channelId;
     }
     public async disputeFoldRechallenge(
         forkId: ForkId,
-        transactionCnt: BigNumberish
+        transactionCnt: BlockHeight
     ): Promise<void> {
         const proof = this.proofManager.createFoldRechallengeProof(
             forkId,
@@ -76,12 +77,9 @@ class DisputeHandler {
     ): Promise<void> {
         const proof =
             this.proofManager.createDoubleSignProof(conflictingBlocks);
-        const _firstBlock = Codec.decode(
-            conflictingBlocks[0].encodedBlock,
-            Type.Block
-        );
+        const _firstBlock = Block.decode(conflictingBlocks[0].encodedBlock);
         return this.createDispute(
-            _firstBlock.transaction.header.forkId,
+            _firstBlock.forkId,
             NO_PARTICIPANT_TO_FOLD,
             INITIAL_TRANSACTION_COUNT,
             [proof]
@@ -93,12 +91,9 @@ class DisputeHandler {
     ): Promise<void> {
         const proof =
             this.proofManager.createIncorrectDataProof(incorrectBlockSigned);
-        const _block = Codec.decode(
-            incorrectBlockSigned.encodedBlock,
-            Type.Block
-        );
+        const _block = Block.decode(incorrectBlockSigned.encodedBlock);
         return this.createDispute(
-            _block.transaction.header.forkId,
+            _block.forkId,
             NO_PARTICIPANT_TO_FOLD,
             INITIAL_TRANSACTION_COUNT,
             [proof]
@@ -107,7 +102,7 @@ class DisputeHandler {
 
     public async disputeFoldPriorBlock(
         forkId: ForkId,
-        transactionCnt: number
+        transactionCnt: BlockHeight
     ): Promise<void> {
         const proof = ProofManager.createFoldPriorBlockProof(transactionCnt);
         return this.createDispute(
@@ -122,9 +117,9 @@ class DisputeHandler {
         BlockSigned: SignedBlockStruct
     ): Promise<void> {
         const proof = ProofManager.createBlockTooFarInFutureProof(BlockSigned);
-        const block = Codec.decode(BlockSigned.encodedBlock, Type.Block);
+        const block = Block.decode(BlockSigned.encodedBlock);
         return this.createDispute(
-            block.transaction.header.forkId,
+            block.forkId,
             NO_PARTICIPANT_TO_FOLD,
             INITIAL_TRANSACTION_COUNT,
             [proof]
@@ -139,8 +134,8 @@ class DisputeHandler {
     //Creates a dispute based on the generated proofs or optimistically timeouts (folds) the provided participant
     public async createDispute(
         forkId: ForkId,
-        foldedParticipant: AddressLike,
-        foldedTransactionCnt: BigNumberish,
+        foldedParticipant: Address,
+        foldedTransactionCnt: BlockHeight,
         proofs: ProofStruct[]
     ): Promise<void> {
         if (foldedParticipant != NO_PARTICIPANT_TO_FOLD) {
@@ -174,8 +169,8 @@ class DisputeHandler {
 
     private async createNewDispute(
         forkId: ForkId,
-        foldedParticipant: AddressLike,
-        foldedTransactionCnt: BigNumberish,
+        foldedParticipant: Address,
+        foldedTransactionCnt: BlockHeight,
         proofs: ProofStruct[]
     ): Promise<void> {
         const {
@@ -324,15 +319,14 @@ class DisputeHandler {
         return this.filterProofs(dispute);
     }
 
-    private getLastTransactionCount(dispute: DisputeStruct): number {
+    private getLastTransactionCount(dispute: DisputeStruct): BlockHeight {
         if (dispute.virtualVotingBlocks.length === 0) return 0;
 
         // Extract from the last block
-        const lastBlock = Codec.decode(
-            dispute.virtualVotingBlocks.at(-1)!.encodedBlock,
-            Type.Block
+        const lastBlock = Block.decode(
+            dispute.virtualVotingBlocks.at(-1)!.encodedBlock
         );
-        return Number(lastBlock.transaction.header.transactionCnt);
+        return lastBlock.height;
     }
 
     // Filters valid proofs

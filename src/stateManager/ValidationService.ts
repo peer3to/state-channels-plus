@@ -3,7 +3,7 @@ import { ExecutionFlags, TimeConfig, AgreementFlag } from "@/types";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import DisputeHandler from "@/DisputeHandler";
-import { AddressLike, BytesLike, ethers, SignatureLike } from "ethers";
+import { ethers } from "ethers";
 import { AStateChannelManagerProxy } from "@typechain-types/contracts/V1/StateChannelDiamondProxy";
 import {
     scheduleTask,
@@ -16,8 +16,14 @@ import {
 import AStateMachine from "@/AStateMachine";
 import { Clock } from "..";
 import ProofManager from "@/ProofManager";
-import { ForkId } from "@/types/types";
-import { Block } from "@/Block";
+import {
+    Address,
+    ChannelId,
+    ForkId,
+    Signature,
+    Timestamp
+} from "@/types/types";
+import { Block } from "@/models";
 
 interface ValidationResult {
     success: boolean;
@@ -33,8 +39,8 @@ export default class ValidationService {
         private readonly scmContract: AStateChannelManagerProxy,
         private readonly timeCfg: TimeConfig,
         /** getter keeps channelId reactive if StateManager changes it later */
-        private readonly getChannelId: () => BytesLike,
-        private readonly signerAddress: AddressLike,
+        private readonly getChannelId: () => ChannelId,
+        private readonly signerAddress: Address,
         private readonly onSignedBlock: (
             signedBlock: SignedBlockStruct,
             block?: Block
@@ -110,7 +116,7 @@ export default class ValidationService {
 
     public async validateBlockConfirmation(
         signed: SignedBlockStruct,
-        confirmationSig: BytesLike,
+        confirmationSig: Signature,
         block?: Block
     ): Promise<ValidationResult> {
         const blk = block ?? Block.decode(signed.encodedBlock);
@@ -136,19 +142,12 @@ export default class ValidationService {
         }
 
         /* confirmer inside fork */
-        const confirmer = blk.getSignerAddress(
-            confirmationSig as SignatureLike
-        );
+        const confirmer = blk.getSignerAddress(confirmationSig);
         if (!this.agreementManager.isParticipantInLatestFork(confirmer))
             return disconnect();
 
         /* duplicate sig */
-        if (
-            this.agreementManager.doesSignatureExist(
-                blk,
-                confirmationSig as SignatureLike
-            )
-        )
+        if (this.agreementManager.doesSignatureExist(blk, confirmationSig))
             return duplicate();
 
         return success();
@@ -156,7 +155,7 @@ export default class ValidationService {
 
     public async validateDispute(
         disputeStruct: DisputeStruct,
-        timestamp: number
+        timestamp: Timestamp
     ): Promise<boolean> {
         // triggered by StateManager.onDisputeCommitted, which is triggered by chain event 'DisputeCommitted'
         // therefore it is assumed that validation has already happened on
@@ -174,7 +173,7 @@ export default class ValidationService {
             this.scmContract,
             this.getChannelId()
         );
-        if (!allowedParticipantsSet.has(disputeStruct.disputer as string)) {
+        if (!allowedParticipantsSet.has(disputeStruct.disputer)) {
             return false;
         }
 
@@ -183,7 +182,7 @@ export default class ValidationService {
 
     public async validateDisputeConfirmation(
         disputeStruct: DisputeStruct,
-        confirmationSignature: BytesLike
+        confirmationSignature: Signature
     ): Promise<ValidationResult> {
         if (!this.isChannelOpen()) return notReady();
 
@@ -199,7 +198,7 @@ export default class ValidationService {
         try {
             confirmer = SignatureUtils.getSignerAddress(
                 Codec.encode(disputeStruct, Type.Dispute),
-                confirmationSignature as SignatureLike
+                confirmationSignature
             );
         } catch (error) {
             return dispute(AgreementFlag.INVALID_SIGNATURE);
@@ -263,11 +262,7 @@ export default class ValidationService {
 
         if (!txOK || !hashOK) return dispute(AgreementFlag.INCORRECT_DATA);
 
-        this.agreementManager.addBlock(
-            block,
-            signed.signature as SignatureLike,
-            encodedState
-        );
+        this.agreementManager.addBlock(block, signed.signature, encodedState);
         scheduleTask(successCallback, 0, "stateTransitionSuccessCallback");
         return success();
     }
@@ -346,14 +341,14 @@ export default class ValidationService {
     private isSignedBlockAuthentic(
         signed: SignedBlockStruct,
         block: Block,
-        expectedChannelId: BytesLike
+        expectedChannelId: ChannelId
     ): boolean {
         if (block.channelId !== expectedChannelId) return false;
 
         const h = ethers.keccak256(signed.encodedBlock);
         const signer = ethers.verifyMessage(
             ethers.getBytes(h),
-            signed.signature as SignatureLike
+            signed.signature as Signature
         );
 
         return signer === block.author;

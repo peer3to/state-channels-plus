@@ -1,11 +1,10 @@
-import { AddressLike } from "ethers";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { AgreementFlag } from "@/types";
 
 import ForkService from "./ForkService";
 import QueueService from "./QueueService";
-import { ForkId } from "@/types/types";
-import { Block } from "@/Block";
+import { Address, BlockHeight, ForkId, Timestamp } from "@/types/types";
+import { Block } from "@/models";
 
 export type BlockChecker = (sb: SignedBlockStruct) => AgreementFlag;
 
@@ -16,7 +15,7 @@ export default class OnChainTracker {
         private checkBlock: BlockChecker
     ) {}
 
-    collect(signed: SignedBlockStruct, timestamp: number): AgreementFlag {
+    collect(signed: SignedBlockStruct, timestamp: Timestamp): AgreementFlag {
         const flag = this.checkBlock(signed);
         if (
             flag === AgreementFlag.INVALID_SIGNATURE ||
@@ -40,7 +39,7 @@ export default class OnChainTracker {
     }
 
     /** Highest timestamp recorded for fork ≤ maxTxCnt */
-    latestTimestamp(forkId: ForkId, maxHeight: number): number {
+    latestTimestamp(forkId: ForkId, maxHeight: BlockHeight): Timestamp {
         const fork = this.forks.forkAt(forkId);
         if (!fork) throw new Error("OnChainTracker - fork not found");
 
@@ -52,7 +51,7 @@ export default class OnChainTracker {
         return latest;
     }
 
-    hasPosted(forkId: ForkId, height: number, address: AddressLike): boolean {
+    hasPosted(forkId: ForkId, height: BlockHeight, address: Address): boolean {
         const fork = this.forks.forkAt(forkId);
         return (
             !!fork &&

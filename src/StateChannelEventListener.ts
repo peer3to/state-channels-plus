@@ -1,9 +1,9 @@
-import { BigNumberish, BytesLike } from "ethers";
 import { AStateChannelManagerProxy } from "@typechain-types";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
+import { ChannelId, Timestamp } from "@/types/types";
 
 //TODO - made a PR to ethers.js to fix Deferred Topic Filter
 
@@ -46,7 +46,7 @@ class StateChannelEventListener {
 
     private readonly eventHandlers = {
         SetState: {
-            filterFactory: (channelId: BytesLike) =>
+            filterFactory: (channelId: ChannelId) =>
                 this.stateChannelManagerContract.filters.SetState(channelId),
             handler: (logObj: any) => {
                 const { encodedState, forkId, timestamp } = logObj.args;
@@ -58,7 +58,7 @@ class StateChannelEventListener {
             }
         },
         BlockCalldataPosted: {
-            filterFactory: (channelId: BytesLike) =>
+            filterFactory: (channelId: ChannelId) =>
                 this.stateChannelManagerContract.filters.BlockCalldataPosted(
                     channelId
                 ),
@@ -67,12 +67,12 @@ class StateChannelEventListener {
                 this.p2pEventHooks.onPostedCalldata?.();
                 const signedBlock = logObj.args
                     .signedBlock as SignedBlockStruct;
-                const timestamp = logObj.args.timestamp as BigNumberish;
+                const timestamp = logObj.args.timestamp as Timestamp;
                 this.stateManager.collectOnChainBlock(signedBlock, timestamp);
             }
         },
         DisputeUpdate: {
-            filterFactory: (channelId: BytesLike) =>
+            filterFactory: (channelId: ChannelId) =>
                 this.stateChannelManagerContract.filters.DisputeUpdated(
                     channelId
                 ),
@@ -83,7 +83,7 @@ class StateChannelEventListener {
             }
         },
         DisputeCommited: {
-            filterFactory: (channelId: BytesLike) =>
+            filterFactory: (channelId: ChannelId) =>
                 this.stateChannelManagerContract.filters.DisputeCommited(
                     channelId
                 ),
@@ -97,7 +97,7 @@ class StateChannelEventListener {
             }
         },
         OutputStateSnapshotVerified: {
-            filterFactory: (channelId: BytesLike) =>
+            filterFactory: (channelId: ChannelId) =>
                 this.stateChannelManagerContract.filters.OutputStateSnapshotVerified(
                     channelId
                 ),
@@ -112,7 +112,7 @@ class StateChannelEventListener {
         }
     };
 
-    public async setChannelId(channelId: BytesLike) {
+    public async setChannelId(channelId: ChannelId) {
         await Promise.all(
             Object.entries(this.eventHandlers).map(
                 ([key, { filterFactory, handler }]) =>

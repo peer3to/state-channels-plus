@@ -2,7 +2,6 @@ export * from "./BarrierLocal";
 export * from "./BroadcastLocal";
 export * from "./DebugProxy";
 export * from "./DeployUtils";
-export * from "./EvmUtils";
 export * from "./LocalDiscoveryServer";
 export * from "./Mutex";
 export * from "./retry";
