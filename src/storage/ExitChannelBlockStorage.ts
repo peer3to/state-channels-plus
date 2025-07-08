@@ -42,9 +42,7 @@ export class ExitChannelBlockStorage {
 
         // Check for duplicates
         if (this.blockMap.has(hash)) {
-            throw new Error(
-                `Exit channel block with hash ${hash} already exists`
-            );
+            return hash;
         }
 
         this.blockMap.set(hash, block);
