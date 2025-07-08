@@ -726,7 +726,7 @@ class StateManager {
         const totalDeposits = this.storageModule.getTotalDeposits();
         const totalWithdrawals = this.storageModule.getTotalWithdrawals();
 
-        const snapshotData: StateSnapshotStruct = {
+        const stateSnapshot: StateSnapshotStruct = {
             forkId,
             timestamp: Clock.getTimeInSeconds(),
             snapshotData: {
@@ -745,7 +745,7 @@ class StateManager {
             }
         };
 
-        return StateSnapshot.from(snapshotData);
+        return StateSnapshot.from(stateSnapshot);
     }
 
     private async createBlock(
