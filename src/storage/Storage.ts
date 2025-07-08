@@ -6,14 +6,17 @@ import { BlockStorage } from "./BlockStorage";
 import { JoinChannelBlockStorage } from "./JoinChannelBlockStorage";
 import { ExitChannelBlockStorage } from "./ExitChannelBlockStorage";
 import { StateSnapshotStorage } from "./StateSnapshotStorage";
-
 import { Timestamp } from "@/types/types";
+import { DisputeStorage } from "./DisputeStorage";
 
 export class Storage {
+    private static instance: Storage;
+
     public readonly blocks = new BlockStorage();
     public readonly joinChannelBlocks = new JoinChannelBlockStorage();
     public readonly exitChannelBlocks = new ExitChannelBlockStorage();
     public readonly stateSnapshots = new StateSnapshotStorage();
+    public readonly disputes = new DisputeStorage();
 
     private _cachedOnChainStateSnapshot:
         | {
@@ -23,6 +26,17 @@ export class Storage {
         | undefined;
 
     private latestSignedBlock: SignedBlockStruct | undefined;
+
+    private constructor() {
+        // Private constructor for singleton pattern
+    }
+
+    public static getInstance(): Storage {
+        if (!Storage.instance) {
+            Storage.instance = new Storage();
+        }
+        return Storage.instance;
+    }
 
     // getLatestBlock(): {
     //     stateSnapshot: StateSnapshotStruct;
