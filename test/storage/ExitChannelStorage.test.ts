@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { describe, it, beforeEach } from "mocha";
-import { ethers } from "ethers";
+import { ethers } from "hardhat";
 import { ExitChannelBlockStorage } from "@/storage/ExitChannelBlockStorage";
 import {
     ExitChannelBlockStruct,

@@ -6,18 +6,16 @@ import {
 import { Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 
+interface ExitChannelBlockEntry {
+    block: ExitChannelBlockStruct;
+    totalWithdrawals: BalanceStruct;
+}
+
 export class ExitChannelBlockStorage {
-    private blockMap: Map<Hash, ExitChannelBlockStruct>;
-    private _latestBlockHash: Hash;
-    private _totalWithdrawals: BalanceStruct;
+    private blockMap: Map<Hash, ExitChannelBlockEntry>;
 
     constructor() {
         this.blockMap = new Map();
-        this._latestBlockHash = ethers.ZeroHash;
-        this._totalWithdrawals = {
-            amount: BigInt(0),
-            data: "0x"
-        };
     }
 
     // ====================================
@@ -27,13 +25,21 @@ export class ExitChannelBlockStorage {
     // Exit Channel Block
 
     /** [OVERLOAD 1] Store exit channel block with auto-computed hash */
-    storeExitChannelBlock(block: ExitChannelBlockStruct): Hash;
+    storeExitChannelBlock(
+        block: ExitChannelBlockStruct,
+        totalWithdrawals: BalanceStruct
+    ): Hash;
 
     /** [OVERLOAD 2] Store exit channel block with provided hash */
-    storeExitChannelBlock(block: ExitChannelBlockStruct, blockHash: Hash): Hash;
+    storeExitChannelBlock(
+        block: ExitChannelBlockStruct,
+        totalWithdrawals: BalanceStruct,
+        blockHash: Hash
+    ): Hash;
 
     storeExitChannelBlock(
         block: ExitChannelBlockStruct,
+        totalWithdrawals: BalanceStruct,
         blockHash?: Hash
     ): Hash {
         const hash =
@@ -45,17 +51,11 @@ export class ExitChannelBlockStorage {
             return hash;
         }
 
-        this.blockMap.set(hash, block);
-        this._latestBlockHash = hash;
+        this.blockMap.set(hash, {
+            block,
+            totalWithdrawals
+        });
         return hash;
-    }
-
-    // ====================================
-
-    // Total Withdrawals
-
-    setTotalWithdrawals(value: BalanceStruct) {
-        this._totalWithdrawals = value;
     }
 
     // ====================================
@@ -63,18 +63,18 @@ export class ExitChannelBlockStorage {
     // ====================================
 
     getExitChannelBlock(blockHash: Hash): ExitChannelBlockStruct | undefined {
+        const entry = this.blockMap.get(blockHash);
+        return entry?.block;
+    }
+
+    getTotalWithdrawals(blockHash: Hash): BalanceStruct | undefined {
+        const entry = this.blockMap.get(blockHash);
+        return entry?.totalWithdrawals;
+    }
+
+    getExitChannelBlockEntry(
+        blockHash: Hash
+    ): ExitChannelBlockEntry | undefined {
         return this.blockMap.get(blockHash);
-    }
-
-    getLatestExitChannelBlockHash(): Hash {
-        return this._latestBlockHash;
-    }
-
-    getLatestExitChannelBlock(): ExitChannelBlockStruct | undefined {
-        return this.blockMap.get(this._latestBlockHash);
-    }
-
-    getTotalWithdrawals(): BalanceStruct {
-        return this._totalWithdrawals;
     }
 }

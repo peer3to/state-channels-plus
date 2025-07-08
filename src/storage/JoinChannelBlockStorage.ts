@@ -6,18 +6,16 @@ import {
 import { Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 
+interface JoinChannelBlockEntry {
+    block: JoinChannelBlockStruct;
+    totalDeposits: BalanceStruct;
+}
+
 export class JoinChannelBlockStorage {
-    private blockMap: Map<Hash, JoinChannelBlockStruct>;
-    private _latestBlockHash: Hash;
-    private _totalDeposits: BalanceStruct;
+    private blockMap: Map<Hash, JoinChannelBlockEntry>;
 
     constructor() {
         this.blockMap = new Map();
-        this._latestBlockHash = ethers.ZeroHash;
-        this._totalDeposits = {
-            amount: BigInt(0),
-            data: "0x"
-        };
     }
 
     // ====================================
@@ -27,37 +25,37 @@ export class JoinChannelBlockStorage {
     // Join Channel Block
 
     /** [OVERLOAD 1] Store join channel block with auto-computed hash */
-    storeJoinChannelBlock(block: JoinChannelBlockStruct): Hash;
+    storeJoinChannelBlock(
+        block: JoinChannelBlockStruct,
+        totalDeposits: BalanceStruct
+    ): Hash;
 
     /** [OVERLOAD 2] Store join channel block with provided hash */
-    storeJoinChannelBlock(block: JoinChannelBlockStruct, blockHash: Hash): Hash;
+    storeJoinChannelBlock(
+        block: JoinChannelBlockStruct,
+        totalDeposits: BalanceStruct,
+        blockHash: Hash
+    ): Hash;
 
     storeJoinChannelBlock(
         block: JoinChannelBlockStruct,
+        totalDeposits: BalanceStruct,
         blockHash?: Hash
     ): Hash {
         const hash =
             blockHash ??
             ethers.keccak256(Codec.encode(block, Type.JoinChannelBlock));
 
-        // Check for duplicates - throw if exists
+        // Check for duplicates
         if (this.blockMap.has(hash)) {
-            throw new Error(
-                `Join channel block with hash ${hash} already exists`
-            );
+            return hash;
         }
 
-        this.blockMap.set(hash, block);
-        this._latestBlockHash = hash;
+        this.blockMap.set(hash, {
+            block,
+            totalDeposits
+        });
         return hash;
-    }
-
-    // ====================================
-
-    // Total Deposits
-
-    setTotalDeposits(value: BalanceStruct) {
-        this._totalDeposits = value;
     }
 
     // ====================================
@@ -65,18 +63,18 @@ export class JoinChannelBlockStorage {
     // ====================================
 
     getJoinChannelBlock(blockHash: Hash): JoinChannelBlockStruct | undefined {
+        const entry = this.blockMap.get(blockHash);
+        return entry?.block;
+    }
+
+    getTotalDeposits(blockHash: Hash): BalanceStruct | undefined {
+        const entry = this.blockMap.get(blockHash);
+        return entry?.totalDeposits;
+    }
+
+    getJoinChannelBlockEntry(
+        blockHash: Hash
+    ): JoinChannelBlockEntry | undefined {
         return this.blockMap.get(blockHash);
-    }
-
-    getLatestJoinChannelBlockHash(): Hash {
-        return this._latestBlockHash;
-    }
-
-    getLatestJoinChannelBlock(): JoinChannelBlockStruct | undefined {
-        return this.blockMap.get(this._latestBlockHash);
-    }
-
-    getTotalDeposits(): BalanceStruct {
-        return this._totalDeposits;
     }
 }

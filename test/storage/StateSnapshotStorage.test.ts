@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { describe, it, beforeEach } from "mocha";
-import { ethers } from "ethers";
+import { ethers } from "hardhat";
 import { StateSnapshotStorage } from "@/storage/StateSnapshotStorage";
 import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Hash } from "@/types/types";
