@@ -1,6 +1,8 @@
+import { Timestamp } from "./types";
+
 export type TimeConfig = {
-    p2pTime: number;
-    agreementTime: number;
-    chainFallbackTime: number;
-    challengeTime: number;
+    p2pTime: Timestamp;
+    agreementTime: Timestamp;
+    chainFallbackTime: Timestamp;
+    challengeTime: Timestamp;
 };

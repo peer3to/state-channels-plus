@@ -1,15 +1,16 @@
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
+import { Address } from "./types/types";
 
 class ProfileManager {
     private mapTransportToProfile: WeakMap<ATransport, PeerProfile> =
         new WeakMap<ATransport, PeerProfile>();
-    private mapEvmAddressToProfile: Map<string, PeerProfile> = new Map<
-        string,
+    private mapEvmAddressToProfile: Map<Address, PeerProfile> = new Map<
+        Address,
         PeerProfile
     >();
-    private mapHpAddressToProfile: Map<string, PeerProfile> = new Map<
-        string,
+    private mapHpAddressToProfile: Map<Address, PeerProfile> = new Map<
+        Address,
         PeerProfile
     >();
 
@@ -17,8 +18,7 @@ class ProfileManager {
         let transport = profile.getTransport();
         if (transport) this.mapTransportToProfile.set(transport, profile);
         let evmAddress = profile.getEvmAddress();
-        if (evmAddress)
-            this.mapEvmAddressToProfile.set(evmAddress.toString(), profile);
+        if (evmAddress) this.mapEvmAddressToProfile.set(evmAddress, profile);
         let hpAddress = profile.getHpAddress();
         if (hpAddress) {
             this.mapHpAddressToProfile.set(hpAddress, profile);
@@ -52,10 +52,12 @@ class ProfileManager {
     ): PeerProfile | undefined {
         return this.mapTransportToProfile.get(transport);
     }
-    public getProfileByEvmAddress(evmAddress: string): PeerProfile | undefined {
+    public getProfileByEvmAddress(
+        evmAddress: Address
+    ): PeerProfile | undefined {
         return this.mapEvmAddressToProfile.get(evmAddress);
     }
-    public getProfileByHpAddress(hpAddress: string): PeerProfile | undefined {
+    public getProfileByHpAddress(hpAddress: Address): PeerProfile | undefined {
         return this.mapHpAddressToProfile.get(hpAddress);
     }
 }

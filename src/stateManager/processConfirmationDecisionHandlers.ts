@@ -1,19 +1,19 @@
 import { ExecutionFlags } from "@/types";
+import { Signature } from "@/types/types";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { SignatureLike } from "ethers";
 
 export interface ConfirmationDecisionContext {
     isDisposed: boolean;
     tryConfirmFromQueue(): Promise<void>;
     queueConfirmation(item: {
         originalSignedBlock: SignedBlockStruct;
-        confirmationSignature: SignatureLike;
+        confirmationSignature: Signature;
     }): void;
 }
 
 type ConfirmationDecisionHandler = (
     originalSignedBlock: SignedBlockStruct,
-    confirmationSignature: SignatureLike,
+    confirmationSignature: Signature,
     ctx: ConfirmationDecisionContext
 ) => Promise<void>;
 
@@ -65,7 +65,7 @@ export const confirmationDecisionHandlers: Record<
 
 export async function processConfirmationDecision(
     originalSignedBlock: SignedBlockStruct,
-    confirmationSignature: SignatureLike,
+    confirmationSignature: Signature,
     executionFlag: ExecutionFlags,
     ctx: ConfirmationDecisionContext
 ): Promise<void> {

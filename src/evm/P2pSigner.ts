@@ -1,12 +1,4 @@
-import {
-    AddressLike,
-    BigNumberish,
-    BytesLike,
-    ethers,
-    SignatureLike,
-    Signer,
-    TransactionResponse
-} from "ethers";
+import { ethers, Signer, TransactionResponse } from "ethers";
 
 import {
     JoinChannelStruct,
@@ -14,14 +6,17 @@ import {
     SignedJoinChannelStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "@/Clock";
 import P2PManager from "@/P2PManager";
-import { EvmUtils, Codec, SignatureUtils, Type } from "@/utils";
+import { Codec, SignatureUtils, Type } from "@/utils";
+import { Block } from "@/models";
+import { Address, Amount, Bytes, Timestamp } from "@/types/types";
+import { SignedDisputeStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 class P2pSigner implements Signer {
     signer: Signer;
-    signerAddress: AddressLike;
+    signerAddress: Address;
     provider: ethers.Provider | null;
     p2pManager: P2PManager;
 
@@ -37,7 +32,7 @@ class P2pSigner implements Signer {
     }
     constructor(
         signer: Signer,
-        signerAddress: AddressLike,
+        signerAddress: Address,
         p2pManager: P2PManager
     ) {
         this.signer = signer;
@@ -123,18 +118,15 @@ class P2pSigner implements Signer {
         return this.signer.signTypedData(domain, types, value);
     }
 
-    setChannelId(channelId: BytesLike) {
+    setChannelId(channelId: Bytes) {
         this.p2pManager.stateManager.setChannelId(channelId);
     }
     public async confirmBlock(signedBlock: SignedBlockStruct) {
-        let block = Codec.decode(signedBlock.encodedBlock, Type.Block);
-        let signature = await SignatureUtils.signMsg(
-            signedBlock.encodedBlock,
-            this.signer
-        );
+        let block = Block.decode(signedBlock.encodedBlock);
+        let signature = await block.sign(this.signer);
         this.p2pManager.stateManager.agreementManager.confirmBlock(
             block,
-            signature as SignatureLike
+            signature
         );
         this.p2pManager.rpcProxy
             .onBlockConfirmation(signedBlock, signature)
@@ -149,7 +141,7 @@ class P2pSigner implements Signer {
         return this.isLeader;
     }
 
-    public async connectToChannel(channelId: ethers.BytesLike) {
+    public async connectToChannel(channelId: Bytes) {
         this.setChannelId(channelId);
         await this.p2pManager.tryOpenConnectionToChannel(channelId.toString());
     }
@@ -160,12 +152,19 @@ class P2pSigner implements Signer {
 
     public async confirmDispute(dispute: DisputeStruct) {
         // Add our signature
-        const signedDispute = await EvmUtils.signDispute(dispute, this.signer);
+        const { encoded, signature } = await SignatureUtils.signDispute(
+            dispute,
+            this.signer
+        );
+        const signedDispute = {
+            encodedDispute: encoded,
+            signature
+        } as SignedDisputeStruct;
 
         // Store signature in AgreementManager
         this.p2pManager.stateManager.agreementManager.confirmDispute(
             dispute,
-            signedDispute.signature as SignatureLike
+            signature
         );
 
         // Broadcast confirmation with our signature
@@ -175,10 +174,10 @@ class P2pSigner implements Signer {
     }
 
     public async joinChannel(
-        channelId: BytesLike,
-        amount: BigNumberish,
-        deadlineTimestamp: BigNumberish,
-        data: BytesLike
+        channelId: Bytes,
+        amount: Amount,
+        deadlineTimestamp: Timestamp,
+        data: Bytes
     ) {
         const joinChannelRequest: JoinChannelStruct = {
             channelId,

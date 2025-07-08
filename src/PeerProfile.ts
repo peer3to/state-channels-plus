@@ -1,17 +1,17 @@
-import { AddressLike } from "ethers";
 import { ATransport } from "@/transport";
+import { Address } from "@/types/types";
 
 //TODO? maybe rename to ParticipantProfile to be consistent with the rest of the codebase, eventhough PeerProfile sounds better
 class PeerProfile {
     transport: ATransport | undefined;
-    evmAddress: AddressLike; //TODO! - AAdress -> base class for different address types (when we do substrate and other address formats)
+    evmAddress: Address; //TODO! - AAdress -> base class for different address types (when we do substrate and other address formats)
     hpAddress: string | undefined;
     isLeader: boolean;
     isBlackListed: boolean;
     isHandshakeCompleted = false;
     constructor(
         transport: ATransport,
-        evmAddress: AddressLike,
+        evmAddress: Address,
         hpAddress?: string | undefined
     ) {
         this.transport = transport;

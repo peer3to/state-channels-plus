@@ -1,8 +1,9 @@
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { Address } from "./types/types";
 
 type P2pEventHooks = {
-    onConnection?: (address: string) => void;
-    onTurn?: (address: string) => void;
+    onConnection?: (address: Address) => void;
+    onTurn?: (address: Address) => void;
     onSetState?: () => void;
     onPostingCalldata?: () => void;
     onPostedCalldata?: () => void;

@@ -1,10 +1,5 @@
 import { ethers, Wallet, NonceManager, Signer } from "ethers";
-import {
-    EvmStateMachine,
-    P2pEventHooks,
-    P2pSigner,
-    EvmUtils
-} from "@peer3/state-channels-plus";
+import { EvmStateMachine, P2pEventHooks } from "@peer3/state-channels-plus";
 import {
     TicTacToeStateChannelManagerProxy,
     TicTacToeStateMachine,

@@ -1,9 +1,8 @@
-import { AddressLike, BytesLike, SignatureLike } from "ethers";
 import {
     SignedBlockStruct,
     SignedJoinChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { SignedDisputeStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { SignedDisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 import P2PManager from "@/P2PManager";
 import RpcProxy from "./RpcProxy";
@@ -19,11 +18,12 @@ import {
     WebRTCSetupService
 } from "./services";
 import { DEBUG_RPC } from "@/utils/config";
+import { Address, ChannelId, Hash, Signature, Timestamp } from "@/types/types";
 
 //TODO! refactor this
 type JoinChanenelConfirmation = {
     signedJoinChannel: SignedJoinChannelStruct;
-    confirmationSignatures: SignatureLike[];
+    confirmationSignatures: Signature[];
 };
 
 class MainRpcService {
@@ -49,13 +49,13 @@ class MainRpcService {
 
     // ********************* InitHandskaheService *********************
 
-    public async onInitHandshakeRequest(challengeHash: string, time: number) {
+    public async onInitHandshakeRequest(challengeHash: Hash, time: Timestamp) {
         this.initHandshakeService.onInitHandshakeRequest(challengeHash, time);
     }
 
     public async onInitHandshakeResponse(
-        signature: string,
-        responseTime: number,
+        signature: Signature,
+        responseTime: Timestamp,
         preferredTransport: TransportType
     ) {
         this.initHandshakeService.onInitHandshakeResponse(
@@ -90,8 +90,8 @@ class MainRpcService {
         this.dhtDiscoveryService.onCanJoinLeaderRequest();
     }
     public async onCanJoinLeaderResponse(
-        channelId: BytesLike,
-        participants: AddressLike[]
+        channelId: ChannelId,
+        participants: Address[]
     ) {
         this.dhtDiscoveryService.onCanJoinLeaderResponse(
             channelId,
@@ -101,7 +101,7 @@ class MainRpcService {
     // ********************* JoinChannelService *********************
     public async onJoinChannelRequest(
         signedJoinChannel: SignedJoinChannelStruct,
-        confirmationSignature?: SignatureLike
+        confirmationSignature?: Signature
     ) {
         this.joinChannelService.onJoinChannelRequest(
             signedJoinChannel,
@@ -116,7 +116,7 @@ class MainRpcService {
 
     public async onBlockConfirmation(
         originalSignedBlock: SignedBlockStruct,
-        confirmationSignature: BytesLike
+        confirmationSignature: Signature
     ) {
         this.stateTransitionService.onBlockConfirmation(
             originalSignedBlock,

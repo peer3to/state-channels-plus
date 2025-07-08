@@ -1,22 +1,15 @@
-import {
-    SignedBlockStruct,
-    BlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { BlockConfirmation } from "./types";
-import { BlockUtils, Codec, EvmUtils, Type } from "@/utils";
-import { BytesLike } from "ethers";
+import { Block } from "@/models";
+import { ForkId, BlockHeight, Address } from "@/types/types";
 
-type forkId = BytesLike;
-type Height = number;
-type Adr = string;
-
-export type Queue<T> = Map<forkId, Map<Height, Map<Adr, T>>>;
+export type Queue<T> = Map<ForkId, Map<BlockHeight, Map<Address, T>>>;
 
 function insertNestedMapWithOverwrite<T>(
     forkMap: Queue<T>,
-    forkId: forkId,
-    height: Height,
-    address: Adr,
+    forkId: ForkId,
+    height: BlockHeight,
+    address: Address,
     element: T
 ) {
     if (!forkMap.has(forkId)) {
@@ -38,9 +31,9 @@ export default class QueueService {
     /*────────── Block queue ─────────*/
 
     queueBlock(sb: SignedBlockStruct): void {
-        const block = Codec.decode(sb.encodedBlock, Type.Block);
-        const { forkId, height } = BlockUtils.getCoordinates(block);
-        const participant = BlockUtils.getBlockAuthor(block);
+        const block = Block.decode(sb.encodedBlock);
+        const { forkId, height } = block.coordinates;
+        const participant = block.author;
         insertNestedMapWithOverwrite(
             this.blockQ,
             forkId,
@@ -50,7 +43,7 @@ export default class QueueService {
         );
     }
 
-    tryDequeueBlocks(forkId: forkId, height: Height): SignedBlockStruct[] {
+    tryDequeueBlocks(forkId: ForkId, height: BlockHeight): SignedBlockStruct[] {
         const heightMap = this.blockQ.get(forkId);
         if (!heightMap) return [];
 
@@ -66,13 +59,11 @@ export default class QueueService {
     /*──────── Confirmation queue ────────*/
 
     queueConfirmation(blockConfirmation: BlockConfirmation): void {
-        const block = Codec.decode(
-            blockConfirmation.originalSignedBlock.encodedBlock,
-            Type.Block
+        const block = Block.decode(
+            blockConfirmation.originalSignedBlock.encodedBlock
         );
-        const { forkId, height } = BlockUtils.getCoordinates(block);
-        const confirmationSigner = EvmUtils.retrieveSignerAddressBlock(
-            block,
+        const { forkId, height } = block.coordinates;
+        const confirmationSigner = block.getSignerAddress(
             blockConfirmation.confirmationSignature
         );
         insertNestedMapWithOverwrite(
@@ -85,8 +76,8 @@ export default class QueueService {
     }
 
     tryDequeueConfirmations(
-        forkId: forkId,
-        height: Height
+        forkId: ForkId,
+        height: BlockHeight
     ): BlockConfirmation[] {
         const heightMap = this.confQ.get(forkId);
         if (!heightMap) return [];
@@ -100,13 +91,11 @@ export default class QueueService {
         return blockConfirmations;
     }
 
-    isBlockQueued(block: BlockStruct): boolean {
-        const { forkId, height } = BlockUtils.getCoordinates(block);
-        const participant = BlockUtils.getBlockAuthor(block);
+    isBlockQueued(block: Block): boolean {
+        const { forkId, height } = block.coordinates;
+        const participant = block.author;
 
         const stored = this.blockQ.get(forkId)?.get(height)?.get(participant);
-        return stored
-            ? stored.encodedBlock === Codec.encode(block, Type.Block)
-            : false;
+        return stored ? stored.encodedBlock === block.encode() : false;
     }
 }
