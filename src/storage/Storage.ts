@@ -2,15 +2,15 @@ import { BlockStorage } from "./BlockStorage";
 import { JoinChannelBlockStorage } from "./JoinChannelBlockStorage";
 import { ExitChannelBlockStorage } from "./ExitChannelBlockStorage";
 import { StateSnapshotStorage } from "./StateSnapshotStorage";
-
-import { BlockCoordinates, StateSnapshot } from "@/models";
-import { Block } from "@/models";
+import { ExitPointsStorage } from "./ExitPointsStorage";
+import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 
 export class Storage {
     public readonly blocks = new BlockStorage();
     public readonly joinChannelBlocks = new JoinChannelBlockStorage();
     public readonly exitChannelBlocks = new ExitChannelBlockStorage();
     public readonly stateSnapshots = new StateSnapshotStorage();
+    public readonly exitPoints = new ExitPointsStorage();
 
     /**
      * Get the state snapshot for given block coordinates.
