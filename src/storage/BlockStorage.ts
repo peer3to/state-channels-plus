@@ -25,36 +25,25 @@ export class BlockStorage {
     // ====================================
 
     /*────────────────────────────────────────────────────────────────────────────
-      OVERLOAD SIGNATURES
+      INSERT BLOCK - OVERLOAD SIGNATURES
     ────────────────────────────────────────────────────────────────────────────*/
 
-    /** [OVERLOAD 1] Insert signed block with auto-computed keys */
-    insertBlock(signedBlock: SignedBlockStruct): Hash;
+    /** Insert signed block with auto-computed keys */
+    storeBlock(signedBlock: SignedBlockStruct): Hash;
 
-    /** [OVERLOAD 2] Insert signed block with provided keys */
-    insertBlock(
+    /** Insert signed block with provided keys */
+    storeBlock(
         signedBlock: SignedBlockStruct,
         blockHash: Hash,
         forkId: ForkId,
         height: BlockHeight
     ): Hash;
 
-    /** [OVERLOAD 3] Insert block confirmation with auto-computed keys */
-    insertBlock(blockConfirmation: BlockConfirmationStruct): Hash;
-
-    /** [OVERLOAD 4] Insert block confirmation with provided keys */
-    insertBlock(
-        blockConfirmation: BlockConfirmationStruct,
-        blockHash: Hash,
-        forkId: ForkId,
-        height: BlockHeight
-    ): Hash;
-
     /*────────────────────────────────────────────────────────────────────────────
-      IMPLEMENTATION
+      STORE  BLOCK - IMPLEMENTATION
     ────────────────────────────────────────────────────────────────────────────*/
-    insertBlock(
-        blockData: SignedBlockStruct | BlockConfirmationStruct,
+    storeBlock(
+        signedBlock: SignedBlockStruct,
         blockHash?: Hash,
         forkId?: ForkId,
         height?: BlockHeight
@@ -64,30 +53,60 @@ export class BlockStorage {
             forkId !== undefined &&
             height !== undefined;
 
-        if (this.isBlockConfirmation(blockData)) {
-            // ┌─ ROUTES TO: [OVERLOAD 3] or [OVERLOAD 4]
-            return hasKeys
-                ? this.storeBlockConfirmationWithKeys(blockData, blockHash, {
+        // Convert SignedBlock to BlockConfirmation (empty signatures)
+        const blockConfirmation: BlockConfirmationStruct = {
+            signedBlock: signedBlock,
+            signatures: [] // Starts empty, ready for peer confirmations
+        };
+
+        return hasKeys
+            ? this._storeBlockConfirmationWithKeys(
+                  blockConfirmation,
+                  blockHash,
+                  { forkId, height }
+              )
+            : this._storeBlockConfirmation(blockConfirmation);
+    }
+
+    /*────────────────────────────────────────────────────────────────────────────
+      STORE BLOCK CONFIRMATION - OVERLOAD SIGNATURES
+    ────────────────────────────────────────────────────────────────────────────*/
+
+    /** Insert block confirmation with auto-computed keys */
+    storeBlockConfirmation(blockConfirmation: BlockConfirmationStruct): Hash;
+
+    /** Insert block confirmation with provided keys */
+    storeBlockConfirmation(
+        blockConfirmation: BlockConfirmationStruct,
+        blockHash: Hash,
+        forkId: ForkId,
+        height: BlockHeight
+    ): Hash;
+
+    /*────────────────────────────────────────────────────────────────────────────
+      STORE BLOCK CONFIRMATION - IMPLEMENTATION
+    ────────────────────────────────────────────────────────────────────────────*/
+    storeBlockConfirmation(
+        blockConfirmation: BlockConfirmationStruct,
+        blockHash?: Hash,
+        forkId?: ForkId,
+        height?: BlockHeight
+    ): Hash {
+        const hasKeys =
+            blockHash !== undefined &&
+            forkId !== undefined &&
+            height !== undefined;
+
+        return hasKeys
+            ? this._storeBlockConfirmationWithKeys(
+                  blockConfirmation,
+                  blockHash,
+                  {
                       forkId,
                       height
-                  })
-                : this.storeBlockConfirmation(blockData);
-        } else {
-            // ┌─ ROUTES TO: [OVERLOAD 1] or [OVERLOAD 2]
-            // │  TYPE CONVERSION: SignedBlock → BlockConfirmation (empty signatures)
-            const blockConfirmation: BlockConfirmationStruct = {
-                signedBlock: blockData,
-                signatures: [] // ← Starts empty, ready for peer confirmations
-            };
-
-            return hasKeys
-                ? this.storeBlockConfirmationWithKeys(
-                      blockConfirmation,
-                      blockHash,
-                      { forkId, height }
-                  )
-                : this.storeBlockConfirmation(blockConfirmation);
-        }
+                  }
+              )
+            : this._storeBlockConfirmation(blockConfirmation);
     }
 
     // ====================================
@@ -234,7 +253,7 @@ export class BlockStorage {
         return `${coordinates.forkId}:${coordinates.height}`;
     }
 
-    private storeBlockConfirmation(
+    private _storeBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct
     ): Hash {
         const blockHash = ethers.keccak256(
@@ -242,14 +261,14 @@ export class BlockStorage {
         );
         const block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
 
-        return this.storeBlockConfirmationWithKeys(
+        return this._storeBlockConfirmationWithKeys(
             blockConfirmation,
             blockHash,
             block.coordinates
         );
     }
 
-    private storeBlockConfirmationWithKeys(
+    private _storeBlockConfirmationWithKeys(
         blockConfirmation: BlockConfirmationStruct,
         blockHash: Hash,
         coordinates: BlockCoordinates
@@ -269,11 +288,5 @@ export class BlockStorage {
         this.hashToBlockMap.set(blockHash, blockConfirmation);
         this.coordinatesToBlockMap.set(coordinateKey, blockConfirmation);
         return blockHash;
-    }
-
-    private isBlockConfirmation(
-        blockData: SignedBlockStruct | BlockConfirmationStruct
-    ): blockData is BlockConfirmationStruct {
-        return "signedBlock" in blockData && "signatures" in blockData;
     }
 }

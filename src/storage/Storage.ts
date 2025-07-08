@@ -32,7 +32,10 @@ export class Storage {
     // ====================================
 
     // C
-    insertBlock = this.blockStorage.insertBlock.bind(this.blockStorage);
+    storeBlock = this.blockStorage.storeBlock.bind(this.blockStorage);
+    storeBlockConfirmation = this.blockStorage.storeBlockConfirmation.bind(
+        this.blockStorage
+    );
 
     // R
     getBlockConfirmation = this.blockStorage.getBlockConfirmation.bind(
