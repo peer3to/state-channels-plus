@@ -10,10 +10,10 @@ import { StateSnapshotStorage } from "./StateSnapshotStorage";
 import { Timestamp } from "@/types/types";
 
 export class Storage {
-    private blockStorage = new BlockStorage();
-    private joinChannelBlockStorage = new JoinChannelBlockStorage();
-    private exitChannelBlockStorage = new ExitChannelBlockStorage();
-    private stateSnapshotStorage = new StateSnapshotStorage();
+    public readonly blocks = new BlockStorage();
+    public readonly joinChannelBlocks = new JoinChannelBlockStorage();
+    public readonly exitChannelBlocks = new ExitChannelBlockStorage();
+    public readonly stateSnapshots = new StateSnapshotStorage();
 
     private _cachedOnChainStateSnapshot:
         | {
@@ -23,25 +23,6 @@ export class Storage {
         | undefined;
 
     private latestSignedBlock: SignedBlockStruct | undefined;
-
-    constructor() {
-        // Auto-bind all methods
-        this.bindMethods(this.blockStorage);
-        this.bindMethods(this.joinChannelBlockStorage);
-        this.bindMethods(this.exitChannelBlockStorage);
-        this.bindMethods(this.stateSnapshotStorage);
-    }
-
-    private bindMethods(source: any) {
-        Object.getOwnPropertyNames(Object.getPrototypeOf(source))
-            .filter(
-                (name) =>
-                    typeof source[name] === "function" && name !== "constructor"
-            )
-            .forEach((name) => {
-                (this as any)[name] = source[name].bind(source);
-            });
-    }
 
     // getLatestBlock(): {
     //     stateSnapshot: StateSnapshotStruct;
