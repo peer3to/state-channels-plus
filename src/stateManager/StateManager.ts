@@ -1,32 +1,67 @@
+// External libraries
+import { ethers } from "ethers";
+
+// TypeChain types - Data types
 import {
     TransactionStruct,
     SignedBlockStruct,
-    MilestoneProofStruct,
     ExitChannelBlockStruct,
-    DisputeProofStruct,
-    SignedDisputeStruct,
     ExitChannelStruct,
     JoinChannelBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { ethers } from "ethers";
-import AgreementManager from "../agreementManager/AgreementManager";
-import { AgreementFlag, ExecutionFlags, TimeConfig } from "@/types";
-import { AStateChannelManagerProxy } from "@typechain-types";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
+// TypeChain types - Proof types
+import {
+    MilestoneProofStruct,
+    DisputeFraudProofStruct
+} from "@typechain-types/contracts/V1/types/ProofTypes";
+
+// TypeChain types - Dispute types
+import {
+    DisputeStruct,
+    SignedDisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+
+// TypeChain types - Contract interfaces
+import { AStateChannelManagerProxy } from "@typechain-types";
+import { StateSnapshotStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+
+// Core components
+import AgreementManager from "../agreementManager/AgreementManager";
+import AStateMachine from "@/AStateMachine";
 import Clock from "@/Clock";
 import DisputeHandler from "@/DisputeHandler";
 import P2PManager from "@/P2PManager";
+import StateChannelEventListener from "@/StateChannelEventListener";
+import ValidationService from "./ValidationService";
+import Storage from "@/storage";
 
-import AStateMachine from "@/AStateMachine";
+// Event handlers and processors
+import P2pEventHooks from "@/P2pEventHooks";
+import {
+    DecisionContext,
+    processExecutionDecision
+} from "./processExecutionDecisionHandlers";
+import {
+    ConfirmationDecisionContext,
+    processConfirmationDecision
+} from "./processConfirmationDecisionHandlers";
+
+// Models
+import { Block, BlockCoordinates, StateSnapshot } from "@/models";
+
+// Utils
 import {
     DebugProxy,
     Mutex,
     scheduleTask,
-    getActiveParticipants
+    getActiveParticipants,
+    Codec,
+    Type,
+    SignatureUtils
 } from "@/utils";
-import StateChannelEventListener from "@/StateChannelEventListener";
-import { Block, StateSnapshot } from "@/models";
+// Types
+import { AgreementFlag, ExecutionFlags, TimeConfig } from "@/types";
 import {
     Address,
     BlockHeight,
@@ -37,21 +72,7 @@ import {
     Signature,
     Timestamp
 } from "@/types/types";
-
-import P2pEventHooks from "@/P2pEventHooks";
-import {
-    DecisionContext,
-    processExecutionDecision
-} from "./processExecutionDecisionHandlers";
-import {
-    ConfirmationDecisionContext,
-    processConfirmationDecision
-} from "./processConfirmationDecisionHandlers";
-import ValidationService from "./ValidationService";
-import { Codec, Type } from "@/utils/Codec";
-import { SignatureUtils } from "@/utils/SignatureUtils";
-import { IStorageModule, StorageModule } from "@/storage";
-import { StateSnapshotStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 
 let DEBUG_STATE_MANAGER = false;
 
@@ -71,7 +92,7 @@ class StateManager {
     self = DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
     isDisposed: boolean = false;
     validationService: ValidationService;
-    private storageModule: IStorageModule = new StorageModule();
+    private storage: Storage = new Storage();
 
     // Store latest dispute data
     private latestDisputeData: {
@@ -163,11 +184,8 @@ class StateManager {
     }
     //Triggered by the On-chain Event Listener when a joinChannelEvent is emitted on-chain
     public async onJoinChannel(joinChannelBlock: JoinChannelBlockStruct) {
-        this.handleJoinChannelStorage(joinChannelBlock);
-        this.handleStateSnapshotStorage(
-            await this.getEncodedStateKecak256(),
-            this.getForkCnt()
-        );
+        this.storeJoinChannelBlock(joinChannelBlock);
+
         this.p2pEventHooks.onJoinChannel?.(joinChannelBlock);
     }
     //Triggered by the On-chain Event Listener when block calldata is posted on-chain
@@ -181,7 +199,7 @@ class StateManager {
             Number(timestamp)
         );
         let block = Block.decode(signedBlock.encodedBlock);
-        let disputeProof: ProofStruct;
+        let disputeProof: DisputeFraudProofStruct;
         if (flag == AgreementFlag.DOUBLE_SIGN) {
             console.log("StateManager - collectOnChainBlock - double sign");
             disputeProof =
@@ -358,7 +376,11 @@ class StateManager {
 
         //This is done before the state snapshot is created
         //This is because the exit channels need to be taken into account when creating the state snapshot
-        this.handleExitChannelsStorage(exitChannels);
+        const coordinates: BlockCoordinates = {
+            forkId: transaction.header.forkId,
+            height: Number(transaction.header.transactionCnt)
+        };
+        this.storeExitChannelBlock(exitChannels, coordinates);
 
         this.handleStateSnapshotStorage(
             encodedState,
@@ -566,29 +588,70 @@ class StateManager {
         return this.getEncodedState().then(ethers.keccak256);
     }
 
-    private handleJoinChannelStorage(joinChannelBlock: JoinChannelBlockStruct) {
-        const blockHash = ethers.keccak256(
-            Codec.encode(joinChannelBlock, Type.JoinChannelBlock)
+    private async calculateTotalBalance(
+        channels: { balance: BalanceStruct }[],
+        initialTotal?: BalanceStruct
+    ): Promise<BalanceStruct> {
+        let total = initialTotal ?? (await this.stateMachine.getZeroBalance());
+
+        for (const channel of channels) {
+            total = await this.stateMachine.addBalance(total, channel.balance);
+        }
+
+        return total;
+    }
+
+    private async storeJoinChannelBlock(
+        joinChannelBlock: JoinChannelBlockStruct
+    ) {
+        const prevBlock =
+            this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
+                joinChannelBlock.previousBlockHash
+            );
+
+        const totalDeposits = await this.calculateTotalBalance(
+            joinChannelBlock.joinChannels,
+            prevBlock?.totalDeposits
         );
-        this.storageModule.storeJoinChannelBlockHash(
-            blockHash,
-            joinChannelBlock
+
+        this.storage.joinChannelBlocks.storeJoinChannelBlock(
+            joinChannelBlock,
+            totalDeposits
         );
     }
 
-    private handleExitChannelsStorage(exitChannels: ExitChannelStruct[]) {
+    private async storeExitChannelBlock(
+        exitChannels: ExitChannelStruct[],
+        coordinates: BlockCoordinates
+    ) {
+        const previousStateSnapshot = this.storage.getStateSnapshot({
+            forkId: coordinates.forkId,
+            height: coordinates.height - 1
+        });
+
         const previousBlockHash =
-            this.storageModule.getLatestExitChannelBlockHash();
+            previousStateSnapshot.snapshotData.latestExitChannelBlockHash;
+
         const exitChannelBlock: ExitChannelBlockStruct = {
             exitChannels,
-            previousBlockHash: previousBlockHash as BytesLike
+            previousBlockHash: previousBlockHash
         };
-        const exitChannelBlockHash = ethers.keccak256(
-            Codec.encode(exitChannelBlock, Type.ExitChannelBlock)
+
+        // Get previous block's total withdrawals or zero balance if first block
+        const prevBlock =
+            this.storage.exitChannelBlocks.getExitChannelBlockEntry(
+                previousBlockHash
+            );
+
+        const totalWithdrawals = await this.calculateTotalBalance(
+            exitChannels,
+            prevBlock?.totalWithdrawals
         );
-        this.storageModule.storeExitChannelBlockHash(
-            exitChannelBlockHash,
-            exitChannelBlock
+
+        // Store the new block with calculated total withdrawals
+        this.storage.exitChannelBlocks.storeExitChannelBlock(
+            exitChannelBlock,
+            totalWithdrawals
         );
     }
 
