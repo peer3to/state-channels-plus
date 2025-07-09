@@ -15,6 +15,7 @@ import AStateMachine from "@/AStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
 import { Address, Bytes } from "@/types/types";
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
+import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 
@@ -190,6 +191,22 @@ class EvmStateMachine extends AStateMachine {
             return encodedBytes;
         } catch (error) {
             throw this.createContextError("getState", error);
+        }
+    }
+
+    async getZeroBalance(): Promise<BalanceStruct> {
+        const callData = this.getEncodedCalldata("getZeroBalance");
+
+        try {
+            let result = await this.contractExecuter.executeCall(callData);
+            const hexResult = hexlify(result.returnValue);
+            const [balanceResult] = ethers.AbiCoder.defaultAbiCoder().decode(
+                ["tuple(uint256,bytes)"],
+                hexResult
+            );
+            return balanceResult;
+        } catch (error) {
+            throw this.createContextError("getZeroBalance", error);
         }
     }
 
