@@ -1,13 +1,11 @@
-import {
-    StateSnapshotStruct,
-    SignedBlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
 import { BlockStorage } from "./BlockStorage";
 import { JoinChannelBlockStorage } from "./JoinChannelBlockStorage";
 import { ExitChannelBlockStorage } from "./ExitChannelBlockStorage";
 import { StateSnapshotStorage } from "./StateSnapshotStorage";
 
-import { Timestamp } from "@/types/types";
+import { BlockCoordinates, StateSnapshot } from "@/models";
+import { Block } from "@/models";
+import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 export class Storage {
     public readonly blocks = new BlockStorage();
@@ -15,66 +13,33 @@ export class Storage {
     public readonly exitChannelBlocks = new ExitChannelBlockStorage();
     public readonly stateSnapshots = new StateSnapshotStorage();
 
-    private _cachedOnChainStateSnapshot:
-        | {
-              stateSnapshot: StateSnapshotStruct;
-              timestamp: Timestamp;
-          }
-        | undefined;
+    /**
+     * Get the state snapshot for given block coordinates.
+     *
+     * If height < 0 (previous to first block): returns the genesis state snapshot of that fork
+     * If height >= 0: gets the state snapshot from that block height
+     *
+     */
+    getStateSnapshot(coordinates: BlockCoordinates): StateSnapshot {
+        const { forkId, height } = coordinates;
 
-    private latestSignedBlock: SignedBlockStruct | undefined;
+        if (height < 0) {
+            return this.stateSnapshots.getGenesisSnapshotDataByForkId(
+                forkId
+            ) as StateSnapshot;
+        }
 
-    // getLatestBlock(): {
-    //     stateSnapshot: StateSnapshotStruct;
-    //     block: BlockStruct;
-    //     signature: BytesLike;
-    // } {
-    //     if (!this.latestSignedBlock) {
-    //         throw new Error("No latest signed block found");
-    //     }
-    //     const block = Codec.decode(
-    //         this.latestSignedBlock.encodedBlock,
-    //         Type.Block
-    //     );
-    //     const stateSnapshotHash = block.stateSnapshotHash;
-    //     const stateSnapshot = this.getStateSnapshotByHash(
-    //         stateSnapshotHash as Hash
-    //     );
-    //     if (!stateSnapshot) {
-    //         throw new Error("State snapshot not found");
-    //     }
-    //     return {
-    //         stateSnapshot,
-    //         block,
-    //         signature: this.latestSignedBlock.signature
-    //     };
-    // }
+        const blockConfirmation = this.blocks.getBlockConfirmation(
+            forkId,
+            height
+        ) as BlockConfirmationStruct;
 
-    // getPreviousBlockHash(
-    //     forkCnt: number,
-    //     transactionCnt: number
-    // ): BlockHash | undefined {
-    //     return this.blockStorageModule.getPreviousBlockHash(
-    //         forkCnt,
-    //         transactionCnt
-    //     );
-    // }
+        const stateSnapshotHash = Block.decode(
+            blockConfirmation.signedBlock.encodedBlock
+        ).stateSnapshotHash;
 
-    // ====================================
-    // Cached on chain state snapshot
-    // ====================================
-
-    getCachedOnChainStateSnapshot() {
-        return this._cachedOnChainStateSnapshot;
-    }
-
-    setCachedOnChainStateSnapshot(
-        stateSnapshot: StateSnapshotStruct,
-        timestamp: Timestamp
-    ): void {
-        this._cachedOnChainStateSnapshot = {
-            stateSnapshot,
-            timestamp
-        };
+        return this.stateSnapshots.getStateSnapshotByHash(
+            stateSnapshotHash
+        ) as StateSnapshot;
     }
 }
