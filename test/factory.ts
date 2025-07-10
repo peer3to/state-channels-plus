@@ -15,6 +15,7 @@ import AgreementManager from "@/agreementManager";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { randomInt } from "crypto";
 import { Codec, Type } from "@/utils";
+import { Block, StateSnapshot } from "@/models";
 
 /**
  * Creates a default transaction header
@@ -99,21 +100,21 @@ export function agreementManager(addresses: string[] = []): AgreementManager {
  * @param overrides Optional overrides for the block properties
  * @returns A mock BlockStruct
  */
-export function block(overrides: Partial<BlockStruct> = {}): BlockStruct {
-    const block: BlockStruct = {
+export function block(overrides: Partial<BlockStruct> = {}): Block {
+    const blockStruct: BlockStruct = {
         transaction: transaction(),
         previousBlockHash: ethers.hexlify(ethers.randomBytes(32)),
         stateSnapshotHash: ethers.hexlify(ethers.randomBytes(32))
     };
 
     if (overrides.transaction) {
-        block.transaction = transaction({
-            ...block.transaction,
+        blockStruct.transaction = transaction({
+            ...blockStruct.transaction,
             ...overrides.transaction
         });
     }
 
-    return { ...block, ...overrides };
+    return Block.from({ ...blockStruct, ...overrides });
 }
 
 /**
@@ -233,7 +234,7 @@ export function exitChannelBlock(
 
 export function stateSnapshot(
     overrides: Partial<StateSnapshotStruct> = {}
-): StateSnapshotStruct {
+): StateSnapshot {
     const defaultStateSnapshot: StateSnapshotStruct = {
         snapshotData: {
             stateMachineStateHash: ethers.hexlify(ethers.randomBytes(32)),
@@ -256,5 +257,5 @@ export function stateSnapshot(
         timestamp: Math.floor(Date.now() / 1000)
     };
 
-    return { ...defaultStateSnapshot, ...overrides };
+    return StateSnapshot.from({ ...defaultStateSnapshot, ...overrides });
 }

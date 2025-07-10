@@ -5,7 +5,8 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Codec, Type } from "../utils/Codec";
 
-import { Bytes, Hash } from "@/types/types";
+import { Bytes, ForkId, Hash } from "@/types/types";
+import { SnapshotDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 export default class StateSnapshot {
     private constructor(private readonly snapshot: StateSnapshotStruct) {}
@@ -37,5 +38,23 @@ export default class StateSnapshot {
 
     get latestJoinBlockHash(): Hash {
         return this.snapshot.snapshotData.latestJoinChannelBlockHash as Hash;
+    }
+
+    get forkId(): ForkId {
+        return this.snapshot.forkId as ForkId;
+    }
+
+    get snapshotData(): SnapshotDataStruct {
+        return this.snapshot.snapshotData;
+    }
+
+    get snapshotDataHash(): Hash {
+        return ethers.keccak256(
+            Codec.encode(this.snapshot.snapshotData, Type.SnapshotData)
+        ) as Hash;
+    }
+
+    get isGenesis(): boolean {
+        return this.forkId === this.snapshotDataHash;
     }
 }

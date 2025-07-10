@@ -58,6 +58,8 @@ abstract contract AStateMachine {
     // return the total balance of the current state (e.g. sum up all participants balances)
     function getTotalStateBalance() public view virtual returns (Balance memory totalBalance);
 
+    function getZeroBalance() public pure virtual returns (Balance memory zeroBalance);
+
     // modifies the state to add a new participant to the channel
     function _joinChannel(JoinChannel memory joinChannel) internal virtual returns (bool);
 

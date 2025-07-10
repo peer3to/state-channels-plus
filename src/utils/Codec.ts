@@ -7,7 +7,8 @@ import {
     ExitChannelBlockStruct,
     BlockConfirmationStruct,
     ExitChannelStruct,
-    JoinChannelBlockStruct
+    JoinChannelBlockStruct,
+    SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     BlockEthersType,
@@ -18,7 +19,8 @@ import {
     JoinChannelBlockEthersType,
     ExitChannelEthersType,
     ExitChannelBlockEthersType,
-    BlockConfirmationEthersType
+    BlockConfirmationEthersType,
+    SnapshotDataEthersType
 } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Bytes } from "@/types/types";
@@ -30,6 +32,7 @@ type StructType =
     | TransactionStruct
     | DisputeStruct
     | StateSnapshotStruct
+    | SnapshotDataStruct
     | JoinChannelBlockStruct
     | ExitChannelBlockStruct
     | ExitChannelStruct;
@@ -42,6 +45,7 @@ export enum Type {
     Transaction,
     Dispute,
     StateSnapshot,
+    SnapshotData,
     JoinChannelBlock,
     ExitChannelBlock,
     ExitChannel
@@ -55,6 +59,7 @@ export class Codec {
         [Type.Transaction, TransactionEthersType],
         [Type.Dispute, DisputeEthersType],
         [Type.StateSnapshot, StateSnapshotEthersType],
+        [Type.SnapshotData, SnapshotDataEthersType],
         [Type.JoinChannelBlock, JoinChannelBlockEthersType],
         [Type.ExitChannelBlock, ExitChannelBlockEthersType],
         [Type.ExitChannel, ExitChannelEthersType]
@@ -87,6 +92,10 @@ export class Codec {
         encoded: Bytes,
         type: Type.StateSnapshot
     ): StateSnapshotStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.SnapshotData
+    ): SnapshotDataStruct;
     public static decode(
         encoded: Bytes,
         type: Type.JoinChannelBlock

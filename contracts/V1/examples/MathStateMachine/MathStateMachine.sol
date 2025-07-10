@@ -143,4 +143,8 @@ contract MathStateMachine is AStateMachine {
         totalBalance.amount = state.number;
         return totalBalance;
     }
+
+    function getZeroBalance() public pure override returns (Balance memory) {
+        return Balance({amount: 0, data: ""});
+    }
 }
