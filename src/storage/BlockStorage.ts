@@ -285,14 +285,8 @@ export class BlockStorage {
             for (const newSignature of blockConfirmation.signatures) {
                 signaturesSet.add(newSignature);
             }
+            existingBlock.signatures = Array.from(signaturesSet);
 
-            const mergedBlock: BlockConfirmationStruct = {
-                signedBlock: existingBlock.signedBlock,
-                signatures: Array.from(signaturesSet)
-            };
-
-            this.hashToBlockMap.set(blockHash, mergedBlock);
-            this.coordinatesToBlockMap.set(coordinateKey, mergedBlock);
             return blockHash;
         }
         // If no existing block, store new block

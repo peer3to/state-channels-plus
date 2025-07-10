@@ -4,6 +4,7 @@ import { ExitChannelBlockStorage } from "./ExitChannelBlockStorage";
 import { StateSnapshotStorage } from "./StateSnapshotStorage";
 import { ExitPointsStorage } from "./ExitPointsStorage";
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
+import { createDeepCopyProxy } from "@/utils";
 
 export class Storage {
     public readonly blocks = new BlockStorage();
@@ -11,6 +12,10 @@ export class Storage {
     public readonly exitChannelBlocks = new ExitChannelBlockStorage();
     public readonly stateSnapshots = new StateSnapshotStorage();
     public readonly exitPoints = new ExitPointsStorage();
+
+    constructor() {
+        return createDeepCopyProxy(this);
+    }
 
     /**
      * Get the state snapshot for given block coordinates.
