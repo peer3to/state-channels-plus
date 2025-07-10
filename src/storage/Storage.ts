@@ -5,7 +5,6 @@ import { StateSnapshotStorage } from "./StateSnapshotStorage";
 
 import { BlockCoordinates, StateSnapshot } from "@/models";
 import { Block } from "@/models";
-import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 export class Storage {
     public readonly blocks = new BlockStorage();
@@ -20,26 +19,25 @@ export class Storage {
      * If height >= 0: gets the state snapshot from that block height
      *
      */
-    getStateSnapshot(coordinates: BlockCoordinates): StateSnapshot {
+    getStateSnapshot(coordinates: BlockCoordinates): StateSnapshot | undefined {
         const { forkId, height } = coordinates;
 
         if (height < 0) {
-            return this.stateSnapshots.getGenesisSnapshotDataByForkId(
-                forkId
-            ) as StateSnapshot;
+            return this.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
         }
 
         const blockConfirmation = this.blocks.getBlockConfirmation(
             forkId,
             height
-        ) as BlockConfirmationStruct;
+        );
+        if (!blockConfirmation) {
+            return undefined;
+        }
 
         const stateSnapshotHash = Block.decode(
             blockConfirmation.signedBlock.encodedBlock
         ).stateSnapshotHash;
 
-        return this.stateSnapshots.getStateSnapshotByHash(
-            stateSnapshotHash
-        ) as StateSnapshot;
+        return this.stateSnapshots.getStateSnapshotByHash(stateSnapshotHash);
     }
 }
