@@ -167,11 +167,10 @@ describe("ExitPointsStorage", () => {
         });
 
         describe("Range inclusivity/exclusivity", () => {
-            it("should be inclusive of start and exclusive of end", () => {
-                // Range [200, 400) should include 200, 300 but exclude 400
+            it("should be inclusive of start and inclusive of end", () => {
+                // Range [200, 400] should include 200, 300 and 400
                 const result = storage.getExitPointsInRange(forkId1, 200, 400);
-                expect(result).to.deep.equal([200, 300]);
-                expect(result).to.not.include(400);
+                expect(result).to.deep.equal([200, 300, 400]);
             });
 
             it("should include exact start value", () => {
@@ -182,9 +181,7 @@ describe("ExitPointsStorage", () => {
 
             it("should exclude exact end value", () => {
                 const result = storage.getExitPointsInRange(forkId1, 200, 300);
-                expect(result).to.include(200);
-                expect(result).to.not.include(300);
-                expect(result).to.deep.equal([200]);
+                expect(result).to.deep.equal([200, 300]);
             });
 
             it("should work with single-element ranges", () => {

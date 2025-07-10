@@ -49,7 +49,7 @@ export class ExitPointsStorage {
         const actualEnd = end ?? list[list.length - 1] + 1;
 
         const filteredExitPoints = list.filter(
-            (height) => height >= actualStart && height < actualEnd
+            (height) => height >= actualStart && height <= actualEnd
         );
 
         return filteredExitPoints;
