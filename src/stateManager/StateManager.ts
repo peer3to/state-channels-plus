@@ -94,13 +94,6 @@ class StateManager {
     validationService: ValidationService;
     private storage: Storage = new Storage();
 
-    // Store latest dispute data
-    private latestDisputeData: {
-        dispute: DisputeStruct;
-        timestamp: Timestamp;
-        commitment: Hash;
-    } | null = null;
-
     // Store output state snapshots data
     private readonly outputStateSnapshotData: Map<Hash, StateSnapshot> =
         new Map();
