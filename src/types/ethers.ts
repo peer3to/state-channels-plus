@@ -35,7 +35,8 @@ ${BalanceEthersType} totalWithdrawals
 
 export const StateSnapshotEthersType = `tuple(
 ${SnapshotDataEthersType} snapshotData,
-bytes32 forkId
+bytes32 forkId,
+uint timestamp
 )`;
 
 export const BlockConfirmationEthersType = `tuple(
