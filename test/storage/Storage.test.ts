@@ -1,7 +1,6 @@
 import { expect } from "chai";
 import { describe, it, beforeEach, before } from "mocha";
 import Storage from "@/storage";
-import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { BlockCoordinates, Block, StateSnapshot } from "@/models";
 import * as factory from "../factory";
 import { ForkId } from "@/types/types";
@@ -20,18 +19,18 @@ describe("Storage", () => {
             const stateSnapshot = factory.stateSnapshot();
             forkId = stateSnapshot.snapshotDataHash;
 
-            // Create genesis state snapshot - needs to be marked as genesis
+            // Create genesis state snapshot
             // A snapshot is genesis if forkId === snapshotDataHash
             const stateSnapshotStruct = stateSnapshot.toStruct();
             stateSnapshotStruct.forkId = stateSnapshot.snapshotDataHash;
             genesisSnapshot = StateSnapshot.from(stateSnapshotStruct);
 
-            // Create a block state snapshot
+            // block state snapshot
             blockSnapshot = factory.stateSnapshot({
                 forkId: forkId
             });
 
-            // Create a mock block with the block snapshot hash
+            // block with the block snapshot hash
             block = factory.block({
                 stateSnapshotHash: blockSnapshot.hash,
                 transaction: factory.transaction({
@@ -42,7 +41,7 @@ describe("Storage", () => {
                 })
             });
 
-            // Create a mock block confirmation that contains the signed block
+            // block confirmation that contains the signed block
             blockConfirmation = factory.blockConfirmation({
                 signedBlock: factory.signedBlock({
                     encodedBlock: block.encode()
@@ -53,11 +52,10 @@ describe("Storage", () => {
         beforeEach(() => {
             storage = new Storage();
 
-            // Set up the storage with our fixtures
-            // Store genesis snapshot - it will be automatically stored as genesis if isGenesis is true
+            // Store genesis snapshot
             storage.stateSnapshots.storeStateSnapshot(genesisSnapshot);
 
-            // Store block snapshot by hash
+            // Store block snapshot
             storage.stateSnapshots.storeStateSnapshot(blockSnapshot);
 
             // Store block confirmation (at forkId, height 1)
@@ -72,8 +70,10 @@ describe("Storage", () => {
 
             const result = storage.getStateSnapshot(coordinates);
 
-            expect(result).to.exist;
-            expect(result.toStruct()).to.deep.equal(genesisSnapshot.toStruct());
+            expect(result).to.not.be.undefined;
+            expect(result?.toStruct()).to.deep.equal(
+                genesisSnapshot.toStruct()
+            );
         });
 
         it("should return genesis state snapshot when height is any negative number", () => {
@@ -85,8 +85,10 @@ describe("Storage", () => {
 
             const result = storage.getStateSnapshot(coordinates);
 
-            expect(result).to.exist;
-            expect(result.toStruct()).to.deep.equal(genesisSnapshot.toStruct());
+            expect(result).to.not.be.undefined;
+            expect(result?.toStruct()).to.deep.equal(
+                genesisSnapshot.toStruct()
+            );
         });
 
         it("should return state snapshot from block when height >= 0", () => {
@@ -97,8 +99,8 @@ describe("Storage", () => {
 
             const result = storage.getStateSnapshot(coordinates);
 
-            expect(result).to.exist;
-            expect(result.toStruct()).to.deep.equal(blockSnapshot.toStruct());
+            expect(result).to.not.be.undefined;
+            expect(result?.toStruct()).to.deep.equal(blockSnapshot.toStruct());
         });
 
         it("genesis snapshot doesn't exist", () => {
