@@ -7,7 +7,8 @@ import {
     SignedBlockStruct,
     ExitChannelBlockStruct,
     ExitChannelStruct,
-    JoinChannelBlockStruct
+    JoinChannelBlockStruct,
+    BalanceStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // TypeChain types - Proof types
@@ -17,10 +18,7 @@ import {
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 // TypeChain types - Dispute types
-import {
-    DisputeStruct,
-    SignedDisputeStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { SignedDisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 // TypeChain types - Contract interfaces
 import { AStateChannelManagerProxy } from "@typechain-types";
@@ -38,14 +36,8 @@ import Storage from "@/storage";
 
 // Event handlers and processors
 import P2pEventHooks from "@/P2pEventHooks";
-import {
-    DecisionContext,
-    processExecutionDecision
-} from "./processExecutionDecisionHandlers";
-import {
-    ConfirmationDecisionContext,
-    processConfirmationDecision
-} from "./processConfirmationDecisionHandlers";
+import { ExecutionDecisionProcessor } from "./executionDecisionProcessor";
+import { ConfirmationDecisionProcessor } from "./confirmationDecisionProcessor";
 
 // Models
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
@@ -72,7 +64,6 @@ import {
     Signature,
     Timestamp
 } from "@/types/types";
-import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 
 let DEBUG_STATE_MANAGER = false;
 
@@ -92,7 +83,11 @@ class StateManager {
     self = DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
     isDisposed: boolean = false;
     validationService: ValidationService;
-    private storage: Storage = new Storage();
+    storage: Storage;
+
+    // Decision processors
+    private executionDecisionProcessor: ExecutionDecisionProcessor;
+    private confirmationDecisionProcessor: ConfirmationDecisionProcessor;
 
     // Store output state snapshots data
     private readonly outputStateSnapshotData: Map<Hash, StateSnapshot> =
@@ -104,19 +99,22 @@ class StateManager {
         stateChannelManagerContract: AStateChannelManagerProxy,
         stateMachine: AStateMachine,
         timeConfig: TimeConfig,
-        p2pEventHooks: P2pEventHooks
+        p2pEventHooks: P2pEventHooks,
+        storage: Storage
     ) {
         this.signerAddress = signerAddress;
         this.stateMachine = stateMachine;
         this.p2pEventHooks = p2pEventHooks;
         this.timeConfig = timeConfig;
         this.stateChannelManagerContract = stateChannelManagerContract;
+        this.storage = storage;
+
         this.stateChannelEventListener = new StateChannelEventListener(
             this.self,
             this.stateChannelManagerContract,
             this.p2pEventHooks
         );
-        this.agreementManager = new AgreementManager();
+        this.agreementManager = new AgreementManager(this.storage);
         this.disputeHandler = new DisputeHandler(
             this.channelId,
             signer,
@@ -135,6 +133,19 @@ class StateManager {
             () => this.getChannelId(),
             this.signerAddress,
             this.onSignedBlock.bind(this)
+        );
+
+        // Initialize decision processors
+        this.executionDecisionProcessor = new ExecutionDecisionProcessor(
+            this.storage,
+            this.p2pManager,
+            this.disputeHandler,
+            this.onSuccessCommon.bind(this)
+        );
+        this.confirmationDecisionProcessor = new ConfirmationDecisionProcessor(
+            this.storage,
+            () => this.isDisposed,
+            this.tryConfirmFromQueue.bind(this)
         );
     }
     //Mark resources for garbage collection
@@ -216,36 +227,32 @@ class StateManager {
         this.onSuccessCommon();
     }
     private async tryExecuteFromQueue() {
-        let signedBlocks = this.agreementManager.tryDequeueBlocks(
+        let signedBlocks = this.storage.queues.tryDequeueBlocks(
             this.getforkId(),
             this.getNextBlockHeight()
         );
 
         for (const signedBlock of signedBlocks) {
             console.log("tryExecuteFromQueue - executing");
-            if (
-                (await this.onSignedBlock(signedBlock)) ==
-                ExecutionFlags.DISPUTE
-            ) {
-                break;
-            }
+            const executionFlag = await this.onSignedBlock(signedBlock);
+            if (executionFlag == ExecutionFlags.DISPUTE) break;
         }
     }
     private async tryConfirmFromQueue(): Promise<void> {
         //TODO! race condition and skipping a txCount
-        let confirmations = this.agreementManager.tryDequeueConfirmations(
+        let confirmations = this.storage.queues.tryDequeueConfirmations(
             this.getforkId(),
             this.getNextBlockHeight()
         );
 
         for (const confirmation of confirmations) {
-            if (
-                (await this.onBlockConfirmation(
-                    confirmation.originalSignedBlock,
-                    confirmation.confirmationSignature
-                )) == ExecutionFlags.DISPUTE
-            ) {
-                break;
+            // Process each signature in the confirmation
+            for (const signature of confirmation.signatures) {
+                const executionFlag = await this.onBlockConfirmation(
+                    confirmation.signedBlock,
+                    signature as Signature
+                );
+                if (executionFlag == ExecutionFlags.DISPUTE) return;
             }
         }
     }
@@ -304,7 +311,7 @@ class StateManager {
             }
 
             // Process the final decision
-            await this.processExecutionDecision(
+            await this.executionDecisionProcessor.process(
                 signedBlock,
                 finalExecutionFlag,
                 finalAgreementFlag
@@ -346,7 +353,7 @@ class StateManager {
                 );
             }
 
-            await this.processConfirmationDecision(
+            await this.confirmationDecisionProcessor.process(
                 signedBlock,
                 confirmationSignature,
                 finalExecutionFlag
@@ -751,49 +758,6 @@ class StateManager {
                 ),
             this.getTimeoutWaitTimeSeconds() * 1000,
             "participantTimeout"
-        );
-    }
-    // Helper function that takes appropriate action on the signed block based on the execution flag and agreement flag
-    private async processExecutionDecision(
-        signedBlock: SignedBlockStruct,
-        executionFlag: ExecutionFlags,
-        agreementFlag?: AgreementFlag
-    ) {
-        const context: DecisionContext = {
-            p2pManager: this.p2pManager,
-            agreementManager: this.agreementManager,
-            disputeHandler: this.disputeHandler,
-            onSuccessCb: this.onSuccessCommon.bind(this),
-            forkId: this.getforkId()
-        };
-
-        return processExecutionDecision(
-            signedBlock,
-            executionFlag,
-            agreementFlag,
-            context
-        );
-    }
-
-    // Helper function that takes appropriate action on the block confirmation based on the execution flag and agreement flag
-    private async processConfirmationDecision(
-        originalSignedBlock: SignedBlockStruct,
-        confirmationSignature: Signature,
-        executionFlag: ExecutionFlags
-    ) {
-        // Build the context for the decision
-        const ctx: ConfirmationDecisionContext = {
-            isDisposed: this.isDisposed,
-            tryConfirmFromQueue: this.tryConfirmFromQueue.bind(this),
-            queueConfirmation:
-                this.agreementManager.queueConfirmation.bind(this)
-        };
-
-        await processConfirmationDecision(
-            originalSignedBlock,
-            confirmationSignature,
-            executionFlag,
-            ctx
         );
     }
 

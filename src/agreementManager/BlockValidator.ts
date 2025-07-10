@@ -3,16 +3,16 @@ import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes
 import { AgreementFlag } from "@/types";
 
 import ForkService from "./ForkService";
-import QueueService from "./QueueService";
 import OnChainTracker from "./OnChainTracker";
 import { BlockHeight, ForkId, Timestamp } from "@/types/types";
 import { Block } from "@/models";
 import { ethers } from "ethers";
+import Storage from "@/storage";
 
 export default class BlockValidator {
     constructor(
         private readonly forks: ForkService,
-        private readonly queues: QueueService,
+        private readonly storage: Storage,
         private readonly chain: OnChainTracker
     ) {}
 
@@ -23,7 +23,10 @@ export default class BlockValidator {
 
     /** In chain OR parked in the “future queue” */
     isBlockDuplicate(block: Block): boolean {
-        return this.isBlockInChain(block) || this.queues.isBlockQueued(block);
+        return (
+            this.isBlockInChain(block) ||
+            this.storage.queues.isBlockQueued(block.hash)
+        );
     }
 
     /** Canonical chain: latest timestamp in this fork           */
