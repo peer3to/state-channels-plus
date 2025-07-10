@@ -76,7 +76,7 @@ import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 
 let DEBUG_STATE_MANAGER = false;
 
-const EMPTY_ADDRESS: Address = "0x00";
+const NULL = "0x00";
 class StateManager {
     stateMachine: AStateMachine;
     p2pEventHooks: P2pEventHooks;
@@ -87,7 +87,7 @@ class StateManager {
     stateChannelManagerContract: AStateChannelManagerProxy;
     p2pManager: P2PManager;
     timeConfig: TimeConfig;
-    channelId: ChannelId = "0x00";
+    channelId: ChannelId = NULL;
     mutex: Mutex = new Mutex();
     self = DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
     isDisposed: boolean = false;
@@ -206,7 +206,7 @@ class StateManager {
                 this.disputeHandler.proofManager.createDoubleSignProof([
                     signedBlock
                 ]);
-            this.disputeHandler.createDispute(block.forkId, EMPTY_ADDRESS, 0, [
+            this.disputeHandler.createDispute(block.forkId, NULL, 0, [
                 disputeProof
             ]);
         } else if (flag == AgreementFlag.INCORRECT_DATA) {
@@ -215,7 +215,7 @@ class StateManager {
                 this.disputeHandler.proofManager.createIncorrectDataProof(
                     signedBlock
                 );
-            this.disputeHandler.createDispute(block.forkId, EMPTY_ADDRESS, 0, [
+            this.disputeHandler.createDispute(block.forkId, NULL, 0, [
                 disputeProof
             ]);
         }
@@ -601,17 +601,6 @@ class StateManager {
         return total;
     }
 
-    private async storeJoinChannelBlock(
-        joinChannelBlock: JoinChannelBlockStruct,
-        _timestamp: Timestamp,
-        totalDeposits: BalanceStruct
-    ) {
-        this.storage.joinChannelBlocks.storeJoinChannelBlock(
-            joinChannelBlock,
-            totalDeposits
-        );
-    }
-
     private async storeExitChannelBlock(
         exitChannels: ExitChannelStruct[],
         coordinates: BlockCoordinates
@@ -633,6 +622,10 @@ class StateManager {
         const prevBlock =
             this.storage.exitChannelBlocks.getExitChannelBlockEntry(
                 previousBlockHash
+            );
+        if (prevBlock == undefined && previousBlockHash != NULL)
+            throw Error(
+                ` previous ExitChannelBlock missing in storage ${previousBlockHash}`
             );
 
         const totalWithdrawals = await this.calculateTotalBalance(
