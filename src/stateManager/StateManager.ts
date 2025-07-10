@@ -177,16 +177,16 @@ class StateManager {
     public getNextBlockHeight(): BlockHeight {
         return this.agreementManager.getNextBlockHeight();
     }
-    //Triggered by the On-chain Event Listener when a dispute is emitted on-chain
-    public onDisputeUpdate(dispute: DisputeStruct) {
-        this.disputeHandler.onDispute(dispute);
-        this.p2pEventHooks.onDisputeUpdate?.(dispute);
-    }
     //Triggered by the On-chain Event Listener when a joinChannelEvent is emitted on-chain
-    public async onJoinChannel(joinChannelBlock: JoinChannelBlockStruct) {
-        this.storeJoinChannelBlock(joinChannelBlock);
-
-        this.p2pEventHooks.onJoinChannel?.(joinChannelBlock);
+    public async onJoinChannel(
+        joinChannelBlock: JoinChannelBlockStruct,
+        _timestamp: Timestamp,
+        totalDeposits: BalanceStruct
+    ) {
+        this.storage.joinChannelBlocks.storeJoinChannelBlock(
+            joinChannelBlock,
+            totalDeposits
+        );
     }
     //Triggered by the On-chain Event Listener when block calldata is posted on-chain
     public collectOnChainBlock(
@@ -589,31 +589,23 @@ class StateManager {
     }
 
     private async calculateTotalBalance(
-        channels: { balance: BalanceStruct }[],
+        balances: { balance: BalanceStruct }[],
         initialTotal?: BalanceStruct
     ): Promise<BalanceStruct> {
         let total = initialTotal ?? (await this.stateMachine.getZeroBalance());
 
-        for (const channel of channels) {
-            total = await this.stateMachine.addBalance(total, channel.balance);
+        for (const balance of balances) {
+            total = await this.stateMachine.addBalance(total, balance.balance);
         }
 
         return total;
     }
 
     private async storeJoinChannelBlock(
-        joinChannelBlock: JoinChannelBlockStruct
+        joinChannelBlock: JoinChannelBlockStruct,
+        _timestamp: Timestamp,
+        totalDeposits: BalanceStruct
     ) {
-        const prevBlock =
-            this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
-                joinChannelBlock.previousBlockHash
-            );
-
-        const totalDeposits = await this.calculateTotalBalance(
-            joinChannelBlock.joinChannels,
-            prevBlock?.totalDeposits
-        );
-
         this.storage.joinChannelBlocks.storeJoinChannelBlock(
             joinChannelBlock,
             totalDeposits

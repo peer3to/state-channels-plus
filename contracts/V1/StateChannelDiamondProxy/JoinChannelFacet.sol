@@ -76,7 +76,7 @@ contract JoinChannelFacet is StateChannelCommon {
         _updatePendingParticipants(jc);
 
         // Emit the event
-        emit JoinChannelProcessed(channelId, jcb, block.timestamp);
+        emit JoinChannelProcessed(channelId, jcb, block.timestamp, newTotalDeposits);
         return true;
     }
 
