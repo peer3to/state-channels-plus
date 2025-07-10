@@ -165,10 +165,10 @@ contract StateSnapshotFacet is StateChannelCommon {
     function _clearOldJoinChannels(bytes32 channelId, bytes32 snapshotLatestJoinChannelBlockHash) internal {
         ChannelBalance storage cb = channelBalances[channelId];
         //start from the previous block hash (keep the current blockHash in storage for easy access even though it's in the snapshot)
-        bytes32 keyToDelete = cb.onChainJoinChannelMap[snapshotLatestJoinChannelBlockHash].prebiousJoinChannelBlockHash;
+        bytes32 keyToDelete = cb.onChainJoinChannelMap[snapshotLatestJoinChannelBlockHash].previousJoinChannelBlockHash;
         bytes32 prev;
         while (keyToDelete != bytes32(0)) {
-            prev = cb.onChainJoinChannelMap[keyToDelete].prebiousJoinChannelBlockHash;
+            prev = cb.onChainJoinChannelMap[keyToDelete].previousJoinChannelBlockHash;
             delete cb.onChainJoinChannelMap[keyToDelete];
             keyToDelete = prev;
         }

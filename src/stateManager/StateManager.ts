@@ -1,32 +1,67 @@
+// External libraries
+import { ethers } from "ethers";
+
+// TypeChain types - Data types
 import {
     TransactionStruct,
     SignedBlockStruct,
-    MilestoneProofStruct,
     ExitChannelBlockStruct,
-    DisputeProofStruct,
-    SignedDisputeStruct,
     ExitChannelStruct,
     JoinChannelBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { ethers } from "ethers";
-import AgreementManager from "../agreementManager/AgreementManager";
-import { AgreementFlag, ExecutionFlags, TimeConfig } from "@/types";
-import { AStateChannelManagerProxy } from "@typechain-types";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
+// TypeChain types - Proof types
+import {
+    MilestoneProofStruct,
+    DisputeFraudProofStruct
+} from "@typechain-types/contracts/V1/types/ProofTypes";
+
+// TypeChain types - Dispute types
+import {
+    DisputeStruct,
+    SignedDisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+
+// TypeChain types - Contract interfaces
+import { AStateChannelManagerProxy } from "@typechain-types";
+import { StateSnapshotStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+
+// Core components
+import AgreementManager from "../agreementManager/AgreementManager";
+import AStateMachine from "@/AStateMachine";
 import Clock from "@/Clock";
 import DisputeHandler from "@/DisputeHandler";
 import P2PManager from "@/P2PManager";
+import StateChannelEventListener from "@/StateChannelEventListener";
+import ValidationService from "./ValidationService";
+import Storage from "@/storage";
 
-import AStateMachine from "@/AStateMachine";
+// Event handlers and processors
+import P2pEventHooks from "@/P2pEventHooks";
+import {
+    DecisionContext,
+    processExecutionDecision
+} from "./processExecutionDecisionHandlers";
+import {
+    ConfirmationDecisionContext,
+    processConfirmationDecision
+} from "./processConfirmationDecisionHandlers";
+
+// Models
+import { Block, BlockCoordinates, StateSnapshot } from "@/models";
+
+// Utils
 import {
     DebugProxy,
     Mutex,
     scheduleTask,
-    getActiveParticipants
+    getActiveParticipants,
+    Codec,
+    Type,
+    SignatureUtils
 } from "@/utils";
-import StateChannelEventListener from "@/StateChannelEventListener";
-import { Block, StateSnapshot } from "@/models";
+// Types
+import { AgreementFlag, ExecutionFlags, TimeConfig } from "@/types";
 import {
     Address,
     BlockHeight,
@@ -37,25 +72,11 @@ import {
     Signature,
     Timestamp
 } from "@/types/types";
-
-import P2pEventHooks from "@/P2pEventHooks";
-import {
-    DecisionContext,
-    processExecutionDecision
-} from "./processExecutionDecisionHandlers";
-import {
-    ConfirmationDecisionContext,
-    processConfirmationDecision
-} from "./processConfirmationDecisionHandlers";
-import ValidationService from "./ValidationService";
-import { Codec, Type } from "@/utils/Codec";
-import { SignatureUtils } from "@/utils/SignatureUtils";
-import { IStorageModule, StorageModule } from "@/storage";
-import { StateSnapshotStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 
 let DEBUG_STATE_MANAGER = false;
 
-const EMPTY_ADDRESS: Address = "0x00";
+const NULL = "0x00";
 class StateManager {
     stateMachine: AStateMachine;
     p2pEventHooks: P2pEventHooks;
@@ -66,19 +87,12 @@ class StateManager {
     stateChannelManagerContract: AStateChannelManagerProxy;
     p2pManager: P2PManager;
     timeConfig: TimeConfig;
-    channelId: ChannelId = "0x00";
+    channelId: ChannelId = NULL;
     mutex: Mutex = new Mutex();
     self = DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
     isDisposed: boolean = false;
     validationService: ValidationService;
-    private storageModule: IStorageModule = new StorageModule();
-
-    // Store latest dispute data
-    private latestDisputeData: {
-        dispute: DisputeStruct;
-        timestamp: Timestamp;
-        commitment: Hash;
-    } | null = null;
+    private storage: Storage = new Storage();
 
     // Store output state snapshots data
     private readonly outputStateSnapshotData: Map<Hash, StateSnapshot> =
@@ -156,19 +170,16 @@ class StateManager {
     public getNextBlockHeight(): BlockHeight {
         return this.agreementManager.getNextBlockHeight();
     }
-    //Triggered by the On-chain Event Listener when a dispute is emitted on-chain
-    public onDisputeUpdate(dispute: DisputeStruct) {
-        this.disputeHandler.onDispute(dispute);
-        this.p2pEventHooks.onDisputeUpdate?.(dispute);
-    }
     //Triggered by the On-chain Event Listener when a joinChannelEvent is emitted on-chain
-    public async onJoinChannel(joinChannelBlock: JoinChannelBlockStruct) {
-        this.handleJoinChannelStorage(joinChannelBlock);
-        this.handleStateSnapshotStorage(
-            await this.getEncodedStateKecak256(),
-            this.getForkCnt()
+    public async onJoinChannel(
+        joinChannelBlock: JoinChannelBlockStruct,
+        _timestamp: Timestamp,
+        totalDeposits: BalanceStruct
+    ) {
+        this.storage.joinChannelBlocks.storeJoinChannelBlock(
+            joinChannelBlock,
+            totalDeposits
         );
-        this.p2pEventHooks.onJoinChannel?.(joinChannelBlock);
     }
     //Triggered by the On-chain Event Listener when block calldata is posted on-chain
     public collectOnChainBlock(
@@ -181,14 +192,14 @@ class StateManager {
             Number(timestamp)
         );
         let block = Block.decode(signedBlock.encodedBlock);
-        let disputeProof: ProofStruct;
+        let disputeProof: DisputeFraudProofStruct;
         if (flag == AgreementFlag.DOUBLE_SIGN) {
             console.log("StateManager - collectOnChainBlock - double sign");
             disputeProof =
                 this.disputeHandler.proofManager.createDoubleSignProof([
                     signedBlock
                 ]);
-            this.disputeHandler.createDispute(block.forkId, EMPTY_ADDRESS, 0, [
+            this.disputeHandler.createDispute(block.forkId, NULL, 0, [
                 disputeProof
             ]);
         } else if (flag == AgreementFlag.INCORRECT_DATA) {
@@ -197,7 +208,7 @@ class StateManager {
                 this.disputeHandler.proofManager.createIncorrectDataProof(
                     signedBlock
                 );
-            this.disputeHandler.createDispute(block.forkId, EMPTY_ADDRESS, 0, [
+            this.disputeHandler.createDispute(block.forkId, NULL, 0, [
                 disputeProof
             ]);
         }
@@ -358,7 +369,11 @@ class StateManager {
 
         //This is done before the state snapshot is created
         //This is because the exit channels need to be taken into account when creating the state snapshot
-        this.handleExitChannelsStorage(exitChannels);
+        const coordinates: BlockCoordinates = {
+            forkId: transaction.header.forkId,
+            height: Number(transaction.header.transactionCnt)
+        };
+        this.storeExitChannelBlock(exitChannels, coordinates);
 
         this.handleStateSnapshotStorage(
             encodedState,
@@ -566,29 +581,61 @@ class StateManager {
         return this.getEncodedState().then(ethers.keccak256);
     }
 
-    private handleJoinChannelStorage(joinChannelBlock: JoinChannelBlockStruct) {
-        const blockHash = ethers.keccak256(
-            Codec.encode(joinChannelBlock, Type.JoinChannelBlock)
-        );
-        this.storageModule.storeJoinChannelBlockHash(
-            blockHash,
-            joinChannelBlock
-        );
+    private async calculateTotalBalance(
+        balances: { balance: BalanceStruct }[],
+        initialTotal?: BalanceStruct
+    ): Promise<BalanceStruct> {
+        let total = initialTotal ?? (await this.stateMachine.getZeroBalance());
+
+        for (const balance of balances) {
+            total = await this.stateMachine.addBalance(total, balance.balance);
+        }
+
+        return total;
     }
 
-    private handleExitChannelsStorage(exitChannels: ExitChannelStruct[]) {
+    private async storeExitChannelBlock(
+        exitChannels: ExitChannelStruct[],
+        coordinates: BlockCoordinates
+    ) {
+        const previousStateSnapshot = this.storage.getStateSnapshot({
+            forkId: coordinates.forkId,
+            height: coordinates.height - 1
+        });
+        if (!previousStateSnapshot) {
+            // This should never happen, but just in case
+            throw new Error(
+                `Previous state snapshot not found for forkId: ${coordinates.forkId} and height: ${coordinates.height - 1}`
+            );
+        }
+
         const previousBlockHash =
-            this.storageModule.getLatestExitChannelBlockHash();
+            previousStateSnapshot.snapshotData.latestExitChannelBlockHash;
+
         const exitChannelBlock: ExitChannelBlockStruct = {
             exitChannels,
-            previousBlockHash: previousBlockHash as BytesLike
+            previousBlockHash: previousBlockHash
         };
-        const exitChannelBlockHash = ethers.keccak256(
-            Codec.encode(exitChannelBlock, Type.ExitChannelBlock)
+
+        // Get previous block's total withdrawals or zero balance if first block
+        const prevBlock =
+            this.storage.exitChannelBlocks.getExitChannelBlockEntry(
+                previousBlockHash
+            );
+        if (prevBlock == undefined && previousBlockHash != NULL)
+            throw Error(
+                ` previous ExitChannelBlock missing in storage ${previousBlockHash}`
+            );
+
+        const totalWithdrawals = await this.calculateTotalBalance(
+            exitChannels,
+            prevBlock?.totalWithdrawals
         );
-        this.storageModule.storeExitChannelBlockHash(
-            exitChannelBlockHash,
-            exitChannelBlock
+
+        // Store the new block with calculated total withdrawals
+        this.storage.exitChannelBlocks.storeExitChannelBlock(
+            exitChannelBlock,
+            totalWithdrawals
         );
     }
 

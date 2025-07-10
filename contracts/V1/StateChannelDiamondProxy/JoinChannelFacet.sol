@@ -65,7 +65,7 @@ contract JoinChannelFacet is StateChannelCommon {
 
         // Persist the onChainJoinChannel in the map
         channelBalance.onChainJoinChannelMap[blockHash] = OnChainJoinChannel({
-            prebiousJoinChannelBlockHash: channelBalance.latestJoinChannelBlockHash,
+            previousJoinChannelBlockHash: channelBalance.latestJoinChannelBlockHash,
             timestamp: block.timestamp,
             totalDeposits: newTotalDeposits
         });
@@ -76,7 +76,7 @@ contract JoinChannelFacet is StateChannelCommon {
         _updatePendingParticipants(jc);
 
         // Emit the event
-        emit JoinChannelProcessed(channelId, jcb, block.timestamp);
+        emit JoinChannelProcessed(channelId, jcb, block.timestamp, newTotalDeposits);
         return true;
     }
 
@@ -89,7 +89,7 @@ contract JoinChannelFacet is StateChannelCommon {
         ChannelBalance storage channelBalance = channelBalances[jc.channelId];
         jcs[0] = jc;
         bytes32 latestBlockHash = channelBalance.latestJoinChannelBlockHash;
-        bytes32 previousBlockHash = channelBalance.onChainJoinChannelMap[latestBlockHash].prebiousJoinChannelBlockHash;
+        bytes32 previousBlockHash = channelBalance.onChainJoinChannelMap[latestBlockHash].previousJoinChannelBlockHash;
         JoinChannelBlock memory joinChannelBlock =
             JoinChannelBlock({previousBlockHash: previousBlockHash, joinChannels: jcs});
         return joinChannelBlock;

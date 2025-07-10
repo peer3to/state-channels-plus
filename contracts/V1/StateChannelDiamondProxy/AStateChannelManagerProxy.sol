@@ -86,7 +86,7 @@ abstract contract AStateChannelManagerProxy is StateChannelManagerInterface, Sta
         // Encode the function selector and arguments
         bytes memory data = abi.encodeCall(DisputeManagerFacet.auditDispute, (dispute, disputeAuditingData));
         // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) = address(this).delegatecall{gas: getGasLimit()}(data);
+        (bool success, bytes memory returnData) = address(disputeManagerFacet).delegatecall{gas: getGasLimit()}(data);
         if (!success) {
             assembly {
                 revert(add(returnData, 0x20), mload(returnData))

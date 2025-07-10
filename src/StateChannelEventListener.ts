@@ -71,17 +71,6 @@ class StateChannelEventListener {
                 this.stateManager.collectOnChainBlock(signedBlock, timestamp);
             }
         },
-        DisputeUpdate: {
-            filterFactory: (channelId: ChannelId) =>
-                this.stateChannelManagerContract.filters.DisputeUpdated(
-                    channelId
-                ),
-            handler: (logObj: any) => {
-                this.stateManager.onDisputeUpdate(
-                    logObj.args.dispute as DisputeStruct
-                );
-            }
-        },
         DisputeCommited: {
             filterFactory: (channelId: ChannelId) =>
                 this.stateChannelManagerContract.filters.DisputeCommited(
@@ -107,6 +96,21 @@ class StateChannelEventListener {
                 this.stateManager.onOutputStateSnapshotVerified(
                     outputStateSnapshot,
                     disputeCommitment
+                );
+            }
+        },
+        JoinChannelProcessed: {
+            filterFactory: (channelId: ChannelId) =>
+                this.stateChannelManagerContract.filters.JoinChannelProcessed(
+                    channelId
+                ),
+            handler: (logObj: any) => {
+                const { joinChannelBlock, timestamp, totalDeposits } =
+                    logObj.args;
+                this.stateManager.onJoinChannel(
+                    joinChannelBlock,
+                    timestamp,
+                    totalDeposits
                 );
             }
         }

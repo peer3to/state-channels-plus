@@ -6,7 +6,7 @@ import {
     BlockConfirmationStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Hash, ForkId, BlockHeight, Signature } from "@/types/types";
+import { Hash, ForkId, BlockHeight } from "@/types/types";
 import * as factory from "../factory";
 import { Block } from "@/models";
 
@@ -27,7 +27,6 @@ describe("BlockStorage", () => {
         mockBlockConfirmation = factory.blockConfirmation({
             signedBlock: mockSignedBlock
         });
-
         const block = Block.decode(mockSignedBlock.encodedBlock);
         mockBlockHash = block.hash;
 

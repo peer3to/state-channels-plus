@@ -12,10 +12,13 @@ import {
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import AgreementManager from "@/agreementManager";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    DisputeStruct,
+    SignedDisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { randomInt } from "crypto";
 import { Codec, Type } from "@/utils";
-import { SignedDisputeStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
+import { Block, StateSnapshot } from "@/models";
 
 /**
  * Creates a default transaction header
@@ -100,21 +103,21 @@ export function agreementManager(addresses: string[] = []): AgreementManager {
  * @param overrides Optional overrides for the block properties
  * @returns A mock BlockStruct
  */
-export function block(overrides: Partial<BlockStruct> = {}): BlockStruct {
-    const block: BlockStruct = {
+export function block(overrides: Partial<BlockStruct> = {}): Block {
+    const blockStruct: BlockStruct = {
         transaction: transaction(),
         previousBlockHash: ethers.hexlify(ethers.randomBytes(32)),
         stateSnapshotHash: ethers.hexlify(ethers.randomBytes(32))
     };
 
     if (overrides.transaction) {
-        block.transaction = transaction({
-            ...block.transaction,
+        blockStruct.transaction = transaction({
+            ...blockStruct.transaction,
             ...overrides.transaction
         });
     }
 
-    return { ...block, ...overrides };
+    return Block.from({ ...blockStruct, ...overrides });
 }
 
 /**
@@ -176,7 +179,6 @@ export function joinChannel(
 
     return { ...defaultJoinChannel, ...overrides };
 }
-
 export function joinChannelBlock(
     overrides: Partial<JoinChannelBlockStruct> = {}
 ): JoinChannelBlockStruct {
@@ -187,7 +189,6 @@ export function joinChannelBlock(
 
     return { ...defaultJoinChannelBlock, ...overrides };
 }
-
 export function signedBlock(
     overrides: Partial<SignedBlockStruct> = {}
 ): SignedBlockStruct {
@@ -211,11 +212,6 @@ export function signedDispute(
     return { ...defaultSignedDispute, ...overrides };
 }
 
-/**
- * Creates a mock BlockConfirmationStruct for testing
- * @param overrides Optional override values for the block confirmation fields
- * @returns A BlockConfirmationStruct with default values and any provided overrides
- */
 export function blockConfirmation(
     overrides: Partial<BlockConfirmationStruct> = {}
 ): BlockConfirmationStruct {
@@ -227,11 +223,6 @@ export function blockConfirmation(
     return { ...defaultBlockConfirmation, ...overrides };
 }
 
-/**
- * Creates a mock ExitChannelBlockStruct for testing
- * @param overrides Optional override values for the exit channel block fields
- * @returns An ExitChannelBlockStruct with default values and any provided overrides
- */
 export function exitChannelBlock(
     overrides: Partial<ExitChannelBlockStruct> = {}
 ): ExitChannelBlockStruct {
@@ -245,7 +236,7 @@ export function exitChannelBlock(
 
 export function stateSnapshot(
     overrides: Partial<StateSnapshotStruct> = {}
-): StateSnapshotStruct {
+): StateSnapshot {
     const defaultStateSnapshot: StateSnapshotStruct = {
         snapshotData: {
             stateMachineStateHash: ethers.hexlify(ethers.randomBytes(32)),
@@ -268,5 +259,5 @@ export function stateSnapshot(
         timestamp: Math.floor(Date.now() / 1000)
     };
 
-    return { ...defaultStateSnapshot, ...overrides };
+    return StateSnapshot.from({ ...defaultStateSnapshot, ...overrides });
 }
