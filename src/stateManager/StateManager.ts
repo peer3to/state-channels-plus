@@ -602,6 +602,12 @@ class StateManager {
             forkId: coordinates.forkId,
             height: coordinates.height - 1
         });
+        if (!previousStateSnapshot) {
+            // This should never happen, but just in case
+            throw new Error(
+                `Previous state snapshot not found for forkId: ${coordinates.forkId} and height: ${coordinates.height - 1}`
+            );
+        }
 
         const previousBlockHash =
             previousStateSnapshot.snapshotData.latestExitChannelBlockHash;
