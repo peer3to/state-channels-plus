@@ -307,7 +307,7 @@ describe("BlockStorage", () => {
             storageWithProxy = new Storage();
         });
 
-        it("should not affect original blockConfirmation when merging signatures in storage", () => {
+        it("altering object inside storage (adding signatures) doesn't affect original object", () => {
             // Create a blockConfirmation with initial signatures
             const originalBlockConfirmation = factory.blockConfirmation({
                 signedBlock: mockSignedBlock,
@@ -350,7 +350,7 @@ describe("BlockStorage", () => {
             );
         });
 
-        it("should not affect storage when modifying retrieved blockConfirmation", () => {
+        it("altering object outside storage doesn't affect object inside storage", () => {
             // Store a blockConfirmation
             const originalBlockConfirmation = factory.blockConfirmation({
                 signedBlock: mockSignedBlock,
