@@ -11,6 +11,10 @@ interface ExitChannelBlockEntry {
     totalWithdrawals: BalanceStruct;
 }
 
+type StoreOptions = {
+    hash?: Hash;
+};
+
 export class ExitChannelBlockStorage {
     private blockMap: Map<Hash, ExitChannelBlockEntry>;
 
@@ -22,28 +26,13 @@ export class ExitChannelBlockStorage {
     // CREATE
     // ====================================
 
-    // Exit Channel Block
-
-    /** [OVERLOAD 1] Store exit channel block with auto-computed hash */
-    storeExitChannelBlock(
-        block: ExitChannelBlockStruct,
-        totalWithdrawals: BalanceStruct
-    ): Hash;
-
-    /** [OVERLOAD 2] Store exit channel block with provided hash */
     storeExitChannelBlock(
         block: ExitChannelBlockStruct,
         totalWithdrawals: BalanceStruct,
-        blockHash: Hash
-    ): Hash;
-
-    storeExitChannelBlock(
-        block: ExitChannelBlockStruct,
-        totalWithdrawals: BalanceStruct,
-        blockHash?: Hash
+        options?: StoreOptions
     ): Hash {
         const hash =
-            blockHash ??
+            options?.hash ??
             ethers.keccak256(Codec.encode(block, Type.ExitChannelBlock));
 
         // Check for duplicates

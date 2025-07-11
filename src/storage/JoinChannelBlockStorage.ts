@@ -11,6 +11,10 @@ interface JoinChannelBlockEntry {
     totalDeposits: BalanceStruct;
 }
 
+type StoreOptions = {
+    hash?: Hash;
+};
+
 export class JoinChannelBlockStorage {
     private blockMap: Map<Hash, JoinChannelBlockEntry>;
 
@@ -22,28 +26,13 @@ export class JoinChannelBlockStorage {
     // CREATE
     // ====================================
 
-    // Join Channel Block
-
-    /** [OVERLOAD 1] Store join channel block with auto-computed hash */
-    storeJoinChannelBlock(
-        block: JoinChannelBlockStruct,
-        totalDeposits: BalanceStruct
-    ): Hash;
-
-    /** [OVERLOAD 2] Store join channel block with provided hash */
     storeJoinChannelBlock(
         block: JoinChannelBlockStruct,
         totalDeposits: BalanceStruct,
-        blockHash: Hash
-    ): Hash;
-
-    storeJoinChannelBlock(
-        block: JoinChannelBlockStruct,
-        totalDeposits: BalanceStruct,
-        blockHash?: Hash
+        options?: StoreOptions
     ): Hash {
         const hash =
-            blockHash ??
+            options?.hash ??
             ethers.keccak256(Codec.encode(block, Type.JoinChannelBlock));
 
         // Check for duplicates

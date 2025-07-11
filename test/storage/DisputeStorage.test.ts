@@ -40,7 +40,9 @@ describe("DisputeStorage", () => {
 
         it("should store SignedDispute with provided hash", () => {
             const customHash = ethers.hexlify(ethers.randomBytes(32));
-            const hash = storage.storeDispute(mockSignedDispute, customHash);
+            const hash = storage.storeDispute(mockSignedDispute, {
+                hash: customHash
+            });
 
             expect(hash).to.equal(customHash);
             const stored = storage.getDisputeConfirmation(customHash);
@@ -50,10 +52,7 @@ describe("DisputeStorage", () => {
 
         it("should return same hash on duplicate insert and preserve existing signatures", () => {
             // First store with empty signatures
-            const hash1 = storage.storeDispute(
-                mockSignedDispute,
-                mockDisputeHash
-            );
+            const hash1 = storage.storeDispute(mockSignedDispute);
             expect(hash1).to.equal(mockDisputeHash);
 
             // Add some signatures to the existing dispute
@@ -64,10 +63,7 @@ describe("DisputeStorage", () => {
             existingDispute!.signatures = [signature1, signature2];
 
             // Second store should preserve existing signatures
-            const hash2 = storage.storeDispute(
-                mockSignedDispute,
-                mockDisputeHash
-            );
+            const hash2 = storage.storeDispute(mockSignedDispute);
             expect(hash2).to.equal(mockDisputeHash);
 
             const stored = storage.getDisputeConfirmation(mockDisputeHash);
@@ -90,7 +86,7 @@ describe("DisputeStorage", () => {
             const customHash = ethers.hexlify(ethers.randomBytes(32));
             const hash = storage.storeDisputeConfirmation(
                 mockDisputeConfirmation,
-                customHash
+                { hash: customHash }
             );
 
             expect(hash).to.equal(customHash);
@@ -111,8 +107,7 @@ describe("DisputeStorage", () => {
             };
 
             const hash1 = storage.storeDisputeConfirmation(
-                firstDisputeConfirmation,
-                mockDisputeHash
+                firstDisputeConfirmation
             );
 
             // Second dispute confirmation with same shared signature + different unique signature
@@ -122,8 +117,7 @@ describe("DisputeStorage", () => {
             };
 
             const hash2 = storage.storeDisputeConfirmation(
-                secondDisputeConfirmation,
-                mockDisputeHash
+                secondDisputeConfirmation
             );
 
             // Should return same hash
@@ -151,8 +145,7 @@ describe("DisputeStorage", () => {
             };
 
             const hash = storage.storeDisputeConfirmation(
-                disputeWithEmptySignatures,
-                mockDisputeHash
+                disputeWithEmptySignatures
             );
 
             const stored = storage.getDisputeConfirmation(hash);
@@ -162,8 +155,7 @@ describe("DisputeStorage", () => {
         it("should preserve original SignedDispute when merging signatures", () => {
             // Store first dispute
             const hash1 = storage.storeDisputeConfirmation(
-                mockDisputeConfirmation,
-                mockDisputeHash
+                mockDisputeConfirmation
             );
 
             // Create a second dispute with different SignedDispute but same hash
@@ -174,10 +166,9 @@ describe("DisputeStorage", () => {
             };
 
             // Store second dispute with same hash
-            const hash2 = storage.storeDisputeConfirmation(
-                secondDispute,
-                mockDisputeHash
-            );
+            const hash2 = storage.storeDisputeConfirmation(secondDispute, {
+                hash: hash1
+            });
 
             expect(hash1).to.equal(hash2);
 
@@ -193,10 +184,7 @@ describe("DisputeStorage", () => {
 
     describe("READ - getDisputeConfirmation()", () => {
         beforeEach(() => {
-            storage.storeDisputeConfirmation(
-                mockDisputeConfirmation,
-                mockDisputeHash
-            );
+            storage.storeDisputeConfirmation(mockDisputeConfirmation);
         });
 
         it("should get dispute confirmation by hash", () => {
@@ -240,10 +228,7 @@ describe("DisputeStorage", () => {
 
         it("should maintain signatures across different storage methods", () => {
             // Store with storeDispute first
-            const hash1 = storage.storeDispute(
-                mockSignedDispute,
-                mockDisputeHash
-            );
+            const hash1 = storage.storeDispute(mockSignedDispute);
 
             // Add a signature through storeDisputeConfirmation
             const disputeWithSignature = {
@@ -251,10 +236,8 @@ describe("DisputeStorage", () => {
                 signatures: [sig()]
             };
 
-            const hash2 = storage.storeDisputeConfirmation(
-                disputeWithSignature,
-                mockDisputeHash
-            );
+            const hash2 =
+                storage.storeDisputeConfirmation(disputeWithSignature);
 
             expect(hash1).to.equal(hash2);
 
@@ -272,8 +255,7 @@ describe("DisputeStorage", () => {
             };
 
             const hash = storage.storeDisputeConfirmation(
-                disputeWithManySignatures,
-                mockDisputeHash
+                disputeWithManySignatures
             );
 
             const stored = storage.getDisputeConfirmation(hash);
