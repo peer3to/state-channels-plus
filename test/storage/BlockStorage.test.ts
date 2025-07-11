@@ -38,12 +38,7 @@ describe("BlockStorage", () => {
 
     describe("CREATE - storeBlock()", () => {
         it("should store SignedBlock and return same hash with empty signatures", () => {
-            const hash = storage.storeBlock(
-                mockSignedBlock,
-                mockBlockHash,
-                mockForkId,
-                mockHeight
-            );
+            const hash = storage.storeBlock(mockSignedBlock);
 
             expect(hash).to.equal(mockBlockHash);
             const stored = storage.getBlockConfirmation(hash);
@@ -66,10 +61,7 @@ describe("BlockStorage", () => {
             };
 
             const hash1 = storage.storeBlockConfirmation(
-                firstBlockConfirmation,
-                mockBlockHash,
-                mockForkId,
-                mockHeight
+                firstBlockConfirmation
             );
 
             // Second block confirmation with same shared signature + different unique signature
@@ -80,9 +72,7 @@ describe("BlockStorage", () => {
 
             const hash2 = storage.storeBlockConfirmation(
                 secondBlockConfirmation,
-                mockBlockHash,
-                mockForkId,
-                mockHeight
+                { hash: mockBlockHash }
             );
 
             // Should return same hash
@@ -111,26 +101,25 @@ describe("BlockStorage", () => {
         });
 
         it("should insert block confirmation with provided keys", () => {
-            const hash = storage.storeBlockConfirmation(
-                mockBlockConfirmation,
-                mockBlockHash,
+            const hash = storage.storeBlockConfirmation(mockBlockConfirmation, {
+                coordinates: { forkId: mockForkId, height: mockHeight }
+            });
+
+            const stored = storage.getBlockConfirmation(hash);
+            const stored_by_coords = storage.getBlockConfirmation(
                 mockForkId,
                 mockHeight
             );
-
-            const stored = storage.getBlockConfirmation(hash);
             expect(stored).to.equal(mockBlockConfirmation);
+            expect(stored_by_coords).to.equal(mockBlockConfirmation);
         });
     });
 
     describe("READ - getBlockConfirmation()", () => {
         beforeEach(() => {
-            storage.storeBlockConfirmation(
-                mockBlockConfirmation,
-                mockBlockHash,
-                mockForkId,
-                mockHeight
-            );
+            storage.storeBlockConfirmation(mockBlockConfirmation, {
+                coordinates: { forkId: mockForkId, height: mockHeight }
+            });
         });
 
         it("should get block by hash", () => {
@@ -165,12 +154,9 @@ describe("BlockStorage", () => {
 
     describe("UPDATE - insertSignature()", () => {
         beforeEach(() => {
-            storage.storeBlockConfirmation(
-                mockBlockConfirmation,
-                mockBlockHash,
-                mockForkId,
-                mockHeight
-            );
+            storage.storeBlockConfirmation(mockBlockConfirmation, {
+                coordinates: { forkId: mockForkId, height: mockHeight }
+            });
         });
 
         it("should insert signature by hash", () => {
@@ -272,12 +258,7 @@ describe("BlockStorage", () => {
 
     describe("DELETE - deleteBlock()", () => {
         beforeEach(() => {
-            storage.storeBlockConfirmation(
-                mockBlockConfirmation,
-                mockBlockHash,
-                mockForkId,
-                mockHeight
-            );
+            storage.storeBlockConfirmation(mockBlockConfirmation);
         });
 
         it("should delete by hash", () => {
@@ -330,9 +311,7 @@ describe("BlockStorage", () => {
             // Store the second blockConfirmation - this should merge signatures in storage
             const hash2 = storageWithProxy.blocks.storeBlockConfirmation(
                 secondBlockConfirmation,
-                hash1,
-                mockForkId,
-                mockHeight
+                { hash: hash1 }
             );
 
             expect(hash1).to.equal(hash2);
@@ -359,9 +338,7 @@ describe("BlockStorage", () => {
 
             storageWithProxy.blocks.storeBlockConfirmation(
                 originalBlockConfirmation,
-                mockBlockHash,
-                mockForkId,
-                mockHeight
+                { hash: mockBlockHash }
             );
 
             // Read the blockConfirmation from storage
