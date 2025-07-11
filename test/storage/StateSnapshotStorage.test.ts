@@ -23,7 +23,7 @@ describe("StateSnapshotStorage", () => {
     });
 
     describe("CREATE - storeStateSnapshot()", () => {
-        describe("[OVERLOAD 1] Auto-computed hash", () => {
+        describe("Auto-computed hash", () => {
             it("should store snapshot with computed hash", () => {
                 const hash = storage.storeStateSnapshot(stateSnapshot);
                 expect(hash).to.equal(stateSnapshot.hash);
@@ -54,13 +54,12 @@ describe("StateSnapshotStorage", () => {
             });
         });
 
-        describe("[OVERLOAD 2] Provided hash", () => {
+        describe("Provided hash", () => {
             it("should store snapshot with provided hash", () => {
                 const customHash = ethers.hexlify(ethers.randomBytes(32));
-                const hash = storage.storeStateSnapshot(
-                    stateSnapshot,
-                    customHash
-                );
+                const hash = storage.storeStateSnapshot(stateSnapshot, {
+                    hash: customHash
+                });
                 expect(hash).to.equal(customHash);
 
                 const stored = storage.getStateSnapshotByHash(customHash);
@@ -71,10 +70,9 @@ describe("StateSnapshotStorage", () => {
 
             it("should store genesis snapshot with provided hash and auto-add to genesis mapping", () => {
                 const customHash = ethers.hexlify(ethers.randomBytes(32));
-                const hash = storage.storeStateSnapshot(
-                    genesisStateSnapshot,
-                    customHash
-                );
+                const hash = storage.storeStateSnapshot(genesisStateSnapshot, {
+                    hash: customHash
+                });
                 expect(hash).to.equal(customHash);
 
                 // Should be stored with custom hash

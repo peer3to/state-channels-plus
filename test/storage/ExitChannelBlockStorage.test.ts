@@ -48,7 +48,7 @@ describe("ExitChannelBlockStorage", () => {
             const hash = storage.storeExitChannelBlock(
                 mockExitBlock,
                 mockTotalWithdrawals,
-                customHash
+                { hash: customHash }
             );
             expect(hash).to.equal(customHash);
 
@@ -63,16 +63,14 @@ describe("ExitChannelBlockStorage", () => {
             // First store succeeds
             const hash1 = storage.storeExitChannelBlock(
                 mockExitBlock,
-                mockTotalWithdrawals,
-                mockBlockHash
+                mockTotalWithdrawals
             );
             expect(hash1).to.equal(mockBlockHash);
 
             // Second store with same hash should return same hash
             const hash2 = storage.storeExitChannelBlock(
                 mockExitBlock,
-                mockTotalWithdrawals,
-                mockBlockHash
+                mockTotalWithdrawals
             );
             expect(hash2).to.equal(mockBlockHash);
             expect(hash1).to.equal(hash2);
@@ -81,11 +79,7 @@ describe("ExitChannelBlockStorage", () => {
 
     describe("READ operations", () => {
         beforeEach(() => {
-            storage.storeExitChannelBlock(
-                mockExitBlock,
-                mockTotalWithdrawals,
-                mockBlockHash
-            );
+            storage.storeExitChannelBlock(mockExitBlock, mockTotalWithdrawals);
         });
 
         it("should get block by hash", () => {
