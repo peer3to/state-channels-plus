@@ -78,7 +78,6 @@ export const TimeoutEthersType = `tuple(
 address participant,
 uint256 blockHeight,
 uint256 minTimeStamp,
-bytes32 forkId,
 bool isForced,
 address previousBlockProducer,
 bool previousBlockProducerPostedCalldata

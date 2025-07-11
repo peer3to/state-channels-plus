@@ -134,5 +134,31 @@ describe("Storage", () => {
                 })
             ).to.be.undefined;
         });
+
+        it("modifying retrieved snapshot doesn't affect stored snapshot", () => {
+            const coordinates: BlockCoordinates = {
+                forkId: forkId,
+                height: 1
+            };
+
+            const snapshot1 = storage.getStateSnapshot(coordinates);
+            const orignalHash = snapshot1!.hash;
+            expect(snapshot1).to.deep.equal(blockSnapshot);
+
+            // Modify the retrieved snapshot's snapshotData
+            snapshot1!.snapshotData.latestJoinChannelBlockHash = "0x11";
+            snapshot1!.snapshotData.latestExitChannelBlockHash = "0x22";
+
+            // Get snapshot second time
+            const snapshot2 = storage.getStateSnapshot(coordinates);
+            expect(snapshot2).to.not.be.undefined;
+
+            // Assert that the stored snapshot was not affected by the modification
+            expect(snapshot2!.hash).to.equal(orignalHash);
+            expect(snapshot2!.toStruct()).to.deep.equal(
+                blockSnapshot.toStruct()
+            );
+            expect(snapshot2!.toStruct()).to.not.equal(snapshot1!.toStruct());
+        });
     });
 });

@@ -2,11 +2,12 @@ import { expect } from "chai";
 import { describe, it, beforeEach } from "mocha";
 import { ethers } from "hardhat";
 import { BlockStorage } from "@/storage/BlockStorage";
+import { Storage } from "@/storage/Storage";
 import {
     BlockConfirmationStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Hash, ForkId, BlockHeight, Signature } from "@/types/types";
+import { Hash, ForkId, BlockHeight } from "@/types/types";
 import * as factory from "../factory";
 import { Block } from "@/models";
 
@@ -27,9 +28,9 @@ describe("BlockStorage", () => {
         mockBlockConfirmation = factory.blockConfirmation({
             signedBlock: mockSignedBlock
         });
-        mockBlockHash = ethers.keccak256(mockSignedBlock.encodedBlock);
-
         const block = Block.decode(mockSignedBlock.encodedBlock);
+        mockBlockHash = block.hash;
+
         const { forkId, height } = block.coordinates;
         mockForkId = forkId;
         mockHeight = height;
@@ -296,6 +297,92 @@ describe("BlockStorage", () => {
         it("should return false when deleting non-existent blocks", () => {
             expect(storage.deleteBlock("nonexistent")).to.be.false;
             expect(storage.deleteBlock("nonexistent", 999)).to.be.false;
+        });
+    });
+
+    describe("DeepCopyProxy - Reference Isolation", () => {
+        let storageWithProxy: Storage;
+
+        beforeEach(() => {
+            storageWithProxy = new Storage();
+        });
+
+        it("altering object inside storage (adding signatures) doesn't affect original object", () => {
+            // Create a blockConfirmation with initial signatures
+            const originalBlockConfirmation = factory.blockConfirmation({
+                signedBlock: mockSignedBlock,
+                signatures: [sig(), sig(), sig()]
+            });
+            const originalSignatureCount =
+                originalBlockConfirmation.signatures.length;
+
+            // Store the first blockConfirmation
+            const hash1 = storageWithProxy.blocks.storeBlockConfirmation(
+                originalBlockConfirmation
+            );
+
+            // Create another blockConfirmation with additional signatures (same hash)
+            const secondBlockConfirmation = factory.blockConfirmation({
+                signedBlock: mockSignedBlock,
+                signatures: [sig(), sig()]
+            });
+
+            // Store the second blockConfirmation - this should merge signatures in storage
+            const hash2 = storageWithProxy.blocks.storeBlockConfirmation(
+                secondBlockConfirmation,
+                hash1,
+                mockForkId,
+                mockHeight
+            );
+
+            expect(hash1).to.equal(hash2);
+
+            // The original blockConfirmation object should NOT be affected
+            expect(originalBlockConfirmation.signatures).to.have.lengthOf(
+                originalSignatureCount
+            );
+
+            // But the stored blockConfirmation should have merged signatures
+            const storedBlock =
+                storageWithProxy.blocks.getBlockConfirmation(mockBlockHash);
+            expect(storedBlock?.signatures.length).to.be.greaterThan(
+                originalSignatureCount
+            );
+        });
+
+        it("altering object outside storage doesn't affect object inside storage", () => {
+            // Store a blockConfirmation
+            const originalBlockConfirmation = factory.blockConfirmation({
+                signedBlock: mockSignedBlock,
+                signatures: [sig(), sig()]
+            });
+
+            storageWithProxy.blocks.storeBlockConfirmation(
+                originalBlockConfirmation,
+                mockBlockHash,
+                mockForkId,
+                mockHeight
+            );
+
+            // Read the blockConfirmation from storage
+            const retrievedBlock1 =
+                storageWithProxy.blocks.getBlockConfirmation(mockBlockHash);
+            const originalStoredSignatureCount =
+                retrievedBlock1?.signatures.length || 0;
+
+            // Modify the retrieved object
+            retrievedBlock1?.signatures.push(sig());
+            retrievedBlock1?.signatures.push(sig());
+
+            // Read again from storage
+            const retrievedBlock2 =
+                storageWithProxy.blocks.getBlockConfirmation(mockBlockHash);
+
+            // The storage should not have been affected by our modifications
+            expect(retrievedBlock2?.signatures).to.have.lengthOf(
+                originalStoredSignatureCount
+            );
+            expect(retrievedBlock1).to.not.equal(retrievedBlock2);
         });
     });
 });

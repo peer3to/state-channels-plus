@@ -51,7 +51,6 @@ export const DisputeEthersType = `tuple(
     address[] onChainSlashes,
     bytes32 onChainLatestJoinChannelBlockHash,
     bytes32 outputSnapshotDataHash,
-    ${ExitChannelBlockEthersType}[] exitChannelBlocks,
     bytes32 disputeAuditingDataHash,
     address disputer,
     ${TimeoutEthersType} timeout,
