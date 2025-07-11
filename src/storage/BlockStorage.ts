@@ -7,6 +7,10 @@ import { ethers } from "ethers";
 import { Block, BlockCoordinates } from "@/models";
 
 type CoordinateKey = string;
+type StoreOptions = {
+    hash?: Hash;
+    coordinates?: BlockCoordinates;
+};
 
 export class BlockStorage {
     // ====================================
@@ -25,88 +29,32 @@ export class BlockStorage {
     // ====================================
 
     /*────────────────────────────────────────────────────────────────────────────
-      INSERT BLOCK - OVERLOAD SIGNATURES
-    ────────────────────────────────────────────────────────────────────────────*/
-
-    /** Insert signed block with auto-computed keys */
-    storeBlock(signedBlock: SignedBlockStruct): Hash;
-
-    /** Insert signed block with provided keys */
-    storeBlock(
-        signedBlock: SignedBlockStruct,
-        blockHash: Hash,
-        forkId: ForkId,
-        height: BlockHeight
-    ): Hash;
-
-    /*────────────────────────────────────────────────────────────────────────────
       STORE  BLOCK - IMPLEMENTATION
     ────────────────────────────────────────────────────────────────────────────*/
-    storeBlock(
-        signedBlock: SignedBlockStruct,
-        blockHash?: Hash,
-        forkId?: ForkId,
-        height?: BlockHeight
-    ): Hash {
-        const hasKeys =
-            blockHash !== undefined &&
-            forkId !== undefined &&
-            height !== undefined;
-
+    storeBlock(signedBlock: SignedBlockStruct, options?: StoreOptions): Hash {
         // Convert SignedBlock to BlockConfirmation (empty signatures)
         const blockConfirmation: BlockConfirmationStruct = {
             signedBlock: signedBlock,
             signatures: [] // Starts empty, ready for peer confirmations
         };
 
-        return hasKeys
-            ? this._storeBlockConfirmationWithKeys(
-                  blockConfirmation,
-                  blockHash,
-                  { forkId, height }
-              )
-            : this._storeBlockConfirmation(blockConfirmation);
+        return this._storeBlockConfirmationWithOptions(
+            blockConfirmation,
+            options
+        );
     }
-
-    /*────────────────────────────────────────────────────────────────────────────
-      STORE BLOCK CONFIRMATION - OVERLOAD SIGNATURES
-    ────────────────────────────────────────────────────────────────────────────*/
-
-    /** Insert block confirmation with auto-computed keys */
-    storeBlockConfirmation(blockConfirmation: BlockConfirmationStruct): Hash;
-
-    /** Insert block confirmation with provided keys */
-    storeBlockConfirmation(
-        blockConfirmation: BlockConfirmationStruct,
-        blockHash: Hash,
-        forkId: ForkId,
-        height: BlockHeight
-    ): Hash;
 
     /*────────────────────────────────────────────────────────────────────────────
       STORE BLOCK CONFIRMATION - IMPLEMENTATION
     ────────────────────────────────────────────────────────────────────────────*/
     storeBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct,
-        blockHash?: Hash,
-        forkId?: ForkId,
-        height?: BlockHeight
+        options?: StoreOptions
     ): Hash {
-        const hasKeys =
-            blockHash !== undefined &&
-            forkId !== undefined &&
-            height !== undefined;
-
-        return hasKeys
-            ? this._storeBlockConfirmationWithKeys(
-                  blockConfirmation,
-                  blockHash,
-                  {
-                      forkId,
-                      height
-                  }
-              )
-            : this._storeBlockConfirmation(blockConfirmation);
+        return this._storeBlockConfirmationWithOptions(
+            blockConfirmation,
+            options
+        );
     }
 
     // ====================================
@@ -256,26 +204,22 @@ export class BlockStorage {
         return `${coordinates.forkId}:${coordinates.height}`;
     }
 
-    private _storeBlockConfirmation(
-        blockConfirmation: BlockConfirmationStruct
-    ): Hash {
-        const blockHash = ethers.keccak256(
-            blockConfirmation.signedBlock.encodedBlock
-        );
-        const block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
-
-        return this._storeBlockConfirmationWithKeys(
-            blockConfirmation,
-            blockHash,
-            block.coordinates
-        );
-    }
-
-    private _storeBlockConfirmationWithKeys(
+    private _storeBlockConfirmationWithOptions(
         blockConfirmation: BlockConfirmationStruct,
-        blockHash: Hash,
-        coordinates: BlockCoordinates
+        options?: StoreOptions
     ): Hash {
+        // Determine hash - use provided or compute
+        const blockHash =
+            options?.hash ??
+            ethers.keccak256(blockConfirmation.signedBlock.encodedBlock);
+
+        // Determine coordinates - use provided or compute
+        const coordinates =
+            options?.coordinates ??
+            Block.decode(blockConfirmation.signedBlock.encodedBlock)
+                .coordinates;
+
+        // Store the block confirmation
         const coordinateKey = this.coordinatesToKey(coordinates);
         const existingBlock = this.hashToBlockMap.get(blockHash);
 
@@ -289,8 +233,8 @@ export class BlockStorage {
 
             return blockHash;
         }
-        // If no existing block, store new block
 
+        // If no existing block, store new block
         this.hashToBlockMap.set(blockHash, blockConfirmation);
         this.coordinatesToBlockMap.set(coordinateKey, blockConfirmation);
         return blockHash;
