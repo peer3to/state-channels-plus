@@ -143,14 +143,6 @@ contract DisputeManagerFacet is StateChannelCommon {
         require(_isCorrectAuditingData(dispute, disputeAuditingData), ErrorDisputeWrongAuditingData());
         require(_isCorrectGenesis(dispute), ErrorDisputeGenesisInvalid());
         require(_verifyStateProof(dispute, disputeAuditingData), ErrorDisputeStateProofInvalid());
-        require(
-            _verifyJoinChannelBlocks(
-                disputeAuditingData.latestStateSnapshot.snapshotData.latestJoinChannelBlockHash,
-                dispute.onChainLatestJoinChannelBlockHash,
-                disputeAuditingData.joinChannelBlocks
-            ),
-            ErrorDisputeJoinChannelBlocksInvalid()
-        );
         require(_verifyExitChannelBlocks(dispute, disputeAuditingData), ErrorDisputeExitChannelBlocksInvalid());
 
         FraudProofVerificationContext memory proofContext =
@@ -159,11 +151,13 @@ contract DisputeManagerFacet is StateChannelCommon {
         slashes = StateChannelUtilLibrary.concatAddressArraysNoDuplicates(slashes, dispute.onChainSlashes);
         address[] memory removals = _calculateRemovals(dispute);
 
+        // Disputes don't apply joins directly, just reduce
+        JoinChannelBlock[] memory emptyJoinChannelBlocks = new JoinChannelBlock[](0);
         DisputeOutputState memory disputeOutputState = generateDisputeOutputState(
             disputeAuditingData.latestStateStateMachineState,
             slashes,
             removals,
-            disputeAuditingData.joinChannelBlocks,
+            emptyJoinChannelBlocks,
             disputeAuditingData.latestStateSnapshot
         );
         SnapshotData memory latestSnapshotData = disputeAuditingData.latestStateSnapshot.snapshotData;
@@ -181,7 +175,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         SnapshotData memory outputSnapshotData = SnapshotData({
             stateMachineStateHash: keccak256(disputeOutputState.encodedModifiedState),
             participants: getStatemachineParticipants(disputeOutputState.encodedModifiedState),
-            latestJoinChannelBlockHash: disputeAuditingData.outputStateSnapshot.snapshotData.latestJoinChannelBlockHash, // This has been verified in _verifyJoinChannelBlocks
+            latestJoinChannelBlockHash: disputeAuditingData.genesisStateSnapshot.snapshotData.latestJoinChannelBlockHash, // Joins are not applied in disputes, but in reduce
             latestExitChannelBlockHash: keccak256(abi.encode(disputeOutputState.exitBlock)),
             totalDeposits: disputeOutputState.totalDeposits,
             totalWithdrawals: disputeOutputState.totalWithdrawals
@@ -816,14 +810,6 @@ contract DisputeManagerFacet is StateChannelCommon {
         if (dispute.latestStateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))) {
             return false;
         }
-        //check outputStateSnapshot
-        if (
-            dispute.outputSnapshotDataHash
-                != keccak256(abi.encode(disputeAuditingData.outputStateSnapshot.snapshotData))
-        ) {
-            return false;
-        }
-
         //check latestStateStateMachineState
         if (
             disputeAuditingData.latestStateSnapshot.snapshotData.stateMachineStateHash
@@ -831,18 +817,6 @@ contract DisputeManagerFacet is StateChannelCommon {
         ) {
             return false;
         }
-
-        //check joinChannelBlocks (linked to latestSateSnapshot, chained internally and outputStateSnapshot commits to the head)
-        bytes32 previousJoinChannelBlockHash =
-            disputeAuditingData.latestStateSnapshot.snapshotData.latestJoinChannelBlockHash;
-        for (uint256 i = 0; i < disputeAuditingData.joinChannelBlocks.length; i++) {
-            if (previousJoinChannelBlockHash != disputeAuditingData.joinChannelBlocks[i].previousBlockHash) {
-                return false;
-            }
-            previousJoinChannelBlockHash = keccak256(abi.encode(disputeAuditingData.joinChannelBlocks[i]));
-        }
-        return previousJoinChannelBlockHash
-            == disputeAuditingData.outputStateSnapshot.snapshotData.latestExitChannelBlockHash;
     }
 
     function _commitToDisputeReducedResult(
