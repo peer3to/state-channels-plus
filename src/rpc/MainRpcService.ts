@@ -36,7 +36,7 @@ class MainRpcService {
 
     //RPC Services
     initHandshakeService = new InitHandshakeService(this.self);
-    webRTCSetunService = new WebRTCSetupService(this.self);
+    webRTCSetupService = new WebRTCSetupService(this.self);
     stateTransitionService = new StateTransitionService(this.self);
     testJoinChannelService = new TESTJoinChannelService(this.self);
     dhtDiscoveryService = new DHTDiscoveryService(this.self);
@@ -67,15 +67,15 @@ class MainRpcService {
 
     // ********************* WebRTCSetupService *********************
     public async onOfferWebRTC(offer: string) {
-        this.webRTCSetunService.onOfferWebRTC(offer);
+        this.webRTCSetupService.onOfferWebRTC(offer);
     }
 
     public async onAnswerWebRTC(answer: string) {
-        this.webRTCSetunService.onAnswerWebRTC(answer);
+        this.webRTCSetupService.onAnswerWebRTC(answer);
     }
 
     public async onIceCandidate(serializedCandidate: string) {
-        this.webRTCSetunService.onIceCandidate(serializedCandidate);
+        this.webRTCSetupService.onIceCandidate(serializedCandidate);
     }
 
     // ********************* TESTJoinChannelService - TODO! TEST this is only for test *********************
