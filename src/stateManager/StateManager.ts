@@ -37,7 +37,6 @@ import Storage from "@/storage";
 // Event handlers and processors
 import P2pEventHooks from "@/P2pEventHooks";
 import { ExecutionDecisionProcessor } from "./executionDecisionProcessor";
-import { ConfirmationDecisionProcessor } from "./confirmationDecisionProcessor";
 
 // Models
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
@@ -87,7 +86,6 @@ class StateManager {
 
     // Decision processors
     private executionDecisionProcessor: ExecutionDecisionProcessor;
-    private confirmationDecisionProcessor: ConfirmationDecisionProcessor;
 
     // Store output state snapshots data
     private readonly outputStateSnapshotData: Map<Hash, StateSnapshot> =
@@ -141,11 +139,6 @@ class StateManager {
             this.p2pManager,
             this.disputeHandler,
             this.onSuccessCommon.bind(this)
-        );
-        this.confirmationDecisionProcessor = new ConfirmationDecisionProcessor(
-            this.storage,
-            () => this.isDisposed,
-            this.tryConfirmFromQueue.bind(this)
         );
     }
     //Mark resources for garbage collection
@@ -233,7 +226,6 @@ class StateManager {
         );
 
         for (const signedBlock of signedBlocks) {
-            console.log("tryExecuteFromQueue - executing");
             const executionFlag = await this.onSignedBlock(signedBlock);
             if (executionFlag == ExecutionFlags.DISPUTE) break;
         }
@@ -353,11 +345,19 @@ class StateManager {
                 );
             }
 
-            await this.confirmationDecisionProcessor.process(
-                signedBlock,
-                confirmationSignature,
-                finalExecutionFlag
-            );
+            if (finalExecutionFlag === ExecutionFlags.NOT_READY) {
+                // Store the confirmation for later processing
+                this.storage.queues.queueConfirmation({
+                    signedBlock: signedBlock,
+                    signatures: [confirmationSignature as Bytes]
+                });
+            } else if (finalExecutionFlag === ExecutionFlags.SUCCESS) {
+                // Schedule next confirmation processing
+                setTimeout(async () => {
+                    if (this.isDisposed) return;
+                    await this.tryConfirmFromQueue();
+                }, 0);
+            }
         }
     }
 
