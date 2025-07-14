@@ -40,16 +40,13 @@ export class Storage {
             return this.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
         }
 
-        const blockConfirmation = this.blocks.getBlockConfirmation(
-            forkId,
-            height
-        );
-        if (!blockConfirmation) {
+        const blockEntry = this.blocks.getBlockEntry(forkId, height);
+        if (!blockEntry) {
             return undefined;
         }
 
         const stateSnapshotHash = Block.decode(
-            blockConfirmation.signedBlock.encodedBlock
+            blockEntry.blockConfirmation.signedBlock.encodedBlock
         ).stateSnapshotHash;
 
         return this.stateSnapshots.getStateSnapshotByHash(stateSnapshotHash);

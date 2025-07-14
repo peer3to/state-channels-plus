@@ -19,6 +19,8 @@ export type BlockCoordinates = {
 };
 
 export default class Block {
+    private _onChainTimestamp?: Timestamp;
+
     private constructor(private readonly block: BlockStruct) {}
 
     static from(block: BlockStruct): Block {
@@ -59,6 +61,14 @@ export default class Block {
 
     get timestamp(): Timestamp {
         return Number(this.block.transaction.header.timestamp);
+    }
+
+    get onChainTimestamp(): Timestamp | undefined {
+        return this._onChainTimestamp;
+    }
+
+    set onChainTimestamp(onChainTimestamp: Timestamp) {
+        this._onChainTimestamp = onChainTimestamp;
     }
 
     get author() {

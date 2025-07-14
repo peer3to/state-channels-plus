@@ -6,6 +6,7 @@ import Block from "@/models/Block";
 import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Codec, Type } from "@/utils";
 import { block as blockFactory } from "../factory";
+import { Timestamp } from "@/types/types";
 
 describe("Block Model", () => {
     let blockStruct: BlockStruct;
@@ -228,6 +229,49 @@ describe("Block Model", () => {
 
             // Original should remain unchanged
             expect(block.toStruct()).to.deep.equal(originalStruct);
+        });
+    });
+
+    describe("On-chain timestamp", () => {
+        it("should have undefined onChainTimestamp by default", () => {
+            expect(block.onChainTimestamp).to.be.undefined;
+        });
+
+        it("should set and get onChainTimestamp", () => {
+            const onChainTimestamp: Timestamp = 1234567890;
+            block.onChainTimestamp = onChainTimestamp;
+
+            expect(block.onChainTimestamp).to.equal(onChainTimestamp);
+        });
+
+        it("should not affect encoding when onChainTimestamp is set", () => {
+            const originalEncoded = block.encode();
+
+            block.onChainTimestamp = 1234567890;
+            const encodedWithTimestamp = block.encode();
+
+            expect(encodedWithTimestamp).to.equal(originalEncoded);
+        });
+
+        it("should not change hash when onChainTimestamp is set", () => {
+            const originalHash = block.hash;
+            const onChainTimestamp: Timestamp = 1234567890;
+
+            block.onChainTimestamp = onChainTimestamp;
+
+            expect(block.hash).to.equal(originalHash);
+            expect(block.onChainTimestamp).to.equal(onChainTimestamp);
+        });
+        it("should consider blocks equal regardless of onChainTimestamp", () => {
+            const block1 = Block.from(blockStruct);
+            const block2 = Block.from(blockStruct);
+
+            // Set different onChainTimestamps
+            block1.onChainTimestamp = 1234567890;
+            block2.onChainTimestamp = 9876543210;
+
+            // They should still be equal because onChainTimestamp doesn't affect encoding
+            expect(block1.equals(block2)).to.be.true;
         });
     });
 });

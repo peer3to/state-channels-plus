@@ -41,9 +41,11 @@ describe("BlockStorage", () => {
             const hash = storage.storeBlock(mockSignedBlock);
 
             expect(hash).to.equal(mockBlockHash);
-            const stored = storage.getBlockConfirmation(hash);
-            expect(stored?.signedBlock).to.equal(mockSignedBlock);
-            expect(stored?.signatures).to.deep.equal([]);
+            const stored = storage.getBlockEntry(hash);
+            expect(stored?.blockConfirmation.signedBlock).to.equal(
+                mockSignedBlock
+            );
+            expect(stored?.blockConfirmation.signatures).to.deep.equal([]);
         });
     });
 
@@ -78,26 +80,28 @@ describe("BlockStorage", () => {
             // Should return same hash
             expect(hash1).to.equal(hash2);
 
-            const stored = storage.getBlockConfirmation(hash1);
+            const stored = storage.getBlockEntry(hash1);
 
             // Should have 3 unique signatures (shared signature not duplicated)
-            expect(stored?.signatures).to.have.lengthOf(3);
-            expect(stored?.signatures).to.include.members([
+            expect(stored?.blockConfirmation.signatures).to.have.lengthOf(3);
+            expect(stored?.blockConfirmation.signatures).to.include.members([
                 sharedSignature,
                 uniqueSignature1,
                 uniqueSignature2
             ]);
 
             // Verify no duplicates
-            const signatureSet = new Set(stored?.signatures);
-            expect(signatureSet.size).to.equal(stored?.signatures.length);
+            const signatureSet = new Set(stored?.blockConfirmation.signatures);
+            expect(signatureSet.size).to.equal(
+                stored?.blockConfirmation.signatures.length
+            );
         });
 
         it("should insert block confirmation with auto-computed keys", () => {
             const hash = storage.storeBlockConfirmation(mockBlockConfirmation);
 
-            const stored = storage.getBlockConfirmation(hash);
-            expect(stored).to.equal(mockBlockConfirmation);
+            const stored = storage.getBlockEntry(hash);
+            expect(stored?.blockConfirmation).to.equal(mockBlockConfirmation);
         });
 
         it("should insert block confirmation with provided keys", () => {
@@ -105,17 +109,19 @@ describe("BlockStorage", () => {
                 coordinates: { forkId: mockForkId, height: mockHeight }
             });
 
-            const stored = storage.getBlockConfirmation(hash);
-            const stored_by_coords = storage.getBlockConfirmation(
+            const stored = storage.getBlockEntry(hash);
+            const stored_by_coords = storage.getBlockEntry(
                 mockForkId,
                 mockHeight
             );
-            expect(stored).to.equal(mockBlockConfirmation);
-            expect(stored_by_coords).to.equal(mockBlockConfirmation);
+            expect(stored?.blockConfirmation).to.equal(mockBlockConfirmation);
+            expect(stored_by_coords?.blockConfirmation).to.equal(
+                mockBlockConfirmation
+            );
         });
     });
 
-    describe("READ - getBlockConfirmation()", () => {
+    describe("READ - getBlockEntry()", () => {
         beforeEach(() => {
             storage.storeBlockConfirmation(mockBlockConfirmation, {
                 coordinates: { forkId: mockForkId, height: mockHeight }
@@ -123,32 +129,28 @@ describe("BlockStorage", () => {
         });
 
         it("should get block by hash", () => {
-            const result = storage.getBlockConfirmation(mockBlockHash);
-            expect(result).to.equal(mockBlockConfirmation);
+            const result = storage.getBlockEntry(mockBlockHash);
+            expect(result?.blockConfirmation).to.equal(mockBlockConfirmation);
         });
 
         it("should get block by coordinates", () => {
-            const result = storage.getBlockConfirmation(mockForkId, mockHeight);
-            expect(result).to.equal(mockBlockConfirmation);
+            const result = storage.getBlockEntry(mockForkId, mockHeight);
+            expect(result?.blockConfirmation).to.equal(mockBlockConfirmation);
         });
 
         it("should return undefined for non-existent blocks", () => {
             expect(
-                storage.getBlockConfirmation(
-                    ethers.hexlify(ethers.randomBytes(32))
-                )
+                storage.getBlockEntry(ethers.hexlify(ethers.randomBytes(32)))
             ).to.be.undefined;
-            expect(storage.getBlockConfirmation("nonexistent", 999)).to.be
-                .undefined;
+            expect(storage.getBlockEntry("nonexistent", 999)).to.be.undefined;
         });
 
         it("should maintain consistency between lookups", () => {
-            const byHash = storage.getBlockConfirmation(mockBlockHash);
-            const byCoords = storage.getBlockConfirmation(
-                mockForkId,
-                mockHeight
-            );
-            expect(byHash).to.equal(byCoords); // Same object reference
+            const byHash = storage.getBlockEntry(mockBlockHash);
+            const byCoords = storage.getBlockEntry(mockForkId, mockHeight);
+            expect(byHash?.blockConfirmation).to.equal(
+                byCoords?.blockConfirmation
+            ); // Same object reference
         });
     });
 
@@ -194,8 +196,8 @@ describe("BlockStorage", () => {
             storage.insertSignature(newSig, mockBlockHash);
 
             // Verify via coordinates
-            const block = storage.getBlockConfirmation(mockForkId, mockHeight);
-            expect(block?.signatures).to.include(newSig);
+            const block = storage.getBlockEntry(mockForkId, mockHeight);
+            expect(block?.blockConfirmation.signatures).to.include(newSig);
         });
 
         it("should prevent duplicate signatures", () => {
@@ -242,7 +244,8 @@ describe("BlockStorage", () => {
             const prevNumSignatures = mockBlockConfirmation.signatures.length;
             const expectedNumSignatures = prevNumSignatures + 3;
             expect(
-                storage.getBlockConfirmation(mockBlockHash)?.signatures
+                storage.getBlockEntry(mockBlockHash)?.blockConfirmation
+                    .signatures
             ).to.have.lengthOf(prevNumSignatures);
 
             // Insert three different signatures
@@ -251,8 +254,63 @@ describe("BlockStorage", () => {
             storage.insertSignature(sig(), mockBlockHash);
 
             expect(
-                storage.getBlockConfirmation(mockBlockHash)?.signatures
+                storage.getBlockEntry(mockBlockHash)?.blockConfirmation
+                    .signatures
             ).to.have.lengthOf(expectedNumSignatures);
+        });
+    });
+
+    describe("UPDATE - setOnChainTimestamp()", () => {
+        beforeEach(() => {
+            storage.storeBlockConfirmation(mockBlockConfirmation, {
+                coordinates: { forkId: mockForkId, height: mockHeight }
+            });
+        });
+
+        it("should set on-chain timestamp by hash", () => {
+            const timestamp = 1234567890;
+            const result = storage.setOnChainTimestamp(
+                mockBlockHash,
+                timestamp
+            );
+
+            expect(result).to.be.true;
+            expect(
+                storage.getBlockEntry(mockBlockHash)?.onChainTimestamp
+            ).to.equal(timestamp);
+        });
+
+        it("should set on-chain timestamp by coordinates", () => {
+            const timestamp = 1234567890;
+            const result = storage.setOnChainTimestamp(
+                mockForkId,
+                mockHeight,
+                timestamp
+            );
+
+            expect(result).to.be.true;
+            expect(
+                storage.getBlockEntry(mockForkId, mockHeight)?.onChainTimestamp
+            ).to.equal(timestamp);
+        });
+
+        it("should return false for non-existent blocks", () => {
+            const timestamp = 1234567890;
+            expect(storage.setOnChainTimestamp("nonexistent", timestamp)).to.be
+                .false;
+            expect(storage.setOnChainTimestamp("nonexistent", 999, timestamp))
+                .to.be.false;
+        });
+
+        it("should maintain consistency between lookups", () => {
+            const timestamp = 1234567890;
+
+            // Set via hash
+            storage.setOnChainTimestamp(mockBlockHash, timestamp);
+
+            // Verify via coordinates
+            const block = storage.getBlockEntry(mockForkId, mockHeight);
+            expect(block?.onChainTimestamp).to.equal(timestamp);
         });
     });
 
@@ -263,15 +321,15 @@ describe("BlockStorage", () => {
 
         it("should delete by hash", () => {
             expect(storage.deleteBlock(mockBlockHash)).to.be.true;
-            expect(storage.getBlockConfirmation(mockBlockHash)).to.be.undefined;
-            expect(storage.getBlockConfirmation(mockForkId, mockHeight)).to.be
+            expect(storage.getBlockEntry(mockBlockHash)).to.be.undefined;
+            expect(storage.getBlockEntry(mockForkId, mockHeight)).to.be
                 .undefined;
         });
 
         it("should delete by coordinates", () => {
             expect(storage.deleteBlock(mockForkId, mockHeight)).to.be.true;
-            expect(storage.getBlockConfirmation(mockBlockHash)).to.be.undefined;
-            expect(storage.getBlockConfirmation(mockForkId, mockHeight)).to.be
+            expect(storage.getBlockEntry(mockBlockHash)).to.be.undefined;
+            expect(storage.getBlockEntry(mockForkId, mockHeight)).to.be
                 .undefined;
         });
 
@@ -323,10 +381,10 @@ describe("BlockStorage", () => {
 
             // But the stored blockConfirmation should have merged signatures
             const storedBlock =
-                storageWithProxy.blocks.getBlockConfirmation(mockBlockHash);
-            expect(storedBlock?.signatures.length).to.be.greaterThan(
-                originalSignatureCount
-            );
+                storageWithProxy.blocks.getBlockEntry(mockBlockHash);
+            expect(
+                storedBlock?.blockConfirmation.signatures.length
+            ).to.be.greaterThan(originalSignatureCount);
         });
 
         it("altering object outside storage doesn't affect object inside storage", () => {
@@ -343,22 +401,22 @@ describe("BlockStorage", () => {
 
             // Read the blockConfirmation from storage
             const retrievedBlock1 =
-                storageWithProxy.blocks.getBlockConfirmation(mockBlockHash);
+                storageWithProxy.blocks.getBlockEntry(mockBlockHash);
             const originalStoredSignatureCount =
-                retrievedBlock1?.signatures.length || 0;
+                retrievedBlock1?.blockConfirmation.signatures.length || 0;
 
             // Modify the retrieved object
-            retrievedBlock1?.signatures.push(sig());
-            retrievedBlock1?.signatures.push(sig());
+            retrievedBlock1?.blockConfirmation.signatures.push(sig());
+            retrievedBlock1?.blockConfirmation.signatures.push(sig());
 
             // Read again from storage
             const retrievedBlock2 =
-                storageWithProxy.blocks.getBlockConfirmation(mockBlockHash);
+                storageWithProxy.blocks.getBlockEntry(mockBlockHash);
 
             // The storage should not have been affected by our modifications
-            expect(retrievedBlock2?.signatures).to.have.lengthOf(
-                originalStoredSignatureCount
-            );
+            expect(
+                retrievedBlock2?.blockConfirmation.signatures
+            ).to.have.lengthOf(originalStoredSignatureCount);
             expect(retrievedBlock1).to.not.equal(retrievedBlock2);
         });
     });
