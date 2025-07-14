@@ -11,10 +11,6 @@ export class QueueStorage {
     // Secondary index for efficient queries by coordinates
     private blocksByCoordinates: Map<string, Set<Hash>> = new Map();
 
-    // ====================================
-    // BLOCK QUEUE OPERATIONS
-    // ====================================
-
     /** Queue a block for future processing */
     queueBlock(signedBlock: SignedBlockStruct): Hash {
         const block = Block.decode(signedBlock.encodedBlock);
@@ -33,42 +29,6 @@ export class QueueStorage {
         return block.hash;
     }
 
-    /** Try to dequeue blocks for a specific fork/height */
-    tryDequeueBlocks(forkId: ForkId, height: BlockHeight): SignedBlockStruct[] {
-        const coordinateKey = this.coordinatesToKey(forkId, height);
-        const hashSet = this.blocksByCoordinates.get(coordinateKey);
-
-        if (!hashSet) {
-            return [];
-        }
-
-        const blocks: SignedBlockStruct[] = [];
-
-        // Collect all blocks for this coordinate
-        for (const hash of hashSet) {
-            const blockConfirmation = this.queuedBlocks.get(hash);
-            if (blockConfirmation) {
-                blocks.push(blockConfirmation.signedBlock);
-
-                // delete the block from the queue
-                this.queuedBlocks.delete(hash);
-            }
-        }
-
-        // Remove from queue
-        this.blocksByCoordinates.delete(coordinateKey);
-
-        return blocks;
-    }
-
-    isBlockQueued(hash: Hash): boolean {
-        return this.queuedBlocks.has(hash);
-    }
-
-    // ====================================
-    // CONFIRMATION QUEUE OPERATIONS
-    // ====================================
-
     /** Queue a block confirmation for future processing */
     queueConfirmation(blockConfirmation: BlockConfirmationStruct): Hash {
         const block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
@@ -83,10 +43,8 @@ export class QueueStorage {
                 signaturesSet.add(newSignature);
             }
 
-            this.queuedBlocks.set(block.hash, {
-                signedBlock: existingBlockConfirmation.signedBlock,
-                signatures: Array.from(signaturesSet)
-            });
+            existingBlockConfirmation.signatures = Array.from(signaturesSet);
+
             return block.hash;
         }
         // Store the new block confirmation
@@ -108,19 +66,27 @@ export class QueueStorage {
             return [];
         }
 
-        const confirmations: BlockConfirmationStruct[] = [];
+        const blockConfirmations: BlockConfirmationStruct[] = [];
 
-        // Collect all confirmations for this coordinate
+        // Collect all blocks for this coordinate
         for (const hash of hashSet) {
             const blockConfirmation = this.queuedBlocks.get(hash);
-            if (blockConfirmation && blockConfirmation.signatures.length > 0) {
-                confirmations.push(blockConfirmation);
-                // Clear the signatures but keep the block
-                blockConfirmation.signatures = [];
+            if (blockConfirmation) {
+                blockConfirmations.push(blockConfirmation);
+
+                // delete the block from the queue
+                this.queuedBlocks.delete(hash);
             }
         }
 
-        return confirmations;
+        // Remove from queue
+        this.blocksByCoordinates.delete(coordinateKey);
+
+        return blockConfirmations;
+    }
+
+    isBlockQueued(hash: Hash): boolean {
+        return this.queuedBlocks.has(hash);
     }
 
     // ====================================

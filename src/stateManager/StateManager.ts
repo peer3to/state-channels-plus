@@ -220,13 +220,15 @@ class StateManager {
         this.onSuccessCommon();
     }
     private async tryExecuteFromQueue() {
-        let signedBlocks = this.storage.queues.tryDequeueBlocks(
+        let blockConfirmations = this.storage.queues.tryDequeueConfirmations(
             this.getforkId(),
             this.getNextBlockHeight()
         );
 
-        for (const signedBlock of signedBlocks) {
-            const executionFlag = await this.onSignedBlock(signedBlock);
+        for (const blockConfirmation of blockConfirmations) {
+            const executionFlag = await this.onSignedBlock(
+                blockConfirmation.signedBlock
+            );
             if (executionFlag == ExecutionFlags.DISPUTE) break;
         }
     }
