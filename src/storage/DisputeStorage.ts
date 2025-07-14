@@ -5,6 +5,10 @@ import {
     SignedDisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
+type StoreOptions = {
+    hash?: Hash;
+};
+
 export class DisputeStorage {
     // ====================================
     // STORAGE MAPS
@@ -20,55 +24,32 @@ export class DisputeStorage {
     // ====================================
 
     /*────────────────────────────────────────────────────────────────────────────
-      STORE DISPUTE - OVERLOAD SIGNATURES
+      STORE  DISPUTE 
     ────────────────────────────────────────────────────────────────────────────*/
-
-    /** Insert signed block with auto-computed keys */
-    storeDispute(dispute: SignedDisputeStruct): Hash;
-
-    /** Insert signed block with provided keys */
-    storeDispute(dispute: SignedDisputeStruct, disputeHash: Hash): Hash;
-
-    /*────────────────────────────────────────────────────────────────────────────
-      STORE  DISPUTE - IMPLEMENTATION
-    ────────────────────────────────────────────────────────────────────────────*/
-    storeDispute(dispute: SignedDisputeStruct, disputeHash?: Hash): Hash {
+    storeDispute(dispute: SignedDisputeStruct, options?: StoreOptions): Hash {
         // Convert SignedDispute to DisputeConfirmation (empty signatures)
         const disputeConfirmation: DisputeConfirmationStruct = {
             signedDispute: dispute,
             signatures: [] // Starts empty, ready for peer confirmations
         };
 
-        return disputeHash !== undefined
-            ? this._storeDisputeWithHash(disputeConfirmation, disputeHash)
-            : this._storeDispute(disputeConfirmation);
+        return this._storeDisputeConfirmationWithOptions(
+            disputeConfirmation,
+            options
+        );
     }
 
     /*────────────────────────────────────────────────────────────────────────────
-      STORE DISPUTE CONFIRMATION - OVERLOAD SIGNATURES
-    ────────────────────────────────────────────────────────────────────────────*/
-
-    /** Insert block confirmation with auto-computed keys */
-    storeDisputeConfirmation(
-        disputeConfirmation: DisputeConfirmationStruct
-    ): Hash;
-
-    /** Insert block confirmation with provided keys */
-    storeDisputeConfirmation(
-        disputeConfirmation: DisputeConfirmationStruct,
-        disputeHash: Hash
-    ): Hash;
-
-    /*────────────────────────────────────────────────────────────────────────────
-      STORE DISPUTE CONFIRMATION - IMPLEMENTATION
+      STORE DISPUTE CONFIRMATION
     ────────────────────────────────────────────────────────────────────────────*/
     storeDisputeConfirmation(
         disputeConfirmation: DisputeConfirmationStruct,
-        disputeHash?: Hash
+        options?: StoreOptions
     ): Hash {
-        return disputeHash !== undefined
-            ? this._storeDisputeWithHash(disputeConfirmation, disputeHash)
-            : this._storeDispute(disputeConfirmation);
+        return this._storeDisputeConfirmationWithOptions(
+            disputeConfirmation,
+            options
+        );
     }
 
     // ====================================
@@ -85,20 +66,15 @@ export class DisputeStorage {
     // PRIVATE HELPERS
     // ====================================
 
-    private _storeDispute(
-        disputeConfirmation: DisputeConfirmationStruct
-    ): Hash {
-        const disputeHash = ethers.keccak256(
-            disputeConfirmation.signedDispute.encodedDispute
-        );
-
-        return this._storeDisputeWithHash(disputeConfirmation, disputeHash);
-    }
-
-    private _storeDisputeWithHash(
+    private _storeDisputeConfirmationWithOptions(
         disputeConfirmation: DisputeConfirmationStruct,
-        disputeHash: Hash
+        options?: StoreOptions
     ): Hash {
+        // Determine hash - use provided or compute
+        const disputeHash =
+            options?.hash ??
+            ethers.keccak256(disputeConfirmation.signedDispute.encodedDispute);
+
         const existingDispute = this.disputes.get(disputeHash);
 
         if (existingDispute !== undefined) {
@@ -116,7 +92,7 @@ export class DisputeStorage {
             this.disputes.set(disputeHash, mergedDispute);
             return disputeHash;
         }
-        // If no existing block, store new block
+        // If no existing dispute, store new dispute
 
         this.disputes.set(disputeHash, disputeConfirmation);
         return disputeHash;

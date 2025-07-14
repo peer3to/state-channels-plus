@@ -48,7 +48,7 @@ describe("JoinChannelBlockStorage", () => {
             const hash = storage.storeJoinChannelBlock(
                 mockJoinBlock,
                 mockTotalDeposits,
-                customHash
+                { hash: customHash }
             );
             expect(hash).to.equal(customHash);
 
@@ -63,16 +63,14 @@ describe("JoinChannelBlockStorage", () => {
             // First store succeeds
             const hash1 = storage.storeJoinChannelBlock(
                 mockJoinBlock,
-                mockTotalDeposits,
-                mockBlockHash
+                mockTotalDeposits
             );
             expect(hash1).to.equal(mockBlockHash);
 
             // Second store with same hash should return same hash
             const hash2 = storage.storeJoinChannelBlock(
                 mockJoinBlock,
-                mockTotalDeposits,
-                mockBlockHash
+                mockTotalDeposits
             );
             expect(hash2).to.equal(mockBlockHash);
             expect(hash1).to.equal(hash2);
@@ -81,11 +79,7 @@ describe("JoinChannelBlockStorage", () => {
 
     describe("READ operations", () => {
         beforeEach(() => {
-            storage.storeJoinChannelBlock(
-                mockJoinBlock,
-                mockTotalDeposits,
-                mockBlockHash
-            );
+            storage.storeJoinChannelBlock(mockJoinBlock, mockTotalDeposits);
         });
 
         it("should get block by hash", () => {

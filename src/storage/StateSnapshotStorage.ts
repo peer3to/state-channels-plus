@@ -3,6 +3,10 @@ import StateSnapshot from "@/models/StateSnapshot";
 
 type StateSnapshotHash = Hash;
 
+type StoreOptions = {
+    hash?: StateSnapshotHash;
+};
+
 export class StateSnapshotStorage {
     private snapshotsByHash: Map<StateSnapshotHash, StateSnapshot>;
     // Store genesis SnapshotData by forkId (forkId = hash(snapshotData)
@@ -17,27 +21,11 @@ export class StateSnapshotStorage {
     // CREATE
     // ====================================
 
-    /*────────────────────────────────────────────────────────────────────────────
-      OVERLOAD SIGNATURES
-    ────────────────────────────────────────────────────────────────────────────*/
-
-    /** [OVERLOAD 1] Store snapshot with auto-computed hash */
-    storeStateSnapshot(snapshot: StateSnapshot): StateSnapshotHash;
-
-    /** [OVERLOAD 2] Store snapshot with provided hash */
     storeStateSnapshot(
         snapshot: StateSnapshot,
-        snapshotHash: StateSnapshotHash
-    ): StateSnapshotHash;
-
-    /*────────────────────────────────────────────────────────────────────────────
-      IMPLEMENTATION
-    ────────────────────────────────────────────────────────────────────────────*/
-    storeStateSnapshot(
-        snapshot: StateSnapshot,
-        snapshotHash?: StateSnapshotHash
+        options?: StoreOptions
     ): StateSnapshotHash {
-        const hash = snapshotHash ?? snapshot.hash;
+        const hash = options?.hash ?? snapshot.hash;
 
         this.snapshotsByHash.set(hash, snapshot);
 
