@@ -14,3 +14,4 @@ export * from "./Codec";
 export * from "./SignatureUtils";
 export * from "./participantUtils";
 export * from "./config";
+export * from "./hash";

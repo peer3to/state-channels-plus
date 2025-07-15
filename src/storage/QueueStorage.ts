@@ -4,6 +4,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Block } from "@/models";
 import { Hash, ForkId, BlockHeight } from "@/types/types";
+import { hash } from "@/utils";
 
 export class QueueStorage {
     private queuedBlocks: Map<Hash, BlockConfirmationStruct> = new Map();
@@ -38,13 +39,11 @@ export class QueueStorage {
 
         if (existingBlockConfirmation) {
             // Merge signatures from the new confirmation
-            const signaturesSet = new Set(existingBlockConfirmation.signatures);
-            for (const newSignature of blockConfirmation.signatures) {
-                signaturesSet.add(newSignature);
-            }
-
-            existingBlockConfirmation.signatures = Array.from(signaturesSet);
-
+            const updatedBlockConfirmation = this.expandSignatures(
+                existingBlockConfirmation,
+                blockConfirmation.signatures
+            );
+            this.queuedBlocks.set(block.hash, updatedBlockConfirmation);
             return block.hash;
         }
         // Store the new block confirmation
@@ -85,13 +84,47 @@ export class QueueStorage {
         return blockConfirmations;
     }
 
-    isBlockQueued(hash: Hash): boolean {
-        return this.queuedBlocks.has(hash);
+    isBlockQueued(
+        blockConfirmation: BlockConfirmationStruct,
+        options?: { hash?: Hash }
+    ): boolean {
+        const blockHash =
+            options?.hash || hash(blockConfirmation.signedBlock.encodedBlock);
+
+        if (!this.queuedBlocks.has(blockHash)) {
+            return false;
+        }
+
+        const existingBlockConfirmation = this.queuedBlocks.get(blockHash);
+        if (existingBlockConfirmation) {
+            const updatedBlockConfirmation = this.expandSignatures(
+                existingBlockConfirmation,
+                blockConfirmation.signatures
+            );
+            this.queuedBlocks.set(blockHash, updatedBlockConfirmation);
+        }
+
+        return true;
     }
 
     // ====================================
     // PRIVATE HELPERS
     // ====================================
+
+    private expandSignatures(
+        existingBlockConfirmation: BlockConfirmationStruct,
+        newSignatures: any[]
+    ): BlockConfirmationStruct {
+        const signaturesSet = new Set(existingBlockConfirmation.signatures);
+        for (const newSignature of newSignatures) {
+            signaturesSet.add(newSignature);
+        }
+
+        return {
+            ...existingBlockConfirmation,
+            signatures: Array.from(signaturesSet)
+        };
+    }
 
     private coordinatesToKey(forkId: ForkId, height: BlockHeight): string {
         return `${forkId}:${height}`;

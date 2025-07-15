@@ -4,10 +4,10 @@ import { AgreementFlag } from "@/types";
 
 import ForkService from "./ForkService";
 import OnChainTracker from "./OnChainTracker";
-import { BlockHeight, ForkId, Timestamp } from "@/types/types";
+import { BlockHeight, ForkId, Hash, Timestamp } from "@/types/types";
 import { Block } from "@/models";
-import { ethers } from "ethers";
 import Storage from "@/storage";
+import { hash } from "@/utils";
 
 export default class BlockValidator {
     constructor(
@@ -16,16 +16,22 @@ export default class BlockValidator {
         private readonly chain: OnChainTracker
     ) {}
 
-    isBlockInChain(block: Block): boolean {
-        const ag = this.forks.agreementByBlock(block);
-        return ag !== undefined && ag.block.equals(block);
+    isBlockInChain(blockHash: Hash): boolean {
+        return (
+            this.storage.blocks.getBlockConfirmation(blockHash) !== undefined
+        );
     }
 
     /** In chain OR parked in the “future queue” */
-    isBlockDuplicate(block: Block): boolean {
+    isBlockDuplicate(signed: SignedBlockStruct): boolean {
+        const confirmation = {
+            signedBlock: signed,
+            signatures: [signed.signature]
+        };
+        const blockHash = hash(signed.encodedBlock);
         return (
-            this.isBlockInChain(block) ||
-            this.storage.queues.isBlockQueued(block.hash)
+            this.isBlockInChain(blockHash) ||
+            this.storage.queues.isBlockQueued(confirmation, { hash: blockHash })
         );
     }
 
@@ -57,7 +63,7 @@ export default class BlockValidator {
         if (signer !== participant) return AgreementFlag.INVALID_SIGNATURE;
 
         /* 2 – duplicate? */
-        if (this.isBlockDuplicate(block)) return AgreementFlag.DUPLICATE;
+        if (this.isBlockDuplicate(signed)) return AgreementFlag.DUPLICATE;
 
         /* 3 – known fork? */
         if (!this.forks.isValidforkId(forkId)) return AgreementFlag.NOT_READY;
@@ -72,7 +78,7 @@ export default class BlockValidator {
 
         /* 5 – first block of fork genesis? */
         if (height === 0) {
-            const expectedPrev = ethers.keccak256(
+            const expectedPrev = hash(
                 this.forks.forkAt(forkId)!.forkGenesisStateEncoded
             );
             return block.previousBlockHash === expectedPrev
