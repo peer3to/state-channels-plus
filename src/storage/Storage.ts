@@ -2,15 +2,18 @@ import { BlockStorage } from "./BlockStorage";
 import { JoinChannelBlockStorage } from "./JoinChannelBlockStorage";
 import { ExitChannelBlockStorage } from "./ExitChannelBlockStorage";
 import { StateSnapshotStorage } from "./StateSnapshotStorage";
+import { StateMachineStateStorage } from "./StateMachineStateStorage";
 import { ExitPointsStorage } from "./ExitPointsStorage";
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 import { deepCopyProxy } from "@/utils";
+import { ForkId, Bytes } from "@/types/types";
 
 export class Storage {
     public readonly blocks: BlockStorage;
     public readonly joinChannelBlocks: JoinChannelBlockStorage;
     public readonly exitChannelBlocks: ExitChannelBlockStorage;
     public readonly stateSnapshots: StateSnapshotStorage;
+    public readonly stateMachineStates: StateMachineStateStorage;
     public readonly exitPoints: ExitPointsStorage;
 
     constructor() {
@@ -18,6 +21,7 @@ export class Storage {
         this.joinChannelBlocks = deepCopyProxy(new JoinChannelBlockStorage());
         this.exitChannelBlocks = deepCopyProxy(new ExitChannelBlockStorage());
         this.stateSnapshots = deepCopyProxy(new StateSnapshotStorage());
+        this.stateMachineStates = deepCopyProxy(new StateMachineStateStorage());
         this.exitPoints = deepCopyProxy(new ExitPointsStorage());
         return deepCopyProxy(this);
     }
@@ -49,5 +53,19 @@ export class Storage {
         ).stateSnapshotHash;
 
         return this.stateSnapshots.getStateSnapshotByHash(stateSnapshotHash);
+    }
+
+    getGenesisStateMachineState(forkId: ForkId): Bytes | undefined {
+        const genesisSnapshot =
+            this.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
+        if (!genesisSnapshot) {
+            return undefined;
+        }
+        const stateMachineStateHash =
+            genesisSnapshot.snapshotData.stateMachineStateHash;
+
+        return this.stateMachineStates.getStateMachineState(
+            stateMachineStateHash
+        );
     }
 }
