@@ -66,6 +66,9 @@ export default class Block {
     get onChainTimestamp(): Timestamp | undefined {
         return this._onChainTimestamp;
     }
+    get relevantTimestamp(): Timestamp {
+        return this._onChainTimestamp ?? this.timestamp;
+    }
 
     set onChainTimestamp(onChainTimestamp: Timestamp) {
         this._onChainTimestamp = onChainTimestamp;
