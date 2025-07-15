@@ -35,8 +35,14 @@ describe("QueueStorage", () => {
 
     describe("Queue Operations", () => {
         it("should queue blocks and convert SignedBlock to BlockConfirmationStruct", () => {
+            const confirmation = {
+                signedBlock: mockSignedBlock,
+                signatures: [mockSignedBlock.signature]
+            };
+
             const hash = storage.queueBlock(mockSignedBlock);
-            expect(storage.isBlockQueued(hash)).to.be.true;
+            expect(storage.isBlockQueued(confirmation)).to.be.true;
+            expect(storage.isBlockQueued(confirmation, { hash })).to.be.true;
         });
 
         it("should queue multiple blocks on same coordinates", () => {
