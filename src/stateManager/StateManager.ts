@@ -277,22 +277,53 @@ class StateManager {
     // Passes the signedBlock through a verification pipeline and returns an execution flag based on the outcome
     public async onSignedBlock(
         signedBlock: SignedBlockStruct,
-        block?: Block
+        blk?: Block
     ): Promise<ExecutionFlags> {
         // Default everything to SUCCESS + no AgreementFlag
         let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS;
         let finalAgreementFlag: AgreementFlag | undefined = undefined;
-        const decodedBlock = block ?? Block.decode(signedBlock.encodedBlock);
+        const block = blk ?? Block.decode(signedBlock.encodedBlock);
 
         try {
             await this.mutex.lock();
             const result = await this.validationService.validateSignedBlock(
                 signedBlock,
-                decodedBlock
+                block
             );
 
             finalExecutionFlag = result.flag;
             finalAgreementFlag = result.agreementFlag;
+
+            // If validation passed, apply the transaction
+            if (result.success && result.flag === ExecutionFlags.SUCCESS) {
+                const applyResult = await this.applyTransaction(
+                    block.transaction
+                );
+                if (!applyResult.success) {
+                    finalExecutionFlag = ExecutionFlags.DISPUTE;
+                    finalAgreementFlag = AgreementFlag.INCORRECT_DATA;
+                } else {
+                    // store exit block, exit points, state snapshot and the block
+                    this.storeExitChannelBlock(
+                        applyResult.exitChannels,
+                        block.coordinates
+                    );
+
+                    this.handleStateSnapshotStorage(
+                        applyResult.encodedState,
+                        block.forkId
+                    );
+
+                    this.storage.blocks.storeBlock(signedBlock);
+
+                    // Schedule the success callback
+                    scheduleTask(
+                        applyResult.successCallback,
+                        0,
+                        "stateTransitionSuccessCallback"
+                    );
+                }
+            }
 
             return finalExecutionFlag;
         } finally {
@@ -363,22 +394,9 @@ class StateManager {
         exitChannels: ExitChannelStruct[];
     }> {
         const previousStateHash = await this.getEncodedStateKecak256();
-        let { success, successCallback, exitChannels } =
+        const { success, successCallback, exitChannels } =
             await this.stateMachine.stateTransition(transaction);
         const encodedState = await this.stateMachine.getState();
-
-        //This is done before the state snapshot is created
-        //This is because the exit channels need to be taken into account when creating the state snapshot
-        const coordinates: BlockCoordinates = {
-            forkId: transaction.header.forkId,
-            height: Number(transaction.header.transactionCnt)
-        };
-        this.storeExitChannelBlock(exitChannels, coordinates);
-
-        this.handleStateSnapshotStorage(
-            encodedState,
-            Number(transaction.header.forkCnt)
-        );
 
         return {
             success,
@@ -637,19 +655,21 @@ class StateManager {
             exitChannelBlock,
             totalWithdrawals
         );
+        this.storage.exitPoints.storeExitPoint(
+            coordinates.forkId,
+            coordinates.height
+        );
     }
 
-    //TODO: check that these storage typings are the best ones to use here
-    // needs to check if its ok to store a number or a BigNumberish
     private async handleStateSnapshotStorage(
-        encodedState: string,
-        forkCnt: number
+        encodedState: Bytes,
+        forkId: ForkId
     ) {
         const stateSnapshot = await this.createStateSnapshot(
             encodedState,
-            forkCnt
+            forkId
         );
-        this.storageModule.storeStateSnapshot(stateSnapshot);
+        this.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
     }
 
     // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute
