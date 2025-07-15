@@ -137,7 +137,7 @@ class InitHandshakeService extends ARpcService {
             this.mainRpcService.p2pManager.p2pSigner.signerAddress <
                 signerAddress
         ) {
-            this.mainRpcService.webRTCSetunService.initiateWebRTC();
+            this.mainRpcService.webRTCSetupService.initiateWebRTC();
         }
         console.log(`onInitHandshakeRESPONSE - done`);
         //TODO! RESOLVE SUCCESS - set some flag also

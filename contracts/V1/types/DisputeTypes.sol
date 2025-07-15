@@ -33,8 +33,6 @@ struct Dispute {
     FraudProof[] fraudProofs;
     /// @notice participants that were slashed on chain
     address[] onChainSlashes;
-    /// @dev Hash of the latest block (head) of the JoinChannel blockchain present on-chain in dispute on-chain storage.
-    bytes32 onChainLatestJoinChannelBlockHash;
     /// @notice Hash of output state (latest on-chain state)
     /// @dev created after from dispute resolution
     bytes32 outputSnapshotDataHash;
@@ -113,10 +111,8 @@ struct OnChainSlash {
 struct DisputeAuditingData {
     StateSnapshot genesisStateSnapshot;
     StateSnapshot latestStateSnapshot;
-    StateSnapshot outputStateSnapshot;
     StateSnapshot[] milestoneSnapshots; //for K milestones there will be K-1 snapshots, since the first milestone is the genesisSnapshot
     bytes latestStateStateMachineState;
-    JoinChannelBlock[] joinChannelBlocks;
     /// @notice Stores all exits since genesis
     /// @dev the time range of the exit is from genesis to the challenge deadline (new fork)
     ExitChannelBlock[] exitChannelBlocks;
