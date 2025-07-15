@@ -85,6 +85,10 @@ export class QueueStorage {
         return blockConfirmations;
     }
 
+    isBlockQueued(hash: Hash): boolean {
+        return this.queuedBlocks.has(hash);
+    }
+
     // ====================================
     // PRIVATE HELPERS
     // ====================================
