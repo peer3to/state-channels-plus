@@ -20,11 +20,14 @@ export type BlockCoordinates = {
 
 export default class Block {
     private _onChainTimestamp?: Timestamp;
+    private readonly block: BlockStruct;
+    private constructor(block: BlockStruct, onChainTimestamp?: Timestamp) {
+        this.block = block;
+        this._onChainTimestamp = onChainTimestamp;
+    }
 
-    private constructor(private readonly block: BlockStruct) {}
-
-    static from(block: BlockStruct): Block {
-        return new Block(block);
+    static from(block: BlockStruct, onChainTimestamp?: Timestamp): Block {
+        return new Block(block, onChainTimestamp);
     }
 
     static decode(encodedBlock: Bytes): Block {
