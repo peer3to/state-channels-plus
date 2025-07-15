@@ -19,6 +19,7 @@ import {
 import { randomInt } from "crypto";
 import { Codec, Type } from "@/utils";
 import { Block, StateSnapshot } from "@/models";
+import Storage from "@/storage";
 
 /**
  * Creates a default transaction header
@@ -81,7 +82,7 @@ export function transaction(
  * @returns A pre-configured AgreementManager
  */
 export function agreementManager(addresses: string[] = []): AgreementManager {
-    const manager = new AgreementManager();
+    const manager = new AgreementManager(new Storage());
     // Initialize with a single fork
     const genesisState = ethers.hexlify(ethers.randomBytes(32));
     const participants = addresses || [

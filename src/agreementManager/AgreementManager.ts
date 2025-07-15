@@ -1,14 +1,14 @@
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
-    BlockConfirmationStruct,
-    DisputeStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
+    SignedBlockStruct,
+    BlockConfirmationStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { AgreementFlag } from "@/types";
-import { Agreement, BlockConfirmation } from "./types";
+import { Agreement } from "./types";
 import * as SetUtils from "@/utils/set";
 import SignatureService from "./SignatureService";
 import ForkService, { Direction } from "./ForkService";
-import QueueService from "./QueueService";
+import { Storage } from "@/storage/Storage";
 import OnChainTracker from "./OnChainTracker";
 import BlockValidator from "./BlockValidator";
 import {
@@ -23,15 +23,16 @@ import { Block } from "@/models";
 
 class AgreementManager {
     forks = new ForkService();
-    queues = new QueueService();
-    chain = new OnChainTracker(
-        this.forks,
-        this.queues,
-        /* temp stub - replaced in the constructor */ () => AgreementFlag.READY
-    );
-    validator = new BlockValidator(this.forks, this.queues, this.chain);
+    chain: OnChainTracker;
+    validator: BlockValidator;
 
-    constructor() {
+    constructor(storage: Storage) {
+        this.chain = new OnChainTracker(
+            this.forks,
+            storage,
+            /* temp stub */ () => AgreementFlag.READY
+        );
+        this.validator = new BlockValidator(this.forks, storage, this.chain);
         const blockChecker = this.validator.check.bind(this.validator);
         this.chain.setChecker(blockChecker);
     }
@@ -327,26 +328,6 @@ class AgreementManager {
         participantAddres: Address
     ): boolean {
         return this.chain.hasPosted(forkId, transactionCnt, participantAddres);
-    }
-
-    public queueBlock(signedBlock: SignedBlockStruct) {
-        this.queues.queueBlock(signedBlock);
-    }
-    public tryDequeueBlocks(
-        forkId: ForkId,
-        transactionCnt: BlockHeight
-    ): SignedBlockStruct[] {
-        return this.queues.tryDequeueBlocks(forkId, transactionCnt);
-    }
-
-    public queueConfirmation(blockConfirmation: BlockConfirmation) {
-        this.queues.queueConfirmation(blockConfirmation);
-    }
-    public tryDequeueConfirmations(
-        forkId: ForkId,
-        transactionCnt: BlockHeight
-    ): BlockConfirmation[] {
-        return this.queues.tryDequeueConfirmations(forkId, transactionCnt);
     }
 
     // ************************************************

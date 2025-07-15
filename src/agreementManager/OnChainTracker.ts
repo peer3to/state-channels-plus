@@ -2,16 +2,16 @@ import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes
 import { AgreementFlag } from "@/types";
 
 import ForkService from "./ForkService";
-import QueueService from "./QueueService";
 import { Address, BlockHeight, ForkId, Timestamp } from "@/types/types";
 import { Block } from "@/models";
+import Storage from "@/storage";
 
 export type BlockChecker = (sb: SignedBlockStruct) => AgreementFlag;
 
 export default class OnChainTracker {
     constructor(
         private readonly forks: ForkService,
-        private readonly queues: QueueService,
+        private readonly storage: Storage,
         private checkBlock: BlockChecker
     ) {}
 
@@ -25,7 +25,7 @@ export default class OnChainTracker {
             return flag;
 
         if (flag === AgreementFlag.READY || flag === AgreementFlag.NOT_READY) {
-            this.queues.queueBlock(signed);
+            this.storage.queues.queueBlock(signed);
         }
 
         const blk: Block = Block.decode(signed.encodedBlock);

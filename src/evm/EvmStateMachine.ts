@@ -16,6 +16,7 @@ import { P2pInstance, ContractExecuter } from "@/evm";
 import { Address, Bytes } from "@/types/types";
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
+import Storage from "@/storage";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 
@@ -291,6 +292,7 @@ class EvmStateMachine extends AStateMachine {
         };
 
         const signerAddress = await signer.getAddress();
+        const storage = new Storage();
 
         // Create state manager with EvmStateMachine (which is an AStateMachine)
         const stateManager = new StateManager(
@@ -299,7 +301,8 @@ class EvmStateMachine extends AStateMachine {
             deployedStateChannelContractInstance,
             evmStateMachine,
             timeConfig,
-            p2pEventHooks || {}
+            p2pEventHooks || {},
+            storage
         );
 
         // Set state manager on P2P communication manager

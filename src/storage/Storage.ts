@@ -4,6 +4,8 @@ import { ExitChannelBlockStorage } from "./ExitChannelBlockStorage";
 import { StateSnapshotStorage } from "./StateSnapshotStorage";
 import { StateMachineStateStorage } from "./StateMachineStateStorage";
 import { ExitPointsStorage } from "./ExitPointsStorage";
+import { QueueStorage } from "./QueueStorage";
+
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 import { deepCopyProxy } from "@/utils";
 import { ForkId, Bytes } from "@/types/types";
@@ -15,6 +17,7 @@ export class Storage {
     public readonly stateSnapshots: StateSnapshotStorage;
     public readonly stateMachineStates: StateMachineStateStorage;
     public readonly exitPoints: ExitPointsStorage;
+    public readonly queues: QueueStorage;
 
     constructor() {
         this.blocks = deepCopyProxy(new BlockStorage());
@@ -23,6 +26,7 @@ export class Storage {
         this.stateSnapshots = deepCopyProxy(new StateSnapshotStorage());
         this.stateMachineStates = deepCopyProxy(new StateMachineStateStorage());
         this.exitPoints = deepCopyProxy(new ExitPointsStorage());
+        this.queues = deepCopyProxy(new QueueStorage());
         return deepCopyProxy(this);
     }
 
