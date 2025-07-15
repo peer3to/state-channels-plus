@@ -67,7 +67,9 @@ export default class Block {
         return this._onChainTimestamp;
     }
     get relevantTimestamp(): Timestamp {
-        return this._onChainTimestamp ?? this.timestamp;
+        return this._onChainTimestamp
+            ? Math.max(this._onChainTimestamp, this.timestamp)
+            : this.timestamp;
     }
 
     set onChainTimestamp(onChainTimestamp: Timestamp) {
