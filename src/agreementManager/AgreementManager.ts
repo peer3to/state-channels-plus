@@ -10,7 +10,6 @@ import SignatureService from "./SignatureService";
 import ForkService, { Direction } from "./ForkService";
 import QueueService from "./QueueService";
 import OnChainTracker from "./OnChainTracker";
-import BlockValidator from "./BlockValidator";
 import {
     Address,
     BlockHeight,
@@ -29,12 +28,6 @@ class AgreementManager {
         this.queues,
         /* temp stub - replaced in the constructor */ () => AgreementFlag.READY
     );
-    validator = new BlockValidator(this.forks, this.queues, this.chain);
-
-    constructor() {
-        const blockChecker = this.validator.check.bind(this.validator);
-        this.chain.setChecker(blockChecker);
-    }
 
     // ************************************************
     // ***** Canonical chain operations - public ******
@@ -388,25 +381,6 @@ class AgreementManager {
     }
 
     //both canonical chain and future queue
-    //both canonical chain and future queue
-    public isBlockInChain(block: Block): boolean {
-        return this.validator.isBlockInChain(block);
-    }
-    public isBlockDuplicate(block: Block): boolean {
-        return this.validator.isBlockDuplicate(block);
-    }
-    public checkBlock(signedBlock: SignedBlockStruct): AgreementFlag {
-        return this.validator.check(signedBlock);
-    }
-    public getLatestBlockTimestamp(forkId: ForkId): Timestamp {
-        return this.validator.latestBlockTimestamp(forkId);
-    }
-    public getLatestTimestamp(
-        forkId: ForkId,
-        maxTxCnt: BlockHeight
-    ): Timestamp {
-        return this.validator.latestRelevantTimestamp(forkId, maxTxCnt);
-    }
 
     public addDispute(dispute: DisputeStruct, timestamp: Timestamp): void {
         this.forks.addDispute(dispute, timestamp);

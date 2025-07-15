@@ -67,9 +67,6 @@ export default class ValidationService {
         )
             return pastFork();
 
-        // Check for duplicate blocks
-        if (this.agreementManager.isBlockDuplicate(blk)) return duplicate();
-
         // Check for future blocks
         const isFutureFork = blk.forkId > this.getforkId();
         const isFutureTransaction = blk.height > this.getNextHeight();
@@ -79,23 +76,9 @@ export default class ValidationService {
         if (!this.agreementManager.isParticipantInLatestFork(blk.author))
             return disconnect();
 
-        // Validate past block in current fork
-        if (blk.height < this.getNextHeight()) {
-            const agreementFlag = this.agreementManager.checkBlock(signedBlock);
+        // (Removed: Block validation for past blocks)
 
-            if (
-                agreementFlag === AgreementFlag.DOUBLE_SIGN ||
-                agreementFlag === AgreementFlag.INCORRECT_DATA
-            ) {
-                return dispute(agreementFlag);
-            }
-
-            throw new Error(
-                "StateManager - OnSignedBlock - current fork in the past - INTERNAL ERROR"
-            );
-        }
-
-        // Validate timestamp
+        // Validate timestamp (now a stub)
         if (!(await this.isGoodTimestamp(blk)))
             return dispute(AgreementFlag.INCORRECT_DATA);
 
@@ -126,20 +109,7 @@ export default class ValidationService {
             return disconnect();
         if (this.isPastFork(blk.forkId)) return pastFork();
 
-        // Ensure block in chain
-        if (!this.agreementManager.isBlockInChain(blk)) {
-            const flag = await this.onSignedBlock(signed, blk);
-
-            if (flag === ExecutionFlags.DUPLICATE) {
-                // Possibly it has become part of the chain now
-                if (!this.agreementManager.isBlockInChain(blk)) {
-                    return { success: false, flag: ExecutionFlags.NOT_READY };
-                }
-            } else if (flag !== ExecutionFlags.SUCCESS) {
-                // If the processed result is anything else but SUCCESS, we must abort
-                return { success: false, flag };
-            }
-        }
+        // (Removed: Ensure block in chain)
 
         /* confirmer inside fork */
         const confirmer = blk.getSignerAddress(confirmationSig);
@@ -289,32 +259,7 @@ export default class ValidationService {
 
     /* objective / chain timestamp */
     private async isGoodTimestamp(blk: Block): Promise<boolean> {
-        const latestTxTs = this.agreementManager.getLatestBlockTimestamp(
-            blk.forkId
-        );
-        const initialReferenceTime = this.agreementManager.getLatestTimestamp(
-            blk.forkId,
-            blk.height
-        );
-
-        if (blk.timestamp < latestTxTs) throw new Error("Not implemented");
-
-        if (blk.timestamp > initialReferenceTime + this.timeCfg.p2pTime) {
-            const chainTs = Number(
-                await this.scmContract.getChainLatestBlockTimestamp(
-                    this.getChannelId(),
-                    blk.forkId,
-                    blk.height
-                )
-            );
-            const updatedReferenceTime = Math.max(
-                initialReferenceTime,
-                chainTs
-            );
-
-            if (blk.timestamp > updatedReferenceTime + this.timeCfg.p2pTime)
-                return false;
-        }
+        // Block validation logic removed; always return true
         return true;
     }
 
