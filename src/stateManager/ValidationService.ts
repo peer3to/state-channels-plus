@@ -350,25 +350,29 @@ export default class ValidationService {
                 return undefined;
             }
 
-            // Query recent logs (last 10 blocks)
+            // filter BlockCalldataPosted calls by channelId and author
             const filter = this.scmContract.filters.BlockCalldataPosted(
                 this.getChannelId(),
                 blk.author
             );
 
+            // best will be to get exact block number from on-chain data
+            // but idk how to AND it is added complexity
+            // assumptoin here is that the block is within the recent 3 blocks (recent, recent-1, recent-2)
             const logs = await this.scmContract.queryFilter(
                 filter,
-                -10,
-                "latest"
+                -2, // from block
+                "latest" // to block
             );
 
             // Find matching log
-            for (const log of logs) {
+
+            for (let i = logs.length - 1; i >= 0; i--) {
+                const log = logs[i];
                 if (hash(log.args.signedBlock.encodedBlock) === blk.hash) {
                     return Number(log.args.timestamp);
                 }
             }
-
             return undefined;
         } catch (error) {
             console.error("Error fetching on-chain timestamp:", error);
