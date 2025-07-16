@@ -128,6 +128,7 @@ class StateManager {
             this.disputeHandler,
             this.stateChannelManagerContract,
             this.timeConfig,
+            this.storage,
             () => this.getChannelId(),
             this.signerAddress,
             this.onSignedBlock.bind(this)

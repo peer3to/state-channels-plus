@@ -5,6 +5,7 @@ export enum ExecutionFlags {
     DISCONNECT,
     DISPUTE,
     TIMESTAMP_IN_FUTURE,
+    TIMESTAMP_TOO_OLD,
     NOT_ENOUGH_TIME,
     PAST_FORK
 }
