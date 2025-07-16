@@ -19,10 +19,15 @@ export type BlockCoordinates = {
 };
 
 export default class Block {
-    private constructor(private readonly block: BlockStruct) {}
+    private _onChainTimestamp?: Timestamp;
+    private readonly block: BlockStruct;
+    private constructor(block: BlockStruct, onChainTimestamp?: Timestamp) {
+        this.block = block;
+        this._onChainTimestamp = onChainTimestamp;
+    }
 
-    static from(block: BlockStruct): Block {
-        return new Block(block);
+    static from(block: BlockStruct, onChainTimestamp?: Timestamp): Block {
+        return new Block(block, onChainTimestamp);
     }
 
     static decode(encodedBlock: Bytes): Block {
@@ -59,6 +64,19 @@ export default class Block {
 
     get timestamp(): Timestamp {
         return Number(this.block.transaction.header.timestamp);
+    }
+
+    get onChainTimestamp(): Timestamp | undefined {
+        return this._onChainTimestamp;
+    }
+    get relevantTimestamp(): Timestamp {
+        return this._onChainTimestamp
+            ? Math.max(this._onChainTimestamp, this.timestamp)
+            : this.timestamp;
+    }
+
+    set onChainTimestamp(onChainTimestamp: Timestamp) {
+        this._onChainTimestamp = onChainTimestamp;
     }
 
     get author() {

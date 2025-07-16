@@ -2,7 +2,14 @@ import {
     BlockConfirmationStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Hash, ForkId, BlockHeight, Signature, Bytes } from "@/types/types";
+import {
+    Hash,
+    ForkId,
+    BlockHeight,
+    Signature,
+    Bytes,
+    Timestamp
+} from "@/types/types";
 import { ethers } from "ethers";
 import { Block, BlockCoordinates } from "@/models";
 
@@ -12,12 +19,17 @@ type StoreOptions = {
     coordinates?: BlockCoordinates;
 };
 
+export type BlockEntry = {
+    blockConfirmation: BlockConfirmationStruct;
+    onChainTimestamp?: Timestamp;
+};
+
 export class BlockStorage {
     // ====================================
     // STORAGE MAPS
     // ====================================
-    private hashToBlockMap: Map<Hash, BlockConfirmationStruct>;
-    private coordinatesToBlockMap: Map<CoordinateKey, BlockConfirmationStruct>;
+    private hashToBlockMap: Map<Hash, BlockEntry>;
+    private coordinatesToBlockMap: Map<CoordinateKey, BlockEntry>;
 
     constructor() {
         this.hashToBlockMap = new Map();
@@ -38,10 +50,7 @@ export class BlockStorage {
             signatures: [] // Starts empty, ready for peer confirmations
         };
 
-        return this._storeBlockConfirmationWithOptions(
-            blockConfirmation,
-            options
-        );
+        return this._storeBlockEntryWithOptions({ blockConfirmation }, options);
     }
 
     /*────────────────────────────────────────────────────────────────────────────
@@ -51,10 +60,7 @@ export class BlockStorage {
         blockConfirmation: BlockConfirmationStruct,
         options?: StoreOptions
     ): Hash {
-        return this._storeBlockConfirmationWithOptions(
-            blockConfirmation,
-            options
-        );
+        return this._storeBlockEntryWithOptions({ blockConfirmation }, options);
     }
 
     // ====================================
@@ -65,22 +71,19 @@ export class BlockStorage {
       OVERLOAD SIGNATURES
     ────────────────────────────────────────────────────────────────────────────*/
 
-    /** [OVERLOAD 1] Get block confirmation by hash */
-    getBlockConfirmation(blockHash: Hash): BlockConfirmationStruct | undefined;
+    /** [OVERLOAD 1] Get block entry by hash */
+    getBlockEntry(blockHash: Hash): BlockEntry | undefined;
 
-    /** [OVERLOAD 2] Get block confirmation by coordinates */
-    getBlockConfirmation(
-        forkId: ForkId,
-        height: BlockHeight
-    ): BlockConfirmationStruct | undefined;
+    /** [OVERLOAD 2] Get block entry by coordinates */
+    getBlockEntry(forkId: ForkId, height: BlockHeight): BlockEntry | undefined;
 
     /*────────────────────────────────────────────────────────────────────────────
       IMPLEMENTATION
     ────────────────────────────────────────────────────────────────────────────*/
-    getBlockConfirmation(
+    getBlockEntry(
         hashOrForkId: Hash | ForkId,
         height?: BlockHeight
-    ): BlockConfirmationStruct | undefined {
+    ): BlockEntry | undefined {
         if (height === undefined) {
             // ┌─ ROUTES TO: [OVERLOAD 1] - by hash
             return this.hashToBlockMap.get(hashOrForkId as Hash);
@@ -94,11 +97,57 @@ export class BlockStorage {
     }
 
     // ====================================
-    // UPDATE - Only signature insertion
+    // UPDATE - Signature insertion and on-chain timestamp setting
     // ====================================
 
     /*────────────────────────────────────────────────────────────────────────────
-      OVERLOAD SIGNATURES
+      SET ON-CHAIN TIMESTAMP - OVERLOAD SIGNATURES
+    ────────────────────────────────────────────────────────────────────────────*/
+
+    /** [OVERLOAD 1] Set on-chain timestamp by hash */
+    setOnChainTimestamp(blockHash: Hash, timestamp: Timestamp): boolean;
+
+    /** [OVERLOAD 2] Set on-chain timestamp by coordinates */
+    setOnChainTimestamp(
+        forkId: ForkId,
+        height: BlockHeight,
+        timestamp: Timestamp
+    ): boolean;
+
+    /*────────────────────────────────────────────────────────────────────────────
+      IMPLEMENTATION
+    ────────────────────────────────────────────────────────────────────────────*/
+    setOnChainTimestamp(
+        hashOrForkId: Hash | ForkId,
+        timestampOrHeight: Timestamp | BlockHeight,
+        timestamp?: Timestamp
+    ): boolean {
+        let blockEntry: BlockEntry | undefined;
+
+        if (timestamp === undefined) {
+            // ┌─ ROUTES TO: [OVERLOAD 1] - by hash
+            blockEntry = this.hashToBlockMap.get(hashOrForkId as Hash);
+            if (blockEntry) {
+                blockEntry.onChainTimestamp = timestampOrHeight as Timestamp;
+                return true;
+            }
+            return false;
+        }
+        // ┌─ ROUTES TO: [OVERLOAD 2] - by coordinates
+        const coordinateKey = this.coordinatesToKey({
+            forkId: hashOrForkId as ForkId,
+            height: timestampOrHeight as BlockHeight
+        });
+        blockEntry = this.coordinatesToBlockMap.get(coordinateKey);
+        if (blockEntry) {
+            blockEntry.onChainTimestamp = timestamp;
+            return true;
+        }
+        return false;
+    }
+
+    /*────────────────────────────────────────────────────────────────────────────
+      INSERT SIGNATURE - OVERLOAD SIGNATURES
     ────────────────────────────────────────────────────────────────────────────*/
 
     /** [OVERLOAD 1] Insert signature by hash */
@@ -122,7 +171,7 @@ export class BlockStorage {
         hashOrForkId: Hash | ForkId,
         height?: BlockHeight
     ): BlockConfirmationStruct | undefined {
-        const blockConfirmation =
+        const blockEntry =
             height === undefined
                 ? this.hashToBlockMap.get(hashOrForkId as Hash)
                 : this.coordinatesToBlockMap.get(
@@ -132,7 +181,8 @@ export class BlockStorage {
                       })
                   );
 
-        if (blockConfirmation) {
+        if (blockEntry) {
+            const blockConfirmation = blockEntry.blockConfirmation;
             // Check for duplicate signature before adding
             if (!blockConfirmation.signatures.includes(signature as Bytes)) {
                 blockConfirmation.signatures.push(signature as Bytes);
@@ -150,10 +200,10 @@ export class BlockStorage {
       OVERLOAD SIGNATURES
     ────────────────────────────────────────────────────────────────────────────*/
 
-    /** [OVERLOAD 1] Delete block confirmation by hash */
+    /** [OVERLOAD 1] Delete block entry by hash */
     deleteBlock(blockHash: Hash): boolean;
 
-    /** [OVERLOAD 2] Delete block confirmation by coordinates */
+    /** [OVERLOAD 2] Delete block entry by coordinates */
     deleteBlock(forkId: ForkId, height: BlockHeight): boolean;
 
     /*────────────────────────────────────────────────────────────────────────────
@@ -162,14 +212,12 @@ export class BlockStorage {
     deleteBlock(hashOrForkId: Hash | ForkId, height?: BlockHeight): boolean {
         if (height === undefined) {
             // ┌─ ROUTES TO: [OVERLOAD 1] - delete by hash
-            const blockConfirmation = this.hashToBlockMap.get(
-                hashOrForkId as Hash
-            );
-            if (!blockConfirmation) return false;
+            const blockEntry = this.hashToBlockMap.get(hashOrForkId as Hash);
+            if (!blockEntry) return false;
 
             // Need to find and delete from coordinates map too
             const block = Block.decode(
-                blockConfirmation.signedBlock.encodedBlock
+                blockEntry.blockConfirmation.signedBlock.encodedBlock
             );
             const coordinateKey = this.coordinatesToKey(block.coordinates);
 
@@ -183,12 +231,12 @@ export class BlockStorage {
             forkId: hashOrForkId as ForkId,
             height
         });
-        const blockConfirmation = this.coordinatesToBlockMap.get(coordinateKey);
-        if (!blockConfirmation) return false;
+        const blockEntry = this.coordinatesToBlockMap.get(coordinateKey);
+        if (!blockEntry) return false;
 
         // Need to find and delete from hash map too
         const blockHash = ethers.keccak256(
-            blockConfirmation.signedBlock.encodedBlock
+            blockEntry.blockConfirmation.signedBlock.encodedBlock
         );
 
         this.coordinatesToBlockMap.delete(coordinateKey);
@@ -204,39 +252,50 @@ export class BlockStorage {
         return `${coordinates.forkId}:${coordinates.height}`;
     }
 
-    private _storeBlockConfirmationWithOptions(
-        blockConfirmation: BlockConfirmationStruct,
+    private _storeBlockEntryWithOptions(
+        blockEntry: BlockEntry,
         options?: StoreOptions
     ): Hash {
         // Determine hash - use provided or compute
         const blockHash =
             options?.hash ??
-            ethers.keccak256(blockConfirmation.signedBlock.encodedBlock);
+            ethers.keccak256(
+                blockEntry.blockConfirmation.signedBlock.encodedBlock
+            );
 
         // Determine coordinates - use provided or compute
         const coordinates =
             options?.coordinates ??
-            Block.decode(blockConfirmation.signedBlock.encodedBlock)
+            Block.decode(blockEntry.blockConfirmation.signedBlock.encodedBlock)
                 .coordinates;
 
-        // Store the block confirmation
+        // Store the block entry
         const coordinateKey = this.coordinatesToKey(coordinates);
-        const existingBlock = this.hashToBlockMap.get(blockHash);
+        const existingEntry = this.hashToBlockMap.get(blockHash);
 
-        if (existingBlock !== undefined) {
+        if (existingEntry !== undefined) {
             // Merge signatures
-            const signaturesSet = new Set(existingBlock.signatures);
-            for (const newSignature of blockConfirmation.signatures) {
+            const signaturesSet = new Set(
+                existingEntry.blockConfirmation.signatures
+            );
+            for (const newSignature of blockEntry.blockConfirmation
+                .signatures) {
                 signaturesSet.add(newSignature);
             }
-            existingBlock.signatures = Array.from(signaturesSet);
+            existingEntry.blockConfirmation.signatures =
+                Array.from(signaturesSet);
+
+            // Update on-chain timestamp if provided
+            if (blockEntry.onChainTimestamp !== undefined) {
+                existingEntry.onChainTimestamp = blockEntry.onChainTimestamp;
+            }
 
             return blockHash;
         }
 
-        // If no existing block, store new block
-        this.hashToBlockMap.set(blockHash, blockConfirmation);
-        this.coordinatesToBlockMap.set(coordinateKey, blockConfirmation);
+        // If no existing block, store new block entry
+        this.hashToBlockMap.set(blockHash, blockEntry);
+        this.coordinatesToBlockMap.set(coordinateKey, blockEntry);
         return blockHash;
     }
 }
