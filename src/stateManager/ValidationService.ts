@@ -6,7 +6,6 @@ import DisputeHandler from "@/DisputeHandler";
 import { ethers } from "ethers";
 import { AStateChannelManagerProxy } from "@typechain-types/contracts/V1/StateChannelDiamondProxy";
 import {
-    scheduleTask,
     subjectiveTimingFlag,
     SignatureUtils,
     getActiveParticipants,
@@ -110,8 +109,8 @@ export default class ValidationService {
         if (blk.author !== nextToWrite)
             return dispute(AgreementFlag.INCORRECT_DATA);
 
-        // Process state transition
-        return this.processStateTransition(blk, signedBlock);
+        // All validation passed - return success
+        return success();
     }
 
     public async validateBlockConfirmation(
@@ -232,40 +231,6 @@ export default class ValidationService {
     }
 
     /*────────────────────── PRIVATE HELPERS ─────────────────────*/
-
-    private async processStateTransition(
-        block: Block,
-        signed: SignedBlockStruct
-    ): Promise<ValidationResult> {
-        const previousStateHash = await this.stateMachine
-            .getState()
-            .then(ethers.keccak256);
-        let {
-            success: txOK,
-            successCallback,
-            exitChannels: _
-        } = await this.stateMachine.stateTransition(block.transaction);
-
-        const encodedState = await this.stateMachine.getState();
-        const stateHash = ethers.keccak256(encodedState);
-
-        // TODO: get current state snapshot and previous block hash
-        // const currentStateSnapshotHash = "";
-        // const previousBlockHash = "";
-
-        // const hashOK =
-        //     currentStateSnapshotHash === block.stateSnapshotHash &&
-        //     previousBlockHash === block.previousBlockHash;
-
-        // TEMPORARY
-        const hashOK = true;
-
-        if (!txOK || !hashOK) return dispute(AgreementFlag.INCORRECT_DATA);
-
-        this.agreementManager.addBlock(block, signed.signature, encodedState);
-        scheduleTask(successCallback, 0, "stateTransitionSuccessCallback");
-        return success();
-    }
 
     /* subjective time window */
     private async isEnoughTimeSubjective(
