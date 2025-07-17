@@ -114,7 +114,7 @@ export default class Block {
         return new Set(signatures.map((sig) => this.getSignerAddress(sig)));
     }
 
-    getParticipantSignature(
+    findSignature(
         participant: Address,
         signatures: Signature[]
     ): { didSign: boolean; signature: Signature | undefined } {

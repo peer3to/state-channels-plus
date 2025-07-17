@@ -65,18 +65,3 @@ export const isSubset = <T>(setA: Set<T>, setB: Set<T>): boolean => {
 export const isSuperset = <T>(setA: Set<T>, setB: Set<T>): boolean => {
     return isSubset(setB, setA);
 };
-
-/**
- * Converts a set to an array
- */
-export const toArray = <T>(set: Set<T>): T[] => {
-    return Array.from(set);
-};
-
-/**
- * Finds elements from the source array that aren't in the excluded set
- * Returns them as an array
- */
-export const excludeFromArray = <T>(source: T[], excluded: Set<T>): T[] => {
-    return source.filter((item) => !excluded.has(item as T));
-};
