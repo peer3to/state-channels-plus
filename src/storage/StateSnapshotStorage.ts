@@ -24,12 +24,29 @@ export class StateSnapshotStorage {
     storeStateSnapshot(
         snapshot: StateSnapshot,
         options?: StoreOptions
-    ): StateSnapshotHash {
+    ): StateSnapshotHash | undefined {
         const hash = options?.hash ?? snapshot.hash;
+
+        // Check if the same snapshot already exists
+        const existingSnapshot = this.snapshotsByHash.get(hash);
+        if (existingSnapshot) {
+            if (existingSnapshot.forkId === snapshot.forkId &&
+                existingSnapshot.snapshotData.stateMachineStateHash === snapshot.snapshotData.stateMachineStateHash) {
+                return hash;
+            }
+            // Conflict
+            return undefined;
+        }
 
         this.snapshotsByHash.set(hash, snapshot);
 
         if (snapshot.isGenesis) {
+            const existingGenesis = this.genesisSnapshotDataByForkId.get(snapshot.forkId);
+            if (existingGenesis) {
+                if (existingGenesis.hash === snapshot.hash) {
+                    return hash;
+                }
+            }
             this.genesisSnapshotDataByForkId.set(snapshot.forkId, snapshot);
         }
 

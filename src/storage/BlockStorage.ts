@@ -43,7 +43,7 @@ export class BlockStorage {
     /*────────────────────────────────────────────────────────────────────────────
       STORE  BLOCK - IMPLEMENTATION
     ────────────────────────────────────────────────────────────────────────────*/
-    storeBlock(signedBlock: SignedBlockStruct, options?: StoreOptions): Hash {
+    storeBlock(signedBlock: SignedBlockStruct, options?: StoreOptions): Hash | undefined {
         // Convert SignedBlock to BlockConfirmation (empty signatures)
         const blockConfirmation: BlockConfirmationStruct = {
             signedBlock: signedBlock,
@@ -59,7 +59,7 @@ export class BlockStorage {
     storeBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct,
         options?: StoreOptions
-    ): Hash {
+    ): Hash | undefined {
         return this._storeBlockEntryWithOptions({ blockConfirmation }, options);
     }
 
@@ -255,7 +255,7 @@ export class BlockStorage {
     private _storeBlockEntryWithOptions(
         blockEntry: BlockEntry,
         options?: StoreOptions
-    ): Hash {
+    ): Hash | undefined {
         // Determine hash - use provided or compute
         const blockHash =
             options?.hash ??
@@ -271,29 +271,44 @@ export class BlockStorage {
 
         // Store the block entry
         const coordinateKey = this.coordinatesToKey(coordinates);
-        const existingEntry = this.hashToBlockMap.get(blockHash);
+        const existingEntryByHash = this.hashToBlockMap.get(blockHash);
+        const existingEntryByCoordinates = this.coordinatesToBlockMap.get(coordinateKey);
 
-        if (existingEntry !== undefined) {
-            // Merge signatures
-            const signaturesSet = new Set(
-                existingEntry.blockConfirmation.signatures
-            );
-            for (const newSignature of blockEntry.blockConfirmation
-                .signatures) {
-                signaturesSet.add(newSignature);
+        // If the same block already exists, merge signatures and return hash - existing functionality
+        if (existingEntryByHash && existingEntryByCoordinates) {
+            const existingBlockDecoded = Block.decode(existingEntryByHash.blockConfirmation.signedBlock.encodedBlock);
+            if (existingBlockDecoded.coordinates.forkId === coordinates.forkId &&
+                existingBlockDecoded.coordinates.height === coordinates.height) {
+                // Same block, merge signatures and return hash
+                const signaturesSet = new Set(
+                    existingEntryByHash.blockConfirmation.signatures
+                );
+                for (const newSignature of blockEntry.blockConfirmation.
+                    signatures) {
+                    signaturesSet.add(newSignature);
+                }
+                existingEntryByHash.blockConfirmation.signatures = 
+                    Array.from(signaturesSet);
+
+                // Update on-chain timestamp if provided
+                if (blockEntry.onChainTimestamp !== undefined) {
+                    existingEntryByHash.onChainTimestamp = blockEntry.onChainTimestamp;
+                }
+                return blockHash;
             }
-            existingEntry.blockConfirmation.signatures =
-                Array.from(signaturesSet);
-
-            // Update on-chain timestamp if provided
-            if (blockEntry.onChainTimestamp !== undefined) {
-                existingEntry.onChainTimestamp = blockEntry.onChainTimestamp;
-            }
-
-            return blockHash;
         }
 
-        // If no existing block, store new block entry
+        // Conflict: different blocks with the same coordinates
+        if (existingEntryByCoordinates) {
+            const existingBlockHash = ethers.keccak256(
+                existingEntryByCoordinates.blockConfirmation.signedBlock.encodedBlock
+            );
+            if (existingBlockHash !== blockHash) {
+                return undefined;
+            }
+        }
+
+        // Store new block entry
         this.hashToBlockMap.set(blockHash, blockEntry);
         this.coordinatesToBlockMap.set(coordinateKey, blockEntry);
         return blockHash;
