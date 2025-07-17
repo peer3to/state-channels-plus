@@ -1,5 +1,4 @@
 import { ethers } from "ethers";
-import AgreementManager from "./agreementManager";
 import { AStateChannelManagerProxy } from "@typechain-types";
 import {
     ProofStruct,
@@ -11,6 +10,7 @@ import P2pEventHooks from "@/P2pEventHooks";
 import ProofManager from "./ProofManager";
 import { Address, BlockHeight, ChannelId, ForkId } from "./types/types";
 import { Block } from "./models";
+import { inject, ServiceNames } from "@/container";
 
 let DEBUG_DISPUTE_HANDLER = true;
 
@@ -20,7 +20,6 @@ const INITIAL_TRANSACTION_COUNT = 0;
 class DisputeHandler {
     signer: ethers.Signer;
     signerAddress: Address;
-    agreementManager: AgreementManager;
     stateChannelManagerContract: AStateChannelManagerProxy;
     channelId: ChannelId;
     localProofs: Map<ForkId, ProofStruct[]> = new Map();
@@ -30,21 +29,23 @@ class DisputeHandler {
     self = DEBUG_DISPUTE_HANDLER ? DebugProxy.createProxy(this) : this;
     proofManager: ProofManager;
 
+    private get agreementManager() {
+        return inject(ServiceNames.AGREEMENT_MANAGER);
+    }
+
     constructor(
         channelId: ChannelId,
         signer: ethers.Signer,
         signerAddress: Address,
-        agreementManager: AgreementManager,
         stateChannelManagerContract: AStateChannelManagerProxy,
         p2pEventHooks: P2pEventHooks
     ) {
         this.channelId = channelId;
         this.signer = signer;
         this.signerAddress = signerAddress;
-        this.agreementManager = agreementManager;
         this.stateChannelManagerContract = stateChannelManagerContract;
         this.p2pEventHooks = p2pEventHooks;
-        this.proofManager = new ProofManager(agreementManager);
+        this.proofManager = new ProofManager();
         return this.self;
     }
 

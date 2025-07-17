@@ -1,16 +1,20 @@
 import { ExecutionFlags, AgreementFlag } from "@/types";
-import P2PManager from "@/P2PManager";
-import DisputeHandler from "@/DisputeHandler";
+
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import Storage from "@/storage";
+import { inject, ServiceNames } from "@/container";
 
 export class ExecutionDecisionProcessor {
-    constructor(
-        private storage: Storage,
-        private p2pManager: P2PManager,
-        private disputeHandler: DisputeHandler,
-        private onSuccessCb: () => Promise<void>
-    ) {}
+    constructor(private onSuccessCb: () => Promise<void>) {}
+
+    private get storage() {
+        return inject(ServiceNames.STORAGE);
+    }
+    private get p2pManager() {
+        return inject(ServiceNames.P2P_MANAGER);
+    }
+    private get disputeHandler() {
+        return inject(ServiceNames.DISPUTE_HANDLER);
+    }
 
     async process(
         signedBlock: SignedBlockStruct,

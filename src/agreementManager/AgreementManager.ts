@@ -3,19 +3,23 @@ import {
     BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { Storage } from "@/storage/Storage";
 import { Address, BlockHeight, Bytes, ForkId, Signature } from "@/types/types";
 import { Block } from "@/models";
 import { Codec, Type } from "@/utils";
 import { ethers } from "ethers";
 import * as SetUtils from "@/utils/set";
 
+import { inject, ServiceNames } from "@/container";
+
 /**
  * AgreementManager acts as a higher logic layer over storage
  * It interprets storage data and provides convenience methods
  */
 class AgreementManager {
-    constructor(private storage: Storage) {}
+    // Lazy-loaded storage dependency
+    private get storage() {
+        return inject(ServiceNames.STORAGE);
+    }
 
     public getLatestSignedBlockByParticipant(
         forkId: ForkId,

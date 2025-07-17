@@ -25,18 +25,13 @@ import { AStateChannelManagerProxy } from "@typechain-types";
 import { StateSnapshotStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 // Core components
-import AgreementManager from "../agreementManager/AgreementManager";
 import AStateMachine from "@/AStateMachine";
 import Clock from "@/Clock";
-import DisputeHandler from "@/DisputeHandler";
-import P2PManager from "@/P2PManager";
+
 import StateChannelEventListener from "@/StateChannelEventListener";
-import ValidationService from "./ValidationService";
-import Storage from "@/storage";
 
 // Event handlers and processors
 import P2pEventHooks from "@/P2pEventHooks";
-import { ExecutionDecisionProcessor } from "./executionDecisionProcessor";
 
 // Models
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
@@ -63,6 +58,10 @@ import {
     Signature,
     Timestamp
 } from "@/types/types";
+import { inject, ServiceNames, registerService } from "@/container";
+import DisputeHandler from "@/DisputeHandler";
+import ValidationService from "./ValidationService";
+import { ExecutionDecisionProcessor } from "./executionDecisionProcessor";
 
 let DEBUG_STATE_MANAGER = false;
 
@@ -71,21 +70,32 @@ class StateManager {
     stateMachine: AStateMachine;
     p2pEventHooks: P2pEventHooks;
     signerAddress: Address;
-    agreementManager: AgreementManager;
     stateChannelEventListener: StateChannelEventListener;
-    disputeHandler: DisputeHandler;
     stateChannelManagerContract: AStateChannelManagerProxy;
-    p2pManager: P2PManager;
     timeConfig: TimeConfig;
     channelId: ChannelId = NULL;
     mutex: Mutex = new Mutex();
     self = DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
     isDisposed: boolean = false;
-    validationService: ValidationService;
-    storage: Storage;
+    private get storage() {
+        return inject(ServiceNames.STORAGE);
+    }
+    private get agreementManager() {
+        return inject(ServiceNames.AGREEMENT_MANAGER);
+    }
+    private get validationService() {
+        return inject(ServiceNames.VALIDATION_SERVICE);
+    }
 
-    // Decision processors
-    private executionDecisionProcessor: ExecutionDecisionProcessor;
+    private get disputeHandler() {
+        return inject(ServiceNames.DISPUTE_HANDLER);
+    }
+    private get p2pManager() {
+        return inject(ServiceNames.P2P_MANAGER);
+    }
+    private get executionDecisionProcessor() {
+        return inject(ServiceNames.EXECUTION_DECISION_PROCESSOR);
+    }
 
     // Store output state snapshots data
     private readonly outputStateSnapshotData: Map<Hash, StateSnapshot> =
@@ -97,48 +107,44 @@ class StateManager {
         stateChannelManagerContract: AStateChannelManagerProxy,
         stateMachine: AStateMachine,
         timeConfig: TimeConfig,
-        p2pEventHooks: P2pEventHooks,
-        storage: Storage
+        p2pEventHooks: P2pEventHooks
     ) {
         this.signerAddress = signerAddress;
         this.stateMachine = stateMachine;
         this.p2pEventHooks = p2pEventHooks;
         this.timeConfig = timeConfig;
         this.stateChannelManagerContract = stateChannelManagerContract;
-        this.storage = storage;
 
         this.stateChannelEventListener = new StateChannelEventListener(
-            this.self,
             this.stateChannelManagerContract,
             this.p2pEventHooks
         );
-        this.agreementManager = new AgreementManager(this.storage);
-        this.disputeHandler = new DisputeHandler(
-            this.channelId,
-            signer,
-            signerAddress,
-            this.agreementManager,
-            this.stateChannelManagerContract,
-            this.p2pEventHooks
+        registerService(
+            ServiceNames.DISPUTE_HANDLER,
+            new DisputeHandler(
+                this.channelId,
+                signer,
+                signerAddress,
+                this.stateChannelManagerContract,
+                this.p2pEventHooks
+            )
         );
-        this.p2pManager = new P2PManager(this.self, signer);
-        this.validationService = new ValidationService(
-            this.agreementManager,
-            this.stateMachine,
-            this.disputeHandler,
-            this.stateChannelManagerContract,
-            this.timeConfig,
-            () => this.getChannelId(),
-            this.signerAddress,
-            this.onSignedBlock.bind(this)
+        registerService(
+            ServiceNames.VALIDATION_SERVICE,
+            new ValidationService(
+                this.stateMachine,
+                this.stateChannelManagerContract,
+                this.timeConfig,
+                () => this.getChannelId(),
+                this.signerAddress,
+                this.onSignedBlock.bind(this)
+            )
         );
 
         // Initialize decision processors
-        this.executionDecisionProcessor = new ExecutionDecisionProcessor(
-            this.storage,
-            this.p2pManager,
-            this.disputeHandler,
-            this.onSuccessCommon.bind(this)
+        registerService(
+            ServiceNames.EXECUTION_DECISION_PROCESSOR,
+            new ExecutionDecisionProcessor(this.onSuccessCommon.bind(this))
         );
     }
     //Mark resources for garbage collection

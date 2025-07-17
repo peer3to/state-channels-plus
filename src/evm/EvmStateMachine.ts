@@ -12,11 +12,17 @@ import { ExitChannelEthersType } from "@/types/ethers";
 import { DebugProxy } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import AStateMachine from "@/AStateMachine";
-import { P2pInstance, ContractExecuter } from "@/evm";
+import { P2pInstance, ContractExecuter, P2pSigner } from "@/evm";
 import { Address, Bytes } from "@/types/types";
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
-import Storage from "@/storage";
+import {
+    registerEasyServices,
+    registerService,
+    inject,
+    ServiceNames
+} from "@/container";
+import P2PManager from "@/P2PManager";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 
@@ -262,13 +268,18 @@ class EvmStateMachine extends AStateMachine {
     ): Promise<P2pInstance<T>> {
         // Sync clock to DLT
         await Clock.init(signer.provider!);
+        registerEasyServices();
+        registerService(
+            ServiceNames.P2P_SIGNER,
+            new P2pSigner(signer, await signer.getAddress())
+        );
+        registerService(ServiceNames.P2P_MANAGER, new P2PManager());
 
         // Connect signer to state channel contract
         deployedStateChannelContractInstance =
             deployedStateChannelContractInstance.connect(signer);
 
         // Apply debug proxy if enabled
-
         if (DEBUG_CHANNEL_CONTRACT) {
             deployedStateChannelContractInstance = DebugProxy.createProxy(
                 deployedStateChannelContractInstance
@@ -292,34 +303,29 @@ class EvmStateMachine extends AStateMachine {
         };
 
         const signerAddress = await signer.getAddress();
-        const storage = new Storage();
 
-        // Create state manager with EvmStateMachine (which is an AStateMachine)
         const stateManager = new StateManager(
             signer,
             signerAddress,
             deployedStateChannelContractInstance,
             evmStateMachine,
             timeConfig,
-            p2pEventHooks || {},
-            storage
+            p2pEventHooks || {}
         );
+        registerService(ServiceNames.STATE_MANAGER, stateManager);
 
         // Set state manager on P2P communication manager
         evmStateMachine.setStateManager(stateManager);
 
         // Create P2P contract instance
         const p2pContractInstance = stateMachineContractInstance.connect(
-            stateManager.p2pManager.p2pSigner
+            inject(ServiceNames.P2P_SIGNER)
         ) as T;
 
         // Set P2P contract instance on P2P manager
         evmStateMachine.setP2pContractInstance(p2pContractInstance);
 
-        return new P2pInstance(
-            p2pContractInstance,
-            stateManager.p2pManager.p2pSigner
-        );
+        return new P2pInstance(p2pContractInstance);
     }
 }
 

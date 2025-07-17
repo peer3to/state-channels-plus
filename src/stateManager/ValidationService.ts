@@ -1,8 +1,6 @@
-import AgreementManager from "@/agreementManager";
 import { ExecutionFlags, TimeConfig, AgreementFlag } from "@/types";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import DisputeHandler from "@/DisputeHandler";
 import { ethers } from "ethers";
 import { AStateChannelManagerProxy } from "@typechain-types/contracts/V1/StateChannelDiamondProxy";
 import {
@@ -23,6 +21,7 @@ import {
     Timestamp
 } from "@/types/types";
 import { Block } from "@/models";
+import { inject, ServiceNames } from "@/container";
 
 interface ValidationResult {
     success: boolean;
@@ -31,10 +30,15 @@ interface ValidationResult {
 }
 
 export default class ValidationService {
+    private get agreementManager() {
+        return inject(ServiceNames.AGREEMENT_MANAGER);
+    }
+    private get disputeHandler() {
+        return inject(ServiceNames.DISPUTE_HANDLER);
+    }
+
     constructor(
-        private readonly agreementManager: AgreementManager,
         private readonly stateMachine: AStateMachine,
-        private readonly disputeHandler: DisputeHandler,
         private readonly scmContract: AStateChannelManagerProxy,
         private readonly timeCfg: TimeConfig,
         /** getter keeps channelId reactive if StateManager changes it later */

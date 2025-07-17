@@ -1,5 +1,4 @@
 import IOnMessage from "@/IOnMessage";
-import StateManager from "@/stateManager";
 import { deserializeRpc } from "@/rpc/Rpc";
 import MainRpcService from "@/rpc/MainRpcService";
 import { P2pSigner } from "@/evm";
@@ -11,10 +10,12 @@ import { DebugProxy, LocalDiscoveryServer } from "@/utils";
 import { RpcHandleMethods } from "@/rpc/RpcProxy";
 import { Buffer } from "buffer";
 import { DEBUG_P2P_MANAGER, DEBUG_LOCAL_TRANSPORT } from "@/utils/config";
+import { inject, ServiceNames } from "@/container";
 
 class P2PManager implements IOnMessage {
-    stateManager: StateManager;
-    p2pSigner: P2pSigner;
+    private get p2pSigner() {
+        return inject(ServiceNames.P2P_SIGNER);
+    }
     profileManager = new ProfileManager();
     localRpcService: MainRpcService;
     rpcProxy: RpcHandleMethods<MainRpcService>;
@@ -24,13 +25,7 @@ class P2PManager implements IOnMessage {
     self = DEBUG_P2P_MANAGER ? DebugProxy.createProxy(this) : this;
     preferredTransport: TransportType = TransportType.HOLEPUNCH;
 
-    constructor(stateManager: StateManager, signer: ethers.Signer) {
-        this.stateManager = stateManager;
-        this.p2pSigner = new P2pSigner(
-            signer,
-            stateManager.signerAddress,
-            this.self
-        );
+    constructor() {
         this.localRpcService = new MainRpcService(this.self);
         this.rpcProxy = this.localRpcService.rpcProxy;
         this.holepunch = new Holepunch(this.self);

@@ -1,27 +1,22 @@
 import { AStateChannelManagerProxy } from "@typechain-types";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
 import { ChannelId, Timestamp } from "@/types/types";
+import { inject, ServiceNames } from "@/container";
 
 //TODO - made a PR to ethers.js to fix Deferred Topic Filter
 
 class StateChannelEventListener {
-    stateManager: StateManager;
-    stateChannelManagerContract: AStateChannelManagerProxy;
-    p2pEventHooks: P2pEventHooks;
+    private get stateManager() {
+        return inject(ServiceNames.STATE_MANAGER);
+    }
+
     filters: Record<string, any> = {};
 
     constructor(
-        stateManager: StateManager,
-        stateChannelManagerContract: AStateChannelManagerProxy,
-        p2pEventHooks: P2pEventHooks
-    ) {
-        this.stateManager = stateManager;
-        this.stateChannelManagerContract = stateChannelManagerContract;
-        this.p2pEventHooks = p2pEventHooks;
-    }
+        private readonly stateChannelManagerContract: AStateChannelManagerProxy,
+        private readonly p2pEventHooks: P2pEventHooks
+    ) {}
 
     private async setListener(
         key: string,
