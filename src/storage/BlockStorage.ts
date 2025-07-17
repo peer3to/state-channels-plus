@@ -244,6 +244,116 @@ export class BlockStorage {
         return true;
     }
 
+    /*────────────────────────────────────────────────────────────────────────────
+      GET ALL BLOCKS BY FORK ID
+    ────────────────────────────────────────────────────────────────────────────*/
+    getBlocksByForkId(
+        forkId: ForkId,
+        sortOrder?: "asc" | "desc"
+    ): BlockEntry[] {
+        const blocks: Array<{ height: BlockHeight; entry: BlockEntry }> = [];
+
+        // Iterate through coordinate keys and filter by forkId
+        for (const [key, blockEntry] of this.coordinatesToBlockMap) {
+            const [keyForkId, blockHeight] = key.split(":");
+            if (keyForkId === forkId) {
+                blocks.push({
+                    height: parseInt(blockHeight),
+                    entry: blockEntry
+                });
+            }
+        }
+
+        // Sort if requested
+        if (sortOrder) {
+            blocks.sort((a, b) => {
+                return sortOrder === "asc"
+                    ? a.height - b.height
+                    : b.height - a.height;
+            });
+        }
+
+        return blocks.map((item) => item.entry);
+    }
+
+    /*────────────────────────────────────────────────────────────────────────────
+      GET ORIGINAL SIGNATURE - OVERLOAD SIGNATURES
+    ────────────────────────────────────────────────────────────────────────────*/
+
+    /** [OVERLOAD 1] Get original signature by hash */
+    getOriginalSignature(blockHash: Hash): Signature | undefined;
+
+    /** [OVERLOAD 2] Get original signature by block object */
+    getOriginalSignature(block: Block): Signature | undefined;
+
+    /*────────────────────────────────────────────────────────────────────────────
+      IMPLEMENTATION
+    ────────────────────────────────────────────────────────────────────────────*/
+    getOriginalSignature(hashOrBlock: Hash | Block): Signature | undefined {
+        const blockHash =
+            hashOrBlock instanceof Block ? hashOrBlock.hash : hashOrBlock;
+
+        const blockEntry = this.hashToBlockMap.get(blockHash);
+        if (!blockEntry) return undefined;
+
+        return blockEntry.blockConfirmation.signedBlock.signature as Signature;
+    }
+
+    /*────────────────────────────────────────────────────────────────────────────
+      GET SIGNATURES - OVERLOAD SIGNATURES
+    ────────────────────────────────────────────────────────────────────────────*/
+
+    /** [OVERLOAD 1] Get all signatures by hash */
+    getSignatures(blockHash: Hash): Signature[];
+
+    /** [OVERLOAD 2] Get all signatures by block object */
+    getSignatures(block: Block): Signature[];
+
+    /*────────────────────────────────────────────────────────────────────────────
+      IMPLEMENTATION
+    ────────────────────────────────────────────────────────────────────────────*/
+    getSignatures(hashOrBlock: Hash | Block): Signature[] {
+        const blockHash =
+            hashOrBlock instanceof Block ? hashOrBlock.hash : hashOrBlock;
+
+        const blockEntry = this.hashToBlockMap.get(blockHash);
+        if (!blockEntry) return [];
+
+        return blockEntry.blockConfirmation.signatures as Signature[];
+    }
+
+    /*────────────────────────────────────────────────────────────────────────────
+      DOES SIGNATURE EXIST - OVERLOAD SIGNATURES
+    ────────────────────────────────────────────────────────────────────────────*/
+
+    /** [OVERLOAD 1] Check if signature exists by hash */
+    doesSignatureExist(blockHash: Hash, signature: Signature): boolean;
+
+    /** [OVERLOAD 2] Check if signature exists by block object */
+    doesSignatureExist(block: Block, signature: Signature): boolean;
+
+    /*────────────────────────────────────────────────────────────────────────────
+      IMPLEMENTATION
+    ────────────────────────────────────────────────────────────────────────────*/
+    doesSignatureExist(
+        hashOrBlock: Hash | Block,
+        signature: Signature
+    ): boolean {
+        const blockHash =
+            hashOrBlock instanceof Block ? hashOrBlock.hash : hashOrBlock;
+
+        const blockEntry = this.hashToBlockMap.get(blockHash);
+        if (!blockEntry) return false;
+
+        if (blockEntry.blockConfirmation.signedBlock.signature === signature) {
+            return true;
+        }
+
+        return blockEntry.blockConfirmation.signatures.includes(
+            signature as Bytes
+        );
+    }
+
     // ====================================
     // PRIVATE HELPERS
     // ====================================
