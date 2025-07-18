@@ -591,7 +591,7 @@ describe("BlockStorage", () => {
                 storage.insertSignature(newSignature, mockForkId, mockHeight);
 
                 // Get that block by hash
-                const blockByHash = storage.getBlockEntry(hash);
+                const blockByHash = storage.getBlockEntry(hash!);
 
                 // Assert that the changes are also applied on the by-hash block
                 expect(blockByHash?.blockConfirmation.signatures).to.include(
