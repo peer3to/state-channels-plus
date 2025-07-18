@@ -43,7 +43,10 @@ export class BlockStorage {
     /*────────────────────────────────────────────────────────────────────────────
       STORE  BLOCK - IMPLEMENTATION
     ────────────────────────────────────────────────────────────────────────────*/
-    storeBlock(signedBlock: SignedBlockStruct, options?: StoreOptions): Hash | undefined {
+    storeBlock(
+        signedBlock: SignedBlockStruct,
+        options?: StoreOptions
+    ): Hash | undefined {
         // Convert SignedBlock to BlockConfirmation (empty signatures)
         const blockConfirmation: BlockConfirmationStruct = {
             signedBlock: signedBlock,
@@ -271,39 +274,37 @@ export class BlockStorage {
 
         // Store the block entry
         const coordinateKey = this.coordinatesToKey(coordinates);
-        const existingEntryByHash = this.hashToBlockMap.get(blockHash);
-        const existingEntryByCoordinates = this.coordinatesToBlockMap.get(coordinateKey);
+        const existingEntry = this.coordinatesToBlockMap.get(coordinateKey);
 
-        // If the same block already exists, merge signatures and return hash - existing functionality
-        if (existingEntryByHash && existingEntryByCoordinates) {
-            const existingBlockDecoded = Block.decode(existingEntryByHash.blockConfirmation.signedBlock.encodedBlock);
-            if (existingBlockDecoded.coordinates.forkId === coordinates.forkId &&
-                existingBlockDecoded.coordinates.height === coordinates.height) {
-                // Same block, merge signatures and return hash
+        if (existingEntry) {
+            // Compare incomingBlock.encodedBlock == existingBlock.encodedBlock
+            const incomingEncodedBlock =
+                blockEntry.blockConfirmation.signedBlock.encodedBlock;
+            const existingEncodedBlock =
+                existingEntry.blockConfirmation.signedBlock.encodedBlock;
+
+            if (incomingEncodedBlock === existingEncodedBlock) {
+                // They are equal => merge signatures
                 const signaturesSet = new Set(
-                    existingEntryByHash.blockConfirmation.signatures
+                    existingEntry.blockConfirmation.signatures
                 );
-                for (const newSignature of blockEntry.blockConfirmation.
-                    signatures) {
+                for (const newSignature of blockEntry.blockConfirmation
+                    .signatures) {
                     signaturesSet.add(newSignature);
                 }
-                existingEntryByHash.blockConfirmation.signatures = 
+                existingEntry.blockConfirmation.signatures =
                     Array.from(signaturesSet);
 
                 // Update on-chain timestamp if provided
                 if (blockEntry.onChainTimestamp !== undefined) {
-                    existingEntryByHash.onChainTimestamp = blockEntry.onChainTimestamp;
+                    existingEntry.onChainTimestamp =
+                        blockEntry.onChainTimestamp;
                 }
-                return blockHash;
-            }
-        }
 
-        // Conflict: different blocks with the same coordinates
-        if (existingEntryByCoordinates) {
-            const existingBlockHash = ethers.keccak256(
-                existingEntryByCoordinates.blockConfirmation.signedBlock.encodedBlock
-            );
-            if (existingBlockHash !== blockHash) {
+                // Return the hash (same object in both maps)
+                return blockHash;
+            } else {
+                // Not equal => abort
                 return undefined;
             }
         }

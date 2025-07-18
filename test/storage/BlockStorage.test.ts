@@ -420,4 +420,190 @@ describe("BlockStorage", () => {
             expect(retrievedBlock1).to.not.equal(retrievedBlock2);
         });
     });
+
+    describe("CONFLICT DETECTION - _storeBlockEntryWithOptions()", () => {
+        describe("Same block stored again", () => {
+            it("should return hash when storing the same block again", () => {
+                const hash1 = storage.storeBlockConfirmation(
+                    mockBlockConfirmation
+                );
+                const hash2 = storage.storeBlockConfirmation(
+                    mockBlockConfirmation
+                );
+
+                expect(hash1).to.equal(hash2);
+                expect(hash1).to.equal(mockBlockHash);
+            });
+
+            it("should merge signatures when storing same block with additional signatures", () => {
+                const blockConf1 = {
+                    ...mockBlockConfirmation,
+                    signatures: [sig()]
+                };
+                const blockConf2 = {
+                    ...mockBlockConfirmation,
+                    signatures: [sig(), sig()]
+                };
+
+                const hash1 = storage.storeBlockConfirmation(blockConf1);
+                const hash2 = storage.storeBlockConfirmation(blockConf2);
+
+                expect(hash1).to.equal(hash2);
+
+                const stored = storage.getBlockEntry(hash1);
+                expect(stored?.blockConfirmation.signatures).to.have.lengthOf(
+                    3
+                );
+            });
+        });
+
+        describe("Different blocks with same coordinates", () => {
+            it("should return undefined when storing different blocks with same coordinates", () => {
+                // Store first block
+                const hash1 = storage.storeBlockConfirmation(
+                    mockBlockConfirmation
+                );
+                expect(hash1).to.equal(mockBlockHash);
+
+                // Create different block with same coordinates
+                const differentBlock = factory.signedBlock();
+                const differentBlockConfirmation = factory.blockConfirmation({
+                    signedBlock: differentBlock
+                });
+
+                // Try to store with same coordinates but different hash
+                const result = storage.storeBlockConfirmation(
+                    differentBlockConfirmation,
+                    {
+                        coordinates: { forkId: mockForkId, height: mockHeight }
+                    }
+                );
+
+                expect(result).to.be.undefined;
+            });
+
+            it("should not store conflicting block in coordinates map", () => {
+                // Store first block
+                storage.storeBlockConfirmation(mockBlockConfirmation);
+
+                // Create different block with same coordinates
+                const differentBlock = factory.signedBlock();
+                const differentBlockConfirmation = factory.blockConfirmation({
+                    signedBlock: differentBlock
+                });
+
+                // Try to store with same coordinates
+                storage.storeBlockConfirmation(differentBlockConfirmation, {
+                    coordinates: { forkId: mockForkId, height: mockHeight }
+                });
+
+                // Should still have original block at those coordinates
+                const stored = storage.getBlockEntry(mockForkId, mockHeight);
+                expect(stored?.blockConfirmation).to.equal(
+                    mockBlockConfirmation
+                );
+            });
+        });
+
+        describe("Different blocks with same hash but different coordinates", () => {
+            it("should return hash when storing block with same hash but different coordinates", () => {
+                // Store first block
+                const hash1 = storage.storeBlockConfirmation(
+                    mockBlockConfirmation
+                );
+                expect(hash1).to.equal(mockBlockHash);
+
+                // Create block with same hash but different coordinates
+                const differentCoordinates = {
+                    forkId: "different",
+                    height: 999
+                };
+                const result = storage.storeBlockConfirmation(
+                    mockBlockConfirmation,
+                    {
+                        coordinates: differentCoordinates
+                    }
+                );
+
+                expect(result).to.equal(mockBlockHash);
+            });
+        });
+
+        describe("Normal new block storage", () => {
+            it("should return hash when storing new block without conflicts", () => {
+                const newBlock = factory.signedBlock();
+                const newBlockConfirmation = factory.blockConfirmation({
+                    signedBlock: newBlock
+                });
+
+                const hash =
+                    storage.storeBlockConfirmation(newBlockConfirmation);
+                expect(hash).to.not.be.undefined;
+                expect(hash).to.equal(ethers.keccak256(newBlock.encodedBlock));
+            });
+
+            it("should store new block in both hash and coordinates maps", () => {
+                const newBlock = factory.signedBlock();
+                const newBlockConfirmation = factory.blockConfirmation({
+                    signedBlock: newBlock
+                });
+                const block = Block.decode(newBlock.encodedBlock);
+
+                const hash =
+                    storage.storeBlockConfirmation(newBlockConfirmation);
+
+                // Should be retrievable by hash
+                const byHash = storage.getBlockEntry(hash);
+                expect(byHash?.blockConfirmation).to.equal(
+                    newBlockConfirmation
+                );
+
+                // Should be retrievable by coordinates
+                const byCoords = storage.getBlockEntry(
+                    block.coordinates.forkId,
+                    block.coordinates.height
+                );
+                expect(byCoords?.blockConfirmation).to.equal(
+                    newBlockConfirmation
+                );
+            });
+        });
+
+        describe("Reference equality", () => {
+            it("should maintain reference equality between hash and coordinates maps", () => {
+                // Store a block
+                const hash = storage.storeBlockConfirmation(
+                    mockBlockConfirmation
+                );
+                expect(hash).to.equal(mockBlockHash);
+
+                // Get the block by coordinates
+                const blockByCoords = storage.getBlockEntry(
+                    mockForkId,
+                    mockHeight
+                );
+                expect(blockByCoords?.blockConfirmation).to.equal(
+                    mockBlockConfirmation
+                );
+
+                // Change the block by coordinates (add signature)
+                const newSignature = sig();
+                storage.insertSignature(newSignature, mockForkId, mockHeight);
+
+                // Get that block by hash
+                const blockByHash = storage.getBlockEntry(hash);
+
+                // Assert that the changes are also applied on the by-hash block
+                expect(blockByHash?.blockConfirmation.signatures).to.include(
+                    newSignature
+                );
+                expect(blockByCoords?.blockConfirmation.signatures).to.include(
+                    newSignature
+                );
+
+                // Verify they are the same object reference
+                expect(blockByHash).to.equal(blockByCoords);
+            });
+        });
+    });
 });
