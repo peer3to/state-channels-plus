@@ -43,7 +43,10 @@ export class BlockStorage {
     /*────────────────────────────────────────────────────────────────────────────
       STORE  BLOCK - IMPLEMENTATION
     ────────────────────────────────────────────────────────────────────────────*/
-    storeBlock(signedBlock: SignedBlockStruct, options?: StoreOptions): Hash {
+    storeBlock(
+        signedBlock: SignedBlockStruct,
+        options?: StoreOptions
+    ): Hash | undefined {
         // Convert SignedBlock to BlockConfirmation (empty signatures)
         const blockConfirmation: BlockConfirmationStruct = {
             signedBlock: signedBlock,
@@ -59,7 +62,7 @@ export class BlockStorage {
     storeBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct,
         options?: StoreOptions
-    ): Hash {
+    ): Hash | undefined {
         return this._storeBlockEntryWithOptions({ blockConfirmation }, options);
     }
 
@@ -255,7 +258,7 @@ export class BlockStorage {
     private _storeBlockEntryWithOptions(
         blockEntry: BlockEntry,
         options?: StoreOptions
-    ): Hash {
+    ): Hash | undefined {
         // Determine hash - use provided or compute
         const blockHash =
             options?.hash ??
@@ -271,31 +274,47 @@ export class BlockStorage {
 
         // Store the block entry
         const coordinateKey = this.coordinatesToKey(coordinates);
-        const existingEntry = this.hashToBlockMap.get(blockHash);
+        const existingEntry = this.coordinatesToBlockMap.get(coordinateKey);
 
-        if (existingEntry !== undefined) {
-            // Merge signatures
-            const signaturesSet = new Set(
-                existingEntry.blockConfirmation.signatures
-            );
-            for (const newSignature of blockEntry.blockConfirmation
-                .signatures) {
-                signaturesSet.add(newSignature);
-            }
-            existingEntry.blockConfirmation.signatures =
-                Array.from(signaturesSet);
-
-            // Update on-chain timestamp if provided
-            if (blockEntry.onChainTimestamp !== undefined) {
-                existingEntry.onChainTimestamp = blockEntry.onChainTimestamp;
-            }
-
+        if (!existingEntry) {
+            // Store new block entry
+            this.hashToBlockMap.set(blockHash, blockEntry);
+            this.coordinatesToBlockMap.set(coordinateKey, blockEntry);
             return blockHash;
         }
 
-        // If no existing block, store new block entry
-        this.hashToBlockMap.set(blockHash, blockEntry);
-        this.coordinatesToBlockMap.set(coordinateKey, blockEntry);
+        // Compare incomingBlock.encodedBlock == existingBlock.encodedBlock
+        const incomingEncodedBlock =
+            blockEntry.blockConfirmation.signedBlock.encodedBlock;
+        const existingEncodedBlock =
+            existingEntry.blockConfirmation.signedBlock.encodedBlock;
+
+        if (incomingEncodedBlock !== existingEncodedBlock) {
+            // Not equal => abort
+            return undefined;
+        }
+
+        // They are equal => merge signatures
+        const signaturesSet = new Set(
+            existingEntry.blockConfirmation.signatures
+        );
+        for (const newSignature of blockEntry.blockConfirmation.signatures) {
+            signaturesSet.add(newSignature);
+        }
+        existingEntry.blockConfirmation.signatures = Array.from(signaturesSet);
+
+        // Update on-chain timestamp if provided
+        if (existingEntry.onChainTimestamp === undefined) {
+            existingEntry.onChainTimestamp = blockEntry.onChainTimestamp;
+        } else if (
+            blockEntry.onChainTimestamp !== undefined &&
+            blockEntry.onChainTimestamp > existingEntry.onChainTimestamp
+        ) {
+            // Replace only if new timestamp is greater
+            existingEntry.onChainTimestamp = blockEntry.onChainTimestamp;
+        }
+
+        // Return the hash (same object in both maps)
         return blockHash;
     }
 }
