@@ -304,7 +304,13 @@ export class BlockStorage {
         existingEntry.blockConfirmation.signatures = Array.from(signaturesSet);
 
         // Update on-chain timestamp if provided
-        if (blockEntry.onChainTimestamp !== undefined) {
+        if (existingEntry.onChainTimestamp === undefined) {
+            existingEntry.onChainTimestamp = blockEntry.onChainTimestamp;
+        } else if (
+            blockEntry.onChainTimestamp !== undefined &&
+            blockEntry.onChainTimestamp > existingEntry.onChainTimestamp
+        ) {
+            // Replace only if new timestamp is greater
             existingEntry.onChainTimestamp = blockEntry.onChainTimestamp;
         }
 
