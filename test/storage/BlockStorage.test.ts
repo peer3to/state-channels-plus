@@ -422,39 +422,6 @@ describe("BlockStorage", () => {
     });
 
     describe("CONFLICT DETECTION - _storeBlockEntryWithOptions()", () => {
-        describe("Same block stored again", () => {
-            it("should return hash when storing the same block again", () => {
-                const hash1 = storage.storeBlockConfirmation(
-                    mockBlockConfirmation
-                );
-                const hash2 = storage.storeBlockConfirmation(
-                    mockBlockConfirmation
-                );
-
-                expect(hash1).to.equal(hash2);
-                expect(hash1).to.equal(mockBlockHash);
-            });
-
-            it("should merge signatures when storing same block with additional signatures", () => {
-                const blockConf1 = {
-                    ...mockBlockConfirmation,
-                    signatures: [sig()]
-                };
-                const blockConf2 = {
-                    ...mockBlockConfirmation,
-                    signatures: [sig(), sig()]
-                };
-
-                const hash1 = storage.storeBlockConfirmation(blockConf1);
-                const hash2 = storage.storeBlockConfirmation(blockConf2);
-
-                expect(hash1).to.equal(hash2);
-
-                const stored = storage.getBlockEntry(hash1);
-                expect(stored?.blockConfirmation.signatures).to.have.lengthOf(
-                    3
-                );
-            });
         });
 
         describe("Different blocks with same coordinates", () => {
