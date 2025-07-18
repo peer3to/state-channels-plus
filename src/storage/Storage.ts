@@ -5,10 +5,12 @@ import { StateSnapshotStorage } from "./StateSnapshotStorage";
 import { StateMachineStateStorage } from "./StateMachineStateStorage";
 import { ExitPointsStorage } from "./ExitPointsStorage";
 import { QueueStorage } from "./QueueStorage";
+import { DisputeStorage } from "./DisputeStorage";
 
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 import { deepCopyProxy } from "@/utils";
 import { ForkId, Bytes } from "@/types/types";
+import { Address } from "@/types/types";
 
 export class Storage {
     public readonly blocks: BlockStorage;
@@ -18,6 +20,7 @@ export class Storage {
     public readonly stateMachineStates: StateMachineStateStorage;
     public readonly exitPoints: ExitPointsStorage;
     public readonly queues: QueueStorage;
+    public readonly disputes: DisputeStorage;
 
     constructor() {
         this.blocks = deepCopyProxy(new BlockStorage());
@@ -27,6 +30,7 @@ export class Storage {
         this.stateMachineStates = deepCopyProxy(new StateMachineStateStorage());
         this.exitPoints = deepCopyProxy(new ExitPointsStorage());
         this.queues = deepCopyProxy(new QueueStorage());
+        this.disputes = deepCopyProxy(new DisputeStorage());
         return deepCopyProxy(this);
     }
 
@@ -68,5 +72,16 @@ export class Storage {
         return this.stateMachineStates.getStateMachineState(
             stateMachineStateHash
         );
+    }
+
+    getParticipants({ forkId, height }: BlockCoordinates): Address[] {
+        const previousSnapshot = this.getStateSnapshot({
+            forkId,
+            height: height - 1
+        });
+        if (!previousSnapshot || !previousSnapshot.snapshotData.participants) {
+            return [];
+        }
+        return previousSnapshot.snapshotData.participants;
     }
 }

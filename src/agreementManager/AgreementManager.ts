@@ -3,237 +3,109 @@ import {
     BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { AgreementFlag } from "@/types";
-import { Agreement } from "./types";
-import * as SetUtils from "@/utils/set";
-import SignatureService from "./SignatureService";
-import ForkService, { Direction } from "./ForkService";
-import { Storage } from "@/storage/Storage";
-import OnChainTracker from "./OnChainTracker";
-import BlockValidator from "./BlockValidator";
-import {
-    Address,
-    BlockHeight,
-    Bytes,
-    ForkId,
-    Signature,
-    Timestamp
-} from "@/types/types";
+import Storage, { SortOrder } from "@/storage";
+import { Address, BlockHeight, Bytes, ForkId, Signature } from "@/types/types";
 import { Block } from "@/models";
+import { Codec, Type } from "@/utils";
+import { ethers } from "ethers";
+import * as SetUtils from "@/utils/set";
 
+/**
+ * AgreementManager acts as a higher logic layer over storage
+ * It interprets storage data and provides convenience methods
+ */
 class AgreementManager {
-    forks = new ForkService();
-    chain: OnChainTracker;
-    validator: BlockValidator;
-
-    constructor(storage: Storage) {
-        this.chain = new OnChainTracker(
-            this.forks,
-            storage,
-            /* temp stub */ () => AgreementFlag.READY
-        );
-        this.validator = new BlockValidator(this.forks, storage, this.chain);
-        const blockChecker = this.validator.check.bind(this.validator);
-        this.chain.setChecker(blockChecker);
-    }
-
-    // ************************************************
-    // ***** Canonical chain operations - public ******
-    // ************************************************
-    public newFork(
-        forkGenesisStateEncoded: Bytes,
-        addressesInThreshold: Address[],
-        forkId: ForkId,
-        genesisTimestamp: Timestamp
-    ) {
-        this.forks.newFork(
-            forkGenesisStateEncoded,
-            addressesInThreshold,
-            forkId,
-            genesisTimestamp
-        );
-    }
-    //After succesfull verification and execution
-    public addBlock(
-        block: Block,
-        originalSignature: Signature | Bytes,
-        encodedState: Bytes
-    ) {
-        this.forks.addBlock(block, originalSignature, encodedState);
-    }
-    //Doesn't check signature - just stores it
-    public confirmBlock(block: Block, confirmationSignature: Signature) {
-        const agreement = this.forks.agreementByBlock(block);
-        if (!agreement)
-            //should never trigger because of checks before confirming
-            throw new Error(
-                "AgreementManager - confirmBlock - block doesn't exist"
-            );
-
-        if (agreement.block.equals(block))
-            throw new Error("AgreementManager - confirmBlock - conflict");
-
-        if (
-            SignatureService.doesSignatureExist(
-                agreement,
-                confirmationSignature
-            )
-        )
-            throw new Error(
-                "AgreementManager - confirmBlock - block already confirmed"
-            );
-
-        agreement.blockSignatures.push(confirmationSignature);
-    }
-    public getLatestforkId(): ForkId {
-        return this.forks.latestforkId();
-    }
-    public getNextBlockHeight(): BlockHeight {
-        return this.forks.nextBlockHeight();
-    }
-    public getBlock(
-        forkId: ForkId,
-        transactionCnt: BlockHeight
-    ): Block | undefined {
-        return this.forks.agreement(forkId, transactionCnt)?.block;
-    }
-    public getDoubleSignedBlock(
-        signedBlock: SignedBlockStruct
-    ): SignedBlockStruct | undefined {
-        const block = Block.decode(signedBlock.encodedBlock);
-
-        const agreement = this.forks.agreementByBlock(block);
-        if (
-            !agreement ||
-            agreement.block.equals(block) ||
-            agreement.block.author !== block.author
-        ) {
-            return undefined;
-        }
-
-        const { didSign, signature } = SignatureService.getParticipantSignature(
-            agreement,
-            block.author
-        );
-
-        return didSign
-            ? {
-                  encodedBlock: agreement.block.encode(),
-                  signature: signature as Bytes
-              }
-            : undefined;
-    }
+    constructor(private storage: Storage) {}
 
     public getLatestSignedBlockByParticipant(
         forkId: ForkId,
         participantAdr: Address
     ): { block: Block; signature: Signature } | undefined {
-        if (!this.forks.isValidforkId(forkId)) return undefined;
-
-        for (const agreement of this.forks.agreementsIterator(
+        const blockEntries = this.storage.blocks.getBlocksByForkId(
             forkId,
-            Direction.BACKWARD
-        )) {
-            const { didSign, signature } =
-                SignatureService.getParticipantSignature(
-                    agreement,
-                    participantAdr
-                );
-
-            if (didSign)
-                return {
-                    block: agreement.block,
-                    signature: signature!
-                };
-        }
-        return undefined;
-    }
-    public didEveryoneSignBlock(block: Block): boolean {
-        const forkId = block.forkId;
-        const fork = this.forks.forkAt(forkId);
-        const agreement = this.forks.agreementByBlock(block);
-
-        if (!agreement || !fork || !agreement.block.equals(block)) return false;
-
-        // Check if all threshold addresses have signed
-        const signersSet = agreement.block.getSignersSet(
-            agreement.blockSignatures
+            SortOrder.DESC
         );
 
-        const addressesSet = new Set<Address>(fork.addressesInThreshold);
-        // All threshold addresses must be in the signers set
-        return SetUtils.isSubset(addressesSet, signersSet);
+        for (const { blockConfirmation } of blockEntries) {
+            const block = Block.decode(
+                blockConfirmation.signedBlock.encodedBlock
+            );
+
+            const { didSign, signature } = block.findSignature(
+                participantAdr,
+                this.getAllSignatures(blockConfirmation)
+            );
+
+            if (didSign) {
+                return {
+                    block,
+                    signature: signature as Signature
+                };
+            }
+        }
+
+        return undefined;
     }
-    public getSigantures(block: Block): Signature[] {
-        return this.forks.agreementByBlock(block)?.blockSignatures || [];
-    }
-    // Returns the signature of the block author
-    public getOriginalSignature(block: Block): Signature | undefined {
-        const participant = block.author;
 
-        const agreement = this.forks.agreementByBlock(block);
-        if (!agreement) return undefined;
+    public didEveryoneSignBlock(block: Block): boolean {
+        const blockEntry = this.storage.blocks.getBlockEntry(block.hash);
+        if (!blockEntry) return false;
 
-        const { didSign: _, signature } =
-            SignatureService.getParticipantSignature(agreement, participant);
+        const thresholdAddresses = new Set<Address>(
+            this.storage.getParticipants(block.coordinates)
+        );
 
-        return signature;
-    }
-    //Probably return boolean, error flag -> dipute
-    public doesSignatureExist(block: Block, signature: Signature): boolean {
-        const agreement = this.forks.agreementByBlock(block);
+        const signersSet = block.getSignerAddresses(
+            this.getAllSignatures(blockEntry.blockConfirmation)
+        );
 
-        if (!agreement) return false;
-
-        if (!agreement.block.equals(block))
-            throw new Error("AgreementManager - doesSignatureExist - conflict");
-
-        return SignatureService.doesSignatureExist(agreement, signature);
+        return SetUtils.isSubset(thresholdAddresses, signersSet);
     }
 
     public didParticipantSign(
         block: Block,
         participant: Address
     ): { didSign: boolean; signature: Signature | undefined } {
-        const agreement = this.forks.agreementByBlock(block);
+        const blockEntry = this.storage.blocks.getBlockEntry(block.hash);
+        if (!blockEntry) return { didSign: false, signature: undefined };
 
-        if (!agreement || !agreement.block.equals(block))
-            return { didSign: false, signature: undefined };
+        // Check if participant is the author
+        if (block.author === participant) {
+            return {
+                didSign: true,
+                signature: blockEntry.blockConfirmation.signedBlock
+                    .signature as Signature
+            };
+        }
 
-        return SignatureService.getParticipantSignature(agreement, participant);
+        // Check all signatures
+        return block.findSignature(
+            participant,
+            this.getAllSignatures(blockEntry.blockConfirmation)
+        );
     }
 
-    public getParticipantsWhoHaventSignedBlock(block: Block): Address[] {
-        const forkId = block.forkId;
-        const agreement = this.forks.agreementByBlock(block);
-        const fork = this.forks.forkAt(forkId);
-        if (!fork || !agreement) return [];
-
-        return SignatureService.getParticipantsWhoDidntSign(fork, agreement);
-    }
-
-    public isParticipantInLatestFork(participant: Address): boolean {
-        const fork = this.forks.latestFork();
-        if (!fork) return false;
-        return new Set(fork.addressesInThreshold).has(participant);
-    }
-
-    public getEncodedState(
-        forkId: ForkId,
-        transactionCnt: BlockHeight
-    ): Bytes | undefined {
-        const agreement = this.forks.agreement(forkId, transactionCnt);
-        return agreement?.encodedState;
-    }
-    public getForkGenesisStateEncoded(forkId: ForkId): Bytes | undefined {
-        const fork = this.forks.forkAt(forkId);
-        return fork?.forkGenesisStateEncoded;
-    }
     /**
-     * Gets the latest finalized state (ecnoded) and the latest signed/confirmed state (encoded) from the signer with virtual votes proving it
-     * @param forkId
-     * @param signerAddress
-     * @returns
+     * Get participants who haven't signed a block
+     */
+    public getParticipantsWhoDidntSign(block: Block): Address[] {
+        const blockEntry = this.storage.blocks.getBlockEntry(block.hash);
+        if (!blockEntry) return [];
+
+        const thresholdAddresses = this.storage.getParticipants(
+            block.coordinates
+        );
+
+        const signersSet = block.getSignerAddresses(
+            this.getAllSignatures(blockEntry.blockConfirmation)
+        );
+
+        // Return addresses that haven't signed
+        return thresholdAddresses.filter((address) => !signersSet.has(address));
+    }
+
+    /**
+     * Get the latest finalized state and latest signed state (by signer) with virtual voting blocks
      */
     public getFinalizedAndLatestWithVotes(
         forkId: ForkId,
@@ -243,44 +115,61 @@ class AgreementManager {
         encodedLatestCorrectState: Bytes;
         virtualVotingBlocks: BlockConfirmationStruct[];
     } {
-        const fork = this.forks.forkAt(forkId);
-        if (!fork)
-            throw new Error(
-                "AgreementManager - getFinalizedAndLatestWithVotes - fork not found"
-            );
+        const thresholdAddresses = new Set<Address>(
+            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId)
+                ?.snapshotData.participants as Address[]
+        );
+
+        if (thresholdAddresses.size === 0) {
+            throw new Error("Fork not found");
+        }
+
         let encodedLatestFinalizedState: Bytes | undefined;
         let encodedLatestCorrectState: Bytes | undefined;
         let virtualVotingBlocks: BlockConfirmationStruct[] = [];
-        let requiredSignatures = new Set<Address>(fork.addressesInThreshold);
+        let requiredSignatures = new Set<Address>(thresholdAddresses);
 
-        for (const agreement of this.forks.agreementsIterator(
+        // Get all blocks sorted by height descending
+        const blockEntries = this.storage.blocks.getBlocksByForkId(
             forkId,
-            Direction.BACKWARD
-        )) {
-            const signersAddresses = agreement.block.getSignersSet(
-                agreement.blockSignatures
+            SortOrder.DESC
+        );
+
+        for (const blockEntry of blockEntries) {
+            const block = Block.decode(
+                blockEntry.blockConfirmation.signedBlock.encodedBlock
             );
+
+            const signersAddresses = block.getSignerAddresses(
+                blockEntry.blockConfirmation.signatures as Signature[]
+            );
+
+            // Find Latest Correct State
 
             // Check if this block is signed by our target signer
             if (
                 !encodedLatestCorrectState &&
                 signersAddresses.has(signerAddress)
             ) {
-                encodedLatestCorrectState = agreement.encodedState;
+                // Get the state for this block
+                const stateSnapshot =
+                    this.storage.stateSnapshots.getStateSnapshotByHash(
+                        block.stateSnapshotHash
+                    );
+                if (stateSnapshot) {
+                    const stateMachineStateHash =
+                        stateSnapshot.snapshotData.stateMachineStateHash;
+                    encodedLatestCorrectState =
+                        this.storage.stateMachineStates.getStateMachineState(
+                            stateMachineStateHash
+                        );
+                }
             }
 
-            if (!encodedLatestCorrectState) continue;
+            // Find Latest Finalized State
 
-            const { originalSignature, confirmationSignatures } =
-                this.separateSignatures(agreement);
-
-            virtualVotingBlocks.unshift({
-                signedBlock: {
-                    encodedBlock: agreement.block.encode(),
-                    signature: originalSignature as Bytes
-                },
-                signatures: confirmationSignatures as Bytes[]
-            });
+            // Add to virtual voting blocks
+            virtualVotingBlocks.unshift(blockEntry.blockConfirmation);
 
             // Remove the signers we found from required signatures
             requiredSignatures = SetUtils.difference(
@@ -288,131 +177,133 @@ class AgreementManager {
                 signersAddresses
             );
 
-            // Check if we found a finalized state
+            // Check if we found a finalized state (all participants signed)
             if (requiredSignatures.size === 0) {
-                encodedLatestFinalizedState = agreement.encodedState;
-                // found a finalized state - break the loop
+                const stateSnapshot =
+                    this.storage.stateSnapshots.getStateSnapshotByHash(
+                        block.stateSnapshotHash
+                    );
+                if (stateSnapshot) {
+                    const stateMachineStateHash =
+                        stateSnapshot.snapshotData.stateMachineStateHash;
+                    encodedLatestFinalizedState =
+                        this.storage.stateMachineStates.getStateMachineState(
+                            stateMachineStateHash
+                        );
+                }
                 break;
             }
         }
 
+        // If no finalized state found, use genesis
+        if (!encodedLatestFinalizedState) {
+            encodedLatestFinalizedState =
+                this.storage.getGenesisStateMachineState(forkId) as Bytes;
+        }
+
+        // If no correct state found, use genesis
+        if (!encodedLatestCorrectState) {
+            encodedLatestCorrectState =
+                this.storage.getGenesisStateMachineState(forkId) as Bytes;
+        }
+
         return {
-            encodedLatestFinalizedState:
-                encodedLatestFinalizedState ?? fork.forkGenesisStateEncoded,
-            encodedLatestCorrectState:
-                encodedLatestCorrectState ?? fork.forkGenesisStateEncoded,
+            encodedLatestFinalizedState: encodedLatestFinalizedState,
+            encodedLatestCorrectState: encodedLatestCorrectState,
             virtualVotingBlocks
         };
     }
 
-    // *************************************************
-    // * On-chain block collection operations - public *
-    // *************************************************
-    public collectOnChainBlock(
-        signedBlock: SignedBlockStruct,
-        timestamp: Timestamp
-    ): AgreementFlag {
-        return this.chain.collect(signedBlock, timestamp);
-    }
-
-    public getChainLatestBlockTimestamp(
-        forkId: ForkId,
-        maxTransactionCnt: BlockHeight
-    ): Timestamp {
-        return this.chain.latestTimestamp(forkId, maxTransactionCnt);
-    }
-
-    public didParticipantPostOnChain(
+    /**
+     * Check if a participant has posted a block on-chain
+     */
+    public didParticipantPostOnChainLocal(
         forkId: ForkId,
         transactionCnt: BlockHeight,
-        participantAddres: Address
+        participantAddress: Address
     ): boolean {
-        return this.chain.hasPosted(forkId, transactionCnt, participantAddres);
-    }
+        const blockEntry = this.storage.blocks.getBlockEntry(
+            forkId,
+            transactionCnt
+        );
+        if (!blockEntry) return false;
 
-    // ************************************************
-    // *************** Common helpers *****************
-    // ************************************************
+        if (!blockEntry.onChainTimestamp) return false;
 
-    /**
-     * Separates the original author signature from confirmation signatures.
-     * This works but isn't pretty - ideally agreement.block (or later, from storage module)
-     * should be a SignedBlockStruct to allow clear separation between original/author signature
-     * and the confirmation signatures.
-     */
-    private separateSignatures(agreement: Agreement): {
-        originalSignature: Signature;
-        confirmationSignatures: Signature[];
-    } {
-        const originalSignature = this.getOriginalSignature(agreement.block);
-        if (!originalSignature) {
-            throw new Error(
-                "AgreementManager - separateSignatures - original signature not found"
-            );
-        }
-
-        // Get all signatures except the author's signature
-        const confirmationSignatures = agreement.blockSignatures.filter(
-            (sig: Signature) => {
-                const { didSign } = agreement.block.getParticipantSignature(
-                    agreement.block.author,
-                    [sig]
-                );
-                return !didSign;
-            }
+        const block = Block.decode(
+            blockEntry.blockConfirmation.signedBlock.encodedBlock
         );
 
-        return {
-            originalSignature,
-            confirmationSignatures
-        };
+        return block.author === participantAddress;
     }
 
-    //both canonical chain and future queue
-    //both canonical chain and future queue
-    public isBlockInChain(block: Block): boolean {
-        return this.validator.isBlockInChain(block);
-    }
-    public isBlockDuplicate(block: Block): boolean {
-        return this.validator.isBlockDuplicate(block);
-    }
-    public checkBlock(signedBlock: SignedBlockStruct): AgreementFlag {
-        return this.validator.check(signedBlock);
-    }
-    public getLatestBlockTimestamp(forkId: ForkId): Timestamp {
-        return this.validator.latestBlockTimestamp(forkId);
-    }
-    public getLatestTimestamp(
-        forkId: ForkId,
-        maxTxCnt: BlockHeight
-    ): Timestamp {
-        return this.validator.latestRelevantTimestamp(forkId, maxTxCnt);
+    /**
+     * Get a double-signed block if it exists
+     * Checks if the incoming block conflicts with an already stored block at the same coordinates
+     */
+    public getDoubleSignedBlock(
+        signedBlock: SignedBlockStruct
+    ): SignedBlockStruct | undefined {
+        const block = Block.decode(signedBlock.encodedBlock);
+
+        // Check if there's already a block at these coordinates
+        const existingBlockEntry = this.storage.blocks.getBlockEntry(
+            block.forkId,
+            block.height
+        );
+        if (!existingBlockEntry) return undefined;
+
+        const existingBlock = Block.decode(
+            existingBlockEntry.blockConfirmation.signedBlock.encodedBlock
+        );
+
+        // Check if it's by the same author but different block (double sign)
+        if (
+            existingBlock.author === block.author &&
+            !existingBlock.equals(block)
+        ) {
+            return existingBlockEntry.blockConfirmation.signedBlock;
+        }
+
+        return undefined;
     }
 
-    public addDispute(dispute: DisputeStruct, timestamp: Timestamp): void {
-        this.forks.addDispute(dispute, timestamp);
-    }
-
-    public confirmDispute(
-        dispute: DisputeStruct,
-        confirmationSignature: Signature
-    ): void {
-        this.forks.addDisputeSignature(dispute, confirmationSignature);
-    }
-
-    public isDisputeKnown(dispute: DisputeStruct): boolean {
-        return this.forks.isDisputeKnown(dispute);
-    }
-
-    public getDisputeSignatures(dispute: DisputeStruct): Signature[] {
-        return this.forks.getDisputeSignatures(dispute);
-    }
-
+    /**
+     * Check if a participant has signed a dispute
+     */
     public hasParticipantSignedDispute(
         dispute: DisputeStruct,
         participant: Address
     ): boolean {
-        return this.forks.hasParticipantSignedDispute(dispute, participant);
+        const disputeHash = ethers.keccak256(
+            Codec.encode(dispute, Type.Dispute)
+        );
+        const disputeConfirmation =
+            this.storage.disputes.getDisputeConfirmation(disputeHash);
+
+        if (!disputeConfirmation) return false;
+
+        // Check if participant is the disputer
+        if (dispute.disputer === participant) return true;
+
+        // Check confirmation signatures
+        for (const sig of disputeConfirmation.signatures) {
+            const signer = ethers.verifyMessage(
+                ethers.getBytes(disputeHash),
+                sig as Signature
+            );
+            if (signer === participant) return true;
+        }
+
+        return false;
+    }
+    private getAllSignatures(
+        blockConfirmation: BlockConfirmationStruct
+    ): Signature[] {
+        return [
+            blockConfirmation.signedBlock.signature as Signature,
+            ...(blockConfirmation.signatures as Signature[])
+        ];
     }
 }
 

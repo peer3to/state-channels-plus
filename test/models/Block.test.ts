@@ -158,7 +158,7 @@ describe("Block Model", () => {
             const sig1 = await signers[1].signMessage(message);
             const sig2 = await signers[2].signMessage(message);
 
-            const signersSet = block.getSignersSet([sig1, sig2]);
+            const signersSet = block.getSignerAddresses([sig1, sig2]);
             expect(signersSet.size).to.equal(2);
             expect(signersSet.has(signers[1].address)).to.be.true;
             expect(signersSet.has(signers[2].address)).to.be.true;
@@ -168,9 +168,7 @@ describe("Block Model", () => {
             const message = ethers.getBytes(block.hash);
             const signature = await signer.signMessage(message);
 
-            const result = block.getParticipantSignature(signer.address, [
-                signature
-            ]);
+            const result = block.findSignature(signer.address, [signature]);
 
             expect(result.didSign).to.be.true;
             expect(result.signature).to.equal(signature);
@@ -178,7 +176,7 @@ describe("Block Model", () => {
 
         it("should handle participant who didn't sign", async () => {
             const nonSigner = signers[1];
-            const result = block.getParticipantSignature(nonSigner.address, []);
+            const result = block.findSignature(nonSigner.address, []);
 
             expect(result.didSign).to.be.false;
             expect(result.signature).to.be.undefined;
