@@ -415,6 +415,10 @@ export class BlockStorage {
             // Store new block entry
             this.hashToBlockMap.set(blockHash, blockEntry);
             this.coordinatesToBlockMap.set(coordinateKey, blockEntry);
+
+            // Update max height
+            this._updateMaxHeight(coordinates.forkId, coordinates.height);
+
             return blockHash;
         }
 
