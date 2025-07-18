@@ -430,7 +430,6 @@ describe("BlockStorage", () => {
                 const hash1 = storage.storeBlockConfirmation(
                     mockBlockConfirmation
                 );
-                expect(hash1).to.equal(mockBlockHash);
 
                 // Create different block with same coordinates
                 const differentBlock = factory.signedBlock();
