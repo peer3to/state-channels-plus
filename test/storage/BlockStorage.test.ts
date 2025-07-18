@@ -41,7 +41,7 @@ describe("BlockStorage", () => {
             const hash = storage.storeBlock(mockSignedBlock);
 
             expect(hash).to.equal(mockBlockHash);
-            const stored = storage.getBlockEntry(hash);
+            const stored = storage.getBlockEntry(hash!);
             expect(stored?.blockConfirmation.signedBlock).to.equal(
                 mockSignedBlock
             );
@@ -80,7 +80,7 @@ describe("BlockStorage", () => {
             // Should return same hash
             expect(hash1).to.equal(hash2);
 
-            const stored = storage.getBlockEntry(hash1);
+            const stored = storage.getBlockEntry(hash1!);
 
             // Should have 3 unique signatures (shared signature not duplicated)
             expect(stored?.blockConfirmation.signatures).to.have.lengthOf(3);
@@ -100,7 +100,7 @@ describe("BlockStorage", () => {
         it("should insert block confirmation with auto-computed keys", () => {
             const hash = storage.storeBlockConfirmation(mockBlockConfirmation);
 
-            const stored = storage.getBlockEntry(hash);
+            const stored = storage.getBlockEntry(hash!);
             expect(stored?.blockConfirmation).to.equal(mockBlockConfirmation);
         });
 
@@ -109,7 +109,7 @@ describe("BlockStorage", () => {
                 coordinates: { forkId: mockForkId, height: mockHeight }
             });
 
-            const stored = storage.getBlockEntry(hash);
+            const stored = storage.getBlockEntry(hash!);
             const stored_by_coords = storage.getBlockEntry(
                 mockForkId,
                 mockHeight
