@@ -158,7 +158,7 @@ describe("Block Model", () => {
             const sig1 = await signers[1].signMessage(message);
             const sig2 = await signers[2].signMessage(message);
 
-            const signersSet = block.getSignersSet([sig1, sig2]);
+            const signersSet = block.getSignerAddresses([sig1, sig2]);
             expect(signersSet.size).to.equal(2);
             expect(signersSet.has(signers[1].address)).to.be.true;
             expect(signersSet.has(signers[2].address)).to.be.true;

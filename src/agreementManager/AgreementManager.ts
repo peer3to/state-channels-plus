@@ -33,7 +33,7 @@ class AgreementManager {
 
             const { didSign, signature } = block.findSignature(
                 participantAdr,
-                blockConfirmation.signatures as Signature[]
+                this.getAllSignatures(blockConfirmation)
             );
 
             if (didSign) {
@@ -55,12 +55,9 @@ class AgreementManager {
             this.storage.getParticipants(block.coordinates)
         );
 
-        const allSignatures = new Set<Signature>([
-            blockEntry.blockConfirmation.signedBlock.signature as Signature,
-            ...(blockEntry.blockConfirmation.signatures as Signature[])
-        ]);
-
-        const signersSet = block.getSignersSet(Array.from(allSignatures));
+        const signersSet = block.getSignerAddresses(
+            this.getAllSignatures(blockEntry.blockConfirmation)
+        );
 
         return SetUtils.isSubset(thresholdAddresses, signersSet);
     }
@@ -80,10 +77,10 @@ class AgreementManager {
             };
         }
 
-        // Check confirmation signatures
+        // Check all signatures
         return block.findSignature(
             participant,
-            blockEntry.blockConfirmation.signatures as Signature[]
+            this.getAllSignatures(blockEntry.blockConfirmation)
         );
     }
 
@@ -98,12 +95,9 @@ class AgreementManager {
             block.coordinates
         );
 
-        const allSignatures = new Set<Signature>([
-            this.storage.blocks.getOriginalSignature(block) as Signature,
-            ...(blockEntry.blockConfirmation.signatures as Signature[])
-        ]);
-
-        const signersSet = block.getSignersSet(Array.from(allSignatures));
+        const signersSet = block.getSignerAddresses(
+            this.getAllSignatures(blockEntry.blockConfirmation)
+        );
 
         // Return addresses that haven't signed
         return thresholdAddresses.filter((address) => !signersSet.has(address));
@@ -145,7 +139,7 @@ class AgreementManager {
                 blockEntry.blockConfirmation.signedBlock.encodedBlock
             );
 
-            const signersAddresses = block.getSignersSet(
+            const signersAddresses = block.getSignerAddresses(
                 blockEntry.blockConfirmation.signatures as Signature[]
             );
 
@@ -301,6 +295,14 @@ class AgreementManager {
         }
 
         return false;
+    }
+    private getAllSignatures(
+        blockConfirmation: BlockConfirmationStruct
+    ): Signature[] {
+        return [
+            blockConfirmation.signedBlock.signature as Signature,
+            ...(blockConfirmation.signatures as Signature[])
+        ];
     }
 }
 

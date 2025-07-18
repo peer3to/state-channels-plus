@@ -110,7 +110,7 @@ export default class Block {
         );
     }
 
-    getSignersSet(signatures: Signature[]): Set<Address> {
+    getSignerAddresses(signatures: Signature[]): Set<Address> {
         return new Set(signatures.map((sig) => this.getSignerAddress(sig)));
     }
 
