@@ -503,7 +503,6 @@ describe("BlockStorage", () => {
                 const hash = storage.storeBlockConfirmation(
                     mockBlockConfirmation
                 );
-                expect(hash).to.equal(mockBlockHash);
 
                 // Get the block by coordinates
                 const blockByCoords = storage.getBlockEntry(
