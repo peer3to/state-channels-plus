@@ -24,6 +24,11 @@ export type BlockEntry = {
     onChainTimestamp?: Timestamp;
 };
 
+export enum SortOrder {
+    ASC = "asc",
+    DESC = "desc"
+}
+
 export class BlockStorage {
     // ====================================
     // STORAGE MAPS
@@ -31,9 +36,13 @@ export class BlockStorage {
     private hashToBlockMap: Map<Hash, BlockEntry>;
     private coordinatesToBlockMap: Map<CoordinateKey, BlockEntry>;
 
+    // NEW: Track highest height for each forkId
+    private forkIdToMaxHeightMap: Map<ForkId, BlockHeight>;
+
     constructor() {
         this.hashToBlockMap = new Map();
         this.coordinatesToBlockMap = new Map();
+        this.forkIdToMaxHeightMap = new Map();
     }
 
     // ====================================
@@ -226,12 +235,22 @@ export class BlockStorage {
 
             this.hashToBlockMap.delete(hashOrForkId as Hash);
             this.coordinatesToBlockMap.delete(coordinateKey);
+
+            const blockHeight = block.height;
+            if (blockHeight === this.forkIdToMaxHeightMap.get(block.forkId)) {
+                this.forkIdToMaxHeightMap.set(
+                    block.forkId,
+                    Math.max(0, blockHeight - 1)
+                );
+            }
+
             return true;
         }
 
         // ┌─ ROUTES TO: [OVERLOAD 2] - delete by coordinates
+        const forkId = hashOrForkId as ForkId;
         const coordinateKey = this.coordinatesToKey({
-            forkId: hashOrForkId as ForkId,
+            forkId: forkId,
             height
         });
         const blockEntry = this.coordinatesToBlockMap.get(coordinateKey);
@@ -244,39 +263,45 @@ export class BlockStorage {
 
         this.coordinatesToBlockMap.delete(coordinateKey);
         this.hashToBlockMap.delete(blockHash);
+
+        if (height === this.forkIdToMaxHeightMap.get(forkId)) {
+            this.forkIdToMaxHeightMap.set(forkId, Math.max(0, height - 1));
+        }
+
         return true;
     }
 
     /*────────────────────────────────────────────────────────────────────────────
-      GET ALL BLOCKS BY FORK ID
+      GET ALL BLOCKS BY FORK ID - SEQUENTIAL ITERATOR
     ────────────────────────────────────────────────────────────────────────────*/
-    getBlocksByForkId(
+    *getBlocksByForkId(
         forkId: ForkId,
-        sortOrder?: "asc" | "desc"
-    ): BlockEntry[] {
-        const blocks: Array<{ height: BlockHeight; entry: BlockEntry }> = [];
+        sortOrder?: SortOrder
+    ): Generator<BlockEntry, void, unknown> {
+        const maxHeight = this.forkIdToMaxHeightMap.get(forkId);
+        if (maxHeight === undefined) return;
 
-        // Iterate through coordinate keys and filter by forkId
-        for (const [key, blockEntry] of this.coordinatesToBlockMap) {
-            const [keyForkId, blockHeight] = key.split(":");
-            if (keyForkId === forkId) {
-                blocks.push({
-                    height: parseInt(blockHeight),
-                    entry: blockEntry
-                });
+        if (sortOrder === SortOrder.ASC) {
+            // Start from 0, go up to maxHeight
+            for (let height = 0; height <= maxHeight; height++) {
+                const coordinateKey = this.coordinatesToKey({ forkId, height });
+                const blockEntry =
+                    this.coordinatesToBlockMap.get(coordinateKey);
+                if (blockEntry) {
+                    yield blockEntry;
+                }
+            }
+        } else {
+            // Start from maxHeight, go down to 0
+            for (let height = maxHeight; height >= 0; height--) {
+                const coordinateKey = this.coordinatesToKey({ forkId, height });
+                const blockEntry =
+                    this.coordinatesToBlockMap.get(coordinateKey);
+                if (blockEntry) {
+                    yield blockEntry;
+                }
             }
         }
-
-        // Sort if requested
-        if (sortOrder) {
-            blocks.sort((a, b) => {
-                return sortOrder === "asc"
-                    ? a.height - b.height
-                    : b.height - a.height;
-            });
-        }
-
-        return blocks.map((item) => item.entry);
     }
 
     /*────────────────────────────────────────────────────────────────────────────
@@ -426,5 +451,12 @@ export class BlockStorage {
 
         // Return the hash (same object in both maps)
         return blockHash;
+    }
+
+    private _updateMaxHeight(forkId: ForkId, height: BlockHeight): void {
+        const currentMax = this.forkIdToMaxHeightMap.get(forkId);
+        if (currentMax === undefined || height > currentMax) {
+            this.forkIdToMaxHeightMap.set(forkId, height);
+        }
     }
 }

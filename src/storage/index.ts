@@ -1,4 +1,4 @@
 import { Storage } from "./Storage";
-export { BlockEntry } from "./BlockStorage";
+export { BlockEntry, SortOrder } from "./BlockStorage";
 
 export default Storage;

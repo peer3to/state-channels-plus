@@ -3,7 +3,7 @@ import {
     BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { Storage } from "@/storage/Storage";
+import Storage, { SortOrder } from "@/storage";
 import { Address, BlockHeight, Bytes, ForkId, Signature } from "@/types/types";
 import { Block } from "@/models";
 import { Codec, Type } from "@/utils";
@@ -23,7 +23,7 @@ class AgreementManager {
     ): { block: Block; signature: Signature } | undefined {
         const blockEntries = this.storage.blocks.getBlocksByForkId(
             forkId,
-            "desc"
+            SortOrder.DESC
         );
 
         for (const { blockConfirmation } of blockEntries) {
@@ -73,7 +73,8 @@ class AgreementManager {
         if (block.author === participant) {
             return {
                 didSign: true,
-                signature: this.storage.blocks.getOriginalSignature(block)
+                signature: blockEntry.blockConfirmation.signedBlock
+                    .signature as Signature
             };
         }
 
@@ -131,7 +132,7 @@ class AgreementManager {
         // Get all blocks sorted by height descending
         const blockEntries = this.storage.blocks.getBlocksByForkId(
             forkId,
-            "desc"
+            SortOrder.DESC
         );
 
         for (const blockEntry of blockEntries) {
@@ -216,7 +217,7 @@ class AgreementManager {
     /**
      * Check if a participant has posted a block on-chain
      */
-    public didParticipantPostOnChain(
+    public didParticipantPostOnChainLocal(
         forkId: ForkId,
         transactionCnt: BlockHeight,
         participantAddress: Address
