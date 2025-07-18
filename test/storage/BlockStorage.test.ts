@@ -422,8 +422,6 @@ describe("BlockStorage", () => {
     });
 
     describe("CONFLICT DETECTION - _storeBlockEntryWithOptions()", () => {
-        });
-
         describe("Different blocks with same coordinates", () => {
             it("should return undefined when storing different blocks with same coordinates", () => {
                 // Store first block
@@ -493,7 +491,6 @@ describe("BlockStorage", () => {
                 expect(result).to.equal(mockBlockHash);
             });
         });
-
 
         describe("Reference equality", () => {
             it("should maintain reference equality between hash and coordinates maps", () => {

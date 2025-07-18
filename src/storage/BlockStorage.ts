@@ -276,42 +276,39 @@ export class BlockStorage {
         const coordinateKey = this.coordinatesToKey(coordinates);
         const existingEntry = this.coordinatesToBlockMap.get(coordinateKey);
 
-        if (existingEntry) {
-            // Compare incomingBlock.encodedBlock == existingBlock.encodedBlock
-            const incomingEncodedBlock =
-                blockEntry.blockConfirmation.signedBlock.encodedBlock;
-            const existingEncodedBlock =
-                existingEntry.blockConfirmation.signedBlock.encodedBlock;
-
-            if (incomingEncodedBlock === existingEncodedBlock) {
-                // They are equal => merge signatures
-                const signaturesSet = new Set(
-                    existingEntry.blockConfirmation.signatures
-                );
-                for (const newSignature of blockEntry.blockConfirmation
-                    .signatures) {
-                    signaturesSet.add(newSignature);
-                }
-                existingEntry.blockConfirmation.signatures =
-                    Array.from(signaturesSet);
-
-                // Update on-chain timestamp if provided
-                if (blockEntry.onChainTimestamp !== undefined) {
-                    existingEntry.onChainTimestamp =
-                        blockEntry.onChainTimestamp;
-                }
-
-                // Return the hash (same object in both maps)
-                return blockHash;
-            } else {
-                // Not equal => abort
-                return undefined;
-            }
+        if (!existingEntry) {
+            // Store new block entry
+            this.hashToBlockMap.set(blockHash, blockEntry);
+            this.coordinatesToBlockMap.set(coordinateKey, blockEntry);
+            return blockHash;
         }
 
-        // Store new block entry
-        this.hashToBlockMap.set(blockHash, blockEntry);
-        this.coordinatesToBlockMap.set(coordinateKey, blockEntry);
+        // Compare incomingBlock.encodedBlock == existingBlock.encodedBlock
+        const incomingEncodedBlock =
+            blockEntry.blockConfirmation.signedBlock.encodedBlock;
+        const existingEncodedBlock =
+            existingEntry.blockConfirmation.signedBlock.encodedBlock;
+
+        if (incomingEncodedBlock !== existingEncodedBlock) {
+            // Not equal => abort
+            return undefined;
+        }
+
+        // They are equal => merge signatures
+        const signaturesSet = new Set(
+            existingEntry.blockConfirmation.signatures
+        );
+        for (const newSignature of blockEntry.blockConfirmation.signatures) {
+            signaturesSet.add(newSignature);
+        }
+        existingEntry.blockConfirmation.signatures = Array.from(signaturesSet);
+
+        // Update on-chain timestamp if provided
+        if (blockEntry.onChainTimestamp !== undefined) {
+            existingEntry.onChainTimestamp = blockEntry.onChainTimestamp;
+        }
+
+        // Return the hash (same object in both maps)
         return blockHash;
     }
 }
