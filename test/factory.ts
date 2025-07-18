@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import { ethers } from "hardhat";
 import {
     BlockStruct,
     TransactionStruct,
@@ -11,7 +11,6 @@ import {
     JoinChannelBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import AgreementManager from "@/agreementManager";
 import {
     DisputeStruct,
     SignedDisputeStruct
@@ -19,7 +18,9 @@ import {
 import { randomInt } from "crypto";
 import { Codec, Type } from "@/utils";
 import { Block, StateSnapshot } from "@/models";
-import Storage from "@/storage";
+
+export const hash = () => ethers.hexlify(ethers.randomBytes(32));
+export const signature = () => ethers.hexlify(ethers.randomBytes(65));
 
 /**
  * Creates a default transaction header
@@ -78,28 +79,6 @@ export function transaction(
 }
 
 /**
- * Creates an AgreementManager with a basic setup of one fork
- * @returns A pre-configured AgreementManager
- */
-export function agreementManager(addresses: string[] = []): AgreementManager {
-    const manager = new AgreementManager(new Storage());
-    // Initialize with a single fork
-    const genesisState = ethers.hexlify(ethers.randomBytes(32));
-    const participants = addresses || [
-        ethers.Wallet.createRandom().address,
-        ethers.Wallet.createRandom().address,
-        ethers.Wallet.createRandom().address
-    ];
-    manager.newFork(
-        genesisState,
-        participants,
-        ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
-        Math.floor(Date.now() / 1000)
-    );
-    return manager;
-}
-
-/**
  * Creates a mock block for testing
  * @param overrides Optional overrides for the block properties
  * @returns A mock BlockStruct
@@ -119,14 +98,6 @@ export function block(overrides: Partial<BlockStruct> = {}): Block {
     }
 
     return Block.from({ ...blockStruct, ...overrides });
-}
-
-/**
- * Creates a mock signature for testing
- * @returns A hex string representing a signature
- */
-export function signature(): string {
-    return ethers.hexlify(ethers.randomBytes(65));
 }
 
 /**

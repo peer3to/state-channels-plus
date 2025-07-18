@@ -14,7 +14,16 @@ export function deepCopyProxy<T extends object>(original: T): T {
                     // Call original method
                     const result = originalValue.apply(target, copiedArgs);
 
-                    // Deep copy result
+                    // Don't deep copy generators - return them as-is
+                    if (
+                        result &&
+                        typeof result === "object" &&
+                        typeof result.next === "function"
+                    ) {
+                        return result;
+                    }
+
+                    // Deep copy other results
                     return cloneDeep(result);
                 };
             }
