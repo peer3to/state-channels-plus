@@ -74,9 +74,6 @@ export class Storage {
         );
     }
 
-    /**
-     * Get the participants for a given fork
-     */
     getParticipants({ forkId, height }: BlockCoordinates): Address[] {
         const previousSnapshot = this.getStateSnapshot({
             forkId,
