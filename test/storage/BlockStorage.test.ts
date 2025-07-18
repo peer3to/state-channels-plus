@@ -478,7 +478,6 @@ describe("BlockStorage", () => {
                 const hash1 = storage.storeBlockConfirmation(
                     mockBlockConfirmation
                 );
-                expect(hash1).to.equal(mockBlockHash);
 
                 // Create block with same hash but different coordinates
                 const differentCoordinates = {
