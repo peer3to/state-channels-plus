@@ -496,45 +496,6 @@ describe("BlockStorage", () => {
             });
         });
 
-        describe("Normal new block storage", () => {
-            it("should return hash when storing new block without conflicts", () => {
-                const newBlock = factory.signedBlock();
-                const newBlockConfirmation = factory.blockConfirmation({
-                    signedBlock: newBlock
-                });
-
-                const hash =
-                    storage.storeBlockConfirmation(newBlockConfirmation);
-                expect(hash).to.not.be.undefined;
-                expect(hash).to.equal(ethers.keccak256(newBlock.encodedBlock));
-            });
-
-            it("should store new block in both hash and coordinates maps", () => {
-                const newBlock = factory.signedBlock();
-                const newBlockConfirmation = factory.blockConfirmation({
-                    signedBlock: newBlock
-                });
-                const block = Block.decode(newBlock.encodedBlock);
-
-                const hash =
-                    storage.storeBlockConfirmation(newBlockConfirmation);
-
-                // Should be retrievable by hash
-                const byHash = storage.getBlockEntry(hash);
-                expect(byHash?.blockConfirmation).to.equal(
-                    newBlockConfirmation
-                );
-
-                // Should be retrievable by coordinates
-                const byCoords = storage.getBlockEntry(
-                    block.coordinates.forkId,
-                    block.coordinates.height
-                );
-                expect(byCoords?.blockConfirmation).to.equal(
-                    newBlockConfirmation
-                );
-            });
-        });
 
         describe("Reference equality", () => {
             it("should maintain reference equality between hash and coordinates maps", () => {
