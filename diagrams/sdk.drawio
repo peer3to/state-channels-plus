@@ -1,0 +1,496 @@
+<mxfile host="65bd71144e">
+    <diagram id="UIa-ucJ7Z0dhIWUHrVS2" name="User Interaction">
+        <mxGraphModel dx="1756" dy="1191" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-1" value="Normal contract interaction&lt;br&gt;No SDK" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+                    <mxGeometry x="70" y="120" width="495" height="660" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-12" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="2USgKruaMMoqPaF7kZq8-1" source="2USgKruaMMoqPaF7kZq8-2" target="2USgKruaMMoqPaF7kZq8-6">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-2" value="Start" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.start_1;whiteSpace=wrap;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-1">
+                    <mxGeometry x="185" y="50" width="70" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-16" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="2USgKruaMMoqPaF7kZq8-1" source="2USgKruaMMoqPaF7kZq8-4" target="2USgKruaMMoqPaF7kZq8-5">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-4" value="Deploy contracts on-chain&lt;br&gt;(contract address)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-1">
+                    <mxGeometry x="160" y="200" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-21" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="2USgKruaMMoqPaF7kZq8-1" source="2USgKruaMMoqPaF7kZq8-5" target="2USgKruaMMoqPaF7kZq8-11">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-5" value="Create `contract instance` with Ethers (provide ABI and contract address)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-1">
+                    <mxGeometry x="117.5" y="290" width="205" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-15" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="2USgKruaMMoqPaF7kZq8-1" source="2USgKruaMMoqPaF7kZq8-6" target="2USgKruaMMoqPaF7kZq8-4">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-6" value="Compile contracts&lt;br&gt;(generate ABI and bytecode)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-1">
+                    <mxGeometry x="160" y="110" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-7" value="Use the `contract instance` to interact with the on-chain contract&lt;br&gt;(e.g. instnace.someFunction())" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-1">
+                    <mxGeometry x="117.5" y="470" width="205" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-10" value="End" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.terminator;whiteSpace=wrap;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-1">
+                    <mxGeometry x="170" y="580" width="100" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-23" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="2USgKruaMMoqPaF7kZq8-1" source="2USgKruaMMoqPaF7kZq8-11" target="2USgKruaMMoqPaF7kZq8-7">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-11" value="Connect a `signer` to the `contract instance`" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-1">
+                    <mxGeometry x="98.75" y="380" width="242.5" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-24" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="2USgKruaMMoqPaF7kZq8-1" source="2USgKruaMMoqPaF7kZq8-7" target="2USgKruaMMoqPaF7kZq8-10">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-34" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" collapsed="1" parent="2USgKruaMMoqPaF7kZq8-1">
+                    <mxGeometry x="355" y="390" width="70" height="30" as="geometry">
+                        <mxRectangle x="355" y="390" width="140" height="160" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-35" value="A signer is an abstraction of a public/private key pair. Usually it connects to a wallet like Metamask that actually contains the public/private key and does the signing" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-34">
+                    <mxGeometry y="30" width="140" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-40" value="SDK contract interaction" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+                    <mxGeometry x="620" y="120" width="590" height="1150" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-41" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="2USgKruaMMoqPaF7kZq8-40" source="2USgKruaMMoqPaF7kZq8-42" target="2USgKruaMMoqPaF7kZq8-48">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-42" value="Start" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.start_1;whiteSpace=wrap;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-40">
+                    <mxGeometry x="215.63" y="50" width="70" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-43" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="2USgKruaMMoqPaF7kZq8-40" source="2USgKruaMMoqPaF7kZq8-44" target="2USgKruaMMoqPaF7kZq8-46">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-44" value="Deploy contracts on-chain&lt;br&gt;(contract address)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-40">
+                    <mxGeometry x="190.63" y="200" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-45" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="2USgKruaMMoqPaF7kZq8-40" source="2USgKruaMMoqPaF7kZq8-46" target="2USgKruaMMoqPaF7kZq8-52">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-46" value="Create `contract instance` with Ethers (provide ABI and contract address)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-40">
+                    <mxGeometry x="148.13" y="290" width="205" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-47" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="2USgKruaMMoqPaF7kZq8-40" source="2USgKruaMMoqPaF7kZq8-48" target="2USgKruaMMoqPaF7kZq8-44">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-48" value="Compile contracts&lt;br&gt;(generate ABI and bytecode)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-40">
+                    <mxGeometry x="190.63" y="110" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-49" value="On channel open/join - Use the `p2p contract instance` to interact with the contract locally&lt;br&gt;(e.g. instnace.someFunction())" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-40">
+                    <mxGeometry x="99.38" y="790" width="302.5" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-50" value="End" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.terminator;whiteSpace=wrap;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-40">
+                    <mxGeometry x="200.63" y="900" width="100" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-51" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="2USgKruaMMoqPaF7kZq8-40" source="2USgKruaMMoqPaF7kZq8-52" target="2USgKruaMMoqPaF7kZq8-56">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-52" value="Generate a `signer`" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-40">
+                    <mxGeometry x="129.38" y="380" width="242.5" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-53" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="2USgKruaMMoqPaF7kZq8-40" source="2USgKruaMMoqPaF7kZq8-49" target="2USgKruaMMoqPaF7kZq8-50">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-54" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" collapsed="1" parent="2USgKruaMMoqPaF7kZq8-40">
+                    <mxGeometry x="385.63" y="390" width="70" height="30" as="geometry">
+                        <mxRectangle x="355" y="390" width="140" height="200" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-55" value="This part is optional, but recommended so a wallet doesn&#39;t poput everytime something needs to be signed - killing entirely the user experience. We use Ethers to generate a in memory hot wallet which is used to interact with the SDK&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-54">
+                    <mxGeometry y="30" width="140" height="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-57" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="2USgKruaMMoqPaF7kZq8-40" source="2USgKruaMMoqPaF7kZq8-56" target="2USgKruaMMoqPaF7kZq8-64">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-56" value="Connect a `signer` to the `contract instance`" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-40">
+                    <mxGeometry x="129.38" y="500" width="242.5" height="60" as="geometry"/>
+                </mxCell>
+                <UserObject label="run &lt;b&gt;SDK.setup()&lt;/b&gt;&lt;br&gt;(returns a p2p contract instane and signer)" link="data:page/id,8IJa3swgfMUrxF_fh19F" id="2USgKruaMMoqPaF7kZq8-61">
+                    <mxCell style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-40">
+                        <mxGeometry x="129.38" y="600" width="242.5" height="60" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-62" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" collapsed="1" parent="2USgKruaMMoqPaF7kZq8-40">
+                    <mxGeometry x="390.63" y="610" width="70" height="30" as="geometry">
+                        <mxRectangle x="360" y="600" width="140" height="460" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-63" value="The p2pSigner is a normal signer extended with additional functionality and it redirects all calls to the SDK instead of an RPC node - it&#39;s polymorphically substitutable anywehre an Ethers.Signer is expected&amp;nbsp;&lt;br&gt;&lt;br&gt;The p2pContract just connects the p2pSigner to it, which redirects all calls to the SDK (local EVM) - it has the same type as the original contract instance that would be used to interact on-chain. It&#39;s fully polymorphically substitutable with the original contract =&amp;gt; you use it the same way.&lt;br&gt;&lt;br&gt;The developer experience should stay the same!&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-62">
+                    <mxGeometry y="30" width="140" height="430" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-65" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="2USgKruaMMoqPaF7kZq8-40" source="2USgKruaMMoqPaF7kZq8-64" target="2USgKruaMMoqPaF7kZq8-49">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-64" value="use&amp;nbsp;&lt;b&gt;p2pSigner.join(ID)&lt;/b&gt;&amp;nbsp;to connect to other peers and join/open the channel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-40">
+                    <mxGeometry x="129.38" y="690" width="242.5" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-66" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" collapsed="1" parent="2USgKruaMMoqPaF7kZq8-40">
+                    <mxGeometry x="390.63" y="705" width="70" height="30" as="geometry">
+                        <mxRectangle x="370" y="690" width="140" height="200" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-67" value="Try and discover other peers that are observing the same &lt;b&gt;channelID&lt;/b&gt; on the DHT (Distributed Hash Table) - negotiate a connection and if succesfull negotiate opening/joining the channel&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-66">
+                    <mxGeometry y="30" width="140" height="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-68" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" collapsed="1" parent="2USgKruaMMoqPaF7kZq8-40">
+                    <mxGeometry x="420.63" y="800" width="70" height="30" as="geometry">
+                        <mxRectangle x="390" y="800" width="140" height="200" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="2USgKruaMMoqPaF7kZq8-69" value="There are hooks in the SDK (&lt;b&gt;p2pEventHooks&lt;/b&gt;) that trigger as callbacks to notify the user when something happen in the SDK:&lt;br&gt;&lt;b&gt;onConnection&lt;/b&gt;&lt;br&gt;&lt;b&gt;onTurn&lt;/b&gt;&lt;br&gt;...." style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="2USgKruaMMoqPaF7kZq8-68">
+                    <mxGeometry y="30" width="140" height="170" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="FIU2_rUHDlD9bzbtEB0G" name="Architecture Overview">
+        <mxGraphModel dx="790" dy="536" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="X9zlBLXTQ7z5bdcYPX1X-19" value="" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="170" y="280" width="370" height="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="X9zlBLXTQ7z5bdcYPX1X-1" value="Blockchain&lt;br&gt;(on-chain)" style="ellipse;shape=cloud;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="490" y="30" width="230" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="X9zlBLXTQ7z5bdcYPX1X-2" value="DHT&lt;br&gt;(Distributed Hash Table)" style="ellipse;shape=cloud;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry y="30" width="230" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="X9zlBLXTQ7z5bdcYPX1X-3" value="User B" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" vertex="1" parent="1">
+                    <mxGeometry x="206" y="390" width="30" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="X9zlBLXTQ7z5bdcYPX1X-4" value="User C" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" vertex="1" parent="1">
+                    <mxGeometry x="466" y="390" width="30" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="X9zlBLXTQ7z5bdcYPX1X-17" style="edgeStyle=none;html=1;exitX=0;exitY=0.3333333333333333;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" parent="1" source="X9zlBLXTQ7z5bdcYPX1X-5" target="X9zlBLXTQ7z5bdcYPX1X-2">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="X9zlBLXTQ7z5bdcYPX1X-18" style="edgeStyle=none;html=1;exitX=1;exitY=0.3333333333333333;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" parent="1" source="X9zlBLXTQ7z5bdcYPX1X-5" target="X9zlBLXTQ7z5bdcYPX1X-1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="X9zlBLXTQ7z5bdcYPX1X-5" value="User A" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" vertex="1" parent="1">
+                    <mxGeometry x="346" y="310" width="30" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="X9zlBLXTQ7z5bdcYPX1X-7" value="" style="endArrow=classic;startArrow=classic;html=1;exitX=1;exitY=0.3333333333333333;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" parent="1" source="X9zlBLXTQ7z5bdcYPX1X-3" target="X9zlBLXTQ7z5bdcYPX1X-5">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="436" y="300" as="sourcePoint"/>
+                        <mxPoint x="486" y="250" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="X9zlBLXTQ7z5bdcYPX1X-10" value="" style="endArrow=classic;startArrow=classic;html=1;" edge="1" parent="1" source="X9zlBLXTQ7z5bdcYPX1X-3" target="X9zlBLXTQ7z5bdcYPX1X-4">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="276" y="450" as="sourcePoint"/>
+                        <mxPoint x="356" y="390" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="X9zlBLXTQ7z5bdcYPX1X-11" value="" style="endArrow=classic;startArrow=classic;html=1;entryX=0;entryY=0.3333333333333333;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="X9zlBLXTQ7z5bdcYPX1X-5" target="X9zlBLXTQ7z5bdcYPX1X-4">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="286" y="520" as="sourcePoint"/>
+                        <mxPoint x="396" y="440" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="X9zlBLXTQ7z5bdcYPX1X-13" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" collapsed="1" parent="1">
+                    <mxGeometry x="230" y="70" width="70" height="30" as="geometry">
+                        <mxRectangle x="230" y="70" width="160" height="230" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="X9zlBLXTQ7z5bdcYPX1X-14" value="The DHT is a distributed &lt;b&gt;key&lt;/b&gt; -&amp;gt; &lt;b&gt;value&lt;/b&gt; lookup and is used for peers to discover one another by finding other peers inerested in the same &lt;b&gt;key&lt;/b&gt; (hash, channeliD).&lt;br&gt;&lt;br&gt;This is not implemented by us and we currently use the Holepunch DHT. More on this in the &lt;b&gt;Networking/Discovery&lt;/b&gt; page" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="X9zlBLXTQ7z5bdcYPX1X-13">
+                    <mxGeometry y="30" width="160" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="X9zlBLXTQ7z5bdcYPX1X-15" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" collapsed="1" parent="1">
+                    <mxGeometry x="710" y="70" width="70" height="30" as="geometry">
+                        <mxRectangle x="420" y="70" width="160" height="230" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="X9zlBLXTQ7z5bdcYPX1X-16" value="The &quot;&lt;b&gt;Supreme Court&lt;/b&gt;&quot;, the &lt;b&gt;single source of truth&lt;/b&gt;.&lt;br&gt;&lt;br&gt;All the shared security and liveness proprerties are inherited from the DLT (blockchain) through a deployed &lt;b&gt;StateChannelManager&lt;/b&gt; contract which follows the &lt;b&gt;DiamondProxy&lt;/b&gt; pattern (&lt;b&gt;EIP-2535&lt;/b&gt;).&lt;div&gt;&lt;br/&gt;&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="X9zlBLXTQ7z5bdcYPX1X-15">
+                    <mxGeometry y="30" width="160" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="97HJZ_cYjFNhWgbvmkS4-1" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" collapsed="1" parent="1">
+                    <mxGeometry x="560" y="300" width="70" height="30" as="geometry">
+                        <mxRectangle x="560" y="300" width="160" height="230" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="97HJZ_cYjFNhWgbvmkS4-2" value="NOTE: &lt;b&gt;All users&lt;/b&gt; are connected to the DHT and Blockchain (not just one - didn&#39;t want to clog up the diagram)&lt;br&gt;&lt;br&gt;Idealy, for the sake of user experience, all connections are bidirectional (Web)Sockets, so the communication is in real-time.&amp;nbsp;&lt;br&gt;&lt;br&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="97HJZ_cYjFNhWgbvmkS4-1">
+                    <mxGeometry y="30" width="160" height="200" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="8IJa3swgfMUrxF_fh19F" name="Setup/VM">
+        <mxGraphModel dx="1053" dy="715" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="J-vIkx5o-MgWQqyid1y3-1" value="&lt;h1 style=&quot;margin-top: 0px;&quot;&gt;Intro&lt;/h1&gt;&lt;p&gt;&lt;b&gt;This is our local environemnt (client side/off-chain) NOT on-chain.&lt;/b&gt;&lt;br&gt;&lt;br&gt;Long term we want to support multiple VMs (EVM,PVM...) so we made an abstraction aVM (which for now we&#39;re caling AStateMachine) in the typescript code.&lt;br&gt;&lt;br&gt;For now we only have the EVM implemented (EVMStateMachine).&lt;br&gt;&lt;br&gt;The user of the SDK needs to pick which VM they want to use, by calling the appropriate &lt;b&gt;setup&lt;/b&gt; function which instantiates all the compontents and gives the user the &lt;b&gt;p2pContractInstace&lt;/b&gt; and &lt;b&gt;p2pSigner&lt;/b&gt; which they use to interact with the system in a familiar way with all the complexity hidden.&lt;br&gt;&lt;br&gt;Locally we &lt;u&gt;deploy&lt;/u&gt; the &lt;b&gt;concrete state machine contract&lt;/b&gt; (e.g. Poker, Chess...) which will execute in rea-time p2p between users (off-chain).&amp;nbsp;&lt;br&gt;&lt;br&gt;We also &lt;u&gt;deploy&lt;/u&gt; a &lt;b&gt;LocalDiamond&lt;/b&gt; with the &lt;b&gt;same facets&lt;/b&gt; as the diamond deployed on-chain. The only difference being the local diamond exposes an interface to &lt;b&gt;unconditionally set storage slots&lt;/b&gt; (state variables) which we use to sync the off-chain state to the on-chain one when needed. &lt;br&gt;&lt;br&gt;We do all of this so we can &lt;b&gt;reuse&lt;/b&gt; the same validation logic that runs on-chain, so we don&#39;t have to have a seperate implementation which also reduces the chance of bugs (differences in typescript/sodlitiy implementations).&lt;br&gt;&lt;br&gt;So the point of our EVMStateMachine (and any other specific VM) is to make it easy to interact locally with these contracts from our typescript code. Internally it runs the official EVM supported by the Ethereum Foundation. In general we&#39;ll try to not implement the VMs, just reuse official implementations and wrap them to accomodate our systems.&lt;br&gt;&lt;br&gt;&lt;/p&gt;&lt;p&gt;&lt;br&gt;&lt;/p&gt;" style="text;html=1;whiteSpace=wrap;overflow=hidden;rounded=0;" vertex="1" parent="1">
+                    <mxGeometry x="30" y="80" width="300" height="680" as="geometry"/>
+                </mxCell>
+                <mxCell id="zkgn0tuZ4sNgNVOaiEEn-5" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" collapsed="1" parent="1">
+                    <mxGeometry x="660" y="250" width="70" height="30" as="geometry">
+                        <mxRectangle x="680" y="225" width="140" height="410" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="zkgn0tuZ4sNgNVOaiEEn-6" value="Currently this is named &lt;b&gt;AStateMachine&lt;/b&gt; which is &lt;u&gt;confusing&lt;/u&gt; since it&#39;s ambiguous to the AStateMachine contract from solidity.&lt;br&gt;&lt;br&gt;&lt;b&gt;aVM&lt;/b&gt; is also &lt;u&gt;not true &lt;/u&gt;since it doesn&#39;t imlement a VM it just uses a specific one&amp;nbsp;&lt;br&gt;&lt;br&gt;Not sure what the name should be (maybe VmManager), but what it does is:&lt;br&gt;&lt;br&gt;exposes an interface to interact with the &lt;b&gt;LocalDiamond&lt;/b&gt; and &lt;b&gt;AStateMachine contract&lt;/b&gt; withouth knowing what the concrete state machine contract implementation." style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="zkgn0tuZ4sNgNVOaiEEn-5">
+                    <mxGeometry y="30" width="140" height="380" as="geometry"/>
+                </mxCell>
+                <mxCell id="zkgn0tuZ4sNgNVOaiEEn-7" value="AStateMachine / aVM" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="410" y="240" width="230" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="zkgn0tuZ4sNgNVOaiEEn-9" value="" style="line;strokeWidth=1;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;strokeColor=inherit;" vertex="1" parent="zkgn0tuZ4sNgNVOaiEEn-7">
+                    <mxGeometry y="26" width="230" height="8" as="geometry"/>
+                </mxCell>
+                <mxCell id="zkgn0tuZ4sNgNVOaiEEn-10" value="+ all LocalDiamondProxy methods&lt;br&gt;&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;+ all AStateMachine contract methods&lt;br&gt;+ setup&lt;/span&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" vertex="1" parent="zkgn0tuZ4sNgNVOaiEEn-7">
+                    <mxGeometry y="34" width="230" height="56" as="geometry"/>
+                </mxCell>
+                <mxCell id="zkgn0tuZ4sNgNVOaiEEn-11" value="General High Level" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" vertex="1" parent="1">
+                    <mxGeometry x="370" y="180" width="450" height="420" as="geometry"/>
+                </mxCell>
+                <mxCell id="zkgn0tuZ4sNgNVOaiEEn-1" value="EVMStateMachine&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;" vertex="1" parent="zkgn0tuZ4sNgNVOaiEEn-11">
+                    <mxGeometry x="40" y="240" width="230" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="zkgn0tuZ4sNgNVOaiEEn-2" value="+ EVM" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" vertex="1" parent="zkgn0tuZ4sNgNVOaiEEn-1">
+                    <mxGeometry y="26" width="230" height="24" as="geometry"/>
+                </mxCell>
+                <mxCell id="zkgn0tuZ4sNgNVOaiEEn-3" value="" style="line;strokeWidth=1;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;strokeColor=inherit;" vertex="1" parent="zkgn0tuZ4sNgNVOaiEEn-1">
+                    <mxGeometry y="50" width="230" height="8" as="geometry"/>
+                </mxCell>
+                <mxCell id="zkgn0tuZ4sNgNVOaiEEn-4" value="&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;+ all LocalDiamondProxy methods&lt;/span&gt;&lt;br&gt;&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;+ all AStateMachine contract methods&lt;br&gt;+ setup&lt;/span&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" vertex="1" parent="zkgn0tuZ4sNgNVOaiEEn-1">
+                    <mxGeometry y="58" width="230" height="72" as="geometry"/>
+                </mxCell>
+                <mxCell id="zkgn0tuZ4sNgNVOaiEEn-12" value="Extends" style="endArrow=block;endSize=16;endFill=0;html=1;entryX=0.465;entryY=1.054;entryDx=0;entryDy=0;entryPerimeter=0;exitX=0.465;exitY=-0.033;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" parent="1" source="zkgn0tuZ4sNgNVOaiEEn-1" target="zkgn0tuZ4sNgNVOaiEEn-10">
+                    <mxGeometry width="160" relative="1" as="geometry">
+                        <mxPoint x="480" y="400" as="sourcePoint"/>
+                        <mxPoint x="640" y="400" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="zfRYxKuKhZlog_5ZJmbi" name="Dependency Graph">
+        <mxGraphModel dx="2167" dy="893" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="6rrWRYpvHSzTtWsxZsAv-1" value="EvmStateMachine" style="html=1;whiteSpace=wrap;" vertex="1" parent="1">
+                    <mxGeometry x="-50" y="340" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-30" style="edgeStyle=none;html=1;exitX=0;exitY=0.75;exitDx=0;exitDy=0;entryX=1;entryY=0.75;entryDx=0;entryDy=0;" edge="1" parent="1" source="6rrWRYpvHSzTtWsxZsAv-3" target="6rrWRYpvHSzTtWsxZsAv-4">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-31" style="edgeStyle=none;html=1;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="1" source="6rrWRYpvHSzTtWsxZsAv-3" target="6rrWRYpvHSzTtWsxZsAv-9">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-46" style="edgeStyle=none;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=1;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="1" source="6rrWRYpvHSzTtWsxZsAv-3" target="6rrWRYpvHSzTtWsxZsAv-6">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="345" y="173"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="6rrWRYpvHSzTtWsxZsAv-3" value="P2PManager" style="html=1;whiteSpace=wrap;" vertex="1" parent="1">
+                    <mxGeometry x="290" y="340" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-6" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="6rrWRYpvHSzTtWsxZsAv-4" target="6rrWRYpvHSzTtWsxZsAv-1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-7" style="edgeStyle=none;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="6rrWRYpvHSzTtWsxZsAv-4" target="6rrWRYpvHSzTtWsxZsAv-12">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-8" style="edgeStyle=none;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="6rrWRYpvHSzTtWsxZsAv-4" target="6rrWRYpvHSzTtWsxZsAv-6">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-9" style="edgeStyle=none;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="6rrWRYpvHSzTtWsxZsAv-4" target="6rrWRYpvHSzTtWsxZsAv-17">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-11" style="edgeStyle=none;html=1;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;fillColor=#f8cecc;strokeColor=#000000;" edge="1" parent="1" source="6rrWRYpvHSzTtWsxZsAv-4" target="6rrWRYpvHSzTtWsxZsAv-3">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-15" style="edgeStyle=elbowEdgeStyle;elbow=vertical;html=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fillColor=#f8cecc;strokeColor=#000000;strokeWidth=1;" edge="1" parent="1" source="6rrWRYpvHSzTtWsxZsAv-4" target="6rrWRYpvHSzTtWsxZsAv-9">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="480" y="520" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="370" y="250"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-28" style="edgeStyle=none;html=1;exitX=1;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="6rrWRYpvHSzTtWsxZsAv-4" target="6rrWRYpvHSzTtWsxZsAv-10">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-37" style="edgeStyle=none;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="1" source="6rrWRYpvHSzTtWsxZsAv-4" target="6rrWRYpvHSzTtWsxZsAv-5">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="6rrWRYpvHSzTtWsxZsAv-4" value="StateManager" style="html=1;whiteSpace=wrap;" vertex="1" parent="1">
+                    <mxGeometry x="120" y="340" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="6rrWRYpvHSzTtWsxZsAv-5" value="AgreementManager" style="html=1;whiteSpace=wrap;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+                    <mxGeometry x="280" y="560" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="6rrWRYpvHSzTtWsxZsAv-6" value="StorageManager" style="html=1;whiteSpace=wrap;" vertex="1" parent="1">
+                    <mxGeometry x="-50" y="160" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="6rrWRYpvHSzTtWsxZsAv-7" value="RPC" style="html=1;whiteSpace=wrap;" vertex="1" parent="1">
+                    <mxGeometry x="-85" y="730" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="6rrWRYpvHSzTtWsxZsAv-8" value="Transport" style="html=1;whiteSpace=wrap;" vertex="1" parent="1">
+                    <mxGeometry x="-85" y="800" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-32" style="edgeStyle=none;html=1;exitX=0;exitY=0.75;exitDx=0;exitDy=0;entryX=1;entryY=0.75;entryDx=0;entryDy=0;" edge="1" parent="1" source="6rrWRYpvHSzTtWsxZsAv-9" target="6rrWRYpvHSzTtWsxZsAv-3">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-34" style="edgeStyle=none;html=1;exitX=0;exitY=0;exitDx=0;exitDy=0;entryX=1;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="6rrWRYpvHSzTtWsxZsAv-9" target="6rrWRYpvHSzTtWsxZsAv-4">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="450" y="280"/>
+                            <mxPoint x="230" y="280"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="6rrWRYpvHSzTtWsxZsAv-9" value="P2PSigner" style="html=1;whiteSpace=wrap;" vertex="1" parent="1">
+                    <mxGeometry x="450" y="340" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-47" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="6rrWRYpvHSzTtWsxZsAv-10" target="6rrWRYpvHSzTtWsxZsAv-6">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="580" y="445"/>
+                            <mxPoint x="580" y="160"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="6rrWRYpvHSzTtWsxZsAv-10" value="DisputeManager" style="html=1;whiteSpace=wrap;" vertex="1" parent="1">
+                    <mxGeometry x="290" y="420" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="6rrWRYpvHSzTtWsxZsAv-11" value="ProofManager" style="html=1;whiteSpace=wrap;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+                    <mxGeometry x="590" y="340" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="6rrWRYpvHSzTtWsxZsAv-12" value="Clock" style="html=1;whiteSpace=wrap;" vertex="1" parent="1">
+                    <mxGeometry x="-50" y="260" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="6rrWRYpvHSzTtWsxZsAv-13" value="Holepunch" style="html=1;whiteSpace=wrap;" vertex="1" parent="1">
+                    <mxGeometry x="-85" y="860" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="6rrWRYpvHSzTtWsxZsAv-14" value="ProfileManager" style="html=1;whiteSpace=wrap;" vertex="1" parent="1">
+                    <mxGeometry x="-255" y="730" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="6rrWRYpvHSzTtWsxZsAv-15" value="PeerProfile" style="html=1;whiteSpace=wrap;" vertex="1" parent="1">
+                    <mxGeometry x="-255" y="810" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="6rrWRYpvHSzTtWsxZsAv-16" value="EventListener" style="html=1;whiteSpace=wrap;" vertex="1" parent="1">
+                    <mxGeometry x="290" y="490" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="6rrWRYpvHSzTtWsxZsAv-17" value="EventHooks" style="html=1;whiteSpace=wrap;" vertex="1" parent="1">
+                    <mxGeometry x="-50" y="80" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-1" value="P2PManager" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" vertex="1" parent="1">
+                    <mxGeometry x="-310" y="670" width="405" height="280" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-3" value="" style="endArrow=classic;html=1;strokeWidth=3;" edge="1" parent="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="-210" y="50" as="sourcePoint"/>
+                        <mxPoint x="510" y="50" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-4" value="&lt;font style=&quot;font-size: 17px;&quot;&gt;&lt;b&gt;Order of Instantiation&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+                    <mxGeometry x="25" y="10" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-5" value="setup()" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.start_1;whiteSpace=wrap;" vertex="1" parent="1">
+                    <mxGeometry x="-310" y="190" width="100" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-29" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.582;entryY=1.04;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="6rrWRYpvHSzTtWsxZsAv-16" target="6rrWRYpvHSzTtWsxZsAv-4">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-35" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" collapsed="1" parent="1">
+                    <mxGeometry x="410" y="560" width="70" height="30" as="geometry">
+                        <mxRectangle x="410" y="560" width="140" height="310" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-36" value="The few functions that are present in AgreementManager can go to the StorageManager as helper functions and agreementManager can be removed. 90% of the code that was removed from AgreementManager was Storage logic anyway - this way we don&#39;t have more &#39;stuff&#39; that we need to pass around since all compontents more or less use storage anyway" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="7IE0TgfvVyxq2MSAQDQT-35">
+                    <mxGeometry y="30" width="140" height="280" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-38" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" collapsed="1" parent="1">
+                    <mxGeometry x="-200" y="80" width="70" height="30" as="geometry">
+                        <mxRectangle x="-200" y="80" width="140" height="180" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-39" value="Currently only the StateManager and RPC use this, but in general as we conclude the SDK all components should have their own deidcated hooks to triger so this component will be refrenced by all components more or less" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="7IE0TgfvVyxq2MSAQDQT-38">
+                    <mxGeometry y="30" width="140" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-42" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" collapsed="1" parent="1">
+                    <mxGeometry x="730" y="340" width="70" height="30" as="geometry">
+                        <mxRectangle x="730" y="340" width="140" height="180" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-43" value="Not sure is this component needed (mostly some helper functions) - will leave it here for now and see later does it make sense to be a seperate component or not" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="7IE0TgfvVyxq2MSAQDQT-42">
+                    <mxGeometry y="30" width="140" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-45" value="&lt;font style=&quot;font-size: 14px;&quot;&gt;&lt;b style=&quot;&quot;&gt;All Components&lt;/b&gt; in the dependency graph have a &lt;b style=&quot;&quot;&gt;single instance&lt;/b&gt; -&amp;gt; are efectively a &lt;b style=&quot;&quot;&gt;singleton logically&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+                    <mxGeometry x="-425" y="360" width="225" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-48" value="To Consider" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+                    <mxGeometry x="240" y="640" width="820" height="690" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-54" style="edgeStyle=none;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="7IE0TgfvVyxq2MSAQDQT-48" source="7IE0TgfvVyxq2MSAQDQT-49" target="7IE0TgfvVyxq2MSAQDQT-50">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-49" value="A" style="html=1;whiteSpace=wrap;" vertex="1" parent="7IE0TgfvVyxq2MSAQDQT-48">
+                    <mxGeometry x="440" y="200" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-55" style="edgeStyle=none;html=1;exitX=0;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="7IE0TgfvVyxq2MSAQDQT-48" source="7IE0TgfvVyxq2MSAQDQT-50" target="7IE0TgfvVyxq2MSAQDQT-49">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-57" style="edgeStyle=none;html=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="7IE0TgfvVyxq2MSAQDQT-48" source="7IE0TgfvVyxq2MSAQDQT-50" target="7IE0TgfvVyxq2MSAQDQT-52">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-59" style="edgeStyle=none;html=1;exitX=1;exitY=1;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="7IE0TgfvVyxq2MSAQDQT-48" source="7IE0TgfvVyxq2MSAQDQT-50" target="7IE0TgfvVyxq2MSAQDQT-51">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-50" value="SharedCoordinator" style="html=1;whiteSpace=wrap;" vertex="1" parent="7IE0TgfvVyxq2MSAQDQT-48">
+                    <mxGeometry x="570" y="70" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-58" style="edgeStyle=none;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="7IE0TgfvVyxq2MSAQDQT-48" source="7IE0TgfvVyxq2MSAQDQT-51" target="7IE0TgfvVyxq2MSAQDQT-50">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-51" value="C" style="html=1;whiteSpace=wrap;" vertex="1" parent="7IE0TgfvVyxq2MSAQDQT-48">
+                    <mxGeometry x="700" y="200" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-56" style="edgeStyle=none;html=1;exitX=0.25;exitY=0;exitDx=0;exitDy=0;entryX=0.25;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="7IE0TgfvVyxq2MSAQDQT-48" source="7IE0TgfvVyxq2MSAQDQT-52" target="7IE0TgfvVyxq2MSAQDQT-50">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-52" value="B" style="html=1;whiteSpace=wrap;" vertex="1" parent="7IE0TgfvVyxq2MSAQDQT-48">
+                    <mxGeometry x="570" y="200" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="7IE0TgfvVyxq2MSAQDQT-60" value="&lt;h1 style=&quot;margin-top: 0px;&quot;&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;Shared Coordinator&lt;br&gt;&lt;span style=&quot;font-size: 12px; font-weight: 400;&quot;&gt;The &lt;/span&gt;&lt;span style=&quot;font-size: 12px;&quot;&gt;dependency graph&lt;/span&gt;&lt;span style=&quot;font-size: 12px; font-weight: 400;&quot;&gt; above depicts the &lt;/span&gt;&lt;span style=&quot;font-size: 12px;&quot;&gt;actual dependencies&lt;/span&gt;&lt;span style=&quot;font-size: 12px; font-weight: 400;&quot;&gt;. All components are &lt;/span&gt;&lt;span style=&quot;font-size: 12px;&quot;&gt;logically signletons&lt;/span&gt;&lt;span style=&quot;font-size: 12px; font-weight: 400;&quot;&gt;, but we don&#39;t want to use the singleton pattern since it makes the software hard to test (dependency injection withouth including &#39;mock&#39; code in source code, parallel/concurrent test would also break due to shared global reference across all tests) and in general if we wanted to run multiple instances of the system in the same memory context, we couldn&#39;t. The alternative solution, if we wanted a &lt;/span&gt;&lt;span style=&quot;font-size: 12px;&quot;&gt;&#39;singleton like&#39;&lt;/span&gt;&lt;span style=&quot;font-size: 12px; font-weight: 400;&quot;&gt; experinece (&lt;/span&gt;&lt;span style=&quot;font-size: 12px;&quot;&gt;not passing all references everywhere&lt;/span&gt;&lt;span style=&quot;font-size: 12px; font-weight: 400;&quot;&gt;), is to use a central coordination compontent. The &lt;/span&gt;&lt;span style=&quot;font-size: 12px;&quot;&gt;SharedCoordinator&lt;/span&gt;&lt;span style=&quot;font-size: 12px; font-weight: 400;&quot;&gt; is a normal object (not a singleton) which is created at &lt;/span&gt;&lt;span style=&quot;font-size: 12px;&quot;&gt;setup&lt;/span&gt;&lt;span style=&quot;font-size: 12px; font-weight: 400;&quot;&gt;&amp;nbsp;and it creates all other &#39;singleton like objects&#39; (following the rules of the dependency graph) with a &lt;/span&gt;&lt;span style=&quot;font-size: 12px;&quot;&gt;bidiredctional reference&lt;/span&gt;&lt;span style=&quot;font-size: 12px; font-weight: 400;&quot;&gt;&amp;nbsp;to every object (every object has a reference to the SharedCoordinator and the SharedCoordinator has a reference to every object) meaning that every &#39;singleton like&#39; object can be reached through the SharedCoordinator. This way in tests we only need to do dependency injections in the SharedCoordinator and all the memory stays seperated, so we could run tests in parrallel and instantiate multiple instances of the system in the same process. All without introducing any &#39;mock&#39; stuff in the source code or having any global references.&lt;/span&gt;&lt;/span&gt;&lt;/h1&gt;" style="text;html=1;whiteSpace=wrap;overflow=hidden;rounded=0;" vertex="1" parent="7IE0TgfvVyxq2MSAQDQT-48">
+                    <mxGeometry x="20" y="80" width="410" height="610" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="Khc5GDcdEs6a0jnA4tgA" name="Networking/Discovery">
+        <mxGraphModel dx="790" dy="536" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="-3QrUwy2nLPkMSnJrA5o" name="Page-6">
+        <mxGraphModel dx="790" dy="536" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="JrNKsWsGu-dz_i6stjm7" name="Page-7">
+        <mxGraphModel dx="790" dy="536" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
