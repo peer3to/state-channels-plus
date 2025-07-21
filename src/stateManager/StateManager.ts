@@ -49,7 +49,10 @@ import {
     getActiveParticipants,
     Codec,
     Type,
-    SignatureUtils
+    SignatureUtils,
+    call,
+    isCustomContractError,
+    ContractErrors
 } from "@/utils";
 // Types
 import { AgreementFlag, ExecutionFlags, TimeConfig } from "@/types";
@@ -482,11 +485,52 @@ class StateManager {
         if (!this.agreementManager.didEveryoneSignBlock(block)) {
             console.log("Posting calldata on chain!");
             this.p2pEventHooks.onPostingCalldata?.();
-            this.stateChannelManagerContract
-                .postBlockCalldata(signedBlock, Clock.getTimeInSeconds())
-                .then((txResponse) => txResponse.wait())
+
+            await call(() =>
+                this.stateChannelManagerContract.postBlockCalldata(
+                    signedBlock,
+                    Clock.getTimeInSeconds()
+                )
+            )
+                .then(async (tx) => {
+                    console.log("Block calldata posted successfully:", tx.hash);
+                    const result = await tx.wait();
+                    if (result) {
+                        console.log(
+                            "Block calldata posted successfully on chain"
+                        );
+                    } else {
+                        console.log("Block calldata posted failed on chain");
+                    }
+                    return result;
+                })
                 .catch((error) => {
-                    console.log("Error posting block on chain", error);
+                    if (isCustomContractError(error)) {
+                        switch (error.name) {
+                            case ContractErrors.BLOCK_CALLDATA_ALREADY_POSTED:
+                                console.log(
+                                    "Block calldata already posted by another participant"
+                                );
+                                break;
+
+                            case ContractErrors.BLOCK_CALLDATA_TIMESTAMP_TOO_LATE:
+                                console.log(
+                                    "Block calldata timestamp too late"
+                                );
+                                break;
+
+                            default:
+                                console.log(
+                                    `Unhandled custom error when posting calldata: ${error.name}`
+                                );
+                                console.log(
+                                    "Error posting block on chain",
+                                    error
+                                );
+                        }
+                    } else {
+                        console.log("Error posting block on chain", error);
+                    }
                 });
         }
     }

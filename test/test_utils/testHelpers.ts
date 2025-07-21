@@ -101,13 +101,28 @@ export async function deployMathChannelProxyFixture(
     let fraudProofFacet = await fraudProofFacetFactory.deploy();
     let fraudProofFacetAddress = await fraudProofFacet.getAddress();
 
-    //Deploy StateSnapshotFacet
-    let stateSnapshotFacetFactory = await _ethers.getContractFactory(
-        "StateSnapshotFacet",
+    //Deploy DisputeFraudProofFacet
+    let disputeFraudProofFacetFactory = await _ethers.getContractFactory(
+        "DisputeFraudProofFacet",
         { libraries: { StateChannelUtilLibrary: libraryAddress } }
     );
+    let disputeFraudProofFacet = await disputeFraudProofFacetFactory.deploy();
+    let disputeFraudProofFacetAddress =
+        await disputeFraudProofFacet.getAddress();
+
+    //Deploy StateSnapshotFacet
+    let stateSnapshotFacetFactory =
+        await _ethers.getContractFactory("StateSnapshotFacet");
     let stateSnapshotFacet = await stateSnapshotFacetFactory.deploy();
     let stateSnapshotFacetAddress = await stateSnapshotFacet.getAddress();
+
+    //Deploy JoinChannelFacet
+    let joinChannelFacetFactory = await _ethers.getContractFactory(
+        "JoinChannelFacet",
+        { libraries: { StateChannelUtilLibrary: libraryAddress } }
+    );
+    let joinChannelFacet = await joinChannelFacetFactory.deploy();
+    let joinChannelFacetAddress = await joinChannelFacet.getAddress();
 
     //State machine logic
     let mathSmFactory = await _ethers.getContractFactory("MathStateMachine");
@@ -122,7 +137,9 @@ export async function deployMathChannelProxyFixture(
         await mathContactInstance.getAddress(),
         disputeManagerFacetAddress,
         fraudProofFacetAddress,
-        stateSnapshotFacetAddress
+        disputeFraudProofFacetAddress,
+        stateSnapshotFacetAddress,
+        joinChannelFacetAddress
     );
 
     return {
