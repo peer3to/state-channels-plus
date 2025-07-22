@@ -23,7 +23,7 @@ import {
     Timestamp
 } from "@/types/types";
 import { Block } from "@/models";
-
+import { SortOrder } from "@/storage/BlockStorage";
 interface ValidationResult {
     success: boolean;
     flag: ExecutionFlags;
@@ -290,13 +290,8 @@ export default class ValidationService {
 
     /* objective / chain timestamp */
     private async isGoodTimestamp(blk: Block): Promise<boolean> {
-        const latestTxTs = this.agreementManager.getLatestBlockTimestamp(
-            blk.forkId
-        );
-        const initialReferenceTime = this.agreementManager.getLatestTimestamp(
-            blk.forkId,
-            blk.height
-        );
+        const latestTxTs = this.getLatestBlockTimestamp(blk.forkId);
+        const initialReferenceTime = blk.relevantTimestamp;
 
         if (blk.timestamp < latestTxTs) throw new Error("Not implemented");
 
@@ -353,6 +348,29 @@ export default class ValidationService {
         );
 
         return signer === block.author;
+    }
+
+    /* Returns the latest block timestamp for a given fork */
+    private getLatestBlockTimestamp(forkId: ForkId): Timestamp {
+        // Get the genesis timestamp from the genesis snapshot
+        const genesisSnapshot =
+            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
+        const genesisTimestamp = genesisSnapshot.snapshot.timestamp;
+        // Get all blocks for the fork in descending order
+        const blocksIterator = this.storage.blocks.getBlocksByForkId(
+            forkId,
+            SortOrder.DESC
+        );
+        const firstBlockEntry = blocksIterator.next().value;
+
+        if (!firstBlockEntry) {
+            return genesisTimestamp;
+        }
+        const block = Block.decode(
+            firstBlockEntry.blockConfirmation.signedBlock.encodedBlock
+        );
+
+        return block.timestamp;
     }
 }
 
