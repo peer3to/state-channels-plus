@@ -68,7 +68,7 @@ export default class ValidationService {
             return pastFork();
 
         // Check for duplicate blocks
-        if (this.agreementManager.isBlockDuplicate(blk)) return duplicate();
+        if (this.isBlockDuplicate(blk)) return duplicate();
 
         // Check for future blocks
         const isFutureFork = blk.forkId > this.getforkId();
@@ -233,7 +233,7 @@ export default class ValidationService {
 
     /*────────────────────── PRIVATE HELPERS ─────────────────────*/
 
-    /* Returns true if the block is in the canonical chain (by hash and equality) */
+    /* Returns true if the block is in the chain (by hash and equality) */
     private isBlockInChain(block: Block): boolean {
         const blockEntry = this.storage.blocks.getBlockEntry(block.hash);
         return !!(
@@ -242,6 +242,30 @@ export default class ValidationService {
                 blockEntry.blockConfirmation.signedBlock.encodedBlock
             ).equals(block)
         );
+    }
+
+    /* Returns true if the block is in the chain or in the queue (duplicate) */
+    private isBlockDuplicate(block: Block): boolean {
+        // Check chain
+        if (this.storage.blocks.getBlockEntry(block.hash)) {
+            return true;
+        }
+        // Check queue with dummy struct
+        const dummyBlockConfirmation = {
+            signedBlock: {
+                encodedBlock: block.encode(),
+                signature: "0x" // dummy signature, not used
+            },
+            signatures: []
+        };
+        if (
+            this.storage.queues.isBlockQueued(dummyBlockConfirmation, {
+                hash: block.hash
+            })
+        ) {
+            return true;
+        }
+        return false;
     }
 
     /* subjective time window */
