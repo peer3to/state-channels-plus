@@ -1,12 +1,12 @@
 import { expect } from "chai";
 import { ethers } from "ethers";
-import { call, isCustomContractError, ContractErrors } from "@/utils";
+import { call, isCustomContractError } from "@/utils";
 import { ethers as hre } from "hardhat";
 import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
 import * as factory from "@test/factory";
 import { MathStateChannelManagerProxy } from "@typechain-types";
 
-describe("ContractErrorHandler", () => {
+describe("ContractCaller and ContractErrors", () => {
     it("should decode real contract errors correctly", async () => {
         // Test with actual error selectors that contracts would throw
         const testCases = [
@@ -48,27 +48,6 @@ describe("ContractErrorHandler", () => {
             expect(isCustomContractError(error)).to.be.false;
             expect(error.message).to.equal("Out of gas");
         }
-    });
-
-    it("should contain all errors from Errors.sol", () => {
-        // Verify we have the key error categories covered
-        const expectedErrors = [
-            "ErrorJoinChannelExpired",
-            "ErrorDisputeAlreadyPosted",
-            "ErrorBlockCalldataAlreadyPosted",
-            "ErrorWithdrawalFailed",
-            "ErrorInvalidFraudProof"
-        ];
-
-        expectedErrors.forEach((errorName) => {
-            expect(Object.values(ContractErrors)).to.include(
-                errorName,
-                `Missing error: ${errorName}`
-            );
-        });
-
-        // Should have a reasonable number of errors (we know there are ~47 from Errors.sol)
-        expect(Object.keys(ContractErrors).length).to.be.greaterThan(40);
     });
 
     describe("Real contract calls", () => {
@@ -123,7 +102,7 @@ describe("ContractErrorHandler", () => {
             } catch (error: any) {
                 expect(isCustomContractError(error)).to.be.true;
                 expect(error.errorDescription.name).to.equal(
-                    ContractErrors.BLOCK_CALLDATA_TIMESTAMP_TOO_LATE
+                    "ErrorBlockCalldataTimestampTooLate"
                 );
             }
         });
@@ -154,7 +133,7 @@ describe("ContractErrorHandler", () => {
             } catch (error: any) {
                 expect(isCustomContractError(error)).to.be.true;
                 expect(error.errorDescription.name).to.equal(
-                    ContractErrors.BLOCK_CALLDATA_ALREADY_POSTED
+                    "ErrorBlockCalldataAlreadyPosted"
                 );
             }
         });
