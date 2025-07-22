@@ -6,9 +6,9 @@ import "../types/DataTypes.sol";
 
 /**
  * @title LocalDiamond
- * @dev Local implementation of the diamond proxy for testing and local EVM environments.
+ * @dev Local implementation of the diamond proxy.
  * This contract provides storage sync methods and no-op asset management for local testing.
- * Focuses on dispute game functionality, not asset management.
+ *
  */
 contract LocalDiamond is AStateChannelManagerProxy {
     // Events for storage sync

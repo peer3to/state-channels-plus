@@ -2,7 +2,6 @@ import { ContractFactory, JsonRpcProvider, Wallet } from "ethers";
 import { AStateChannelManagerProxy } from "../../typechain-types/contracts/V1/StateChannelDiamondProxy/AStateChannelManagerProxy";
 import { AStateMachine } from "../../typechain-types/contracts/V1/AStateMachine";
 
-// Load artifacts manually for pure ethers
 import StateChannelUtilLibraryArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelUtilLibrary.sol/StateChannelUtilLibrary.json";
 import DisputeManagerFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol/DisputeManagerFacet.json";
 import FraudProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol/FraudProofFacet.json";
@@ -24,9 +23,6 @@ export interface DeploymentConfig {
     rpcUrl?: string;
 }
 
-/**
- * Deploy the StateChannelUtilLibrary first since other contracts depend on it
- */
 async function deployStateChannelUtilLibrary(config: DeploymentConfig) {
     const StateChannelUtilLibraryFactory = new ContractFactory(
         StateChannelUtilLibraryArtifact.abi,
@@ -41,19 +37,12 @@ async function deployStateChannelUtilLibrary(config: DeploymentConfig) {
 }
 
 /**
- * UNIVERSAL deployment function that deploys all facets and the diamond proxy
- * @param consumerFacetAddress The address of the consumer facet implementation (or 0x00 for local)
- * @param config Deployment configuration with provider and signer
- * @returns DeploymentResult containing diamond and state machine
+ * Deploy all facets with linked library
  */
-export async function deployUniversal(
-    consumerFacetAddress: string,
-    config: DeploymentConfig
-): Promise<DeploymentResult> {
-    // Deploy the library first since other contracts depend on it
-    const stateChannelUtilLibrary = await deployStateChannelUtilLibrary(config);
-    const libraryAddress = await stateChannelUtilLibrary.getAddress();
-
+async function deployAllFacets(
+    config: DeploymentConfig,
+    libraryAddress: string
+) {
     // Library placeholder that needs to be replaced in bytecode
     const placeholder = new RegExp(
         "__\\$a7bb0527a0afa4608b604803fa485abfbd\\$__",
@@ -124,7 +113,16 @@ export async function deployUniversal(
     const joinChannelFacet = await JoinChannelFacetFactory.deploy();
     await joinChannelFacet.waitForDeployment();
 
-    // Deploy state machine (no library dependency)
+    return {
+        disputeManagerFacet,
+        fraudProofFacet,
+        disputeFraudProofFacet,
+        stateSnapshotFacet,
+        joinChannelFacet
+    };
+}
+
+async function deployStateMachine(config: DeploymentConfig) {
     const MathStateMachineFactory = new ContractFactory(
         MathStateMachineArtifact.abi,
         MathStateMachineArtifact.bytecode,
@@ -132,42 +130,69 @@ export async function deployUniversal(
     );
     const stateMachine = await MathStateMachineFactory.deploy(5000000); // 5M gas limit
     await stateMachine.waitForDeployment();
+    return stateMachine;
+}
 
-    // Deploy diamond - conditional logic for LocalDiamond vs AStateChannelManagerProxy
+export async function deploy(
+    consumerFacetAddress: string,
+    config: DeploymentConfig
+): Promise<DeploymentResult> {
+    const stateChannelUtilLibrary = await deployStateChannelUtilLibrary(config);
+    const libraryAddress = await stateChannelUtilLibrary.getAddress();
 
-    let diamond;
-    if (consumerFacetAddress === "0x0000000000000000000000000000000000000000") {
-        // Deploy LocalDiamond for testing (no consumer facet)
-        const LocalDiamondFactory = new ContractFactory(
-            LocalDiamondArtifact.abi,
-            LocalDiamondArtifact.bytecode,
-            config.signer
-        );
-        diamond = await LocalDiamondFactory.deploy(
-            await stateMachine.getAddress(),
-            await disputeManagerFacet.getAddress(),
-            await fraudProofFacet.getAddress(),
-            await disputeFraudProofFacet.getAddress(),
-            await stateSnapshotFacet.getAddress(),
-            await joinChannelFacet.getAddress()
-        );
-    } else {
-        // Deploy regular AStateChannelManagerProxy with consumer facet
-        const AStateChannelManagerProxyFactory = new ContractFactory(
-            AStateChannelManagerProxyArtifact.abi,
-            AStateChannelManagerProxyArtifact.bytecode,
-            config.signer
-        );
-        diamond = await AStateChannelManagerProxyFactory.deploy(
-            await stateMachine.getAddress(),
-            await disputeManagerFacet.getAddress(),
-            await fraudProofFacet.getAddress(),
-            await disputeFraudProofFacet.getAddress(),
-            await stateSnapshotFacet.getAddress(),
-            await joinChannelFacet.getAddress(),
-            consumerFacetAddress
-        );
-    }
+    const facets = await deployAllFacets(config, libraryAddress);
+
+    const stateMachine = await deployStateMachine(config);
+
+    // Deploy AStateChannelManagerProxy with consumer facet
+    const AStateChannelManagerProxyFactory = new ContractFactory(
+        AStateChannelManagerProxyArtifact.abi,
+        AStateChannelManagerProxyArtifact.bytecode,
+        config.signer
+    );
+    const diamond = await AStateChannelManagerProxyFactory.deploy(
+        await stateMachine.getAddress(),
+        await facets.disputeManagerFacet.getAddress(),
+        await facets.fraudProofFacet.getAddress(),
+        await facets.disputeFraudProofFacet.getAddress(),
+        await facets.stateSnapshotFacet.getAddress(),
+        await facets.joinChannelFacet.getAddress(),
+        consumerFacetAddress
+    );
+
+    await diamond.waitForDeployment();
+
+    const result: DeploymentResult = {
+        diamond: diamond as unknown as AStateChannelManagerProxy,
+        stateMachine: stateMachine as unknown as AStateMachine
+    };
+
+    return result;
+}
+
+export async function deployLocalDiamond(
+    config: DeploymentConfig
+): Promise<DeploymentResult> {
+    const stateChannelUtilLibrary = await deployStateChannelUtilLibrary(config);
+    const libraryAddress = await stateChannelUtilLibrary.getAddress();
+
+    const facets = await deployAllFacets(config, libraryAddress);
+
+    const stateMachine = await deployStateMachine(config);
+
+    const LocalDiamondFactory = new ContractFactory(
+        LocalDiamondArtifact.abi,
+        LocalDiamondArtifact.bytecode,
+        config.signer
+    );
+    const diamond = await LocalDiamondFactory.deploy(
+        await stateMachine.getAddress(),
+        await facets.disputeManagerFacet.getAddress(),
+        await facets.fraudProofFacet.getAddress(),
+        await facets.disputeFraudProofFacet.getAddress(),
+        await facets.stateSnapshotFacet.getAddress(),
+        await facets.joinChannelFacet.getAddress()
+    );
 
     await diamond.waitForDeployment();
 
