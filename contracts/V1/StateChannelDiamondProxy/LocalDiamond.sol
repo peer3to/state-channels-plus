@@ -58,12 +58,11 @@ contract LocalDiamond is AStateChannelManagerProxy {
      * @param slot The storage slot to read
      * @return The value stored at the slot
      */
-    function getStorageSlot(bytes32 slot) external returns (bytes32) {
+    function getStorageSlot(bytes32 slot) external view returns (bytes32) {
         bytes32 value;
         assembly {
             value := sload(slot)
         }
-        emit StorageGet(slot, value);
         return value;
     }
 
@@ -90,7 +89,7 @@ contract LocalDiamond is AStateChannelManagerProxy {
      * @param slots Array of storage slots to read
      * @return Array of values stored at the slots
      */
-    function getStorageSlots(bytes32[] calldata slots) external returns (bytes32[] memory) {
+    function getStorageSlots(bytes32[] calldata slots) external view returns (bytes32[] memory) {
         bytes32[] memory values = new bytes32[](slots.length);
 
         for (uint256 i = 0; i < slots.length; i++) {
@@ -100,7 +99,6 @@ contract LocalDiamond is AStateChannelManagerProxy {
                 value := sload(slot)
             }
             values[i] = value;
-            emit StorageGet(slot, value);
         }
 
         return values;
