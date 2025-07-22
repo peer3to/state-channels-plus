@@ -1,9 +1,9 @@
 import { ErrorDescription, ethers } from "ethers";
-import { ERROR_ABI } from "./ContractErrors";
+import { errorAbis } from "./ContractErrors";
 import { Bytes } from "@/types/types";
 
 // interface for parsing errors
-const errorInterface = new ethers.Interface(ERROR_ABI);
+const errorInterface = new ethers.Interface(errorAbis);
 
 export interface CustomError {
     name: string;

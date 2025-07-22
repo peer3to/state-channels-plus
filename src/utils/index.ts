@@ -15,5 +15,5 @@ export * from "./SignatureUtils";
 export * from "./participantUtils";
 export * from "./config";
 export * from "./hash";
-export * from "./ContractErrorHandler";
 export * from "./ContractErrors";
+export * from "./contractCaller";

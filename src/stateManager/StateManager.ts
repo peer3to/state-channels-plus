@@ -51,8 +51,7 @@ import {
     Type,
     SignatureUtils,
     call,
-    isCustomContractError,
-    ContractErrors
+    isCustomContractError
 } from "@/utils";
 // Types
 import { AgreementFlag, ExecutionFlags, TimeConfig } from "@/types";
@@ -507,28 +506,10 @@ class StateManager {
                 })
                 .catch((error) => {
                     if (isCustomContractError(error)) {
-                        switch (error.name) {
-                            case ContractErrors.BLOCK_CALLDATA_ALREADY_POSTED:
-                                console.log(
-                                    "Block calldata already posted by another participant"
-                                );
-                                break;
-
-                            case ContractErrors.BLOCK_CALLDATA_TIMESTAMP_TOO_LATE:
-                                console.log(
-                                    "Block calldata timestamp too late"
-                                );
-                                break;
-
-                            default:
-                                console.log(
-                                    `Unhandled custom error when posting calldata: ${error.name}`
-                                );
-                                console.log(
-                                    "Error posting block on chain",
-                                    error
-                                );
-                        }
+                        console.log(
+                            "Error posting block on chain",
+                            error.errorDescription
+                        );
                     } else {
                         console.log("Error posting block on chain", error);
                     }
