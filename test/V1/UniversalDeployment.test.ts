@@ -8,17 +8,25 @@ import {
 } from "../../typechain-types";
 import {
     deployUniversal,
-    deployMathSystem,
-    deployLocalSystem
+    createDeploymentConfig
 } from "../../scripts/V1/deployUniversal";
 
 describe("Universal Deployment System", () => {
     let deployer: any;
     let user1: any;
     let user2: any;
+    let deploymentConfig: any;
 
     beforeEach(async () => {
         [deployer, user1, user2] = await ethers.getSigners();
+
+        // Create deployment config for testing
+        const provider = ethers.provider;
+        deploymentConfig = {
+            provider,
+            signer: deployer,
+            rpcUrl: "http://localhost:8545" // Hardhat default
+        };
     });
 
     describe("Consumer Facet Pattern", () => {
@@ -27,9 +35,16 @@ describe("Universal Deployment System", () => {
         let stateMachine: AStateMachine;
 
         beforeEach(async () => {
-            // Deploy Math system
-            const result = await deployMathSystem();
-            mathConsumerFacet = result.consumerFacet as MathConsumerFacet;
+            // Deploy Math system using universal pattern
+            const MathConsumerFacetFactory =
+                await ethers.getContractFactory("MathConsumerFacet");
+            mathConsumerFacet = await MathConsumerFacetFactory.deploy();
+            await mathConsumerFacet.waitForDeployment();
+
+            const result = await deployUniversal(
+                await mathConsumerFacet.getAddress(),
+                deploymentConfig
+            );
             diamond = result.diamond;
             stateMachine = result.stateMachine;
         });
@@ -150,7 +165,11 @@ describe("Universal Deployment System", () => {
         let stateMachine: AStateMachine;
 
         beforeEach(async () => {
-            const result = await deployLocalSystem();
+            // Use deployUniversal with 0x00 for local testing
+            const result = await deployUniversal(
+                ethers.ZeroAddress,
+                deploymentConfig
+            );
             localDiamond = result.diamond as LocalDiamond;
             stateMachine = result.stateMachine;
         });
@@ -242,7 +261,8 @@ describe("Universal Deployment System", () => {
 
             // Deploy universal system with the mock consumer facet
             const result = await deployUniversal(
-                await mockConsumerFacet.getAddress()
+                await mockConsumerFacet.getAddress(),
+                deploymentConfig
             );
 
             expect(await result.diamond.getAddress()).to.not.equal(
@@ -251,40 +271,34 @@ describe("Universal Deployment System", () => {
             expect(await result.stateMachine.getAddress()).to.not.equal(
                 ethers.ZeroAddress
             );
-            expect(result.consumerFacet).to.not.be.null;
         });
 
-        it("should deploy complete Math system", async () => {
-            const result = await deployMathSystem();
+        it("should deploy complete Math system using universal pattern", async () => {
+            // Deploy consumer facet first
+            const MathConsumerFacetFactory =
+                await ethers.getContractFactory("MathConsumerFacet");
+            const consumerFacet = await MathConsumerFacetFactory.deploy();
+            await consumerFacet.waitForDeployment();
+
+            // Deploy universal system
+            const result = await deployUniversal(
+                await consumerFacet.getAddress(),
+                deploymentConfig
+            );
 
             expect(await result.diamond.getAddress()).to.not.equal(
                 ethers.ZeroAddress
             );
             expect(await result.stateMachine.getAddress()).to.not.equal(
-                ethers.ZeroAddress
-            );
-            expect(await result.consumerFacet.getAddress()).to.not.equal(
-                ethers.ZeroAddress
-            );
-            expect(await result.disputeManagerFacet.getAddress()).to.not.equal(
-                ethers.ZeroAddress
-            );
-            expect(await result.fraudProofFacet.getAddress()).to.not.equal(
-                ethers.ZeroAddress
-            );
-            expect(
-                await result.disputeFraudProofFacet.getAddress()
-            ).to.not.equal(ethers.ZeroAddress);
-            expect(await result.stateSnapshotFacet.getAddress()).to.not.equal(
-                ethers.ZeroAddress
-            );
-            expect(await result.joinChannelFacet.getAddress()).to.not.equal(
                 ethers.ZeroAddress
             );
         });
 
         it("should deploy complete Local system", async () => {
-            const result = await deployLocalSystem();
+            const result = await deployUniversal(
+                ethers.ZeroAddress,
+                deploymentConfig
+            );
 
             expect(await result.diamond.getAddress()).to.not.equal(
                 ethers.ZeroAddress
@@ -292,7 +306,6 @@ describe("Universal Deployment System", () => {
             expect(await result.stateMachine.getAddress()).to.not.equal(
                 ethers.ZeroAddress
             );
-            expect(result.consumerFacet).to.be.null; // LocalDiamond doesn't use consumer facet
         });
     });
 
@@ -301,25 +314,24 @@ describe("Universal Deployment System", () => {
             // Deploy two different consumer facets
             const MathConsumerFacetFactory =
                 await ethers.getContractFactory("MathConsumerFacet");
-            const mathConsumerFacet1 = await MathConsumerFacetFactory.deploy();
-            const mathConsumerFacet2 = await MathConsumerFacetFactory.deploy();
+            const consumerFacet1 = await MathConsumerFacetFactory.deploy();
+            await consumerFacet1.waitForDeployment();
+
+            const consumerFacet2 = await MathConsumerFacetFactory.deploy();
+            await consumerFacet2.waitForDeployment();
 
             // Deploy two diamonds with different consumer facets
             const result1 = await deployUniversal(
-                await mathConsumerFacet1.getAddress()
+                await consumerFacet1.getAddress(),
+                deploymentConfig
             );
             const result2 = await deployUniversal(
-                await mathConsumerFacet2.getAddress()
+                await consumerFacet2.getAddress(),
+                deploymentConfig
             );
 
             expect(await result1.diamond.getAddress()).to.not.equal(
                 await result2.diamond.getAddress()
-            );
-            expect(await result1.consumerFacet.getAddress()).to.equal(
-                await mathConsumerFacet1.getAddress()
-            );
-            expect(await result2.consumerFacet.getAddress()).to.equal(
-                await mathConsumerFacet2.getAddress()
             );
         });
 
@@ -327,9 +339,16 @@ describe("Universal Deployment System", () => {
             // Test that the diamond handles dispute game logic
             // while consumer facet handles asset management logic
 
-            const result = await deployMathSystem();
+            const MathConsumerFacetFactory =
+                await ethers.getContractFactory("MathConsumerFacet");
+            const consumerFacet = await MathConsumerFacetFactory.deploy();
+            await consumerFacet.waitForDeployment();
+
+            const result = await deployUniversal(
+                await consumerFacet.getAddress(),
+                deploymentConfig
+            );
             const diamond = result.diamond;
-            const consumerFacet = result.consumerFacet;
 
             // Diamond should handle dispute-related operations
             const channelId = ethers.keccak256(
