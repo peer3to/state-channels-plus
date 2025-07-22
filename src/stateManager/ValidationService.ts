@@ -81,7 +81,7 @@ export default class ValidationService {
 
         // Validate past block in current fork
         if (blk.height < this.getNextHeight()) {
-            const agreementFlag = this.agreementManager.checkBlock(signedBlock);
+            const agreementFlag = this.checkBlock(signedBlock);
 
             if (
                 agreementFlag === AgreementFlag.DOUBLE_SIGN ||
@@ -371,6 +371,59 @@ export default class ValidationService {
         );
 
         return block.timestamp;
+    }
+    /* Returns the agreement flag for a given block after validation */
+    private checkBlock(signed: SignedBlockStruct): AgreementFlag {
+        const block = Block.decode(signed.encodedBlock);
+        const { forkId, height } = block.coordinates;
+        const participant = block.author;
+
+        // 1 – valid signature?
+        const signer = block.getSignerAddress(signed.signature);
+        if (signer !== participant) return AgreementFlag.INVALID_SIGNATURE;
+
+        // 2 – duplicate?
+        if (this.isBlockDuplicate(block)) return AgreementFlag.DUPLICATE;
+
+        // 3 – known fork?
+        const genesisSnapshot =
+            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
+        if (!genesisSnapshot) return AgreementFlag.NOT_READY;
+
+        // 4 – double sign / incorrect data vs existing block
+        const existingEntry = this.storage.blocks.getBlockEntry(forkId, height);
+        if (existingEntry) {
+            const existingBlock = Block.decode(
+                existingEntry.blockConfirmation.signedBlock.encodedBlock
+            );
+            return existingBlock.author === participant
+                ? AgreementFlag.DOUBLE_SIGN
+                : AgreementFlag.INCORRECT_DATA;
+        }
+
+        // 5 – first block of fork genesis?
+        if (height === 0) {
+            // Get the expected previous block hash from the genesis snapshot
+            // (Assume you have a way to get the encoded genesis state for the fork)
+            const expectedPrev = ethers.keccak256(
+                (genesisSnapshot as any).snapshot.snapshotData
+                    .stateMachineStateHash
+            );
+            return block.previousBlockHash === expectedPrev
+                ? AgreementFlag.READY
+                : AgreementFlag.INCORRECT_DATA;
+        }
+
+        // 6 – compare with previous block in chain
+        const prevEntry = this.storage.blocks.getBlockEntry(forkId, height - 1);
+        if (!prevEntry) return AgreementFlag.NOT_READY;
+
+        const prevBlock = Block.decode(
+            prevEntry.blockConfirmation.signedBlock.encodedBlock
+        );
+        return prevBlock.hash === block.previousBlockHash
+            ? AgreementFlag.READY
+            : AgreementFlag.INCORRECT_DATA;
     }
 }
 
