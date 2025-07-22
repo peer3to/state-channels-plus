@@ -8,6 +8,7 @@ describe("Universal Deployment", () => {
     let deployer: any;
     let config: any;
     let libraryAddress: string;
+    let mathStateMachineDeployTx: any;
 
     before(async () => {
         [deployer] = await ethers.getSigners();
@@ -23,11 +24,23 @@ describe("Universal Deployment", () => {
         );
         const library = await StateChannelUtilLibrary.deploy();
         libraryAddress = await library.getAddress();
+
+        // Create MathStateMachine deployment transaction
+        const MathStateMachine =
+            await ethers.getContractFactory("MathStateMachine");
+        mathStateMachineDeployTx = {
+            interface: MathStateMachine.interface,
+            bytecode: MathStateMachine.bytecode,
+            constructorArgs: [5000000]
+        };
     });
 
     describe("Local Diamond", () => {
         it("deploys successfully", async () => {
-            const result = await deployLocalDiamond(config);
+            const result = await deployLocalDiamond(
+                mathStateMachineDeployTx,
+                config
+            );
 
             expect(await result.diamond.getAddress()).to.not.equal(
                 ethers.ZeroAddress
@@ -38,7 +51,10 @@ describe("Universal Deployment", () => {
         });
 
         it("provides storage functionality", async () => {
-            const result = await deployLocalDiamond(config);
+            const result = await deployLocalDiamond(
+                mathStateMachineDeployTx,
+                config
+            );
             const localDiamond = result.diamond as LocalDiamond;
 
             const testSlot = ethers.keccak256(ethers.toUtf8Bytes("test-slot"));
@@ -65,6 +81,7 @@ describe("Universal Deployment", () => {
 
             const result = await deploy(
                 await consumerFacet.getAddress(),
+                mathStateMachineDeployTx,
                 config
             );
 
@@ -95,10 +112,12 @@ describe("Universal Deployment", () => {
 
             const result1 = await deploy(
                 await consumerFacet1.getAddress(),
+                mathStateMachineDeployTx,
                 config
             );
             const result2 = await deploy(
                 await consumerFacet2.getAddress(),
+                mathStateMachineDeployTx,
                 config
             );
 
@@ -113,7 +132,11 @@ describe("Universal Deployment", () => {
         it("fails with invalid consumer facet", async () => {
             const fakeAddress = "0x1234567890123456789012345678901234567890";
 
-            const result = await deploy(fakeAddress, config);
+            const result = await deploy(
+                fakeAddress,
+                mathStateMachineDeployTx,
+                config
+            );
 
             const channelId = ethers.keccak256(
                 ethers.toUtf8Bytes("test-channel")

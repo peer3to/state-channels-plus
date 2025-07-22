@@ -122,19 +122,25 @@ async function deployAllFacets(
     };
 }
 
-async function deployStateMachine(config: DeploymentConfig) {
-    const MathStateMachineFactory = new ContractFactory(
-        MathStateMachineArtifact.abi,
-        MathStateMachineArtifact.bytecode,
+async function deployStateMachine(
+    stateMachineDeployTx: any,
+    config: DeploymentConfig
+) {
+    const StateMachineFactory = new ContractFactory(
+        stateMachineDeployTx.interface,
+        stateMachineDeployTx.bytecode,
         config.signer
     );
-    const stateMachine = await MathStateMachineFactory.deploy(5000000); // 5M gas limit
+
+    const constructorArgs = stateMachineDeployTx.constructorArgs;
+    const stateMachine = await StateMachineFactory.deploy(...constructorArgs);
     await stateMachine.waitForDeployment();
     return stateMachine;
 }
 
 export async function deploy(
     consumerFacetAddress: string,
+    stateMachineDeployTx: any,
     config: DeploymentConfig
 ): Promise<DeploymentResult> {
     const stateChannelUtilLibrary = await deployStateChannelUtilLibrary(config);
@@ -142,7 +148,7 @@ export async function deploy(
 
     const facets = await deployAllFacets(config, libraryAddress);
 
-    const stateMachine = await deployStateMachine(config);
+    const stateMachine = await deployStateMachine(stateMachineDeployTx, config);
 
     // Deploy AStateChannelManagerProxy with consumer facet
     const AStateChannelManagerProxyFactory = new ContractFactory(
@@ -171,6 +177,7 @@ export async function deploy(
 }
 
 export async function deployLocalDiamond(
+    stateMachineDeployTx: any,
     config: DeploymentConfig
 ): Promise<DeploymentResult> {
     const stateChannelUtilLibrary = await deployStateChannelUtilLibrary(config);
@@ -178,7 +185,7 @@ export async function deployLocalDiamond(
 
     const facets = await deployAllFacets(config, libraryAddress);
 
-    const stateMachine = await deployStateMachine(config);
+    const stateMachine = await deployStateMachine(stateMachineDeployTx, config);
 
     const LocalDiamondFactory = new ContractFactory(
         LocalDiamondArtifact.abi,
