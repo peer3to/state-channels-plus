@@ -32,6 +32,7 @@ interface ValidationResult {
 
 export default class ValidationService {
     constructor(
+        private readonly storage: Storage,
         private readonly agreementManager: AgreementManager,
         private readonly stateMachine: AStateMachine,
         private readonly disputeHandler: DisputeHandler,
@@ -126,12 +127,12 @@ export default class ValidationService {
         if (this.isPastFork(blk.forkId)) return pastFork();
 
         // Ensure block in chain
-        if (!this.agreementManager.isBlockInChain(blk)) {
+        if (!this.isBlockInChain(blk)) {
             const flag = await this.onSignedBlock(signed, blk);
 
             if (flag === ExecutionFlags.DUPLICATE) {
                 // Possibly it has become part of the chain now
-                if (!this.agreementManager.isBlockInChain(blk)) {
+                if (!this.isBlockInChain(blk)) {
                     return { success: false, flag: ExecutionFlags.NOT_READY };
                 }
             } else if (flag !== ExecutionFlags.SUCCESS) {
@@ -231,6 +232,17 @@ export default class ValidationService {
     }
 
     /*────────────────────── PRIVATE HELPERS ─────────────────────*/
+
+    /* Returns true if the block is in the canonical chain (by hash and equality) */
+    private isBlockInChain(block: Block): boolean {
+        const blockEntry = this.storage.blocks.getBlockEntry(block.hash);
+        return !!(
+            blockEntry &&
+            Block.decode(
+                blockEntry.blockConfirmation.signedBlock.encodedBlock
+            ).equals(block)
+        );
+    }
 
     /* subjective time window */
     private async isEnoughTimeSubjective(
