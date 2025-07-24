@@ -187,7 +187,7 @@ export default class ValidationService {
         if (!this.isChannelOpen()) return notReady();
 
         // Check if dispute exists
-        if (!this.agreementManager.isDisputeKnown(disputeStruct)) {
+        if (!this.isDisputeKnown(disputeStruct)) {
             // Dispute not found - could be gossip arrived before event
             // Return NOT_READY to allow retry
             return notReady();
@@ -232,6 +232,13 @@ export default class ValidationService {
     }
 
     /*────────────────────── PRIVATE HELPERS ─────────────────────*/
+
+    /* Returns true if the dispute is known */
+    private isDisputeKnown(dispute: DisputeStruct): boolean {
+        const encoded = Codec.encode(dispute, Type.Dispute);
+        const hash = ethers.keccak256(encoded);
+        return this.storage.disputes.getDisputeConfirmation(hash) !== undefined;
+    }
 
     /* Returns true if the block is in the chain (by hash and equality) */
     private isBlockInChain(block: Block): boolean {
