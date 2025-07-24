@@ -246,8 +246,7 @@ export default class ValidationService {
 
     /* Returns true if the block is in the chain or in the queue (duplicate) */
     private isBlockDuplicate(block: Block): boolean {
-        // Check chain
-        if (this.storage.blocks.getBlockEntry(block.hash)) {
+        if (this.isBlockInChain(block)) {
             return true;
         }
         // Check queue with dummy struct
