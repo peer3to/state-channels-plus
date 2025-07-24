@@ -357,7 +357,7 @@ export default class ValidationService {
             this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
         const genesisTimestamp = genesisSnapshot.snapshot.timestamp;
         // Get all blocks for the fork in descending order
-        const blocksIterator = this.storage.blocks.getBlocksByForkId(
+        const blocksIterator = this.storage.blocks.getIterator(
             forkId,
             SortOrder.DESC
         );
