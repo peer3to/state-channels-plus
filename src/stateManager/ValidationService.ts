@@ -166,12 +166,15 @@ export default class ValidationService {
 
         // Subjective timestamp validation (requireS)
         if (
-            Math.abs(Clock.getTimeInSeconds() - blk.timestamp) >=
-            this.timeCfg.agreementTime
-        )
-            return timestampTooOld();
-
-        // }
+            blk.onChainTimestamp === undefined ||
+            blk.onChainTimestamp <= blk.timestamp
+        ) {
+            if (
+                Math.abs(Clock.getTimeInSeconds() - blk.timestamp) >=
+                this.timeCfg.agreementTime
+            )
+                return timestampTooOld();
+        }
 
         // Validate block producer
         const nextToWrite = await this.stateMachine.getNextToWrite();
