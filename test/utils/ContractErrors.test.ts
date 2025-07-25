@@ -5,6 +5,32 @@ import { ethers as hre } from "hardhat";
 import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
 import * as factory from "@test/factory";
 import { MathStateChannelManagerProxy } from "@typechain-types";
+import { artifacts, errorAbis } from "@/utils/ContractErrors";
+
+describe("artifacts loading", () => {
+    it("should load all required facet artifacts", () => {
+        expect(artifacts).to.be.an("array");
+        expect(artifacts.length).to.be.greaterThan(0);
+
+        // Check that each artifact has the expected structure
+        artifacts.forEach((artifact, index) => {
+            expect(artifact).to.have.property("abi");
+            expect(artifact.abi).to.be.an("array");
+            expect(artifact).to.have.property("contractName");
+            expect(artifact).to.have.property("bytecode");
+        });
+    });
+
+    it("should extract error ABIs from artifacts", () => {
+        expect(errorAbis).to.be.an("array");
+
+        // Check that all extracted items are actually errors
+        errorAbis.forEach((errorAbi) => {
+            expect(errorAbi).to.have.property("type", "error");
+            expect(errorAbi).to.have.property("name");
+        });
+    });
+});
 
 describe("ContractCaller and ContractErrors", () => {
     it("should decode real contract errors correctly", async () => {
