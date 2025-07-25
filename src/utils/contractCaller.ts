@@ -5,12 +5,6 @@ import { Bytes } from "@/types/types";
 // interface for parsing errors
 const errorInterface = new ethers.Interface(errorAbis);
 
-export interface CustomError {
-    name: string;
-    args: any[];
-    signature: string;
-}
-
 /**
  * Custom error class that extends Error and includes decoded Solidity error information
  */
