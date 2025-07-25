@@ -478,7 +478,7 @@
         </mxGraphModel>
     </diagram>
     <diagram id="-3QrUwy2nLPkMSnJrA5o" name="Message Lifecycle">
-        <mxGraphModel dx="3835" dy="1853" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+        <mxGraphModel dx="3105" dy="872" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -486,7 +486,7 @@
                     <mxGeometry x="-200" y="60" width="370" height="120" as="geometry"/>
                 </mxCell>
                 <mxCell id="ac9qXiK-3Fl4joFTNuty-2" value="onSignedBlock || onBlockConfirmation" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=230;height=30;" parent="1" vertex="1">
-                    <mxGeometry x="-200" y="260" width="1400" height="720" as="geometry"/>
+                    <mxGeometry x="-200" y="260" width="1400" height="750" as="geometry"/>
                 </mxCell>
                 <mxCell id="3C9OKIPbisEUVXZUuXrE-1" value="&lt;font&gt;We&#39;re not creating the Block/SignedBock/BlockConfirmation here. We&#39;re just receving it.&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fillColor=#fff2cc;strokeColor=#d6b656;" parent="ac9qXiK-3Fl4joFTNuty-2" vertex="1">
                     <mxGeometry x="10" y="50" width="220" height="90" as="geometry"/>
@@ -614,6 +614,14 @@
                     <mxGeometry x="-0.0222" y="-1" relative="1" as="geometry">
                         <mxPoint as="offset"/>
                     </mxGeometry>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-203" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="ac9qXiK-3Fl4joFTNuty-2">
+                    <mxGeometry x="625" y="520" width="300" height="220" as="geometry">
+                        <mxRectangle x="625" y="520" width="70" height="30" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-204" value="We have this in the current design, but it&#39;s not needed. We do simple things on success and most flags don&#39;t have custom behavior so even if they do we can implement functions like:&lt;br&gt;success()&lt;br&gt;notReady()&lt;br&gt;disconnect()&lt;br&gt;...&lt;br&gt;&lt;br&gt;and use them on the spot instead of passing the context around&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-203">
+                    <mxGeometry y="30" width="300" height="190" as="geometry"/>
                 </mxCell>
                 <mxCell id="3C9OKIPbisEUVXZUuXrE-42" value="BlockConfirmation Validation Pipeline" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
                     <mxGeometry x="-200" y="1060" width="1330" height="2600" as="geometry"/>
@@ -957,12 +965,12 @@
                     <mxGeometry x="378" y="1340" width="140" height="120" as="geometry"/>
                 </mxCell>
                 <mxCell id="Tkg7loyrQP702Ur1c9dN-152" value="Think(isLinked)" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="3C9OKIPbisEUVXZUuXrE-42">
-                    <mxGeometry x="90" y="1385" width="140" height="170" as="geometry">
+                    <mxGeometry x="90" y="1385" width="220" height="350" as="geometry">
                         <mxRectangle x="90" y="1385" width="120" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="Tkg7loyrQP702Ur1c9dN-153" value="Think" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-152">
-                    <mxGeometry y="30" width="140" height="140" as="geometry"/>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-153" value="If not linked we can&#39;t slash since the peer could have been building on the wrong &#39;reality&#39; since someone performed a double sign&amp;nbsp;&lt;br&gt;&lt;br&gt;In reality this shouldn&#39;t be the case, since we gosip all blocks and if someone perfomed a double sign it should be exchanged by all honest peers - so if it&#39;s not, we can assume they&#39;re dishonest but can&#39;t prove it so it&#39;s safe to disconnect&amp;nbsp;&lt;br&gt;&lt;div&gt;&lt;br&gt;- maybe sleep for agreementTime if there was some race condtition and this block came before the block that prooves the double sign and if it&#39;s still the case that after sleeping you&#39;re not aware of the double sign, just disconnect - otherwise keep the connection if the fork is disputed&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-152">
+                    <mxGeometry y="30" width="220" height="320" as="geometry"/>
                 </mxCell>
                 <mxCell id="Tkg7loyrQP702Ur1c9dN-154" value="isNextLeader(author)" style="rhombus;" vertex="1" parent="3C9OKIPbisEUVXZUuXrE-42">
                     <mxGeometry x="378" y="1540" width="140" height="120" as="geometry"/>
@@ -1110,9 +1118,9 @@
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="Tkg7loyrQP702Ur1c9dN-188" value="Think (maxTimestamp)" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" collapsed="1" parent="3C9OKIPbisEUVXZUuXrE-42">
-                    <mxGeometry x="90" y="1785" width="120" height="30" as="geometry">
-                        <mxRectangle x="90" y="1785" width="140" height="280" as="alternateBounds"/>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-188" value="Think (maxTimestamp)" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="3C9OKIPbisEUVXZUuXrE-42">
+                    <mxGeometry x="90" y="1785" width="140" height="280" as="geometry">
+                        <mxRectangle x="90" y="1785" width="120" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="Tkg7loyrQP702Ur1c9dN-189" value="postBlockOnChain - has a maxTimestamp safety gurad which should be ((p2p + agreement + chainFallback) time)&lt;br&gt;Currently this pipeline doesn&#39;t check that - should it check it?&amp;nbsp;&lt;br&gt;&lt;br&gt;It can also be checked when the event is collected -&amp;gt; a dispute can be initlized from there too&amp;nbsp;&lt;br&gt;&lt;br&gt;This has to be a 4th fraud proof" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-188">
@@ -1173,6 +1181,65 @@
                 </mxCell>
                 <mxCell id="Tkg7loyrQP702Ur1c9dN-113" value="Past fork blocks that are not processed will be queues, same with future blocks - queue can be spammed - we need to protect it&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-112">
                     <mxGeometry y="30" width="140" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-205" value="isLinked" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+                    <mxGeometry x="-1000" y="2340" width="780" height="440" as="geometry"/>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-214" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="Tkg7loyrQP702Ur1c9dN-205" source="Tkg7loyrQP702Ur1c9dN-206" target="Tkg7loyrQP702Ur1c9dN-213">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-206" value="Block A" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-205">
+                    <mxGeometry x="260" y="130" width="80" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-210" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="Tkg7loyrQP702Ur1c9dN-205" source="Tkg7loyrQP702Ur1c9dN-207" target="Tkg7loyrQP702Ur1c9dN-206">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-207" value="Block B" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-205">
+                    <mxGeometry x="380" y="130" width="80" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-211" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="Tkg7loyrQP702Ur1c9dN-205" source="Tkg7loyrQP702Ur1c9dN-208" target="Tkg7loyrQP702Ur1c9dN-207">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-208" value="Block C" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-205">
+                    <mxGeometry x="510" y="130" width="80" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-209" value="Block D" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-205">
+                    <mxGeometry x="620" y="220" width="80" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-215" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="Tkg7loyrQP702Ur1c9dN-205" source="Tkg7loyrQP702Ur1c9dN-212" target="Tkg7loyrQP702Ur1c9dN-213">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="140" y="245"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-212" value="" style="verticalLabelPosition=bottom;verticalAlign=top;html=1;shape=mxgraph.flowchart.parallel_mode;pointerEvents=1" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-205">
+                    <mxGeometry x="415" y="225" width="95" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-213" value="Genesis" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-205">
+                    <mxGeometry x="100" y="130" width="80" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-216" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="Tkg7loyrQP702Ur1c9dN-205" source="Tkg7loyrQP702Ur1c9dN-209" target="Tkg7loyrQP702Ur1c9dN-212">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-219" value="Canonical" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-205">
+                    <mxGeometry x="90" y="80" width="530" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-222" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-205">
+                    <mxGeometry x="302.5" y="281" width="320" height="150" as="geometry">
+                        <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-223" value="A double sign happened for sure somehre here in the past. Since the canonical reality was shared by all honest peers, the producer of Block D for sure has evidence to initiate a double sign - he may withold that eveidence from honest peers, but than honest peers know subjectivly that the block producer is dishonest" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-222">
+                    <mxGeometry y="30" width="320" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-220" value="Think(LatestState in Disputes)" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+                    <mxGeometry x="-1260" y="2420" width="220" height="210" as="geometry">
+                        <mxRectangle x="90" y="1385" width="120" height="30" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-221" value="A double sign happened for sure, but what do we pick as the latest state when creating a dispute? What&#39;s the canonical reality.&lt;br&gt;&lt;br&gt;This is more theoretical than practical - still need to think it through" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-220">
+                    <mxGeometry y="30" width="220" height="180" as="geometry"/>
                 </mxCell>
             </root>
         </mxGraphModel>
