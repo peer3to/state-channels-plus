@@ -52,7 +52,6 @@ contract MathConsumerFacet is ConsumerFacet {
             require(channelId == joinChannels[i].channelId, "MathConsumerFacet: openChannel channelId doesn't match");
 
             require(joinChannels[i].balance.amount > 0, "MathConsumerFacet: openChannel amount must be greater than 0");
-            //TODO process deposits (this is composable with the global state (other contracts))
 
             require(
                 joinChannels[i].deadlineTimestamp > block.timestamp,
@@ -77,7 +76,6 @@ contract MathConsumerFacet is ConsumerFacet {
         override
     {
         // Implementation for closing the channel
-        // This would typically involve processing withdrawals and finalizing the channel state
     }
 
     function removeParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
@@ -96,13 +94,12 @@ contract MathConsumerFacet is ConsumerFacet {
 
     function depositAssetsComposable(JoinChannel memory joinChannel) external override returns (bool) {
         // Implementation for depositing assets when a participant joins
-        // This would typically involve transferring tokens or other assets
+
         return true; // Placeholder implementation
     }
 
     function withdrawAssetsComposable(ExitChannel memory exitChannel) external override returns (bool) {
         // Implementation for withdrawing assets when a participant exits
-        // This would typically involve transferring tokens or other assets back to the participant
         return true; // Placeholder implementation
     }
 }

@@ -33,7 +33,6 @@ contract LocalDiamond is AStateChannelManagerProxy {
             address(0) // Use 0x00 for consumer facet in local environment
         )
     {
-        // Set local-specific timing parameters
         p2pTime = 5;
         agreementTime = 5;
         chainFallbackTime = 5;
@@ -41,11 +40,6 @@ contract LocalDiamond is AStateChannelManagerProxy {
         killTime = 10;
     }
 
-    /**
-     * @dev Set a storage slot value - useful for syncing state between local and on-chain environments
-     * @param slot The storage slot to set
-     * @param value The value to store
-     */
     function setStorageSlot(bytes32 slot, bytes32 value) external {
         assembly {
             sstore(slot, value)
@@ -53,11 +47,6 @@ contract LocalDiamond is AStateChannelManagerProxy {
         emit StorageSet(slot, value);
     }
 
-    /**
-     * @dev Get a storage slot value - useful for reading state in local environment
-     * @param slot The storage slot to read
-     * @return The value stored at the slot
-     */
     function getStorageSlot(bytes32 slot) external view returns (bytes32) {
         bytes32 value;
         assembly {
@@ -66,11 +55,6 @@ contract LocalDiamond is AStateChannelManagerProxy {
         return value;
     }
 
-    /**
-     * @dev Set multiple storage slots at once for efficient state syncing
-     * @param slots Array of storage slots to set
-     * @param values Array of values to store
-     */
     function setStorageSlots(bytes32[] calldata slots, bytes32[] calldata values) external {
         require(slots.length == values.length, "LocalDiamond: slots and values arrays must have same length");
 
@@ -84,11 +68,6 @@ contract LocalDiamond is AStateChannelManagerProxy {
         }
     }
 
-    /**
-     * @dev Get multiple storage slots at once for efficient state reading
-     * @param slots Array of storage slots to read
-     * @return Array of values stored at the slots
-     */
     function getStorageSlots(bytes32[] calldata slots) external view returns (bytes32[] memory) {
         bytes32[] memory values = new bytes32[](slots.length);
 
