@@ -1,5 +1,33 @@
-const artifacts_base_path =
-    "../../artifacts/contracts/V1/StateChannelDiamondProxy/";
+import path from "path";
+import fs from "fs";
+
+const getArtifactsPath = () => {
+    // Try development path first (when running tests/development)
+    // From src/utils/ContractErrors.ts, go up to project root: ../../../artifacts/...
+    const devPath = path.join(
+        __dirname,
+        "../../../artifacts/contracts/V1/StateChannelDiamondProxy/"
+    );
+    if (fs.existsSync(devPath)) {
+        return devPath;
+    }
+
+    // Try built package path (when installed via npm)
+    // From dist/src/utils/ContractErrors.js, go up to dist: ../../artifacts/...
+    const builtPath = path.join(
+        __dirname,
+        "../../artifacts/contracts/V1/StateChannelDiamondProxy/"
+    );
+    if (fs.existsSync(builtPath)) {
+        return builtPath;
+    }
+
+    throw new Error(
+        'Could not find artifacts directory. Make sure the package is built correctly or run "yarn compile" first.'
+    );
+};
+
+const artifacts_base_path = getArtifactsPath();
 const facets = [
     "AStateChannelManagerProxy",
     "DisputeManagerFacet",
@@ -9,8 +37,13 @@ const facets = [
     "StateChannelCommon",
     "StateSnapshotFacet"
 ];
+
 export const artifacts = facets.map((facet) => {
-    return require(`${artifacts_base_path}/${facet}.sol/${facet}.json`);
+    const artifactPath = path.join(
+        artifacts_base_path,
+        `${facet}.sol/${facet}.json`
+    );
+    return JSON.parse(fs.readFileSync(artifactPath, "utf8"));
 });
 
 export const errorAbis = artifacts.flatMap((artifact) => {
