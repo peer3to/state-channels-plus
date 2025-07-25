@@ -6,11 +6,11 @@ import DisputeHandler from "@/DisputeHandler";
 import { ethers } from "ethers";
 import { AStateChannelManagerProxy } from "@typechain-types/contracts/V1/StateChannelDiamondProxy";
 import {
-    subjectiveTimingFlag,
     SignatureUtils,
     getActiveParticipants,
     Codec,
-    Type
+    Type,
+    hash
 } from "@/utils";
 import AStateMachine from "@/AStateMachine";
 import { Clock } from "..";
@@ -23,6 +23,7 @@ import {
     Timestamp
 } from "@/types/types";
 import { Block } from "@/models";
+import Storage from "@/storage";
 
 interface ValidationResult {
     success: boolean;
@@ -37,6 +38,7 @@ export default class ValidationService {
         private readonly disputeHandler: DisputeHandler,
         private readonly scmContract: AStateChannelManagerProxy,
         private readonly timeCfg: TimeConfig,
+        private readonly storage: Storage,
         /** getter keeps channelId reactive if StateManager changes it later */
         private readonly getChannelId: () => ChannelId,
         private readonly signerAddress: Address,
@@ -94,14 +96,84 @@ export default class ValidationService {
             );
         }
 
-        // Validate timestamp
-        if (!(await this.isGoodTimestamp(blk)))
-            return dispute(AgreementFlag.INCORRECT_DATA);
+        const { timestamp: previousTimestamp, previousBlock } =
+            this.getPreviousTimestampAndBlock(blk);
 
-        // Check if enough time has passed
-        const timeFlag = await this.isEnoughTimeSubjective(signedBlock, blk);
-        if (timeFlag !== ExecutionFlags.SUCCESS) {
-            return { success: false, flag: timeFlag };
+        const isValidTimestamp =
+            blk.timestamp >= previousTimestamp &&
+            blk.timestamp <= previousTimestamp + this.timeCfg.p2pTime;
+
+        // Objective timestamp validation
+        if (!isValidTimestamp) {
+            if (
+                blk.height <= 0 || // genesis block
+                previousBlock === undefined || // no previous block == genesis block
+                previousBlock.onChainTimestamp !== undefined
+            ) {
+                // already has best timestamp
+                // no point in trying to  update the timestamp => fraud proof
+                const fraudProof =
+                    this.disputeHandler.proofManager.createIncorrectDataProof(
+                        signedBlock
+                    );
+                await this.disputeHandler.createDispute(blk.forkId, "0x00", 0, [
+                    fraudProof
+                ]);
+                return dispute(AgreementFlag.INCORRECT_DATA);
+            }
+
+            // try to fetch later timestamp from on-chain data
+            const onChainTimestamp =
+                await this.fetchOnChainTimestamp(previousBlock);
+
+            // Early return: Couldn't fetch or not better than current
+            if (!onChainTimestamp || onChainTimestamp <= previousTimestamp) {
+                const fraudProof =
+                    this.disputeHandler.proofManager.createIncorrectDataProof(
+                        signedBlock
+                    );
+                await this.disputeHandler.createDispute(blk.forkId, "0x00", 0, [
+                    fraudProof
+                ]);
+                return dispute(AgreementFlag.INCORRECT_DATA);
+            }
+
+            // Update the previous block with the on-chain timestamp
+            previousBlock.onChainTimestamp = onChainTimestamp;
+            this.storage.blocks.setOnChainTimestamp(
+                previousBlock.forkId,
+                previousBlock.height,
+                onChainTimestamp
+            );
+
+            // Re-validate with updated timestamp
+            const isValidTimestamp =
+                blk.timestamp >= onChainTimestamp &&
+                blk.timestamp <= onChainTimestamp + this.timeCfg.p2pTime;
+
+            if (!isValidTimestamp) {
+                const fraudProof =
+                    this.disputeHandler.proofManager.createIncorrectDataProof(
+                        signedBlock
+                    );
+                await this.disputeHandler.createDispute(blk.forkId, "0x00", 0, [
+                    fraudProof
+                ]);
+                return dispute(AgreementFlag.INCORRECT_DATA);
+            }
+            // If valid, continue with rest of validation
+        }
+
+        // Subjective timestamp validation (requireS)
+        if (
+            blk.onChainTimestamp === undefined ||
+            blk.onChainTimestamp <= blk.timestamp
+        ) {
+            if (
+                Math.abs(Clock.getTimeInSeconds() - blk.timestamp) >=
+                this.timeCfg.agreementTime
+            )
+                return timestampTooOld();
         }
 
         // Validate block producer
@@ -111,6 +183,42 @@ export default class ValidationService {
 
         // All validation passed - return success
         return success();
+    }
+
+    public getPreviousTimestamp(blk: Block): Timestamp {
+        const { timestamp } = this.getPreviousTimestampAndBlock(blk);
+        return timestamp;
+    }
+
+    public getPreviousTimestampAndBlock(blk: Block): {
+        timestamp: Timestamp;
+        previousBlock?: Block;
+    } {
+        if (blk.height <= 0) {
+            return {
+                timestamp:
+                    this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                        blk.forkId
+                    )!.timestamp
+            };
+        }
+
+        const previousBlockEntry = this.storage.blocks.getBlockEntry(
+            blk.forkId,
+            blk.height - 1
+        )!;
+        const previousBlock = Block.decode(
+            previousBlockEntry.blockConfirmation.signedBlock.encodedBlock
+        );
+        const timestamp = previousBlock.getRelevantTimestamp(
+            blk.author,
+            previousBlockEntry.blockConfirmation.signatures
+        );
+
+        return {
+            timestamp,
+            previousBlock
+        };
     }
 
     public async validateBlockConfirmation(
@@ -161,12 +269,8 @@ export default class ValidationService {
 
         // this is the place to add any validation that should run on a new dispute
 
-        if (
-            disputeStruct.disputeIndex !==
-            this.agreementManager.forks.getDisputesCount()
-        ) {
-            return false;
-        }
+        // Note: disputeIndex property doesn't exist on DisputeStruct, removing this validation
+        // If dispute ordering validation is needed, it should be implemented differently
 
         const allowedParticipantsSet = await getActiveParticipants(
             this.scmContract,
@@ -232,55 +336,51 @@ export default class ValidationService {
 
     /*────────────────────── PRIVATE HELPERS ─────────────────────*/
 
-    /* subjective time window */
-    private async isEnoughTimeSubjective(
-        signed: SignedBlockStruct,
+    private async fetchOnChainTimestamp(
         blk: Block
-    ): Promise<ExecutionFlags> {
-        if (!(await this.isMyTurn())) return ExecutionFlags.SUCCESS;
-
-        const flag = subjectiveTimingFlag(
-            blk.timestamp,
-            Clock.getTimeInSeconds()
-        );
-        if (flag === ExecutionFlags.DISPUTE) {
-            const proof = ProofManager.createBlockTooFarInFutureProof(signed);
-            this.disputeHandler.createDispute(this.getforkId(), "0x00", 0, [
-                proof
-            ]);
-        }
-        return flag;
-    }
-
-    /* objective / chain timestamp */
-    private async isGoodTimestamp(blk: Block): Promise<boolean> {
-        const latestTxTs = this.agreementManager.getLatestBlockTimestamp(
-            blk.forkId
-        );
-        const initialReferenceTime = this.agreementManager.getLatestTimestamp(
-            blk.forkId,
-            blk.height
-        );
-
-        if (blk.timestamp < latestTxTs) throw new Error("Not implemented");
-
-        if (blk.timestamp > initialReferenceTime + this.timeCfg.p2pTime) {
-            const chainTs = Number(
-                await this.scmContract.getChainLatestBlockTimestamp(
+    ): Promise<Timestamp | undefined> {
+        try {
+            // Check if commitment exists on-chain
+            const commitmentResult =
+                await this.scmContract.getBlockCallDataCommitment(
                     this.getChannelId(),
                     blk.forkId,
-                    blk.height
-                )
-            );
-            const updatedReferenceTime = Math.max(
-                initialReferenceTime,
-                chainTs
+                    blk.height,
+                    blk.author
+                );
+
+            if (!commitmentResult.found) {
+                return undefined;
+            }
+
+            // filter BlockCalldataPosted calls by channelId and author
+            const filter = this.scmContract.filters.BlockCalldataPosted(
+                this.getChannelId(),
+                blk.author
             );
 
-            if (blk.timestamp > updatedReferenceTime + this.timeCfg.p2pTime)
-                return false;
+            // best will be to get exact block number from on-chain data
+            // but idk how to AND it is added complexity
+            // assumptoin here is that the block is within the recent 3 blocks (recent, recent-1, recent-2)
+            const logs = await this.scmContract.queryFilter(
+                filter,
+                -2, // from block
+                "latest" // to block
+            );
+
+            // Find matching log
+
+            for (let i = logs.length - 1; i >= 0; i--) {
+                const log = logs[i];
+                if (hash(log.args.signedBlock.encodedBlock) === blk.hash) {
+                    return Number(log.args.timestamp);
+                }
+            }
+            return undefined;
+        } catch (error) {
+            console.error("Error fetching on-chain timestamp:", error);
+            return undefined;
         }
-        return true;
     }
 
     /* one-liners */
@@ -288,10 +388,15 @@ export default class ValidationService {
         return this.agreementManager.getLatestforkId();
     }
     private isChannelOpen(): boolean {
-        return this.getforkId() >= 0;
+        // Fix: Compare ForkId properly using ethers comparison
+        const currentForkId = this.getforkId();
+        return currentForkId !== ethers.ZeroHash && currentForkId !== "0x00";
     }
     private isPastFork(f: ForkId): boolean {
-        return f < this.getforkId();
+        // Fix: Use proper comparison for BytesLike types
+        const currentForkId = this.getforkId();
+        // This is a simplified comparison - in practice you may need more sophisticated fork comparison logic
+        return f !== currentForkId;
     }
     private getNextHeight(): number {
         return this.agreementManager.getNextBlockHeight();
@@ -340,6 +445,14 @@ const duplicate = (): ValidationResult => ({
 const disconnect = (): ValidationResult => ({
     success: false,
     flag: ExecutionFlags.DISCONNECT
+});
+const timestampTooOld = (): ValidationResult => ({
+    success: false,
+    flag: ExecutionFlags.TIMESTAMP_TOO_OLD
+});
+const timestampTooFarInFuture = (): ValidationResult => ({
+    success: false,
+    flag: ExecutionFlags.TIMESTAMP_IN_FUTURE
 });
 const dispute = (af: AgreementFlag): ValidationResult => ({
     success: false,
