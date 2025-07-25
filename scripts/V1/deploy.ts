@@ -1,6 +1,6 @@
-import { ContractFactory, JsonRpcProvider, Wallet } from "ethers";
+import { ethers, ContractFactory, Signer } from "ethers";
+
 import { AStateChannelManagerProxy } from "../../typechain-types/contracts/V1/StateChannelDiamondProxy/AStateChannelManagerProxy";
-import { AStateMachine } from "../../typechain-types/contracts/V1/AStateMachine";
 
 import StateChannelUtilLibraryArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelUtilLibrary.sol/StateChannelUtilLibrary.json";
 import DisputeManagerFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol/DisputeManagerFacet.json";
@@ -8,110 +8,126 @@ import FraudProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDi
 import DisputeFraudProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol/DisputeFraudProofFacet.json";
 import StateSnapshotFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol/StateSnapshotFacet.json";
 import JoinChannelFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol/JoinChannelFacet.json";
-import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import AStateChannelManagerProxyArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/AStateChannelManagerProxy.sol/AStateChannelManagerProxy.json";
 import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol/LocalDiamond.json";
+import { EVM } from "@ethereumjs/evm";
 
-export interface DeploymentResult {
-    diamond: AStateChannelManagerProxy;
-    stateMachine: AStateMachine;
+enum DeploymentMode {
+    LOCAL = "LOCAL",
+    NETWORK = "NETWORK"
 }
 
-export interface DeploymentConfig {
-    provider: JsonRpcProvider;
-    signer: Wallet;
-    rpcUrl?: string;
+type DeploymentContext = {
+    mode: DeploymentMode;
+    signer?: Signer;
+    evm?: EVM;
+};
+
+function linkBytecode(bytecode: string, libraryAddress: string): string {
+    const placeholder = /__\$[a-f0-9]{34}\$__/g;
+    return bytecode.replace(placeholder, libraryAddress.slice(2)); // Remove 0x prefix
 }
 
-async function deployStateChannelUtilLibrary(config: DeploymentConfig) {
+async function deployLocal(bytecode: string, evm: EVM): Promise<string> {
+    const result = await evm.runCall({
+        data: ethers.getBytes(bytecode)
+    });
+
+    if (result.execResult.exceptionError) {
+        throw new Error(
+            `Failed to deploy in EVM ${result.execResult.exceptionError.error}`
+        );
+    }
+
+    if (!result.createdAddress) {
+        throw new Error(`Facet returned no address`);
+    }
+
+    return result.createdAddress.toString();
+}
+
+async function deployStateChannelUtilLibrary(
+    context: DeploymentContext
+): Promise<string> {
+    if (context.mode === DeploymentMode.LOCAL) {
+        if (!context.evm) {
+            throw new Error("EVM instance required for local deployment");
+        }
+        return deployLocal(
+            StateChannelUtilLibraryArtifact.bytecode,
+            context.evm
+        );
+    }
+
+    if (!context.signer) {
+        throw new Error("Signer required for network deployment");
+    }
+
     const StateChannelUtilLibraryFactory = new ContractFactory(
         StateChannelUtilLibraryArtifact.abi,
         StateChannelUtilLibraryArtifact.bytecode,
-        config.signer
+        context.signer
     );
     const stateChannelUtilLibrary =
-        await StateChannelUtilLibraryFactory.deploy();
-    await stateChannelUtilLibrary.waitForDeployment();
+        await StateChannelUtilLibraryFactory.deploy().then((contract) =>
+            contract.waitForDeployment()
+        );
 
-    return stateChannelUtilLibrary;
+    return stateChannelUtilLibrary.getAddress();
 }
 
-/**
- * Deploy all facets with linked library
- */
+async function deployFacet(
+    artifact: any,
+    libraryAddress: string,
+    context: DeploymentContext
+): Promise<string> {
+    const linkedBytecode = linkBytecode(artifact.bytecode, libraryAddress);
+
+    if (context.mode === DeploymentMode.LOCAL) {
+        if (!context.evm) {
+            throw new Error("EVM instance required for local deployment");
+        }
+        return await deployLocal(linkedBytecode, context.evm);
+    }
+
+    if (!context.signer) {
+        throw new Error("Signer required for network deployment");
+    }
+
+    const factory = new ContractFactory(
+        artifact.abi,
+        linkedBytecode,
+        context.signer
+    );
+    const contract = await factory
+        .deploy()
+        .then((contract) => contract.waitForDeployment());
+    return contract.getAddress();
+}
+
 async function deployAllFacets(
-    config: DeploymentConfig,
-    libraryAddress: string
+    libraryAddress: string,
+    context: DeploymentContext
 ) {
-    // Library placeholder that needs to be replaced in bytecode
-    const placeholder = new RegExp(
-        "__\\$a7bb0527a0afa4608b604803fa485abfbd\\$__",
-        "g"
-    );
-    const libraryAddressWithoutPrefix = libraryAddress.slice(2); // Remove 0x prefix
+    const facetArtifacts = [
+        DisputeManagerFacetArtifact,
+        FraudProofFacetArtifact,
+        DisputeFraudProofFacetArtifact,
+        StateSnapshotFacetArtifact,
+        JoinChannelFacetArtifact
+    ];
 
-    const linkBytecode = (bytecode: string) =>
-        bytecode.replace(placeholder, libraryAddressWithoutPrefix);
-
-    // Deploy DisputeManagerFacet with linked bytecode
-    const linkedDisputeManagerBytecode = linkBytecode(
-        DisputeManagerFacetArtifact.bytecode
+    const [
+        disputeManagerFacet,
+        fraudProofFacet,
+        disputeFraudProofFacet,
+        stateSnapshotFacet,
+        joinChannelFacet
+    ] = await Promise.all(
+        facetArtifacts.map((artifact) =>
+            deployFacet(artifact, libraryAddress, context)
+        )
     );
-    const DisputeManagerFacetFactory = new ContractFactory(
-        DisputeManagerFacetArtifact.abi,
-        linkedDisputeManagerBytecode,
-        config.signer
-    );
-    const disputeManagerFacet = await DisputeManagerFacetFactory.deploy();
-    await disputeManagerFacet.waitForDeployment();
-
-    // Deploy FraudProofFacet with linked bytecode
-    const linkedFraudProofBytecode = linkBytecode(
-        FraudProofFacetArtifact.bytecode
-    );
-    const FraudProofFacetFactory = new ContractFactory(
-        FraudProofFacetArtifact.abi,
-        linkedFraudProofBytecode,
-        config.signer
-    );
-    const fraudProofFacet = await FraudProofFacetFactory.deploy();
-    await fraudProofFacet.waitForDeployment();
-
-    // Deploy DisputeFraudProofFacet with linked bytecode
-    const linkedDisputeFraudProofBytecode = linkBytecode(
-        DisputeFraudProofFacetArtifact.bytecode
-    );
-    const DisputeFraudProofFacetFactory = new ContractFactory(
-        DisputeFraudProofFacetArtifact.abi,
-        linkedDisputeFraudProofBytecode,
-        config.signer
-    );
-    const disputeFraudProofFacet = await DisputeFraudProofFacetFactory.deploy();
-    await disputeFraudProofFacet.waitForDeployment();
-
-    // Deploy StateSnapshotFacet with linked bytecode
-    const linkedStateSnapshotBytecode = linkBytecode(
-        StateSnapshotFacetArtifact.bytecode
-    );
-    const StateSnapshotFacetFactory = new ContractFactory(
-        StateSnapshotFacetArtifact.abi,
-        linkedStateSnapshotBytecode,
-        config.signer
-    );
-    const stateSnapshotFacet = await StateSnapshotFacetFactory.deploy();
-    await stateSnapshotFacet.waitForDeployment();
-
-    // Deploy JoinChannelFacet with linked bytecode
-    const linkedJoinChannelBytecode = linkBytecode(
-        JoinChannelFacetArtifact.bytecode
-    );
-    const JoinChannelFacetFactory = new ContractFactory(
-        JoinChannelFacetArtifact.abi,
-        linkedJoinChannelBytecode,
-        config.signer
-    );
-    const joinChannelFacet = await JoinChannelFacetFactory.deploy();
-    await joinChannelFacet.waitForDeployment();
 
     return {
         disputeManagerFacet,
@@ -122,91 +138,74 @@ async function deployAllFacets(
     };
 }
 
-async function deployStateMachine(
-    stateMachineDeployTx: any,
-    config: DeploymentConfig
-) {
-    const StateMachineFactory = new ContractFactory(
-        stateMachineDeployTx.interface,
-        stateMachineDeployTx.bytecode,
-        config.signer
-    );
-
-    const constructorArgs = stateMachineDeployTx.constructorArgs;
-    const stateMachine = await StateMachineFactory.deploy(...constructorArgs);
-    await stateMachine.waitForDeployment();
-    return stateMachine;
-}
-
 export async function deploy(
+    stateMachineAddress: string,
     consumerFacetAddress: string,
-    stateMachineDeployTx: any,
-    config: DeploymentConfig
-): Promise<DeploymentResult> {
-    const stateChannelUtilLibrary = await deployStateChannelUtilLibrary(config);
-    const libraryAddress = await stateChannelUtilLibrary.getAddress();
+    signer: Signer
+): Promise<AStateChannelManagerProxy> {
+    const context: DeploymentContext = {
+        mode: DeploymentMode.NETWORK,
+        signer
+    };
 
-    const facets = await deployAllFacets(config, libraryAddress);
+    const stateChannelUtilLibrary =
+        await deployStateChannelUtilLibrary(context);
 
-    const stateMachine = await deployStateMachine(stateMachineDeployTx, config);
+    const facets = await deployAllFacets(stateChannelUtilLibrary, context);
 
     // Deploy AStateChannelManagerProxy with consumer facet
     const AStateChannelManagerProxyFactory = new ContractFactory(
         AStateChannelManagerProxyArtifact.abi,
         AStateChannelManagerProxyArtifact.bytecode,
-        config.signer
+        signer
     );
     const diamond = await AStateChannelManagerProxyFactory.deploy(
-        await stateMachine.getAddress(),
-        await facets.disputeManagerFacet.getAddress(),
-        await facets.fraudProofFacet.getAddress(),
-        await facets.disputeFraudProofFacet.getAddress(),
-        await facets.stateSnapshotFacet.getAddress(),
-        await facets.joinChannelFacet.getAddress(),
+        stateMachineAddress,
+        facets.disputeManagerFacet,
+        facets.fraudProofFacet,
+        facets.disputeFraudProofFacet,
+        facets.stateSnapshotFacet,
+        facets.joinChannelFacet,
         consumerFacetAddress
     );
 
-    await diamond.waitForDeployment();
-
-    const result: DeploymentResult = {
-        diamond: diamond as unknown as AStateChannelManagerProxy,
-        stateMachine: stateMachine as unknown as AStateMachine
-    };
-
-    return result;
+    return diamond.waitForDeployment() as Promise<AStateChannelManagerProxy>;
 }
 
 export async function deployLocalDiamond(
-    stateMachineDeployTx: any,
-    config: DeploymentConfig
-): Promise<DeploymentResult> {
-    const stateChannelUtilLibrary = await deployStateChannelUtilLibrary(config);
-    const libraryAddress = await stateChannelUtilLibrary.getAddress();
+    bytecode: string,
+    evm: EVM
+): Promise<string> {
+    const context: DeploymentContext = {
+        mode: DeploymentMode.LOCAL,
+        evm
+    };
 
-    const facets = await deployAllFacets(config, libraryAddress);
+    const stateChannelUtilLibrary =
+        await deployStateChannelUtilLibrary(context);
 
-    const stateMachine = await deployStateMachine(stateMachineDeployTx, config);
+    const facets = await deployAllFacets(stateChannelUtilLibrary, context);
+
+    const stateMachine = await deployLocal(bytecode, evm);
 
     const LocalDiamondFactory = new ContractFactory(
         LocalDiamondArtifact.abi,
-        LocalDiamondArtifact.bytecode,
-        config.signer
-    );
-    const diamond = await LocalDiamondFactory.deploy(
-        await stateMachine.getAddress(),
-        await facets.disputeManagerFacet.getAddress(),
-        await facets.fraudProofFacet.getAddress(),
-        await facets.disputeFraudProofFacet.getAddress(),
-        await facets.stateSnapshotFacet.getAddress(),
-        await facets.joinChannelFacet.getAddress()
+        LocalDiamondArtifact.bytecode
     );
 
-    await diamond.waitForDeployment();
+    const constructorArgs = [
+        stateMachine,
+        facets.disputeManagerFacet,
+        facets.fraudProofFacet,
+        facets.disputeFraudProofFacet,
+        facets.stateSnapshotFacet,
+        facets.joinChannelFacet
+    ];
 
-    const result: DeploymentResult = {
-        diamond: diamond as unknown as AStateChannelManagerProxy,
-        stateMachine: stateMachine as unknown as AStateMachine
-    };
+    const encodedConstructorArgs =
+        LocalDiamondFactory.interface.encodeDeploy(constructorArgs);
+    const deploymentData =
+        LocalDiamondArtifact.bytecode + encodedConstructorArgs.slice(2); // Remove 0x prefix
 
-    return result;
+    return deployLocal(deploymentData, evm);
 }

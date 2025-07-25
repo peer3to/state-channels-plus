@@ -1,5 +1,5 @@
 import { EVM } from "@ethereumjs/evm";
-import { ethers, Signer, hexlify } from "ethers";
+import { ethers, Signer, hexlify, ContractDeployTransaction } from "ethers";
 import {
     AStateChannelManagerProxy,
     AStateMachine as AStateMachineContract
@@ -218,7 +218,7 @@ class EvmStateMachine extends AStateMachine {
      * @returns A new EvmStateMachine instance
      */
     public static async createStandalone(
-        deployStateMachineTx: any,
+        deployStateMachineTx: ContractDeployTransaction,
         contractInterface: ethers.Interface
     ): Promise<EvmStateMachine> {
         const evm = await EVM.create();
