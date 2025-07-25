@@ -164,7 +164,7 @@ export default class ValidationService {
 
         if (
             disputeStruct.disputeIndex !==
-            this.agreementManager.forks.getDisputesCount()
+            this.storage.disputes.getDisputesCount()
         ) {
             return false;
         }
@@ -333,7 +333,6 @@ export default class ValidationService {
     private getNextHeight(): number {
         return this.agreementManager.getNextBlockHeight();
     }
-
     private async isMyTurn(): Promise<boolean> {
         return (
             (await this.stateMachine.getNextToWrite()) === this.signerAddress

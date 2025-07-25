@@ -62,6 +62,10 @@ export class DisputeStorage {
         return this.disputes.get(disputeHash);
     }
 
+    getDisputesCount(): number {
+        return this.disputes.size;
+    }
+
     // ====================================
     // PRIVATE HELPERS
     // ====================================
