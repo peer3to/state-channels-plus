@@ -477,8 +477,109 @@
             </root>
         </mxGraphModel>
     </diagram>
+    <diagram id="JrNKsWsGu-dz_i6stjm7" name="Entry Points">
+        <mxGraphModel dx="1018" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="yCVjHuBSaaYtSWHuKgmm-1" value="High Level Overview" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" vertex="1" parent="1">
+                    <mxGeometry x="80" y="200" width="1190" height="610" as="geometry"/>
+                </mxCell>
+                <mxCell id="TrUzMLvp8-iy_VfnUbSl-5" style="edgeStyle=none;html=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="yCVjHuBSaaYtSWHuKgmm-1" source="yCVjHuBSaaYtSWHuKgmm-2" target="yCVjHuBSaaYtSWHuKgmm-14">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="205" y="265"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="yCVjHuBSaaYtSWHuKgmm-2" value="&lt;p style=&quot;margin:0px;margin-top:6px;text-align:center;&quot;&gt;&lt;b&gt;RPC (services)&lt;/b&gt;&lt;/p&gt;&lt;hr size=&quot;1&quot; style=&quot;border-style:solid;&quot;&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;+ InitHandshake&lt;/p&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;+ WebRTCSetup&lt;/p&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;+ Spectate/Sync&lt;br&gt;+ JoinChannel&lt;/p&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;+ StateTransition&lt;/p&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;+ Dispute&lt;/p&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;&lt;br&gt;&lt;/p&gt;" style="align=left;overflow=fill;html=1;dropTarget=0;whiteSpace=wrap;" vertex="1" parent="yCVjHuBSaaYtSWHuKgmm-1">
+                    <mxGeometry x="70" y="91" width="180" height="159" as="geometry"/>
+                </mxCell>
+                <mxCell id="yCVjHuBSaaYtSWHuKgmm-3" value="" style="shape=component;jettyWidth=8;jettyHeight=4;" vertex="1" parent="yCVjHuBSaaYtSWHuKgmm-2">
+                    <mxGeometry x="1" width="20" height="20" relative="1" as="geometry">
+                        <mxPoint x="-24" y="4" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="TrUzMLvp8-iy_VfnUbSl-7" style="edgeStyle=none;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="yCVjHuBSaaYtSWHuKgmm-1" source="yCVjHuBSaaYtSWHuKgmm-7" target="yCVjHuBSaaYtSWHuKgmm-14">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="775" y="265"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="yCVjHuBSaaYtSWHuKgmm-7" value="&lt;p style=&quot;margin:0px;margin-top:6px;text-align:center;&quot;&gt;&lt;b&gt;Blockchain Events&lt;/b&gt;&lt;/p&gt;&lt;hr size=&quot;1&quot; style=&quot;border-style:solid;&quot;&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;+ StateSnapshotUpdated&lt;br&gt;+ BlockCalldataPosted&lt;/p&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;+ DisputeCommitted&lt;/p&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;+ DisputeAuditingDataPosted&lt;/p&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;+ JoinChannelProcessed&lt;/p&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;+ ReduceCommitment&lt;/p&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;+ OnChainSlashes&lt;/p&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;+ DisputeKilled&lt;/p&gt;" style="align=left;overflow=fill;html=1;dropTarget=0;whiteSpace=wrap;" vertex="1" parent="yCVjHuBSaaYtSWHuKgmm-1">
+                    <mxGeometry x="730" y="90" width="180" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="yCVjHuBSaaYtSWHuKgmm-8" value="" style="shape=component;jettyWidth=8;jettyHeight=4;" vertex="1" parent="yCVjHuBSaaYtSWHuKgmm-7">
+                    <mxGeometry x="1" width="20" height="20" relative="1" as="geometry">
+                        <mxPoint x="-24" y="4" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="TrUzMLvp8-iy_VfnUbSl-8" style="edgeStyle=none;html=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" edge="1" parent="yCVjHuBSaaYtSWHuKgmm-1" source="yCVjHuBSaaYtSWHuKgmm-9" target="yCVjHuBSaaYtSWHuKgmm-14">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="205" y="315"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="yCVjHuBSaaYtSWHuKgmm-9" value="&lt;p style=&quot;margin:0px;margin-top:6px;text-align:center;&quot;&gt;&lt;b&gt;P2P Contract Instance&lt;/b&gt;&lt;/p&gt;&lt;hr size=&quot;1&quot; style=&quot;border-style:solid;&quot;&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;+ anyMethod&lt;br&gt;&lt;/p&gt;" style="align=left;overflow=fill;html=1;dropTarget=0;whiteSpace=wrap;" vertex="1" parent="yCVjHuBSaaYtSWHuKgmm-1">
+                    <mxGeometry x="70" y="330" width="180" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="yCVjHuBSaaYtSWHuKgmm-10" value="" style="shape=component;jettyWidth=8;jettyHeight=4;" vertex="1" parent="yCVjHuBSaaYtSWHuKgmm-9">
+                    <mxGeometry x="1" width="20" height="20" relative="1" as="geometry">
+                        <mxPoint x="-24" y="4" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="TrUzMLvp8-iy_VfnUbSl-9" style="edgeStyle=none;html=1;exitX=0.25;exitY=0;exitDx=0;exitDy=0;entryX=1;entryY=0.75;entryDx=0;entryDy=0;" edge="1" parent="yCVjHuBSaaYtSWHuKgmm-1" source="yCVjHuBSaaYtSWHuKgmm-11" target="yCVjHuBSaaYtSWHuKgmm-14">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="775" y="315"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="yCVjHuBSaaYtSWHuKgmm-11" value="&lt;p style=&quot;margin:0px;margin-top:6px;text-align:center;&quot;&gt;&lt;b&gt;P2P Signer&lt;/b&gt;&lt;/p&gt;&lt;hr size=&quot;1&quot; style=&quot;border-style:solid;&quot;&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;+ spectate&lt;br&gt;&lt;/p&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;+ join&lt;/p&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;+ forceExit&lt;/p&gt;&lt;p style=&quot;margin:0px;margin-left:8px;&quot;&gt;&lt;br&gt;&lt;/p&gt;" style="align=left;overflow=fill;html=1;dropTarget=0;whiteSpace=wrap;" vertex="1" parent="yCVjHuBSaaYtSWHuKgmm-1">
+                    <mxGeometry x="730" y="330" width="180" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="yCVjHuBSaaYtSWHuKgmm-12" value="" style="shape=component;jettyWidth=8;jettyHeight=4;" vertex="1" parent="yCVjHuBSaaYtSWHuKgmm-11">
+                    <mxGeometry x="1" width="20" height="20" relative="1" as="geometry">
+                        <mxPoint x="-24" y="4" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="yCVjHuBSaaYtSWHuKgmm-14" value="System" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=14;strokeWidth=2;" vertex="1" parent="yCVjHuBSaaYtSWHuKgmm-1">
+                    <mxGeometry x="430" y="240" width="100" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="yCVjHuBSaaYtSWHuKgmm-15" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="yCVjHuBSaaYtSWHuKgmm-1">
+                    <mxGeometry x="940" y="91" width="220" height="140" as="geometry">
+                        <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="yCVjHuBSaaYtSWHuKgmm-16" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;span&gt;&lt;b&gt;ReduceCommitmentKilled &lt;/b&gt;-&lt;/span&gt;&lt;font&gt;&lt;span&gt;&amp;nbsp;&lt;/span&gt;&lt;span&gt;&lt;font&gt;Not needed, a new reduction event will be emited on a successful challenge and slashes too&lt;/font&gt;&lt;/span&gt;&lt;/font&gt;&lt;/font&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="yCVjHuBSaaYtSWHuKgmm-15">
+                    <mxGeometry y="30" width="220" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="TrUzMLvp8-iy_VfnUbSl-1" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="yCVjHuBSaaYtSWHuKgmm-1">
+                    <mxGeometry x="950" y="330" width="140" height="120" as="geometry">
+                        <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="TrUzMLvp8-iy_VfnUbSl-2" value="There are others but there are all the external ones (for now) - other are internal (called by the system)" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="TrUzMLvp8-iy_VfnUbSl-1">
+                    <mxGeometry y="30" width="140" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="TrUzMLvp8-iy_VfnUbSl-11" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="yCVjHuBSaaYtSWHuKgmm-1">
+                    <mxGeometry x="380" y="400" width="220" height="170" as="geometry">
+                        <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="TrUzMLvp8-iy_VfnUbSl-12" value="&lt;b&gt;P2P Contact Instance&lt;/b&gt; and &lt;b&gt;P2PSigner&lt;/b&gt; are used by the user to explicitly interact with the SDK - so they&#39;re &#39;&lt;b&gt;action&lt;/b&gt;&#39; triggers/entry points and the&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;&lt;b&gt;RPC&lt;/b&gt; and &lt;b&gt;BlockchainEvents&lt;/b&gt; are implicit &#39;&lt;b&gt;reaction&lt;/b&gt;&#39; entry points (the end user doesn&#39;t interact with them directly)&amp;nbsp;&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="TrUzMLvp8-iy_VfnUbSl-11">
+                    <mxGeometry y="30" width="220" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="TrUzMLvp8-iy_VfnUbSl-10" value="&lt;h1 style=&quot;margin-top: 0px;&quot;&gt;Entry Points&lt;/h1&gt;&lt;p&gt;External triggers, that start some process within the system (SDK).&lt;/p&gt;" style="text;html=1;whiteSpace=wrap;overflow=hidden;rounded=0;" vertex="1" parent="1">
+                    <mxGeometry x="60" y="30" width="390" height="120" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
     <diagram id="-3QrUwy2nLPkMSnJrA5o" name="BlockConfirmation Message Lifecycle">
-        <mxGraphModel dx="3503" dy="2029" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+        <mxGraphModel dx="3452" dy="2029" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -1587,14 +1688,6 @@
                 <mxCell id="Tkg7loyrQP702Ur1c9dN-292" value="&lt;h1 style=&quot;margin-top: 0px;&quot;&gt;&lt;font style=&quot;color: rgb(0, 204, 102);&quot;&gt;CONCLUSION&lt;/font&gt;&lt;/h1&gt;&lt;p&gt;After going over what each flag does and means we come to a conclusion they&#39;re not needed! Originally they we&#39;re desgined to pass more information back to the RPC/P2PManager so the calling context has more information on what to do, but the only decision that the calling context (RPC/P2PManager) do is decide do they disconnect the soccet and blacklist the peer or not - so the return value can just be &#39;shouldDisconnect&#39; and everything else can be initiated by the StateManager so these &#39;flags&#39; can become private helper functions of the validation pipeline: success(), notReady()...&amp;nbsp;&lt;/p&gt;" style="text;html=1;whiteSpace=wrap;overflow=hidden;rounded=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-267">
                     <mxGeometry x="520" y="200" width="180" height="370" as="geometry"/>
                 </mxCell>
-            </root>
-        </mxGraphModel>
-    </diagram>
-    <diagram id="JrNKsWsGu-dz_i6stjm7" name="Page-7">
-        <mxGraphModel dx="1194" dy="913" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
-            <root>
-                <mxCell id="0"/>
-                <mxCell id="1" parent="0"/>
             </root>
         </mxGraphModel>
     </diagram>

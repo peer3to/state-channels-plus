@@ -71,9 +71,9 @@ class StateChannelEventListener {
                 this.stateManager.collectOnChainBlock(signedBlock, timestamp);
             }
         },
-        DisputeCommited: {
+        DisputeCommitted: {
             filterFactory: (channelId: ChannelId) =>
-                this.stateChannelManagerContract.filters.DisputeCommited(
+                this.stateChannelManagerContract.filters.DisputeCommitted(
                     channelId
                 ),
             handler: (logObj: any) => {

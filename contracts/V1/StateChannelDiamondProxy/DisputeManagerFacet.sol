@@ -247,16 +247,19 @@ contract DisputeManagerFacet is StateChannelCommon {
         SnapshotData memory snapshotData =
             reduceOutputToSnapshotData(reducedOutput, stateSnapshot, encodedStateMachineState, joinChannelBlocks);
 
-        bytes32 winingForkId = keccak256(abi.encode(snapshotData));
+        bytes32 winningForkId = keccak256(abi.encode(snapshotData));
 
         if (
-            winingForkId != disputeWindow.reducedResult.forkId
+            winningForkId != disputeWindow.reducedResult.forkId
                 || reducedOutput.forkGenesisTimestamp != disputeWindow.reducedResult.forkGenesisTimestamp
         ) {
             addOnChainSlashedParticipant(channelId, disputeWindow.reducedResult.reducer);
             disputeWindow.reducedResult.forkId = bytes32(0); // unset
             _commitToDisputeReducedResult(
-                disputeWindow, winingForkId, block.timestamp - getEvidenceTime() - 1, reducedOutput.forkGenesisTimestamp
+                disputeWindow,
+                winningForkId,
+                block.timestamp - getEvidenceTime() - 1,
+                reducedOutput.forkGenesisTimestamp
             );
         } else {
             addOnChainSlashedParticipant(channelId, msg.sender);
@@ -400,7 +403,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
         disputeWindow.evidence.disputeCommitments.push(keccak256(abi.encode(dispute)));
         disputeWindow.evidence.hasPosted[dispute.disputer] = true; //disputer has posted the dispute
-        emit DisputeCommited(
+        emit DisputeCommitted(
             dispute.channelId, dispute, block.timestamp, isThresholdFinal, disputeWindow.evidence.creationTimestamp
         );
     }
