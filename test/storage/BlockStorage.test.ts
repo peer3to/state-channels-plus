@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { describe, it, beforeEach } from "mocha";
 import { ethers } from "hardhat";
 import { BlockStorage } from "@/storage/BlockStorage";
-import { Storage } from "@/storage/Storage";
+import Storage, { SortOrder } from "@/storage";
 import {
     BlockConfirmationStruct,
     SignedBlockStruct
@@ -10,6 +10,7 @@ import {
 import { Hash, ForkId, BlockHeight } from "@/types/types";
 import * as factory from "../factory";
 import { Block } from "@/models";
+import { Codec, Type } from "@/utils";
 
 const sig = () => ethers.hexlify(ethers.randomBytes(65));
 
@@ -41,7 +42,7 @@ describe("BlockStorage", () => {
             const hash = storage.storeBlock(mockSignedBlock);
 
             expect(hash).to.equal(mockBlockHash);
-            const stored = storage.getBlockEntry(hash);
+            const stored = storage.getBlockEntry(hash!);
             expect(stored?.blockConfirmation.signedBlock).to.equal(
                 mockSignedBlock
             );
@@ -80,7 +81,7 @@ describe("BlockStorage", () => {
             // Should return same hash
             expect(hash1).to.equal(hash2);
 
-            const stored = storage.getBlockEntry(hash1);
+            const stored = storage.getBlockEntry(hash1!);
 
             // Should have 3 unique signatures (shared signature not duplicated)
             expect(stored?.blockConfirmation.signatures).to.have.lengthOf(3);
@@ -100,7 +101,7 @@ describe("BlockStorage", () => {
         it("should insert block confirmation with auto-computed keys", () => {
             const hash = storage.storeBlockConfirmation(mockBlockConfirmation);
 
-            const stored = storage.getBlockEntry(hash);
+            const stored = storage.getBlockEntry(hash!);
             expect(stored?.blockConfirmation).to.equal(mockBlockConfirmation);
         });
 
@@ -109,7 +110,7 @@ describe("BlockStorage", () => {
                 coordinates: { forkId: mockForkId, height: mockHeight }
             });
 
-            const stored = storage.getBlockEntry(hash);
+            const stored = storage.getBlockEntry(hash!);
             const stored_by_coords = storage.getBlockEntry(
                 mockForkId,
                 mockHeight
@@ -526,6 +527,245 @@ describe("BlockStorage", () => {
                 // Verify they are the same object reference
                 expect(blockByHash).to.equal(blockByCoords);
             });
+        });
+    });
+});
+
+describe("ForkIdToMaxHeightMap", () => {
+    let storage: BlockStorage;
+    let forkId: ForkId;
+
+    beforeEach(() => {
+        storage = new BlockStorage();
+        forkId = factory.hash();
+    });
+
+    // Convenience method to create blocks with specific coordinates
+    function createBlockWithCoordinates(
+        forkId: ForkId,
+        height: BlockHeight
+    ): BlockConfirmationStruct {
+        const block = factory.block({
+            transaction: factory.transaction({
+                header: factory.transactionHeader({
+                    forkId: forkId,
+                    transactionCnt: height
+                })
+            })
+        });
+
+        const signedBlock = factory.signedBlock({
+            encodedBlock: Codec.encode(block, Type.Block)
+        });
+
+        return factory.blockConfirmation({
+            signedBlock: signedBlock
+        });
+    }
+
+    describe("ADDING - Max Height Updates", () => {
+        it("should update max height when adding block with higher height", () => {
+            // Add block at height 5
+            const blockConfirmation1 = createBlockWithCoordinates(forkId, 5);
+            storage.storeBlockConfirmation(blockConfirmation1);
+
+            let heighestBlock = storage
+                .getBlocksByForkId(forkId, SortOrder.DESC)
+                .next().value!;
+            let heighestBlockData = Block.decode(
+                heighestBlock.blockConfirmation.signedBlock.encodedBlock
+            );
+            expect(heighestBlockData.coordinates.height).to.equal(5);
+
+            // Add block at height 10
+            const blockConfirmation2 = createBlockWithCoordinates(forkId, 10);
+            storage.storeBlockConfirmation(blockConfirmation2);
+
+            heighestBlock = storage
+                .getBlocksByForkId(forkId, SortOrder.DESC)
+                .next().value!;
+            heighestBlockData = Block.decode(
+                heighestBlock.blockConfirmation.signedBlock.encodedBlock
+            );
+            expect(heighestBlockData.coordinates.height).to.equal(10);
+        });
+
+        it("should not update max height when adding block with lower height", () => {
+            // Add block at height 10 first
+            storage.storeBlockConfirmation(
+                createBlockWithCoordinates(forkId, 10)
+            );
+
+            // Add block at height 5
+            storage.storeBlockConfirmation(
+                createBlockWithCoordinates(forkId, 5)
+            );
+
+            const blocks = Array.from(
+                storage.getBlocksByForkId(forkId, SortOrder.DESC)
+            );
+
+            // The first block should be at height 10
+            // this means that the max height stored is 10 => not reduced by the new block at height 5
+            const firstBlockData = Block.decode(
+                blocks[0].blockConfirmation.signedBlock.encodedBlock
+            );
+            expect(firstBlockData.coordinates.height).to.equal(10);
+
+            // The second block should be at height 5
+            const secondBlockData = Block.decode(
+                blocks[1].blockConfirmation.signedBlock.encodedBlock
+            );
+            expect(secondBlockData.coordinates.height).to.equal(5);
+        });
+
+        it("should handle multiple forks independently", () => {
+            const forkId1 = factory.hash();
+            const forkId2 = factory.hash();
+
+            // Add blocks to different forks
+            const blockConfirmation1 = createBlockWithCoordinates(forkId1, 10);
+            storage.storeBlockConfirmation(blockConfirmation1);
+
+            const blockConfirmation2 = createBlockWithCoordinates(forkId2, 5);
+            storage.storeBlockConfirmation(blockConfirmation2);
+
+            // Verify each fork has correct blocks
+            const blocks1 = Array.from(storage.getBlocksByForkId(forkId1));
+            const blocks2 = Array.from(storage.getBlocksByForkId(forkId2));
+            expect(blocks1).to.have.lengthOf(1);
+            expect(blocks2).to.have.lengthOf(1);
+        });
+    });
+
+    describe("REMOVING - Max Height Updates", () => {
+        it("should update max height when removing the highest block", () => {
+            // Add blocks at heights 0, 5, 10
+            for (let height of [0, 5, 10]) {
+                const blockConfirmation = createBlockWithCoordinates(
+                    forkId,
+                    height
+                );
+                storage.storeBlockConfirmation(blockConfirmation);
+            }
+
+            // Remove block at height 10 (highest)
+            storage.deleteBlock(forkId, 10);
+
+            // Verify only 2 blocks remain
+            const blocks = Array.from(
+                storage.getBlocksByForkId(forkId, SortOrder.DESC)
+            );
+            expect(
+                Block.decode(
+                    blocks[0].blockConfirmation.signedBlock.encodedBlock
+                ).coordinates.height
+            ).to.equal(5);
+            expect(
+                Block.decode(
+                    blocks[1].blockConfirmation.signedBlock.encodedBlock
+                ).coordinates.height
+            ).to.equal(0);
+        });
+
+        it("should not update max height when removing non-highest block", () => {
+            // Add blocks at heights 0, 5, 10
+            for (let height of [0, 5, 10]) {
+                const blockConfirmation = createBlockWithCoordinates(
+                    forkId,
+                    height
+                );
+                storage.storeBlockConfirmation(blockConfirmation);
+            }
+
+            // Remove block at height 5 (not highest)
+            storage.deleteBlock(forkId, 5);
+
+            // Verify only 2 blocks remain
+            const blocks = Array.from(
+                storage.getBlocksByForkId(forkId, SortOrder.DESC)
+            );
+            expect(
+                Block.decode(
+                    blocks[0].blockConfirmation.signedBlock.encodedBlock
+                ).coordinates.height
+            ).to.equal(10);
+            expect(
+                Block.decode(
+                    blocks[1].blockConfirmation.signedBlock.encodedBlock
+                ).coordinates.height
+            ).to.equal(0);
+        });
+
+        it("should handle removing the only block in a fork", () => {
+            // Add single block at height 5
+            const blockConfirmation = createBlockWithCoordinates(forkId, 5);
+            storage.storeBlockConfirmation(blockConfirmation);
+
+            // Remove the block
+            storage.deleteBlock(forkId, 5);
+
+            // Verify no blocks remain
+            expect(storage.getBlocksByForkId(forkId).next().value).to.be
+                .undefined;
+        });
+    });
+
+    describe("GETTING - getBlocksByForkId", () => {
+        it("should return empty when no blocks exist on fork", () => {
+            const block = storage.getBlocksByForkId(forkId).next().value;
+            expect(block).to.be.undefined;
+        });
+
+        it("should return blocks in correct order", () => {
+            // Add blocks in random order
+            for (let height of [10, 0, 5]) {
+                const blockConfirmation = createBlockWithCoordinates(
+                    forkId,
+                    height
+                );
+                storage.storeBlockConfirmation(blockConfirmation);
+            }
+
+            // Test ascending order
+            const blocksAsc = Array.from(
+                storage.getBlocksByForkId(forkId, SortOrder.ASC)
+            );
+            expect(
+                Block.decode(
+                    blocksAsc[0].blockConfirmation.signedBlock.encodedBlock
+                ).coordinates.height
+            ).to.equal(0);
+            expect(
+                Block.decode(
+                    blocksAsc[1].blockConfirmation.signedBlock.encodedBlock
+                ).coordinates.height
+            ).to.equal(5);
+            expect(
+                Block.decode(
+                    blocksAsc[2].blockConfirmation.signedBlock.encodedBlock
+                ).coordinates.height
+            ).to.equal(10);
+
+            // Test descending order
+            const blocksDesc = Array.from(
+                storage.getBlocksByForkId(forkId, SortOrder.DESC)
+            );
+            expect(
+                Block.decode(
+                    blocksDesc[0].blockConfirmation.signedBlock.encodedBlock
+                ).coordinates.height
+            ).to.equal(10);
+            expect(
+                Block.decode(
+                    blocksDesc[1].blockConfirmation.signedBlock.encodedBlock
+                ).coordinates.height
+            ).to.equal(5);
+            expect(
+                Block.decode(
+                    blocksDesc[2].blockConfirmation.signedBlock.encodedBlock
+                ).coordinates.height
+            ).to.equal(0);
         });
     });
 });

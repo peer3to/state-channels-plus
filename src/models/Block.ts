@@ -69,7 +69,19 @@ export default class Block {
     get onChainTimestamp(): Timestamp | undefined {
         return this._onChainTimestamp;
     }
-    get relevantTimestamp(): Timestamp {
+    getRelevantTimestamp(
+        nextBlockAuthor: Address,
+        signatures: Signature[] | Bytes[]
+    ): Timestamp {
+        // internal type "conversion" so that the calling context doesnt have to deal with this
+        const sigs = signatures as Signature[];
+        const { didSign } = this.getParticipantSignature(nextBlockAuthor, sigs);
+
+        if (didSign) {
+            // If nextBlockAuthor has signed, return block timestamp
+            return this.timestamp;
+        }
+        // If nextBlockAuthor has NOT signed, return onChainTimestamp (or fallback)
         return this._onChainTimestamp
             ? Math.max(this._onChainTimestamp, this.timestamp)
             : this.timestamp;
