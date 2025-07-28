@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
-import "./AStateChannelManagerProxy.sol";
+import "./StateChannelManagerProxy.sol";
 import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
 
@@ -48,7 +48,7 @@ contract JoinChannelFacet is StateChannelCommon {
         bytes32 channelId = jc.channelId;
 
         // Process the deposit for the specific StateChannelManager
-        success = AStateChannelManagerProxy(address(this)).depositAssetsComposable(jc);
+        success = StateChannelManagerProxy(address(this)).depositAssetsComposable(jc);
         if (!success) return false;
 
         // Create JoinChannelBlock

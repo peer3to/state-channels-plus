@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
-import "./AStateChannelManagerProxy.sol";
+import "./StateChannelManagerProxy.sol";
 import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
 import "../types/DisputeFraudProofTypes.sol";

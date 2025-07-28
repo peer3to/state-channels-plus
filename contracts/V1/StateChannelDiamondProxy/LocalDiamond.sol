@@ -1,6 +1,6 @@
 pragma solidity ^0.8.8;
 
-import "./AStateChannelManagerProxy.sol";
+import "./StateChannelManagerProxy.sol";
 import "../types/DataTypes.sol";
 
 /**
@@ -9,7 +9,7 @@ import "../types/DataTypes.sol";
  * This contract provides storage sync methods and no-op asset management for local testing.
  *
  */
-contract LocalDiamond is AStateChannelManagerProxy {
+contract LocalDiamond is StateChannelManagerProxy {
     // Events for storage sync
     event StorageSet(bytes32 indexed slot, bytes32 value);
     event StorageGet(bytes32 indexed slot, bytes32 value);
@@ -22,7 +22,7 @@ contract LocalDiamond is AStateChannelManagerProxy {
         address _stateSnapshotFacet,
         address _joinChannelFacet
     )
-        AStateChannelManagerProxy(
+        StateChannelManagerProxy(
             _stateMachineImplementation,
             _disputeManagerFacet,
             _fraudProofFacet,

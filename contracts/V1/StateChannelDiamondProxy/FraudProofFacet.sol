@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
-import "./AStateChannelManagerProxy.sol";
+import "./StateChannelManagerProxy.sol";
 import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
 import "../types/FraudProofTypes.sol";
@@ -146,7 +146,7 @@ contract FraudProofFacet is StateChannelCommon {
             );
         }
 
-        (bool isSuccess, bytes memory encodedModifiedState) = AStateChannelManagerProxy(address(this))
+        (bool isSuccess, bytes memory encodedModifiedState) = StateChannelManagerProxy(address(this))
             .executeStateTransition(
             fraudProofVerificationContext.channelId, previousStateStateMachineState, fraudBlock.transaction
         );
