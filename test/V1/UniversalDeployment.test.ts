@@ -1,9 +1,17 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { Signer } from "ethers";
 
-import { deploy, deployLocalDiamond } from "../../scripts/V1/deploy";
+import {
+    deploy,
+    deployLocalDiamond,
+    linkLibraries,
+    deployArtifact
+} from "../../scripts/V1/deploy";
+import DisputeFraudProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol/DisputeFraudProofFacet.json";
+import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
+import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
+import StateChannelUtilLibraryArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelUtilLibrary.sol/StateChannelUtilLibrary.json";
 
 describe("Universal Deployment", () => {
     let deployer: HardhatEthersSigner;
@@ -13,78 +21,73 @@ describe("Universal Deployment", () => {
     before(async () => {
         [deployer] = await ethers.getSigners();
 
-        const StateChannelUtilLibrary = await ethers.getContractFactory(
-            "StateChannelUtilLibrary"
+        const { address } = await deployArtifact(
+            StateChannelUtilLibraryArtifact,
+            deployer
         );
-        const library = await StateChannelUtilLibrary.deploy();
-        libraryAddress = await library.getAddress();
+        libraryAddress = address;
 
-        // Create MathStateMachine deployment transaction
         const MathStateMachine =
             await ethers.getContractFactory("MathStateMachine");
 
-        // Get the deployment transaction
         mathStateMachineDeployTx =
             await MathStateMachine.getDeployTransaction(5000000);
     });
 
-    // describe("Local Diamond", () => {
-    //     it("deploys successfully", async () => {
-    //         const { address: diamondAddress } = await deployLocalDiamond(
-    //             mathStateMachineDeployTx,
-    //             localSigner
-    //         );
+    describe("Local Diamond", () => {
+        it("deploys successfully", async () => {
+            const { address: diamondAddress } = await deployLocalDiamond(
+                mathStateMachineDeployTx,
+                deployer
+            );
 
-    //         expect(diamondAddress).to.not.equal(ethers.ZeroAddress);
-    //         expect(diamondAddress).to.match(/^0x[a-fA-F0-9]{40}$/);
-    //     });
+            expect(diamondAddress).to.not.equal(ethers.ZeroAddress);
+            expect(diamondAddress).to.match(/^0x[a-fA-F0-9]{40}$/);
+        });
 
-    //     it("provides storage functionality", async () => {
-    //         const { address: diamondAddress, contract: localDiamond } = await deployLocalDiamond(
-    //             mathStateMachineDeployTx,
-    //             localSigner
-    //         );
+        it("provides storage functionality", async () => {
+            const { contract: localDiamond } = await deployLocalDiamond(
+                mathStateMachineDeployTx,
+                deployer
+            );
 
-    //         const testSlot = ethers.keccak256(ethers.toUtf8Bytes("test-slot"));
-    //         const testValue = ethers.keccak256(
-    //             ethers.toUtf8Bytes("test-value")
-    //         );
+            const testSlot = ethers.keccak256(ethers.toUtf8Bytes("test-slot"));
+            const testValue = ethers.keccak256(
+                ethers.toUtf8Bytes("test-value")
+            );
 
-    //         // Note: For local EVM deployment, we can't directly call contract methods
-    //         // as we would with a network deployment. The storage functionality
-    //         // would need to be tested through the EVM interface or by creating
-    //         // a ContractExecuter instance.
-
-    //         // This test demonstrates that the deployment was successful
-    //         expect(diamondAddress).to.not.equal(ethers.ZeroAddress);
-    //         const response = await localDiamond.setStorageSlot(testSlot, testValue)
-    //         expect(response).to.not.equal(ethers.ZeroAddress);
-    //         expect(await localDiamond.getStorageSlot(testSlot)).to.equal(testValue);
-    //     });
-    // });
+            await localDiamond.setStorageSlot(testSlot, testValue);
+            expect(await localDiamond.getStorageSlot(testSlot)).to.equal(
+                testValue
+            );
+        });
+    });
 
     describe("consumer facet Deployment", () => {
-        it("deploys with consumer facet", async () => {
-            // Deploy MathStateMachine first
-            const MathStateMachine =
-                await ethers.getContractFactory("MathStateMachine");
-            const stateMachine = await MathStateMachine.deploy(5000000);
-            await stateMachine.waitForDeployment();
+        let mathStateMachineAddress: string;
+        let consumerFacetAddress: string;
 
-            // Deploy MathConsumerFacet
-            const MathConsumerFacet = await ethers.getContractFactory(
-                "MathConsumerFacet",
-                {
-                    libraries: { StateChannelUtilLibrary: libraryAddress }
-                }
+        before(async () => {
+            const { address: mathAddress } = await deployArtifact(
+                MathStateMachineArtifact,
+                deployer,
+                {},
+                [5000000]
             );
-            const consumerFacet = await MathConsumerFacet.deploy();
-            await consumerFacet.waitForDeployment();
+            mathStateMachineAddress = mathAddress;
 
+            const { address: consumerAddress } = await deployArtifact(
+                MathConsumerFacetArtifact,
+                deployer,
+                { StateChannelUtilLibrary: libraryAddress }
+            );
+            consumerFacetAddress = consumerAddress;
+        });
+        it("deploys with consumer facet", async () => {
             const { address: diamondAddress, contract: diamondContract } =
                 await deploy(
-                    await stateMachine.getAddress(),
-                    await consumerFacet.getAddress(),
+                    mathStateMachineAddress,
+                    consumerFacetAddress,
                     deployer
                 );
 
@@ -94,34 +97,68 @@ describe("Universal Deployment", () => {
             expect(times).to.deep.equal([15n, 5n, 30n, 30n, 60n]);
         });
 
-        // it("fails with invalid consumer facet", async () => {
-        //     // Deploy state machine
-        //     const MathStateMachine =
-        //         await ethers.getContractFactory("MathStateMachine");
-        //     const stateMachine = await MathStateMachine.deploy(5000000);
-        //     await stateMachine.waitForDeployment();
+        it("fails with invalid consumer facet", async () => {
+            const fakeConsumerFacetAddress =
+                "0x1234567890123456789012345678901234567890";
 
-        //     const fakeAddress = "0x1234567890123456789012345678901234567890";
+            const { contract: diamondContract } = await deploy(
+                mathStateMachineAddress,
+                fakeConsumerFacetAddress,
+                deployer
+            );
 
-        //     const {  contract: diamondContract } = await deploy(
-        //         await stateMachine.getAddress(),
-        //         fakeAddress,
-        //         deployer
-        //     );
+            const channelId = ethers.keccak256(
+                ethers.toUtf8Bytes("test-channel")
+            );
+            const openChannelData = ["0x"];
+            const signatures = ["0x"];
 
-        //     const channelId = ethers.keccak256(
-        //         ethers.toUtf8Bytes("test-channel")
-        //     );
-        //     const openChannelData = ["0x"];
-        //     const signatures = ["0x"];
+            await expect(
+                diamondContract.openChannel(
+                    channelId,
+                    openChannelData,
+                    signatures
+                )
+            ).to.be.reverted;
+        });
+    });
 
-        //     await expect(
-        //         diamondContract.openChannel(
-        //             channelId,
-        //             openChannelData,
-        //             signatures
-        //         )
-        //     ).to.be.reverted;
-        // });
+    describe("linkLibraries function", () => {
+        it("should replace library placeholders with addresses", () => {
+            const libraryAddress = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+
+            const linkedArtifact = linkLibraries(
+                DisputeFraudProofFacetArtifact,
+                { StateChannelUtilLibrary: libraryAddress }
+            );
+
+            // Assert that placeholders are replaced (should find 0 placeholders)
+            const placeholderPattern = /__\$[a-fA-F0-9]+\$__/g;
+            const placeholderMatches =
+                linkedArtifact.bytecode.match(placeholderPattern);
+            expect(placeholderMatches).to.be.null;
+
+            // Assert that the library address appears the expected number of times (2 times based on linkReferences)
+            const normalizedAddress = libraryAddress
+                .toLowerCase()
+                .replace(/^0x/, "")
+                .padStart(40, "0");
+            const addressMatches = linkedArtifact.bytecode.match(
+                new RegExp(normalizedAddress, "g")
+            );
+            const expectedLength =
+                DisputeFraudProofFacetArtifact.linkReferences[
+                    "contracts/V1/StateChannelDiamondProxy/StateChannelUtilLibrary.sol"
+                ].StateChannelUtilLibrary.length;
+            expect(addressMatches).to.have.length(expectedLength);
+        });
+
+        it("should throw error when library address is missing", () => {
+            expect(() => {
+                linkLibraries(DisputeFraudProofFacetArtifact, {});
+            }).to.throw(
+                "Missing deployed address for library 'StateChannelUtilLibrary'"
+            );
+        });
     });
 });

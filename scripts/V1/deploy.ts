@@ -3,7 +3,9 @@ import {
     Signer,
     Contract,
     ContractDeployTransaction,
-    getCreateAddress
+    getCreateAddress,
+    keccak256,
+    toUtf8Bytes
 } from "ethers";
 
 import StateChannelUtilLibraryArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelUtilLibrary.sol/StateChannelUtilLibrary.json";
@@ -19,6 +21,7 @@ import {
     LocalDiamond,
     AStateChannelManagerProxy
 } from "@typechain-types/index";
+import { Artifact } from "hardhat/types";
 
 export async function deployLocalFromTx<T extends Contract>(
     tx: ContractDeployTransaction,
@@ -34,21 +37,55 @@ export async function deployLocalFromTx<T extends Contract>(
     return { address };
 }
 
-async function deployArtifact<T>(
+export function linkLibraries(
+    artifact: Artifact,
+    libs: Record<string, string>
+): Artifact {
+    let linkedBytecode = artifact.bytecode;
+
+    // Iterate over each source path in linkReferences
+    for (const sourcePath in artifact.linkReferences) {
+        const libraries = artifact.linkReferences[sourcePath];
+
+        // Iterate over each library name under the source path
+        for (const libName in libraries) {
+            const deployedAddress = libs[libName];
+            if (!deployedAddress) {
+                throw new Error(
+                    `Missing deployed address for library '${libName}'`
+                );
+            }
+
+            // Replace each occurrence using the exact byte positions
+            for (const { start, length } of libraries[libName]) {
+                const addressWithoutPrefix = deployedAddress
+                    .toLowerCase()
+                    .replace(/^0x/, "");
+                linkedBytecode =
+                    linkedBytecode.substring(0, 2 + start * 2) +
+                    addressWithoutPrefix +
+                    linkedBytecode.substring(2 + (start + length) * 2);
+            }
+        }
+    }
+
+    return { ...artifact, bytecode: linkedBytecode };
+}
+
+export async function deployArtifact<T>(
     artifact: any,
     signer: Signer,
     libs: Record<string, string> = {},
     args: any[] = []
 ): Promise<{ address: string; contract: T }> {
+    const linkedArtifact = linkLibraries(artifact, libs);
     const factory = new ContractFactory(
         artifact.abi,
-        artifact.bytecode,
+        linkedArtifact.bytecode,
         signer
     );
-    const libraries = { libraries: libs };
-    console.log(libraries);
 
-    const contract = await factory.deploy(...args, libraries);
+    const contract = await factory.deploy(...args);
     await contract.waitForDeployment();
     const address = await contract.getAddress();
     return { address, contract: contract as unknown as T };
@@ -65,17 +102,14 @@ async function deployFacets(
         StateSnapshotFacetArtifact,
         JoinChannelFacetArtifact
     ];
-    let addresses: string[] = [];
-    console.log(libs);
 
-    for (const artifact of artifacts) {
-        console.log(artifact.contractName);
-        const { address } = await deployArtifact(artifact, signer, libs);
-        console.log(address);
-        addresses.push(address);
-    }
-
-    return addresses;
+    return Promise.all(
+        artifacts.map((artifact) =>
+            deployArtifact(artifact, signer, libs).then(
+                ({ address }) => address
+            )
+        )
+    );
 }
 
 export async function deploy(
