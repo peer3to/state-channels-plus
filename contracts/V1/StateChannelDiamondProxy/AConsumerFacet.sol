@@ -3,7 +3,7 @@ pragma solidity ^0.8.8;
 import "../types/DataTypes.sol";
 import "../StateChannelManagerInterface.sol";
 
-abstract contract ConsumerFacet {
+abstract contract AConsumerFacet {
     function openChannel(bytes32 channelId, bytes[] calldata openChannelData, bytes[] calldata signatures)
         external
         virtual;

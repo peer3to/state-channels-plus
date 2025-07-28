@@ -3,7 +3,7 @@ pragma solidity ^0.8.8;
 import "./StateChannelCommon.sol";
 import "../StateChannelManagerInterface.sol";
 import "./StateChannelUtilLibrary.sol";
-import "./ConsumerFacet.sol";
+import "./AConsumerFacet.sol";
 
 import "./DisputeManagerFacet.sol";
 import "./FraudProofFacet.sol";
@@ -17,7 +17,7 @@ contract AStateChannelManagerProxy is StateChannelManagerInterface, StateChannel
     DisputeFraudProofFacet disputeFraudProofFacet;
     StateSnapshotFacet stateSnapshotFacet;
     JoinChannelFacet joinChannelFacet;
-    ConsumerFacet consumerFacet;
+    AConsumerFacet consumerFacet;
 
     constructor(
         address _stateMachineImplementation,
@@ -34,7 +34,7 @@ contract AStateChannelManagerProxy is StateChannelManagerInterface, StateChannel
         disputeFraudProofFacet = DisputeFraudProofFacet(_disputeFraudProofFacet);
         stateSnapshotFacet = StateSnapshotFacet(_stateSnapshotFacet);
         joinChannelFacet = JoinChannelFacet(_joinChannelFacet);
-        consumerFacet = ConsumerFacet(_consumerFacet);
+        consumerFacet = AConsumerFacet(_consumerFacet);
         p2pTime = 15;
         agreementTime = 5;
         chainFallbackTime = 30;

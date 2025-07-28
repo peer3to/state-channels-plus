@@ -1,7 +1,6 @@
 pragma solidity ^0.8.8;
 
 import "./AStateChannelManagerProxy.sol";
-import "./ConsumerFacet.sol";
 import "../types/DataTypes.sol";
 
 /**

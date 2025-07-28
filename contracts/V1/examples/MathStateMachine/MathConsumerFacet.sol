@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.8;
 
-import "../../StateChannelDiamondProxy/ConsumerFacet.sol";
+import "../../StateChannelDiamondProxy/AConsumerFacet.sol";
 import "../../StateChannelDiamondProxy/StateChannelUtilLibrary.sol";
 import "./MathStateMachine.sol";
 import "../../types/DataTypes.sol";
@@ -10,7 +10,7 @@ import "../../types/DataTypes.sol";
  * @title MathConsumerFacet
  * @dev Concrete implementation of ConsumerFacet for the Math state machine example
  */
-contract MathConsumerFacet is ConsumerFacet {
+contract MathConsumerFacet is AConsumerFacet {
     // Events
     event SetState(bytes32 indexed channelId, bytes encodedState, uint256 timestamp, uint256 blockTimestamp);
 
