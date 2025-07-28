@@ -50,8 +50,7 @@ import {
     Codec,
     Type,
     SignatureUtils,
-    call,
-    isCustomContractError
+    isCustomEvmError
 } from "@/utils";
 // Types
 import { AgreementFlag, ExecutionFlags, TimeConfig } from "@/types";
@@ -486,12 +485,9 @@ class StateManager {
             console.log("Posting calldata on chain!");
             this.p2pEventHooks.onPostingCalldata?.();
 
-            await call(() =>
-                this.stateChannelManagerContract.postBlockCalldata(
-                    signedBlock,
-                    Clock.getTimeInSeconds()
-                )
-            )
+            this.stateChannelManagerContract
+                .postBlockCalldata(signedBlock, Clock.getTimeInSeconds())
+
                 .then(async (tx) => {
                     console.log("Block calldata posted successfully:", tx.hash);
                     const result = await tx.wait();
@@ -505,7 +501,7 @@ class StateManager {
                     return result;
                 })
                 .catch((error) => {
-                    if (isCustomContractError(error)) {
+                    if (isCustomEvmError(error)) {
                         console.log(
                             "Error posting block on chain",
                             error.errorDescription

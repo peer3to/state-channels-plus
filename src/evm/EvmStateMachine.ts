@@ -9,7 +9,7 @@ import StateManager from "@/stateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
 import { ExitChannelEthersType } from "@/types/ethers";
-import { DebugProxy } from "@/utils";
+import { DebugProxy, decodeErrorProxy } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import AStateMachine from "@/AStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
@@ -262,6 +262,9 @@ class EvmStateMachine extends AStateMachine {
     ): Promise<P2pInstance<T>> {
         // Sync clock to DLT
         await Clock.init(signer.provider!);
+        deployedStateChannelContractInstance = decodeErrorProxy(
+            deployedStateChannelContractInstance
+        ) as AStateChannelManagerProxy;
 
         // Connect signer to state channel contract
         deployedStateChannelContractInstance =

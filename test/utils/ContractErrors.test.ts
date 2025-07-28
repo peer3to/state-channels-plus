@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { ethers } from "ethers";
-import { call, isCustomContractError } from "@/utils";
+import { isCustomEvmError, decodeErrorProxy } from "@/utils/contractCaller";
 import { ethers as hre } from "hardhat";
 import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
 import * as factory from "@test/factory";
@@ -13,7 +13,7 @@ describe("artifacts loading", () => {
         expect(artifacts.length).to.be.greaterThan(0);
 
         // Check that each artifact has the expected structure
-        artifacts.forEach((artifact, index) => {
+        artifacts.forEach((artifact) => {
             expect(artifact).to.have.property("abi");
             expect(artifact.abi).to.be.an("array");
             expect(artifact).to.have.property("contractName");
@@ -48,15 +48,23 @@ describe("ContractCaller and ContractErrors", () => {
             );
             const errorData = fullHash.slice(0, 10); // 0x + 8 hex chars = 4 bytes
 
-            try {
-                await call(() => {
+            // Create a mock contract object that throws the error
+            const mockContract = {
+                testMethod: async () => {
                     const error = new Error("Contract call failed");
                     (error as any).data = errorData;
                     throw error;
-                });
+                }
+            };
+
+            // Wrap with proxy
+            const proxiedContract = decodeErrorProxy(mockContract);
+
+            try {
+                await proxiedContract.testMethod();
                 expect.fail(`Expected ${errorName} to be thrown`);
             } catch (error: any) {
-                expect(isCustomContractError(error)).to.be.true;
+                expect(isCustomEvmError(error)).to.be.true;
                 expect(error.errorDescription.name).to.equal(errorName);
             }
         }
@@ -65,13 +73,21 @@ describe("ContractCaller and ContractErrors", () => {
     it("should pass through regular errors unchanged", async () => {
         const regularError = new Error("Out of gas");
 
-        try {
-            await call(() => {
+        // Create a mock contract object that throws a regular error
+        const mockContract = {
+            testMethod: async () => {
                 throw regularError;
-            });
+            }
+        };
+
+        // Wrap with proxy
+        const proxiedContract = decodeErrorProxy(mockContract);
+
+        try {
+            await proxiedContract.testMethod();
             expect.fail("Expected error to be thrown");
         } catch (error: any) {
-            expect(isCustomContractError(error)).to.be.false;
+            expect(isCustomEvmError(error)).to.be.false;
             expect(error.message).to.equal("Out of gas");
         }
     });
@@ -81,7 +97,7 @@ describe("ContractCaller and ContractErrors", () => {
 
         beforeEach(async () => {
             const contracts = await deployMathChannelProxyFixture(hre);
-            mathChannelManager = contracts.mathChannelManager;
+            mathChannelManager = decodeErrorProxy(contracts.mathChannelManager);
         });
 
         it("should handle postBlockCalldata success case", async () => {
@@ -93,11 +109,9 @@ describe("ContractCaller and ContractErrors", () => {
             const maxTimestamp = currentBlock!.timestamp + 100; // 100 seconds in future
 
             try {
-                const result = await call(() =>
-                    mathChannelManager.postBlockCalldata(
-                        signedBlock,
-                        maxTimestamp
-                    )
+                const result = await mathChannelManager.postBlockCalldata(
+                    signedBlock,
+                    maxTimestamp
                 );
 
                 // Should succeed without throwing
@@ -116,17 +130,15 @@ describe("ContractCaller and ContractErrors", () => {
             const maxTimestamp = currentBlock!.timestamp - 100;
 
             try {
-                await call(() =>
-                    mathChannelManager.postBlockCalldata(
-                        signedBlock,
-                        maxTimestamp
-                    )
+                await mathChannelManager.postBlockCalldata(
+                    signedBlock,
+                    maxTimestamp
                 );
                 expect.fail(
                     "Expected ErrorBlockCalldataTimestampTooLate to be thrown"
                 );
             } catch (error: any) {
-                expect(isCustomContractError(error)).to.be.true;
+                expect(isCustomEvmError(error)).to.be.true;
                 expect(error.errorDescription.name).to.equal(
                     "ErrorBlockCalldataTimestampTooLate"
                 );
@@ -141,23 +153,22 @@ describe("ContractCaller and ContractErrors", () => {
             const maxTimestamp = currentBlock!.timestamp + 100;
 
             // First call should succeed
-            await call(() =>
-                mathChannelManager.postBlockCalldata(signedBlock, maxTimestamp)
+            await mathChannelManager.postBlockCalldata(
+                signedBlock,
+                maxTimestamp
             );
 
             // Second call with the same data should fail
             try {
-                await call(() =>
-                    mathChannelManager.postBlockCalldata(
-                        signedBlock,
-                        maxTimestamp
-                    )
+                await mathChannelManager.postBlockCalldata(
+                    signedBlock,
+                    maxTimestamp
                 );
                 expect.fail(
                     "Expected ErrorBlockCalldataAlreadyPosted to be thrown"
                 );
             } catch (error: any) {
-                expect(isCustomContractError(error)).to.be.true;
+                expect(isCustomEvmError(error)).to.be.true;
                 expect(error.errorDescription.name).to.equal(
                     "ErrorBlockCalldataAlreadyPosted"
                 );
