@@ -2,7 +2,7 @@ pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
 import "../types/DataTypes.sol";
-import "./AStateChannelManagerProxy.sol";
+import "./StateChannelManagerProxy.sol";
 import "./Errors.sol";
 import "./StateChannelUtilLibrary.sol";
 
@@ -76,7 +76,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot[] memory milestoneSnapshots,
         StateSnapshot memory genesisSnapshot
     ) internal returns (bool) {
-        (bool isValid,) = AStateChannelManagerProxy(address(this)).verifyMilestones(
+        (bool isValid,) = StateChannelManagerProxy(address(this)).verifyMilestones(
             milestoneProofs, milestoneSnapshots, genesisSnapshot
         );
         return isValid;
@@ -129,7 +129,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         Balance memory totalWithdrawals = cb.totalOnChainWithdrawals;
         for (uint256 i = 0; i < exitChannelBlocks.length; i++) {
             for (uint256 j = 0; j < exitChannelBlocks[i].exitChannels.length; j++) {
-                bool success = AStateChannelManagerProxy(address(this)).withdrawAssetsComposable(
+                bool success = StateChannelManagerProxy(address(this)).withdrawAssetsComposable(
                     exitChannelBlocks[i].exitChannels[j]
                 );
                 require(success, ErrorWithdrawalFailed());

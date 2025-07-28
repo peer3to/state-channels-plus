@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
-import "./AStateChannelManagerProxy.sol";
+import "./StateChannelManagerProxy.sol";
 import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
 import "./utils/DisputeUtils.sol";
@@ -30,7 +30,7 @@ contract DisputeManagerFacet is StateChannelCommon {
     ) public {
         //first audit -> update on-chain slashes -> reduced threshold
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
-        address[] memory slashes = AStateChannelManagerProxy(address(this)).auditDispute(dispute, disputeAuditingData);
+        address[] memory slashes = StateChannelManagerProxy(address(this)).auditDispute(dispute, disputeAuditingData);
         for (uint256 i = 0; i < slashes.length; i++) {
             addOnChainSlashedParticipant(dispute.channelId, slashes[i]);
         }
@@ -147,7 +147,8 @@ contract DisputeManagerFacet is StateChannelCommon {
 
         FraudProofVerificationContext memory proofContext =
             FraudProofVerificationContext({channelId: dispute.channelId});
-        address[] memory slashes = _verifyFraudProofs(dispute.fraudProofs, proofContext);
+        address[] memory slashes =
+            StateChannelManagerProxy(address(this)).verifyFraudProofs(dispute.fraudProofs, proofContext);
         slashes = StateChannelUtilLibrary.concatAddressArraysNoDuplicates(slashes, dispute.onChainSlashes);
         address[] memory removals = _calculateRemovals(dispute);
 
@@ -264,7 +265,8 @@ contract DisputeManagerFacet is StateChannelCommon {
     }
 
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public {
-        Dispute[] memory maliciousDisputes = _verifyDisputeFraudProofs(proofs);
+        bytes memory result = StateChannelManagerProxy(address(this)).verifyDisputeFraudProofs(proofs);
+        Dispute[] memory maliciousDisputes = abi.decode(result, (Dispute[]));
         for (uint256 i = 0; i < maliciousDisputes.length; i++) {
             _killDispute(maliciousDisputes[i]);
         }
@@ -337,13 +339,13 @@ contract DisputeManagerFacet is StateChannelCommon {
 
         // Apply slashes
         ExitChannel[] memory slashExitChannels;
-        (outputState.encodedModifiedState, slashExitChannels) =
-            _applySlashes(outputState.encodedModifiedState, slashParticipants);
+        (outputState.encodedModifiedState, slashExitChannels) = StateChannelManagerProxy(address(this))
+            .applySlashesToStateMachine(outputState.encodedModifiedState, slashParticipants);
 
         // Apply removals
         ExitChannel[] memory removalExitChannels;
-        (outputState.encodedModifiedState, removalExitChannels) =
-            _applyRemovals(outputState.encodedModifiedState, removeParticipants);
+        (outputState.encodedModifiedState, removalExitChannels) = StateChannelManagerProxy(address(this))
+            .removeParticipantsFromStateMachine(outputState.encodedModifiedState, removeParticipants);
 
         // Combine exit channels and calculate totals
         ExitChannel[] memory allExitChannels =

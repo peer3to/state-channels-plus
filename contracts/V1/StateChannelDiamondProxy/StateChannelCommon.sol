@@ -4,7 +4,6 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./StateChannelManagerStorage.sol";
 import "../StateChannelManagerEvents.sol";
 import "./StateChannelUtilLibrary.sol";
-import "./AStateChannelManagerProxy.sol";
 import "./Errors.sol";
 import "./utils/DisputeUtils.sol";
 
@@ -127,21 +126,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         }
     }
 
-    function _applySlashes(bytes memory encodedStateMachineState, address[] memory slashParticipants)
-        internal
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
-    {
-        (encodedModifiedState, exitChannels) = _applySlashesToStateMachine(encodedStateMachineState, slashParticipants);
-    }
-
-    function _applyRemovals(bytes memory encodedStateMachineState, address[] memory removeParticipants)
-        internal
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
-    {
-        (encodedModifiedState, exitChannels) =
-            _removeParticipantsFromStateMachine(encodedStateMachineState, removeParticipants);
-    }
-
     function _calculateTotalWithdrawals(Balance memory totalWithdrawals, ExitChannel[] memory exitChannels)
         internal
         view
@@ -155,18 +139,20 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
 
     function _verifyFraudProofs(FraudProof[] memory fraudProofs, FraudProofVerificationContext memory proofContext)
         internal
+        virtual
         returns (address[] memory slashParticipants)
     {
-        return AStateChannelManagerProxy(address(this)).verifyFraudProofs(fraudProofs, proofContext);
+        // This will be overridden by StateChannelManagerProxy
+        revert("Must be implemented by inheriting contract");
     }
 
     function _verifyDisputeFraudProofs(DisputeFraudProof[] memory disputeFraudProofs)
         internal
+        virtual
         returns (Dispute[] memory maliciousDisputes)
     {
-        return abi.decode(
-            AStateChannelManagerProxy(address(this)).verifyDisputeFraudProofs(disputeFraudProofs), (Dispute[])
-        );
+        // This will be overridden by StateChannelManagerProxy
+        revert("Must be implemented by inheriting contract");
     }
 
     function _removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
@@ -174,7 +160,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         virtual
         returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
     {
-        return AStateChannelManagerProxy(address(this)).removeParticipantsFromStateMachine(encodedState, participants);
+        // This will be overridden by StateChannelManagerProxy
+        revert("Must be implemented by inheriting contract");
     }
 
     function _areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks, bytes32 optionalPreviousHash)
@@ -229,7 +216,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         virtual
         returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
     {
-        return AStateChannelManagerProxy(address(this)).applySlashesToStateMachine(encodedState, slashedParticipants);
+        // This will be overridden by StateChannelManagerProxy
+        revert("Must be implemented by inheriting contract");
     }
 
     function isDisputeCommitted(Dispute memory dispute) internal view returns (bool) {

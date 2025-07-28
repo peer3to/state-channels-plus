@@ -11,7 +11,7 @@ import "./DisputeFraudProofFacet.sol";
 import "./StateSnapshotFacet.sol";
 import "./JoinChannelFacet.sol";
 
-contract AStateChannelManagerProxy is StateChannelManagerInterface, StateChannelCommon {
+contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelCommon {
     DisputeManagerFacet disputeManagerFacet;
     FraudProofFacet fraudProofFacet;
     DisputeFraudProofFacet disputeFraudProofFacet;
@@ -81,7 +81,7 @@ contract AStateChannelManagerProxy is StateChannelManagerInterface, StateChannel
         virtual
         override
     {
-        require(!isChannelOpen(channelId), "AStateChannelManagerProxy: openChannel - channel already open");
+        require(!isChannelOpen(channelId), "StateChannelManagerProxy: openChannel - channel already open");
         consumerFacet.openChannel(channelId, openChannelData, signatures);
     }
 
@@ -256,10 +256,11 @@ contract AStateChannelManagerProxy is StateChannelManagerInterface, StateChannel
         public
         returns (bytes memory maliciousDisputesEncoded)
     {
-        return _delegatecall(
+        bytes memory result = _delegatecall(
             address(disputeFraudProofFacet),
             abi.encodeCall(disputeFraudProofFacet.verifyDisputeFraudProofs, (disputeFraudProofs))
         );
+        return result;
     }
 
     function getParticipants(bytes32 channelId)
@@ -396,7 +397,7 @@ contract AStateChannelManagerProxy is StateChannelManagerInterface, StateChannel
         (bool success, bytes memory result) = target.delegatecall(data);
         if (!success) {
             if (result.length == 0) {
-                revert("AStateChannelManagerProxy - Delegatecall failed");
+                revert("StateChannelManagerProxy - Delegatecall failed");
             }
             assembly ("memory-safe") {
                 let returndata_size := mload(result)

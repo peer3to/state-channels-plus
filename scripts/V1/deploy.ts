@@ -11,13 +11,10 @@ import FraudProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDi
 import DisputeFraudProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol/DisputeFraudProofFacet.json";
 import StateSnapshotFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol/StateSnapshotFacet.json";
 import JoinChannelFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol/JoinChannelFacet.json";
-import AStateChannelManagerProxyArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/AStateChannelManagerProxy.sol/AStateChannelManagerProxy.json";
+import StateChannelManagerProxyArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol/StateChannelManagerProxy.json";
 import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol/LocalDiamond.json";
 
-import {
-    LocalDiamond,
-    AStateChannelManagerProxy
-} from "@typechain-types/index";
+import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types/index";
 import { Artifact } from "hardhat/types";
 
 export async function deployLocalFromTx(
@@ -111,7 +108,7 @@ export async function deploy(
     stateMachineAddress: string,
     consumerFacetAddress: string,
     signer: Signer
-): Promise<{ address: string; contract: AStateChannelManagerProxy }> {
+): Promise<{ address: string; contract: StateChannelManagerProxy }> {
     const { address: libAddress } = await deployArtifact(
         StateChannelUtilLibraryArtifact,
         signer
@@ -121,11 +118,12 @@ export async function deploy(
         StateChannelUtilLibrary: libAddress
     });
 
-    return deployArtifact(AStateChannelManagerProxyArtifact, signer, {}, [
-        stateMachineAddress,
-        ...facetAddresses,
-        consumerFacetAddress
-    ]);
+    return deployArtifact<StateChannelManagerProxy>(
+        StateChannelManagerProxyArtifact,
+        signer,
+        {},
+        [stateMachineAddress, ...facetAddresses, consumerFacetAddress]
+    );
 }
 
 export async function deployLocalDiamond(

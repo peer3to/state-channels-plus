@@ -1,7 +1,7 @@
 import { EVM } from "@ethereumjs/evm";
 import { ethers, Signer, hexlify, ContractDeployTransaction } from "ethers";
 import {
-    AStateChannelManagerProxy,
+    StateChannelManagerProxy,
     AStateMachine as AStateMachineContract
 } from "@typechain-types";
 import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -256,7 +256,7 @@ class EvmStateMachine extends AStateMachine {
     public static async p2pSetup<T extends AStateMachineContract>(
         signer: Signer,
         deployStateMachineTx: any,
-        deployedStateChannelContractInstance: AStateChannelManagerProxy,
+        deployedStateChannelContractInstance: StateChannelManagerProxy,
         stateMachineContractInstance: T,
         p2pEventHooks?: P2pEventHooks
     ): Promise<P2pInstance<T>> {
