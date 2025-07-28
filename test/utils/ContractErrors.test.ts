@@ -13,7 +13,7 @@ describe("artifacts loading", () => {
         expect(artifacts.length).to.be.greaterThan(0);
 
         // Check that each artifact has the expected structure
-        artifacts.forEach((artifact) => {
+        artifacts.forEach((artifact: any) => {
             expect(artifact).to.have.property("abi");
             expect(artifact.abi).to.be.an("array");
             expect(artifact).to.have.property("contractName");
