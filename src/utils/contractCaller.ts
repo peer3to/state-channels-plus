@@ -8,7 +8,7 @@ const errorInterface = new ethers.Interface(errorAbis);
 /**
  * Custom error class that extends Error and includes decoded Solidity error information
  */
-export class CustomContractError extends Error {
+export class CustomEvmError extends Error {
     public readonly errorDescription: ErrorDescription;
     public readonly isCustomError = true;
     public readonly originalError: any;
@@ -29,22 +29,33 @@ function decodeCustomError(errorData: Bytes): ErrorDescription | null {
     return errorInterface.parseError(errorData);
 }
 
-export function isCustomContractError(
-    error: any
-): error is CustomContractError {
+export function isCustomEvmError(error: any): error is CustomEvmError {
     return !!error && error.isCustomError === true;
 }
 
-export async function call<T>(contractCall: () => Promise<T>): Promise<T> {
-    try {
-        return await contractCall();
-    } catch (error: any) {
-        const customError = error.data ? decodeCustomError(error.data) : null;
+export function decodeErrorProxy<T extends Object>(contract: T) {
+    return new Proxy(contract, {
+        get(target, prop, receiver) {
+            const originalProperty = Reflect.get(target, prop, receiver);
 
-        if (customError) {
-            throw new CustomContractError(customError, error);
+            if (typeof originalProperty !== "function") {
+                return originalProperty;
+            }
+            return async function (...args: any[]) {
+                try {
+                    return await Reflect.apply(originalProperty, target, args);
+                } catch (error: any) {
+                    const customError = error.data
+                        ? decodeCustomError(error.data)
+                        : null;
+
+                    if (customError) {
+                        throw new CustomEvmError(customError, error);
+                    }
+
+                    throw error;
+                }
+            };
         }
-
-        throw error;
-    }
+    });
 }
