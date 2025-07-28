@@ -364,7 +364,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
         internal
-        override
         returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
     {
         exitChannels = new ExitChannel[](slashedParticipants.length);
@@ -379,7 +378,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     function _removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
         internal
-        override
         returns (bytes memory encodedModifiedState, ExitChannel[] memory)
     {
         ExitChannel[] memory exitChannels = new ExitChannel[](participants.length);

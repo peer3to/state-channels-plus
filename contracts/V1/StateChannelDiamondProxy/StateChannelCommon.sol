@@ -137,33 +137,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return totalWithdrawals;
     }
 
-    function _verifyFraudProofs(FraudProof[] memory fraudProofs, FraudProofVerificationContext memory proofContext)
-        internal
-        virtual
-        returns (address[] memory slashParticipants)
-    {
-        // This will be overridden by StateChannelManagerProxy
-        revert("Must be implemented by inheriting contract");
-    }
-
-    function _verifyDisputeFraudProofs(DisputeFraudProof[] memory disputeFraudProofs)
-        internal
-        virtual
-        returns (Dispute[] memory maliciousDisputes)
-    {
-        // This will be overridden by StateChannelManagerProxy
-        revert("Must be implemented by inheriting contract");
-    }
-
-    function _removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
-        internal
-        virtual
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
-    {
-        // This will be overridden by StateChannelManagerProxy
-        revert("Must be implemented by inheriting contract");
-    }
-
     function _areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks, bytes32 optionalPreviousHash)
         internal
         pure
@@ -210,15 +183,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return (stateMachineImplementation.getState());
     }
     //stateless
-
-    function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
-        internal
-        virtual
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
-    {
-        // This will be overridden by StateChannelManagerProxy
-        revert("Must be implemented by inheriting contract");
-    }
 
     function isDisputeCommitted(Dispute memory dispute) internal view returns (bool) {
         bytes32 channelId = dispute.channelId;
