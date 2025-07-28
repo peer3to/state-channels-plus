@@ -3,9 +3,7 @@ import {
     Signer,
     Contract,
     ContractDeployTransaction,
-    getCreateAddress,
-    keccak256,
-    toUtf8Bytes
+    getCreateAddress
 } from "ethers";
 
 import StateChannelUtilLibraryArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelUtilLibrary.sol/StateChannelUtilLibrary.json";
