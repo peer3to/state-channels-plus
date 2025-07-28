@@ -61,11 +61,12 @@
   },
   "scripts": {
     "compile": "yarn hardhat clean && yarn hardhat compile --force && yarn hardhat typechain",
+    "generate-artifacts": "node scripts/generate-artifacts.js",
     "testts": "yarn hardhat test --no-compile",
     "testc": "yarn compile && yarn hardhat test",
     "test": "yarn hardhat test",
     "test:coverage": "nyc --reporter=html yarn testts",
-    "build": "yarn compile && rimraf dist && mkdir -p dist && cp -r artifacts dist/ && tsc && npm pack && node rename-pack.js",
+    "build": "yarn compile && yarn generate-artifacts && rimraf dist && mkdir -p dist && tsc && npm pack && node rename-pack.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky install"

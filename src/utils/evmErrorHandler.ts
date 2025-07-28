@@ -1,13 +1,10 @@
 import { ErrorDescription, ethers } from "ethers";
-import { errorAbis } from "./ContractErrors";
+import { errorAbis } from "./GeneratedArtifacts";
 import { Bytes } from "@/types/types";
 
 // interface for parsing errors
 const errorInterface = new ethers.Interface(errorAbis);
 
-/**
- * Custom error class that extends Error and includes decoded Solidity error information
- */
 export class CustomEvmError extends Error {
     public readonly errorDescription: ErrorDescription;
     public readonly isCustomError = true;

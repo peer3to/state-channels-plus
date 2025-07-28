@@ -1,11 +1,11 @@
 import { expect } from "chai";
 import { ethers } from "ethers";
-import { isCustomEvmError, decodeErrorProxy } from "@/utils/contractCaller";
+import { isCustomEvmError, decodeErrorProxy } from "@/utils/evmErrorHandler";
 import { ethers as hre } from "hardhat";
 import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
 import * as factory from "@test/factory";
 import { MathStateChannelManagerProxy } from "@typechain-types";
-import { artifacts, errorAbis } from "@/utils/ContractErrors";
+import { artifacts, errorAbis } from "@/utils/GeneratedArtifacts";
 
 describe("artifacts loading", () => {
     it("should load all required facet artifacts", () => {
@@ -13,7 +13,7 @@ describe("artifacts loading", () => {
         expect(artifacts.length).to.be.greaterThan(0);
 
         // Check that each artifact has the expected structure
-        artifacts.forEach((artifact) => {
+        artifacts.forEach((artifact: any) => {
             expect(artifact).to.have.property("abi");
             expect(artifact.abi).to.be.an("array");
             expect(artifact).to.have.property("contractName");
@@ -25,7 +25,7 @@ describe("artifacts loading", () => {
         expect(errorAbis).to.be.an("array");
 
         // Check that all extracted items are actually errors
-        errorAbis.forEach((errorAbi) => {
+        errorAbis.forEach((errorAbi: any) => {
             expect(errorAbi).to.have.property("type", "error");
             expect(errorAbi).to.have.property("name");
         });
@@ -33,8 +33,7 @@ describe("artifacts loading", () => {
 });
 
 describe("ContractCaller and ContractErrors", () => {
-    it("should decode real contract errors correctly", async () => {
-        // Test with actual error selectors that contracts would throw
+    it("should decode  contract errors correctly", async () => {
         const testCases = [
             "ErrorJoinChannelExpired",
             "ErrorDisputeAlreadyPosted",
@@ -48,20 +47,16 @@ describe("ContractCaller and ContractErrors", () => {
             );
             const errorData = fullHash.slice(0, 10); // 0x + 8 hex chars = 4 bytes
 
-            // Create a mock contract object that throws the error
-            const mockContract = {
+            const mockContract = decodeErrorProxy({
                 testMethod: async () => {
                     const error = new Error("Contract call failed");
                     (error as any).data = errorData;
                     throw error;
                 }
-            };
-
-            // Wrap with proxy
-            const proxiedContract = decodeErrorProxy(mockContract);
+            });
 
             try {
-                await proxiedContract.testMethod();
+                await mockContract.testMethod();
                 expect.fail(`Expected ${errorName} to be thrown`);
             } catch (error: any) {
                 expect(isCustomEvmError(error)).to.be.true;
@@ -74,17 +69,14 @@ describe("ContractCaller and ContractErrors", () => {
         const regularError = new Error("Out of gas");
 
         // Create a mock contract object that throws a regular error
-        const mockContract = {
+        const mockContract = decodeErrorProxy({
             testMethod: async () => {
                 throw regularError;
             }
-        };
-
-        // Wrap with proxy
-        const proxiedContract = decodeErrorProxy(mockContract);
+        });
 
         try {
-            await proxiedContract.testMethod();
+            await mockContract.testMethod();
             expect.fail("Expected error to be thrown");
         } catch (error: any) {
             expect(isCustomEvmError(error)).to.be.false;
