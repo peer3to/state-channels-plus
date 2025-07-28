@@ -1,7 +1,6 @@
 import {
     ContractFactory,
     Signer,
-    Contract,
     ContractDeployTransaction,
     getCreateAddress
 } from "ethers";
@@ -21,18 +20,16 @@ import {
 } from "@typechain-types/index";
 import { Artifact } from "hardhat/types";
 
-export async function deployLocalFromTx<T extends Contract>(
+export async function deployLocalFromTx(
     tx: ContractDeployTransaction,
     signer: Signer
-): Promise<{ address: string; contract?: T }> {
+): Promise<string> {
     if (!signer) throw new Error("Signer required for deployment");
     const sentTx = await signer.sendTransaction(tx);
-    const address = getCreateAddress({
+    return getCreateAddress({
         from: sentTx.from!,
         nonce: sentTx.nonce
     });
-
-    return { address };
 }
 
 export function linkLibraries(
@@ -71,7 +68,7 @@ export function linkLibraries(
 }
 
 export async function deployArtifact<T>(
-    artifact: any,
+    artifact: Artifact,
     signer: Signer,
     libs: Record<string, string> = {},
     args: any[] = []
@@ -124,12 +121,11 @@ export async function deploy(
         StateChannelUtilLibrary: libAddress
     });
 
-    return deployArtifact<AStateChannelManagerProxy>(
-        AStateChannelManagerProxyArtifact,
-        signer,
-        {},
-        [stateMachineAddress, ...facetAddresses, consumerFacetAddress]
-    );
+    return deployArtifact(AStateChannelManagerProxyArtifact, signer, {}, [
+        stateMachineAddress,
+        ...facetAddresses,
+        consumerFacetAddress
+    ]);
 }
 
 export async function deployLocalDiamond(
@@ -144,12 +140,9 @@ export async function deployLocalDiamond(
         StateChannelUtilLibrary: libAddress
     });
 
-    const { address: stateMachineAddress } = await deployLocalFromTx(
-        stateMachineTx,
-        signer
-    );
+    const stateMachineAddress = await deployLocalFromTx(stateMachineTx, signer);
 
-    return deployArtifact<LocalDiamond>(LocalDiamondArtifact, signer, {}, [
+    return deployArtifact(LocalDiamondArtifact, signer, {}, [
         stateMachineAddress,
         ...facetAddresses
     ]);
