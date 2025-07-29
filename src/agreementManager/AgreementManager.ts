@@ -3,9 +3,18 @@ import {
     BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import Storage, { SortOrder } from "@/storage";
-import { Address, BlockHeight, Bytes, ForkId, Signature } from "@/types/types";
-import { Block } from "@/models";
+import { BlockEntry } from "@/storage/BlockStorage";
+import {
+    Address,
+    BlockHeight,
+    Bytes,
+    ForkId,
+    Signature,
+    Hash
+} from "@/types/types";
+import { Block, StateSnapshot } from "@/models";
 import { Codec, Type } from "@/utils";
 import { ethers } from "ethers";
 import * as SetUtils from "@/utils/set";
@@ -106,34 +115,229 @@ class AgreementManager {
 
     /**
      * Get the latest finalized state and latest signed state (by signer) with virtual voting blocks
+     * This method accounts for exit points as milestones in the new design where participants can exit within a fork
      */
-    public getFinalizedAndLatestWithVotes(
+    public getFinalizedAndLatestWithMilestones(
         forkId: ForkId,
         signerAddress: Address
     ): {
         encodedLatestFinalizedState: Bytes;
         encodedLatestCorrectState: Bytes;
         virtualVotingBlocks: BlockConfirmationStruct[];
+        milestoneProofs: MilestoneProofStruct[];
+        milestoneSnapshots: StateSnapshot[];
     } {
-        const thresholdAddresses = new Set<Address>(
-            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId)
-                ?.snapshotData.participants as Address[]
+        const genesisSnapshot =
+            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
+        if (!genesisSnapshot) {
+            throw new Error("Fork not found");
+        }
+
+        // Get all exit points for this fork - these are the milestones
+        const exitPoints = this.storage.exitPoints.getExitPointsInRange(forkId);
+
+        // Get all blocks sorted by height descending
+        const blockEntries = Array.from(
+            this.storage.blocks.getBlocksByForkId(forkId, SortOrder.DESC)
         );
 
-        if (thresholdAddresses.size === 0) {
-            throw new Error("Fork not found");
+        let encodedLatestFinalizedState: Bytes | undefined;
+        let encodedLatestCorrectState: Bytes | undefined;
+        let virtualVotingBlocks: BlockConfirmationStruct[] = [];
+        let milestoneProofs: MilestoneProofStruct[] = [];
+        let milestoneSnapshots: StateSnapshot[] = [];
+
+        // Start with genesis snapshot for the first milestone
+        let currentSnapshot = genesisSnapshot;
+
+        // Process exit points in chronological order - each exit point is a milestone
+        const sortedExitPoints = [...exitPoints].sort(
+            (a, b) => Number(a) - Number(b)
+        );
+
+        for (const exitPointHeight of sortedExitPoints) {
+            const milestoneData = this.processMilestone(
+                exitPointHeight,
+                blockEntries,
+                currentSnapshot
+            );
+
+            if (milestoneData) {
+                milestoneProofs.push(milestoneData.milestoneProof);
+                milestoneSnapshots.push(milestoneData.snapshot);
+                currentSnapshot = milestoneData.snapshot;
+            }
+        }
+
+        // Find latest finalized and correct states using the final participant set
+        const finalParticipantSet = new Set<Address>(
+            currentSnapshot.snapshotData.participants as Address[]
+        );
+
+        const virtualVotingResult = this.performVirtualVoting(
+            blockEntries,
+            signerAddress,
+            finalParticipantSet
+        );
+
+        encodedLatestFinalizedState =
+            virtualVotingResult.encodedLatestFinalizedState;
+        encodedLatestCorrectState =
+            virtualVotingResult.encodedLatestCorrectState;
+        virtualVotingBlocks = virtualVotingResult.virtualVotingBlocks;
+
+        // If no finalized state found, use genesis
+        if (!encodedLatestFinalizedState) {
+            encodedLatestFinalizedState =
+                this.storage.getGenesisStateMachineState(forkId) as Bytes;
+        }
+
+        // If no correct state found, use genesis
+        if (!encodedLatestCorrectState) {
+            encodedLatestCorrectState =
+                this.storage.getGenesisStateMachineState(forkId) as Bytes;
+        }
+
+        return {
+            encodedLatestFinalizedState,
+            encodedLatestCorrectState,
+            virtualVotingBlocks,
+            milestoneProofs,
+            milestoneSnapshots
+        };
+    }
+
+    /**
+     * Build a milestone proof for a given set of blocks and participant set
+     */
+    private buildMilestoneProof(
+        blocks: any[],
+        participantSet: Set<Address>,
+        genesisSnapshot: StateSnapshot
+    ): MilestoneProofStruct | null {
+        if (blocks.length === 0) {
+            return null;
+        }
+
+        const blockConfirmations: BlockConfirmationStruct[] = [];
+        let requiredSignatures = new Set<Address>(participantSet);
+
+        for (const blockEntry of blocks) {
+            const block = Block.decode(
+                blockEntry.blockConfirmation.signedBlock.encodedBlock
+            );
+            const signersAddresses = block.getSignerAddresses(
+                blockEntry.blockConfirmation.signatures as Signature[]
+            );
+
+            // Add to block confirmations
+            blockConfirmations.push(blockEntry.blockConfirmation);
+
+            // Remove the signers we found from required signatures
+            requiredSignatures = SetUtils.difference(
+                requiredSignatures,
+                signersAddresses
+            );
+
+            // Check if we found a finalized state (all participants signed)
+            if (requiredSignatures.size === 0) {
+                return {
+                    blockConfirmations
+                };
+            }
+        }
+
+        return null; // No milestone achieved
+    }
+
+    /**
+     * Process a single milestone at the given exit point height
+     */
+    private processMilestone(
+        exitPointHeight: BlockHeight,
+        blockEntries: any[],
+        currentSnapshot: StateSnapshot
+    ): {
+        milestoneProof: MilestoneProofStruct;
+        snapshot: StateSnapshot;
+    } | null {
+        // Get blocks up to this exit point (milestone)
+        const blocksUpToExit = blockEntries
+            .filter((entry: any) => {
+                const block = Block.decode(
+                    entry.blockConfirmation.signedBlock.encodedBlock
+                );
+                return block.coordinates.height <= exitPointHeight;
+            })
+            .sort((a: any, b: any) => {
+                const blockA = Block.decode(
+                    a.blockConfirmation.signedBlock.encodedBlock
+                );
+                const blockB = Block.decode(
+                    b.blockConfirmation.signedBlock.encodedBlock
+                );
+                return (
+                    Number(blockA.coordinates.height) -
+                    Number(blockB.coordinates.height)
+                );
+            });
+
+        // Build milestone proof for this exit point using the participant set from currentSnapshot
+        const currentParticipantSet = new Set<Address>(
+            currentSnapshot.snapshotData.participants as Address[]
+        );
+
+        const milestoneProof = this.buildMilestoneProof(
+            blocksUpToExit,
+            currentParticipantSet,
+            currentSnapshot
+        );
+
+        if (!milestoneProof) {
+            return null;
+        }
+
+        // Get the state snapshot at this exit point
+        const exitPointSnapshot = this.storage.getStateSnapshot({
+            forkId: currentSnapshot.forkId,
+            height: exitPointHeight
+        });
+
+        if (!exitPointSnapshot) {
+            return null;
+        }
+
+        return {
+            milestoneProof,
+            snapshot: exitPointSnapshot
+        };
+    }
+
+    /**
+     * Perform virtual voting to find latest finalized and correct states
+     */
+    private performVirtualVoting(
+        blockEntries: any[],
+        signerAddress: Address,
+        participantSet: Set<Address>
+    ): {
+        encodedLatestFinalizedState: Bytes | undefined;
+        encodedLatestCorrectState: Bytes | undefined;
+        virtualVotingBlocks: BlockConfirmationStruct[];
+    } {
+        // Return if participant set is empty; this should never happen
+        if (participantSet.size === 0) {
+            return {
+                encodedLatestFinalizedState: undefined,
+                encodedLatestCorrectState: undefined,
+                virtualVotingBlocks: []
+            };
         }
 
         let encodedLatestFinalizedState: Bytes | undefined;
         let encodedLatestCorrectState: Bytes | undefined;
         let virtualVotingBlocks: BlockConfirmationStruct[] = [];
-        let requiredSignatures = new Set<Address>(thresholdAddresses);
-
-        // Get all blocks sorted by height descending
-        const blockEntries = this.storage.blocks.getBlocksByForkId(
-            forkId,
-            SortOrder.DESC
-        );
+        let requiredSignatures = new Set<Address>(participantSet);
 
         for (const blockEntry of blockEntries) {
             const block = Block.decode(
@@ -145,13 +349,10 @@ class AgreementManager {
             );
 
             // Find Latest Correct State
-
-            // Check if this block is signed by our target signer
             if (
                 !encodedLatestCorrectState &&
                 signersAddresses.has(signerAddress)
             ) {
-                // Get the state for this block
                 const stateSnapshot =
                     this.storage.stateSnapshots.getStateSnapshotByHash(
                         block.stateSnapshotHash
@@ -167,8 +368,6 @@ class AgreementManager {
             }
 
             // Find Latest Finalized State
-
-            // Add to virtual voting blocks
             virtualVotingBlocks.unshift(blockEntry.blockConfirmation);
 
             // Remove the signers we found from required signatures
@@ -195,21 +394,9 @@ class AgreementManager {
             }
         }
 
-        // If no finalized state found, use genesis
-        if (!encodedLatestFinalizedState) {
-            encodedLatestFinalizedState =
-                this.storage.getGenesisStateMachineState(forkId) as Bytes;
-        }
-
-        // If no correct state found, use genesis
-        if (!encodedLatestCorrectState) {
-            encodedLatestCorrectState =
-                this.storage.getGenesisStateMachineState(forkId) as Bytes;
-        }
-
         return {
-            encodedLatestFinalizedState: encodedLatestFinalizedState,
-            encodedLatestCorrectState: encodedLatestCorrectState,
+            encodedLatestFinalizedState,
+            encodedLatestCorrectState,
             virtualVotingBlocks
         };
     }

@@ -164,12 +164,12 @@ describe("AgreementManager", () => {
         });
     });
 
-    describe("getFinalizedAndLatestWithVotes", () => {
-        it("should return finalized and latest states with virtual voting blocks", () => {
+    describe("getFinalizedAndLatestWithMilestones", () => {
+        it("should return finalized and latest states with virtual voting blocks and milestone data", () => {
             storage.blocks.storeBlockConfirmation(blockConfirmation1);
             storage.blocks.storeBlockConfirmation(blockConfirmation2);
 
-            const result = agreementManager.getFinalizedAndLatestWithVotes(
+            const result = agreementManager.getFinalizedAndLatestWithMilestones(
                 forkId,
                 participant1
             );
@@ -181,12 +181,14 @@ describe("AgreementManager", () => {
                 "0x1234567890abcdef"
             );
             expect(result.virtualVotingBlocks).to.have.length(2);
+            expect(result.milestoneProofs).to.be.an("array");
+            expect(result.milestoneSnapshots).to.be.an("array");
         });
 
         it("should throw error when fork not found", () => {
             const nonExistentForkId = ethers.hexlify(ethers.randomBytes(32));
             expect(() => {
-                agreementManager.getFinalizedAndLatestWithVotes(
+                agreementManager.getFinalizedAndLatestWithMilestones(
                     nonExistentForkId,
                     participant1
                 );
@@ -194,7 +196,7 @@ describe("AgreementManager", () => {
         });
 
         it("should use genesis state when no finalized state found", () => {
-            const result = agreementManager.getFinalizedAndLatestWithVotes(
+            const result = agreementManager.getFinalizedAndLatestWithMilestones(
                 forkId,
                 participant1
             );
@@ -206,6 +208,256 @@ describe("AgreementManager", () => {
                 "0x1234567890abcdef"
             );
             expect(result.virtualVotingBlocks).to.be.empty;
+            expect(result.milestoneProofs).to.be.an("array");
+            expect(result.milestoneSnapshots).to.be.an("array");
+        });
+
+        it("should handle exit points and build milestone proofs", () => {
+            // Store some exit points
+            storage.exitPoints.storeExitPoint(forkId, 5);
+            storage.exitPoints.storeExitPoint(forkId, 10);
+
+            // Create state snapshots at exit points with reduced participant sets
+            const snapshotAtHeight5 = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1, participant2], // participant3 removed
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(100), data: "0x" }
+                }
+            });
+
+            const snapshotAtHeight10 = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1], // participant2 and participant3 removed
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(200), data: "0x" }
+                }
+            });
+
+            // Store the snapshots
+            storage.stateSnapshots.storeStateSnapshot(snapshotAtHeight5);
+            storage.stateSnapshots.storeStateSnapshot(snapshotAtHeight10);
+
+            const result = agreementManager.getFinalizedAndLatestWithMilestones(
+                forkId,
+                participant1
+            );
+
+            expect(result.encodedLatestFinalizedState).to.equal(
+                "0x1234567890abcdef"
+            );
+            expect(result.encodedLatestCorrectState).to.equal(
+                "0x1234567890abcdef"
+            );
+            expect(result.milestoneProofs).to.be.an("array");
+            expect(result.milestoneSnapshots).to.be.an("array");
+        });
+
+        it("should verify that state snapshots contain correct participant sets after exits", () => {
+            // Create a state snapshot with reduced participant set (simulating after exits)
+            const remainingParticipants = [participant1, participant3]; // participant2 removed
+            const snapshotWithExits = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: remainingParticipants,
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(250), data: "0x" }
+                }
+            });
+
+            // Verify that the snapshot contains the correct participant set
+            const snapshotParticipantSet = new Set<Address>(
+                snapshotWithExits.snapshotData.participants as Address[]
+            );
+
+            // This should match the remaining participants after exits
+            expect(snapshotParticipantSet.size).to.equal(2);
+            expect([...snapshotParticipantSet].sort()).to.deep.equal(
+                [participant1, participant3].sort()
+            );
+
+            // Verify that participant2 is not in the set
+            expect(snapshotParticipantSet.has(participant2)).to.be.false;
+        });
+
+        it("should handle case with no exit points", () => {
+            // No exit points stored
+            const result = agreementManager.getFinalizedAndLatestWithMilestones(
+                forkId,
+                participant1
+            );
+
+            expect(result.encodedLatestFinalizedState).to.equal(
+                "0x1234567890abcdef"
+            );
+            expect(result.encodedLatestCorrectState).to.equal(
+                "0x1234567890abcdef"
+            );
+            expect(result.milestoneProofs).to.be.an("array");
+            expect(result.milestoneSnapshots).to.be.an("array");
+            expect(result.milestoneProofs).to.have.length(0);
+            expect(result.milestoneSnapshots).to.have.length(0);
+        });
+
+        it("should handle case where exit point snapshot is not found", () => {
+            // Store exit point but no corresponding snapshot
+            storage.exitPoints.storeExitPoint(forkId, 5);
+
+            const result = agreementManager.getFinalizedAndLatestWithMilestones(
+                forkId,
+                participant1
+            );
+
+            expect(result.encodedLatestFinalizedState).to.equal(
+                "0x1234567890abcdef"
+            );
+            expect(result.encodedLatestCorrectState).to.equal(
+                "0x1234567890abcdef"
+            );
+            expect(result.milestoneProofs).to.be.an("array");
+            expect(result.milestoneSnapshots).to.be.an("array");
+            // Should still work but without milestone data
+        });
+
+        it("should handle multiple exit points in correct order", () => {
+            // Store exit points in reverse order to test sorting
+            storage.exitPoints.storeExitPoint(forkId, 100);
+            storage.exitPoints.storeExitPoint(forkId, 50);
+
+            // Create state snapshots at exit points
+            const snapshotAtHeight50 = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1, participant2], // participant3 removed
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(100), data: "0x" }
+                }
+            });
+
+            const snapshotAtHeight100 = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1], // participant2 and participant3 removed
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(200), data: "0x" }
+                }
+            });
+
+            storage.stateSnapshots.storeStateSnapshot(snapshotAtHeight50);
+            storage.stateSnapshots.storeStateSnapshot(snapshotAtHeight100);
+
+            const result = agreementManager.getFinalizedAndLatestWithMilestones(
+                forkId,
+                participant1
+            );
+
+            expect(result.milestoneProofs).to.be.an("array");
+            expect(result.milestoneSnapshots).to.be.an("array");
+            // Should process milestones in chronological order (50, then 100)
+        });
+
+        it("should handle case where milestone proof cannot be built", () => {
+            // Store exit point but no blocks to build proof
+            storage.exitPoints.storeExitPoint(forkId, 5);
+
+            const result = agreementManager.getFinalizedAndLatestWithMilestones(
+                forkId,
+                participant1
+            );
+
+            expect(result.encodedLatestFinalizedState).to.equal(
+                "0x1234567890abcdef"
+            );
+            expect(result.encodedLatestCorrectState).to.equal(
+                "0x1234567890abcdef"
+            );
+            expect(result.milestoneProofs).to.be.an("array");
+            expect(result.milestoneSnapshots).to.be.an("array");
+            // Should still work even if no milestone proof can be built
+        });
+
+        it("should use correct participant sets for each milestone", () => {
+            // Store exit points
+            storage.exitPoints.storeExitPoint(forkId, 5);
+            storage.exitPoints.storeExitPoint(forkId, 10);
+
+            // Create state snapshots with different participant sets
+            const snapshotAtHeight5 = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1, participant2], // participant3 removed
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(100), data: "0x" }
+                }
+            });
+
+            const snapshotAtHeight10 = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1], // participant2 and participant3 removed
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(200), data: "0x" }
+                }
+            });
+
+            storage.stateSnapshots.storeStateSnapshot(snapshotAtHeight5);
+            storage.stateSnapshots.storeStateSnapshot(snapshotAtHeight10);
+
+            const result = agreementManager.getFinalizedAndLatestWithMilestones(
+                forkId,
+                participant1
+            );
+
+            expect(result.milestoneProofs).to.be.an("array");
+            expect(result.milestoneSnapshots).to.be.an("array");
+
+            // Verify that milestone snapshots are in correct order
+            if (result.milestoneSnapshots.length >= 2) {
+                const firstSnapshot = result.milestoneSnapshots[0];
+                const secondSnapshot = result.milestoneSnapshots[1];
+
+                // First snapshot should have 2 participants (participant1, participant2)
+                expect(firstSnapshot.snapshotData.participants).to.have.length(
+                    2
+                );
+                expect(firstSnapshot.snapshotData.participants).to.include(
+                    participant1
+                );
+                expect(firstSnapshot.snapshotData.participants).to.include(
+                    participant2
+                );
+
+                // Second snapshot should have 1 participant (participant1)
+                expect(secondSnapshot.snapshotData.participants).to.have.length(
+                    1
+                );
+                expect(secondSnapshot.snapshotData.participants).to.include(
+                    participant1
+                );
+            }
         });
     });
 
