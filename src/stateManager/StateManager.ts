@@ -487,19 +487,7 @@ class StateManager {
 
             this.stateChannelManagerContract
                 .postBlockCalldata(signedBlock, Clock.getTimeInSeconds())
-
-                .then(async (tx) => {
-                    console.log("Block calldata posted successfully:", tx.hash);
-                    const result = await tx.wait();
-                    if (result) {
-                        console.log(
-                            "Block calldata posted successfully on chain"
-                        );
-                    } else {
-                        console.log("Block calldata posted failed on chain");
-                    }
-                    return result;
-                })
+                .then((txResponse) => txResponse.wait())
                 .catch((error) => {
                     if (isCustomEvmError(error)) {
                         console.log(
