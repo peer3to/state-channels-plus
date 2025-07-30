@@ -2,8 +2,10 @@ import {
     ContractFactory,
     Signer,
     ContractDeployTransaction,
-    getCreateAddress
+    Wallet,
+    ethers
 } from "ethers";
+import { EVM } from "@ethereumjs/evm";
 
 import StateChannelUtilLibraryArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelUtilLibrary.sol/StateChannelUtilLibrary.json";
 import DisputeManagerFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol/DisputeManagerFacet.json";
@@ -14,19 +16,165 @@ import JoinChannelFacetArtifact from "../../artifacts/contracts/V1/StateChannelD
 import StateChannelManagerProxyArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol/StateChannelManagerProxy.json";
 import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol/LocalDiamond.json";
 
-import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types/index";
+import { StateChannelManagerProxy } from "@typechain-types/index";
 import { Artifact } from "hardhat/types";
 
-export async function deployLocalFromTx(
-    tx: ContractDeployTransaction,
-    signer: Signer
+const facetArtifacts = [
+    DisputeManagerFacetArtifact,
+    FraudProofFacetArtifact,
+    DisputeFraudProofFacetArtifact,
+    StateSnapshotFacetArtifact,
+    JoinChannelFacetArtifact
+];
+
+export async function deployArtifact<T>(
+    artifact: Artifact,
+    signer: Signer,
+    options?: {
+        libs?: Record<string, string>;
+        args?: any[];
+    }
+): Promise<{ address: string; contract: T }> {
+    const linkedArtifact = linkLibraries(artifact, options?.libs || {});
+    const factory = new ContractFactory(
+        artifact.abi,
+        linkedArtifact.bytecode,
+        signer
+    );
+
+    const contract = await factory.deploy(...(options?.args || []));
+    await contract.waitForDeployment();
+    const address = await contract.getAddress();
+    return { address, contract: contract as unknown as T };
+}
+
+async function deployArtifactLocal(
+    artifact: Artifact,
+    evm: EVM,
+    signer: Signer,
+    options?: {
+        libs?: Record<string, string>;
+        args?: any[];
+    }
 ): Promise<string> {
-    if (!signer) throw new Error("Signer required for deployment");
-    const sentTx = await signer.sendTransaction(tx);
-    return getCreateAddress({
-        from: sentTx.from!,
-        nonce: sentTx.nonce
+    const linkedArtifact = linkLibraries(artifact, options?.libs || {});
+    const factory = new ContractFactory(
+        artifact.abi,
+        linkedArtifact.bytecode,
+        signer
+    );
+    console.log("deploying artifact", artifact.contractName);
+    const deployTx = await factory.getDeployTransaction(
+        ...(options?.args || [])
+    );
+    console.log("deploy tx", deployTx);
+    return deployLocalFromTx(deployTx, evm);
+}
+
+async function deployFacets(
+    signer: Signer,
+    libs: Record<string, string>
+): Promise<string[]> {
+    return Promise.all(
+        facetArtifacts.map((artifact) =>
+            deployArtifact(artifact, signer, { libs }).then(
+                ({ address }) => address
+            )
+        )
+    );
+}
+
+async function deployFacetsLocal(
+    evm: EVM,
+    signer: Signer,
+    libs: Record<string, string>
+): Promise<string[]> {
+    const addresses: string[] = [];
+    for (const artifact of facetArtifacts) {
+        const address = await deployArtifactLocal(artifact, evm, signer, {
+            libs
+        });
+        console.log(`Deployed ${artifact.contractName} to ${address}`);
+        addresses.push(address);
+    }
+
+    return addresses;
+}
+
+export async function deploy(
+    stateMachineAddress: string,
+    consumerFacetAddress: string,
+    signer: Signer
+): Promise<{ address: string; contract: StateChannelManagerProxy }> {
+    const { address: libAddress } = await deployArtifact(
+        StateChannelUtilLibraryArtifact,
+        signer
+    );
+
+    const facetAddresses = await deployFacets(signer, {
+        StateChannelUtilLibrary: libAddress
     });
+
+    return deployArtifact<StateChannelManagerProxy>(
+        StateChannelManagerProxyArtifact,
+        signer,
+        {
+            args: [stateMachineAddress, ...facetAddresses, consumerFacetAddress]
+        }
+    );
+}
+
+export async function deployLocalDiamond(
+    stateMachineTx: ContractDeployTransaction,
+    evm: EVM,
+    signer?: Signer
+): Promise<{ address: string; signer: Signer }> {
+    const usedSigner = signer || Wallet.createRandom();
+
+    const libAddress = await deployArtifactLocal(
+        StateChannelUtilLibraryArtifact,
+        evm,
+        usedSigner
+    );
+
+    const facetAddresses = await deployFacetsLocal(evm, usedSigner, {
+        StateChannelUtilLibrary: libAddress
+    });
+
+    const stateMachineAddress = await deployLocalFromTx(stateMachineTx, evm);
+
+    const diamondAddress = await deployArtifactLocal(
+        LocalDiamondArtifact,
+        evm,
+        usedSigner,
+        {
+            args: [stateMachineAddress, ...facetAddresses]
+        }
+    );
+
+    return { address: diamondAddress, signer: usedSigner };
+}
+
+async function deployLocalFromTx(
+    tx: ContractDeployTransaction,
+    evm: EVM
+): Promise<string> {
+    const deploymentResult = await evm.runCall({
+        data: ethers.getBytes(tx.data as string)
+    });
+    console.log("deployment result", deploymentResult);
+
+    if (deploymentResult.execResult.exceptionError) {
+        throw new Error(
+            `Failed to deploy tx: ${deploymentResult.execResult.exceptionError}`
+        );
+    }
+
+    if (!deploymentResult.createdAddress) {
+        throw new Error(`No contract address created for tx`);
+    }
+
+    return deploymentResult.createdAddress.toString();
 }
 
 export function linkLibraries(
@@ -62,86 +210,4 @@ export function linkLibraries(
     }
 
     return { ...artifact, bytecode: linkedBytecode };
-}
-
-export async function deployArtifact<T>(
-    artifact: Artifact,
-    signer: Signer,
-    libs: Record<string, string> = {},
-    args: any[] = []
-): Promise<{ address: string; contract: T }> {
-    const linkedArtifact = linkLibraries(artifact, libs);
-    const factory = new ContractFactory(
-        artifact.abi,
-        linkedArtifact.bytecode,
-        signer
-    );
-
-    const contract = await factory.deploy(...args);
-    await contract.waitForDeployment();
-    const address = await contract.getAddress();
-    return { address, contract: contract as unknown as T };
-}
-
-async function deployFacets(
-    signer: Signer,
-    libs: Record<string, string>
-): Promise<string[]> {
-    const artifacts = [
-        DisputeManagerFacetArtifact,
-        FraudProofFacetArtifact,
-        DisputeFraudProofFacetArtifact,
-        StateSnapshotFacetArtifact,
-        JoinChannelFacetArtifact
-    ];
-
-    return Promise.all(
-        artifacts.map((artifact) =>
-            deployArtifact(artifact, signer, libs).then(
-                ({ address }) => address
-            )
-        )
-    );
-}
-
-export async function deploy(
-    stateMachineAddress: string,
-    consumerFacetAddress: string,
-    signer: Signer
-): Promise<{ address: string; contract: StateChannelManagerProxy }> {
-    const { address: libAddress } = await deployArtifact(
-        StateChannelUtilLibraryArtifact,
-        signer
-    );
-
-    const facetAddresses = await deployFacets(signer, {
-        StateChannelUtilLibrary: libAddress
-    });
-
-    return deployArtifact<StateChannelManagerProxy>(
-        StateChannelManagerProxyArtifact,
-        signer,
-        {},
-        [stateMachineAddress, ...facetAddresses, consumerFacetAddress]
-    );
-}
-
-export async function deployLocalDiamond(
-    stateMachineTx: ContractDeployTransaction,
-    signer: Signer
-): Promise<{ address: string; contract: LocalDiamond }> {
-    const { address: libAddress } = await deployArtifact(
-        StateChannelUtilLibraryArtifact,
-        signer
-    );
-    const facetAddresses = await deployFacets(signer, {
-        StateChannelUtilLibrary: libAddress
-    });
-
-    const stateMachineAddress = await deployLocalFromTx(stateMachineTx, signer);
-
-    return deployArtifact(LocalDiamondArtifact, signer, {}, [
-        stateMachineAddress,
-        ...facetAddresses
-    ]);
 }

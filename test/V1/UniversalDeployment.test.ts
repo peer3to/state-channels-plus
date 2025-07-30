@@ -12,13 +12,16 @@ import DisputeFraudProofFacetArtifact from "../../artifacts/contracts/V1/StateCh
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import StateChannelUtilLibraryArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelUtilLibrary.sol/StateChannelUtilLibrary.json";
+import { EVM } from "@ethereumjs/evm";
 
 describe("Universal Deployment", () => {
     let deployer: HardhatEthersSigner;
     let libraryAddress: string;
     let mathStateMachineDeployTx: any;
+    let evm: EVM;
 
     before(async () => {
+        evm = await EVM.create();
         [deployer] = await ethers.getSigners();
 
         const { address } = await deployArtifact(
@@ -38,28 +41,12 @@ describe("Universal Deployment", () => {
         it("deploys successfully", async () => {
             const { address: diamondAddress } = await deployLocalDiamond(
                 mathStateMachineDeployTx,
+                evm,
                 deployer
             );
 
             expect(diamondAddress).to.not.equal(ethers.ZeroAddress);
             expect(diamondAddress).to.match(/^0x[a-fA-F0-9]{40}$/);
-        });
-
-        it("provides storage functionality", async () => {
-            const { contract: localDiamond } = await deployLocalDiamond(
-                mathStateMachineDeployTx,
-                deployer
-            );
-
-            const testSlot = ethers.keccak256(ethers.toUtf8Bytes("test-slot"));
-            const testValue = ethers.keccak256(
-                ethers.toUtf8Bytes("test-value")
-            );
-
-            await localDiamond.setStorageSlot(testSlot, testValue);
-            expect(await localDiamond.getStorageSlot(testSlot)).to.equal(
-                testValue
-            );
         });
     });
 
@@ -71,15 +58,18 @@ describe("Universal Deployment", () => {
             const { address: mathAddress } = await deployArtifact(
                 MathStateMachineArtifact,
                 deployer,
-                {},
-                [5000000]
+                {
+                    args: [5000000]
+                }
             );
             mathStateMachineAddress = mathAddress;
 
             const { address: consumerAddress } = await deployArtifact(
                 MathConsumerFacetArtifact,
                 deployer,
-                { StateChannelUtilLibrary: libraryAddress }
+                {
+                    libs: { StateChannelUtilLibrary: libraryAddress }
+                }
             );
             consumerFacetAddress = consumerAddress;
         });
