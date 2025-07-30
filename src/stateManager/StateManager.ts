@@ -8,7 +8,8 @@ import {
     ExitChannelBlockStruct,
     ExitChannelStruct,
     JoinChannelBlockStruct,
-    BalanceStruct
+    BalanceStruct,
+    StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // TypeChain types - Proof types
@@ -50,7 +51,9 @@ import {
     Codec,
     Type,
     SignatureUtils,
-    isCustomEvmError
+    isCustomEvmError,
+    difference,
+    isSubset
 } from "@/utils";
 // Types
 import { AgreementFlag, ExecutionFlags, TimeConfig } from "@/types";
@@ -64,6 +67,7 @@ import {
     Signature,
     Timestamp
 } from "@/types/types";
+import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 let DEBUG_STATE_MANAGER = false;
 
@@ -89,8 +93,7 @@ class StateManager {
     private executionDecisionProcessor: ExecutionDecisionProcessor;
 
     // Store output state snapshots data
-    private readonly outputStateSnapshotData: Map<Hash, StateSnapshot> =
-        new Map();
+    private latestForkId: ForkId = NULL;
 
     constructor(
         signer: ethers.Signer,
@@ -124,6 +127,7 @@ class StateManager {
         );
         this.p2pManager = new P2PManager(this.self, signer);
         this.validationService = new ValidationService(
+            this.storage,
             this.agreementManager,
             this.stateMachine,
             this.disputeHandler,
@@ -168,14 +172,13 @@ class StateManager {
         //TODO? this can be done through the AgreementManager for the given fork or thought the stateMachine
         return this.stateMachine.getParticipants();
     }
-    public getforkId(): ForkId {
-        throw new Error(
-            "StateManager - getforkId - Not implemented - will be implemented with TS logic"
-        );
+    public get forkId(): ForkId {
+        return this.latestForkId;
     }
-    public getNextBlockHeight(): BlockHeight {
-        return this.agreementManager.getNextBlockHeight();
+    public set forkId(forkId: ForkId) {
+        this.latestForkId = forkId;
     }
+
     //Triggered by the On-chain Event Listener when a joinChannelEvent is emitted on-chain
     public async onJoinChannel(
         joinChannelBlock: JoinChannelBlockStruct,
@@ -222,9 +225,12 @@ class StateManager {
         this.onSuccessCommon();
     }
     private async tryExecuteFromQueue() {
-        let blockConfirmations = this.storage.queues.tryDequeueConfirmations(
-            this.getforkId(),
-            this.getNextBlockHeight()
+        const nextBlockHeight = this.storage.blocks.getNextBlockHeight(
+            this.forkId
+        );
+        const blockConfirmations = this.storage.queues.tryDequeueConfirmations(
+            this.forkId,
+            nextBlockHeight
         );
 
         for (const blockConfirmation of blockConfirmations) {
@@ -235,10 +241,12 @@ class StateManager {
         }
     }
     private async tryConfirmFromQueue(): Promise<void> {
-        //TODO! race condition and skipping a txCount
-        let confirmations = this.storage.queues.tryDequeueConfirmations(
-            this.getforkId(),
-            this.getNextBlockHeight()
+        const nextBlockHeight = this.storage.blocks.getNextBlockHeight(
+            this.forkId
+        );
+        const confirmations = this.storage.queues.tryDequeueConfirmations(
+            this.forkId,
+            nextBlockHeight
         );
 
         for (const confirmation of confirmations) {
@@ -278,81 +286,123 @@ class StateManager {
     }
 
     // Passes the signedBlock through a verification pipeline and returns an execution flag based on the outcome
-    public async onSignedBlock(
-        signedBlock: SignedBlockStruct,
-        blk?: Block
+    public onSignedBlock(
+        signedBlock: SignedBlockStruct
     ): Promise<ExecutionFlags> {
-        // Default everything to SUCCESS + no AgreementFlag
-        let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS;
-        let finalAgreementFlag: AgreementFlag | undefined = undefined;
-        const block = blk ?? Block.decode(signedBlock.encodedBlock);
-
-        try {
-            await this.mutex.lock();
-            const result = await this.validationService.validateSignedBlock(
-                signedBlock,
-                block
-            );
-
-            finalExecutionFlag = result.flag;
-            finalAgreementFlag = result.agreementFlag;
-
-            // If validation passed, apply the transaction
-            if (result.success && result.flag === ExecutionFlags.SUCCESS) {
-                const applyResult = await this.applyTransaction(
-                    block.transaction
-                );
-                if (!applyResult.success) {
-                    finalExecutionFlag = ExecutionFlags.DISPUTE;
-                    finalAgreementFlag = AgreementFlag.INCORRECT_DATA;
-                } else {
-                    // store exit block, exit points, state snapshot and the block
-                    this.storeExitChannelBlock(
-                        applyResult.exitChannels,
-                        block.coordinates
-                    );
-
-                    this.handleStateSnapshotStorage(
-                        applyResult.encodedState,
-                        block.forkId
-                    );
-
-                    this.storage.blocks.storeBlock(signedBlock);
-
-                    // Schedule the success callback
-                    scheduleTask(
-                        applyResult.successCallback,
-                        0,
-                        "stateTransitionSuccessCallback"
-                    );
-                }
-            }
-
-            return finalExecutionFlag;
-        } finally {
-            // Safety check: must have an execution flag
-            if (finalExecutionFlag === undefined) {
-                throw new Error(
-                    "StateManager - onSignedBlock - Internal Error - flag undefined"
-                );
-            }
-
-            // Process the final decision
-            await this.executionDecisionProcessor.process(
-                signedBlock,
-                finalExecutionFlag,
-                finalAgreementFlag
-            );
-            this.mutex.unlock();
-        }
+        return this.onBlockConfirmation({
+            signedBlock,
+            signatures: []
+        });
     }
 
     // Passes the block confirmation through a verification pipeline and returns an execution flag
     public async onBlockConfirmation(
-        signedBlock: SignedBlockStruct,
-        confirmationSignature: Signature,
-        block?: Block
+        blockConfirmation: BlockConfirmationStruct
     ): Promise<ExecutionFlags> {
+        let block: Block;
+        // require(channel is open)
+        if (!this.isChannelOpen()) {
+            this.storage.queues.queueConfirmation(blockConfirmation);
+            return ExecutionFlags.NOT_READY;
+        }
+
+        // require(block is valid)
+        try {
+            block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
+            if (block.channelId !== this.channelId) {
+                throw new Error(
+                    "Block channelId does not match current channelId"
+                );
+            }
+            if (
+                block.getSignerAddress(
+                    blockConfirmation.signedBlock.signature
+                ) !== block.author
+            ) {
+                throw new Error("Block signature does not match block author");
+            }
+        } catch (error) {
+            console.error("Invalid block confirmation", error);
+            return ExecutionFlags.DISCONNECT;
+        }
+
+        // ========================================================================
+        // IS BLOCK DUPLICATE?
+        // ========================================================================
+
+        // 1. Check if block is in queue
+
+        if (
+            this.storage.queues.isBlockQueued(blockConfirmation, {
+                hash: block.hash
+            })
+        ) {
+            // Handle IN QUEUE case
+            const validParticipants = new Set(
+                this.storage.getParticipants(block.coordinates)
+            );
+            const signerAddresses = block.getSignerAddresses(
+                blockConfirmation.signatures as Signature[]
+            );
+            const areAllParticipants = isSubset(
+                signerAddresses,
+                validParticipants
+            );
+
+            if (!areAllParticipants) {
+                return ExecutionFlags.DISCONNECT;
+            }
+
+            // Store in queue (handles signature merging automatically)
+            this.storage.queues.queueConfirmation(blockConfirmation);
+            return ExecutionFlags.DUPLICATE;
+        }
+
+        // 2. Check if block is in block storage
+
+        if (this.storage.blocks.getBlockEntry(block.hash) !== undefined) {
+            // Handle IN BLOCK STORAGE case
+            const existingSignatures = new Set(
+                this.storage.blocks.getSignatures(block.hash) as Signature[]
+            );
+            const incomingSignatures = new Set(
+                blockConfirmation.signatures as Signature[]
+            );
+            const newSignatures = difference(
+                incomingSignatures,
+                existingSignatures
+            );
+            const hasNewSignatures = newSignatures.size > 0;
+
+            if (!hasNewSignatures) {
+                return ExecutionFlags.DUPLICATE;
+            }
+
+            // Validate new signatures are from participants
+            const validParticipants: Set<Address> = new Set(
+                this.storage.getParticipants(block.coordinates)
+            );
+            const newSignerAddresses: Set<Address> = block.getSignerAddresses(
+                Array.from(newSignatures)
+            );
+            const areNewSignersParticipants = isSubset(
+                newSignerAddresses,
+                validParticipants
+            );
+
+            if (!areNewSignersParticipants) {
+                return ExecutionFlags.DISCONNECT;
+            }
+
+            // Store (handles signature merging automatically)
+            this.storage.blocks.storeBlockConfirmation(blockConfirmation);
+            return ExecutionFlags.BROADCAST;
+        }
+
+        // ========================================================================
+        // END OF IS BLOCK DUPLICATE?
+        // ========================================================================
+
         let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS; // Default to SUCCESS
         const decodedBlock = block ?? Block.decode(signedBlock.encodedBlock);
 
@@ -380,19 +430,7 @@ class StateManager {
                 );
             }
 
-            if (finalExecutionFlag === ExecutionFlags.NOT_READY) {
-                // Store the confirmation for later processing
-                this.storage.queues.queueConfirmation({
-                    signedBlock: signedBlock,
-                    signatures: [confirmationSignature as Bytes]
-                });
-            } else if (finalExecutionFlag === ExecutionFlags.SUCCESS) {
-                // Schedule next confirmation processing
-                setTimeout(async () => {
-                    if (this.isDisposed) return;
-                    await this.tryConfirmFromQueue();
-                }, 0);
-            }
+            return result.flag;
         }
     }
 
@@ -878,7 +916,7 @@ class StateManager {
     // ----- Private validation helper methods -----
 
     private isChannelOpen(): boolean {
-        return this.getforkId() !== -1;
+        return this.forkId !== ethers.ZeroHash && this.forkId !== NULL;
     }
 
     // ----- Event handlers -----

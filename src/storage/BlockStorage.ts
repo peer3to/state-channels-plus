@@ -271,6 +271,13 @@ export class BlockStorage {
         return true;
     }
 
+    getNextBlockHeight(forkId: ForkId): BlockHeight {
+        if (this.forkIdToMaxHeightMap.has(forkId)) {
+            return this.forkIdToMaxHeightMap.get(forkId)! + 1;
+        }
+        return 0;
+    }
+
     /*────────────────────────────────────────────────────────────────────────────
       GET ALL BLOCKS BY FORK ID - SEQUENTIAL ITERATOR
     ────────────────────────────────────────────────────────────────────────────*/
