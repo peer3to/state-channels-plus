@@ -63,11 +63,9 @@ async function deployArtifactLocal(
         linkedArtifact.bytecode,
         signer
     );
-    console.log("deploying artifact", artifact.contractName);
     const deployTx = await factory.getDeployTransaction(
         ...(options?.args || [])
     );
-    console.log("deploy tx", deployTx);
     return deployLocalFromTx(deployTx, evm);
 }
 
@@ -89,16 +87,11 @@ async function deployFacetsLocal(
     signer: Signer,
     libs: Record<string, string>
 ): Promise<string[]> {
-    const addresses: string[] = [];
-    for (const artifact of facetArtifacts) {
-        const address = await deployArtifactLocal(artifact, evm, signer, {
-            libs
-        });
-        console.log(`Deployed ${artifact.contractName} to ${address}`);
-        addresses.push(address);
-    }
-
-    return addresses;
+    return Promise.all(
+        facetArtifacts.map((artifact) =>
+            deployArtifactLocal(artifact, evm, signer, { libs })
+        )
+    );
 }
 
 export async function deploy(
@@ -162,11 +155,12 @@ async function deployLocalFromTx(
     const deploymentResult = await evm.runCall({
         data: ethers.getBytes(tx.data as string)
     });
-    console.log("deployment result", deploymentResult);
 
     if (deploymentResult.execResult.exceptionError) {
         throw new Error(
-            `Failed to deploy tx: ${deploymentResult.execResult.exceptionError}`
+            `Failed to deploy tx: ${JSON.stringify(
+                deploymentResult.execResult.exceptionError
+            )}`
         );
     }
 
