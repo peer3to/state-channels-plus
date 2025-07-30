@@ -53,7 +53,8 @@ import {
     SignatureUtils,
     isCustomEvmError,
     difference,
-    isSubset
+    isSubset,
+    hash
 } from "@/utils";
 // Types
 import { AgreementFlag, ExecutionFlags, TimeConfig } from "@/types";
@@ -68,6 +69,7 @@ import {
     Timestamp
 } from "@/types/types";
 import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+import { BlockDoubleSignProofStruct } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 
 let DEBUG_STATE_MANAGER = false;
 
@@ -325,6 +327,25 @@ class StateManager {
             console.error("Invalid block confirmation", error);
             return ExecutionFlags.DISCONNECT;
         }
+        let participants = new Set(
+            this.storage.getParticipants(block.coordinates)
+        );
+
+        if (participants.size === 0) {
+            // get participants from chain
+            const participantsFromChain =
+                await this.stateChannelManagerContract.getParticipants(
+                    this.channelId
+                );
+            const pendingParticipants =
+                await this.stateChannelManagerContract.getPendingParticipants(
+                    this.channelId
+                );
+            participants = new Set([
+                ...participantsFromChain,
+                ...pendingParticipants
+            ]);
+        }
 
         // ========================================================================
         // IS BLOCK DUPLICATE?
@@ -338,16 +359,11 @@ class StateManager {
             })
         ) {
             // Handle IN QUEUE case
-            const validParticipants = new Set(
-                this.storage.getParticipants(block.coordinates)
-            );
+
             const signerAddresses = block.getSignerAddresses(
                 blockConfirmation.signatures as Signature[]
             );
-            const areAllParticipants = isSubset(
-                signerAddresses,
-                validParticipants
-            );
+            const areAllParticipants = isSubset(signerAddresses, participants);
 
             if (!areAllParticipants) {
                 return ExecutionFlags.DISCONNECT;
@@ -379,15 +395,13 @@ class StateManager {
             }
 
             // Validate new signatures are from participants
-            const validParticipants: Set<Address> = new Set(
-                this.storage.getParticipants(block.coordinates)
-            );
+
             const newSignerAddresses: Set<Address> = block.getSignerAddresses(
                 Array.from(newSignatures)
             );
             const areNewSignersParticipants = isSubset(
                 newSignerAddresses,
-                validParticipants
+                participants
             );
 
             if (!areNewSignersParticipants) {
@@ -400,8 +414,41 @@ class StateManager {
         }
 
         // ========================================================================
-        // END OF IS BLOCK DUPLICATE?
+        // END  IS BLOCK DUPLICATE
         // ========================================================================
+
+        // is author a participant?
+        if (!participants.has(block.author)) {
+            return ExecutionFlags.DISCONNECT;
+        }
+
+        // confilicting block (same forkId, height)
+        const maybePreExistingSignedBlock = this.storage.blocks.getBlockEntry(
+            block.hash,
+            block.height
+        )?.blockConfirmation.signedBlock;
+        if (maybePreExistingSignedBlock) {
+            // name change for clarity
+            const preExistingSignedBlock = maybePreExistingSignedBlock;
+            const preExistingBlock = Block.decode(
+                preExistingSignedBlock.encodedBlock
+            );
+            if (preExistingBlock.author === block.author) {
+                // DOUBLE SIGN
+                const fraudProof: BlockDoubleSignProofStruct = {
+                    block1: preExistingSignedBlock,
+                    block2: blockConfirmation.signedBlock
+                };
+                // TODO: persist to storage
+                return ExecutionFlags.DOUBLE_SIGN;
+            }
+        }
+        // confliciting block but not a double sign
+
+        // is block height > next block height?
+        const nextBlockHeight = this.storage.blocks.getNextBlockHeight(
+            this.forkId
+        );
 
         let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS; // Default to SUCCESS
         const decodedBlock = block ?? Block.decode(signedBlock.encodedBlock);

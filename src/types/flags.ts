@@ -8,7 +8,8 @@ export enum ExecutionFlags {
     TIMESTAMP_TOO_OLD,
     NOT_ENOUGH_TIME,
     PAST_FORK,
-    BROADCAST
+    BROADCAST,
+    DOUBLE_SIGN
 }
 
 export enum AgreementFlag {
