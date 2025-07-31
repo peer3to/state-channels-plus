@@ -40,7 +40,6 @@ export default class ValidationService {
         private readonly disputeHandler: DisputeHandler,
         private readonly scmContract: AStateChannelManagerProxy,
         private readonly timeCfg: TimeConfig,
-        private readonly storage: Storage,
         /** getter keeps channelId reactive if StateManager changes it later */
         private readonly getChannelId: () => ChannelId,
         private readonly signerAddress: Address,
