@@ -779,6 +779,551 @@ describe("AgreementManager", () => {
         });
     });
 
+    describe("getStateProof", () => {
+        it("should return state proof up to specified block height", async () => {
+            // Store blocks at different heights
+            storage.blocks.storeBlockConfirmation(blockConfirmation1);
+            storage.blocks.storeBlockConfirmation(blockConfirmation2);
+
+            // Create blocks at different heights
+            const blockAtHeight5 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 5,
+                        participant: participant1
+                    })
+                }),
+                stateSnapshotHash: genesisSnapshot.hash
+            });
+
+            const blockAtHeight10 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 10,
+                        participant: participant2
+                    })
+                }),
+                stateSnapshotHash: genesisSnapshot.hash
+            });
+
+            const blockAtHeight15 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 15,
+                        participant: participant3
+                    })
+                }),
+                stateSnapshotHash: genesisSnapshot.hash
+            });
+
+            // Store block confirmations
+            const blockConfirmationAtHeight5 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight5.encode(),
+                    signature: await signers[0].signMessage(
+                        ethers.getBytes(
+                            ethers.keccak256(blockAtHeight5.encode())
+                        )
+                    )
+                }),
+                signatures: []
+            });
+
+            const blockConfirmationAtHeight10 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight10.encode(),
+                    signature: await signers[1].signMessage(
+                        ethers.getBytes(
+                            ethers.keccak256(blockAtHeight10.encode())
+                        )
+                    )
+                }),
+                signatures: []
+            });
+
+            const blockConfirmationAtHeight15 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight15.encode(),
+                    signature: await signers[2].signMessage(
+                        ethers.getBytes(
+                            ethers.keccak256(blockAtHeight15.encode())
+                        )
+                    )
+                }),
+                signatures: []
+            });
+
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight10);
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight15);
+
+            // Get state proof up to height 12
+            const result = await agreementManager.getStateProof(
+                forkId,
+                12,
+                participant1
+            );
+
+            expect(result.encodedLatestFinalizedState).to.equal(
+                "0x1234567890abcdef"
+            );
+            expect(result.encodedLatestCorrectState).to.equal(
+                "0x1234567890abcdef"
+            );
+            expect(result.virtualVotingBlocks).to.be.an("array");
+            expect(result.milestoneProofs).to.be.an("array");
+            expect(result.milestoneSnapshots).to.be.an("array");
+
+            // Verify that blocks higher than 12 are filtered out
+            const blockHeights = result.virtualVotingBlocks.map(
+                (blockConfirmation: any) => {
+                    const block = Block.decode(
+                        blockConfirmation.signedBlock.encodedBlock
+                    );
+                    return block.coordinates.height;
+                }
+            );
+
+            expect(blockHeights.every((height) => height <= 12)).to.be.true;
+        });
+
+        it("should filter milestone proofs and snapshots up to block height", async () => {
+            // Store exit points at different heights
+            storage.exitPoints.storeExitPoint(forkId, 5);
+            storage.exitPoints.storeExitPoint(forkId, 10);
+            storage.exitPoints.storeExitPoint(forkId, 15);
+
+            // Create state snapshots at exit points
+            const snapshotAtHeight5 = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1, participant2], // participant3 removed
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(100), data: "0x" }
+                }
+            });
+
+            const snapshotAtHeight10 = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1], // participant2 and participant3 removed
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(200), data: "0x" }
+                }
+            });
+
+            const snapshotAtHeight15 = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1], // Only participant1 remains
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(300), data: "0x" }
+                }
+            });
+
+            // Store the snapshots
+            storage.stateSnapshots.storeStateSnapshot(snapshotAtHeight5);
+            storage.stateSnapshots.storeStateSnapshot(snapshotAtHeight10);
+            storage.stateSnapshots.storeStateSnapshot(snapshotAtHeight15);
+
+            // Create blocks at exit point heights that reference the snapshots
+            const blockAtHeight5 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 5,
+                        participant: participant1
+                    })
+                }),
+                stateSnapshotHash: snapshotAtHeight5.hash
+            });
+
+            const blockAtHeight10 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 10,
+                        participant: participant2
+                    })
+                }),
+                stateSnapshotHash: snapshotAtHeight10.hash
+            });
+
+            const blockAtHeight15 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 15,
+                        participant: participant3
+                    })
+                }),
+                stateSnapshotHash: snapshotAtHeight15.hash
+            });
+
+            // Store block confirmations with signatures from all participants
+            const blockHash5 = ethers.keccak256(blockAtHeight5.encode());
+            const blockHash10 = ethers.keccak256(blockAtHeight10.encode());
+            const blockHash15 = ethers.keccak256(blockAtHeight15.encode());
+
+            const blockConfirmationAtHeight5 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight5.encode(),
+                    signature: await signers[0].signMessage(
+                        ethers.getBytes(blockHash5)
+                    )
+                }),
+                signatures: [
+                    await signers[1].signMessage(ethers.getBytes(blockHash5)),
+                    await signers[2].signMessage(ethers.getBytes(blockHash5))
+                ]
+            });
+
+            const blockConfirmationAtHeight10 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight10.encode(),
+                    signature: await signers[1].signMessage(
+                        ethers.getBytes(blockHash10)
+                    )
+                }),
+                signatures: [
+                    await signers[0].signMessage(ethers.getBytes(blockHash10)),
+                    await signers[2].signMessage(ethers.getBytes(blockHash10))
+                ]
+            });
+
+            const blockConfirmationAtHeight15 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight15.encode(),
+                    signature: await signers[2].signMessage(
+                        ethers.getBytes(blockHash15)
+                    )
+                }),
+                signatures: [
+                    await signers[0].signMessage(ethers.getBytes(blockHash15)),
+                    await signers[1].signMessage(ethers.getBytes(blockHash15))
+                ]
+            });
+
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight10);
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight15);
+
+            // Get state proof up to height 12
+            const result = await agreementManager.getStateProof(
+                forkId,
+                12,
+                participant1
+            );
+
+            // Should only include milestone proofs and snapshots for exit points up to height 12
+            // (exit points 5 and 10, but not 15)
+            expect(result.milestoneProofs).to.have.length(2);
+            expect(result.milestoneSnapshots).to.have.length(2);
+        });
+
+        it("should handle case with no exit points", async () => {
+            // No exit points stored
+            const result = await agreementManager.getStateProof(
+                forkId,
+                10,
+                participant1
+            );
+
+            expect(result.encodedLatestFinalizedState).to.equal(
+                "0x1234567890abcdef"
+            );
+            expect(result.encodedLatestCorrectState).to.equal(
+                "0x1234567890abcdef"
+            );
+            expect(result.milestoneProofs).to.be.an("array");
+            expect(result.milestoneSnapshots).to.be.an("array");
+            expect(result.milestoneProofs).to.have.length(0);
+            expect(result.milestoneSnapshots).to.have.length(0);
+        });
+
+        it("should handle case where block height is lower than any exit point", async () => {
+            // Store exit points at heights 10 and 20
+            storage.exitPoints.storeExitPoint(forkId, 10);
+            storage.exitPoints.storeExitPoint(forkId, 20);
+
+            // Get state proof up to height 5 (lower than any exit point)
+            const result = await agreementManager.getStateProof(
+                forkId,
+                5,
+                participant1
+            );
+
+            // Should not include any milestone proofs or snapshots
+            expect(result.milestoneProofs).to.have.length(0);
+            expect(result.milestoneSnapshots).to.have.length(0);
+        });
+
+        it("should handle case where block height is exactly at an exit point", async () => {
+            // Store exit points at different heights
+            storage.exitPoints.storeExitPoint(forkId, 5);
+            storage.exitPoints.storeExitPoint(forkId, 10);
+            storage.exitPoints.storeExitPoint(forkId, 15);
+
+            // Create state snapshots at exit points
+            const snapshotAtHeight5 = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1, participant2], // participant3 removed
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(100), data: "0x" }
+                }
+            });
+
+            const snapshotAtHeight10 = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1], // participant2 and participant3 removed
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(200), data: "0x" }
+                }
+            });
+
+            const snapshotAtHeight15 = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1], // Only participant1 remains
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(300), data: "0x" }
+                }
+            });
+
+            // Store the snapshots
+            storage.stateSnapshots.storeStateSnapshot(snapshotAtHeight5);
+            storage.stateSnapshots.storeStateSnapshot(snapshotAtHeight10);
+            storage.stateSnapshots.storeStateSnapshot(snapshotAtHeight15);
+
+            // Create blocks at exit point heights that reference the snapshots
+            const blockAtHeight5 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 5,
+                        participant: participant1
+                    })
+                }),
+                stateSnapshotHash: snapshotAtHeight5.hash
+            });
+
+            const blockAtHeight10 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 10,
+                        participant: participant2
+                    })
+                }),
+                stateSnapshotHash: snapshotAtHeight10.hash
+            });
+
+            const blockAtHeight15 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 15,
+                        participant: participant3
+                    })
+                }),
+                stateSnapshotHash: snapshotAtHeight15.hash
+            });
+
+            // Store block confirmations with signatures from all participants
+            const blockHash5 = ethers.keccak256(blockAtHeight5.encode());
+            const blockHash10 = ethers.keccak256(blockAtHeight10.encode());
+            const blockHash15 = ethers.keccak256(blockAtHeight15.encode());
+
+            const blockConfirmationAtHeight5 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight5.encode(),
+                    signature: await signers[0].signMessage(
+                        ethers.getBytes(blockHash5)
+                    )
+                }),
+                signatures: [
+                    await signers[1].signMessage(ethers.getBytes(blockHash5)),
+                    await signers[2].signMessage(ethers.getBytes(blockHash5))
+                ]
+            });
+
+            const blockConfirmationAtHeight10 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight10.encode(),
+                    signature: await signers[1].signMessage(
+                        ethers.getBytes(blockHash10)
+                    )
+                }),
+                signatures: [
+                    await signers[0].signMessage(ethers.getBytes(blockHash10)),
+                    await signers[2].signMessage(ethers.getBytes(blockHash10))
+                ]
+            });
+
+            const blockConfirmationAtHeight15 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight15.encode(),
+                    signature: await signers[2].signMessage(
+                        ethers.getBytes(blockHash15)
+                    )
+                }),
+                signatures: [
+                    await signers[0].signMessage(ethers.getBytes(blockHash15)),
+                    await signers[1].signMessage(ethers.getBytes(blockHash15))
+                ]
+            });
+
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight10);
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight15);
+
+            // Get state proof up to height 10 (exactly at exit point)
+            const result = await agreementManager.getStateProof(
+                forkId,
+                10,
+                participant1
+            );
+
+            // Should include milestone proofs and snapshots for exit points up to height 10 (5 and 10)
+            expect(result.milestoneProofs).to.have.length(2);
+            expect(result.milestoneSnapshots).to.have.length(2);
+        });
+
+        it("should throw error when fork not found", async () => {
+            const nonExistentForkId = ethers.hexlify(ethers.randomBytes(32));
+
+            await expect(
+                agreementManager.getStateProof(
+                    nonExistentForkId,
+                    10,
+                    participant1
+                )
+            ).to.be.rejectedWith("Fork not found");
+        });
+
+        it("should filter virtual voting blocks correctly", async () => {
+            // Create blocks at different heights
+            const blockAtHeight3 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 3,
+                        participant: participant1
+                    })
+                }),
+                stateSnapshotHash: genesisSnapshot.hash
+            });
+
+            const blockAtHeight7 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 7,
+                        participant: participant2
+                    })
+                }),
+                stateSnapshotHash: genesisSnapshot.hash
+            });
+
+            const blockAtHeight12 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 12,
+                        participant: participant3
+                    })
+                }),
+                stateSnapshotHash: genesisSnapshot.hash
+            });
+
+            // Store block confirmations
+            const blockConfirmationAtHeight3 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight3.encode(),
+                    signature: await signers[0].signMessage(
+                        ethers.getBytes(
+                            ethers.keccak256(blockAtHeight3.encode())
+                        )
+                    )
+                }),
+                signatures: []
+            });
+
+            const blockConfirmationAtHeight7 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight7.encode(),
+                    signature: await signers[1].signMessage(
+                        ethers.getBytes(
+                            ethers.keccak256(blockAtHeight7.encode())
+                        )
+                    )
+                }),
+                signatures: []
+            });
+
+            const blockConfirmationAtHeight12 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight12.encode(),
+                    signature: await signers[2].signMessage(
+                        ethers.getBytes(
+                            ethers.keccak256(blockAtHeight12.encode())
+                        )
+                    )
+                }),
+                signatures: []
+            });
+
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight3);
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight7);
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight12);
+
+            // Get state proof up to height 8
+            const result = await agreementManager.getStateProof(
+                forkId,
+                8,
+                participant1
+            );
+
+            // Verify that only blocks up to height 8 are included
+            const blockHeights = result.virtualVotingBlocks.map(
+                (blockConfirmation: any) => {
+                    const block = Block.decode(
+                        blockConfirmation.signedBlock.encodedBlock
+                    );
+                    return block.coordinates.height;
+                }
+            );
+
+            expect(blockHeights.every((height) => height <= 8)).to.be.true;
+            expect(blockHeights).to.include(3);
+            expect(blockHeights).to.include(7);
+            expect(blockHeights).to.not.include(12);
+        });
+    });
+
     describe("didParticipantPostOnChainLocal", () => {
         it("should return false when block does not exist", () => {
             const result = agreementManager.didParticipantPostOnChainLocal(

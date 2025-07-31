@@ -5,7 +5,6 @@ import {
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import Storage, { SortOrder } from "@/storage";
-import { BlockEntry } from "@/storage/BlockStorage";
 import {
     Address,
     BlockHeight,
@@ -114,6 +113,64 @@ class AgreementManager {
     }
 
     /**
+     * Get state proof for a specific block height
+     */
+    public async getStateProof(
+        forkId: ForkId,
+        blockHeight: BlockHeight,
+        signerAddress: Address
+    ): Promise<{
+        encodedLatestFinalizedState: Bytes;
+        encodedLatestCorrectState: Bytes;
+        virtualVotingBlocks: BlockConfirmationStruct[];
+        milestoneProofs: MilestoneProofStruct[];
+        milestoneSnapshots: StateSnapshot[];
+    }> {
+        // Get the full result from getFinalizedAndLatestWithMilestones
+        const fullResult = this.getFinalizedAndLatestWithMilestones(
+            forkId,
+            signerAddress
+        );
+
+        // Filter blocks up to the specified blockHeight
+        const filteredVirtualVotingBlocks =
+            fullResult.virtualVotingBlocks.filter((blockConfirmation: any) => {
+                const block = Block.decode(
+                    blockConfirmation.signedBlock.encodedBlock
+                );
+                return block.coordinates.height <= blockHeight;
+            });
+
+        // Filter milestone proofs and snapshots for exit points up to blockHeight
+        const filteredMilestoneProofs: MilestoneProofStruct[] = [];
+        const filteredMilestoneSnapshots: StateSnapshot[] = [];
+
+        // Get all exit points to know which milestones correspond to which heights
+        const allExitPoints = this.storage.exitPoints
+            .getExitPointsInRange(forkId)
+            .sort((a, b) => Number(a) - Number(b)); // Sort to match the order in getFinalizedAndLatestWithMilestones
+
+        // Only include milestone proofs and snapshots for exit points up to blockHeight
+        for (let i = 0; i < fullResult.milestoneProofs.length; i++) {
+            // Check if this milestone corresponds to an exit point within our range
+            if (i < allExitPoints.length && allExitPoints[i] <= blockHeight) {
+                filteredMilestoneProofs.push(fullResult.milestoneProofs[i]);
+                filteredMilestoneSnapshots.push(
+                    fullResult.milestoneSnapshots[i]
+                );
+            }
+        }
+
+        return {
+            encodedLatestFinalizedState: fullResult.encodedLatestFinalizedState,
+            encodedLatestCorrectState: fullResult.encodedLatestCorrectState,
+            virtualVotingBlocks: filteredVirtualVotingBlocks,
+            milestoneProofs: filteredMilestoneProofs,
+            milestoneSnapshots: filteredMilestoneSnapshots
+        };
+    }
+
+    /**
      * Get the latest finalized state and latest signed state (by signer) with virtual voting blocks
      * This method accounts for exit points as milestones in the new design where participants can exit within a fork
      */
@@ -212,8 +269,7 @@ class AgreementManager {
      */
     private buildMilestoneProof(
         blocks: any[],
-        participantSet: Set<Address>,
-        genesisSnapshot: StateSnapshot
+        participantSet: Set<Address>
     ): MilestoneProofStruct | null {
         if (blocks.length === 0) {
             return null;
@@ -289,8 +345,7 @@ class AgreementManager {
 
         const milestoneProof = this.buildMilestoneProof(
             blocksUpToExit,
-            currentParticipantSet,
-            currentSnapshot
+            currentParticipantSet
         );
 
         if (!milestoneProof) {
