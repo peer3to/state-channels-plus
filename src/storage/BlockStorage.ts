@@ -274,7 +274,7 @@ export class BlockStorage {
     /*────────────────────────────────────────────────────────────────────────────
       GET ALL BLOCKS BY FORK ID - SEQUENTIAL ITERATOR
     ────────────────────────────────────────────────────────────────────────────*/
-    *getBlocksByForkId(
+    *getIterator(
         forkId: ForkId,
         sortOrder?: SortOrder
     ): Generator<BlockEntry, void, unknown> {

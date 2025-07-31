@@ -570,7 +570,7 @@ describe("ForkIdToMaxHeightMap", () => {
             storage.storeBlockConfirmation(blockConfirmation1);
 
             let heighestBlock = storage
-                .getBlocksByForkId(forkId, SortOrder.DESC)
+                .getIterator(forkId, SortOrder.DESC)
                 .next().value!;
             let heighestBlockData = Block.decode(
                 heighestBlock.blockConfirmation.signedBlock.encodedBlock
@@ -582,7 +582,7 @@ describe("ForkIdToMaxHeightMap", () => {
             storage.storeBlockConfirmation(blockConfirmation2);
 
             heighestBlock = storage
-                .getBlocksByForkId(forkId, SortOrder.DESC)
+                .getIterator(forkId, SortOrder.DESC)
                 .next().value!;
             heighestBlockData = Block.decode(
                 heighestBlock.blockConfirmation.signedBlock.encodedBlock
@@ -602,7 +602,7 @@ describe("ForkIdToMaxHeightMap", () => {
             );
 
             const blocks = Array.from(
-                storage.getBlocksByForkId(forkId, SortOrder.DESC)
+                storage.getIterator(forkId, SortOrder.DESC)
             );
 
             // The first block should be at height 10
@@ -631,8 +631,8 @@ describe("ForkIdToMaxHeightMap", () => {
             storage.storeBlockConfirmation(blockConfirmation2);
 
             // Verify each fork has correct blocks
-            const blocks1 = Array.from(storage.getBlocksByForkId(forkId1));
-            const blocks2 = Array.from(storage.getBlocksByForkId(forkId2));
+            const blocks1 = Array.from(storage.getIterator(forkId1));
+            const blocks2 = Array.from(storage.getIterator(forkId2));
             expect(blocks1).to.have.lengthOf(1);
             expect(blocks2).to.have.lengthOf(1);
         });
@@ -654,7 +654,7 @@ describe("ForkIdToMaxHeightMap", () => {
 
             // Verify only 2 blocks remain
             const blocks = Array.from(
-                storage.getBlocksByForkId(forkId, SortOrder.DESC)
+                storage.getIterator(forkId, SortOrder.DESC)
             );
             expect(
                 Block.decode(
@@ -683,7 +683,7 @@ describe("ForkIdToMaxHeightMap", () => {
 
             // Verify only 2 blocks remain
             const blocks = Array.from(
-                storage.getBlocksByForkId(forkId, SortOrder.DESC)
+                storage.getIterator(forkId, SortOrder.DESC)
             );
             expect(
                 Block.decode(
@@ -706,14 +706,13 @@ describe("ForkIdToMaxHeightMap", () => {
             storage.deleteBlock(forkId, 5);
 
             // Verify no blocks remain
-            expect(storage.getBlocksByForkId(forkId).next().value).to.be
-                .undefined;
+            expect(storage.getIterator(forkId).next().value).to.be.undefined;
         });
     });
 
-    describe("GETTING - getBlocksByForkId", () => {
+    describe("GETTING - getIterator", () => {
         it("should return empty when no blocks exist on fork", () => {
-            const block = storage.getBlocksByForkId(forkId).next().value;
+            const block = storage.getIterator(forkId).next().value;
             expect(block).to.be.undefined;
         });
 
@@ -729,7 +728,7 @@ describe("ForkIdToMaxHeightMap", () => {
 
             // Test ascending order
             const blocksAsc = Array.from(
-                storage.getBlocksByForkId(forkId, SortOrder.ASC)
+                storage.getIterator(forkId, SortOrder.ASC)
             );
             expect(
                 Block.decode(
@@ -749,7 +748,7 @@ describe("ForkIdToMaxHeightMap", () => {
 
             // Test descending order
             const blocksDesc = Array.from(
-                storage.getBlocksByForkId(forkId, SortOrder.DESC)
+                storage.getIterator(forkId, SortOrder.DESC)
             );
             expect(
                 Block.decode(

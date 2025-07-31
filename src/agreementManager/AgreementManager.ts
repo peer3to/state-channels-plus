@@ -29,7 +29,7 @@ class AgreementManager {
         forkId: ForkId,
         participantAdr: Address
     ): { block: Block; signature: Signature } | undefined {
-        const blockEntries = this.storage.blocks.getBlocksByForkId(
+        const blockEntries = this.storage.blocks.getIterator(
             forkId,
             SortOrder.DESC
         );
@@ -235,6 +235,11 @@ class AgreementManager {
             blockEntries,
             signerAddress,
             finalParticipantSet
+
+        // Get all blocks sorted by height descending
+        const blockEntries = this.storage.blocks.getIterator(
+            forkId,
+            SortOrder.DESC
         );
 
         encodedLatestFinalizedState =
