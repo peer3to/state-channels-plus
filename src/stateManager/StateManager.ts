@@ -21,7 +21,7 @@ import {
 import { SignedDisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 // TypeChain types - Contract interfaces
-import { AStateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerProxy } from "@typechain-types";
 import { StateSnapshotStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 // Core components
@@ -74,7 +74,7 @@ class StateManager {
     agreementManager: AgreementManager;
     stateChannelEventListener: StateChannelEventListener;
     disputeHandler: DisputeHandler;
-    stateChannelManagerContract: AStateChannelManagerProxy;
+    stateChannelManagerContract: StateChannelManagerProxy;
     p2pManager: P2PManager;
     timeConfig: TimeConfig;
     channelId: ChannelId = NULL;
@@ -94,7 +94,7 @@ class StateManager {
     constructor(
         signer: ethers.Signer,
         signerAddress: Address,
-        stateChannelManagerContract: AStateChannelManagerProxy,
+        stateChannelManagerContract: StateChannelManagerProxy,
         stateMachine: AStateMachine,
         timeConfig: TimeConfig,
         p2pEventHooks: P2pEventHooks,

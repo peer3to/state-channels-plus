@@ -4,7 +4,7 @@ import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import DisputeHandler from "@/DisputeHandler";
 import { ethers } from "ethers";
-import { AStateChannelManagerProxy } from "@typechain-types/contracts/V1/StateChannelDiamondProxy";
+import { StateChannelManagerProxy } from "@typechain-types/contracts/V1/StateChannelDiamondProxy";
 import {
     SignatureUtils,
     getActiveParticipants,
@@ -38,7 +38,7 @@ export default class ValidationService {
         private readonly agreementManager: AgreementManager,
         private readonly stateMachine: AStateMachine,
         private readonly disputeHandler: DisputeHandler,
-        private readonly scmContract: AStateChannelManagerProxy,
+        private readonly scmContract: StateChannelManagerProxy,
         private readonly timeCfg: TimeConfig,
         /** getter keeps channelId reactive if StateManager changes it later */
         private readonly getChannelId: () => ChannelId,

@@ -4,7 +4,6 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./StateChannelManagerStorage.sol";
 import "../StateChannelManagerEvents.sol";
 import "./StateChannelUtilLibrary.sol";
-import "./AStateChannelManagerProxy.sol";
 import "./Errors.sol";
 import "./utils/DisputeUtils.sol";
 
@@ -127,21 +126,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         }
     }
 
-    function _applySlashes(bytes memory encodedStateMachineState, address[] memory slashParticipants)
-        internal
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
-    {
-        (encodedModifiedState, exitChannels) = _applySlashesToStateMachine(encodedStateMachineState, slashParticipants);
-    }
-
-    function _applyRemovals(bytes memory encodedStateMachineState, address[] memory removeParticipants)
-        internal
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
-    {
-        (encodedModifiedState, exitChannels) =
-            _removeParticipantsFromStateMachine(encodedStateMachineState, removeParticipants);
-    }
-
     function _calculateTotalWithdrawals(Balance memory totalWithdrawals, ExitChannel[] memory exitChannels)
         internal
         view
@@ -151,30 +135,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             totalWithdrawals = stateMachineImplementation.addBalance(totalWithdrawals, exitChannels[i].balance);
         }
         return totalWithdrawals;
-    }
-
-    function _verifyFraudProofs(FraudProof[] memory fraudProofs, FraudProofVerificationContext memory proofContext)
-        internal
-        returns (address[] memory slashParticipants)
-    {
-        return AStateChannelManagerProxy(address(this)).verifyFraudProofs(fraudProofs, proofContext);
-    }
-
-    function _verifyDisputeFraudProofs(DisputeFraudProof[] memory disputeFraudProofs)
-        internal
-        returns (Dispute[] memory maliciousDisputes)
-    {
-        return abi.decode(
-            AStateChannelManagerProxy(address(this)).verifyDisputeFraudProofs(disputeFraudProofs), (Dispute[])
-        );
-    }
-
-    function _removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
-        internal
-        virtual
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
-    {
-        return AStateChannelManagerProxy(address(this)).removeParticipantsFromStateMachine(encodedState, participants);
     }
 
     function _areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks, bytes32 optionalPreviousHash)
@@ -223,14 +183,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return (stateMachineImplementation.getState());
     }
     //stateless
-
-    function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
-        internal
-        virtual
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
-    {
-        return AStateChannelManagerProxy(address(this)).applySlashesToStateMachine(encodedState, slashedParticipants);
-    }
 
     function isDisputeCommitted(Dispute memory dispute) internal view returns (bool) {
         bytes32 channelId = dispute.channelId;
