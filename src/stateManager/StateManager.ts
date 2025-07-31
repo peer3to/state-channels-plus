@@ -69,7 +69,10 @@ import {
     Timestamp
 } from "@/types/types";
 import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
-import { BlockDoubleSignProofStruct } from "@typechain-types/contracts/V1/types/FraudProofTypes";
+import {
+    BlockDoubleSignProofStruct,
+    BlockInvalidStateTransitionProofStruct
+} from "@typechain-types/contracts/V1/types/FraudProofTypes";
 
 let DEBUG_STATE_MANAGER = false;
 
@@ -424,7 +427,7 @@ class StateManager {
 
         // confilicting block (same forkId, height)
         const maybePreExistingSignedBlock = this.storage.blocks.getBlockEntry(
-            block.hash,
+            block.forkId,
             block.height
         )?.blockConfirmation.signedBlock;
         if (maybePreExistingSignedBlock) {
@@ -441,6 +444,48 @@ class StateManager {
                 };
                 // TODO: persist to storage
                 return ExecutionFlags.DOUBLE_SIGN;
+            } else {
+                const isLinked = this.isLinked(block);
+                if (!isLinked) {
+                    return ExecutionFlags.DISCONNECT;
+                }
+
+                // invalid state fraud proof - get the correct previous block and its state snapshot
+                let prevSignedBlock: SignedBlockStruct | undefined;
+                let prevStateSnapshot: StateSnapshot;
+
+                if (block.height > 0) {
+                    const prevSignedBlock = this.storage.blocks.getBlockEntry(
+                        block.forkId,
+                        block.height - 1
+                    )!.blockConfirmation.signedBlock;
+
+                    const prevBlock = Block.decode(
+                        prevSignedBlock.encodedBlock
+                    );
+                    prevStateSnapshot =
+                        this.storage.stateSnapshots.getStateSnapshotByHash(
+                            prevBlock.stateSnapshotHash
+                        )!;
+                } else {
+                    prevSignedBlock = undefined;
+                    prevStateSnapshot =
+                        this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                            block.forkId
+                        )!;
+                }
+
+                const fraudProof: BlockInvalidStateTransitionProofStruct = {
+                    invalidBlock: blockConfirmation.signedBlock,
+                    previousBlock: prevSignedBlock,
+                    previousBlockStateSnapshot: prevStateSnapshot.toStruct(),
+                    previousStateStateMachineState:
+                        this.storage.stateMachineStates.getStateMachineState(
+                            prevStateSnapshot.stateMachineStateHash
+                        )!
+                };
+                // TODO: persist to storage
+                return ExecutionFlags.DISPUTE;
             }
         }
         // confliciting block but not a double sign
@@ -450,34 +495,24 @@ class StateManager {
             this.forkId
         );
 
-        let finalExecutionFlag: ExecutionFlags = ExecutionFlags.SUCCESS; // Default to SUCCESS
-        const decodedBlock = block ?? Block.decode(signedBlock.encodedBlock);
+        if (block.height > nextBlockHeight) {
+            this.storage.queues.queueConfirmation(blockConfirmation);
+            return ExecutionFlags.NOT_READY;
+        }
 
-        try {
-            const result =
-                await this.validationService.validateBlockConfirmation(
-                    signedBlock,
-                    confirmationSignature,
-                    decodedBlock
-                );
-            finalExecutionFlag = result.flag;
+        // If we reach here, the block is ready for processing
+        const executionFlag =
+            await this.validationService.validateBlockConfirmation(
+                blockConfirmation.signedBlock,
+                blockConfirmation.signatures[0] as Signature,
+                block
+            );
 
-            if (result.success) {
-                this.agreementManager.confirmBlock(
-                    decodedBlock,
-                    confirmationSignature
-                );
-            }
-
-            return finalExecutionFlag;
-        } finally {
-            if (finalExecutionFlag === undefined) {
-                throw new Error(
-                    "StateManager - onBlockConfirmation - Internal Error - flag undefined"
-                );
-            }
-
-            return result.flag;
+        if (executionFlag.success) {
+            this.storage.blocks.storeBlockConfirmation(blockConfirmation);
+            return ExecutionFlags.SUCCESS;
+        } else {
+            return executionFlag.flag;
         }
     }
 
@@ -510,7 +545,7 @@ class StateManager {
         await this.mutex.lock();
 
         try {
-            console.log("Play Transaction", this.getforkId());
+            console.log("Play Transaction", this.forkId);
             if (!this.isChannelOpen()) {
                 throw new Error("Channel not open");
             }
@@ -858,8 +893,9 @@ class StateManager {
         );
 
         // Identify the fork/tx counts for the next participant
-        const forkId = this.getforkId();
-        const nextTransactionCnt = this.getNextBlockHeight();
+        const forkId = this.forkId;
+        const nextTransactionCnt =
+            this.storage.blocks.getNextBlockHeight(forkId);
         const nextToWrite = await this.stateMachine.getNextToWrite();
 
         // Notify any event hooks
@@ -893,7 +929,7 @@ class StateManager {
 
     private adjustTimestampIfNeeded(tx: TransactionStruct): void {
         const latestBlockTimestamp =
-            this.agreementManager.getLatestBlockTimestamp(this.getforkId());
+            this.agreementManager.getLatestBlockTimestamp(this.forkId);
         if (Number(tx.header.timestamp) < latestBlockTimestamp) {
             tx.header.timestamp = latestBlockTimestamp + 1;
         }
@@ -906,11 +942,12 @@ class StateManager {
         const participants = await this.stateMachine.getParticipants();
 
         const latestJoinChannelBlockHash =
-            this.storageModule.getLatestJoinChannelBlockHash();
+            this.storage.joinChannelBlocks.getLatestJoinChannelBlockHash();
         const latestExitChannelBlockHash =
-            this.storageModule.getLatestExitChannelBlockHash();
-        const totalDeposits = this.storageModule.getTotalDeposits();
-        const totalWithdrawals = this.storageModule.getTotalWithdrawals();
+            this.storage.exitChannelBlocks.getLatestExitChannelBlockHash();
+        const totalDeposits = this.storage.joinChannelBlocks.getTotalDeposits();
+        const totalWithdrawals =
+            this.storage.exitChannelBlocks.getTotalWithdrawals();
 
         const stateSnapshot: StateSnapshotStruct = {
             forkId,
@@ -938,10 +975,10 @@ class StateManager {
         tx: TransactionStruct,
         posteriorStateHash: Hash
     ): Promise<Block> {
-        const forkId = this.getforkId();
+        const forkId = this.forkId;
         const transactionCnt = Number(tx.header.transactionCnt);
 
-        const previousBlockHash = this.storageModule.getPreviousBlockHash(
+        const previousBlockHash = this.storage.blocks.getPreviousBlockHash(
             forkId,
             transactionCnt - 1
         );
@@ -960,7 +997,41 @@ class StateManager {
         });
     }
 
-    // ----- Private validation helper methods -----
+    public isLinked(block: Block): boolean {
+        const { forkId } = block.coordinates;
+        let currentHeight = block.height;
+        let currentPreviousBlockHash = block.previousBlockHash;
+
+        // Iterate backwards through the chain until we reach height 0
+        while (currentHeight > 0) {
+            const prevBlockEntry = this.storage.blocks.getBlockEntry(
+                forkId,
+                currentHeight - 1
+            );
+            if (!prevBlockEntry) {
+                return false;
+            }
+
+            const prevBlockHash = hash(
+                prevBlockEntry.blockConfirmation.signedBlock.encodedBlock
+            );
+            if (prevBlockHash !== currentPreviousBlockHash) {
+                return false; // Chain is broken - hashes don't match
+            }
+
+            currentHeight = currentHeight - 1;
+            currentPreviousBlockHash = prevBlockHash;
+        }
+
+        // currentHeight is  0 => validate against the genesis snapshot
+        const genesisSnapshot =
+            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
+        if (!genesisSnapshot) {
+            return false;
+        }
+
+        return genesisSnapshot.hash === currentPreviousBlockHash;
+    }
 
     private isChannelOpen(): boolean {
         return this.forkId !== ethers.ZeroHash && this.forkId !== NULL;
