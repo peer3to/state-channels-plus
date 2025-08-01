@@ -1,7 +1,4 @@
-// External libraries
 import { ethers } from "ethers";
-
-// TypeChain types - Data types
 import {
     SignedBlockStruct,
     BlockConfirmationStruct
@@ -21,14 +18,8 @@ import {
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
 import Storage from "@/storage";
-
-// Models
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
-
-// Utils
 import { difference, isSubset, hash } from "@/utils";
-
-// Types
 import { ExecutionFlags, FraudType, TimeConfig } from "@/types";
 import {
     Address,
@@ -100,22 +91,28 @@ export default class ValidationService {
         private readonly getForkId: () => ForkId
     ) {}
 
-    public async validateBlockConfirmation(
+    async validateBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct
     ): Promise<ExecutionFlags> {
+        const forkId = this.getForkId();
+        const channelId = this.channelId;
+
         try {
             // 1. Check if channel is open
-            if (!this.isChannelOpen()) {
+            if (!this.isChannelOpen(forkId)) {
                 this.storage.queues.queueConfirmation(blockConfirmation);
                 return ExecutionFlags.NOT_READY;
             }
 
             // 2. Authenticate the block and get participants
-            const block = this.authenticateBlock(blockConfirmation);
+            const block = this.authenticateBlock(blockConfirmation, channelId);
             if (!block) {
                 return ExecutionFlags.DISCONNECT;
             }
-            const participants = await this.getParticipants(block.coordinates);
+            const participants = await this.getParticipants(
+                block.coordinates,
+                channelId
+            );
 
             // 3. check duplicate blocks
             const duplicateBlockFlag = this.checkDuplicateBlock(
@@ -168,15 +165,12 @@ export default class ValidationService {
                 return ExecutionFlags.DISCONNECT;
             }
 
-            if (await this.isDisputedFork(block.forkId)) {
+            if (await this.isDisputedFork(block.forkId, channelId)) {
                 this.storage.queues.queueConfirmation(blockConfirmation);
                 return ExecutionFlags.NOT_READY;
             }
             // isNext
-            if (
-                block.height >
-                this.storage.blocks.getNextBlockHeight(this.getForkId())
-            ) {
+            if (block.height > this.storage.blocks.getNextBlockHeight(forkId)) {
                 this.storage.queues.queueConfirmation(blockConfirmation);
                 return ExecutionFlags.NOT_READY;
             }
@@ -197,128 +191,28 @@ export default class ValidationService {
             }
 
             // Time logic
-            const timeValidationFlag = await this.validateTimeLogic(
+            const timeValidationResult = await this.validateTimeLogic(
                 block,
-                previousEntity
+                previousEntity,
+                blockConfirmation.signedBlock,
+                channelId
             );
-            if (timeValidationFlag !== undefined) {
-                return timeValidationFlag;
+            if (timeValidationResult !== undefined) {
+                // this can only be NOT_ENOUGH_TIME, other validation errors are OBJECTIVE and have thrown an exception
+                return timeValidationResult;
             }
 
             return ExecutionFlags.SUCCESS;
         } catch (error) {
             if (error instanceof ValidationFraudException) {
-                if (error instanceof DoubleSignException) {
-                    const fraudProof: BlockDoubleSignProofStruct = {
-                        block1: error.block1,
-                        block2: error.block2
-                    };
-                    // TODO: Persist fraud proof to storage
-                    return ExecutionFlags.DISPUTE;
-                } else if (error instanceof InvalidStateTransitionException) {
-                    const fraudProof = this.createInvalidStateTransitionProof(
-                        error.previousEntity,
-                        error.invalidBlock
-                    );
-                    // TODO: Persist fraud proof to storage
-                    return ExecutionFlags.DISPUTE;
-                } else if (error instanceof InvalidTimestampException) {
-                    const fraudProof = this.createInvalidStateTransitionProof(
-                        error.previousEntity,
-                        error.invalidBlock
-                    );
-                    // TODO: Persist fraud proof to storage
-                    return ExecutionFlags.DISPUTE;
-                } else if (error instanceof InvalidLeaderException) {
-                    const fraudProof = this.createInvalidStateTransitionProof(
-                        error.previousEntity,
-                        error.invalidBlock
-                    );
+                const creator = this.fraudProofCreators[error.constructor.name];
+                if (creator) {
+                    const fraudProof = creator(error);
                     // TODO: Persist fraud proof to storage
                     return ExecutionFlags.DISPUTE;
                 }
             }
             throw error; // Re-throw non-fraud exceptions
-        }
-    }
-
-    // Validation method specifically for state transitions (used after transaction application)
-    public validateStateTransition(
-        encodedState: string,
-        previousStateHash: Hash,
-        previousEntity: PreviousEntity,
-        blockConfirmation: BlockConfirmationStruct
-    ): ExecutionFlags {
-        try {
-            if (!this.isValidStateTransition(encodedState, previousStateHash)) {
-                throw new InvalidStateTransitionException(
-                    previousEntity,
-                    blockConfirmation.signedBlock
-                );
-            }
-            return ExecutionFlags.SUCCESS;
-        } catch (error) {
-            if (error instanceof InvalidStateTransitionException) {
-                const fraudProof = this.createInvalidStateTransitionProof(
-                    error.previousEntity,
-                    error.invalidBlock
-                );
-                // TODO: Persist fraud proof to storage
-                return ExecutionFlags.DISPUTE;
-            }
-            throw error;
-        }
-    }
-
-    // Preserved from old ValidationService
-    public async fetchOnChainTimestamp(
-        blk: Block | undefined
-    ): Promise<Timestamp | undefined> {
-        if (blk === undefined) {
-            return undefined;
-        }
-        try {
-            // Check if commitment exists on-chain
-            const commitmentResult =
-                await this.stateChannelManagerContract.getBlockCallDataCommitment(
-                    this.channelId,
-                    blk.forkId,
-                    blk.height,
-                    blk.author
-                );
-
-            if (!commitmentResult.found) {
-                return undefined;
-            }
-
-            // filter BlockCalldataPosted calls by channelId and author
-            const filter =
-                this.stateChannelManagerContract.filters.BlockCalldataPosted(
-                    this.channelId,
-                    blk.author
-                );
-
-            // best will be to get exact block number from on-chain data
-            // but idk how to AND it is added complexity
-            // assumptoin here is that the block is within the recent 3 blocks (recent, recent-1, recent-2)
-            const logs = await this.stateChannelManagerContract.queryFilter(
-                filter,
-                -2, // from block
-                "latest" // to block
-            );
-
-            // Find matching log
-
-            for (let i = logs.length - 1; i >= 0; i--) {
-                const log = logs[i];
-                if (hash(log.args.signedBlock.encodedBlock) === blk.hash) {
-                    return Number(log.args.timestamp);
-                }
-            }
-            return undefined;
-        } catch (error) {
-            console.error("Error fetching on-chain timestamp:", error);
-            return undefined;
         }
     }
 
@@ -351,20 +245,19 @@ export default class ValidationService {
         return prevBlockHash === block.previousBlockHash;
     }
 
-    private isChannelOpen(): boolean {
-        return (
-            this.getForkId() !== ethers.ZeroHash && this.getForkId() !== NULL
-        );
+    private isChannelOpen(forkId: ForkId): boolean {
+        return forkId !== ethers.ZeroHash && forkId !== NULL;
     }
 
     private authenticateBlock(
-        blockConfirmation: BlockConfirmationStruct
+        blockConfirmation: BlockConfirmationStruct,
+        channelId: ChannelId
     ): Block | undefined {
         let block: Block;
 
         try {
             block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
-            if (block.channelId !== this.channelId) {
+            if (block.channelId !== channelId) {
                 throw new Error(
                     "Block channelId does not match current channelId"
                 );
@@ -484,14 +377,136 @@ export default class ValidationService {
         };
     }
 
-    private async isDisputedFork(forkId: ForkId): Promise<boolean> {
+    private async isDisputedFork(
+        forkId: ForkId,
+        channelId: ChannelId
+    ): Promise<boolean> {
         return (
             this.storage.disputes.getDisputedFork(forkId) ||
             (await this.stateChannelManagerContract.isForkDisputed(
-                this.channelId,
+                channelId,
                 forkId
             ))
         );
+    }
+
+    private async validateTimeLogic(
+        block: Block,
+        previousEntity: PreviousEntity,
+        signedBlock: SignedBlockStruct,
+        channelId: ChannelId
+    ): Promise<ExecutionFlags | undefined> {
+        let previousTimestamp: Timestamp;
+        let previousBlock: Block | undefined;
+        let previousStateSnapshot: StateSnapshot | undefined;
+
+        if (previousEntity.blockConfirmation) {
+            previousBlock = Block.decode(
+                previousEntity.blockConfirmation.signedBlock.encodedBlock
+            );
+            previousTimestamp = previousBlock.getRelevantTimestamp(
+                block.author,
+                previousEntity.blockConfirmation.signatures
+            );
+        } else {
+            previousStateSnapshot = previousEntity.stateSnapshot;
+            previousTimestamp = previousStateSnapshot!.timestamp;
+        }
+
+        const isValidTimestamp =
+            block.timestamp >= previousTimestamp &&
+            block.timestamp <= previousTimestamp + this.timeConfig.p2pTime;
+
+        if (!isValidTimestamp) {
+            if (
+                block.height <= 0 || // genesis block
+                previousBlock === undefined || // no previous block == genesis block
+                previousBlock.onChainTimestamp !== undefined
+            ) {
+                // already has best timestamp
+                // no point in trying to update the timestamp => fraud proof
+                throw new InvalidTimestampException(
+                    previousEntity,
+                    signedBlock
+                );
+            }
+
+            // try to fetch later timestamp from on-chain data
+            const onChainTimestamp = await this.fetchOnChainTimestamp(
+                previousBlock,
+                channelId
+            );
+
+            // Early return: Couldn't fetch or not better than current
+            if (!onChainTimestamp || onChainTimestamp <= previousTimestamp) {
+                throw new InvalidTimestampException(
+                    previousEntity,
+                    signedBlock
+                );
+            }
+
+            // Update the previous block with the on-chain timestamp
+            previousBlock.onChainTimestamp = onChainTimestamp;
+            this.storage.blocks.setOnChainTimestamp(
+                previousBlock.forkId,
+                previousBlock.height,
+                onChainTimestamp
+            );
+
+            // Re-validate with updated timestamp
+            const isValidTimestamp =
+                block.timestamp >= onChainTimestamp &&
+                block.timestamp <= onChainTimestamp + this.timeConfig.p2pTime;
+
+            if (!isValidTimestamp) {
+                throw new InvalidTimestampException(
+                    previousEntity,
+                    signedBlock
+                );
+            }
+            // If valid, continue with rest of validation
+
+            if (
+                block.onChainTimestamp === undefined ||
+                block.onChainTimestamp <= block.timestamp
+            ) {
+                if (
+                    Math.abs(Clock.getTimeInSeconds() - block.timestamp) >=
+                    this.timeConfig.agreementTime
+                )
+                    return ExecutionFlags.NOT_ENOUGH_TIME;
+            }
+        }
+
+        return undefined; // Time validation passed
+    }
+
+    // ────────────────────── Helpers ─────────────────────
+
+    private async getParticipants(
+        blockCoordinates: BlockCoordinates,
+        channelId: ChannelId
+    ): Promise<Set<Address>> {
+        let participants = new Set(
+            this.storage.getParticipants(blockCoordinates)
+        );
+
+        if (participants.size === 0) {
+            // get participants from chain
+            const [participantsFromChain, pendingParticipants] =
+                await Promise.all([
+                    this.stateChannelManagerContract.getParticipants(channelId),
+                    this.stateChannelManagerContract.getPendingParticipants(
+                        channelId
+                    )
+                ]);
+            participants = new Set([
+                ...participantsFromChain,
+                ...pendingParticipants
+            ]);
+        }
+
+        return participants;
     }
 
     // Assumes the previous data exists (called after isLinked check).
@@ -511,6 +526,58 @@ export default class ValidationService {
             this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId)!;
 
         return { stateSnapshot: genesisSnapshot };
+    }
+
+    private async fetchOnChainTimestamp(
+        blk: Block | undefined,
+        channelId: ChannelId
+    ): Promise<Timestamp | undefined> {
+        if (blk === undefined) {
+            return undefined;
+        }
+        try {
+            // Check if commitment exists on-chain
+            const commitmentResult =
+                await this.stateChannelManagerContract.getBlockCallDataCommitment(
+                    channelId,
+                    blk.forkId,
+                    blk.height,
+                    blk.author
+                );
+
+            if (!commitmentResult.found) {
+                return undefined;
+            }
+
+            // filter BlockCalldataPosted calls by channelId and author
+            const filter =
+                this.stateChannelManagerContract.filters.BlockCalldataPosted(
+                    channelId,
+                    blk.author
+                );
+
+            // best will be to get exact block number from on-chain data
+            // but idk how to AND it is added complexity
+            // assumptoin here is that the block is within the recent 3 blocks (recent, recent-1, recent-2)
+            const logs = await this.stateChannelManagerContract.queryFilter(
+                filter,
+                -2, // from block
+                "latest" // to block
+            );
+
+            // Find matching log
+
+            for (let i = logs.length - 1; i >= 0; i--) {
+                const log = logs[i];
+                if (hash(log.args.signedBlock.encodedBlock) === blk.hash) {
+                    return Number(log.args.timestamp);
+                }
+            }
+            return undefined;
+        } catch (error) {
+            console.error("Error fetching on-chain timestamp:", error);
+            return undefined;
+        }
     }
 
     private createInvalidStateTransitionProof(
@@ -545,129 +612,59 @@ export default class ValidationService {
         };
     }
 
-    private async validateTimeLogic(
-        block: Block,
-        previousEntity: PreviousEntity
-    ): Promise<ExecutionFlags | undefined> {
-        let previousTimestamp: Timestamp;
-        let previousBlock: Block | undefined;
-        let previousStateSnapshot: StateSnapshot | undefined;
+    private createInvalidTimestampProof(
+        previousEntity: PreviousEntity,
+        signedBlock: SignedBlockStruct
+    ): InvalidTimestampProofStruct {
+        let prevSignedBlock: SignedBlockStruct | undefined;
+        let prevStateSnapshot: StateSnapshot;
 
         if (previousEntity.blockConfirmation) {
-            previousBlock = Block.decode(
-                previousEntity.blockConfirmation.signedBlock.encodedBlock
-            );
-            previousTimestamp = previousBlock.getRelevantTimestamp(
-                block.author,
-                previousEntity.blockConfirmation.signatures
-            );
+            // Height > 0 case - we have a previous block
+            prevSignedBlock = previousEntity.blockConfirmation.signedBlock;
+            const prevBlock = Block.decode(prevSignedBlock!.encodedBlock);
+            prevStateSnapshot =
+                this.storage.stateSnapshots.getStateSnapshotByHash(
+                    prevBlock.stateSnapshotHash
+                )!;
         } else {
-            previousStateSnapshot = previousEntity.stateSnapshot;
-            previousTimestamp = previousStateSnapshot!.timestamp;
+            // Height === 0 case - we have genesis state snapshot
+            prevSignedBlock = NULL as unknown as SignedBlockStruct;
+            prevStateSnapshot = previousEntity.stateSnapshot!;
         }
 
-        const isValidTimestamp =
-            block.timestamp >= previousTimestamp &&
-            block.timestamp <= previousTimestamp + this.timeConfig.p2pTime;
-
-        if (!isValidTimestamp) {
-            if (
-                block.height <= 0 || // genesis block
-                previousBlock === undefined || // no previous block == genesis block
-                previousBlock.onChainTimestamp !== undefined
-            ) {
-                // already has best timestamp
-                // no point in trying to update the timestamp => fraud proof
-
-                // TODO: Create Invalid Timestamp Fraud Proof
-                // TODO: Persist fraud proof to storage
-                return ExecutionFlags.DISPUTE;
-            }
-
-            // try to fetch later timestamp from on-chain data
-            const onChainTimestamp =
-                await this.fetchOnChainTimestamp(previousBlock);
-
-            // Early return: Couldn't fetch or not better than current
-            if (!onChainTimestamp || onChainTimestamp <= previousTimestamp) {
-                // TODO: Create Invalid Timestamp Fraud Proof
-                // TODO: Persist fraud proof to storage
-                return ExecutionFlags.DISPUTE;
-            }
-
-            // Update the previous block with the on-chain timestamp
-            previousBlock.onChainTimestamp = onChainTimestamp;
-            this.storage.blocks.setOnChainTimestamp(
-                previousBlock.forkId,
-                previousBlock.height,
-                onChainTimestamp
-            );
-
-            // Re-validate with updated timestamp
-            const isValidTimestamp =
-                block.timestamp >= onChainTimestamp &&
-                block.timestamp <= onChainTimestamp + this.timeConfig.p2pTime;
-
-            if (!isValidTimestamp) {
-                // TODO: Create Invalid Timestamp Fraud Proof
-                // TODO: Persist fraud proof to storage
-                return ExecutionFlags.DISPUTE;
-            }
-            // If valid, continue with rest of validation
-
-            if (
-                block.onChainTimestamp === undefined ||
-                block.onChainTimestamp <= block.timestamp
-            ) {
-                if (
-                    Math.abs(Clock.getTimeInSeconds() - block.timestamp) >=
-                    this.timeConfig.agreementTime
-                )
-                    return ExecutionFlags.NOT_ENOUGH_TIME;
-            }
-        }
-
-        return undefined; // Time validation passed
+        return {
+            invalidBlock: signedBlock,
+            previousBlock: prevSignedBlock,
+            previousStateSnapshot: prevStateSnapshot.toStruct()
+        };
     }
 
-    private isValidStateTransition(
-        encodedState: string,
-        previousStateHash: Hash
-    ): boolean {
-        // state did not change
-        if (hash(encodedState) === previousStateHash) {
-            return false;
-        }
+    private readonly fraudProofCreators = {
+        [DoubleSignException.name]: (error: ValidationFraudException) =>
+            ({
+                block1: (error as DoubleSignException).block1,
+                block2: (error as DoubleSignException).block2
+            }) as BlockDoubleSignProofStruct,
 
-        return true;
-    }
+        [InvalidStateTransitionException.name]: (
+            error: ValidationFraudException
+        ) =>
+            this.createInvalidStateTransitionProof(
+                (error as InvalidStateTransitionException).previousEntity,
+                (error as InvalidStateTransitionException).invalidBlock
+            ),
 
-    // ────────────────────── Helpers ─────────────────────
+        [InvalidTimestampException.name]: (error: ValidationFraudException) =>
+            this.createInvalidTimestampProof(
+                (error as InvalidTimestampException).previousEntity,
+                (error as InvalidTimestampException).invalidBlock
+            ),
 
-    private async getParticipants(
-        blockCoordinates: BlockCoordinates
-    ): Promise<Set<Address>> {
-        let participants = new Set(
-            this.storage.getParticipants(blockCoordinates)
-        );
-
-        if (participants.size === 0) {
-            // get participants from chain
-            const [participantsFromChain, pendingParticipants] =
-                await Promise.all([
-                    this.stateChannelManagerContract.getParticipants(
-                        this.channelId
-                    ),
-                    this.stateChannelManagerContract.getPendingParticipants(
-                        this.channelId
-                    )
-                ]);
-            participants = new Set([
-                ...participantsFromChain,
-                ...pendingParticipants
-            ]);
-        }
-
-        return participants;
-    }
+        [InvalidLeaderException.name]: (error: ValidationFraudException) =>
+            this.createInvalidStateTransitionProof(
+                (error as InvalidLeaderException).previousEntity,
+                (error as InvalidLeaderException).invalidBlock
+            )
+    };
 }

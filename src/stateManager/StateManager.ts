@@ -9,7 +9,8 @@ import {
     ExitChannelStruct,
     JoinChannelBlockStruct,
     BalanceStruct,
-    StateSnapshotStruct
+    StateSnapshotStruct,
+    BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // TypeChain types - Proof types
@@ -43,21 +44,9 @@ import { ExecutionDecisionProcessor } from "./executionDecisionProcessor";
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 
 // Utils
-import {
-    DebugProxy,
-    Mutex,
-    scheduleTask,
-    getActiveParticipants,
-    Codec,
-    Type,
-    SignatureUtils,
-    isCustomEvmError,
-    difference,
-    isSubset,
-    hash
-} from "@/utils";
+import { DebugProxy, Mutex, scheduleTask, Codec, Type, hash, isCustomEvmError } from "@/utils";
 // Types
-import { AgreementFlag, ExecutionFlags, FraudType, TimeConfig } from "@/types";
+import { AgreementFlag, ExecutionFlags, TimeConfig } from "@/types";
 import {
     Address,
     BlockHeight,
@@ -68,11 +57,7 @@ import {
     Signature,
     Timestamp
 } from "@/types/types";
-import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
-import {
-    BlockDoubleSignProofStruct,
-    BlockInvalidStateTransitionProofStruct
-} from "@typechain-types/contracts/V1/types/FraudProofTypes";
+import { BlockInvalidStateTransitionProofStruct } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 
 let DEBUG_STATE_MANAGER = false;
 
@@ -142,7 +127,7 @@ class StateManager {
             this.stateMachine,
             this.stateChannelManagerContract,
             this.timeConfig,
-            () => this.getChannelId(),
+            this.channelId,
             () => this.forkId
         );
 
@@ -259,10 +244,8 @@ class StateManager {
         for (const confirmation of confirmations) {
             // Process each signature in the confirmation
             for (const signature of confirmation.signatures) {
-                const executionFlag = await this.onBlockConfirmation(
-                    confirmation.signedBlock,
-                    signature as Signature
-                );
+                const executionFlag =
+                    await this.onBlockConfirmation(confirmation);
                 if (executionFlag == ExecutionFlags.DISPUTE) return;
             }
         }
@@ -324,6 +307,7 @@ class StateManager {
         );
 
         // state transition
+
         const {
             success,
             encodedState,
@@ -342,16 +326,18 @@ class StateManager {
         }
 
         // Validate the state transition result
-        const stateTransitionFlag =
-            this.validationService.validateStateTransition(
-                encodedState as string,
-                previousStateHash,
-                previousEntity,
-                blockConfirmation
-            );
+        const stateTransitionFlag = this.isValidStateTransition(
+            encodedState as string,
+            previousStateHash
+        );
 
-        if (stateTransitionFlag !== ExecutionFlags.SUCCESS) {
-            return stateTransitionFlag;
+        if (!stateTransitionFlag) {
+            const fraudProof = this.createInvalidStateTransitionProof(
+                previousEntity,
+                blockConfirmation.signedBlock
+            );
+            // TODO: Persist fraud proof to storage
+            return ExecutionFlags.DISPUTE;
         }
 
         return ExecutionFlags.SUCCESS;
@@ -365,7 +351,7 @@ class StateManager {
         successCallback: () => void;
         exitChannels: ExitChannelStruct[];
     }> {
-        const previousStateHash = await this.getEncodedStateKecak256();
+        const previousStateHash = await this.stateMachine.getState().then(hash);
         const { success, successCallback, exitChannels } =
             await this.stateMachine.stateTransition(transaction);
         const encodedState = await this.stateMachine.getState();
@@ -410,7 +396,9 @@ class StateManager {
                 );
             }
 
-            const posteriorStateHash = await this.getEncodedStateKecak256();
+            const posteriorStateHash = await this.stateMachine
+                .getState()
+                .then(hash);
             const block = await this.createBlock(tx, posteriorStateHash);
             const signedBlock = await block.signedBlock(
                 this.p2pManager.p2pSigner
@@ -574,14 +562,6 @@ class StateManager {
         console.log(
             "Dispute is not finalized, state snapshot was not submitted"
         );
-    }
-
-    public getEncodedState(): Promise<Bytes> {
-        return this.stateMachine.getState();
-    }
-
-    public getEncodedStateKecak256(): Promise<Hash> {
-        return this.getEncodedState().then(ethers.keccak256);
     }
 
     private async calculateTotalBalance(
@@ -883,6 +863,18 @@ class StateManager {
 
     private isChannelOpen(): boolean {
         return this.forkId !== ethers.ZeroHash && this.forkId !== NULL;
+    }
+
+    private isValidStateTransition(
+        encodedState: string,
+        previousStateHash: Hash
+    ): boolean {
+        // state did not change
+        if (hash(encodedState) === previousStateHash) {
+            return false;
+        }
+
+        return true;
     }
 
     // Helper method to get previous block or snapshot (used by both StateManager and ValidationService)
