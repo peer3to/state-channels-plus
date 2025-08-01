@@ -3,7 +3,6 @@ import {
     BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
-// TypeChain types - Contract interfaces
 import { StateChannelManagerProxy } from "@typechain-types";
 
 // TypeChain types - Fraud proof types
