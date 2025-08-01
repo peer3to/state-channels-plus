@@ -232,12 +232,8 @@ class StateManager {
         );
 
         for (const confirmation of confirmations) {
-            // Process each signature in the confirmation
-            for (const signature of confirmation.signatures) {
-                const executionFlag =
-                    await this.onBlockConfirmation(confirmation);
-                if (executionFlag == ExecutionFlags.DISPUTE) return;
-            }
+            const executionFlag = await this.onBlockConfirmation(confirmation);
+            if (executionFlag == ExecutionFlags.DISPUTE) return;
         }
     }
     /**
@@ -449,114 +445,115 @@ class StateManager {
         }
     }
 
-    // public async postStateSnapshot(
-    //     milestoneProofs: MilestoneProofStruct[],
-    //     milestoneSnapshots: StateSnapshot[],
-    //     exitChannelBlocks: ExitChannelBlockStruct[] = []
-    // ) {
-    //     // Get on-chain state
-    //     const onChainforkId = await this.stateChannelManagerContract.getforkId(
-    //         this.channelId
-    //     );
-    //     const onChainDisputeLength =
-    //         await this.stateChannelManagerContract.getDisputeLength(
-    //             this.channelId
-    //         );
+    public async postStateSnapshot(
+        milestoneProofs: MilestoneProofStruct[],
+        milestoneSnapshots: StateSnapshot[],
+        exitChannelBlocks: ExitChannelBlockStruct[] = []
+    ) {
+        // Get on-chain state
+        const onChainforkId = await this.stateChannelManagerContract.getforkId(
+            this.channelId
+        );
+        const onChainDisputeLength =
+            await this.stateChannelManagerContract.getDisputeLength(
+                this.channelId
+            );
 
-    //     if (onChainDisputeLength == onChainforkId) {
-    //         // Call contract without dispute
-    //         return this.stateChannelManagerContract.updateStateSnapshotWithoutDispute(
-    //             this.channelId,
-    //             milestoneProofs,
-    //             milestoneSnapshots,
-    //             exitChannelBlocks
-    //         );
-    //     }
+        if (onChainDisputeLength == onChainforkId) {
+            // Call contract without dispute
+            return this.stateChannelManagerContract.updateStateSnapshotWithoutDispute(
+                this.channelId,
+                milestoneProofs,
+                milestoneSnapshots,
+                exitChannelBlocks
+            );
+        }
 
-    //     // Need to include a dispute
-    //     const disputeData = this.agreementManager.forks.getLatestDispute();
-    //     if (!disputeData) {
-    //         throw new Error(
-    //             "No dispute data available but dispute length > fork count"
-    //         );
-    //     }
+        // Need to include a dispute
+        const disputeData = this.agreementManager.forks.getLatestDispute();
+        if (!disputeData) {
+            throw new Error(
+                "No dispute data available but dispute length > fork count"
+            );
+        }
 
-    //     // Get output state snapshot data
-    //     const encodedDispute = Codec.encode(disputeData.dispute, Type.Dispute);
-    //     const commitment = ethers.keccak256(
-    //         ethers.AbiCoder.defaultAbiCoder().encode(
-    //             ["bytes", "uint256"],
-    //             [encodedDispute, disputeData.timestamp]
-    //         )
-    //     );
+        // Get output state snapshot data
+        const encodedDispute = Codec.encode(disputeData.dispute, Type.Dispute);
+        const commitment = ethers.keccak256(
+            ethers.AbiCoder.defaultAbiCoder().encode(
+                ["bytes", "uint256"],
+                [encodedDispute, disputeData.timestamp]
+            )
+        );
 
-    //     const outputStateSnapshot = this.outputStateSnapshotData.get(commitment);
-    //     if (!outputStateSnapshot) {
-    //         throw new Error("No output state snapshot data available");
-    //     }
+        const outputStateSnapshot =
+            this.outputStateSnapshotData.get(commitment);
+        if (!outputStateSnapshot) {
+            throw new Error("No output state snapshot data available");
+        }
 
-    //     const disputeProof: DisputeProofStruct = {
-    //         dispute: disputeData.dispute,
-    //         outputStateSnapshot: outputStateSnapshot,
-    //         timestamp: disputeData.timestamp,
-    //         signatures: []
-    //     };
+        const disputeProof: DisputeProofStruct = {
+            dispute: disputeData.dispute,
+            outputStateSnapshot: outputStateSnapshot,
+            timestamp: disputeData.timestamp,
+            signatures: []
+        };
 
-    //     // Check if dispute is within agreement time
-    //     const currentTime = Clock.getTimeInSeconds();
-    //     const timeSinceDispute = currentTime - disputeData.timestamp;
+        // Check if dispute is within agreement time
+        const currentTime = Clock.getTimeInSeconds();
+        const timeSinceDispute = currentTime - disputeData.timestamp;
 
-    //     if (timeSinceDispute > this.timeConfig.challengeTime) {
-    //         // dispute is already finalized, no need for threshold finaliztion
-    //         return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
-    //             this.channelId,
-    //             milestoneProofs,
-    //             milestoneSnapshots,
-    //             disputeProof,
-    //             exitChannelBlocks
-    //         );
-    //     }
+        if (timeSinceDispute > this.timeConfig.challengeTime) {
+            // dispute is already finalized, no need for threshold finaliztion
+            return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
+                this.channelId,
+                milestoneProofs,
+                milestoneSnapshots,
+                disputeProof,
+                exitChannelBlocks
+            );
+        }
 
-    //     // Check if we have threshold signatures on the dispute
-    //     const fork = this.agreementManager.forks.latestFork();
-    //     if (!fork) {
-    //         throw new Error("No latest fork found");
-    //     }
+        // Check if we have threshold signatures on the dispute
+        const fork = this.agreementManager.forks.latestFork();
+        if (!fork) {
+            throw new Error("No latest fork found");
+        }
 
-    //     // Get all participants who have signed the dispute
-    //     const disputeSignatures = this.agreementManager.getDisputeSignatures(
-    //         disputeData.dispute
-    //     );
+        // Get all participants who have signed the dispute
+        const disputeSignatures = this.agreementManager.getDisputeSignatures(
+            disputeData.dispute
+        );
 
-    //     const allowedParticipantsSet = await getActiveParticipants(
-    //         this.stateChannelManagerContract,
-    //         this.getChannelId()
-    //     );
+        const allowedParticipantsSet = await getActiveParticipants(
+            this.stateChannelManagerContract,
+            this.getChannelId()
+        );
 
-    //     const hasThreshold = SignatureUtils.hasSignatureThreshold(
-    //         allowedParticipantsSet,
-    //         Codec.encode(disputeData.dispute, Type.Dispute),
-    //         disputeSignatures
-    //     );
+        const hasThreshold = SignatureUtils.hasSignatureThreshold(
+            allowedParticipantsSet,
+            Codec.encode(disputeData.dispute, Type.Dispute),
+            disputeSignatures
+        );
 
-    //     if (hasThreshold) {
-    //         // Create dispute proof from the latest dispute
-    //         // Call contract with dispute and signatures
-    //         disputeProof.signatures = disputeSignatures;
-    //         return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
-    //             this.channelId,
-    //             milestoneProofs,
-    //             milestoneSnapshots,
-    //             disputeProof,
-    //             exitChannelBlocks
-    //         );
-    //     }
+        if (hasThreshold) {
+            // Create dispute proof from the latest dispute
+            // Call contract with dispute and signatures
+            disputeProof.signatures = disputeSignatures;
+            return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
+                this.channelId,
+                milestoneProofs,
+                milestoneSnapshots,
+                disputeProof,
+                exitChannelBlocks
+            );
+        }
 
-    //     // Dispute is not finalized
-    //     console.log(
-    //         "Dispute is not finalized, state snapshot was not submitted"
-    //     );
-    // }
+        // Dispute is not finalized
+        console.log(
+            "Dispute is not finalized, state snapshot was not submitted"
+        );
+    }
 
     private async calculateTotalBalance(
         balances: { balance: BalanceStruct }[],
@@ -639,13 +636,10 @@ class StateManager {
     ) {
         if (participantAdr == this.signerAddress) return;
 
-        // TODO: Fix this - getBlock method doesn't exist in AgreementManager
-        /*
         const block = this.agreementManager.getBlock(forkId, transactionCnt);
         if (block) {
             if (this.agreementManager.didEveryoneSignBlock(block)) return;
         }
-        */
 
         //if there is no block -> check if player posted on chain and try timeout
         if (
@@ -657,8 +651,6 @@ class StateManager {
         )
             return;
 
-        // TODO: Fix this - getChainLatestBlockTimestamp method doesn't exist in AgreementManager
-        /*
         if (
             Clock.getTimeInSeconds() <
             this.agreementManager.getChainLatestBlockTimestamp(
@@ -668,7 +660,6 @@ class StateManager {
                 this.getTimeoutWaitTimeSeconds()
         )
             return;
-        */
 
         const response =
             await this.stateChannelManagerContract.getBlockCallDataCommitment(
@@ -680,13 +671,10 @@ class StateManager {
         if (response.found) return;
         //This should be enough since Clock should always lag behind DLT clock
 
-        // TODO: Fix this - getLatestBlockTimestamp method doesn't exist in AgreementManager
-        /*
         const delayTimeSeconds =
             this.getTimeoutWaitTimeSeconds() -
             (Clock.getTimeInSeconds() -
                 this.agreementManager.getLatestBlockTimestamp(forkId));
-        */
 
         // For now, use a simple timeout without the complex calculation
         const delayTimeSeconds = this.getTimeoutWaitTimeSeconds();
@@ -766,14 +754,11 @@ class StateManager {
     }
 
     private adjustTimestampIfNeeded(tx: TransactionStruct): void {
-        // TODO: Fix this - getLatestBlockTimestamp method doesn't exist in AgreementManager
-        /*
         const latestBlockTimestamp =
             this.agreementManager.getLatestBlockTimestamp(this.forkId);
         if (Number(tx.header.timestamp) < latestBlockTimestamp) {
             tx.header.timestamp = latestBlockTimestamp + 1;
         }
-        */
     }
 
     private async createStateSnapshot(
@@ -782,8 +767,6 @@ class StateManager {
     ): Promise<StateSnapshot> {
         const participants = await this.stateMachine.getParticipants();
 
-        // TODO: Fix this - getLatestJoinChannelBlockHash method doesn't exist
-        /*
         const latestJoinChannelBlockHash =
             this.storage.joinChannelBlocks.getLatestJoinChannelBlockHash();
         const latestExitChannelBlockHash =
@@ -791,13 +774,6 @@ class StateManager {
         const totalDeposits = this.storage.joinChannelBlocks.getTotalDeposits();
         const totalWithdrawals =
             this.storage.exitChannelBlocks.getTotalWithdrawals();
-        */
-
-        // For now, use placeholder values
-        const latestJoinChannelBlockHash = NULL;
-        const latestExitChannelBlockHash = NULL;
-        const totalDeposits = { amount: 0n, data: "0x" };
-        const totalWithdrawals = { amount: 0n, data: "0x" };
 
         const stateSnapshot: StateSnapshotStruct = {
             forkId,
@@ -876,10 +852,8 @@ class StateManager {
             return;
         }
         // Add dispute to ForkService
-        // TODO: Fix this - addDispute method doesn't exist in AgreementManager
-        /*
+
         this.agreementManager.addDispute(dispute, timestamp);
-        */
 
         if (dispute.disputer !== this.signerAddress) {
             // this signs the dispute, adds the signature to the AgreementManager and broadcasts
@@ -910,17 +884,14 @@ class StateManager {
         const { success, flag } =
             await this.validationService.validateDisputeConfirmation(
                 dispute,
-                signedDispute.signature as any // TODO: Fix type: SignatureLike
+                signedDispute.signature as any
             );
 
         if (success) {
-            // TODO: Fix this - confirmDispute method doesn't exist in AgreementManager
-            /*
             this.agreementManager.confirmDispute(
                 dispute,
                 signedDispute.signature
             );
-            */
         }
 
         return flag;
