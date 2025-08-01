@@ -139,15 +139,11 @@ class StateManager {
         this.p2pManager = new P2PManager(this.self, signer);
         this.validationService = new ValidationService(
             this.storage,
-            this.agreementManager,
             this.stateMachine,
-            this.disputeHandler,
             this.stateChannelManagerContract,
             this.timeConfig,
-            this.storage,
             () => this.getChannelId(),
-            this.signerAddress,
-            this.onSignedBlock.bind(this)
+            () => this.forkId
         );
 
         // Initialize decision processors
@@ -310,130 +306,22 @@ class StateManager {
     public async onBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct
     ): Promise<ExecutionFlags> {
-        // 1. Check if channel is open
-        if (!this.isChannelOpen()) {
-            this.storage.queues.queueConfirmation(blockConfirmation);
-            return ExecutionFlags.NOT_READY;
+        // Use the validation service for the main validation pipeline
+        const validationFlag =
+            await this.validationService.validateBlockConfirmation(
+                blockConfirmation
+            );
+
+        // If validation failed or is not ready, return early
+        if (validationFlag !== ExecutionFlags.SUCCESS) {
+            return validationFlag;
         }
 
-        // 2. Authenticate the block and get participants
-        const block = this.authenticateBlock(blockConfirmation);
-        if (!block) {
-            return ExecutionFlags.DISCONNECT;
-        }
-        let participants = new Set(
-            this.storage.getParticipants(block.coordinates)
-        );
-
-        if (participants.size === 0) {
-            // get participants from chain
-            const participantsFromChain =
-                await this.stateChannelManagerContract.getParticipants(
-                    this.channelId
-                );
-            const pendingParticipants =
-                await this.stateChannelManagerContract.getPendingParticipants(
-                    this.channelId
-                );
-            participants = new Set([
-                ...participantsFromChain,
-                ...pendingParticipants
-            ]);
-        }
-
-        // 3. check duplicate blocks
-        const duplicateBlockFlag = await this.checkDuplicateBlock(
-            blockConfirmation,
-            participants
-        );
-        // could be DISCONNECT, DUPLICATE, BROADCAST or undefined
-        if (duplicateBlockFlag !== undefined) {
-            return duplicateBlockFlag;
-        }
-
-        // 4. Validate block author
-        if (!participants.has(block.author)) {
-            return ExecutionFlags.DISCONNECT;
-        }
-
-        // 5. Handle conflicting blocks
-        const maybePreExistingBlockConfirmation =
-            this.storage.blocks.getBlockEntry(
-                block.forkId,
-                block.height
-            )?.blockConfirmation;
-
+        // Validation passed, now apply the transaction
+        const block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
         const previousEntity = this.getPreviousBlockOrSnapshot(
             block.coordinates
         );
-        const { conflict, fraudType } = await this.checkConflictingBlock(
-            block,
-            maybePreExistingBlockConfirmation?.signedBlock
-        );
-        if (conflict) {
-            if (fraudType !== undefined) {
-                let fraudProof:
-                    | BlockDoubleSignProofStruct
-                    | BlockInvalidStateTransitionProofStruct;
-
-                if (fraudType === FraudType.DOUBLE_SIGN) {
-                    fraudProof = {
-                        block1: this.storage.blocks.getBlockEntry(
-                            block.forkId,
-                            block.height
-                        )!.blockConfirmation.signedBlock,
-                        block2: blockConfirmation.signedBlock
-                    };
-                } else if (fraudType === FraudType.INVALID_STATE_TRANSITION) {
-                    fraudProof = this.createInvalidStateTransitionProof(
-                        previousEntity,
-                        blockConfirmation.signedBlock
-                    );
-                }
-                // TODO: Persist fraud proof to storage
-                return ExecutionFlags.DISPUTE;
-            }
-
-            return ExecutionFlags.DISCONNECT;
-        }
-
-        if (await this.isDisputedFork(block.forkId)) {
-            this.storage.queues.queueConfirmation(blockConfirmation);
-            return ExecutionFlags.NOT_READY;
-        }
-        // isNext
-        if (
-            block.height > this.storage.blocks.getNextBlockHeight(this.forkId)
-        ) {
-            this.storage.queues.queueConfirmation(blockConfirmation);
-            return ExecutionFlags.NOT_READY;
-        }
-
-        // Is linked
-        if (!this.isLinked(block)) {
-            return ExecutionFlags.DISCONNECT;
-        }
-
-        // isNextLeader
-        const nextLeader = await this.stateMachine.getNextToWrite();
-        if (nextLeader !== block.author) {
-            // create invalid state transition proof
-            const fraudProof = this.createInvalidStateTransitionProof(
-                previousEntity,
-                blockConfirmation.signedBlock
-            );
-            // TODO: Persist fraud proof to storage
-            return ExecutionFlags.DISPUTE;
-        }
-        // Time logic
-
-        const timeValidationFlag = await this.validateTimeLogic(
-            block,
-            previousEntity
-        );
-        if (timeValidationFlag !== undefined) {
-            return timeValidationFlag;
-        }
 
         // state transition
         const {
@@ -453,13 +341,17 @@ class StateManager {
             return ExecutionFlags.DISPUTE;
         }
 
-        if (!this.isValidStateTransition(encodedState, previousStateHash)) {
-            const fraudProof = this.createInvalidStateTransitionProof(
+        // Validate the state transition result
+        const stateTransitionFlag =
+            this.validationService.validateStateTransition(
+                encodedState as string,
+                previousStateHash,
                 previousEntity,
-                blockConfirmation.signedBlock
+                blockConfirmation
             );
-            // TODO: Persist fraud proof to storage
-            return ExecutionFlags.DISPUTE;
+
+        if (stateTransitionFlag !== ExecutionFlags.SUCCESS) {
+            return stateTransitionFlag;
         }
 
         return ExecutionFlags.SUCCESS;
@@ -989,177 +881,11 @@ class StateManager {
 
     //  Validation pipeline functions
 
-    private isLinked(block: Block): boolean {
-        const { forkId, height } = block.coordinates;
-        if (height === 0) {
-            const genesisSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                    forkId
-                );
-            if (!genesisSnapshot) {
-                return false;
-            }
-
-            return genesisSnapshot.hash === block.previousBlockHash;
-        }
-
-        const prevBlockEntry = this.storage.blocks.getBlockEntry(
-            forkId,
-            height - 1
-        );
-        if (!prevBlockEntry) {
-            return false;
-        }
-        const prevBlockHash = hash(
-            prevBlockEntry.blockConfirmation.signedBlock.encodedBlock
-        );
-        return prevBlockHash === block.previousBlockHash;
-    }
-
     private isChannelOpen(): boolean {
         return this.forkId !== ethers.ZeroHash && this.forkId !== NULL;
     }
 
-    private authenticateBlock(
-        blockConfirmation: BlockConfirmationStruct
-    ): Block | undefined {
-        let block: Block;
-
-        try {
-            block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
-            if (block.channelId !== this.channelId) {
-                throw new Error(
-                    "Block channelId does not match current channelId"
-                );
-            }
-            if (
-                block.getSignerAddress(
-                    blockConfirmation.signedBlock.signature
-                ) !== block.author
-            ) {
-                throw new Error("Block signature does not match block author");
-            }
-        } catch (error) {
-            console.error("Invalid block confirmation", error);
-            return undefined;
-        }
-
-        return block;
-    }
-
-    private checkDuplicateBlock(
-        blockConfirmation: BlockConfirmationStruct,
-        participants: Set<Address>
-    ): ExecutionFlags | undefined {
-        const block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
-
-        // 1. Check if block is in queue
-        if (
-            this.storage.queues.isBlockQueued(blockConfirmation, {
-                hash: block.hash
-            })
-        ) {
-            const signerAddresses = block.getSignerAddresses(
-                blockConfirmation.signatures as Signature[]
-            );
-            const areAllParticipants = isSubset(signerAddresses, participants);
-
-            if (!areAllParticipants) {
-                return ExecutionFlags.DISCONNECT;
-            }
-
-            // Store in queue (handles signature merging automatically)
-            this.storage.queues.queueConfirmation(blockConfirmation);
-            return ExecutionFlags.DUPLICATE;
-        }
-
-        // 2. Check if block is in block storage
-        if (this.storage.blocks.getBlockEntry(block.hash) !== undefined) {
-            const existingSignatures = new Set(
-                this.storage.blocks.getSignatures(block.hash) as Signature[]
-            );
-            const incomingSignatures = new Set(
-                blockConfirmation.signatures as Signature[]
-            );
-            const newSignatures = difference(
-                incomingSignatures,
-                existingSignatures
-            );
-            const hasNewSignatures = newSignatures.size > 0;
-
-            if (!hasNewSignatures) {
-                return ExecutionFlags.DUPLICATE;
-            }
-
-            // Validate new signatures are from participants
-            const newSignerAddresses: Set<Address> = block.getSignerAddresses(
-                Array.from(newSignatures)
-            );
-            const areNewSignersParticipants = isSubset(
-                newSignerAddresses,
-                participants
-            );
-
-            if (!areNewSignersParticipants) {
-                return ExecutionFlags.DISCONNECT;
-            }
-
-            // Store (handles signature merging automatically)
-            this.storage.blocks.storeBlockConfirmation(blockConfirmation);
-            return ExecutionFlags.BROADCAST;
-        }
-
-        return undefined;
-    }
-
-    private checkConflictingBlock(
-        block: Block,
-        maybePreExistingSignedBlock: SignedBlockStruct | undefined
-    ): {
-        conflict: boolean;
-        fraudType?: FraudType;
-    } {
-        if (!maybePreExistingSignedBlock) {
-            return { conflict: false };
-        }
-
-        const preExistingSignedBlock = maybePreExistingSignedBlock;
-        const preExistingBlock = Block.decode(
-            preExistingSignedBlock.encodedBlock
-        );
-
-        if (preExistingBlock.author === block.author) {
-            // DOUBLE SIGN
-            return {
-                conflict: true,
-                fraudType: FraudType.DOUBLE_SIGN
-            };
-        } else {
-            if (!this.isLinked(block)) {
-                return {
-                    conflict: true
-                };
-            }
-
-            // invalid state fraud proof
-
-            return {
-                conflict: true,
-                fraudType: FraudType.INVALID_STATE_TRANSITION
-            };
-        }
-    }
-
-    private async isDisputedFork(forkId: ForkId): Promise<boolean> {
-        return (
-            this.storage.disputes.getDisputedFork(forkId) ||
-            (await this.stateChannelManagerContract.isForkDisputed(
-                this.channelId,
-                forkId
-            ))
-        );
-    }
-    // Assumes the previous data exists (called after isLinked check).
+    // Helper method to get previous block or snapshot (used by both StateManager and ValidationService)
     private getPreviousBlockOrSnapshot({
         forkId,
         height
@@ -1178,6 +904,7 @@ class StateManager {
         return { stateSnapshot: genesisSnapshot };
     }
 
+    // Helper method to create invalid state transition proof (used by both StateManager and ValidationService)
     private createInvalidStateTransitionProof(
         previousEntity: PreviousEntity,
         signedBlock: SignedBlockStruct
@@ -1208,105 +935,6 @@ class StateManager {
                     prevStateSnapshot.stateMachineStateHash
                 )!
         };
-    }
-
-    private async validateTimeLogic(
-        block: Block,
-        previousEntity: PreviousEntity
-    ): Promise<ExecutionFlags | undefined> {
-        let previousTimestamp: Timestamp;
-        let previousBlock: Block | undefined;
-        let previousStateSnapshot: StateSnapshot | undefined;
-
-        if (previousEntity.blockConfirmation) {
-            previousBlock = Block.decode(
-                previousEntity.blockConfirmation.signedBlock.encodedBlock
-            );
-            previousTimestamp = previousBlock.getRelevantTimestamp(
-                block.author,
-                previousEntity.blockConfirmation.signatures
-            );
-        } else {
-            previousStateSnapshot = previousEntity.stateSnapshot;
-            previousTimestamp = previousStateSnapshot!.timestamp;
-        }
-
-        const isValidTimestamp =
-            block.timestamp >= previousTimestamp &&
-            block.timestamp <= previousTimestamp + this.timeConfig.p2pTime;
-
-        if (!isValidTimestamp) {
-            if (
-                block.height <= 0 || // genesis block
-                previousBlock === undefined || // no previous block == genesis block
-                previousBlock.onChainTimestamp !== undefined
-            ) {
-                // already has best timestamp
-                // no point in trying to update the timestamp => fraud proof
-
-                // TODO: Create Invalid Timestamp Fraud Proof
-                // TODO: Persist fraud proof to storage
-                return ExecutionFlags.DISPUTE;
-            }
-
-            // try to fetch later timestamp from on-chain data
-            const onChainTimestamp =
-                await this.validationService.fetchOnChainTimestamp(
-                    previousBlock
-                );
-
-            // Early return: Couldn't fetch or not better than current
-            if (!onChainTimestamp || onChainTimestamp <= previousTimestamp) {
-                // TODO: Create Invalid Timestamp Fraud Proof
-                // TODO: Persist fraud proof to storage
-                return ExecutionFlags.DISPUTE;
-            }
-
-            // Update the previous block with the on-chain timestamp
-            previousBlock.onChainTimestamp = onChainTimestamp;
-            this.storage.blocks.setOnChainTimestamp(
-                previousBlock.forkId,
-                previousBlock.height,
-                onChainTimestamp
-            );
-
-            // Re-validate with updated timestamp
-            const isValidTimestamp =
-                block.timestamp >= onChainTimestamp &&
-                block.timestamp <= onChainTimestamp + this.timeConfig.p2pTime;
-
-            if (!isValidTimestamp) {
-                // TODO: Create Invalid Timestamp Fraud Proof
-                // TODO: Persist fraud proof to storage
-                return ExecutionFlags.DISPUTE;
-            }
-            // If valid, continue with rest of validation
-
-            if (
-                block.onChainTimestamp === undefined ||
-                block.onChainTimestamp <= block.timestamp
-            ) {
-                if (
-                    Math.abs(Clock.getTimeInSeconds() - block.timestamp) >=
-                    this.timeConfig.agreementTime
-                )
-                    return ExecutionFlags.NOT_ENOUGH_TIME;
-            }
-        }
-
-        return undefined; // Time validation passed
-    }
-
-    private isValidStateTransition(
-        encodedState: Bytes,
-        previousStateHash: Hash
-    ): boolean {
-        // state did not change
-        if (hash(encodedState) === previousStateHash) {
-            return false;
-        }
-
-        return true;
     }
 
     // END Validation pipeline functions
