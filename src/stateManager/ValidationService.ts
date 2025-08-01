@@ -82,7 +82,7 @@ export default class ValidationService {
                 participants
             );
             // could be DISCONNECT, DUPLICATE, BROADCAST or undefined
-            if (duplicateBlockFlag !== undefined) {
+            if (duplicateBlockFlag !== null) {
                 return duplicateBlockFlag;
             }
 
@@ -98,11 +98,12 @@ export default class ValidationService {
             );
 
             // 5. check conflicting block
+            const blockEntry = this.storage.blocks.getBlockEntry(
+                block.forkId,
+                block.height
+            );
             const maybePreExistingBlockConfirmation =
-                this.storage.blocks.getBlockEntry(
-                    block.forkId,
-                    block.height
-                )?.blockConfirmation;
+                blockEntry?.blockConfirmation;
 
             const { conflict, fraudType } = this.checkConflictingBlock(
                 block,
@@ -111,10 +112,7 @@ export default class ValidationService {
             if (conflict) {
                 if (fraudType === FraudType.DOUBLE_SIGN) {
                     throw new DoubleSignException(
-                        this.storage.blocks.getBlockEntry(
-                            block.forkId,
-                            block.height
-                        )!.blockConfirmation.signedBlock,
+                        blockEntry!.blockConfirmation.signedBlock,
                         blockConfirmation.signedBlock
                     );
                 }
@@ -160,7 +158,7 @@ export default class ValidationService {
                 blockConfirmation.signedBlock,
                 channelId
             );
-            if (timeValidationResult !== undefined) {
+            if (timeValidationResult !== null) {
                 // this can only be NOT_ENOUGH_TIME, other validation errors are OBJECTIVE and have thrown an exception
                 return timeValidationResult;
             }
@@ -178,7 +176,11 @@ export default class ValidationService {
     }
 
     // ────────────────────── VALIDATION METHODS ─────────────────────
+    /**
+     * Determine whether the given block properly chains
+     * to its predecessor (or genesis snapshot).
 
+     */
     private isLinked(block: Block): boolean {
         const { forkId, height } = block.coordinates;
         if (height === 0) {
@@ -209,26 +211,23 @@ export default class ValidationService {
     private authenticateBlock(
         blockConfirmation: BlockConfirmationStruct,
         channelId: ChannelId
-    ): Block | undefined {
+    ): Block | null {
         let block: Block;
 
         try {
             block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
             if (block.channelId !== channelId) {
-                throw new Error(
-                    "Block channelId does not match current channelId"
-                );
+                return null;
             }
             if (
                 block.getSignerAddress(
                     blockConfirmation.signedBlock.signature
                 ) !== block.author
             ) {
-                throw new Error("Block signature does not match block author");
+                return null;
             }
         } catch (error) {
-            console.error("Invalid block confirmation", error);
-            return undefined;
+            return null;
         }
 
         return block;
@@ -237,7 +236,7 @@ export default class ValidationService {
     private checkDuplicateBlock(
         blockConfirmation: BlockConfirmationStruct,
         participants: Set<Address>
-    ): ExecutionFlags | undefined {
+    ): ExecutionFlags | null {
         const block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
 
         // 1. Check if block is in queue
@@ -261,7 +260,10 @@ export default class ValidationService {
         }
 
         // 2. Check if block is in block storage
-        if (this.storage.blocks.getBlockEntry(block.hash) !== undefined) {
+        const existingBlockEntry = this.storage.blocks.getBlockEntry(
+            block.hash
+        );
+        if (existingBlockEntry !== undefined) {
             const existingSignatures = new Set(
                 this.storage.blocks.getSignatures(block.hash) as Signature[]
             );
@@ -296,7 +298,7 @@ export default class ValidationService {
             return ExecutionFlags.BROADCAST;
         }
 
-        return undefined;
+        return null;
     }
 
     private checkConflictingBlock(
@@ -347,12 +349,24 @@ export default class ValidationService {
         );
     }
 
+    /**
+     * Ensure block.timestamp is within the allowed
+     * p2pTime window of the previous timestamp, optionally
+     * fetching a better on-chain timestamp if needed.
+     *
+     * @param block            – the new block to validate
+     * @param previousEntity   – prior block or snapshot data
+     * @param signedBlock      – raw SignedBlockStruct
+     * @param channelId        – for on-chain lookup
+     * @returns ExecutionFlags.NOT_ENOUGH_TIME if time is only OBJECTIVELY invalid, otherwise `null`
+     * @throws InvalidTimestampException when timestamp is OBJECTIVELY invalid
+     */
     private async validateTimeLogic(
         block: Block,
         previousEntity: PreviousEntity,
         signedBlock: SignedBlockStruct,
         channelId: ChannelId
-    ): Promise<ExecutionFlags | undefined> {
+    ): Promise<ExecutionFlags | null> {
         let previousTimestamp: Timestamp;
         let previousBlock: Block | undefined;
         let previousStateSnapshot: StateSnapshot | undefined;
@@ -435,7 +449,7 @@ export default class ValidationService {
             }
         }
 
-        return undefined; // Time validation passed
+        return null; // Time validation passed
     }
 
     // ────────────────────── Helpers ─────────────────────
