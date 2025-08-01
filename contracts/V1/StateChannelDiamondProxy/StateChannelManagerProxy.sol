@@ -6,6 +6,7 @@ import "./StateChannelUtilLibrary.sol";
 import "./AConsumerFacet.sol";
 
 import "./DisputeManagerFacet.sol";
+import "./DisputeVerificationFacet.sol";
 import "./FraudProofFacet.sol";
 import "./DisputeFraudProofFacet.sol";
 import "./StateSnapshotFacet.sol";
@@ -13,6 +14,7 @@ import "./JoinChannelFacet.sol";
 
 contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelCommon {
     DisputeManagerFacet disputeManagerFacet;
+    DisputeVerificationFacet disputeVerificationFacet;
     FraudProofFacet fraudProofFacet;
     DisputeFraudProofFacet disputeFraudProofFacet;
     StateSnapshotFacet stateSnapshotFacet;
@@ -22,6 +24,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     constructor(
         address _stateMachineImplementation,
         address _disputeManagerFacet,
+        address _disputeVerificationFacet,
         address _fraudProofFacet,
         address _disputeFraudProofFacet,
         address _stateSnapshotFacet,
@@ -30,6 +33,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     ) {
         stateMachineImplementation = AStateMachine(_stateMachineImplementation);
         disputeManagerFacet = DisputeManagerFacet(_disputeManagerFacet);
+        disputeVerificationFacet = DisputeVerificationFacet(_disputeVerificationFacet);
         fraudProofFacet = FraudProofFacet(_fraudProofFacet);
         disputeFraudProofFacet = DisputeFraudProofFacet(_disputeFraudProofFacet);
         stateSnapshotFacet = StateSnapshotFacet(_stateSnapshotFacet);
@@ -123,9 +127,10 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         //This is done manually since the logic is different from other _delegatecalls
 
         // Encode the function selector and arguments
-        bytes memory data = abi.encodeCall(DisputeManagerFacet.auditDispute, (dispute, disputeAuditingData));
+        bytes memory data = abi.encodeCall(DisputeVerificationFacet.auditDispute, (dispute, disputeAuditingData));
         // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) = address(disputeManagerFacet).delegatecall{gas: getGasLimit()}(data);
+        (bool success, bytes memory returnData) =
+            address(disputeVerificationFacet).delegatecall{gas: getGasLimit()}(data);
         if (!success) {
             assembly {
                 revert(add(returnData, 0x20), mload(returnData))
@@ -157,14 +162,15 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public override {
         _delegatecall(
-            address(disputeManagerFacet),
-            abi.encodeCall(disputeManagerFacet.challengeDispute, (dispute, disputeAuditingData))
+            address(disputeVerificationFacet),
+            abi.encodeCall(disputeVerificationFacet.challengeDispute, (dispute, disputeAuditingData))
         );
     }
 
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public override {
         _delegatecall(
-            address(disputeManagerFacet), abi.encodeCall(disputeManagerFacet.applyDisputeFraudProofs, (proofs))
+            address(disputeVerificationFacet),
+            abi.encodeCall(disputeVerificationFacet.applyDisputeFraudProofs, (proofs))
         );
     }
 
@@ -340,10 +346,31 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         StateSnapshot memory genesisSnapshot
     ) public returns (bool isValid, bytes memory lastBlockEncoded) {
         bytes memory result = _delegatecall(
-            address(disputeManagerFacet),
-            abi.encodeCall(disputeManagerFacet.verifyMilestones, (milestoneProofs, milestoneSnapshots, genesisSnapshot))
+            address(disputeVerificationFacet),
+            abi.encodeCall(
+                disputeVerificationFacet.verifyMilestones, (milestoneProofs, milestoneSnapshots, genesisSnapshot)
+            )
         );
         return abi.decode(result, (bool, bytes));
+    }
+
+    function reduce(Dispute[] memory disputes, uint256 disputeWindowCreationTimestamp)
+        public
+        returns (ReduceOutput memory reducedOutput)
+    {
+        bytes memory result = _delegatecall(
+            address(disputeManagerFacet),
+            abi.encodeCall(disputeManagerFacet.reduce, (disputes, disputeWindowCreationTimestamp))
+        );
+        return abi.decode(result, (ReduceOutput));
+    }
+
+    function _canParticipateInDisputes(bytes32 channelId, address participant) public returns (bool) {
+        bytes memory result = _delegatecall(
+            address(disputeManagerFacet),
+            abi.encodeCall(disputeManagerFacet._canParticipateInDisputes, (channelId, participant))
+        );
+        return abi.decode(result, (bool));
     }
 
     function multicall(bytes[] calldata calls) external override returns (bytes[] memory results) {

@@ -14,6 +14,7 @@ contract MathStateChannelManagerProxy is StateChannelManagerProxy {
     constructor(
         address aStateMachineAddress,
         address disputeManagerFacet,
+        address disputeVerificationFacet,
         address fraudProofFacet,
         address disputeFraudProofFacet,
         address stateSnapshotFacet,
@@ -23,6 +24,7 @@ contract MathStateChannelManagerProxy is StateChannelManagerProxy {
         StateChannelManagerProxy(
             aStateMachineAddress,
             disputeManagerFacet,
+            disputeVerificationFacet,
             fraudProofFacet,
             disputeFraudProofFacet,
             stateSnapshotFacet,
