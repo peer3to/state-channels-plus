@@ -371,9 +371,12 @@ export default class ValidationService {
         return false;
     }
 
-    private async fetchOnChainTimestamp(
-        blk: Block
+    public async fetchOnChainTimestamp(
+        blk: Block | undefined
     ): Promise<Timestamp | undefined> {
+        if (blk === undefined) {
+            return undefined;
+        }
         try {
             // Check if commitment exists on-chain
             const commitmentResult =
