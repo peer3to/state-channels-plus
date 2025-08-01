@@ -30,6 +30,7 @@ function _getLatestBlock(StateProof memory stateProof) pure returns (Block memor
         );
 }
 
+//not used anywhere right now
 function _isEvidencePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime) view returns (bool) {
     return block.timestamp > disputeWindow.evidence.creationTimestamp + evidenceTime;
 }
