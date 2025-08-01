@@ -4,7 +4,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import Storage, { SortOrder } from "@/storage";
+import Storage, { BlockEntry, SortOrder } from "@/storage";
 import {
     Address,
     BlockHeight,
@@ -134,21 +134,22 @@ class AgreementManager {
 
         // Filter blocks up to the specified blockHeight
         const filteredVirtualVotingBlocks =
-            fullResult.virtualVotingBlocks.filter((blockConfirmation: any) => {
-                const block = Block.decode(
-                    blockConfirmation.signedBlock.encodedBlock
-                );
-                return block.coordinates.height <= blockHeight;
-            });
+            fullResult.virtualVotingBlocks.filter(
+                (blockConfirmation: BlockConfirmationStruct) => {
+                    const block = Block.decode(
+                        blockConfirmation.signedBlock.encodedBlock
+                    );
+                    return block.coordinates.height <= blockHeight;
+                }
+            );
 
         // Filter milestone proofs and snapshots for exit points up to blockHeight
         const filteredMilestoneProofs: MilestoneProofStruct[] = [];
         const filteredMilestoneSnapshots: StateSnapshot[] = [];
 
         // Get all exit points to know which milestones correspond to which heights
-        const allExitPoints = this.storage.exitPoints
-            .getExitPointsInRange(forkId)
-            .sort((a, b) => Number(a) - Number(b)); // Sort to match the order in getFinalizedAndLatestWithMilestones
+        const allExitPoints =
+            this.storage.exitPoints.getExitPointsInRange(forkId);
 
         // Only include milestone proofs and snapshots for exit points up to blockHeight
         for (let i = 0; i < fullResult.milestoneProofs.length; i++) {
@@ -195,7 +196,7 @@ class AgreementManager {
 
         // Get all blocks sorted by height descending
         const blockEntries = Array.from(
-            this.storage.blocks.getBlocksByForkId(forkId, SortOrder.DESC)
+            this.storage.blocks.getIterator(forkId, SortOrder.DESC)
         );
 
         let encodedLatestFinalizedState: Bytes | undefined;
@@ -207,12 +208,7 @@ class AgreementManager {
         // Start with genesis snapshot for the first milestone
         let currentSnapshot = genesisSnapshot;
 
-        // Process exit points in chronological order - each exit point is a milestone
-        const sortedExitPoints = [...exitPoints].sort(
-            (a, b) => Number(a) - Number(b)
-        );
-
-        for (const exitPointHeight of sortedExitPoints) {
+        for (const exitPointHeight of exitPoints) {
             const milestoneData = this.processMilestone(
                 exitPointHeight,
                 blockEntries,
@@ -235,11 +231,6 @@ class AgreementManager {
             blockEntries,
             signerAddress,
             finalParticipantSet
-
-        // Get all blocks sorted by height descending
-        const blockEntries = this.storage.blocks.getIterator(
-            forkId,
-            SortOrder.DESC
         );
 
         encodedLatestFinalizedState =
@@ -273,7 +264,7 @@ class AgreementManager {
      * Build a milestone proof for a given set of blocks and participant set
      */
     private buildMilestoneProof(
-        blocks: any[],
+        blocks: BlockEntry[],
         participantSet: Set<Address>
     ): MilestoneProofStruct | null {
         if (blocks.length === 0) {
@@ -281,7 +272,7 @@ class AgreementManager {
         }
 
         const blockConfirmations: BlockConfirmationStruct[] = [];
-        let requiredSignatures = new Set<Address>(participantSet);
+        let requiredParticipants = new Set<Address>(participantSet);
 
         for (const blockEntry of blocks) {
             const block = Block.decode(
@@ -295,13 +286,13 @@ class AgreementManager {
             blockConfirmations.push(blockEntry.blockConfirmation);
 
             // Remove the signers we found from required signatures
-            requiredSignatures = SetUtils.difference(
-                requiredSignatures,
+            requiredParticipants = SetUtils.difference(
+                requiredParticipants,
                 signersAddresses
             );
 
             // Check if we found a finalized state (all participants signed)
-            if (requiredSignatures.size === 0) {
+            if (requiredParticipants.size === 0) {
                 return {
                     blockConfirmations
                 };
@@ -316,7 +307,7 @@ class AgreementManager {
      */
     private processMilestone(
         exitPointHeight: BlockHeight,
-        blockEntries: any[],
+        blockEntries: BlockEntry[],
         currentSnapshot: StateSnapshot
     ): {
         milestoneProof: MilestoneProofStruct;
@@ -324,13 +315,13 @@ class AgreementManager {
     } | null {
         // Get blocks up to this exit point (milestone)
         const blocksUpToExit = blockEntries
-            .filter((entry: any) => {
+            .filter((entry: BlockEntry) => {
                 const block = Block.decode(
                     entry.blockConfirmation.signedBlock.encodedBlock
                 );
                 return block.coordinates.height <= exitPointHeight;
             })
-            .sort((a: any, b: any) => {
+            .sort((a: BlockEntry, b: BlockEntry) => {
                 const blockA = Block.decode(
                     a.blockConfirmation.signedBlock.encodedBlock
                 );
@@ -377,7 +368,7 @@ class AgreementManager {
      * Perform virtual voting to find latest finalized and correct states
      */
     private performVirtualVoting(
-        blockEntries: any[],
+        blockEntries: BlockEntry[],
         signerAddress: Address,
         participantSet: Set<Address>
     ): {
