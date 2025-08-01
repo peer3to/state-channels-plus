@@ -188,7 +188,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
         it("should return DISCONNECT when block authentication fails", async () => {
             sinon
                 .stub(validationService as any, "authenticateBlock")
-                .returns(undefined);
+                .returns(null);
 
             const result = await validationService.validateBlockConfirmation(
                 createBlockConfirmation()
@@ -214,6 +214,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
         it("should return DISCONNECT when duplicate block has invalid signers", async () => {
             mockStorage.queues.isBlockQueued.returns(true);
             const mockBlock = createBlock();
+            // signer that is not a participant
             (mockBlock.getSignerAddresses as sinon.SinonStub).returns(
                 new Set(["0xinvalidsigner"])
             );
@@ -343,7 +344,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
             sinon.stub(validationService as any, "isLinked").returns(true);
             sinon
                 .stub(validationService as any, "validateTimeLogic")
-                .resolves(undefined);
+                .resolves(null);
 
             const result = await validationService.validateBlockConfirmation(
                 createBlockConfirmation()
@@ -399,7 +400,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
             sinon.stub(validationService as any, "isLinked").returns(true);
             sinon
                 .stub(validationService as any, "validateTimeLogic")
-                .resolves(undefined);
+                .resolves(null);
 
             const result = await validationService.validateBlockConfirmation(
                 createBlockConfirmation()
