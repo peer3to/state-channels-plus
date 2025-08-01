@@ -14,10 +14,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // TypeChain types - Proof types
-import {
-    MilestoneProofStruct,
-    DisputeFraudProofStruct
-} from "@typechain-types/contracts/V1/types/ProofTypes";
+import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 // TypeChain types - Dispute types
 import { SignedDisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -38,7 +35,6 @@ import Storage from "@/storage";
 
 // Event handlers and processors
 import P2pEventHooks from "@/P2pEventHooks";
-import { ExecutionDecisionProcessor } from "./executionDecisionProcessor";
 
 // Models
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
@@ -54,19 +50,21 @@ import {
     ChannelId,
     ForkId,
     Hash,
-    Signature,
     Timestamp
 } from "@/types/types";
-import { BlockInvalidStateTransitionProofStruct } from "@typechain-types/contracts/V1/types/FraudProofTypes";
+
+import {
+    isChannelOpen,
+    getPreviousBlockOrSnapshot
+} from "./utils/channelValidation";
+import {
+    InvalidStateTransitionException,
+    FraudProofService
+} from "./utils/FraudProofService";
 
 let DEBUG_STATE_MANAGER = false;
 
 const NULL = "0x00";
-
-type PreviousEntity = {
-    blockConfirmation?: BlockConfirmationStruct;
-    stateSnapshot?: StateSnapshot;
-};
 
 class StateManager {
     stateMachine: ADiamondStateMachine;
@@ -84,9 +82,7 @@ class StateManager {
     isDisposed: boolean = false;
     validationService: ValidationService;
     storage: Storage;
-
-    // Decision processors
-    private executionDecisionProcessor: ExecutionDecisionProcessor;
+    fraudProofService: FraudProofService;
 
     // Store output state snapshots data
     private latestForkId: ForkId = NULL;
@@ -122,21 +118,15 @@ class StateManager {
             this.p2pEventHooks
         );
         this.p2pManager = new P2PManager(this.self, signer);
+        this.fraudProofService = new FraudProofService(this.storage);
         this.validationService = new ValidationService(
             this.storage,
+            this.fraudProofService,
             this.stateMachine,
             this.stateChannelManagerContract,
             this.timeConfig,
             this.channelId,
             () => this.forkId
-        );
-
-        // Initialize decision processors
-        this.executionDecisionProcessor = new ExecutionDecisionProcessor(
-            this.storage,
-            this.p2pManager,
-            this.disputeHandler,
-            this.onSuccessCommon.bind(this)
         );
     }
     //Mark resources for garbage collection
@@ -289,7 +279,6 @@ class StateManager {
     public async onBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct
     ): Promise<ExecutionFlags> {
-        // Use the validation service for the main validation pipeline
         const validationFlag =
             await this.validationService.validateBlockConfirmation(
                 blockConfirmation
@@ -299,45 +288,55 @@ class StateManager {
         if (validationFlag !== ExecutionFlags.SUCCESS) {
             return validationFlag;
         }
-
-        // Validation passed, now apply the transaction
         const block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
-        const previousEntity = this.getPreviousBlockOrSnapshot(
-            block.coordinates
-        );
 
-        // state transition
+        // apply state transition and validate state transition result
+        try {
+            const {
+                success,
+                encodedState,
+                previousStateHash,
+                successCallback,
+                exitChannels
+            } = await this.applyTransaction(block.transaction);
 
-        const {
-            success,
-            encodedState,
-            previousStateHash,
-            successCallback,
-            exitChannels
-        } = await this.applyTransaction(block.transaction);
-
-        if (!success) {
-            const fraudProof = this.createInvalidStateTransitionProof(
-                previousEntity,
-                blockConfirmation.signedBlock
+            if (!success) {
+                const previousEntity = getPreviousBlockOrSnapshot(
+                    block.coordinates,
+                    this.storage
+                );
+                throw new InvalidStateTransitionException(
+                    previousEntity,
+                    blockConfirmation.signedBlock
+                );
+            }
+            // validate state transition result
+            const stateTransitionFlag = this.isValidStateTransition(
+                encodedState as string,
+                previousStateHash
             );
-            // TODO: Persist fraud proof to storage
-            return ExecutionFlags.DISPUTE;
-        }
 
-        // Validate the state transition result
-        const stateTransitionFlag = this.isValidStateTransition(
-            encodedState as string,
-            previousStateHash
-        );
-
-        if (!stateTransitionFlag) {
-            const fraudProof = this.createInvalidStateTransitionProof(
-                previousEntity,
-                blockConfirmation.signedBlock
-            );
-            // TODO: Persist fraud proof to storage
-            return ExecutionFlags.DISPUTE;
+            if (!stateTransitionFlag) {
+                const previousEntity = getPreviousBlockOrSnapshot(
+                    block.coordinates,
+                    this.storage
+                );
+                throw new InvalidStateTransitionException(
+                    previousEntity,
+                    blockConfirmation.signedBlock
+                );
+            }
+        } catch (error) {
+            if (error instanceof InvalidStateTransitionException) {
+                const fraudProof =
+                    this.fraudProofService.createInvalidStateTransitionProof(
+                        error.previousEntity,
+                        error.invalidBlock
+                    );
+                // TODO: Persist fraud proof to storage
+                return ExecutionFlags.DISPUTE;
+            }
+            throw error; // Re-throw non-fraud exceptions
         }
 
         return ExecutionFlags.SUCCESS;
@@ -373,7 +372,7 @@ class StateManager {
 
         try {
             console.log("Play Transaction", this.forkId);
-            if (!this.isChannelOpen()) {
+            if (!isChannelOpen(this.forkId)) {
                 throw new Error("Channel not open");
             }
             if (!(await this.isMyTurn())) {
@@ -450,119 +449,114 @@ class StateManager {
         }
     }
 
-    public async postStateSnapshot(
-        milestoneProofs: MilestoneProofStruct[],
-        milestoneSnapshots: StateSnapshot[],
-        exitChannelBlocks: ExitChannelBlockStruct[] = []
-    ) {
-        // Get on-chain state
-        const onChainforkId = await this.stateChannelManagerContract.getforkId(
-            this.channelId
-        );
-        const onChainDisputeLength =
-            await this.stateChannelManagerContract.getDisputeLength(
-                this.channelId
-            );
+    // public async postStateSnapshot(
+    //     milestoneProofs: MilestoneProofStruct[],
+    //     milestoneSnapshots: StateSnapshot[],
+    //     exitChannelBlocks: ExitChannelBlockStruct[] = []
+    // ) {
+    //     // Get on-chain state
+    //     const onChainforkId = await this.stateChannelManagerContract.getforkId(
+    //         this.channelId
+    //     );
+    //     const onChainDisputeLength =
+    //         await this.stateChannelManagerContract.getDisputeLength(
+    //             this.channelId
+    //         );
 
-        if (onChainDisputeLength == onChainforkId) {
-            // Call contract without dispute
-            return this.stateChannelManagerContract.updateStateSnapshotWithoutDispute(
-                this.channelId,
-                milestoneProofs,
-                milestoneSnapshots,
-                exitChannelBlocks
-            );
-        }
+    //     if (onChainDisputeLength == onChainforkId) {
+    //         // Call contract without dispute
+    //         return this.stateChannelManagerContract.updateStateSnapshotWithoutDispute(
+    //             this.channelId,
+    //             milestoneProofs,
+    //             milestoneSnapshots,
+    //             exitChannelBlocks
+    //         );
+    //     }
 
-        // Need to include a dispute
-        const disputeData = this.agreementManager.forks.getLatestDispute();
-        if (!disputeData) {
-            throw new Error(
-                "No dispute data available but dispute length > fork count"
-            );
-        }
+    //     // Need to include a dispute
+    //     const disputeData = this.agreementManager.forks.getLatestDispute();
+    //     if (!disputeData) {
+    //         throw new Error(
+    //             "No dispute data available but dispute length > fork count"
+    //         );
+    //     }
 
-        // Get output state snapshot data
-        const encodedDispute = Codec.encode(disputeData.dispute, Type.Dispute);
-        const commitment = ethers.keccak256(
-            ethers.AbiCoder.defaultAbiCoder().encode(
-                ["bytes", "uint256"],
-                [encodedDispute, disputeData.timestamp]
-            )
-        );
-        // TODO: Fix this section - outputStateSnapshotData property doesn't exist
-        /*
-        const outputStateSnapshot = this.outputStateSnapshotData.get(commitment);
-        if (!outputStateSnapshot) {
-            throw new Error("No output state snapshot data available");
-        }
-        */
+    //     // Get output state snapshot data
+    //     const encodedDispute = Codec.encode(disputeData.dispute, Type.Dispute);
+    //     const commitment = ethers.keccak256(
+    //         ethers.AbiCoder.defaultAbiCoder().encode(
+    //             ["bytes", "uint256"],
+    //             [encodedDispute, disputeData.timestamp]
+    //         )
+    //     );
 
-        // TODO: Fix this section - DisputeProofStruct type doesn't exist and updateStateSnapshotWithDispute method doesn't exist
-        /*
-        const disputeProof: DisputeProofStruct = {
-            dispute: disputeData.dispute,
-            outputStateSnapshot: outputStateSnapshot,
-            timestamp: disputeData.timestamp,
-            signatures: []
-        };
+    //     const outputStateSnapshot = this.outputStateSnapshotData.get(commitment);
+    //     if (!outputStateSnapshot) {
+    //         throw new Error("No output state snapshot data available");
+    //     }
 
-        // Check if dispute is within agreement time
-        const currentTime = Clock.getTimeInSeconds();
-        const timeSinceDispute = currentTime - disputeData.timestamp;
+    //     const disputeProof: DisputeProofStruct = {
+    //         dispute: disputeData.dispute,
+    //         outputStateSnapshot: outputStateSnapshot,
+    //         timestamp: disputeData.timestamp,
+    //         signatures: []
+    //     };
 
-        if (timeSinceDispute > this.timeConfig.challengeTime) {
-            // dispute is already finalized, no need for threshold finaliztion
-            return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
-                this.channelId,
-                milestoneProofs,
-                milestoneSnapshots,
-                disputeProof,
-                exitChannelBlocks
-            );
-        }
+    //     // Check if dispute is within agreement time
+    //     const currentTime = Clock.getTimeInSeconds();
+    //     const timeSinceDispute = currentTime - disputeData.timestamp;
 
-        // Check if we have threshold signatures on the dispute
-        const fork = this.agreementManager.forks.latestFork();
-        if (!fork) {
-            throw new Error("No latest fork found");
-        }
+    //     if (timeSinceDispute > this.timeConfig.challengeTime) {
+    //         // dispute is already finalized, no need for threshold finaliztion
+    //         return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
+    //             this.channelId,
+    //             milestoneProofs,
+    //             milestoneSnapshots,
+    //             disputeProof,
+    //             exitChannelBlocks
+    //         );
+    //     }
 
-        // Get all participants who have signed the dispute
-        const disputeSignatures = this.agreementManager.getDisputeSignatures(
-            disputeData.dispute
-        );
+    //     // Check if we have threshold signatures on the dispute
+    //     const fork = this.agreementManager.forks.latestFork();
+    //     if (!fork) {
+    //         throw new Error("No latest fork found");
+    //     }
 
-        const allowedParticipantsSet = await getActiveParticipants(
-            this.stateChannelManagerContract,
-            this.getChannelId()
-        );
+    //     // Get all participants who have signed the dispute
+    //     const disputeSignatures = this.agreementManager.getDisputeSignatures(
+    //         disputeData.dispute
+    //     );
 
-        const hasThreshold = SignatureUtils.hasSignatureThreshold(
-            allowedParticipantsSet,
-            Codec.encode(disputeData.dispute, Type.Dispute),
-            disputeSignatures
-        );
+    //     const allowedParticipantsSet = await getActiveParticipants(
+    //         this.stateChannelManagerContract,
+    //         this.getChannelId()
+    //     );
 
-        if (hasThreshold) {
-            // Create dispute proof from the latest dispute
-            // Call contract with dispute and signatures
-            disputeProof.signatures = disputeSignatures;
-            return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
-                this.channelId,
-                milestoneProofs,
-                milestoneSnapshots,
-                disputeProof,
-                exitChannelBlocks
-            );
-        }
-        */
+    //     const hasThreshold = SignatureUtils.hasSignatureThreshold(
+    //         allowedParticipantsSet,
+    //         Codec.encode(disputeData.dispute, Type.Dispute),
+    //         disputeSignatures
+    //     );
 
-        // Dispute is not finalized
-        console.log(
-            "Dispute is not finalized, state snapshot was not submitted"
-        );
-    }
+    //     if (hasThreshold) {
+    //         // Create dispute proof from the latest dispute
+    //         // Call contract with dispute and signatures
+    //         disputeProof.signatures = disputeSignatures;
+    //         return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
+    //             this.channelId,
+    //             milestoneProofs,
+    //             milestoneSnapshots,
+    //             disputeProof,
+    //             exitChannelBlocks
+    //         );
+    //     }
+
+    //     // Dispute is not finalized
+    //     console.log(
+    //         "Dispute is not finalized, state snapshot was not submitted"
+    //     );
+    // }
 
     private async calculateTotalBalance(
         balances: { balance: BalanceStruct }[],
@@ -834,16 +828,10 @@ class StateManager {
         const forkId = this.forkId;
         const transactionCnt = Number(tx.header.transactionCnt);
 
-        // TODO: Fix this - getPreviousBlockHash method doesn't exist in BlockStorage
-        /*
-        const previousBlockHash = this.storage.blocks.getPreviousBlockHash(
+        const previousBlockHash = this.storageModule.getPreviousBlockHash(
             forkId,
             transactionCnt - 1
         );
-        */
-
-        // For now, use NULL as placeholder
-        const previousBlockHash = NULL;
 
         const stateSnapshot = await this.createStateSnapshot(
             posteriorStateHash,
@@ -859,12 +847,6 @@ class StateManager {
         });
     }
 
-    //  Validation pipeline functions
-
-    private isChannelOpen(): boolean {
-        return this.forkId !== ethers.ZeroHash && this.forkId !== NULL;
-    }
-
     private isValidStateTransition(
         encodedState: string,
         previousStateHash: Hash
@@ -876,60 +858,6 @@ class StateManager {
 
         return true;
     }
-
-    // Helper method to get previous block or snapshot (used by both StateManager and ValidationService)
-    private getPreviousBlockOrSnapshot({
-        forkId,
-        height
-    }: BlockCoordinates): PreviousEntity {
-        if (height > 0) {
-            const prevBlockEntry = this.storage.blocks.getBlockEntry(
-                forkId,
-                height - 1
-            )!;
-
-            return { blockConfirmation: prevBlockEntry.blockConfirmation };
-        }
-        const genesisSnapshot =
-            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId)!;
-
-        return { stateSnapshot: genesisSnapshot };
-    }
-
-    // Helper method to create invalid state transition proof (used by both StateManager and ValidationService)
-    private createInvalidStateTransitionProof(
-        previousEntity: PreviousEntity,
-        signedBlock: SignedBlockStruct
-    ): BlockInvalidStateTransitionProofStruct {
-        let prevSignedBlock: SignedBlockStruct | undefined;
-        let prevStateSnapshot: StateSnapshot;
-
-        if (previousEntity.blockConfirmation) {
-            // Height > 0 case - we have a previous block
-            prevSignedBlock = previousEntity.blockConfirmation.signedBlock;
-            const prevBlock = Block.decode(prevSignedBlock!.encodedBlock);
-            prevStateSnapshot =
-                this.storage.stateSnapshots.getStateSnapshotByHash(
-                    prevBlock.stateSnapshotHash
-                )!;
-        } else {
-            // Height === 0 case - we have genesis state snapshot
-            prevSignedBlock = NULL as unknown as SignedBlockStruct;
-            prevStateSnapshot = previousEntity.stateSnapshot!;
-        }
-
-        return {
-            invalidBlock: signedBlock,
-            previousBlock: prevSignedBlock,
-            previousBlockStateSnapshot: prevStateSnapshot.toStruct(),
-            previousStateStateMachineState:
-                this.storage.stateMachineStates.getStateMachineState(
-                    prevStateSnapshot.stateMachineStateHash
-                )!
-        };
-    }
-
-    // END Validation pipeline functions
 
     // ----- Event handlers -----
     public async onDisputeCommitted(

@@ -1,4 +1,3 @@
-import { ethers } from "ethers";
 import {
     SignedBlockStruct,
     BlockConfirmationStruct
@@ -25,65 +24,28 @@ import {
     Address,
     ChannelId,
     ForkId,
-    Hash,
     Signature,
     Timestamp
 } from "@/types/types";
 
-const NULL = "0x00";
-
-type PreviousEntity = {
-    blockConfirmation?: BlockConfirmationStruct;
-    stateSnapshot?: StateSnapshot;
-};
-
-// Custom exception classes for dispute creation
-abstract class ValidationFraudException extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = this.constructor.name;
-    }
-}
-
-class DoubleSignException extends ValidationFraudException {
-    constructor(
-        public readonly block1: SignedBlockStruct,
-        public readonly block2: SignedBlockStruct
-    ) {
-        super("Double sign fraud detected");
-    }
-}
-
-class InvalidStateTransitionException extends ValidationFraudException {
-    constructor(
-        public readonly previousEntity: PreviousEntity,
-        public readonly invalidBlock: SignedBlockStruct
-    ) {
-        super("Invalid state transition fraud detected");
-    }
-}
-
-class InvalidTimestampException extends ValidationFraudException {
-    constructor(
-        public readonly previousEntity: PreviousEntity,
-        public readonly invalidBlock: SignedBlockStruct
-    ) {
-        super("Invalid timestamp fraud detected");
-    }
-}
-
-class InvalidLeaderException extends ValidationFraudException {
-    constructor(
-        public readonly previousEntity: PreviousEntity,
-        public readonly invalidBlock: SignedBlockStruct
-    ) {
-        super("Invalid leader fraud detected");
-    }
-}
+import {
+    isChannelOpen,
+    getPreviousBlockOrSnapshot,
+    PreviousEntity
+} from "./utils/channelValidation";
+import {
+    ValidationFraudException,
+    DoubleSignException,
+    InvalidStateTransitionException,
+    InvalidTimestampException,
+    InvalidLeaderException,
+    FraudProofService
+} from "./utils/FraudProofService";
 
 export default class ValidationService {
     constructor(
         private readonly storage: Storage,
+        private readonly fraudProofService: FraudProofService,
         private readonly stateMachine: ADiamondStateMachine,
         private readonly stateChannelManagerContract: StateChannelManagerProxy,
         private readonly timeConfig: TimeConfig,
@@ -99,7 +61,7 @@ export default class ValidationService {
 
         try {
             // 1. Check if channel is open
-            if (!this.isChannelOpen(forkId)) {
+            if (!isChannelOpen(forkId)) {
                 this.storage.queues.queueConfirmation(blockConfirmation);
                 return ExecutionFlags.NOT_READY;
             }
@@ -130,8 +92,9 @@ export default class ValidationService {
             }
 
             // previous block or snapshot
-            const previousEntity = this.getPreviousBlockOrSnapshot(
-                block.coordinates
+            const previousEntity = getPreviousBlockOrSnapshot(
+                block.coordinates,
+                this.storage
             );
 
             // 5. check conflicting block
@@ -205,12 +168,10 @@ export default class ValidationService {
             return ExecutionFlags.SUCCESS;
         } catch (error) {
             if (error instanceof ValidationFraudException) {
-                const creator = this.fraudProofCreators[error.constructor.name];
-                if (creator) {
-                    const fraudProof = creator(error);
-                    // TODO: Persist fraud proof to storage
-                    return ExecutionFlags.DISPUTE;
-                }
+                const fraudProof =
+                    this.fraudProofService.createFraudProof(error);
+                // TODO: Persist fraud proof to storage
+                return ExecutionFlags.DISPUTE;
             }
             throw error; // Re-throw non-fraud exceptions
         }
@@ -243,10 +204,6 @@ export default class ValidationService {
             prevBlockEntry.blockConfirmation.signedBlock.encodedBlock
         );
         return prevBlockHash === block.previousBlockHash;
-    }
-
-    private isChannelOpen(forkId: ForkId): boolean {
-        return forkId !== ethers.ZeroHash && forkId !== NULL;
     }
 
     private authenticateBlock(
@@ -509,25 +466,6 @@ export default class ValidationService {
         return participants;
     }
 
-    // Assumes the previous data exists (called after isLinked check).
-    private getPreviousBlockOrSnapshot({
-        forkId,
-        height
-    }: BlockCoordinates): PreviousEntity {
-        if (height > 0) {
-            const prevBlockEntry = this.storage.blocks.getBlockEntry(
-                forkId,
-                height - 1
-            )!;
-
-            return { blockConfirmation: prevBlockEntry.blockConfirmation };
-        }
-        const genesisSnapshot =
-            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId)!;
-
-        return { stateSnapshot: genesisSnapshot };
-    }
-
     private async fetchOnChainTimestamp(
         blk: Block | undefined,
         channelId: ChannelId
@@ -579,92 +517,4 @@ export default class ValidationService {
             return undefined;
         }
     }
-
-    private createInvalidStateTransitionProof(
-        previousEntity: PreviousEntity,
-        signedBlock: SignedBlockStruct
-    ): BlockInvalidStateTransitionProofStruct {
-        let prevSignedBlock: SignedBlockStruct | undefined;
-        let prevStateSnapshot: StateSnapshot;
-
-        if (previousEntity.blockConfirmation) {
-            // Height > 0 case - we have a previous block
-            prevSignedBlock = previousEntity.blockConfirmation.signedBlock;
-            const prevBlock = Block.decode(prevSignedBlock!.encodedBlock);
-            prevStateSnapshot =
-                this.storage.stateSnapshots.getStateSnapshotByHash(
-                    prevBlock.stateSnapshotHash
-                )!;
-        } else {
-            // Height === 0 case - we have genesis state snapshot
-            prevSignedBlock = NULL as unknown as SignedBlockStruct;
-            prevStateSnapshot = previousEntity.stateSnapshot!;
-        }
-
-        return {
-            invalidBlock: signedBlock,
-            previousBlock: prevSignedBlock,
-            previousBlockStateSnapshot: prevStateSnapshot.toStruct(),
-            previousStateStateMachineState:
-                this.storage.stateMachineStates.getStateMachineState(
-                    prevStateSnapshot.stateMachineStateHash
-                )!
-        };
-    }
-
-    private createInvalidTimestampProof(
-        previousEntity: PreviousEntity,
-        signedBlock: SignedBlockStruct
-    ): InvalidTimestampProofStruct {
-        let prevSignedBlock: SignedBlockStruct | undefined;
-        let prevStateSnapshot: StateSnapshot;
-
-        if (previousEntity.blockConfirmation) {
-            // Height > 0 case - we have a previous block
-            prevSignedBlock = previousEntity.blockConfirmation.signedBlock;
-            const prevBlock = Block.decode(prevSignedBlock!.encodedBlock);
-            prevStateSnapshot =
-                this.storage.stateSnapshots.getStateSnapshotByHash(
-                    prevBlock.stateSnapshotHash
-                )!;
-        } else {
-            // Height === 0 case - we have genesis state snapshot
-            prevSignedBlock = NULL as unknown as SignedBlockStruct;
-            prevStateSnapshot = previousEntity.stateSnapshot!;
-        }
-
-        return {
-            invalidBlock: signedBlock,
-            previousBlock: prevSignedBlock,
-            previousStateSnapshot: prevStateSnapshot.toStruct()
-        };
-    }
-
-    private readonly fraudProofCreators = {
-        [DoubleSignException.name]: (error: ValidationFraudException) =>
-            ({
-                block1: (error as DoubleSignException).block1,
-                block2: (error as DoubleSignException).block2
-            }) as BlockDoubleSignProofStruct,
-
-        [InvalidStateTransitionException.name]: (
-            error: ValidationFraudException
-        ) =>
-            this.createInvalidStateTransitionProof(
-                (error as InvalidStateTransitionException).previousEntity,
-                (error as InvalidStateTransitionException).invalidBlock
-            ),
-
-        [InvalidTimestampException.name]: (error: ValidationFraudException) =>
-            this.createInvalidTimestampProof(
-                (error as InvalidTimestampException).previousEntity,
-                (error as InvalidTimestampException).invalidBlock
-            ),
-
-        [InvalidLeaderException.name]: (error: ValidationFraudException) =>
-            this.createInvalidStateTransitionProof(
-                (error as InvalidLeaderException).previousEntity,
-                (error as InvalidLeaderException).invalidBlock
-            )
-    };
 }
