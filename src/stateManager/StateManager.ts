@@ -635,12 +635,10 @@ class StateManager {
         participantAdr: Address
     ) {
         if (participantAdr == this.signerAddress) return;
-
         const block = this.agreementManager.getBlock(forkId, transactionCnt);
         if (block) {
             if (this.agreementManager.didEveryoneSignBlock(block)) return;
         }
-
         //if there is no block -> check if player posted on chain and try timeout
         if (
             this.agreementManager.didParticipantPostOnChainLocal(
@@ -660,7 +658,6 @@ class StateManager {
                 this.getTimeoutWaitTimeSeconds()
         )
             return;
-
         const response =
             await this.stateChannelManagerContract.getBlockCallDataCommitment(
                 this.channelId,
@@ -670,14 +667,10 @@ class StateManager {
             );
         if (response.found) return;
         //This should be enough since Clock should always lag behind DLT clock
-
         const delayTimeSeconds =
             this.getTimeoutWaitTimeSeconds() -
             (Clock.getTimeInSeconds() -
                 this.agreementManager.getLatestBlockTimestamp(forkId));
-
-        // For now, use a simple timeout without the complex calculation
-        const delayTimeSeconds = this.getTimeoutWaitTimeSeconds();
 
         if (delayTimeSeconds < 0) {
             this.disputeHandler.createDispute(
@@ -868,10 +861,7 @@ class StateManager {
         outputStateSnapshot: StateSnapshot,
         commitment: Hash
     ) {
-        // TODO: Fix this - outputStateSnapshotData property doesn't exist in StateManager
-        /*
         this.outputStateSnapshotData.set(commitment, outputStateSnapshot);
-        */
     }
     public async onDisputeConfirmation(
         signedDispute: SignedDisputeStruct
@@ -884,7 +874,7 @@ class StateManager {
         const { success, flag } =
             await this.validationService.validateDisputeConfirmation(
                 dispute,
-                signedDispute.signature as any
+                signedDispute.signature
             );
 
         if (success) {
