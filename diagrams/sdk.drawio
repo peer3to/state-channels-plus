@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram id="UIa-ucJ7Z0dhIWUHrVS2" name="User Interaction">
-        <mxGraphModel dx="1194" dy="913" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+        <mxGraphModel dx="790" dy="436" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -478,7 +478,7 @@
         </mxGraphModel>
     </diagram>
     <diagram id="JrNKsWsGu-dz_i6stjm7" name="Entry Points">
-        <mxGraphModel dx="1194" dy="913" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+        <mxGraphModel dx="790" dy="436" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -579,7 +579,7 @@
         </mxGraphModel>
     </diagram>
     <diagram id="-3QrUwy2nLPkMSnJrA5o" name="BlockConfirmation Message Lifecycle">
-        <mxGraphModel dx="2044" dy="913" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+        <mxGraphModel dx="2286" dy="793" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -1692,20 +1692,20 @@
         </mxGraphModel>
     </diagram>
     <diagram id="LqkWZOM_T8NzajkTzYGm" name="Disputes Mental Model">
-        <mxGraphModel dx="1137" dy="870" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+        <mxGraphModel dx="1215" dy="671" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
-                <mxCell id="4UW8feESG9jQvsrGOWkp-2" value="PeerB" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;" vertex="1" parent="1">
+                <mxCell id="4UW8feESG9jQvsrGOWkp-2" value="PeerB" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;" parent="1" vertex="1">
                     <mxGeometry x="1350" y="330" width="30" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="4UW8feESG9jQvsrGOWkp-3" value="PeerC" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;" vertex="1" parent="1">
+                <mxCell id="4UW8feESG9jQvsrGOWkp-3" value="PeerC" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;" parent="1" vertex="1">
                     <mxGeometry x="1460" y="330" width="30" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="4UW8feESG9jQvsrGOWkp-5" value="&lt;b&gt;SomeValidationPipeline&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(179, 179, 179);&quot;&gt;(onBlockConfirmation, onDispute, onReducedCommitment)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                <mxCell id="4UW8feESG9jQvsrGOWkp-5" value="&lt;b&gt;SomeValidationPipeline&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(179, 179, 179);&quot;&gt;(onBlockConfirmation, onDispute, onReducedCommitment)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;" parent="1" vertex="1">
                     <mxGeometry x="1370" y="450" width="175" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-14" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="ODITfQRj00F-9atufKFF-1" target="ODITfQRj00F-9atufKFF-13">
+                <mxCell id="ODITfQRj00F-9atufKFF-14" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="ODITfQRj00F-9atufKFF-1" target="ODITfQRj00F-9atufKFF-13" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="165" y="440"/>
@@ -1713,10 +1713,10 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-1" value="BlockConfirmation Validation Pipeline - objective failute" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                <mxCell id="ODITfQRj00F-9atufKFF-1" value="BlockConfirmation Validation Pipeline - objective failute" style="rounded=1;whiteSpace=wrap;html=1;" parent="1" vertex="1">
                     <mxGeometry x="100" y="290" width="130" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-15" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="ODITfQRj00F-9atufKFF-5" target="ODITfQRj00F-9atufKFF-13">
+                <mxCell id="ODITfQRj00F-9atufKFF-15" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="ODITfQRj00F-9atufKFF-5" target="ODITfQRj00F-9atufKFF-13" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="400" y="450" as="targetPoint"/>
                         <Array as="points">
@@ -1725,20 +1725,20 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-5" value="Timeout Next Peer" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                <mxCell id="ODITfQRj00F-9atufKFF-5" value="Timeout Next Peer" style="rounded=1;whiteSpace=wrap;html=1;" parent="1" vertex="1">
                     <mxGeometry x="260" y="290" width="130" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-16" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="ODITfQRj00F-9atufKFF-6" target="ODITfQRj00F-9atufKFF-13">
+                <mxCell id="ODITfQRj00F-9atufKFF-16" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="ODITfQRj00F-9atufKFF-6" target="ODITfQRj00F-9atufKFF-13" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="485" y="440"/>
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-6" value="SelfRemoval&lt;br&gt;(forced exit)&lt;div&gt;&lt;font style=&quot;color: rgb(51, 51, 255);&quot;&gt;(normal exit failure)&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                <mxCell id="ODITfQRj00F-9atufKFF-6" value="SelfRemoval&lt;br&gt;(forced exit)&lt;div&gt;&lt;font style=&quot;color: rgb(51, 51, 255);&quot;&gt;(normal exit failure)&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;" parent="1" vertex="1">
                     <mxGeometry x="420" y="290" width="130" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-17" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="ODITfQRj00F-9atufKFF-7" target="ODITfQRj00F-9atufKFF-13">
+                <mxCell id="ODITfQRj00F-9atufKFF-17" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="ODITfQRj00F-9atufKFF-7" target="ODITfQRj00F-9atufKFF-13" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="635" y="440"/>
@@ -1746,19 +1746,19 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-7" value="DisputeWindow&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;created&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;on-chain&amp;nbsp;&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(51, 51, 255);&quot;&gt;(event trigger)&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                <mxCell id="ODITfQRj00F-9atufKFF-7" value="DisputeWindow&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;created&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;on-chain&amp;nbsp;&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(51, 51, 255);&quot;&gt;(event trigger)&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;" parent="1" vertex="1">
                     <mxGeometry x="570" y="290" width="130" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-8" value="Dispute Creation - Triggers" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" vertex="1" parent="1">
+                <mxCell id="ODITfQRj00F-9atufKFF-8" value="Dispute Creation - Triggers" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
                     <mxGeometry x="30" y="90" width="1060" height="510" as="geometry"/>
                 </mxCell>
-                <mxCell id="4UW8feESG9jQvsrGOWkp-1" value="PeerA" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-8">
+                <mxCell id="4UW8feESG9jQvsrGOWkp-1" value="PeerA" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;" parent="ODITfQRj00F-9atufKFF-8" vertex="1">
                     <mxGeometry x="440" y="10" width="30" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-13" value="Try Create Dispute" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-8">
+                <mxCell id="ODITfQRj00F-9atufKFF-13" value="Try Create Dispute" style="rounded=1;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-8" vertex="1">
                     <mxGeometry x="390" y="390" width="130" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-24" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="ODITfQRj00F-9atufKFF-8" source="ODITfQRj00F-9atufKFF-18" target="ODITfQRj00F-9atufKFF-13">
+                <mxCell id="ODITfQRj00F-9atufKFF-24" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="ODITfQRj00F-9atufKFF-8" source="ODITfQRj00F-9atufKFF-18" target="ODITfQRj00F-9atufKFF-13" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="755" y="350"/>
@@ -1766,10 +1766,10 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-18" value="JoinChannel&lt;br&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;on-chain&amp;nbsp;&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(51, 51, 255);&quot;&gt;(event trigger)&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-8">
+                <mxCell id="ODITfQRj00F-9atufKFF-18" value="JoinChannel&lt;br&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;on-chain&amp;nbsp;&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(51, 51, 255);&quot;&gt;(event trigger)&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-8" vertex="1">
                     <mxGeometry x="690" y="200" width="130" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-23" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="ODITfQRj00F-9atufKFF-8" target="ODITfQRj00F-9atufKFF-18">
+                <mxCell id="ODITfQRj00F-9atufKFF-23" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="ODITfQRj00F-9atufKFF-8" target="ODITfQRj00F-9atufKFF-18" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="455" y="90" as="sourcePoint"/>
                         <Array as="points">
@@ -1778,7 +1778,7 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-9" style="edgeStyle=none;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" parent="1" target="ODITfQRj00F-9atufKFF-5">
+                <mxCell id="ODITfQRj00F-9atufKFF-9" style="edgeStyle=none;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;" parent="1" target="ODITfQRj00F-9atufKFF-5" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="485" y="180" as="sourcePoint"/>
                         <Array as="points">
@@ -1787,7 +1787,7 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-10" style="edgeStyle=none;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" parent="1" target="ODITfQRj00F-9atufKFF-1">
+                <mxCell id="ODITfQRj00F-9atufKFF-10" style="edgeStyle=none;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;" parent="1" target="ODITfQRj00F-9atufKFF-1" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="485" y="180" as="sourcePoint"/>
                         <Array as="points">
@@ -1796,7 +1796,7 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-11" style="edgeStyle=none;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" parent="1" target="ODITfQRj00F-9atufKFF-6">
+                <mxCell id="ODITfQRj00F-9atufKFF-11" style="edgeStyle=none;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;" parent="1" target="ODITfQRj00F-9atufKFF-6" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="485" y="180" as="sourcePoint"/>
                         <Array as="points">
@@ -1804,7 +1804,7 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-12" style="edgeStyle=none;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" parent="1" target="ODITfQRj00F-9atufKFF-7">
+                <mxCell id="ODITfQRj00F-9atufKFF-12" style="edgeStyle=none;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;" parent="1" target="ODITfQRj00F-9atufKFF-7" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="485" y="180" as="sourcePoint"/>
                         <Array as="points">
@@ -1813,261 +1813,261 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-27" value="Dispute Window" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" vertex="1" parent="1">
+                <mxCell id="ODITfQRj00F-9atufKFF-27" value="Dispute Window" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
                     <mxGeometry x="30" y="670" width="2110" height="730" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-28" value="PeerA" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-27">
+                <mxCell id="ODITfQRj00F-9atufKFF-28" value="PeerA" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;" parent="ODITfQRj00F-9atufKFF-27" vertex="1">
                     <mxGeometry x="920" y="110" width="30" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-29" value="Dispute Window Creation" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-27">
+                <mxCell id="ODITfQRj00F-9atufKFF-29" value="Dispute Window Creation" style="rounded=1;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-27" vertex="1">
                     <mxGeometry x="860" y="210" width="120" height="140" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-41" value="DisputeWindow" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="ODITfQRj00F-9atufKFF-27">
+                <mxCell id="ODITfQRj00F-9atufKFF-41" value="DisputeWindow" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="ODITfQRj00F-9atufKFF-27" vertex="1">
                     <mxGeometry x="260" y="160" width="300" height="420" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-42" value="Evidence" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="ODITfQRj00F-9atufKFF-41">
+                <mxCell id="ODITfQRj00F-9atufKFF-42" value="Evidence" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="ODITfQRj00F-9atufKFF-41" vertex="1">
                     <mxGeometry x="30" y="50" width="240" height="160" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-43" value="D1" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-42">
+                <mxCell id="ODITfQRj00F-9atufKFF-43" value="D1" style="rounded=1;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-42" vertex="1">
                     <mxGeometry x="20" y="50" width="50" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-46" value="D2" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-42">
+                <mxCell id="ODITfQRj00F-9atufKFF-46" value="D2" style="rounded=1;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-42" vertex="1">
                     <mxGeometry x="80" y="50" width="50" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-47" value="DN" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-42">
+                <mxCell id="ODITfQRj00F-9atufKFF-47" value="DN" style="rounded=1;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-42" vertex="1">
                     <mxGeometry x="174" y="50" width="50" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-48" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;entryX=0;entryY=1;entryDx=0;entryDy=0;exitX=1;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="ODITfQRj00F-9atufKFF-42" source="ODITfQRj00F-9atufKFF-46" target="ODITfQRj00F-9atufKFF-47">
+                <mxCell id="ODITfQRj00F-9atufKFF-48" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;entryX=0;entryY=1;entryDx=0;entryDy=0;exitX=1;exitY=1;exitDx=0;exitDy=0;" parent="ODITfQRj00F-9atufKFF-42" source="ODITfQRj00F-9atufKFF-46" target="ODITfQRj00F-9atufKFF-47" edge="1">
                     <mxGeometry width="50" height="50" relative="1" as="geometry">
                         <mxPoint x="110" y="190" as="sourcePoint"/>
                         <mxPoint x="160" y="140" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-49" value="Reduced Result" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="ODITfQRj00F-9atufKFF-41">
+                <mxCell id="ODITfQRj00F-9atufKFF-49" value="Reduced Result" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="ODITfQRj00F-9atufKFF-41" vertex="1">
                     <mxGeometry x="30" y="230" width="240" height="150" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-50" value="ForkId" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-49">
+                <mxCell id="ODITfQRj00F-9atufKFF-50" value="ForkId" style="rounded=1;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-49" vertex="1">
                     <mxGeometry x="64" y="30" width="110" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-39" value="genesisTimestamp" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-49">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-39" value="genesisTimestamp" style="rounded=1;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-49" vertex="1">
                     <mxGeometry x="65" y="90" width="110" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-51" value="Evidence" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="ODITfQRj00F-9atufKFF-27">
+                <mxCell id="ODITfQRj00F-9atufKFF-51" value="Evidence" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="ODITfQRj00F-9atufKFF-27" vertex="1">
                     <mxGeometry x="20" y="205" width="200" height="190" as="geometry">
                         <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-52" value="The dispute &quot;evidence&quot; contains at most N disputes (one for every participant). In other words every participant has a chance to submit their opinion of what a dispute outcome should be for a given fork" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-51">
+                <mxCell id="ODITfQRj00F-9atufKFF-52" value="The dispute &quot;evidence&quot; contains at most N disputes (one for every participant). In other words every participant has a chance to submit their opinion of what a dispute outcome should be for a given fork" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-51" vertex="1">
                     <mxGeometry y="30" width="200" height="160" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-53" value="Every disputed &lt;b&gt;fork&lt;/b&gt; has a &lt;b&gt;single DisputeWindow.&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="ODITfQRj00F-9atufKFF-27">
+                <mxCell id="ODITfQRj00F-9atufKFF-53" value="Every disputed &lt;b&gt;fork&lt;/b&gt; has a &lt;b&gt;single DisputeWindow.&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" parent="ODITfQRj00F-9atufKFF-27" vertex="1">
                     <mxGeometry x="288" y="70" width="215" height="70" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-54" value="Reduced Result" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="ODITfQRj00F-9atufKFF-27">
+                <mxCell id="ODITfQRj00F-9atufKFF-54" value="Reduced Result" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="ODITfQRj00F-9atufKFF-27" vertex="1">
                     <mxGeometry x="570" y="285" width="250" height="390" as="geometry">
                         <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-55" value="The reduced ruslt is generated through a deterministic algorithm (&lt;b&gt;reduce( )&lt;/b&gt;) that takes into account all disputes present in evidenence. The reduced result is a &lt;b&gt;single forkId&lt;/b&gt; which is the reality that wins and everyone builds upon.&lt;br&gt;&lt;br&gt;What&#39;s important to mention is that the order of disputes is NOT relevant. A same &lt;b&gt;combination&lt;/b&gt; (e.g. (A,B,C) or (B,C,A)...) reduces to the &lt;b&gt;same forkId&lt;/b&gt;.&amp;nbsp;&lt;br&gt;&lt;br&gt;This works like a&amp;nbsp;&lt;b&gt;CRDT&lt;/b&gt;&amp;nbsp;(conflict-free replicated data type), even though the blockchain does order them. The CRDT property allows for disputes to be created in parallel without them being aware of one another, which leads to a constant &lt;b&gt;Evidence Submission Time&lt;/b&gt; which is defined as the minimal amount of time for a user/peer to become aware of an emitted event and to allow them, with high probability, to issue and include a transaction in an on-chain block within time." style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-54">
+                <mxCell id="ODITfQRj00F-9atufKFF-55" value="The reduced ruslt is generated through a deterministic algorithm (&lt;b&gt;reduce( )&lt;/b&gt;) that takes into account all disputes present in evidenence. The reduced result is a &lt;b&gt;single forkId&lt;/b&gt; which is the reality that wins and everyone builds upon.&lt;br&gt;&lt;br&gt;What&#39;s important to mention is that the order of disputes is NOT relevant. A same &lt;b&gt;combination&lt;/b&gt; (e.g. (A,B,C) or (B,C,A)...) reduces to the &lt;b&gt;same forkId&lt;/b&gt;.&amp;nbsp;&lt;br&gt;&lt;br&gt;This works like a&amp;nbsp;&lt;b&gt;CRDT&lt;/b&gt;&amp;nbsp;(conflict-free replicated data type), even though the blockchain does order them. The CRDT property allows for disputes to be created in parallel without them being aware of one another, which leads to a constant &lt;b&gt;Evidence Submission Time&lt;/b&gt; which is defined as the minimal amount of time for a user/peer to become aware of an emitted event and to allow them, with high probability, to issue and include a transaction in an on-chain block within time." style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-54" vertex="1">
                     <mxGeometry y="30" width="250" height="360" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-56" value="ForkId" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="ODITfQRj00F-9atufKFF-27">
+                <mxCell id="ODITfQRj00F-9atufKFF-56" value="ForkId" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="ODITfQRj00F-9atufKFF-27" vertex="1">
                     <mxGeometry x="20" y="410" width="200" height="190" as="geometry">
                         <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-57" value="The forkId is the hash of the &lt;b&gt;genesis SnapshotData&lt;/b&gt; which is the result od reduce( ) so it &lt;b&gt;unambiguously&lt;/b&gt; commits to a single genesis state (snapshot) for the winning fork.&amp;nbsp;&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-56">
+                <mxCell id="ODITfQRj00F-9atufKFF-57" value="The forkId is the hash of the &lt;b&gt;genesis SnapshotData&lt;/b&gt; which is the result od reduce( ) so it &lt;b&gt;unambiguously&lt;/b&gt; commits to a single genesis state (snapshot) for the winning fork.&amp;nbsp;&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-56" vertex="1">
                     <mxGeometry y="30" width="200" height="160" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-62" value="Dispute Evidence Submission Window" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-27">
+                <mxCell id="ODITfQRj00F-9atufKFF-62" value="Dispute Evidence Submission Window" style="rounded=1;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-27" vertex="1">
                     <mxGeometry x="1210" y="210" width="140" height="30" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-60" value="" style="endArrow=classic;startArrow=classic;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="ODITfQRj00F-9atufKFF-27" target="ODITfQRj00F-9atufKFF-62">
+                <mxCell id="ODITfQRj00F-9atufKFF-60" value="" style="endArrow=classic;startArrow=classic;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="ODITfQRj00F-9atufKFF-27" target="ODITfQRj00F-9atufKFF-62" edge="1">
                     <mxGeometry width="50" height="50" relative="1" as="geometry">
                         <mxPoint x="978" y="225" as="sourcePoint"/>
                         <mxPoint x="1080" y="270" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-64" value="Evidence Submission Time" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="ODITfQRj00F-9atufKFF-60">
+                <mxCell id="ODITfQRj00F-9atufKFF-64" value="Evidence Submission Time" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="ODITfQRj00F-9atufKFF-60" vertex="1" connectable="0">
                     <mxGeometry x="-0.091" relative="1" as="geometry">
                         <mxPoint x="3" y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-68" value="Dispute Evidence Kill Window" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-27">
+                <mxCell id="ODITfQRj00F-9atufKFF-68" value="Dispute Evidence Kill Window" style="rounded=1;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-27" vertex="1">
                     <mxGeometry x="1490" y="255" width="110" height="30" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-70" value="" style="endArrow=classic;startArrow=classic;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="ODITfQRj00F-9atufKFF-27" target="ODITfQRj00F-9atufKFF-68">
+                <mxCell id="ODITfQRj00F-9atufKFF-70" value="" style="endArrow=classic;startArrow=classic;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="ODITfQRj00F-9atufKFF-27" target="ODITfQRj00F-9atufKFF-68" edge="1">
                     <mxGeometry width="50" height="50" relative="1" as="geometry">
                         <mxPoint x="980" y="269.58000000000004" as="sourcePoint"/>
                         <mxPoint x="1212" y="269.58000000000004" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-71" value="Evidence Kill Time" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="ODITfQRj00F-9atufKFF-70">
+                <mxCell id="ODITfQRj00F-9atufKFF-71" value="Evidence Kill Time" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="ODITfQRj00F-9atufKFF-70" vertex="1" connectable="0">
                     <mxGeometry x="-0.091" relative="1" as="geometry">
                         <mxPoint x="3" y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-72" value="" style="endArrow=none;html=1;" edge="1" parent="ODITfQRj00F-9atufKFF-27">
+                <mxCell id="ODITfQRj00F-9atufKFF-72" value="" style="endArrow=none;html=1;" parent="ODITfQRj00F-9atufKFF-27" edge="1">
                     <mxGeometry width="50" height="50" relative="1" as="geometry">
                         <mxPoint x="1490" y="210" as="sourcePoint"/>
                         <mxPoint x="1489.1470570554266" y="350.00036069285125" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-78" value="Evidence Submission Time" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="ODITfQRj00F-9atufKFF-27">
+                <mxCell id="ODITfQRj00F-9atufKFF-78" value="Evidence Submission Time" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="ODITfQRj00F-9atufKFF-27" vertex="1">
                     <mxGeometry x="990" y="340" width="190" height="210" as="geometry">
                         <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-79" value="The first dispute that hits the chain for a given fork creates the DisputeWindow, which starts the Evidene Submission Time. &lt;br&gt;This is the time window, other peers have to submit their evidence (dispute perception). Disputes can come randomly, in any order or may not come at all, but they must come within this time or they won&#39;t be included." style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-78">
+                <mxCell id="ODITfQRj00F-9atufKFF-79" value="The first dispute that hits the chain for a given fork creates the DisputeWindow, which starts the Evidene Submission Time. &lt;br&gt;This is the time window, other peers have to submit their evidence (dispute perception). Disputes can come randomly, in any order or may not come at all, but they must come within this time or they won&#39;t be included." style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-78" vertex="1">
                     <mxGeometry y="30" width="190" height="180" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-80" value="Evidence Kill Time" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="ODITfQRj00F-9atufKFF-27">
+                <mxCell id="ODITfQRj00F-9atufKFF-80" value="Evidence Kill Time" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="ODITfQRj00F-9atufKFF-27" vertex="1">
                     <mxGeometry x="1190" y="330" width="280" height="290" as="geometry">
                         <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-81" value="There&#39;s a chance that the evidence(dispute) submitted is &lt;b&gt;fradulent&lt;/b&gt;. Such disputes should be killed/removed and their submitters slashed. This is done with &lt;b&gt;DisputeFraudProofs&lt;/b&gt; or explitic dispute &lt;b&gt;auditing&lt;/b&gt;. This is detected in the &lt;b&gt;Dispute Validation Pipeline&lt;/b&gt;, once peers become aware of a dispute that&#39;s commited on-chain. By killing the dispute, it&#39;s removed from evidence and not taken into account in &lt;b&gt;reduce&lt;/b&gt;. The kill time is longer than the evidence submission time to allow disputes that are submitted at the end of the evidence submission time to still be detected and potentially killed.&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-80">
+                <mxCell id="ODITfQRj00F-9atufKFF-81" value="There&#39;s a chance that the evidence(dispute) submitted is &lt;b&gt;fradulent&lt;/b&gt;. Such disputes should be killed/removed and their submitters slashed. This is done with &lt;b&gt;DisputeFraudProofs&lt;/b&gt; or explitic dispute &lt;b&gt;auditing&lt;/b&gt;. This is detected in the &lt;b&gt;Dispute Validation Pipeline&lt;/b&gt;, once peers become aware of a dispute that&#39;s commited on-chain. By killing the dispute, it&#39;s removed from evidence and not taken into account in &lt;b&gt;reduce&lt;/b&gt;. The kill time is longer than the evidence submission time to allow disputes that are submitted at the end of the evidence submission time to still be detected and potentially killed.&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-80" vertex="1">
                     <mxGeometry y="30" width="280" height="260" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-82" value="Reduce Challenge Time" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="ODITfQRj00F-9atufKFF-27">
-                    <mxGeometry x="1620" y="360" width="230" height="290" as="geometry">
+                <mxCell id="ODITfQRj00F-9atufKFF-82" value="Reduce Challenge Time" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="ODITfQRj00F-9atufKFF-27" vertex="1">
+                    <mxGeometry x="1620" y="360" width="230" height="360" as="geometry">
                         <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-83" value="Since most blockchains are event driven (a transaction has to happen to update/mutate the state), the reduced result is NOT computed automatically when the Evidence Kill Time expires. An external event/transaction has to initiate the computation. It can be done in 2 ways:&lt;br&gt;1) By explicitly running reduce any time after the Evidence Kill Time expires for the given DisputeWindow, which commits and finalizes the reduce result. This can not be challenged but the computation has been verifed/done on-chain. Instalty final.&lt;br&gt;2)&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-82">
-                    <mxGeometry y="30" width="230" height="260" as="geometry"/>
+                <mxCell id="ODITfQRj00F-9atufKFF-83" value="Since most blockchains are event driven (a transaction has to happen to update/mutate the state), the reduced result is NOT computed automatically when the Evidence Kill Time expires. An external event/transaction has to initiate the computation. It can be done in 2 ways:&lt;br&gt;1) By explicitly running reduce any time after the Evidence Kill Time expires for the given DisputeWindow, which &lt;b&gt;commits and finalizes&lt;/b&gt; the reduce result. This can not be challenged but the computation has been verifed/done on-chain. Instalty final.&lt;br&gt;2) Optimistically commiting to the reduced result and allowing it to be challenged during the &lt;b&gt;Reduce Challenge Time&lt;/b&gt;&lt;br&gt;&lt;br&gt;Allowing to pay&amp;nbsp;&lt;b&gt;in gas&lt;/b&gt; (fees) (1) or &lt;b&gt;in time&lt;/b&gt; (2)" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-82" vertex="1">
+                    <mxGeometry y="30" width="230" height="330" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-84" value="" style="endArrow=none;html=1;" edge="1" parent="ODITfQRj00F-9atufKFF-27">
+                <mxCell id="ODITfQRj00F-9atufKFF-84" value="" style="endArrow=none;html=1;" parent="ODITfQRj00F-9atufKFF-27" edge="1">
                     <mxGeometry width="50" height="50" relative="1" as="geometry">
                         <mxPoint x="1632.43" y="210" as="sourcePoint"/>
                         <mxPoint x="1631.5770570554266" y="350.00036069285125" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-75" value="" style="endArrow=classic;startArrow=classic;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" target="ODITfQRj00F-9atufKFF-74">
+                <mxCell id="ODITfQRj00F-9atufKFF-75" value="" style="endArrow=classic;startArrow=classic;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" target="ODITfQRj00F-9atufKFF-74" edge="1">
                     <mxGeometry width="50" height="50" relative="1" as="geometry">
                         <mxPoint x="1660" y="1000" as="sourcePoint"/>
                         <mxPoint x="1640" y="980" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-77" value="(optional) Reduce Challenge Time" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="ODITfQRj00F-9atufKFF-75">
+                <mxCell id="ODITfQRj00F-9atufKFF-77" value="(optional) Reduce Challenge Time" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="ODITfQRj00F-9atufKFF-75" vertex="1" connectable="0">
                     <mxGeometry x="0.142" relative="1" as="geometry">
                         <mxPoint x="-13" y="-11" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-74" value="&lt;b&gt;(optional)&lt;/b&gt;&lt;br&gt;Reduced Result&lt;br&gt;challenge period" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                <mxCell id="ODITfQRj00F-9atufKFF-74" value="&lt;b&gt;(optional)&lt;/b&gt;&lt;br&gt;Reduced Result&lt;br&gt;challenge period" style="rounded=1;whiteSpace=wrap;html=1;" parent="1" vertex="1">
                     <mxGeometry x="2000" y="973" width="110" height="55" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-1" value="Reduce (Statefull)" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" vertex="1" parent="1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-1" value="Reduce (Statefull)" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
                     <mxGeometry x="30" y="1460" width="1100" height="930" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-5" value="" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.annotation_2;align=left;labelPosition=right;pointerEvents=1;rotation=-90;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-5" value="" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.annotation_2;align=left;labelPosition=right;pointerEvents=1;rotation=-90;" parent="MiHG-ok4c3-oJHMUXmo7-1" vertex="1">
                     <mxGeometry x="180" y="10" width="50" height="275" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-6" value="DisputeWindow&lt;br&gt;Creation&lt;br&gt;Timestamp" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-6" value="DisputeWindow&lt;br&gt;Creation&lt;br&gt;Timestamp" style="rounded=1;whiteSpace=wrap;html=1;" parent="MiHG-ok4c3-oJHMUXmo7-1" vertex="1">
                     <mxGeometry x="210" y="80" width="120" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-14" value="Explicit Inputs - function arguments" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-14" value="Explicit Inputs - function arguments" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" parent="MiHG-ok4c3-oJHMUXmo7-1" vertex="1">
                     <mxGeometry x="100" y="40" width="190" height="30" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-15" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-15" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="MiHG-ok4c3-oJHMUXmo7-1" vertex="1">
                     <mxGeometry x="350" y="75" width="160" height="130" as="geometry">
                         <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-16" value="&lt;b&gt;DisputeWindow Creation Timestamp&lt;/b&gt; used to cacluclate when does the &lt;b&gt;DisputeWindow expire&lt;/b&gt;&amp;nbsp;and the new &lt;b&gt;genesis timestamp&lt;/b&gt;&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-15">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-16" value="&lt;b&gt;DisputeWindow Creation Timestamp&lt;/b&gt; used to cacluclate when does the &lt;b&gt;DisputeWindow expire&lt;/b&gt;&amp;nbsp;and the new &lt;b&gt;genesis timestamp&lt;/b&gt;&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="MiHG-ok4c3-oJHMUXmo7-15" vertex="1">
                     <mxGeometry y="30" width="160" height="100" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-21" value="Think" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-21" value="Think" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="MiHG-ok4c3-oJHMUXmo7-1" vertex="1">
                     <mxGeometry x="255" y="320" width="140" height="120" as="geometry">
                         <mxRectangle x="120" y="500" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-22" value="Why doesn&#39;t the base dispute account for joins? so it can reach finality N/N&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-21">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-22" value="Why doesn&#39;t the base dispute account for joins? so it can reach finality N/N&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="MiHG-ok4c3-oJHMUXmo7-21" vertex="1">
                     <mxGeometry y="30" width="140" height="90" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-23" value="ChannelBalance" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-23" value="ChannelBalance" style="rounded=1;whiteSpace=wrap;html=1;" parent="MiHG-ok4c3-oJHMUXmo7-1" vertex="1">
                     <mxGeometry x="800" y="80" width="120" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-28" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-28" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="MiHG-ok4c3-oJHMUXmo7-1" vertex="1">
                     <mxGeometry x="740" y="155" width="115" height="190" as="geometry">
                         <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-29" value="What&#39;s used from the DisputeData:&lt;br&gt;- pendingParticipants - to calculate maxSlashCount&amp;nbsp;&lt;br&gt;(not really needed)&lt;br&gt;&lt;br&gt;- onChainSlashes" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-28">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-29" value="What&#39;s used from the DisputeData:&lt;br&gt;- pendingParticipants - to calculate maxSlashCount&amp;nbsp;&lt;br&gt;(not really needed)&lt;br&gt;&lt;br&gt;- onChainSlashes" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="MiHG-ok4c3-oJHMUXmo7-28" vertex="1">
                     <mxGeometry y="30" width="115" height="160" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-20" value="on-chain storage dependencies - the statefull component" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-20" value="on-chain storage dependencies - the statefull component" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" parent="MiHG-ok4c3-oJHMUXmo7-1" vertex="1">
                     <mxGeometry x="540" y="40" width="365" height="30" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-30" value="Think" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-30" value="Think" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="MiHG-ok4c3-oJHMUXmo7-1" vertex="1">
                     <mxGeometry x="510" y="360" width="140" height="120" as="geometry">
                         <mxRectangle x="120" y="500" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-31" value="MaxSlashCount = f(disputes) - cheaper to iterate than to read storage slots" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-30">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-31" value="MaxSlashCount = f(disputes) - cheaper to iterate than to read storage slots" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="MiHG-ok4c3-oJHMUXmo7-30" vertex="1">
                     <mxGeometry y="30" width="140" height="90" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-33" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-33" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="MiHG-ok4c3-oJHMUXmo7-1" vertex="1">
                     <mxGeometry x="880" y="155" width="200" height="230" as="geometry">
                         <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-34" value="What&#39;s used from the ChannelBalances:&lt;br&gt;- latestJoinChannelBlockHash&lt;br&gt;- onChainJoinChannelMap&amp;nbsp;&lt;br&gt;&lt;br&gt;Used to include only joinChannels that happened before the DisputeWindow Expired -&amp;gt; keeping &lt;b&gt;reduce deterministic &lt;/b&gt;- if it didn&#39;t have the hard cutoff, a join later would change the reduced result - causing everything to revets effectively" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-33">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-34" value="What&#39;s used from the ChannelBalances:&lt;br&gt;- latestJoinChannelBlockHash&lt;br&gt;- onChainJoinChannelMap&amp;nbsp;&lt;br&gt;&lt;br&gt;Used to include only joinChannels that happened before the DisputeWindow Expired -&amp;gt; keeping &lt;b&gt;reduce deterministic &lt;/b&gt;- if it didn&#39;t have the hard cutoff, a join later would change the reduced result - causing everything to revets effectively" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="MiHG-ok4c3-oJHMUXmo7-33" vertex="1">
                     <mxGeometry y="30" width="200" height="200" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-35" value="Think" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-35" value="Think" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="MiHG-ok4c3-oJHMUXmo7-1" vertex="1">
                     <mxGeometry x="890" y="410" width="140" height="120" as="geometry">
                         <mxRectangle x="120" y="500" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-36" value="How are pendingParticipants cleared - do they account for partial joins?&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-35">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-36" value="How are pendingParticipants cleared - do they account for partial joins?&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="MiHG-ok4c3-oJHMUXmo7-35" vertex="1">
                     <mxGeometry y="30" width="140" height="90" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-4" value="ReduceOutput.genesisTimestamp (initial)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-4" value="ReduceOutput.genesisTimestamp (initial)" style="rounded=1;whiteSpace=wrap;html=1;" parent="MiHG-ok4c3-oJHMUXmo7-1" vertex="1">
                     <mxGeometry x="330" y="610" width="260" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-2" value="Fork Choice Rule" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" vertex="1" parent="1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-2" value="Fork Choice Rule" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
                     <mxGeometry x="1150" y="1460" width="340" height="180" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-3" value="onDispute" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" vertex="1" parent="1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-3" value="onDispute" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
                     <mxGeometry x="1540" y="1460" width="340" height="180" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-7" value="Upload Dispute" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" vertex="1" parent="1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-7" value="Upload Dispute" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
                     <mxGeometry x="1150" y="1680" width="340" height="180" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-8" value="Audit Dispute" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" vertex="1" parent="1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-8" value="Audit Dispute" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
                     <mxGeometry x="1530" y="1680" width="340" height="180" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-9" value="Challenge Dispute" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" vertex="1" parent="1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-9" value="Challenge Dispute" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
                     <mxGeometry x="1900" y="1680" width="340" height="180" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-10" value="CommitToReducedResult" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" vertex="1" parent="1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-10" value="CommitToReducedResult" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
                     <mxGeometry x="1150" y="1890" width="340" height="180" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-11" value="Challenge Dispute Reduction" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=170;height=30;" vertex="1" parent="1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-11" value="Challenge Dispute Reduction" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=170;height=30;" parent="1" vertex="1">
                     <mxGeometry x="1530" y="1890" width="360" height="180" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-12" value="Generate Dsipute Output State" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=200;height=30;" vertex="1" parent="1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-12" value="Generate Dsipute Output State" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=200;height=30;" parent="1" vertex="1">
                     <mxGeometry x="1150" y="2100" width="340" height="180" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-13" value="Reduce Output -&amp;gt; SnapshotData" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=210;height=30;" vertex="1" parent="1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-13" value="Reduce Output -&amp;gt; SnapshotData" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=210;height=30;" parent="1" vertex="1">
                     <mxGeometry x="1530" y="2100" width="340" height="180" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-17" value="StateSnapshot" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-17" value="StateSnapshot" style="rounded=1;whiteSpace=wrap;html=1;" parent="1" vertex="1">
                     <mxGeometry x="560" y="1539" width="120" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-18" value="" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.annotation_2;align=left;labelPosition=right;pointerEvents=1;rotation=-90;" vertex="1" parent="1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-18" value="" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.annotation_2;align=left;labelPosition=right;pointerEvents=1;rotation=-90;" parent="1" vertex="1">
                     <mxGeometry x="733" y="1401" width="50" height="411" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-19" value="DisputeData" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-19" value="DisputeData" style="rounded=1;whiteSpace=wrap;html=1;" parent="1" vertex="1">
                     <mxGeometry x="695" y="1539" width="120" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-26" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-26" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
                     <mxGeometry x="555" y="1620" width="115" height="190" as="geometry">
                         <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-27" value="What&#39;s used from the StateSnapshot:&lt;br&gt;- participants - to calculate maxSlashCount&amp;nbsp;&lt;br&gt;&lt;br&gt;This dependency is not really needed, more for convenience" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-26">
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-27" value="What&#39;s used from the StateSnapshot:&lt;br&gt;- participants - to calculate maxSlashCount&amp;nbsp;&lt;br&gt;&lt;br&gt;This dependency is not really needed, more for convenience" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="MiHG-ok4c3-oJHMUXmo7-26" vertex="1">
                     <mxGeometry y="30" width="115" height="160" as="geometry"/>
                 </mxCell>
             </root>
