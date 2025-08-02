@@ -21,12 +21,7 @@ describe("Universal Deployment", () => {
     let evm: EVM;
 
     before(async () => {
-        // TEMPORARY: allow unlimited contract size
-        // DisputeManagerFacet is too large to deploy with the default code size limit
-        // TODO: https://trello.com/c/8472PdJp
-        evm = await EVM.create({
-            allowUnlimitedContractSize: true
-        });
+        evm = await EVM.create();
         [deployer] = await ethers.getSigners();
 
         const { address } = await deployArtifact(

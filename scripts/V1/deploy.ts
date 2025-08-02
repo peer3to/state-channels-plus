@@ -8,6 +8,7 @@ import {
 import { EVM } from "@ethereumjs/evm";
 
 import StateChannelUtilLibraryArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelUtilLibrary.sol/StateChannelUtilLibrary.json";
+import DisputeVerificationFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol/DisputeVerificationFacet.json";
 import DisputeManagerFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol/DisputeManagerFacet.json";
 import FraudProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol/FraudProofFacet.json";
 import DisputeFraudProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol/DisputeFraudProofFacet.json";
@@ -21,6 +22,7 @@ import { Artifact } from "hardhat/types";
 
 const facetArtifacts = [
     DisputeManagerFacetArtifact,
+    DisputeVerificationFacetArtifact,
     FraudProofFacetArtifact,
     DisputeFraudProofFacetArtifact,
     StateSnapshotFacetArtifact,
