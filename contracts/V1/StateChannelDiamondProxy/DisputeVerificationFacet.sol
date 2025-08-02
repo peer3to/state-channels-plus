@@ -77,6 +77,12 @@ contract DisputeVerificationFacet is StateChannelCommon {
             _killDispute(dispute);
         }
     }
+    /**
+     * @notice Challenges a dispute reduction by providing disputes and verification data
+     * @dev IMPORTANT: The disputes array must be provided in the same order as they were committed
+     *      to the dispute window. The off-chain client is responsible for ensuring disputes are
+     *      ordered correctly to save on gas during verification.
+     */
 
     function challengeDisputeReduction(
         Dispute[] memory disputes,

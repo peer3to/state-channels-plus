@@ -148,13 +148,6 @@ contract DisputeManagerFacet is StateChannelCommon {
         //TODO - emit event
     }
 
-    /**
-     * @notice Challenges a dispute reduction by providing disputes and verification data
-     * @dev IMPORTANT: The disputes array must be provided in the same order as they were committed
-     *      to the dispute window. The off-chain client is responsible for ensuring disputes are
-     *      ordered correctly to save on gas during verification.
-     */
-
     // ********************** Internal/private functions
 
     function _uploadDispute(DisputeConfirmation memory disputeConfirmation, bool isAuditingCalldataProvided) internal {
