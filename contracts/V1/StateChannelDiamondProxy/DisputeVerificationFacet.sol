@@ -5,7 +5,6 @@ import "./StateChannelManagerProxy.sol";
 import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
 import "./utils/DisputeUtils.sol";
-import "./DisputeManagerFacet.sol";
 
 contract DisputeVerificationFacet is StateChannelCommon {
     function auditDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
@@ -77,13 +76,108 @@ contract DisputeVerificationFacet is StateChannelCommon {
             _killDispute(dispute);
         }
     }
+
+    function reduce(Dispute[] memory disputes, uint256 disputeWindowCreationTimestamp)
+        public
+        view
+        returns (ReduceOutput memory reducedOutput)
+    {
+        uint256 maxSlashCount;
+        uint256 slashCount;
+        uint256 selfRemovalCount;
+        address[] memory slashParticipants;
+        address[] memory selfRemovalParticipants = new address[](disputes.length);
+        reducedOutput.forkGenesisTimestamp = disputeWindowCreationTimestamp + getEvidenceTime(); //expiration of evidence time
+        uint256 disputeWindowExpirationTimestamp = disputeWindowCreationTimestamp + getKillTime();
+        require(disputes.length > 0, ErrorNoDisputesProvided());
+
+        for (uint256 i = 0; i < disputes.length; i++) {
+            Dispute memory dispute = disputes[i];
+
+            // ***** setup / first run *****
+            if (maxSlashCount == 0) {
+                SnapshotData storage snapshotData = stateSnapshots[dispute.channelId].snapshotData;
+                DisputeData storage disputeData = disputeData[dispute.channelId];
+                maxSlashCount = snapshotData.participants.length + disputeData.pendingParticipants.length;
+                slashParticipants = new address[](maxSlashCount);
+
+                //populate initially with on-chain slashes up to the dispute window expiration timestamp
+                for (uint256 j = 0; j < disputeData.onChainSlashes.length; j++) {
+                    if (disputeData.onChainSlashes[j].timestamp <= disputeWindowExpirationTimestamp) {
+                        slashParticipants[slashCount++] = disputeData.onChainSlashes[j].participant;
+                        //if on-chain slash happened after evidnece period expired (during the kill period), take that timestamp as genesis
+                        if (disputeData.onChainSlashes[j].timestamp > reducedOutput.forkGenesisTimestamp) {
+                            reducedOutput.forkGenesisTimestamp = disputeData.onChainSlashes[j].timestamp;
+                        }
+                    }
+                }
+                // ***** reducedOutput.latestJoinChannelBlockHash *****
+                ChannelBalance storage cb = channelBalances[dispute.channelId];
+                bytes32 jcbHash = cb.latestJoinChannelBlockHash;
+                while (cb.onChainJoinChannelMap[jcbHash].timestamp > disputeWindowExpirationTimestamp) {
+                    jcbHash = cb.onChainJoinChannelMap[jcbHash].previousJoinChannelBlockHash;
+                }
+                reducedOutput.latestJoinChannelBlockHash = jcbHash;
+            }
+
+            // ***** reducedOutput.latestBlock *****
+            // Extract the latest block from the state proof - it's either the last signed block or the last one in milestones
+            StateProof memory stateProof = dispute.stateProof;
+            Block memory disputeLatestBlock = _getLatestBlock(stateProof);
+
+            // Take the latest block possible
+            if (
+                disputeLatestBlock.transaction.header.transactionCnt
+                    >= reducedOutput.latestBlock.transaction.header.transactionCnt
+            ) {
+                reducedOutput.latestBlock = disputeLatestBlock;
+            }
+
+            // ***** reducedOutput.slashedParticipants *****
+            for (uint256 j = 0; j < dispute.fraudProofs.length; j++) {
+                FraudProof memory fraudProof = dispute.fraudProofs[j];
+                bool isAlreadySlashed = false;
+                for (uint256 k = 0; k < slashCount; k++) {
+                    if (slashParticipants[k] == fraudProof.participant) {
+                        isAlreadySlashed = true;
+                        break;
+                    }
+                }
+                if (!isAlreadySlashed) {
+                    slashParticipants[slashCount++] = fraudProof.participant;
+                }
+            }
+
+            // ***** reducedOutput.timeout *****
+            if (
+                reducedOutput.timeout.participant == address(0)
+                    || dispute.timeout.blockHeight < reducedOutput.timeout.blockHeight
+            ) {
+                reducedOutput.timeout = dispute.timeout;
+            }
+
+            // ***** reducedOutput.selfRemovals *****
+            if (dispute.selfRemoval) {
+                selfRemovalParticipants[selfRemovalCount++] = dispute.disputer;
+            }
+        }
+        // allocate correct size arrays
+        reducedOutput.slashedParticipants = new address[](slashCount);
+        for (uint256 i = 0; i < slashCount; i++) {
+            reducedOutput.slashedParticipants[i] = slashParticipants[i];
+        }
+        reducedOutput.selfRemovals = new address[](selfRemovalCount);
+        for (uint256 i = 0; i < selfRemovalCount; i++) {
+            reducedOutput.selfRemovals[i] = selfRemovalParticipants[i];
+        }
+    }
+
     /**
      * @notice Challenges a dispute reduction by providing disputes and verification data
      * @dev IMPORTANT: The disputes array must be provided in the same order as they were committed
      *      to the dispute window. The off-chain client is responsible for ensuring disputes are
      *      ordered correctly to save on gas during verification.
      */
-
     function challengeDisputeReduction(
         Dispute[] memory disputes,
         uint256 disputeWindowCreationTimestamp,
@@ -105,8 +199,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         //require reduce challenge period is not expired - this also assures it's commited
         require(!_isReduceChallengePeriodExpired(disputeWindow), ErrorDisputeChallengePeriodExpired());
 
-        ReduceOutput memory reducedOutput =
-            StateChannelManagerProxy(address(this)).reduce(disputes, disputeWindowCreationTimestamp);
+        ReduceOutput memory reducedOutput = reduce(disputes, disputeWindowCreationTimestamp);
 
         SnapshotData memory snapshotData =
             reduceOutputToSnapshotData(reducedOutput, stateSnapshot, encodedStateMachineState, joinChannelBlocks);

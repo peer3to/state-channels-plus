@@ -354,17 +354,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return abi.decode(result, (bool, bytes));
     }
 
-    function reduce(Dispute[] memory disputes, uint256 disputeWindowCreationTimestamp)
-        public
-        returns (ReduceOutput memory reducedOutput)
-    {
-        bytes memory result = _delegatecall(
-            address(disputeManagerFacet),
-            abi.encodeCall(disputeManagerFacet.reduce, (disputes, disputeWindowCreationTimestamp))
-        );
-        return abi.decode(result, (ReduceOutput));
-    }
-
     function _canParticipateInDisputes(bytes32 channelId, address participant) public returns (bool) {
         bytes memory result = _delegatecall(
             address(disputeManagerFacet),
