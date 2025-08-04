@@ -5,6 +5,7 @@ import "./StateChannelManagerProxy.sol";
 import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
 import "./utils/DisputeUtils.sol";
+import "./utils/BlockUtils.sol";
 
 contract DisputeVerificationFacet is StateChannelCommon {
     function auditDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
