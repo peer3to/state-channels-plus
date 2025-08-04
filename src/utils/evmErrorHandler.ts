@@ -42,9 +42,13 @@ export function decodeErrorProxy<T extends Object>(contract: T) {
                 try {
                     return await Reflect.apply(originalProperty, target, args);
                 } catch (error: any) {
-                    const customError = error.data
-                        ? decodeCustomError(error.data)
-                        : null;
+                    const errorData = error.data
+                        ? error.data
+                        : error.execResult?.returnValue
+                          ? ethers.hexlify(error.execResult.returnValue)
+                          : null;
+
+                    const customError = decodeCustomError(errorData);
 
                     if (customError) {
                         throw new CustomEvmError(customError, error);
