@@ -198,4 +198,18 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         }
         return true; //is participant and not slashed -> can participate
     }
+
+    function _commitToDisputeReducedResult(
+        DisputeWindow storage disputeWindow,
+        bytes32 reducedForkId,
+        uint256 reductionTimestamp,
+        uint256 forkGenesisTimestamp
+    ) internal {
+        require(_isKillPeriodExpired(disputeWindow, getKillTime()), ErrorDisputeKillPeriodNotExpired());
+        require(disputeWindow.reducedResult.forkId == bytes32(0), ErrorDisputeAlreadyReduced());
+        disputeWindow.reducedResult.forkId = reducedForkId;
+        disputeWindow.reducedResult.forkGenesisTimestamp = forkGenesisTimestamp;
+        disputeWindow.reducedResult.timestamp = reductionTimestamp;
+        disputeWindow.reducedResult.reducer = msg.sender; //calling function should check that msg.sender is part of channel 'can participate'
+    }
 }
