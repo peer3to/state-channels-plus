@@ -354,14 +354,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return abi.decode(result, (bool, bytes));
     }
 
-    function _canParticipateInDisputes(bytes32 channelId, address participant) public returns (bool) {
-        bytes memory result = _delegatecall(
-            address(disputeManagerFacet),
-            abi.encodeCall(disputeManagerFacet._canParticipateInDisputes, (channelId, participant))
-        );
-        return abi.decode(result, (bool));
-    }
-
     function multicall(bytes[] calldata calls) external override returns (bytes[] memory results) {
         results = new bytes[](calls.length);
         for (uint256 i = 0; i < calls.length; i++) {

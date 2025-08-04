@@ -175,38 +175,6 @@ contract DisputeManagerFacet is StateChannelCommon {
 
     // ================== Shared Utility Functions ==================
 
-    function _canParticipateInDisputes(bytes32 channelId, address participant) public view returns (bool) {
-        StateSnapshot storage stateSnapshot = stateSnapshots[channelId];
-        bool isParticipant = false;
-        //Check if normal participant
-        for (uint256 i = 0; i < stateSnapshot.snapshotData.participants.length; i++) {
-            if (stateSnapshot.snapshotData.participants[i] == participant) {
-                isParticipant = true;
-                break;
-            }
-        }
-        if (!isParticipant) {
-            //check pending participants
-            DisputeData storage _disputeData = disputeData[channelId];
-            for (uint256 i = 0; i < _disputeData.pendingParticipants.length; i++) {
-                if (_disputeData.pendingParticipants[i] == participant) {
-                    isParticipant = true;
-                    break;
-                }
-            }
-            if (!isParticipant) return false;
-        }
-
-        address[] memory onChainSlashedParticipants = getOnChainSlashedParticipants(channelId);
-        //check if slashed on-chain -> slashed participants can't participate in disputes
-        for (uint256 i = 0; i < onChainSlashedParticipants.length; i++) {
-            if (onChainSlashedParticipants[i] == participant) {
-                return false; //is slashed -> can't participate
-            }
-        }
-        return true; //is participant and not slashed -> can participate
-    }
-
     function _commitToDisputeReducedResult(
         DisputeWindow storage disputeWindow,
         bytes32 reducedForkId,

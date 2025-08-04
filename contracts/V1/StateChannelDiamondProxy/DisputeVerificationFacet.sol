@@ -68,7 +68,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         (bool success, bytes memory returnData) = address(this).call{gas: gasLimit}(data);
         if (success) {
             // auditing passed - dispute is correct, slash the challenger
-            if (StateChannelManagerProxy(address(this))._canParticipateInDisputes(dispute.channelId, msg.sender)) {
+            if (_canParticipateInDisputes(dispute.channelId, msg.sender)) {
                 addOnChainSlashedParticipant(dispute.channelId, msg.sender);
             }
         } else {
@@ -187,10 +187,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
     ) public {
         require(disputes.length > 0, ErrorNoDisputesProvided());
         bytes32 channelId = disputes[0].channelId;
-        require(
-            StateChannelManagerProxy(address(this))._canParticipateInDisputes(channelId, msg.sender),
-            ErrorCantParticipateInDispute()
-        );
+        require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].genesisSnapshotDataHash];
 
