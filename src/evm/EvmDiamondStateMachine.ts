@@ -134,9 +134,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     async getParticipants(): Promise<Address[]> {
         const callData = this.getEncodedCalldata("getParticipants");
 
-        const result = await this.contractExecuter.executeCall(callData);
         const addresses = Codec.decodeEthersResult<Address[]>(
-            result,
+            await this.contractExecuter.executeCall(callData),
             "address[]"
         );
         return addresses;
