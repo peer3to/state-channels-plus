@@ -12,198 +12,67 @@ import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { Bytes } from "@/types/types";
 
-describe("EvmStateMachine", function () {
+describe("EvmDiamondStateMachine", function () {
     let mathStateMachine: any;
     let deployTx: any;
+    let evm: EVM;
+    let mathStateMachineDeployTx: any;
+    let contractInterface: Interface;
 
     before(async function () {
         mathStateMachine = await ethers.getContractFactory("MathStateMachine");
         deployTx = await getMathDeploymentTransaction(ethers);
     });
+    beforeEach(async function () {
+        evm = await EVM.create();
 
-    describe("EvmDiamondStateMachine", function () {
-        let evm: EVM;
-        let mathStateMachineDeployTx: any;
-        let contractInterface: Interface;
-
-        beforeEach(async function () {
-            evm = await EVM.create();
-
-            const MathStateMachine =
-                await ethers.getContractFactory("MathStateMachine");
-            mathStateMachineDeployTx =
-                await MathStateMachine.getDeployTransaction(5000000);
-            contractInterface = MathStateMachine.interface;
-        });
-
-        describe("Dual Deployment Issue", function () {
-            it("should deploy state machine twice resulting in different addresses", async function () {
-                const firstDeploymentResult = await evm.runCall({
-                    data: ethers.getBytes(mathStateMachineDeployTx.data)
-                });
-
-                const secondDeploymentResult = await evm.runCall({
-                    data: ethers.getBytes(mathStateMachineDeployTx.data)
-                });
-
-                // Verify both deployments succeeded
-                expect(firstDeploymentResult.execResult.exceptionError).to.be
-                    .undefined;
-                expect(secondDeploymentResult.execResult.exceptionError).to.be
-                    .undefined;
-                expect(firstDeploymentResult.createdAddress).to.not.be
-                    .undefined;
-                expect(secondDeploymentResult.createdAddress).to.not.be
-                    .undefined;
-
-                expect(
-                    firstDeploymentResult.createdAddress!.equals(
-                        secondDeploymentResult.createdAddress!
-                    )
-                ).to.be.false;
-            });
-        });
-
-        describe("createStandalone", function () {
-            it("should successfully create a standalone EvmDiamondStateMachine", async function () {
-                const evmDiamondStateMachine =
-                    await EvmDiamondStateMachine.createStandalone(
-                        mathStateMachineDeployTx,
-                        contractInterface
-                    );
-
-                expect(evmDiamondStateMachine).to.be.instanceOf(
-                    EvmDiamondStateMachine
-                );
-                expect(evmDiamondStateMachine.contractInterface).to.equal(
-                    contractInterface
-                );
-                expect(evmDiamondStateMachine.diamondExecuter).to.not.be
-                    .undefined;
-            });
-        });
-
-        describe("Balance Operations", function () {
-            let evmDiamondStateMachine: EvmDiamondStateMachine;
-
-            beforeEach(async function () {
-                evmDiamondStateMachine =
-                    await EvmDiamondStateMachine.createStandalone(
-                        mathStateMachineDeployTx,
-                        contractInterface
-                    );
+        const MathStateMachine =
+            await ethers.getContractFactory("MathStateMachine");
+        mathStateMachineDeployTx =
+            await MathStateMachine.getDeployTransaction(5000000);
+        contractInterface = MathStateMachine.interface;
+    });
+    describe("Dual Deployment works", function () {
+        it("should deploy state machine twice resulting in different addresses", async function () {
+            const firstDeploymentResult = await evm.runCall({
+                data: ethers.getBytes(mathStateMachineDeployTx.data)
             });
 
-            it("should add two balances correctly", async function () {
-                const balance1 = {
-                    amount: 100n,
-                    data: "0x"
-                };
-
-                const balance2 = {
-                    amount: 50n,
-                    data: "0x"
-                };
-
-                const result = await evmDiamondStateMachine.addBalance(
-                    balance1,
-                    balance2
-                );
-
-                expect(result.amount).to.equal(150n);
-                expect(result.data).to.equal("0x");
+            const secondDeploymentResult = await evm.runCall({
+                data: ethers.getBytes(mathStateMachineDeployTx.data)
             });
 
-            it("should subtract balances correctly", async function () {
-                const balance1 = {
-                    amount: 100n,
-                    data: "0x"
-                };
+            // Verify both deployments succeeded
+            expect(firstDeploymentResult.execResult.exceptionError).to.be
+                .undefined;
+            expect(secondDeploymentResult.execResult.exceptionError).to.be
+                .undefined;
+            expect(firstDeploymentResult.createdAddress).to.not.be.undefined;
+            expect(secondDeploymentResult.createdAddress).to.not.be.undefined;
 
-                const balance2 = {
-                    amount: 30n,
-                    data: "0x"
-                };
-
-                const result = await evmDiamondStateMachine.subtractBalance(
-                    balance1,
-                    balance2
-                );
-
-                expect(result.amount).to.equal(70n);
-                expect(result.data).to.equal("0x");
-            });
-
-            it("should throw error when subtracting larger balance from smaller", async function () {
-                const balance1 = {
-                    amount: 30n,
-                    data: "0x"
-                };
-
-                const balance2 = {
-                    amount: 100n,
-                    data: "0x"
-                };
-
-                await expect(
-                    evmDiamondStateMachine.subtractBalance(balance1, balance2)
-                ).to.be.rejected;
-            });
-
-            it("should get total state balance", async function () {
-                const result =
-                    await evmDiamondStateMachine.getTotalStateBalance();
-
-                expect(result).to.have.property("amount");
-                expect(result).to.have.property("data");
-                expect(typeof result.amount).to.equal("bigint");
-            });
-
-            it("should get zero balance", async function () {
-                const result = await evmDiamondStateMachine.getZeroBalance();
-
-                expect(result.amount).to.equal(0n);
-                expect(result.data).to.equal("0x");
-            });
-
-            it("should handle balance operations with custom data", async function () {
-                const balance1 = {
-                    amount: 200n,
-                    data: ethers.hexlify(ethers.toUtf8Bytes("custom data 1"))
-                };
-
-                const balance2 = {
-                    amount: 100n,
-                    data: ethers.hexlify(ethers.toUtf8Bytes("custom data 2"))
-                };
-
-                const addResult = await evmDiamondStateMachine.addBalance(
-                    balance1,
-                    balance2
-                );
-                expect(addResult.amount).to.equal(300n);
-
-                const subtractResult =
-                    await evmDiamondStateMachine.subtractBalance(
-                        balance1,
-                        balance2
-                    );
-                expect(subtractResult.amount).to.equal(100n);
-            });
+            expect(
+                firstDeploymentResult.createdAddress!.equals(
+                    secondDeploymentResult.createdAddress!
+                )
+            ).to.be.false;
         });
     });
 
     describe("createStandalone", function () {
-        it("should successfully create a standalone EvmStateMachine", async function () {
-            const evmStateMachine = await EvmStateMachine.createStandalone(
-                deployTx,
-                mathStateMachine.interface
-            );
+        it("should successfully create a standalone EvmDiamondStateMachine", async function () {
+            const evmDiamondStateMachine =
+                await EvmDiamondStateMachine.createStandalone(
+                    mathStateMachineDeployTx,
+                    contractInterface
+                );
 
-            expect(evmStateMachine).to.be.instanceOf(EvmStateMachine);
-            expect(evmStateMachine.contractInterface).to.equal(
-                mathStateMachine.interface
+            expect(evmDiamondStateMachine).to.be.instanceOf(
+                EvmDiamondStateMachine
             );
+            expect(evmDiamondStateMachine.contractInterface).to.equal(
+                contractInterface
+            );
+            expect(evmDiamondStateMachine.diamondExecuter).to.not.be.undefined;
         });
 
         it("should fail when deployment transaction is invalid", async function () {
@@ -744,6 +613,115 @@ describe("EvmStateMachine", function () {
             expect(newState.balances[newState.balances.length - 1]).to.equal(
                 0n
             );
+        });
+
+        describe("Balance Operations", function () {
+            let evmDiamondStateMachine: EvmDiamondStateMachine;
+
+            beforeEach(async function () {
+                evmDiamondStateMachine =
+                    await EvmDiamondStateMachine.createStandalone(
+                        mathStateMachineDeployTx,
+                        contractInterface
+                    );
+            });
+
+            it("should add two balances correctly", async function () {
+                const balance1 = {
+                    amount: 100n,
+                    data: "0x"
+                };
+
+                const balance2 = {
+                    amount: 50n,
+                    data: "0x"
+                };
+
+                const result = await evmDiamondStateMachine.addBalance(
+                    balance1,
+                    balance2
+                );
+
+                expect(result.amount).to.equal(150n);
+                expect(result.data).to.equal("0x");
+            });
+
+            it("should subtract balances correctly", async function () {
+                const balance1 = {
+                    amount: 100n,
+                    data: "0x"
+                };
+
+                const balance2 = {
+                    amount: 30n,
+                    data: "0x"
+                };
+
+                const result = await evmDiamondStateMachine.subtractBalance(
+                    balance1,
+                    balance2
+                );
+
+                expect(result.amount).to.equal(70n);
+                expect(result.data).to.equal("0x");
+            });
+
+            it("should throw error when subtracting larger balance from smaller", async function () {
+                const balance1 = {
+                    amount: 30n,
+                    data: "0x"
+                };
+
+                const balance2 = {
+                    amount: 100n,
+                    data: "0x"
+                };
+
+                await expect(
+                    evmDiamondStateMachine.subtractBalance(balance1, balance2)
+                ).to.be.rejected;
+            });
+
+            it("should get total state balance", async function () {
+                const result =
+                    await evmDiamondStateMachine.getTotalStateBalance();
+
+                expect(result).to.have.property("amount");
+                expect(result).to.have.property("data");
+                expect(typeof result.amount).to.equal("bigint");
+            });
+
+            it("should get zero balance", async function () {
+                const result = await evmDiamondStateMachine.getZeroBalance();
+
+                expect(result.amount).to.equal(0n);
+                expect(result.data).to.equal("0x");
+            });
+
+            it("should handle balance operations with custom data", async function () {
+                const balance1 = {
+                    amount: 200n,
+                    data: ethers.hexlify(ethers.toUtf8Bytes("custom data 1"))
+                };
+
+                const balance2 = {
+                    amount: 100n,
+                    data: ethers.hexlify(ethers.toUtf8Bytes("custom data 2"))
+                };
+
+                const addResult = await evmDiamondStateMachine.addBalance(
+                    balance1,
+                    balance2
+                );
+                expect(addResult.amount).to.equal(300n);
+
+                const subtractResult =
+                    await evmDiamondStateMachine.subtractBalance(
+                        balance1,
+                        balance2
+                    );
+                expect(subtractResult.amount).to.equal(100n);
+            });
         });
     });
 });
