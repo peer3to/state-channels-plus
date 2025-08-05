@@ -7,12 +7,14 @@ import {
     getSigners,
     createJoinChannelTestObject
 } from "@test/test_utils/testHelpers";
-import { EvmUtils } from "@/utils";
+import { SignatureUtils } from "@/utils";
 import {
     MathStateChannelManagerProxy,
     MathStateMachine
 } from "@typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { Bytes } from "@/types/types";
+import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 describe("StateChannelManagerProxy", function () {
     process.env.DEBUG_LOCAL_TRANSPORT = "true"; //will use local transport - these tests aren't meant to test the distributed system
@@ -22,6 +24,12 @@ describe("StateChannelManagerProxy", function () {
     let firstSigner: HardhatEthersSigner;
     let secondSigner: HardhatEthersSigner;
 
+    // Default test objects - can be overridden in individual tests
+    let jc1: JoinChannelStruct;
+    let jc2: JoinChannelStruct;
+    let jc1Signed: any;
+    let jc2Signed: any;
+
     beforeEach(async function () {
         const contracts = await deployMathChannelProxyFixture(ethers);
         mathChannelManager = contracts.mathChannelManager;
@@ -30,136 +38,99 @@ describe("StateChannelManagerProxy", function () {
         const signers = await getSigners(ethers);
         firstSigner = signers.firstSigner;
         secondSigner = signers.secondSigner;
+
+        jc1 = createJoinChannelTestObject(firstSigner.address);
+        jc2 = createJoinChannelTestObject(secondSigner.address);
+
+        jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
+        jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
     });
 
     describe("Open Channel - MathStateChannel", function () {
         it("2 participants - success", async function () {
-            let jc1 = createJoinChannelTestObject(firstSigner.address);
-            let jc2 = createJoinChannelTestObject(secondSigner.address);
-
-            let jc1Signed = await EvmUtils.signJoinChannel(jc1, firstSigner);
-            let jc2Signed = await EvmUtils.signJoinChannel(jc2, secondSigner);
-
             let res = await mathChannelManager.openChannel(
                 jc1.channelId,
-                [jc1Signed.encodedJoinChannel, jc2Signed.encodedJoinChannel],
-                [jc1Signed.signature, jc2Signed.signature]
+                [jc1Signed.encoded, jc2Signed.encoded],
+                [jc1Signed.signature as Bytes, jc2Signed.signature as Bytes]
             );
             let receipt = await res.wait();
             expect(receipt?.logs.length, "Event logs").to.be.equal(1);
             receipt?.logs.forEach((event) => {
                 let e: EventLog = event as EventLog;
-                let id = e.args[0];
-                let poker = e.args[1];
+                let id = e.topics[1];
+
                 expect(id, "Game not created successfully").to.be.equal(
                     jc1.channelId
                 );
             });
         });
+
         it("2 participants signatures not inorder - success", async function () {
-            let jc1 = createJoinChannelTestObject(firstSigner.address);
-            let jc2 = createJoinChannelTestObject(secondSigner.address);
-
-            let jc1Signed = await EvmUtils.signJoinChannel(jc1, firstSigner);
-            let jc2Signed = await EvmUtils.signJoinChannel(jc2, secondSigner);
-
             let res = await mathChannelManager.openChannel(
                 jc1.channelId,
-                [jc1Signed.encodedJoinChannel, jc2Signed.encodedJoinChannel],
-                [jc2Signed.signature, jc1Signed.signature]
+                [jc1Signed.encoded, jc2Signed.encoded],
+                [jc2Signed.signature as Bytes, jc1Signed.signature as Bytes]
             );
             let receipt = await res.wait();
             expect(receipt?.logs.length, "Event logs").to.be.equal(1);
             receipt?.logs.forEach((event) => {
                 let e: EventLog = event as EventLog;
-                let id = e.args[0];
-                let poker = e.args[1];
+                let id = e.topics[1];
+
                 expect(id, "Game not created successfully").to.be.equal(
                     jc1.channelId
                 );
             });
         });
+
         it("2 participants 1 signature - fail", async function () {
-            let jc1 = createJoinChannelTestObject(firstSigner.address);
-            let jc2 = createJoinChannelTestObject(secondSigner.address);
-
-            let jc1Signed = await EvmUtils.signJoinChannel(jc1, firstSigner);
-            let jc2Signed = await EvmUtils.signJoinChannel(jc2, secondSigner);
-
             let res = mathChannelManager.openChannel(
                 jc1.channelId,
-                [jc1Signed.encodedJoinChannel, jc2Signed.encodedJoinChannel],
+                [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature]
             );
             await expect(res).to.be.revertedWith(
-                "MathStateChannelManager: openChannel (openChannel <> signatures) incorect length"
+                "MathConsumerFacet: openChannel (openChannel <> signatures) incorrect length"
             );
         });
 
         it("2 participants double signature - fail", async function () {
-            let jc1 = createJoinChannelTestObject(firstSigner.address);
-            let jc2 = createJoinChannelTestObject(secondSigner.address);
-
-            let jc1Signed = await EvmUtils.signJoinChannel(jc1, firstSigner);
-            let jc2Signed = await EvmUtils.signJoinChannel(jc2, secondSigner);
-
             let res = mathChannelManager.openChannel(
                 jc1.channelId,
-                [jc1Signed.encodedJoinChannel, jc2Signed.encodedJoinChannel],
-                [jc1Signed.signature, jc1Signed.signature]
+                [jc1Signed.encoded, jc2Signed.encoded],
+                [jc1Signed.signature as Bytes, jc1Signed.signature as Bytes]
             );
             await expect(res).to.be.revertedWith(
-                "MathStateChannelManager: openChannel (openChannel <> signatures) singatures don't match"
+                "MathConsumerFacet: openChannel (openChannel <> signatures) signatures don't match"
             );
         });
 
         it("2 participants wrong encoded openChannel msg - fail", async function () {
-            let jc1 = createJoinChannelTestObject(firstSigner.address);
-            let jc2 = createJoinChannelTestObject(secondSigner.address);
-
-            let jc1Signed = await EvmUtils.signJoinChannel(jc1, firstSigner);
-            let jc2Signed = await EvmUtils.signJoinChannel(jc2, secondSigner);
-
             let res = mathChannelManager.openChannel(
                 jc1.channelId,
-                [
-                    jc1Signed.encodedJoinChannel + "00",
-                    jc2Signed.encodedJoinChannel
-                ],
+                [jc1Signed.encoded + "00", jc2Signed.encoded],
                 [jc1Signed.signature, jc2Signed.signature]
             );
             await expect(res).to.be.revertedWith(
-                "MathStateChannelManager: openChannel (openChannel <> signatures) singatures don't match"
+                "MathConsumerFacet: openChannel (openChannel <> signatures) signatures don't match"
             );
         });
 
         it("2 participants no signatures - fail", async function () {
-            let jc1 = createJoinChannelTestObject(firstSigner.address);
-            let jc2 = createJoinChannelTestObject(secondSigner.address);
-
-            let jc1Signed = await EvmUtils.signJoinChannel(jc1, firstSigner);
-            let jc2Signed = await EvmUtils.signJoinChannel(jc2, secondSigner);
-
             let res = mathChannelManager.openChannel(
                 jc1.channelId,
-                [jc1Signed.encodedJoinChannel, jc2Signed.encodedJoinChannel],
+                [jc1Signed.encoded, jc2Signed.encoded],
                 []
             );
             await expect(res).to.be.revertedWith(
-                "MathStateChannelManager: openChannel (openChannel <> signatures) incorect length"
+                "MathConsumerFacet: openChannel (openChannel <> signatures) incorrect length"
             );
         });
 
         it("2 participants invalid signature length - fail", async function () {
-            let jc1 = createJoinChannelTestObject(firstSigner.address);
-            let jc2 = createJoinChannelTestObject(secondSigner.address);
-
-            let jc1Signed = await EvmUtils.signJoinChannel(jc1, firstSigner);
-            let jc2Signed = await EvmUtils.signJoinChannel(jc2, secondSigner);
-
             let resultPromise = mathChannelManager.openChannel(
                 jc1.channelId,
-                [jc1Signed.encodedJoinChannel, jc2Signed.encodedJoinChannel],
+                [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature, jc2Signed.signature + "00"]
             );
             await expect(resultPromise)
@@ -175,100 +146,90 @@ describe("StateChannelManagerProxy", function () {
         });
 
         it("2 participants channelId = 0 - fail", async function () {
-            let jc1 = createJoinChannelTestObject(firstSigner.address);
-            let jc2 = createJoinChannelTestObject(secondSigner.address);
+            // Override default objects for this test
             jc1.channelId = new Uint8Array(32);
             jc2.channelId = new Uint8Array(32);
 
-            let jc1Signed = await EvmUtils.signJoinChannel(jc1, firstSigner);
-            let jc2Signed = await EvmUtils.signJoinChannel(jc2, secondSigner);
+            jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
+            jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
 
             let res = mathChannelManager.openChannel(
                 jc1.channelId,
-                [jc1Signed.encodedJoinChannel, jc2Signed.encodedJoinChannel],
+                [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature, jc2Signed.signature]
             );
             await expect(res).to.be.revertedWith(
-                "MathStateChannelManager: openChannel channelId cannot be 0x0"
+                "MathConsumerFacet: openChannel channelId cannot be 0x0"
             );
         });
 
         it.skip("2 participants game already exists - fail", async function () {
-            let jc1 = createJoinChannelTestObject(firstSigner.address);
-            let jc2 = createJoinChannelTestObject(secondSigner.address);
-
-            let jc1Signed = await EvmUtils.signJoinChannel(jc1, firstSigner);
-            let jc2Signed = await EvmUtils.signJoinChannel(jc2, secondSigner);
-
             await mathChannelManager.openChannel(
                 jc1.channelId,
-                [jc1Signed.encodedJoinChannel, jc2Signed.encodedJoinChannel],
+                [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature, jc2Signed.signature]
             );
             let res = mathChannelManager.openChannel(
                 jc1.channelId,
-                [jc1Signed.encodedJoinChannel, jc2Signed.encodedJoinChannel],
+                [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature, jc2Signed.signature]
             );
             await expect(res).to.be.revertedWith(
-                "MathStateChannelManager: openChannel - channel already open"
+                "MathConsumerFacet: openChannel - channel already open"
             );
         });
 
         it("2 participants channelId doesn't match - fail", async function () {
-            let jc1 = createJoinChannelTestObject(firstSigner.address);
-            let jc2 = createJoinChannelTestObject(secondSigner.address);
+            // Override default objects for this test
             jc2.channelId = ethers.keccak256("0x1aaa");
 
-            let jc1Signed = await EvmUtils.signJoinChannel(jc1, firstSigner);
-            let jc2Signed = await EvmUtils.signJoinChannel(jc2, secondSigner);
+            jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
+            jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
 
             let res = mathChannelManager.openChannel(
                 jc1.channelId,
-                [jc1Signed.encodedJoinChannel, jc2Signed.encodedJoinChannel],
+                [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature, jc2Signed.signature]
             );
             await expect(res).to.be.revertedWith(
-                "MathStateChannelManager: openChannel channelId doesn't match"
+                "MathConsumerFacet: openChannel channelId doesn't match"
             );
         });
 
         it("2 participants amount 0 - fail", async function () {
-            let jc1 = createJoinChannelTestObject(firstSigner.address);
-            let jc2 = createJoinChannelTestObject(secondSigner.address);
+            // Override default objects for this test
             jc2.balance = {
                 amount: 0,
                 data: "0x"
             };
 
-            let jc1Signed = await EvmUtils.signJoinChannel(jc1, firstSigner);
-            let jc2Signed = await EvmUtils.signJoinChannel(jc2, secondSigner);
+            jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
+            jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
 
             let res = mathChannelManager.openChannel(
                 jc1.channelId,
-                [jc1Signed.encodedJoinChannel, jc2Signed.encodedJoinChannel],
+                [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature, jc2Signed.signature]
             );
             await expect(res).to.be.revertedWith(
-                "MathStateChannelManager: openChannel amount must be greater than 0"
+                "MathConsumerFacet: openChannel amount must be greater than 0"
             );
         });
 
         it("2 participants time expired - fail", async function () {
-            let jc1 = createJoinChannelTestObject(firstSigner.address);
-            let jc2 = createJoinChannelTestObject(secondSigner.address);
+            // Override default objects for this test
             jc2.deadlineTimestamp = Number(jc2.deadlineTimestamp) - 300;
 
-            let jc1Signed = await EvmUtils.signJoinChannel(jc1, firstSigner);
-            let jc2Signed = await EvmUtils.signJoinChannel(jc2, secondSigner);
+            jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
+            jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
 
             let res = mathChannelManager.openChannel(
                 jc1.channelId,
-                [jc1Signed.encodedJoinChannel, jc2Signed.encodedJoinChannel],
+                [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature, jc2Signed.signature]
             );
             await expect(res).to.be.revertedWith(
-                "MathStateChannelManager: openChannel timestampDeadline must be in the future"
+                "MathConsumerFacet: openChannel timestampDeadline must be in the future"
             );
         });
     });

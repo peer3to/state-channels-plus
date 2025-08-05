@@ -9,7 +9,7 @@ import { AgreementFlag, ExecutionFlags } from "@/types";
 import AgreementManager from "@/agreementManager";
 import DisputeHandler from "@/DisputeHandler";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
-import { AStateChannelManagerProxy } from "@typechain-types/contracts/V1/StateChannelDiamondProxy";
+import { StateChannelManagerProxy } from "@typechain-types/contracts/V1/StateChannelDiamondProxy";
 
 class PublicStateSnapshot {
     constructor(public snapshot: any) {}
@@ -22,7 +22,7 @@ describe("ValidationService", () => {
     let agreementManager: AgreementManager;
     let disputeHandler: DisputeHandler;
     let stateMachine: ADiamondStateMachine;
-    let scmContract: AStateChannelManagerProxy;
+    let scmContract: StateChannelManagerProxy;
     const dummyTimeCfg = {
         p2pTime: 10,
         agreementTime: 10,
@@ -35,7 +35,7 @@ describe("ValidationService", () => {
         agreementManager = {} as AgreementManager;
         disputeHandler = {} as DisputeHandler;
         stateMachine = {} as ADiamondStateMachine;
-        scmContract = {} as AStateChannelManagerProxy;
+        scmContract = {} as StateChannelManagerProxy;
         validationService = new ValidationService(
             storage,
             agreementManager,
