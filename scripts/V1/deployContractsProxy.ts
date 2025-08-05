@@ -42,6 +42,24 @@ async function main() {
     let disputeManagerFacetAddress = await disputeManagerFacet.getAddress();
     console.log("Deployed DisputeManagerFacet at ", disputeManagerFacetAddress);
 
+    //Deploy DisputeVerificationFacet
+    let disputeVerificationFacetFactory = await ethers.getContractFactory(
+        "DisputeVerificationFacet",
+        { libraries: { StateChannelUtilLibrary: libraryAddress } }
+    );
+    disputeVerificationFacetFactory =
+        disputeVerificationFacetFactory.connect(randomSinger);
+    let disputeVerificationFacet = await deployUtils.deployAsync(
+        disputeVerificationFacetFactory,
+        "DisputeVerificationFacet"
+    );
+    let disputeVerificationFacetAddress =
+        await disputeVerificationFacet.getAddress();
+    console.log(
+        "Deployed DisputeVerificationFacet at ",
+        disputeVerificationFacetAddress
+    );
+
     //State machine logic
     let mathSmFactory = await ethers.getContractFactory("MathStateMachine");
     mathSmFactory = mathSmFactory.connect(randomSinger);
@@ -68,7 +86,11 @@ async function main() {
     let mathStateChannelContactInstance = await deployUtils.deployAsync(
         mathSmcFactory,
         "MathStateChannelManagerProxy",
-        [await mathContactInstance.getAddress(), disputeManagerFacetAddress]
+        [
+            await mathContactInstance.getAddress(),
+            disputeManagerFacetAddress,
+            disputeVerificationFacetAddress
+        ]
     );
     console.log(
         "Deployed MathStateChannelManagerProxy at ",

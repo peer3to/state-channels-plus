@@ -17,6 +17,7 @@ contract LocalDiamond is StateChannelManagerProxy {
     constructor(
         address _stateMachineImplementation,
         address _disputeManagerFacet,
+        address _disputeVerificationFacet,
         address _fraudProofFacet,
         address _disputeFraudProofFacet,
         address _stateSnapshotFacet,
@@ -25,6 +26,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         StateChannelManagerProxy(
             _stateMachineImplementation,
             _disputeManagerFacet,
+            _disputeVerificationFacet,
             _fraudProofFacet,
             _disputeFraudProofFacet,
             _stateSnapshotFacet,
