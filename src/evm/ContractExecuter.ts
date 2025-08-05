@@ -1,7 +1,8 @@
-import { EVM, EVMResult, ExecResult } from "@ethereumjs/evm";
+import { EVM, ExecResult } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
 import { ethers } from "ethers";
 import { Bytes } from "@/types/types";
+import { decodeErrorProxy } from "@/utils/evmErrorHandler";
 
 export default class ContractExecuter {
     private readonly evm: EVM;
@@ -10,6 +11,8 @@ export default class ContractExecuter {
     constructor(evm: EVM, contractAddress: Address) {
         this.evm = evm;
         this.contractAddress = contractAddress;
+
+        return decodeErrorProxy(this);
     }
 
     async executeCall(data: Bytes): Promise<ExecResult> {
@@ -19,19 +22,21 @@ export default class ContractExecuter {
         });
 
         if (result.execResult.exceptionError) {
-            throw this.decodeError(result);
+            const exceptionError = result.execResult.exceptionError;
+            const errorData = result.execResult.returnValue
+                ? ethers.hexlify(result.execResult.returnValue)
+                : null;
+
+            const errorMessage = `EVM execution failed: ${exceptionError.error || exceptionError}`;
+
+            // Create error with structured data for the proxy to handle
+            const error = new Error(errorMessage);
+            (error as any).execResult = result.execResult;
+            (error as any).data = errorData;
+
+            throw error;
         }
 
         return result.execResult;
-    }
-
-    private decodeError(result: EVMResult): Error {
-        let hex = ethers.hexlify(result.execResult.returnValue);
-        hex = "0x" + hex.slice(2 + 8);
-        let decodedString = ethers.AbiCoder.defaultAbiCoder().decode(
-            ["string"],
-            hex
-        );
-        return new Error(`EVM execution error: ${decodedString}`);
     }
 }

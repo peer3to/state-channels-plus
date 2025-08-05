@@ -9,14 +9,15 @@ import StateManager from "@/stateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
 import { ExitChannelEthersType } from "@/types/ethers";
-import { DebugProxy } from "@/utils";
+import { DebugProxy, decodeErrorProxy } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
-import AStateMachine from "@/AStateMachine";
+import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
 import { Address, Bytes } from "@/types/types";
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import Storage from "@/storage";
+import { deployLocalDiamond, deployLocalFromTx } from "scripts/V1/deploy";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 
@@ -24,19 +25,22 @@ const DEBUG_CHANNEL_CONTRACT = true;
  * Manages peer-to-peer communication and state machines
  * Also serves as the implementation of AStateMachine
  */
-class EvmStateMachine extends AStateMachine {
+class EvmDiamondStateMachine extends ADiamondStateMachine {
     readonly contractExecuter: ContractExecuter;
+    readonly diamondExecuter?: ContractExecuter;
     readonly contractInterface: ethers.Interface;
     private p2pContractInstance?: AStateMachineContract;
     public stateManager?: StateManager;
 
     constructor(
         contractExecuter: ContractExecuter,
-        contractInterface: ethers.Interface
+        contractInterface: ethers.Interface,
+        diamondExecuter?: ContractExecuter
     ) {
         super();
         this.contractExecuter = contractExecuter;
         this.contractInterface = contractInterface;
+        this.diamondExecuter = diamondExecuter;
     }
 
     private getEncodedCalldata(
@@ -220,27 +224,23 @@ class EvmStateMachine extends AStateMachine {
     public static async createStandalone(
         deployStateMachineTx: ContractDeployTransaction,
         contractInterface: ethers.Interface
-    ): Promise<EvmStateMachine> {
+    ): Promise<EvmDiamondStateMachine> {
         const evm = await EVM.create();
 
-        // Deploy the state machine contract
-        const deploymentResult = await evm.runCall({
-            data: ethers.getBytes(deployStateMachineTx.data)
-        });
+        const stateMachineAddress = await deployLocalFromTx(
+            deployStateMachineTx,
+            evm
+        );
 
-        if (deploymentResult.execResult.exceptionError) {
-            throw new Error("EvmStateMachine - create - deploymentTx failed");
-        }
+        const diamondResult = await deployLocalDiamond(
+            deployStateMachineTx,
+            evm
+        );
 
-        if (!deploymentResult.createdAddress) {
-            throw new Error(
-                "EvmStateMachine - create - deploymentTx didn't deploy a contract"
-            );
-        }
-
-        return new EvmStateMachine(
-            new ContractExecuter(evm, deploymentResult.createdAddress),
-            contractInterface
+        return new EvmDiamondStateMachine(
+            new ContractExecuter(evm, stateMachineAddress),
+            contractInterface,
+            new ContractExecuter(evm, diamondResult.address)
         );
     }
 
@@ -262,6 +262,9 @@ class EvmStateMachine extends AStateMachine {
     ): Promise<P2pInstance<T>> {
         // Sync clock to DLT
         await Clock.init(signer.provider!);
+        deployedStateChannelContractInstance = decodeErrorProxy(
+            deployedStateChannelContractInstance
+        ) as StateChannelManagerProxy;
 
         // Connect signer to state channel contract
         deployedStateChannelContractInstance =
@@ -276,7 +279,7 @@ class EvmStateMachine extends AStateMachine {
         }
 
         // Create the EvmStateMachine instance (which extends AStateMachine)
-        const evmStateMachine = await EvmStateMachine.createStandalone(
+        const evmStateMachine = await EvmDiamondStateMachine.createStandalone(
             deployStateMachineTx,
             stateMachineContractInstance.interface
         );
@@ -323,4 +326,4 @@ class EvmStateMachine extends AStateMachine {
     }
 }
 
-export default EvmStateMachine;
+export default EvmDiamondStateMachine;

@@ -3,6 +3,7 @@ import { expect } from "chai";
 import { EVM } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
 import { ContractExecuter } from "@/evm";
+import { isCustomEvmError } from "@/utils/evmErrorHandler";
 import {
     getSimpleNumberStorageDeploymentTransaction,
     getSimpleNumberStorageFactory
@@ -119,7 +120,8 @@ describe("ContractExecuter", function () {
             // Should not reach here
             expect.fail("Expected call to fail");
         } catch (error: any) {
-            expect(error.message).to.include("data out-of-bounds");
+            // basic error message
+            expect(error.message).to.include("EVM execution failed: revert");
         }
     });
 
@@ -138,9 +140,14 @@ describe("ContractExecuter", function () {
             // Should not reach here
             expect.fail("Expected the function to revert");
         } catch (error: any) {
-            // The decoded error message should contain our custom error
-            expect(error.message).to.include("EVM execution error");
-            expect(error.message).to.include(errorMessage);
+            // custom error
+            expect(isCustomEvmError(error)).to.be.true;
+            expect(error.errorDescription.name).to.equal("Error");
+            expect(error.errorDescription.args).to.have.length(1);
+            expect(error.errorDescription.args[0]).to.equal(errorMessage);
+            expect(error.originalError.message).to.equal(
+                "EVM execution failed: revert"
+            );
         }
     });
 });

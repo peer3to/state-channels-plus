@@ -12,7 +12,7 @@ import {
     Type,
     hash
 } from "@/utils";
-import AStateMachine from "@/AStateMachine";
+import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Clock } from "..";
 import ProofManager from "@/ProofManager";
 import {
@@ -36,7 +36,7 @@ export default class ValidationService {
     constructor(
         private readonly storage: Storage,
         private readonly agreementManager: AgreementManager,
-        private readonly stateMachine: AStateMachine,
+        private readonly stateMachine: ADiamondStateMachine,
         private readonly disputeHandler: DisputeHandler,
         private readonly scmContract: StateChannelManagerProxy,
         private readonly timeCfg: TimeConfig,
