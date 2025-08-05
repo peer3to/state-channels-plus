@@ -14,14 +14,16 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // TypeChain types - Proof types
-import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import {
+    DisputeFraudProofStruct,
+    MilestoneProofStruct
+} from "@typechain-types/contracts/V1/types/ProofTypes";
 
 // TypeChain types - Dispute types
 import { SignedDisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 // TypeChain types - Contract interfaces
 import { StateChannelManagerProxy } from "@typechain-types";
-import { StateSnapshotStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 // Core components
 import AgreementManager from "../agreementManager/AgreementManager";
@@ -40,7 +42,17 @@ import P2pEventHooks from "@/P2pEventHooks";
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 
 // Utils
-import { DebugProxy, Mutex, scheduleTask, Codec, Type, hash, isCustomEvmError } from "@/utils";
+import {
+    DebugProxy,
+    Mutex,
+    scheduleTask,
+    Codec,
+    Type,
+    hash,
+    isCustomEvmError,
+    getActiveParticipants,
+    SignatureUtils
+} from "@/utils";
 // Types
 import { AgreementFlag, ExecutionFlags, TimeConfig } from "@/types";
 import {
@@ -84,7 +96,6 @@ class StateManager {
     storage: Storage;
     fraudProofService: FraudProofService;
 
-    // Store output state snapshots data
     private latestForkId: ForkId = NULL;
 
     constructor(

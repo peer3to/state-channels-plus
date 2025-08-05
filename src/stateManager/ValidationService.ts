@@ -5,14 +5,6 @@ import {
 
 import { StateChannelManagerProxy } from "@typechain-types";
 
-// TypeChain types - Fraud proof types
-import {
-    BlockDoubleSignProofStruct,
-    BlockInvalidStateTransitionProofStruct,
-    InvalidTimestampProofStruct
-} from "@typechain-types/contracts/V1/types/FraudProofTypes";
-
-// Core components
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
 import Storage from "@/storage";
