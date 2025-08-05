@@ -17,8 +17,7 @@ import { Address, Bytes } from "@/types/types";
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import Storage from "@/storage";
-import { deployLocalDiamond } from "scripts/V1/deploy";
-import { Address as EthereumAddress } from "@ethereumjs/util";
+import { deployLocalDiamond, deployLocalFromTx } from "scripts/V1/deploy";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 
@@ -288,33 +287,20 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     ): Promise<EvmDiamondStateMachine> {
         const evm = await EVM.create();
 
-        // Deploy the state machine contract
-        const deploymentResult = await evm.runCall({
-            data: ethers.getBytes(deployStateMachineTx.data)
-        });
+        const stateMachineAddress = await deployLocalFromTx(
+            deployStateMachineTx,
+            evm
+        );
 
         const diamondResult = await deployLocalDiamond(
             deployStateMachineTx,
             evm
         );
 
-        if (deploymentResult.execResult.exceptionError) {
-            throw new Error("EvmStateMachine - create - deploymentTx failed");
-        }
-
-        if (!deploymentResult.createdAddress) {
-            throw new Error(
-                "EvmStateMachine - create - deploymentTx didn't deploy a contract"
-            );
-        }
-
         return new EvmDiamondStateMachine(
-            new ContractExecuter(evm, deploymentResult.createdAddress),
+            new ContractExecuter(evm, stateMachineAddress),
             contractInterface,
-            new ContractExecuter(
-                evm,
-                EthereumAddress.fromString(diamondResult.address)
-            )
+            new ContractExecuter(evm, diamondResult.address)
         );
     }
 

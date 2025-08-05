@@ -19,6 +19,7 @@ import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamo
 
 import { StateChannelManagerProxy } from "@typechain-types/index";
 import { Artifact } from "hardhat/types";
+import { Address } from "@ethereumjs/util";
 
 const facetArtifacts = [
     DisputeManagerFacetArtifact,
@@ -58,7 +59,7 @@ async function deployArtifactLocal(
         libs?: Record<string, string>;
         args?: any[];
     }
-): Promise<string> {
+): Promise<Address> {
     const linkedArtifact = linkLibraries(artifact, options?.libs || {});
     const factory = new ContractFactory(
         artifact.abi,
@@ -91,7 +92,9 @@ async function deployFacetsLocal(
 ): Promise<string[]> {
     return Promise.all(
         facetArtifacts.map((artifact) =>
-            deployArtifactLocal(artifact, evm, signer, { libs })
+            deployArtifactLocal(artifact, evm, signer, { libs }).then((a) =>
+                a.toString()
+            )
         )
     );
 }
@@ -123,7 +126,7 @@ export async function deployLocalDiamond(
     stateMachineTx: ContractDeployTransaction,
     evm: EVM,
     signer?: Signer
-): Promise<{ address: string; signer: Signer }> {
+): Promise<{ address: Address; signer: Signer }> {
     const usedSigner = signer || Wallet.createRandom();
 
     const libAddress = await deployArtifactLocal(
@@ -133,10 +136,12 @@ export async function deployLocalDiamond(
     );
 
     const facetAddresses = await deployFacetsLocal(evm, usedSigner, {
-        StateChannelUtilLibrary: libAddress
+        StateChannelUtilLibrary: libAddress.toString()
     });
 
-    const stateMachineAddress = await deployLocalFromTx(stateMachineTx, evm);
+    const stateMachineAddress = (
+        await deployLocalFromTx(stateMachineTx, evm)
+    ).toString();
 
     const diamondAddress = await deployArtifactLocal(
         LocalDiamondArtifact,
@@ -150,10 +155,10 @@ export async function deployLocalDiamond(
     return { address: diamondAddress, signer: usedSigner };
 }
 
-async function deployLocalFromTx(
+export async function deployLocalFromTx(
     tx: ContractDeployTransaction,
     evm: EVM
-): Promise<string> {
+): Promise<Address> {
     const deploymentResult = await evm.runCall({
         data: ethers.getBytes(tx.data as string)
     });
@@ -170,7 +175,7 @@ async function deployLocalFromTx(
         throw new Error(`No contract address created for tx`);
     }
 
-    return deploymentResult.createdAddress.toString();
+    return deploymentResult.createdAddress;
 }
 
 export function linkLibraries(
