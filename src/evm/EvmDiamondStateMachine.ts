@@ -215,66 +215,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
     }
 
-    async addBalance(
-        balance1: BalanceStruct,
-        balance2: BalanceStruct
-    ): Promise<BalanceStruct> {
-        const encodedData = this.getEncodedCalldata("addBalance", [
-            balance1,
-            balance2
-        ]);
-
-        try {
-            const result = await this.contractExecuter.executeCall(encodedData);
-            const hexResult = hexlify(result.returnValue);
-            const [balanceResult] = ethers.AbiCoder.defaultAbiCoder().decode(
-                ["tuple(uint256,bytes)"],
-                hexResult
-            );
-            return balanceResult;
-        } catch (error) {
-            throw this.createContextError("addBalance", error);
-        }
-    }
-
-    async subtractBalance(
-        balance1: BalanceStruct,
-        balance2: BalanceStruct
-    ): Promise<BalanceStruct> {
-        const encodedData = this.getEncodedCalldata("subtractBalance", [
-            balance1,
-            balance2
-        ]);
-
-        try {
-            const result = await this.contractExecuter.executeCall(encodedData);
-            const hexResult = hexlify(result.returnValue);
-            const [balanceResult] = ethers.AbiCoder.defaultAbiCoder().decode(
-                ["tuple(uint256,bytes)"],
-                hexResult
-            );
-            return balanceResult;
-        } catch (error) {
-            throw this.createContextError("subtractBalance", error);
-        }
-    }
-
-    async getTotalStateBalance(): Promise<BalanceStruct> {
-        const callData = this.getEncodedCalldata("getTotalStateBalance");
-
-        try {
-            const result = await this.contractExecuter.executeCall(callData);
-            const hexResult = hexlify(result.returnValue);
-            const [balanceResult] = ethers.AbiCoder.defaultAbiCoder().decode(
-                ["tuple(uint256,bytes)"],
-                hexResult
-            );
-            return balanceResult;
-        } catch (error) {
-            throw this.createContextError("getTotalStateBalance", error);
-        }
-    }
-
     /**
      * Creates a standalone EVM state machine
      * @param deployStateMachineTx The transaction to deploy the state machine
