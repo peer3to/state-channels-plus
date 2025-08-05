@@ -8,7 +8,7 @@ import * as factory from "./factory";
 import { AgreementFlag, ExecutionFlags } from "@/types";
 import AgreementManager from "@/agreementManager";
 import DisputeHandler from "@/DisputeHandler";
-import AStateMachine from "@/AStateMachine";
+import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { AStateChannelManagerProxy } from "@typechain-types/contracts/V1/StateChannelDiamondProxy";
 
 class PublicStateSnapshot {
@@ -21,7 +21,7 @@ describe("ValidationService", () => {
     let block: Block;
     let agreementManager: AgreementManager;
     let disputeHandler: DisputeHandler;
-    let stateMachine: AStateMachine;
+    let stateMachine: ADiamondStateMachine;
     let scmContract: AStateChannelManagerProxy;
     const dummyTimeCfg = {
         p2pTime: 10,
@@ -34,7 +34,7 @@ describe("ValidationService", () => {
         storage = new Storage();
         agreementManager = {} as AgreementManager;
         disputeHandler = {} as DisputeHandler;
-        stateMachine = {} as AStateMachine;
+        stateMachine = {} as ADiamondStateMachine;
         scmContract = {} as AStateChannelManagerProxy;
         validationService = new ValidationService(
             storage,

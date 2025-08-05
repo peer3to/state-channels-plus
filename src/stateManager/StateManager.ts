@@ -26,7 +26,7 @@ import { StateSnapshotStruct } from "@typechain-types/contracts/V1/StateChannelM
 
 // Core components
 import AgreementManager from "../agreementManager/AgreementManager";
-import AStateMachine from "@/AStateMachine";
+import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
 import DisputeHandler from "@/DisputeHandler";
 import P2PManager from "@/P2PManager";
@@ -69,7 +69,7 @@ let DEBUG_STATE_MANAGER = false;
 
 const NULL = "0x00";
 class StateManager {
-    stateMachine: AStateMachine;
+    stateMachine: ADiamondStateMachine;
     p2pEventHooks: P2pEventHooks;
     signerAddress: Address;
     agreementManager: AgreementManager;
@@ -96,7 +96,7 @@ class StateManager {
         signer: ethers.Signer,
         signerAddress: Address,
         stateChannelManagerContract: StateChannelManagerProxy,
-        stateMachine: AStateMachine,
+        stateMachine: ADiamondStateMachine,
         timeConfig: TimeConfig,
         p2pEventHooks: P2pEventHooks,
         storage: Storage

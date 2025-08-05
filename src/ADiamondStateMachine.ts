@@ -6,7 +6,7 @@ type TransitionResponse = {
     exitChannels: ExitChannelStruct[];
     successCallback: () => void;
 };
-abstract class AStateMachine {
+abstract class ADiamondStateMachine {
     public abstract stateTransition(tx: any): Promise<TransitionResponse>;
     public abstract runView(tx: any): Promise<any>;
     public abstract getParticipants(): Promise<Address[]>;
@@ -28,4 +28,4 @@ abstract class AStateMachine {
     public abstract getZeroBalance(): Promise<BalanceStruct>;
 }
 
-export default AStateMachine;
+export default ADiamondStateMachine;

@@ -11,12 +11,14 @@ import { TimeConfig } from "@/types";
 import { ExitChannelEthersType } from "@/types/ethers";
 import { DebugProxy, decodeErrorProxy } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
-import AStateMachine from "@/AStateMachine";
+import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
 import { Address, Bytes } from "@/types/types";
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import Storage from "@/storage";
+import { deployLocalDiamond } from "scripts/V1/deploy";
+import { Address as EthereumAddress } from "@ethereumjs/util";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 
@@ -24,19 +26,22 @@ const DEBUG_CHANNEL_CONTRACT = true;
  * Manages peer-to-peer communication and state machines
  * Also serves as the implementation of AStateMachine
  */
-class EvmStateMachine extends AStateMachine {
+class EvmDiamondStateMachine extends ADiamondStateMachine {
     readonly contractExecuter: ContractExecuter;
+    readonly diamondExecuter?: ContractExecuter;
     readonly contractInterface: ethers.Interface;
     private p2pContractInstance?: AStateMachineContract;
     public stateManager?: StateManager;
 
     constructor(
         contractExecuter: ContractExecuter,
-        contractInterface: ethers.Interface
+        contractInterface: ethers.Interface,
+        diamondExecuter?: ContractExecuter
     ) {
         super();
         this.contractExecuter = contractExecuter;
         this.contractInterface = contractInterface;
+        this.diamondExecuter = diamondExecuter;
     }
 
     private getEncodedCalldata(
@@ -211,6 +216,66 @@ class EvmStateMachine extends AStateMachine {
         }
     }
 
+    async addBalance(
+        balance1: BalanceStruct,
+        balance2: BalanceStruct
+    ): Promise<BalanceStruct> {
+        const encodedData = this.getEncodedCalldata("addBalance", [
+            balance1,
+            balance2
+        ]);
+
+        try {
+            const result = await this.contractExecuter.executeCall(encodedData);
+            const hexResult = hexlify(result.returnValue);
+            const [balanceResult] = ethers.AbiCoder.defaultAbiCoder().decode(
+                ["tuple(uint256,bytes)"],
+                hexResult
+            );
+            return balanceResult;
+        } catch (error) {
+            throw this.createContextError("addBalance", error);
+        }
+    }
+
+    async subtractBalance(
+        balance1: BalanceStruct,
+        balance2: BalanceStruct
+    ): Promise<BalanceStruct> {
+        const encodedData = this.getEncodedCalldata("subtractBalance", [
+            balance1,
+            balance2
+        ]);
+
+        try {
+            const result = await this.contractExecuter.executeCall(encodedData);
+            const hexResult = hexlify(result.returnValue);
+            const [balanceResult] = ethers.AbiCoder.defaultAbiCoder().decode(
+                ["tuple(uint256,bytes)"],
+                hexResult
+            );
+            return balanceResult;
+        } catch (error) {
+            throw this.createContextError("subtractBalance", error);
+        }
+    }
+
+    async getTotalStateBalance(): Promise<BalanceStruct> {
+        const callData = this.getEncodedCalldata("getTotalStateBalance");
+
+        try {
+            const result = await this.contractExecuter.executeCall(callData);
+            const hexResult = hexlify(result.returnValue);
+            const [balanceResult] = ethers.AbiCoder.defaultAbiCoder().decode(
+                ["tuple(uint256,bytes)"],
+                hexResult
+            );
+            return balanceResult;
+        } catch (error) {
+            throw this.createContextError("getTotalStateBalance", error);
+        }
+    }
+
     /**
      * Creates a standalone EVM state machine
      * @param deployStateMachineTx The transaction to deploy the state machine
@@ -220,13 +285,18 @@ class EvmStateMachine extends AStateMachine {
     public static async createStandalone(
         deployStateMachineTx: ContractDeployTransaction,
         contractInterface: ethers.Interface
-    ): Promise<EvmStateMachine> {
+    ): Promise<EvmDiamondStateMachine> {
         const evm = await EVM.create();
 
         // Deploy the state machine contract
         const deploymentResult = await evm.runCall({
             data: ethers.getBytes(deployStateMachineTx.data)
         });
+
+        const diamondResult = await deployLocalDiamond(
+            deployStateMachineTx,
+            evm
+        );
 
         if (deploymentResult.execResult.exceptionError) {
             throw new Error("EvmStateMachine - create - deploymentTx failed");
@@ -238,9 +308,13 @@ class EvmStateMachine extends AStateMachine {
             );
         }
 
-        return new EvmStateMachine(
+        return new EvmDiamondStateMachine(
             new ContractExecuter(evm, deploymentResult.createdAddress),
-            contractInterface
+            contractInterface,
+            new ContractExecuter(
+                evm,
+                EthereumAddress.fromString(diamondResult.address)
+            )
         );
     }
 
@@ -264,7 +338,7 @@ class EvmStateMachine extends AStateMachine {
         await Clock.init(signer.provider!);
         deployedStateChannelContractInstance = decodeErrorProxy(
             deployedStateChannelContractInstance
-        ) as AStateChannelManagerProxy;
+        ) as StateChannelManagerProxy;
 
         // Connect signer to state channel contract
         deployedStateChannelContractInstance =
@@ -279,7 +353,7 @@ class EvmStateMachine extends AStateMachine {
         }
 
         // Create the EvmStateMachine instance (which extends AStateMachine)
-        const evmStateMachine = await EvmStateMachine.createStandalone(
+        const evmStateMachine = await EvmDiamondStateMachine.createStandalone(
             deployStateMachineTx,
             stateMachineContractInstance.interface
         );
@@ -326,4 +400,4 @@ class EvmStateMachine extends AStateMachine {
     }
 }
 
-export default EvmStateMachine;
+export default EvmDiamondStateMachine;
