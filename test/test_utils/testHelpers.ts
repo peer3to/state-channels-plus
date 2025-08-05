@@ -85,61 +85,50 @@ export async function deployMathChannelProxyFixture(
     let stateChannelUtilLibrary = await stateChannelUtilLibraryFactory.deploy();
     let libraryAddress = await stateChannelUtilLibrary.getAddress();
 
-    //Deploy DisputeManagerFacet
-    let disputeManagerFacetFactory = await _ethers.getContractFactory(
-        "DisputeManagerFacet",
-        { libraries: { StateChannelUtilLibrary: libraryAddress } }
-    );
-    let disputeManagerFacet = await disputeManagerFacetFactory.deploy();
-    let disputeManagerFacetAddress = await disputeManagerFacet.getAddress();
+    const libs = { StateChannelUtilLibrary: libraryAddress };
 
-    //Deploy FraudProofFacet
-    let fraudProofFacetFactory = await _ethers.getContractFactory(
-        "FraudProofFacet",
-        { libraries: { StateChannelUtilLibrary: libraryAddress } }
-    );
-    let fraudProofFacet = await fraudProofFacetFactory.deploy();
-    let fraudProofFacetAddress = await fraudProofFacet.getAddress();
+    // Facet configurations in constructor order
+    const facetConfigs = [
+        { name: "DisputeManagerFacet", libs },
+        { name: "DisputeVerificationFacet", libs },
+        { name: "FraudProofFacet", libs },
+        { name: "DisputeFraudProofFacet", libs },
+        { name: "StateSnapshotFacet", libs: undefined },
+        { name: "JoinChannelFacet", libs },
+        { name: "MathConsumerFacet", libs }
+    ] as const;
 
-    //Deploy DisputeFraudProofFacet
-    let disputeFraudProofFacetFactory = await _ethers.getContractFactory(
-        "DisputeFraudProofFacet",
-        { libraries: { StateChannelUtilLibrary: libraryAddress } }
-    );
-    let disputeFraudProofFacet = await disputeFraudProofFacetFactory.deploy();
-    let disputeFraudProofFacetAddress =
-        await disputeFraudProofFacet.getAddress();
+    // the generic are here in order to make the spread operator in mathSmcFactory.deploy work
+    // typescipt needs to know the keys and the order of the array
+    async function deployFacets<T extends readonly any[]>(
+        configs: T
+    ): Promise<{ [K in keyof T]: string }> {
+        const addresses = await Promise.all(
+            configs.map(async (config) => {
+                const factory = await _ethers.getContractFactory(config.name, {
+                    libraries: config.libs
+                });
+                const facet = await factory.deploy();
+                return await facet.getAddress();
+            })
+        );
+        return addresses as { [K in keyof T]: string };
+    }
 
-    //Deploy StateSnapshotFacet
-    let stateSnapshotFacetFactory =
-        await _ethers.getContractFactory("StateSnapshotFacet");
-    let stateSnapshotFacet = await stateSnapshotFacetFactory.deploy();
-    let stateSnapshotFacetAddress = await stateSnapshotFacet.getAddress();
-
-    //Deploy JoinChannelFacet
-    let joinChannelFacetFactory = await _ethers.getContractFactory(
-        "JoinChannelFacet",
-        { libraries: { StateChannelUtilLibrary: libraryAddress } }
-    );
-    let joinChannelFacet = await joinChannelFacetFactory.deploy();
-    let joinChannelFacetAddress = await joinChannelFacet.getAddress();
+    // Deploy all facets in parallel and get addresses in order
+    const facetAddresses = await deployFacets(facetConfigs);
 
     //State machine logic
     let mathSmFactory = await _ethers.getContractFactory("MathStateMachine");
     let mathContactInstance = await mathSmFactory.deploy(500000);
 
-    //Deploy MathStateChannelManager
+    //Deploy MathStateChannelManager with all facet addresses
     let mathSmcFactory = await _ethers.getContractFactory(
-        "MathStateChannelManagerProxy",
-        { libraries: { StateChannelUtilLibrary: libraryAddress } }
+        "MathStateChannelManagerProxy"
     );
     let mathStateChannelContactInstance = await mathSmcFactory.deploy(
         await mathContactInstance.getAddress(),
-        disputeManagerFacetAddress,
-        fraudProofFacetAddress,
-        disputeFraudProofFacetAddress,
-        stateSnapshotFacetAddress,
-        joinChannelFacetAddress
+        ...facetAddresses
     );
 
     return {
@@ -161,8 +150,8 @@ export function getMathP2pEventHooks(
     myAddress: string
 ) {
     let hooks: P2pEventHooks = {
-        onTurn(address: string): void {
-            address == myAddress && onTurnCallback();
+        onTurn(address: AddressLike): void {
+            (address as string) == myAddress && onTurnCallback();
         }
     };
     return hooks;
