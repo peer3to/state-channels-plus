@@ -81,6 +81,115 @@ describe("EvmStateMachine", function () {
                     .undefined;
             });
         });
+
+        describe("Balance Operations", function () {
+            let evmDiamondStateMachine: EvmDiamondStateMachine;
+
+            beforeEach(async function () {
+                evmDiamondStateMachine =
+                    await EvmDiamondStateMachine.createStandalone(
+                        mathStateMachineDeployTx,
+                        contractInterface
+                    );
+            });
+
+            it("should add two balances correctly", async function () {
+                const balance1 = {
+                    amount: 100n,
+                    data: "0x"
+                };
+
+                const balance2 = {
+                    amount: 50n,
+                    data: "0x"
+                };
+
+                const result = await evmDiamondStateMachine.addBalance(
+                    balance1,
+                    balance2
+                );
+
+                expect(result.amount).to.equal(150n);
+                expect(result.data).to.equal("0x");
+            });
+
+            it("should subtract balances correctly", async function () {
+                const balance1 = {
+                    amount: 100n,
+                    data: "0x"
+                };
+
+                const balance2 = {
+                    amount: 30n,
+                    data: "0x"
+                };
+
+                const result = await evmDiamondStateMachine.subtractBalance(
+                    balance1,
+                    balance2
+                );
+
+                expect(result.amount).to.equal(70n);
+                expect(result.data).to.equal("0x");
+            });
+
+            it("should throw error when subtracting larger balance from smaller", async function () {
+                const balance1 = {
+                    amount: 30n,
+                    data: "0x"
+                };
+
+                const balance2 = {
+                    amount: 100n,
+                    data: "0x"
+                };
+
+                await expect(
+                    evmDiamondStateMachine.subtractBalance(balance1, balance2)
+                ).to.be.rejected;
+            });
+
+            it("should get total state balance", async function () {
+                const result =
+                    await evmDiamondStateMachine.getTotalStateBalance();
+
+                expect(result).to.have.property("amount");
+                expect(result).to.have.property("data");
+                expect(typeof result.amount).to.equal("bigint");
+            });
+
+            it("should get zero balance", async function () {
+                const result = await evmDiamondStateMachine.getZeroBalance();
+
+                expect(result.amount).to.equal(0n);
+                expect(result.data).to.equal("0x");
+            });
+
+            it("should handle balance operations with custom data", async function () {
+                const balance1 = {
+                    amount: 200n,
+                    data: ethers.hexlify(ethers.toUtf8Bytes("custom data 1"))
+                };
+
+                const balance2 = {
+                    amount: 100n,
+                    data: ethers.hexlify(ethers.toUtf8Bytes("custom data 2"))
+                };
+
+                const addResult = await evmDiamondStateMachine.addBalance(
+                    balance1,
+                    balance2
+                );
+                expect(addResult.amount).to.equal(300n);
+
+                const subtractResult =
+                    await evmDiamondStateMachine.subtractBalance(
+                        balance1,
+                        balance2
+                    );
+                expect(subtractResult.amount).to.equal(100n);
+            });
+        });
     });
 
     describe("createStandalone", function () {
@@ -427,7 +536,7 @@ describe("EvmStateMachine", function () {
                 header: {
                     participant: participant,
                     transactionCnt: transactionCnt,
-                    forkId: ethers.hexlify(ethers.zeroPadBytes("0x01", 32)),
+                    forkId: ethers.hexlify(ethers.randomBytes(32)),
                     timestamp: Math.floor(Date.now() / 1000),
                     channelId: ethers.id("testChannel")
                 },

@@ -8,8 +8,8 @@ import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes
 import StateManager from "@/stateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
-import { ExitChannelEthersType } from "@/types/ethers";
-import { DebugProxy, decodeErrorProxy } from "@/utils";
+import { ExitChannelEthersType, BalanceEthersType } from "@/types/ethers";
+import { DebugProxy, decodeErrorProxy, Codec } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
@@ -134,37 +134,30 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     async getParticipants(): Promise<Address[]> {
         const callData = this.getEncodedCalldata("getParticipants");
 
-        let result = await this.contractExecuter.executeCall(callData);
-        const hexResult = hexlify(result.returnValue);
-        const [addresses] = ethers.AbiCoder.defaultAbiCoder().decode(
-            ["address[]"],
-            hexResult
+        const result = await this.contractExecuter.executeCall(callData);
+        const addresses = Codec.decodeEthersResult<Address[]>(
+            result,
+            "address[]"
         );
-        return addresses.toArray();
+        return addresses;
     }
 
     async getExitChannels(): Promise<ExitChannelStruct[]> {
         const callData = this.getEncodedCalldata("getExitChannels");
 
-        let result = await this.contractExecuter.executeCall(callData);
-        const hexResult = hexlify(result.returnValue);
-        const [exitChannels] = ethers.AbiCoder.defaultAbiCoder().decode(
-            [`${ExitChannelEthersType}[]`],
-            hexResult
+        return Codec.decodeEthersResult<ExitChannelStruct[]>(
+            await this.contractExecuter.executeCall(callData),
+            `${ExitChannelEthersType}[]`
         );
-        return exitChannels;
     }
 
     async getNextToWrite(): Promise<Address> {
         const callData = this.getEncodedCalldata("getNextToWrite");
         try {
-            let result = await this.contractExecuter.executeCall(callData);
-            const hexResult = ethers.hexlify(result.returnValue);
-            const [address] = ethers.AbiCoder.defaultAbiCoder().decode(
-                ["address"],
-                hexResult
+            return Codec.decodeEthersResult<Address>(
+                await this.contractExecuter.executeCall(callData),
+                "address"
             );
-            return address;
         } catch (error) {
             throw this.createContextError("getNextToWrite", error);
         }
@@ -187,13 +180,10 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const callData = this.getEncodedCalldata("getState");
 
         try {
-            let result = await this.contractExecuter.executeCall(callData);
-            const hexResult = hexlify(result.returnValue);
-            const [encodedBytes] = ethers.AbiCoder.defaultAbiCoder().decode(
-                ["bytes"],
-                hexResult
+            return Codec.decodeEthersResult<Bytes>(
+                await this.contractExecuter.executeCall(callData),
+                "bytes"
             );
-            return encodedBytes;
         } catch (error) {
             throw this.createContextError("getState", error);
         }
@@ -203,15 +193,64 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const callData = this.getEncodedCalldata("getZeroBalance");
 
         try {
-            let result = await this.contractExecuter.executeCall(callData);
-            const hexResult = hexlify(result.returnValue);
-            const [balanceResult] = ethers.AbiCoder.defaultAbiCoder().decode(
-                ["tuple(uint256,bytes)"],
-                hexResult
+            return Codec.decodeEthersResult<BalanceStruct>(
+                await this.contractExecuter.executeCall(callData),
+                BalanceEthersType
             );
-            return balanceResult;
         } catch (error) {
             throw this.createContextError("getZeroBalance", error);
+        }
+    }
+
+    async addBalance(
+        balance1: BalanceStruct,
+        balance2: BalanceStruct
+    ): Promise<BalanceStruct> {
+        const callData = this.getEncodedCalldata("addBalance", [
+            balance1,
+            balance2
+        ]);
+
+        try {
+            return Codec.decodeEthersResult<BalanceStruct>(
+                await this.contractExecuter.executeCall(callData),
+                BalanceEthersType
+            );
+        } catch (error) {
+            throw this.createContextError("addBalance", error);
+        }
+    }
+
+    async subtractBalance(
+        balance1: BalanceStruct,
+        balance2: BalanceStruct
+    ): Promise<BalanceStruct> {
+        const callData = this.getEncodedCalldata("subtractBalance", [
+            balance1,
+            balance2
+        ]);
+
+        try {
+            return Codec.decodeEthersResult<BalanceStruct>(
+                await this.contractExecuter.executeCall(callData),
+                BalanceEthersType
+            );
+        } catch (error) {
+            throw this.createContextError("subtractBalance", error);
+        }
+    }
+
+    async getTotalStateBalance(): Promise<BalanceStruct> {
+        const callData = this.getEncodedCalldata("getTotalStateBalance");
+
+        try {
+            return Codec.decodeEthersResult<BalanceStruct>(
+                await this.contractExecuter.executeCall(callData),
+                BalanceEthersType,
+                { useObjectConversion: true }
+            );
+        } catch (error) {
+            throw this.createContextError("getTotalStateBalance", error);
         }
     }
 

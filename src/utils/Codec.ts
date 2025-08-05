@@ -24,6 +24,7 @@ import {
 } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Bytes } from "@/types/types";
+import { ExecResult } from "@ethereumjs/evm";
 
 type StructType =
     | BlockStruct
@@ -140,5 +141,26 @@ export class Codec {
             }
         }
         return obj;
+    }
+
+    public static decodeEthersResult<T>(
+        execResult: ExecResult,
+        ethersType: string,
+        options: {
+            useObjectConversion: boolean;
+        } = {
+            useObjectConversion: false
+        }
+    ): T {
+        const decoded = ethers.AbiCoder.defaultAbiCoder().decode(
+            [ethersType],
+            execResult.returnValue
+        );
+
+        if (options.useObjectConversion) {
+            return Codec.ethersResultToObjectRecursive(decoded[0]) as T;
+        }
+
+        return decoded[0] as T;
     }
 }
