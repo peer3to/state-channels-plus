@@ -10,6 +10,7 @@ import { ContractExecuter, EvmStateMachine } from "@/evm";
 import { getMathDeploymentTransaction } from "@test/test_utils/testHelpers";
 import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { Bytes } from "@/types/types";
 
 describe("EvmStateMachine", function () {
     let mathStateMachine: any;
@@ -515,7 +516,7 @@ describe("EvmStateMachine", function () {
             ]);
         }
 
-        function decodeState(encodedState: string): {
+        function decodeState(encodedState: Bytes): {
             number: bigint;
             participants: string[];
             balances: bigint[];
