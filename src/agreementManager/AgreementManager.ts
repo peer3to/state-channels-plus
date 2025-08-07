@@ -117,7 +117,7 @@ class AgreementManager {
     }
 
     /**
-     * Get state proof for a specific block height
+     * Get latest state proof.
      */
     public async getStateProof(
         forkId: ForkId,
