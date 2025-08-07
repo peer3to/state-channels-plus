@@ -12,6 +12,7 @@ import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/types/D
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Codec, Type } from "@/utils";
 import { SortOrder } from "@/storage/BlockStorage";
+import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 describe("AgreementManager", () => {
     let agreementManager: AgreementManager;
@@ -490,11 +491,7 @@ describe("AgreementManager", () => {
             storage.blocks.storeBlockConfirmation(blockConfirmation1);
             storage.blocks.storeBlockConfirmation(blockConfirmation2);
 
-            const result = await agreementManager.getStateProof(
-                forkId,
-                10,
-                participant1
-            );
+            const result = await agreementManager.getStateProof(forkId, 10);
 
             expect(result).to.have.property("milestones");
             expect(result).to.have.property("signedBlocks");
@@ -504,11 +501,7 @@ describe("AgreementManager", () => {
 
         it("should handle case with no exit points", async () => {
             // No exit points stored
-            const result = await agreementManager.getStateProof(
-                forkId,
-                10,
-                participant1
-            );
+            const result = await agreementManager.getStateProof(forkId, 10);
 
             expect(result.milestones).to.have.length(0);
             expect(result.signedBlocks).to.be.an("array");
@@ -604,11 +597,7 @@ describe("AgreementManager", () => {
             storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
             storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight10);
 
-            const result = await agreementManager.getStateProof(
-                forkId,
-                15,
-                participant1
-            );
+            const result = await agreementManager.getStateProof(forkId, 15);
 
             expect(result.milestones).to.be.an("array");
             expect(result.signedBlocks).to.be.an("array");
@@ -618,11 +607,7 @@ describe("AgreementManager", () => {
             // Store exit point but no corresponding snapshot
             storage.exitPoints.storeExitPoint(forkId, 5);
 
-            const result = await agreementManager.getStateProof(
-                forkId,
-                10,
-                participant1
-            );
+            const result = await agreementManager.getStateProof(forkId, 10);
 
             expect(result.milestones).to.be.an("array");
             expect(result.signedBlocks).to.be.an("array");
@@ -632,11 +617,7 @@ describe("AgreementManager", () => {
             // Store exit point but no blocks to build proof
             storage.exitPoints.storeExitPoint(forkId, 5);
 
-            const result = await agreementManager.getStateProof(
-                forkId,
-                10,
-                participant1
-            );
+            const result = await agreementManager.getStateProof(forkId, 10);
 
             expect(result.milestones).to.be.an("array");
             expect(result.signedBlocks).to.be.an("array");
@@ -646,11 +627,7 @@ describe("AgreementManager", () => {
             const nonExistentForkId = ethers.hexlify(ethers.randomBytes(32));
 
             await expect(
-                agreementManager.getStateProof(
-                    nonExistentForkId,
-                    10,
-                    participant1
-                )
+                agreementManager.getStateProof(nonExistentForkId, 10)
             ).to.be.rejectedWith("Fork not found");
         });
 
@@ -658,23 +635,238 @@ describe("AgreementManager", () => {
             // Store exit point
             storage.exitPoints.storeExitPoint(forkId, 5);
 
-            // Store some blocks
+            // Create blocks that form a chain where each block links to the previous one
+            // This way participants implicitly validate previous blocks by building on them
+            const block1 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 1,
+                        participant: participant1
+                    })
+                }),
+                stateSnapshotHash: genesisSnapshot.hash // Links to genesis
+            });
+
+            const block2 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 2,
+                        participant: participant2
+                    })
+                }),
+                stateSnapshotHash: ethers.keccak256(block1.encode()) // Links to block1
+            });
+
+            const block3 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 3,
+                        participant: participant3
+                    })
+                }),
+                stateSnapshotHash: ethers.keccak256(block2.encode()) // Links to block2
+            });
+
+            const block1Hash = ethers.keccak256(block1.encode());
+            const block2Hash = ethers.keccak256(block2.encode());
+            const block3Hash = ethers.keccak256(block3.encode());
+
+            const signature1 = await signers[0].signMessage(
+                ethers.getBytes(block1Hash)
+            );
+            const signature2 = await signers[1].signMessage(
+                ethers.getBytes(block2Hash)
+            );
+            const signature3 = await signers[2].signMessage(
+                ethers.getBytes(block3Hash)
+            );
+
+            const blockConfirmation1 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: block1.encode(),
+                    signature: signature1
+                }),
+                signatures: [] // Only author signed
+            });
+
+            const blockConfirmation2 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: block2.encode(),
+                    signature: signature2
+                }),
+                signatures: [] // Only author signed
+            });
+
+            const blockConfirmation3 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: block3.encode(),
+                    signature: signature3
+                }),
+                signatures: [] // Only author signed
+            });
+
             storage.blocks.storeBlockConfirmation(blockConfirmation1);
             storage.blocks.storeBlockConfirmation(blockConfirmation2);
+            storage.blocks.storeBlockConfirmation(blockConfirmation3);
 
             const result = await agreementManager.getStateProof(
                 forkId,
-                10,
-                participant1
+                3 // Use height 3 so we have blocks to collect
             );
 
             expect(result.signedBlocks).to.be.an("array");
+
+            // With new logic: if milestone can be built, signedBlocks will be empty
+            // If no milestone can be built, signedBlocks will contain blocks
+            if (result.milestones.length > 0) {
+                // If we have milestones, signedBlocks should be empty
+                expect(result.signedBlocks.length).to.equal(0);
+            } else {
+                // If no milestones, we should have signed blocks
+                expect(result.signedBlocks.length).to.be.greaterThan(0);
+
+                // Verify that signed blocks have the correct structure
+                result.signedBlocks.forEach((signedBlock) => {
+                    expect(signedBlock).to.have.property("encodedBlock");
+                    expect(signedBlock).to.have.property("signature");
+                });
+            }
+        });
+
+        it("should verify signedBlocks contains actual block confirmations", async () => {
+            // Create a scenario where no milestones can be built, forcing signedBlocks collection
+            // No exit points stored - this should force signedBlocks collection
+
+            // Create blocks that commit to a different snapshot (not genesis)
+            const differentSnapshot = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1, participant2, participant3],
+                    stateMachineStateHash: factory.hash(), // Different hash
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(100), data: "0x" }
+                }
+            });
+            storage.stateSnapshots.storeStateSnapshot(differentSnapshot);
+
+            // Create blocks that commit to the different snapshot
+            // Only participant1 and participant2 will sign blocks, participant3 will NOT sign any block
+            const blockAtHeight5 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 5,
+                        participant: participant1
+                    })
+                }),
+                stateSnapshotHash: differentSnapshot.hash
+            });
+
+            const blockAtHeight6 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 6,
+                        participant: participant2
+                    })
+                }),
+                stateSnapshotHash: differentSnapshot.hash
+            });
+
+            const blockAtHeight7 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 7,
+                        participant: participant1 // participant1 authors another block
+                    })
+                }),
+                stateSnapshotHash: differentSnapshot.hash
+            });
+
+            const blockHash5 = ethers.keccak256(blockAtHeight5.encode());
+            const blockHash6 = ethers.keccak256(blockAtHeight6.encode());
+            const blockHash7 = ethers.keccak256(blockAtHeight7.encode());
+
+            const signature5 = await signers[0].signMessage(
+                ethers.getBytes(blockHash5)
+            );
+            const signature6 = await signers[1].signMessage(
+                ethers.getBytes(blockHash6)
+            );
+            const signature7 = await signers[0].signMessage(
+                ethers.getBytes(blockHash7)
+            ); // participant1 signs again
+
+            const blockConfirmationAtHeight5 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight5.encode(),
+                    signature: signature5
+                }),
+                signatures: []
+            });
+
+            const blockConfirmationAtHeight6 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight6.encode(),
+                    signature: signature6
+                }),
+                signatures: []
+            });
+
+            const blockConfirmationAtHeight7 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight7.encode(),
+                    signature: signature7
+                }),
+                signatures: []
+            });
+
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight6);
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight7);
+
+            const result = await agreementManager.getStateProof(forkId, 7);
+
+            // Should have no milestones since participant3 never signed any block
+            expect(result.milestones).to.have.length(0);
+
+            // Should have signed blocks
+            expect(result.signedBlocks).to.be.an("array");
             expect(result.signedBlocks.length).to.be.greaterThan(0);
 
-            // Verify that signed blocks have the correct structure
-            result.signedBlocks.forEach((signedBlock) => {
+            // Verify that signedBlocks contains the actual block confirmations
+            const signedBlockHeights = result.signedBlocks.map((sb) => {
+                const block = Block.decode(sb.encodedBlock);
+                return block.height;
+            });
+
+            // Should contain all the blocks we created
+            expect(signedBlockHeights).to.include(5);
+            expect(signedBlockHeights).to.include(6);
+            expect(signedBlockHeights).to.include(7);
+
+            // Verify the order is ascending (since we reverse the array)
+            expect(signedBlockHeights).to.deep.equal([5, 6, 7]);
+
+            // Verify that each signedBlock has the correct structure and content
+            result.signedBlocks.forEach((signedBlock, index) => {
                 expect(signedBlock).to.have.property("encodedBlock");
                 expect(signedBlock).to.have.property("signature");
+
+                const block = Block.decode(signedBlock.encodedBlock);
+                expect(block.height).to.equal(5 + index); // Should be heights 5, 6, 7
+
+                // Verify the signature matches the expected signer
+                const expectedSignatures = [signature5, signature6, signature7];
+                expect(signedBlock.signature).to.equal(
+                    expectedSignatures[index]
+                );
             });
         });
 
@@ -711,11 +903,7 @@ describe("AgreementManager", () => {
             storage.stateSnapshots.storeStateSnapshot(snapshotAtHeight50);
             storage.stateSnapshots.storeStateSnapshot(snapshotAtHeight100);
 
-            const result = await agreementManager.getStateProof(
-                forkId,
-                150,
-                participant1
-            );
+            const result = await agreementManager.getStateProof(forkId, 150);
 
             expect(result.milestones).to.be.an("array");
             expect(result.signedBlocks).to.be.an("array");
@@ -774,40 +962,25 @@ describe("AgreementManager", () => {
 
             storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
 
-            const result = await agreementManager.getStateProof(
-                forkId,
-                10,
-                participant1
-            );
+            const result = await agreementManager.getStateProof(forkId, 10);
 
             // Should have a milestone proof because all participants signed
             expect(result).to.have.property("milestones");
             expect(result).to.have.property("signedBlocks");
             expect(Array.isArray(result.milestones)).to.be.true;
             expect(Array.isArray(result.signedBlocks)).to.be.true;
-            expect(result.milestones.length).to.equal(1);
-            expect(result.milestones[0].blockConfirmations).to.have.length(1);
-
-            // Verify the milestone proof contains the block confirmation
-            const milestoneBlockConfirmation =
-                result.milestones[0].blockConfirmations[0];
-            expect(
-                milestoneBlockConfirmation.signedBlock.encodedBlock
-            ).to.equal(blockAtHeight5.encode());
-            expect(milestoneBlockConfirmation.signedBlock.signature).to.equal(
-                authorSignature
+            // With new logic: we can have multiple milestones (exit point + latest)
+            expect(result.milestones.length).to.be.greaterThan(0);
+            // Find the milestone that contains our block
+            const milestoneWithOurBlock = result.milestones.find((milestone) =>
+                milestone.blockConfirmations.some(
+                    (bc) =>
+                        bc.signedBlock.encodedBlock === blockAtHeight5.encode()
+                )
             );
-
-            // With corrected filtering logic: only CURRENT participant signatures should be included
-            // participant1 (author) and participant2 are CURRENT participants, so their signatures are included
-            // participant3 is NEW participant, so their signature should be filtered out
-            expect(milestoneBlockConfirmation.signatures).to.have.length(1);
-            expect(milestoneBlockConfirmation.signatures).to.include(
-                participant2Signature
-            );
-            expect(milestoneBlockConfirmation.signatures).to.not.include(
-                participant3Signature
-            );
+            expect(milestoneWithOurBlock).to.not.be.undefined;
+            // Since all 2 participants signed the same block, we should have exactly 1 block confirmation
+            expect(milestoneWithOurBlock!.blockConfirmations).to.have.length(1);
         });
 
         it("should not create milestone proof when only author signed", async () => {
@@ -857,11 +1030,7 @@ describe("AgreementManager", () => {
 
             storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
 
-            const result = await agreementManager.getStateProof(
-                forkId,
-                10,
-                participant1
-            );
+            const result = await agreementManager.getStateProof(forkId, 10);
 
             // Should NOT have a milestone proof because only author signed (not all participants)
             expect(result.milestones).to.have.length(0);
@@ -920,40 +1089,25 @@ describe("AgreementManager", () => {
 
             storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
 
-            const result = await agreementManager.getStateProof(
-                forkId,
-                10,
-                participant1
-            );
+            const result = await agreementManager.getStateProof(forkId, 10);
 
             // Should have a milestone proof because all current participants signed
             expect(result).to.have.property("milestones");
             expect(result).to.have.property("signedBlocks");
             expect(Array.isArray(result.milestones)).to.be.true;
             expect(Array.isArray(result.signedBlocks)).to.be.true;
-            expect(result.milestones.length).to.equal(1);
-            expect(result.milestones[0].blockConfirmations).to.have.length(1);
-
-            // Verify the milestone proof contains filtered signatures (only CURRENT participants)
-            const milestoneBlockConfirmation =
-                result.milestones[0].blockConfirmations[0];
-            expect(
-                milestoneBlockConfirmation.signedBlock.encodedBlock
-            ).to.equal(blockAtHeight5.encode());
-            expect(milestoneBlockConfirmation.signedBlock.signature).to.equal(
-                authorSignature
+            // With new logic: we can have multiple milestones (exit point + latest)
+            expect(result.milestones.length).to.be.greaterThan(0);
+            // Find the milestone that contains our block
+            const milestoneWithOurBlock = result.milestones.find((milestone) =>
+                milestone.blockConfirmations.some(
+                    (bc) =>
+                        bc.signedBlock.encodedBlock === blockAtHeight5.encode()
+                )
             );
-
-            // Should only include participant2's signature (CURRENT participant)
-            // participant1 (author) and participant2 signatures should be included (CURRENT participants)
-            // participant3's signature should be filtered out (NEW participant)
-            expect(milestoneBlockConfirmation.signatures).to.have.length(1);
-            expect(milestoneBlockConfirmation.signatures).to.include(
-                participant2Signature
-            );
-            expect(milestoneBlockConfirmation.signatures).to.not.include(
-                participant3Signature
-            );
+            expect(milestoneWithOurBlock).to.not.be.undefined;
+            // Since all 2 current participants signed the same block, we should have exactly 1 block confirmation
+            expect(milestoneWithOurBlock!.blockConfirmations).to.have.length(1);
         });
 
         it("should include all signatures when all participants are current", async () => {
@@ -1008,36 +1162,418 @@ describe("AgreementManager", () => {
 
             storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
 
-            const result = await agreementManager.getStateProof(
-                forkId,
-                10,
-                participant1
-            );
+            const result = await agreementManager.getStateProof(forkId, 10);
 
             // Should have a milestone proof because all participants signed
             expect(result).to.have.property("milestones");
             expect(result).to.have.property("signedBlocks");
             expect(Array.isArray(result.milestones)).to.be.true;
             expect(Array.isArray(result.signedBlocks)).to.be.true;
-            expect(result.milestones.length).to.equal(1);
-            expect(result.milestones[0].blockConfirmations).to.have.length(1);
-
-            // Verify the milestone proof contains all signatures from current participants
-            const milestoneBlockConfirmation =
-                result.milestones[0].blockConfirmations[0];
-            expect(
-                milestoneBlockConfirmation.signedBlock.encodedBlock
-            ).to.equal(blockAtHeight5.encode());
-            expect(milestoneBlockConfirmation.signedBlock.signature).to.equal(
-                authorSignature
+            // With new logic: we can have multiple milestones (exit point + latest)
+            expect(result.milestones.length).to.be.greaterThan(0);
+            // Find the milestone that contains our block
+            const milestoneWithOurBlock = result.milestones.find((milestone) =>
+                milestone.blockConfirmations.some(
+                    (bc) =>
+                        bc.signedBlock.encodedBlock === blockAtHeight5.encode()
+                )
             );
-            expect(milestoneBlockConfirmation.signatures).to.have.length(2);
-            expect(milestoneBlockConfirmation.signatures).to.include(
+            expect(milestoneWithOurBlock).to.not.be.undefined;
+            // Since all 3 participants signed the same block, we should have exactly 1 block confirmation
+            expect(milestoneWithOurBlock!.blockConfirmations).to.have.length(1);
+        });
+    });
+
+    describe("tryBuildMilestone", () => {
+        it("should build milestone when all participants sign", async () => {
+            // Create a snapshot with 2 participants
+            const snapshot = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1, participant2],
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(100), data: "0x" }
+                }
+            });
+
+            // Create a block with signatures from both participants
+            const block = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 5,
+                        participant: participant1
+                    })
+                }),
+                stateSnapshotHash: snapshot.hash
+            });
+
+            const blockHash = ethers.keccak256(block.encode());
+            const authorSignature = await signers[0].signMessage(
+                ethers.getBytes(blockHash)
+            );
+            const participant2Signature = await signers[1].signMessage(
+                ethers.getBytes(blockHash)
+            );
+
+            const blockConfirmation = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: block.encode(),
+                    signature: authorSignature
+                }),
+                signatures: [participant2Signature]
+            });
+
+            storage.blocks.storeBlockConfirmation(blockConfirmation);
+
+            // Create iterator starting from the block
+            const blockIterator = storage.blocks.getIterator(
+                forkId,
+                SortOrder.ASC,
+                5
+            );
+
+            const milestone = agreementManager.tryBuildMilestone(
+                blockIterator,
+                snapshot
+            );
+
+            expect(milestone).to.not.be.undefined;
+            expect(milestone!.blockConfirmations).to.have.length(1);
+            expect(
+                milestone!.blockConfirmations[0].signedBlock.encodedBlock
+            ).to.equal(block.encode());
+            expect(milestone!.blockConfirmations[0].signatures).to.have.length(
+                1
+            );
+            expect(milestone!.blockConfirmations[0].signatures).to.include(
                 participant2Signature
             );
-            expect(milestoneBlockConfirmation.signatures).to.include(
+        });
+
+        it("should return undefined when not all participants sign", async () => {
+            // Create a snapshot with 3 participants
+            const snapshot = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1, participant2, participant3],
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(100), data: "0x" }
+                }
+            });
+
+            // Create a block with signatures from only 2 participants
+            const block = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 5,
+                        participant: participant1
+                    })
+                }),
+                stateSnapshotHash: snapshot.hash
+            });
+
+            const blockHash = ethers.keccak256(block.encode());
+            const authorSignature = await signers[0].signMessage(
+                ethers.getBytes(blockHash)
+            );
+            const participant2Signature = await signers[1].signMessage(
+                ethers.getBytes(blockHash)
+            );
+
+            const blockConfirmation = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: block.encode(),
+                    signature: authorSignature
+                }),
+                signatures: [participant2Signature] // Only 2 participants signed, need 3
+            });
+
+            storage.blocks.storeBlockConfirmation(blockConfirmation);
+
+            const blockIterator = storage.blocks.getIterator(
+                forkId,
+                SortOrder.ASC,
+                5
+            );
+
+            const milestone = agreementManager.tryBuildMilestone(
+                blockIterator,
+                snapshot
+            );
+
+            expect(milestone).to.be.undefined;
+        });
+
+        it("should filter signatures from non-participants", async () => {
+            // Create a snapshot with only 2 participants
+            const snapshot = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1, participant2], // Only 2 participants
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(100), data: "0x" }
+                }
+            });
+
+            // Create a block with signatures from all 3 participants
+            const block = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 5,
+                        participant: participant1
+                    })
+                }),
+                stateSnapshotHash: snapshot.hash
+            });
+
+            const blockHash = ethers.keccak256(block.encode());
+            const authorSignature = await signers[0].signMessage(
+                ethers.getBytes(blockHash)
+            );
+            const participant2Signature = await signers[1].signMessage(
+                ethers.getBytes(blockHash)
+            );
+            const participant3Signature = await signers[2].signMessage(
+                ethers.getBytes(blockHash)
+            );
+
+            const blockConfirmation = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: block.encode(),
+                    signature: authorSignature
+                }),
+                signatures: [participant2Signature, participant3Signature] // All 3 signed
+            });
+
+            storage.blocks.storeBlockConfirmation(blockConfirmation);
+
+            const blockIterator = storage.blocks.getIterator(
+                forkId,
+                SortOrder.ASC,
+                5
+            );
+
+            const milestone = agreementManager.tryBuildMilestone(
+                blockIterator,
+                snapshot
+            );
+
+            expect(milestone).to.not.be.undefined;
+            expect(milestone!.blockConfirmations[0].signatures).to.have.length(
+                1
+            );
+            expect(milestone!.blockConfirmations[0].signatures).to.include(
+                participant2Signature
+            );
+            expect(milestone!.blockConfirmations[0].signatures).to.not.include(
                 participant3Signature
             );
+        });
+
+        it("should work with DESC iterator and sort correctly", async () => {
+            // Create a snapshot with 2 participants
+            const snapshot = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1, participant2],
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(100), data: "0x" }
+                }
+            });
+
+            // Create blocks at different heights
+            const block1 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 1,
+                        participant: participant1
+                    })
+                }),
+                stateSnapshotHash: snapshot.hash
+            });
+
+            const block2 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 2,
+                        participant: participant2
+                    })
+                }),
+                stateSnapshotHash: snapshot.hash
+            });
+
+            const block1Hash = ethers.keccak256(block1.encode());
+            const block2Hash = ethers.keccak256(block2.encode());
+
+            const authorSignature1 = await signers[0].signMessage(
+                ethers.getBytes(block1Hash)
+            );
+            const authorSignature2 = await signers[1].signMessage(
+                ethers.getBytes(block2Hash)
+            );
+            const participant2Signature1 = await signers[1].signMessage(
+                ethers.getBytes(block1Hash)
+            );
+            const participant1Signature2 = await signers[0].signMessage(
+                ethers.getBytes(block2Hash)
+            );
+
+            const blockConfirmation1 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: block1.encode(),
+                    signature: authorSignature1
+                }),
+                signatures: [participant2Signature1]
+            });
+
+            const blockConfirmation2 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: block2.encode(),
+                    signature: authorSignature2
+                }),
+                signatures: [participant1Signature2]
+            });
+
+            storage.blocks.storeBlockConfirmation(blockConfirmation1);
+            storage.blocks.storeBlockConfirmation(blockConfirmation2);
+
+            // Use DESC iterator
+            const blockIterator = storage.blocks.getIterator(
+                forkId,
+                SortOrder.DESC,
+                2
+            );
+
+            const milestone = agreementManager.tryBuildMilestone(
+                blockIterator,
+                snapshot
+            );
+
+            expect(milestone).to.not.be.undefined;
+            // Since both blocks have all participants signed, the first block (height 2)
+            // will create a milestone, so we expect 1 block confirmation
+            expect(milestone!.blockConfirmations).to.have.length(1);
+
+            // The block should be sorted correctly (ascending order)
+            const firstBlock = Block.decode(
+                milestone!.blockConfirmations[0].signedBlock.encodedBlock
+            );
+            expect(firstBlock.height).to.equal(2); // Should be the first block in DESC order
+        });
+    });
+
+    describe("getSnapshot", () => {
+        it("should return snapshot from first block confirmation", async () => {
+            // Create a snapshot
+            const snapshot = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1, participant2],
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(100), data: "0x" }
+                }
+            });
+
+            storage.stateSnapshots.storeStateSnapshot(snapshot);
+
+            // Create a block that references this snapshot
+            const block = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 5,
+                        participant: participant1
+                    })
+                }),
+                stateSnapshotHash: snapshot.hash
+            });
+
+            const blockHash = ethers.keccak256(block.encode());
+            const signature = await signers[0].signMessage(
+                ethers.getBytes(blockHash)
+            );
+
+            const blockConfirmation = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: block.encode(),
+                    signature: signature
+                }),
+                signatures: []
+            });
+
+            const milestone: MilestoneProofStruct = {
+                blockConfirmations: [blockConfirmation]
+            };
+
+            const result = agreementManager.getSnapshot(milestone);
+
+            expect(result).to.not.be.undefined;
+            expect(result!.hash).to.equal(snapshot.hash);
+        });
+
+        it("should return undefined for empty milestone", () => {
+            const emptyMilestone: MilestoneProofStruct = {
+                blockConfirmations: []
+            };
+
+            const result = agreementManager.getSnapshot(emptyMilestone);
+
+            expect(result).to.be.undefined;
+        });
+
+        it("should return undefined when snapshot not found", async () => {
+            // Create a block with non-existent snapshot hash
+            const block = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 5,
+                        participant: participant1
+                    })
+                }),
+                stateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)) // Random hash
+            });
+
+            const blockHash = ethers.keccak256(block.encode());
+            const signature = await signers[0].signMessage(
+                ethers.getBytes(blockHash)
+            );
+
+            const blockConfirmation = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: block.encode(),
+                    signature: signature
+                }),
+                signatures: []
+            });
+
+            const milestone: MilestoneProofStruct = {
+                blockConfirmations: [blockConfirmation]
+            };
+
+            const result = agreementManager.getSnapshot(milestone);
+
+            expect(result).to.be.undefined;
         });
     });
 

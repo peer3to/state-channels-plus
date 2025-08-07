@@ -121,8 +121,7 @@ class AgreementManager {
      */
     public async getStateProof(
         forkId: ForkId,
-        blockHeight: BlockHeight,
-        signerAddress: Address
+        blockHeight: BlockHeight
     ): Promise<StateProofStruct> {
         const genesisSnapshot =
             this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
@@ -138,243 +137,184 @@ class AgreementManager {
 
         // For each exit point, iterate forward to prove it's final
         for (const exitPointHeight of exitPoints) {
-            const milestoneData = this.processMilestone(
-                exitPointHeight,
+            const blockIterator = this.storage.blocks.getIterator(
                 forkId,
-                currentSnapshot,
-                signerAddress,
-                {
-                    encodedLatestFinalizedState: undefined,
-                    encodedLatestCorrectState: undefined,
-                    virtualVotingBlocks: []
-                }
+                SortOrder.ASC,
+                exitPointHeight
             );
 
-            if (milestoneData) {
-                milestones.push(milestoneData.milestoneProof);
-                currentSnapshot = milestoneData.snapshot;
+            const milestone = this.tryBuildMilestone(
+                blockIterator,
+                currentSnapshot
+            );
+
+            if (milestone) {
+                milestones.push(milestone);
+                const newSnapshot = this.getSnapshot(milestone);
+                if (newSnapshot) {
+                    currentSnapshot = newSnapshot;
+                }
             }
         }
 
-        // Iterate backwards from the last exit point to collect signed blocks
-        const signedBlocks: SignedBlockStruct[] = [];
+        // Now try to build the latest milestone for the latest possible state
+        const blockIterator = this.storage.blocks.getIterator(
+            forkId,
+            SortOrder.DESC,
+            blockHeight
+        );
 
-        if (exitPoints.length > 0) {
-            const lastExitPointHeight = exitPoints.at(-1);
-            const blockEntries = this.storage.blocks.getIterator(
+        const milestone = this.tryBuildMilestone(
+            blockIterator,
+            currentSnapshot
+        );
+
+        if (milestone) {
+            milestones.push(milestone);
+            const newSnapshot = this.getSnapshot(milestone);
+            if (newSnapshot) {
+                currentSnapshot = newSnapshot;
+            }
+
+            return {
+                milestones,
+                // signedBlocks are empty since the milestone already accounted the latest state
+                signedBlocks: []
+            };
+        } else {
+            // We can't prove finality so we iterate backwards
+
+            const signedBlocks: SignedBlockStruct[] = [];
+            const blockIterator = this.storage.blocks.getIterator(
                 forkId,
                 SortOrder.DESC,
-                lastExitPointHeight
+                blockHeight
             );
-            const firstBlock = blockEntries.next();
 
-            if (!firstBlock.done && firstBlock.value) {
-                signedBlocks.push(
-                    firstBlock.value.blockConfirmation.signedBlock
+            let result = blockIterator.next();
+            while (!result.done) {
+                const blockEntry = result.value;
+                const block = Block.decode(
+                    blockEntry.blockConfirmation.signedBlock.encodedBlock
                 );
-            }
-        }
 
-        return {
-            milestones,
-            signedBlocks
-        };
+                // Stop if we reach block 0 or the block that commits to currentSnapshot
+                if (
+                    block.height === 0 ||
+                    block.stateSnapshotHash === currentSnapshot.hash
+                ) {
+                    break;
+                }
+
+                signedBlocks.push(blockEntry.blockConfirmation.signedBlock);
+                result = blockIterator.next();
+            }
+
+            // Reverse the array to get ascending order
+            signedBlocks.reverse();
+
+            return {
+                milestones,
+                signedBlocks
+            };
+        }
     }
 
     /**
-     * Build a milestone proof for a given set of blocks and participant set
+     * Get snapshot from the first block confirmation in a milestone
      */
-    private buildMilestoneProof(
-        blocks: Generator<BlockEntry, void, unknown>,
-        participantSet: Set<Address>,
-        signerAddress: Address,
-        currentStates: {
-            encodedLatestFinalizedState: Bytes | undefined;
-            encodedLatestCorrectState: Bytes | undefined;
-            virtualVotingBlocks: BlockConfirmationStruct[];
+    public getSnapshot(
+        milestone: MilestoneProofStruct
+    ): StateSnapshot | undefined {
+        if (milestone.blockConfirmations.length === 0) {
+            return undefined;
         }
-    ): {
-        milestoneProof: MilestoneProofStruct | null;
-        encodedLatestFinalizedState: Bytes | undefined;
-        encodedLatestCorrectState: Bytes | undefined;
-        virtualVotingBlocks: BlockConfirmationStruct[];
-    } {
-        const blockConfirmations: BlockConfirmationStruct[] = [];
-        let requiredParticipants = new Set<Address>(participantSet);
-        let {
-            encodedLatestFinalizedState,
-            encodedLatestCorrectState,
-            virtualVotingBlocks
-        } = currentStates;
 
-        for (const blockEntry of blocks) {
-            const block = Block.decode(
-                blockEntry.blockConfirmation.signedBlock.encodedBlock
-            );
+        const firstBlockConfirmation = milestone.blockConfirmations[0];
+        const block = Block.decode(
+            firstBlockConfirmation.signedBlock.encodedBlock
+        );
 
-            // Get all signatures including author's signature
+        return this.storage.stateSnapshots.getStateSnapshotByHash(
+            block.stateSnapshotHash
+        );
+    }
+
+    /**
+     * Try to build a milestone from a block iterator and current snapshot
+     */
+    public tryBuildMilestone(
+        blockIterator: Generator<BlockEntry, void, unknown>,
+        currentSnapshot: StateSnapshot
+    ): MilestoneProofStruct | undefined {
+        const thresholdSet = new Set<Address>(
+            currentSnapshot.snapshotData.participants as Address[]
+        );
+        const filteredBlockConfirmations: BlockConfirmationStruct[] = [];
+
+        let result = blockIterator.next();
+        while (!result.done) {
+            const blockEntry = result.value;
+            const currentBlockConfirmation = blockEntry.blockConfirmation;
             const allSignatures = this.getAllSignatures(
-                blockEntry.blockConfirmation
+                currentBlockConfirmation
             );
-            const signersAddresses = block.getSignerAddresses(allSignatures);
 
-            // Filter signatures to only include those from CURRENT participants (in current set)
-            const filteredSignatures: Signature[] = [];
-            const authorAddress = block.author;
-
-            // Include author signature if author is in current participant set
-            if (participantSet.has(authorAddress)) {
-                filteredSignatures.push(
-                    blockEntry.blockConfirmation.signedBlock
-                        .signature as Signature
-                );
-            }
-
-            // Include additional signatures only from CURRENT participants (in current set)
-            for (
-                let i = 0;
-                i < blockEntry.blockConfirmation.signatures.length;
-                i++
-            ) {
-                const signature = blockEntry.blockConfirmation.signatures[
-                    i
-                ] as Signature;
-                const signerAddresses = block.getSignerAddresses([signature]);
-                const signerAddress = signerAddresses.values().next().value;
-                if (signerAddress && participantSet.has(signerAddress)) {
-                    filteredSignatures.push(signature);
-                }
-            }
-
-            // Create filtered block confirmation with only CURRENT participant signatures
+            // Create a copy of the block confirmation and strip signatures
             const filteredBlockConfirmation: BlockConfirmationStruct = {
-                signedBlock: blockEntry.blockConfirmation.signedBlock,
-                signatures: filteredSignatures.slice(1) as BytesLike[] // Remove author signature from additional signatures
+                signedBlock: currentBlockConfirmation.signedBlock,
+                signatures: [] // Strip signatures but keep author's signature in signedBlock
             };
 
-            // Add filtered block confirmation
-            blockConfirmations.push(filteredBlockConfirmation);
+            for (const signature of allSignatures) {
+                const participantAddress = Block.decode(
+                    currentBlockConfirmation.signedBlock.encodedBlock
+                )
+                    .getSignerAddresses([signature])
+                    .values()
+                    .next().value;
 
-            // Track latest correct state if signer signed this block
-            if (
-                !encodedLatestCorrectState &&
-                signersAddresses.has(signerAddress)
-            ) {
-                const stateSnapshot =
-                    this.storage.stateSnapshots.getStateSnapshotByHash(
-                        block.stateSnapshotHash
+                if (
+                    participantAddress &&
+                    thresholdSet.has(participantAddress)
+                ) {
+                    thresholdSet.delete(participantAddress); // Subtract participant from threshold set
+
+                    // Add signature to filtered block confirmation if it's not the author's signature
+                    const block = Block.decode(
+                        currentBlockConfirmation.signedBlock.encodedBlock
                     );
-                if (stateSnapshot) {
-                    const stateMachineStateHash =
-                        stateSnapshot.snapshotData.stateMachineStateHash;
-                    encodedLatestCorrectState =
-                        this.storage.stateMachineStates.getStateMachineState(
-                            stateMachineStateHash
+                    if (participantAddress !== block.author) {
+                        filteredBlockConfirmation.signatures.push(
+                            signature as BytesLike
                         );
+                    }
                 }
             }
 
-            // Track latest finalized state
-            virtualVotingBlocks.push(blockEntry.blockConfirmation);
+            filteredBlockConfirmations.push(filteredBlockConfirmation);
 
-            // Remove the signers we found from required signatures (use original signatures for finality)
-            requiredParticipants = SetUtils.difference(
-                requiredParticipants,
-                signersAddresses
-            );
-
-            // Check if we found a finalized state (all participants signed)
-            if (requiredParticipants.size === 0) {
-                const stateSnapshot =
-                    this.storage.stateSnapshots.getStateSnapshotByHash(
-                        block.stateSnapshotHash
-                    );
-                if (stateSnapshot) {
-                    const stateMachineStateHash =
-                        stateSnapshot.snapshotData.stateMachineStateHash;
-                    encodedLatestFinalizedState =
-                        this.storage.stateMachineStates.getStateMachineState(
-                            stateMachineStateHash
-                        );
-                }
-
+            if (thresholdSet.size === 0) {
+                // Sort by block height to make it work regardless of iterator direction
                 return {
-                    milestoneProof: { blockConfirmations },
-                    encodedLatestFinalizedState,
-                    encodedLatestCorrectState,
-                    virtualVotingBlocks
+                    blockConfirmations: filteredBlockConfirmations.sort(
+                        (a, b) => {
+                            const blockA = Block.decode(
+                                a.signedBlock.encodedBlock
+                            );
+                            const blockB = Block.decode(
+                                b.signedBlock.encodedBlock
+                            );
+                            return blockA.height - blockB.height;
+                        }
+                    )
                 };
             }
+
+            result = blockIterator.next();
         }
 
-        return {
-            milestoneProof: null,
-            encodedLatestFinalizedState,
-            encodedLatestCorrectState,
-            virtualVotingBlocks
-        };
-    }
-
-    /**
-     * Process a single milestone at the given exit point height
-     */
-    private processMilestone(
-        exitPointHeight: BlockHeight,
-        forkId: ForkId,
-        currentSnapshot: StateSnapshot,
-        signerAddress: Address,
-        currentStates: {
-            encodedLatestFinalizedState: Bytes | undefined;
-            encodedLatestCorrectState: Bytes | undefined;
-            virtualVotingBlocks: BlockConfirmationStruct[];
-        }
-    ): {
-        milestoneProof: MilestoneProofStruct;
-        snapshot: StateSnapshot;
-        encodedLatestFinalizedState: Bytes | undefined;
-        encodedLatestCorrectState: Bytes | undefined;
-        virtualVotingBlocks: BlockConfirmationStruct[];
-    } | null {
-        // Start from the exit point block and iterate forward to prove it's final
-        const blocksFromExitPoint = this.storage.blocks.getIterator(
-            forkId,
-            SortOrder.ASC,
-            exitPointHeight
-        );
-
-        // Get the state snapshot at this exit point
-        const exitPointSnapshot = this.storage.getStateSnapshot({
-            forkId: currentSnapshot.forkId,
-            height: exitPointHeight
-        });
-
-        if (!exitPointSnapshot) {
-            return null;
-        }
-
-        // Build milestone proof starting from the exit point block
-        const currentParticipantSet = new Set<Address>(
-            exitPointSnapshot.snapshotData.participants as Address[]
-        );
-
-        const result = this.buildMilestoneProof(
-            blocksFromExitPoint,
-            currentParticipantSet,
-            signerAddress,
-            currentStates
-        );
-
-        if (!result.milestoneProof) {
-            return null;
-        }
-
-        return {
-            milestoneProof: result.milestoneProof,
-            snapshot: exitPointSnapshot,
-            encodedLatestFinalizedState: result.encodedLatestFinalizedState,
-            encodedLatestCorrectState: result.encodedLatestCorrectState,
-            virtualVotingBlocks: result.virtualVotingBlocks
-        };
+        return undefined;
     }
 
     /**
