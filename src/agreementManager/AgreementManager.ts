@@ -198,7 +198,6 @@ class AgreementManager {
                     blockEntry.blockConfirmation.signedBlock.encodedBlock
                 );
 
-                // Stop if we reach block 0 or the block that commits to currentSnapshot
                 if (
                     block.height === 0 ||
                     block.stateSnapshotHash === currentSnapshot.hash
@@ -210,7 +209,6 @@ class AgreementManager {
                 result = blockIterator.next();
             }
 
-            // Reverse the array to get ascending order
             signedBlocks.reverse();
 
             return {
@@ -260,7 +258,6 @@ class AgreementManager {
                 currentBlockConfirmation
             );
 
-            // Create a copy of the block confirmation and strip signatures
             const filteredBlockConfirmation: BlockConfirmationStruct = {
                 signedBlock: currentBlockConfirmation.signedBlock,
                 signatures: [] // Strip signatures but keep author's signature in signedBlock
@@ -295,7 +292,6 @@ class AgreementManager {
             filteredBlockConfirmations.push(filteredBlockConfirmation);
 
             if (thresholdSet.size === 0) {
-                // Sort by block height to make it work regardless of iterator direction
                 return {
                     blockConfirmations: filteredBlockConfirmations.sort(
                         (a, b) => {
