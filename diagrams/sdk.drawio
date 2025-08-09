@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram id="UIa-ucJ7Z0dhIWUHrVS2" name="User Interaction">
-        <mxGraphModel dx="702" dy="421" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+        <mxGraphModel dx="1684" dy="824" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -1906,10 +1906,321 @@
         </mxGraphModel>
     </diagram>
     <diagram id="LqkWZOM_T8NzajkTzYGm" name="Disputes Mental Model">
-        <mxGraphModel dx="2808" dy="2784" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+        <mxGraphModel dx="5613" dy="3847" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
+                <mxCell id="MiHG-ok4c3-oJHMUXmo7-2" value="Fork Choice Rule" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;fillColor=default;" parent="1" vertex="1">
+                    <mxGeometry x="2220" y="670" width="2340" height="1420" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-15" value="on-chain Snapshot" style="swimlane;whiteSpace=wrap;html=1;fillColor=#008a00;strokeColor=#005700;fontColor=#ffffff;strokeWidth=2;" parent="MiHG-ok4c3-oJHMUXmo7-2" vertex="1">
+                    <mxGeometry x="390" y="210" width="160" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-20" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-15" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="79.84" y="40" as="sourcePoint"/>
+                        <mxPoint x="79.84" y="70" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-161" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;rounded=1;curved=0;strokeColor=#007FFF;strokeWidth=6;" parent="MiHG-ok4c3-oJHMUXmo7-2" source="ifsbyHzDkbNQgsuxaP6B-19" target="ifsbyHzDkbNQgsuxaP6B-27" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-19" value="ForkId" style="rounded=1;whiteSpace=wrap;html=1;" parent="MiHG-ok4c3-oJHMUXmo7-2" vertex="1">
+                    <mxGeometry x="432.5" y="285" width="65" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-1" value="DisputeWindow (ForkId)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="MiHG-ok4c3-oJHMUXmo7-2" vertex="1">
+                    <mxGeometry x="880" y="250" width="180" height="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-2" value="Evidence" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="ifsbyHzDkbNQgsuxaP6B-1" vertex="1">
+                    <mxGeometry x="30" y="50" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-6" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-2" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="45" y="40" as="sourcePoint"/>
+                        <mxPoint x="85" y="40" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-7" value="Reduced Result" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="ifsbyHzDkbNQgsuxaP6B-1" vertex="1">
+                    <mxGeometry x="30" y="130" width="120" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-8" value="ForkId" style="rounded=1;whiteSpace=wrap;html=1;" parent="ifsbyHzDkbNQgsuxaP6B-7" vertex="1">
+                    <mxGeometry x="27.5" y="65.5" width="65" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-11" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-7" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="59.81" y="30" as="sourcePoint"/>
+                        <mxPoint x="59.81" y="60" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-21" value="DisputeWindow (ForkId)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="MiHG-ok4c3-oJHMUXmo7-2" vertex="1">
+                    <mxGeometry x="1320" y="360" width="180" height="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-22" value="Evidence" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="ifsbyHzDkbNQgsuxaP6B-21" vertex="1">
+                    <mxGeometry x="30" y="50" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-23" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-22" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="45" y="40" as="sourcePoint"/>
+                        <mxPoint x="85" y="40" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-24" value="Reduced Result" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="ifsbyHzDkbNQgsuxaP6B-21" vertex="1">
+                    <mxGeometry x="30" y="130" width="120" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-25" value="ForkId" style="rounded=1;whiteSpace=wrap;html=1;" parent="ifsbyHzDkbNQgsuxaP6B-24" vertex="1">
+                    <mxGeometry x="27.5" y="65.5" width="65" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-26" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-24" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="59.81" y="30" as="sourcePoint"/>
+                        <mxPoint x="59.81" y="60" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-27" value="DisputeWindow (ForkId)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="MiHG-ok4c3-oJHMUXmo7-2" vertex="1">
+                    <mxGeometry x="620" y="560" width="180" height="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-28" value="Evidence" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="ifsbyHzDkbNQgsuxaP6B-27" vertex="1">
+                    <mxGeometry x="30" y="50" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-29" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-28" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="45" y="40" as="sourcePoint"/>
+                        <mxPoint x="85" y="40" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-30" value="Reduced Result" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="ifsbyHzDkbNQgsuxaP6B-27" vertex="1">
+                    <mxGeometry x="30" y="130" width="120" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-31" value="ForkId" style="rounded=1;whiteSpace=wrap;html=1;" parent="ifsbyHzDkbNQgsuxaP6B-30" vertex="1">
+                    <mxGeometry x="27.5" y="65.5" width="65" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-32" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-30" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="59.81" y="30" as="sourcePoint"/>
+                        <mxPoint x="59.81" y="60" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-33" value="DisputeWindow (ForkId)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="MiHG-ok4c3-oJHMUXmo7-2" vertex="1">
+                    <mxGeometry x="1070" y="670" width="180" height="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-34" value="Evidence" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="ifsbyHzDkbNQgsuxaP6B-33" vertex="1">
+                    <mxGeometry x="30" y="50" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-35" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-34" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="45" y="40" as="sourcePoint"/>
+                        <mxPoint x="85" y="40" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-36" value="Reduced Result" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="ifsbyHzDkbNQgsuxaP6B-33" vertex="1">
+                    <mxGeometry x="30" y="130" width="120" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-37" value="ForkId" style="rounded=1;whiteSpace=wrap;html=1;" parent="ifsbyHzDkbNQgsuxaP6B-36" vertex="1">
+                    <mxGeometry x="27.5" y="65.5" width="65" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-38" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-36" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="59.81" y="30" as="sourcePoint"/>
+                        <mxPoint x="59.81" y="60" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-67" value="DisputeWindow (ForkId)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="MiHG-ok4c3-oJHMUXmo7-2" vertex="1">
+                    <mxGeometry x="1730" y="730" width="180" height="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-68" value="Evidence" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="ifsbyHzDkbNQgsuxaP6B-67" vertex="1">
+                    <mxGeometry x="30" y="50" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-69" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-68" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="45" y="40" as="sourcePoint"/>
+                        <mxPoint x="85" y="40" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-70" value="Reduced Result" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="ifsbyHzDkbNQgsuxaP6B-67" vertex="1">
+                    <mxGeometry x="30" y="130" width="120" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-71" value="ForkId" style="rounded=1;whiteSpace=wrap;html=1;" parent="ifsbyHzDkbNQgsuxaP6B-70" vertex="1">
+                    <mxGeometry x="27.5" y="65.5" width="65" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-72" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-70" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="59.81" y="30" as="sourcePoint"/>
+                        <mxPoint x="59.81" y="60" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-73" value="DisputeWindow (ForkId)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="MiHG-ok4c3-oJHMUXmo7-2" vertex="1">
+                    <mxGeometry x="1700" y="240" width="180" height="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-74" value="Evidence" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="ifsbyHzDkbNQgsuxaP6B-73" vertex="1">
+                    <mxGeometry x="30" y="50" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-75" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-74" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="45" y="40" as="sourcePoint"/>
+                        <mxPoint x="85" y="40" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-76" value="Reduced Result" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="ifsbyHzDkbNQgsuxaP6B-73" vertex="1">
+                    <mxGeometry x="30" y="130" width="120" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-77" value="ForkId" style="rounded=1;whiteSpace=wrap;html=1;" parent="ifsbyHzDkbNQgsuxaP6B-76" vertex="1">
+                    <mxGeometry x="27.5" y="65.5" width="65" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-78" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-76" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="59.81" y="30" as="sourcePoint"/>
+                        <mxPoint x="59.81" y="60" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-79" value="DisputeWindow (ForkId)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="MiHG-ok4c3-oJHMUXmo7-2" vertex="1">
+                    <mxGeometry x="2040" y="570" width="180" height="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-80" value="Evidence" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="ifsbyHzDkbNQgsuxaP6B-79" vertex="1">
+                    <mxGeometry x="30" y="50" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-81" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-80" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="45" y="40" as="sourcePoint"/>
+                        <mxPoint x="85" y="40" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-82" value="Reduced Result" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="ifsbyHzDkbNQgsuxaP6B-79" vertex="1">
+                    <mxGeometry x="30" y="130" width="120" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-83" value="ForkId" style="rounded=1;whiteSpace=wrap;html=1;" parent="ifsbyHzDkbNQgsuxaP6B-82" vertex="1">
+                    <mxGeometry x="27.5" y="65.5" width="65" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-84" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-82" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="59.81" y="30" as="sourcePoint"/>
+                        <mxPoint x="59.81" y="60" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-85" value="DisputeWindow (ForkId)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="MiHG-ok4c3-oJHMUXmo7-2" vertex="1">
+                    <mxGeometry x="790" y="990" width="180" height="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-86" value="Evidence" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="ifsbyHzDkbNQgsuxaP6B-85" vertex="1">
+                    <mxGeometry x="30" y="50" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-87" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-86" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="45" y="40" as="sourcePoint"/>
+                        <mxPoint x="85" y="40" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-88" value="Reduced Result" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="ifsbyHzDkbNQgsuxaP6B-85" vertex="1">
+                    <mxGeometry x="30" y="130" width="120" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-89" value="ForkId" style="rounded=1;whiteSpace=wrap;html=1;" parent="ifsbyHzDkbNQgsuxaP6B-88" vertex="1">
+                    <mxGeometry x="27.5" y="65.5" width="65" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-90" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-88" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="59.81" y="30" as="sourcePoint"/>
+                        <mxPoint x="59.81" y="60" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-143" value="DisputeWindow (ForkId)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="MiHG-ok4c3-oJHMUXmo7-2" vertex="1">
+                    <mxGeometry x="380" y="900" width="180" height="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-144" value="Evidence" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="ifsbyHzDkbNQgsuxaP6B-143" vertex="1">
+                    <mxGeometry x="30" y="50" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-145" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-144" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="45" y="40" as="sourcePoint"/>
+                        <mxPoint x="85" y="40" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-146" value="Reduced Result" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="ifsbyHzDkbNQgsuxaP6B-143" vertex="1">
+                    <mxGeometry x="30" y="130" width="120" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-147" value="ForkId" style="rounded=1;whiteSpace=wrap;html=1;" parent="ifsbyHzDkbNQgsuxaP6B-146" vertex="1">
+                    <mxGeometry x="27.5" y="65.5" width="65" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-148" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-146" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="59.81" y="30" as="sourcePoint"/>
+                        <mxPoint x="59.81" y="60" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-149" value="DisputeWindow (ForkId)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="MiHG-ok4c3-oJHMUXmo7-2" vertex="1">
+                    <mxGeometry x="1350" y="1000" width="180" height="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-150" value="Evidence" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="ifsbyHzDkbNQgsuxaP6B-149" vertex="1">
+                    <mxGeometry x="30" y="50" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-151" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-150" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="45" y="40" as="sourcePoint"/>
+                        <mxPoint x="85" y="40" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-152" value="Reduced Result" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="ifsbyHzDkbNQgsuxaP6B-149" vertex="1">
+                    <mxGeometry x="30" y="130" width="120" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-153" value="ForkId" style="rounded=1;whiteSpace=wrap;html=1;" parent="ifsbyHzDkbNQgsuxaP6B-152" vertex="1">
+                    <mxGeometry x="27.5" y="65.5" width="65" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-154" value="" style="endArrow=none;dashed=1;html=1;dashPattern=1 3;strokeWidth=2;" parent="ifsbyHzDkbNQgsuxaP6B-152" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="59.81" y="30" as="sourcePoint"/>
+                        <mxPoint x="59.81" y="60" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-158" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" parent="MiHG-ok4c3-oJHMUXmo7-2" source="ifsbyHzDkbNQgsuxaP6B-8" target="ifsbyHzDkbNQgsuxaP6B-21" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1140" y="330"/>
+                            <mxPoint x="1450" y="330"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-159" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" parent="MiHG-ok4c3-oJHMUXmo7-2" source="ifsbyHzDkbNQgsuxaP6B-147" target="ifsbyHzDkbNQgsuxaP6B-85" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="620" y="970"/>
+                            <mxPoint x="925" y="970"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-160" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" parent="MiHG-ok4c3-oJHMUXmo7-2" source="ifsbyHzDkbNQgsuxaP6B-89" target="ifsbyHzDkbNQgsuxaP6B-149" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1100" y="970"/>
+                            <mxPoint x="1485" y="970"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-162" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;strokeColor=#007FFF;strokeWidth=6;" parent="MiHG-ok4c3-oJHMUXmo7-2" source="ifsbyHzDkbNQgsuxaP6B-31" target="ifsbyHzDkbNQgsuxaP6B-33" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="980" y="770"/>
+                            <mxPoint x="980" y="630"/>
+                            <mxPoint x="1205" y="630"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-163" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;strokeColor=#007FFF;strokeWidth=6;" parent="MiHG-ok4c3-oJHMUXmo7-2" source="ifsbyHzDkbNQgsuxaP6B-37" target="ifsbyHzDkbNQgsuxaP6B-73" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1580" y="881"/>
+                            <mxPoint x="1580" y="210"/>
+                            <mxPoint x="1830" y="210"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-164" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;strokeColor=#007FFF;strokeWidth=6;" parent="MiHG-ok4c3-oJHMUXmo7-2" source="ifsbyHzDkbNQgsuxaP6B-77" target="ifsbyHzDkbNQgsuxaP6B-79" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-165" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="MiHG-ok4c3-oJHMUXmo7-2" vertex="1">
+                    <mxGeometry x="40" y="210" width="320" height="400" as="geometry">
+                        <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ifsbyHzDkbNQgsuxaP6B-166" value="The &lt;font style=&quot;color: rgb(0, 153, 77);&quot;&gt;onChainSnapshot&lt;/font&gt; is the single source of truth, that&#39;s always available. Apart from other things it contains the &lt;b&gt;forkId&lt;/b&gt;. - The forkId uniquely identifies the genesis state of the fork - it&#39;s the hash of the genesis state snapshot data.&amp;nbsp;&lt;div&gt;&lt;br&gt;Everyone builds on top of this forkId untill there is a dispute. The dispute creats a DisputeWindow for that forkId.&lt;br&gt;&lt;br&gt;The outcome of the dispute is another &lt;b&gt;forkId&lt;/b&gt; that&#39;s computed with &lt;b&gt;reduce()&lt;/b&gt;.&amp;nbsp;&lt;br&gt;&lt;br&gt;So the fork choice rule becomes:&lt;br&gt;&lt;font style=&quot;color: rgb(0, 102, 204);&quot;&gt;selectedFork = onChainSnapshot.forkId&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 102, 204);&quot;&gt;while(existsDisputeWindow(selectedFork){&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 102, 204);&quot;&gt;&lt;span style=&quot;white-space: pre;&quot;&gt;&#x9;&lt;/span&gt;selectedFork = &lt;span style=&quot;white-space: pre;&quot;&gt;&#x9;&lt;/span&gt;disputeWindow[selectedFork].reducedResult.forkId&lt;br&gt;&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 102, 204);&quot;&gt;}&lt;br&gt;&lt;br&gt;&lt;/font&gt;&lt;/div&gt;&lt;div&gt;Since the &lt;font style=&quot;color: rgb(0, 153, 77);&quot;&gt;onChainSnapshot &lt;/font&gt;is available on-chain, this same algorithm is used on-chain prove a snapshot update when the snapshot is not on the same fork as the onChainSnapshot - this same algorithm is used to prove the state to an independent observer (spectator).&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="ifsbyHzDkbNQgsuxaP6B-165" vertex="1">
+                    <mxGeometry y="30" width="320" height="370" as="geometry"/>
+                </mxCell>
                 <mxCell id="ODITfQRj00F-9atufKFF-14" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="ODITfQRj00F-9atufKFF-1" target="ODITfQRj00F-9atufKFF-13" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
@@ -2065,8 +2376,8 @@
                 <mxCell id="ODITfQRj00F-9atufKFF-52" value="The dispute &quot;evidence&quot; contains at most N disputes (one for every participant). In other words every participant has a chance to submit their opinion of what a dispute outcome should be for a given fork" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-51" vertex="1">
                     <mxGeometry y="30" width="200" height="160" as="geometry"/>
                 </mxCell>
-                <mxCell id="ODITfQRj00F-9atufKFF-53" value="Every disputed &lt;b&gt;fork&lt;/b&gt; has a &lt;b&gt;single DisputeWindow.&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" parent="ODITfQRj00F-9atufKFF-27" vertex="1">
-                    <mxGeometry x="288" y="70" width="215" height="70" as="geometry"/>
+                <mxCell id="ODITfQRj00F-9atufKFF-53" value="Every disputed &lt;b&gt;fork&lt;/b&gt; has a &lt;b&gt;single DisputeWindow.&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="ODITfQRj00F-9atufKFF-27" vertex="1">
+                    <mxGeometry x="302.5" y="70" width="215" height="70" as="geometry"/>
                 </mxCell>
                 <mxCell id="ODITfQRj00F-9atufKFF-54" value="Reduced Result" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="ODITfQRj00F-9atufKFF-27" vertex="1">
                     <mxGeometry x="570" y="285" width="250" height="390" as="geometry">
@@ -2279,29 +2590,26 @@
                 <mxCell id="04kf31U29QvEIDmgyHl--35" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="MiHG-ok4c3-oJHMUXmo7-1" source="04kf31U29QvEIDmgyHl--33" target="04kf31U29QvEIDmgyHl--19" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="MiHG-ok4c3-oJHMUXmo7-2" value="Fork Choice Rule" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
-                    <mxGeometry x="1970" y="1480" width="340" height="180" as="geometry"/>
-                </mxCell>
                 <mxCell id="MiHG-ok4c3-oJHMUXmo7-3" value="onDispute" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
-                    <mxGeometry x="2360" y="1480" width="340" height="180" as="geometry"/>
+                    <mxGeometry x="2280" y="2190" width="340" height="180" as="geometry"/>
                 </mxCell>
                 <mxCell id="MiHG-ok4c3-oJHMUXmo7-7" value="Upload Dispute" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
-                    <mxGeometry x="1970" y="1700" width="340" height="180" as="geometry"/>
+                    <mxGeometry x="1890" y="2410" width="340" height="180" as="geometry"/>
                 </mxCell>
                 <mxCell id="MiHG-ok4c3-oJHMUXmo7-8" value="Audit Dispute" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
-                    <mxGeometry x="2350" y="1700" width="340" height="180" as="geometry"/>
+                    <mxGeometry x="2270" y="2410" width="340" height="180" as="geometry"/>
                 </mxCell>
                 <mxCell id="MiHG-ok4c3-oJHMUXmo7-9" value="Challenge Dispute" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
-                    <mxGeometry x="2720" y="1700" width="340" height="180" as="geometry"/>
+                    <mxGeometry x="2640" y="2410" width="340" height="180" as="geometry"/>
                 </mxCell>
                 <mxCell id="MiHG-ok4c3-oJHMUXmo7-10" value="CommitToReducedResult" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
-                    <mxGeometry x="1970" y="1910" width="340" height="180" as="geometry"/>
+                    <mxGeometry x="1890" y="2620" width="340" height="180" as="geometry"/>
                 </mxCell>
                 <mxCell id="MiHG-ok4c3-oJHMUXmo7-11" value="Challenge Dispute Reduction" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=170;height=30;" parent="1" vertex="1">
-                    <mxGeometry x="2350" y="1910" width="360" height="180" as="geometry"/>
+                    <mxGeometry x="2270" y="2620" width="360" height="180" as="geometry"/>
                 </mxCell>
                 <mxCell id="MiHG-ok4c3-oJHMUXmo7-12" value="Generate Dsipute Output State" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=200;height=30;" parent="1" vertex="1">
-                    <mxGeometry x="1970" y="2120" width="340" height="180" as="geometry"/>
+                    <mxGeometry x="1890" y="2830" width="340" height="180" as="geometry"/>
                 </mxCell>
                 <mxCell id="MiHG-ok4c3-oJHMUXmo7-13" value="Reduce Output -&amp;gt; SnapshotData" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=210;height=30;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
                     <mxGeometry x="50" y="2580" width="1340" height="1240" as="geometry"/>
@@ -2400,84 +2708,84 @@
                 <mxCell id="VvB_f3e381Ho7GhoUqQR-1" value="Package1" style="shape=folder;fontStyle=1;tabWidth=80;tabHeight=30;tabPosition=left;html=1;boundedLbl=1;whiteSpace=wrap;" parent="MiHG-ok4c3-oJHMUXmo7-13" vertex="1">
                     <mxGeometry x="316.05" y="940" width="257.31" height="140" as="geometry"/>
                 </mxCell>
-                <mxCell id="Q22LJm39gkMQTBp-yN1j-1" value="Think" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="MiHG-ok4c3-oJHMUXmo7-13">
+                <mxCell id="Q22LJm39gkMQTBp-yN1j-1" value="Think" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="MiHG-ok4c3-oJHMUXmo7-13" vertex="1">
                     <mxGeometry x="60" y="360" width="160" height="130" as="geometry">
                         <mxRectangle x="120" y="500" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="Q22LJm39gkMQTBp-yN1j-2" value="All this verification can be extracted and done in the challenge - but it&#39;s still stateless so it doesn&#39;t matter much" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="Q22LJm39gkMQTBp-yN1j-1">
+                <mxCell id="Q22LJm39gkMQTBp-yN1j-2" value="All this verification can be extracted and done in the challenge - but it&#39;s still stateless so it doesn&#39;t matter much" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="Q22LJm39gkMQTBp-yN1j-1" vertex="1">
                     <mxGeometry y="30" width="160" height="100" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-1" value="Dispute Overview" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" vertex="1" parent="1">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-1" value="Dispute Overview" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
                     <mxGeometry x="20" y="-640" width="1430" height="570" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-23" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="ZRMZaf2iJkQqHhPmeZ5K-1" source="ZRMZaf2iJkQqHhPmeZ5K-2" target="ZRMZaf2iJkQqHhPmeZ5K-3">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-23" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="ZRMZaf2iJkQqHhPmeZ5K-1" source="ZRMZaf2iJkQqHhPmeZ5K-2" target="ZRMZaf2iJkQqHhPmeZ5K-3" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-2" value="Block 0" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ZRMZaf2iJkQqHhPmeZ5K-1">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-2" value="Block 0" style="rounded=1;whiteSpace=wrap;html=1;" parent="ZRMZaf2iJkQqHhPmeZ5K-1" vertex="1">
                     <mxGeometry x="215" y="320" width="100" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-25" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="ZRMZaf2iJkQqHhPmeZ5K-1" source="ZRMZaf2iJkQqHhPmeZ5K-3" target="ZRMZaf2iJkQqHhPmeZ5K-4">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-25" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="ZRMZaf2iJkQqHhPmeZ5K-1" source="ZRMZaf2iJkQqHhPmeZ5K-3" target="ZRMZaf2iJkQqHhPmeZ5K-4" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-3" value="Block 1" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ZRMZaf2iJkQqHhPmeZ5K-1">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-3" value="Block 1" style="rounded=1;whiteSpace=wrap;html=1;" parent="ZRMZaf2iJkQqHhPmeZ5K-1" vertex="1">
                     <mxGeometry x="395" y="320" width="100" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-26" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="ZRMZaf2iJkQqHhPmeZ5K-1" source="ZRMZaf2iJkQqHhPmeZ5K-4" target="ZRMZaf2iJkQqHhPmeZ5K-5">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-26" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="ZRMZaf2iJkQqHhPmeZ5K-1" source="ZRMZaf2iJkQqHhPmeZ5K-4" target="ZRMZaf2iJkQqHhPmeZ5K-5" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-4" value="Block 2" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ZRMZaf2iJkQqHhPmeZ5K-1">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-4" value="Block 2" style="rounded=1;whiteSpace=wrap;html=1;" parent="ZRMZaf2iJkQqHhPmeZ5K-1" vertex="1">
                     <mxGeometry x="565" y="320" width="100" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-27" style="edgeStyle=none;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="ZRMZaf2iJkQqHhPmeZ5K-1" source="ZRMZaf2iJkQqHhPmeZ5K-5" target="ZRMZaf2iJkQqHhPmeZ5K-18">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-27" style="edgeStyle=none;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="ZRMZaf2iJkQqHhPmeZ5K-1" source="ZRMZaf2iJkQqHhPmeZ5K-5" target="ZRMZaf2iJkQqHhPmeZ5K-18" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-5" value="Some objective failute/deviation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="ZRMZaf2iJkQqHhPmeZ5K-1">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-5" value="Some objective failute/deviation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="ZRMZaf2iJkQqHhPmeZ5K-1" vertex="1">
                     <mxGeometry x="725" y="320" width="100" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-33" style="edgeStyle=none;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="ZRMZaf2iJkQqHhPmeZ5K-1" source="ZRMZaf2iJkQqHhPmeZ5K-18" target="ZRMZaf2iJkQqHhPmeZ5K-30">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-33" style="edgeStyle=none;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="ZRMZaf2iJkQqHhPmeZ5K-1" source="ZRMZaf2iJkQqHhPmeZ5K-18" target="ZRMZaf2iJkQqHhPmeZ5K-30" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-18" value="dispute" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0050ef;fontColor=#ffffff;strokeColor=#001DBC;" vertex="1" parent="ZRMZaf2iJkQqHhPmeZ5K-1">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-18" value="dispute" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0050ef;fontColor=#ffffff;strokeColor=#001DBC;" parent="ZRMZaf2iJkQqHhPmeZ5K-1" vertex="1">
                     <mxGeometry x="725" y="200" width="100" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-19" value="ForkId A" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;fillColor=#6a00ff;strokeColor=#3700CC;fontColor=#ffffff;" vertex="1" parent="ZRMZaf2iJkQqHhPmeZ5K-1">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-19" value="ForkId A" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;fillColor=#6a00ff;strokeColor=#3700CC;fontColor=#ffffff;" parent="ZRMZaf2iJkQqHhPmeZ5K-1" vertex="1">
                     <mxGeometry x="20" y="280" width="845" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-29" value="fork A genesis state" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6a00ff;fontColor=#ffffff;strokeColor=#3700CC;" vertex="1" parent="ZRMZaf2iJkQqHhPmeZ5K-19">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-29" value="fork A genesis state" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6a00ff;fontColor=#ffffff;strokeColor=#3700CC;" parent="ZRMZaf2iJkQqHhPmeZ5K-19" vertex="1">
                     <mxGeometry x="40" y="40" width="100" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-20" value="ForkId B" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;fillColor=#d80073;strokeColor=#A50040;fontColor=#ffffff;" vertex="1" parent="ZRMZaf2iJkQqHhPmeZ5K-1">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-20" value="ForkId B" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;fillColor=#d80073;strokeColor=#A50040;fontColor=#ffffff;" parent="ZRMZaf2iJkQqHhPmeZ5K-1" vertex="1">
                     <mxGeometry x="690" y="35" width="675" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-34" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="ZRMZaf2iJkQqHhPmeZ5K-20" source="ZRMZaf2iJkQqHhPmeZ5K-11" target="ZRMZaf2iJkQqHhPmeZ5K-14">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-34" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="ZRMZaf2iJkQqHhPmeZ5K-20" source="ZRMZaf2iJkQqHhPmeZ5K-11" target="ZRMZaf2iJkQqHhPmeZ5K-14" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-11" value="Block 0" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ZRMZaf2iJkQqHhPmeZ5K-20">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-11" value="Block 0" style="rounded=1;whiteSpace=wrap;html=1;" parent="ZRMZaf2iJkQqHhPmeZ5K-20" vertex="1">
                     <mxGeometry x="195" y="41" width="100" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-35" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="ZRMZaf2iJkQqHhPmeZ5K-20" source="ZRMZaf2iJkQqHhPmeZ5K-14" target="ZRMZaf2iJkQqHhPmeZ5K-15">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-35" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="ZRMZaf2iJkQqHhPmeZ5K-20" source="ZRMZaf2iJkQqHhPmeZ5K-14" target="ZRMZaf2iJkQqHhPmeZ5K-15" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-14" value="Block 1" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ZRMZaf2iJkQqHhPmeZ5K-20">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-14" value="Block 1" style="rounded=1;whiteSpace=wrap;html=1;" parent="ZRMZaf2iJkQqHhPmeZ5K-20" vertex="1">
                     <mxGeometry x="395" y="41" width="100" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-15" value="Block 2" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ZRMZaf2iJkQqHhPmeZ5K-20">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-15" value="Block 2" style="rounded=1;whiteSpace=wrap;html=1;" parent="ZRMZaf2iJkQqHhPmeZ5K-20" vertex="1">
                     <mxGeometry x="565" y="41" width="100" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-32" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="ZRMZaf2iJkQqHhPmeZ5K-20" source="ZRMZaf2iJkQqHhPmeZ5K-30" target="ZRMZaf2iJkQqHhPmeZ5K-11">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-32" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="ZRMZaf2iJkQqHhPmeZ5K-20" source="ZRMZaf2iJkQqHhPmeZ5K-30" target="ZRMZaf2iJkQqHhPmeZ5K-11" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-30" value="fork B genesis state" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d80073;fontColor=#ffffff;strokeColor=#A50040;" vertex="1" parent="ZRMZaf2iJkQqHhPmeZ5K-20">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-30" value="fork B genesis state" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d80073;fontColor=#ffffff;strokeColor=#A50040;" parent="ZRMZaf2iJkQqHhPmeZ5K-20" vertex="1">
                     <mxGeometry x="35" y="41" width="100" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-31" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="ZRMZaf2iJkQqHhPmeZ5K-1" source="ZRMZaf2iJkQqHhPmeZ5K-29" target="ZRMZaf2iJkQqHhPmeZ5K-2">
+                <mxCell id="ZRMZaf2iJkQqHhPmeZ5K-31" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="ZRMZaf2iJkQqHhPmeZ5K-1" source="ZRMZaf2iJkQqHhPmeZ5K-29" target="ZRMZaf2iJkQqHhPmeZ5K-2" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="Q22LJm39gkMQTBp-yN1j-3" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="ZRMZaf2iJkQqHhPmeZ5K-1">
+                <mxCell id="Q22LJm39gkMQTBp-yN1j-3" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="ZRMZaf2iJkQqHhPmeZ5K-1" vertex="1">
                     <mxGeometry x="880" y="180" width="500" height="210" as="geometry"/>
                 </mxCell>
-                <mxCell id="Q22LJm39gkMQTBp-yN1j-4" value="Disputes are the &lt;b&gt;ONLY&lt;/b&gt; way to create a fork in the system.&amp;nbsp;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;This is not a typical fork as in blockchains, where you have multiple block producers produce a block and consensus picks the winning one following a fork choice rule.&amp;nbsp;&lt;/div&gt;&lt;div&gt;Our system is designed to not have such forks and if they happen it&#39;s a result of an objective deviation in the protocol and is handled by disputes by creating a new genesis where all the byzantine/malicious actors are removed. This is the resulting fork which all honest participants accept and build on top. All of this uses a deterministic algorithm so it&#39;s easy to prove later to an independent 3rd party (blockchain or an observer) what&#39;s the canonical reality that should be taken into account when settling on-chain.&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;&amp;nbsp;&lt;/span&gt;&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="Q22LJm39gkMQTBp-yN1j-3">
+                <mxCell id="Q22LJm39gkMQTBp-yN1j-4" value="Disputes are the &lt;b&gt;ONLY&lt;/b&gt; way to create a fork in the system.&amp;nbsp;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;This is not a typical fork as in blockchains, where you have multiple block producers produce a block and consensus picks the winning one following a fork choice rule.&amp;nbsp;&lt;/div&gt;&lt;div&gt;Our system is designed to not have such forks and if they happen it&#39;s a result of an objective deviation in the protocol and is handled by disputes by creating a new genesis where all the byzantine/malicious actors are removed. This is the resulting fork which all honest participants accept and build on top. All of this uses a deterministic algorithm so it&#39;s easy to prove later to an independent 3rd party (blockchain or an observer) what&#39;s the canonical reality that should be taken into account when settling on-chain.&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;&amp;nbsp;&lt;/span&gt;&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="Q22LJm39gkMQTBp-yN1j-3" vertex="1">
                     <mxGeometry y="30" width="500" height="180" as="geometry"/>
                 </mxCell>
             </root>
