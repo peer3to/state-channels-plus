@@ -54,7 +54,7 @@ import {
     SignatureUtils
 } from "@/utils";
 // Types
-import { AgreementFlag, ExecutionFlags, TimeConfig } from "@/types";
+import { AgreementFlag, BlockValidationAction, TimeConfig } from "@/types";
 import {
     Address,
     BlockHeight,
@@ -90,6 +90,12 @@ class StateManager {
     fraudProofService: FraudProofService;
 
     private latestForkId: ForkId = NULL;
+    private dispatcher = new Map([
+        [BlockValidationAction.DISPUTE, this.dispute],
+        [BlockValidationAction.BROADCAST, this.broadcast],
+        [BlockValidationAction.NOT_ENOUGH_TIME, this.notEnoughTime],
+        [BlockValidationAction.SUCCESS, this.success]
+    ]);
 
     constructor(
         signer: ethers.Signer,
@@ -220,9 +226,9 @@ class StateManager {
         );
 
         for (const blockConfirmation of blockConfirmations) {
-            const executionFlag =
+            const shouldDisconnect =
                 await this.onBlockConfirmation(blockConfirmation);
-            if (executionFlag == ExecutionFlags.DISPUTE) break;
+            if (shouldDisconnect) break;
         }
     }
     /**
@@ -250,69 +256,33 @@ class StateManager {
         return this.onSuccessCommon();
     }
 
-    // Passes the signedBlock through a verification pipeline and returns an execution flag based on the outcome
-    public onSignedBlock(
-        signedBlock: SignedBlockStruct
-    ): Promise<ExecutionFlags> {
+    // Passes the signedBlock through a verification pipeline and returns shouldDisconnect flag
+    public onSignedBlock(signedBlock: SignedBlockStruct): Promise<boolean> {
         return this.onBlockConfirmation({
             signedBlock,
             signatures: []
         });
     }
 
-    // Passes the block confirmation through a verification pipeline and returns an execution flag
+    // Passes the block confirmation through a verification pipeline and returns shouldDisconnect flag
     public async onBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct
-    ): Promise<ExecutionFlags> {
+    ): Promise<boolean> {
         // the try/catch is to ensure that the mutex is unlocked in case of an error
         // no error is actually expected to happen, and the catch block just re-throws the error
         try {
             await this.mutex.lock();
-            const validationFlag =
+
+            const validationResult =
                 await this.validationService.validateBlockConfirmation(
                     blockConfirmation
                 );
-
-            // If validation failed or is not ready, return early
-            if (validationFlag !== ExecutionFlags.SUCCESS) {
-                return validationFlag;
-            }
-            const block = Block.decode(
-                blockConfirmation.signedBlock.encodedBlock
-            );
-
-            // apply state transition and validate state transition result
-
-            const {
-                success,
-                encodedState,
-                previousStateHash,
-                successCallback,
-                exitChannels
-            } = await this.applyTransaction(block.transaction);
-
-            if (!success) {
-                this.fraudProofService.createInvalidStateTransitionProof(
-                    block.coordinates,
-                    blockConfirmation.signedBlock
+            if (validationResult.action) {
+                await this.dispatcher.get(validationResult.action)!(
+                    blockConfirmation
                 );
-                return ExecutionFlags.DISPUTE;
             }
-            // validate state transition result
-            const stateTransitionFlag = this.isValidStateTransition(
-                encodedState as string,
-                previousStateHash
-            );
-
-            if (!stateTransitionFlag) {
-                this.fraudProofService.createInvalidStateTransitionProof(
-                    block.coordinates,
-                    blockConfirmation.signedBlock
-                );
-                return ExecutionFlags.DISPUTE;
-            }
-
-            return ExecutionFlags.SUCCESS;
+            return !!validationResult.shouldDisconnect;
         } catch (error) {
             throw error;
         } finally {
@@ -801,6 +771,82 @@ class StateManager {
         }
 
         return true;
+    }
+
+    // ─────────────────────── ACTION HANDLERS ───────────────────────
+
+    private async success(
+        blockConfirmation: BlockConfirmationStruct
+    ): Promise<void> {
+        // this function is still incomplete and should be considered as TODO
+        // will be done in follow up PRs (after https://github.com/peer3to/state-channels-plus/pull/130)
+        const block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
+
+        const {
+            success,
+            encodedState,
+            previousStateHash,
+            successCallback,
+            exitChannels
+        } = await this.applyTransaction(block.transaction);
+
+        if (!success) {
+            this.fraudProofService.createInvalidStateTransitionProof(
+                block.coordinates,
+                blockConfirmation.signedBlock
+            );
+            await this.dispute(blockConfirmation);
+            return;
+        }
+
+        const stateTransitionFlag = this.isValidStateTransition(
+            encodedState as string,
+            previousStateHash
+        );
+
+        if (!stateTransitionFlag) {
+            this.fraudProofService.createInvalidStateTransitionProof(
+                block.coordinates,
+                blockConfirmation.signedBlock
+            );
+            await this.dispute(blockConfirmation);
+            return;
+        }
+
+        // Store the block confirmation
+        this.storage.blocks.storeBlockConfirmation(blockConfirmation);
+
+        // Handle state snapshot storage
+        await this.handleStateSnapshotStorage(encodedState, block.forkId);
+
+        // Store exit channel blocks if present
+        if (exitChannels.length > 0) {
+            await this.storeExitChannelBlock(exitChannels, block.coordinates);
+        }
+
+        successCallback();
+        await this.onSuccessCommon();
+    }
+
+    private async dispute(
+        _blockConfirmation: BlockConfirmationStruct
+    ): Promise<void> {
+        // The fraud proof has already been stored by ValidationService
+        // rest is left as TODO for now
+    }
+
+    private async broadcast(
+        _blockConfirmation: BlockConfirmationStruct
+    ): Promise<void> {
+        // The block has already been stored by ValidationService with merged signatures
+        // We would trigger P2P broadcast here: this.p2pManager.broadcastBlockConfirmation(blockConfirmation);
+        // For now, this is left as TODO
+    }
+
+    private async notEnoughTime(
+        _blockConfirmation: BlockConfirmationStruct
+    ): Promise<void> {
+        // No-op - abstain from applying/signing
     }
 
     // ----- Event handlers -----

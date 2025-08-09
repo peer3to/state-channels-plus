@@ -11,7 +11,7 @@ import Clock from "@/Clock";
 import Storage from "@/storage";
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 import { difference, isSubset, hash } from "@/utils";
-import { ExecutionFlags, TimeConfig } from "@/types";
+import { BlockValidationAction, TimeConfig } from "@/types";
 import {
     Address,
     ChannelId,
@@ -22,6 +22,11 @@ import {
 } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
+
+export type ValidationResult = {
+    shouldDisconnect?: boolean;
+    action?: BlockValidationAction;
+};
 
 export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
@@ -39,20 +44,21 @@ export default class ValidationService {
 
     async validateBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct
-    ): Promise<ExecutionFlags> {
+    ): Promise<ValidationResult> {
         const forkId = this.getForkId();
         const channelId = this.channelId;
 
         // 1. Check if channel is open
         if (!this.isChannelOpen(forkId)) {
-            this.storage.queues.queueConfirmation(blockConfirmation);
-            return ExecutionFlags.NOT_READY;
+            // not ready
+            this.queueForLater(blockConfirmation);
+            return { shouldDisconnect: false };
         }
 
         // 2. Authenticate the block and get participants
         const block = this.authenticateBlock(blockConfirmation, channelId);
         if (!block) {
-            return ExecutionFlags.DISCONNECT;
+            return { shouldDisconnect: true };
         }
         const participants = await this.getParticipants(
             block.coordinates,
@@ -60,42 +66,45 @@ export default class ValidationService {
         );
 
         // 3. check duplicate blocks
-        const duplicateBlockFlag = this.checkDuplicateBlock(
+        const duplicateResult = this.checkDuplicateBlock(
             blockConfirmation,
             participants
         );
-        // could be DISCONNECT, DUPLICATE, BROADCAST or undefined
-        if (duplicateBlockFlag !== null) {
-            return duplicateBlockFlag;
+
+        if (duplicateResult !== undefined) {
+            return duplicateResult;
         }
 
         // 4. author is a participant
         if (!participants.has(block.author)) {
-            return ExecutionFlags.DISCONNECT;
+            return { shouldDisconnect: true };
         }
 
         // 5. check conflicting block
-        const { conflict, executionFlag } = this.checkConflictingBlock(
+        const conflictResult = this.checkConflictingBlock(
             block,
             blockConfirmation.signedBlock
         );
-        if (conflict) {
-            return executionFlag!;
+        if (conflictResult !== undefined) {
+            return conflictResult;
         }
 
         if (await this.isDisputedFork(block.forkId, channelId)) {
-            this.storage.queues.queueConfirmation(blockConfirmation);
-            return ExecutionFlags.NOT_READY;
+            // not ready
+            this.queueForLater(blockConfirmation);
+            return { shouldDisconnect: false };
         }
+
         // isNext
         if (block.height > this.storage.blocks.getNextBlockHeight(forkId)) {
-            this.storage.queues.queueConfirmation(blockConfirmation);
-            return ExecutionFlags.NOT_READY;
+            // not ready
+            this.queueForLater(blockConfirmation);
+            return { shouldDisconnect: false };
         }
 
         // Is linked
         if (!this.isLinked(block)) {
-            return ExecutionFlags.DISCONNECT;
+            return { shouldDisconnect: true };
         }
 
         // previous block or snapshot
@@ -111,34 +120,41 @@ export default class ValidationService {
                 block.coordinates,
                 blockConfirmation.signedBlock
             );
-            return ExecutionFlags.DISPUTE;
+            return {
+                shouldDisconnect: true,
+                action: BlockValidationAction.DISPUTE
+            };
         }
 
         // Time logic
-        const timeValidationResult = await this.validateTimeLogic(
+        const timeResult = await this.validateTimeLogic(
             block,
             previousBlockOrSnapshot,
             blockConfirmation.signedBlock,
             channelId
         );
-        if (timeValidationResult !== null) {
-            // this can be NOT_ENOUGH_TIME or DISPUTE
-            return timeValidationResult;
+
+        if (timeResult) {
+            return timeResult;
         }
 
-        return ExecutionFlags.SUCCESS;
+        return {
+            action: BlockValidationAction.SUCCESS
+        };
+    }
+
+    // ────────────────────── INTERNAL ACTION METHODS ─────────────────────
+
+    private queueForLater(blockConfirmation: BlockConfirmationStruct): void {
+        this.storage.queues.queueConfirmation(blockConfirmation);
     }
 
     // ────────────────────── VALIDATION METHODS ─────────────────────
-    /**
-     * Determine whether the given block properly chains
-     * to its predecessor (or genesis snapshot).
-
-     */
 
     isChannelOpen(forkId: ForkId): boolean {
         return forkId !== ZeroHash;
     }
+
     private isLinked(block: Block): boolean {
         const { forkId, height } = block.coordinates;
         if (height === 0) {
@@ -194,7 +210,8 @@ export default class ValidationService {
     private checkDuplicateBlock(
         blockConfirmation: BlockConfirmationStruct,
         participants: Set<Address>
-    ): ExecutionFlags | null {
+        // undefined is conceptually same as DUPLICATE => do nothing
+    ): ValidationResult | undefined {
         const block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
 
         // 1. Check if block is in queue
@@ -209,12 +226,12 @@ export default class ValidationService {
             const areAllParticipants = isSubset(signerAddresses, participants);
 
             if (!areAllParticipants) {
-                return ExecutionFlags.DISCONNECT;
+                return { shouldDisconnect: true };
             }
 
             // Store in queue (handles signature merging automatically)
             this.storage.queues.queueConfirmation(blockConfirmation);
-            return ExecutionFlags.DUPLICATE;
+            return;
         }
 
         // 2. Check if block is in block storage
@@ -235,7 +252,7 @@ export default class ValidationService {
 
             // no new signatures
             if (newSignatures.size === 0) {
-                return ExecutionFlags.DUPLICATE;
+                return;
             }
 
             // Validate new signatures are from participants
@@ -248,24 +265,21 @@ export default class ValidationService {
             );
 
             if (!areNewSignersParticipants) {
-                return ExecutionFlags.DISCONNECT;
+                return { shouldDisconnect: true };
             }
 
-            // Store (handles signature merging automatically)
+            // Store new signatures and indicate broadcast
             this.storage.blocks.storeBlockConfirmation(blockConfirmation);
-            return ExecutionFlags.BROADCAST;
+            return { action: BlockValidationAction.BROADCAST };
         }
 
-        return null;
+        return;
     }
 
     private checkConflictingBlock(
         block: Block,
         signedBlock: SignedBlockStruct
-    ): {
-        conflict: boolean;
-        executionFlag?: ExecutionFlags;
-    } {
+    ): ValidationResult | undefined {
         // conflicting block ?
         const blockEntry = this.storage.blocks.getBlockEntry(
             block.forkId,
@@ -274,7 +288,7 @@ export default class ValidationService {
         const maybePreExistingBlockConfirmation = blockEntry?.blockConfirmation;
 
         if (!maybePreExistingBlockConfirmation) {
-            return { conflict: false };
+            return;
         }
 
         // name change for clarity, it isn't a maybe anymore
@@ -291,7 +305,10 @@ export default class ValidationService {
                 conflictingSignedBlock,
                 signedBlock
             );
-            return { conflict: true, executionFlag: ExecutionFlags.DISPUTE };
+            return {
+                shouldDisconnect: true,
+                action: BlockValidationAction.DISPUTE
+            };
         }
 
         // If not linked we can't slash since the peer could have been building on the wrong 'reality' since someone performed a double sign
@@ -300,13 +317,13 @@ export default class ValidationService {
                 block.coordinates,
                 signedBlock
             );
-            return { conflict: true, executionFlag: ExecutionFlags.DISPUTE };
+            return {
+                shouldDisconnect: true,
+                action: BlockValidationAction.DISPUTE
+            };
         }
 
-        return {
-            conflict: true,
-            executionFlag: ExecutionFlags.DISCONNECT
-        };
+        return { shouldDisconnect: true };
     }
 
     private async isDisputedFork(
@@ -323,20 +340,13 @@ export default class ValidationService {
      * Ensure block.timestamp is within the allowed
      * p2pTime window of the previous timestamp, optionally
      * fetching a better on-chain timestamp if needed.
-     *
-     * @param block            – the new block to validate
-     * @param previousblockOrSnapshot   – prior block or snapshot data
-     * @param signedBlock      – raw SignedBlockStruct
-     * @param channelId        – for on-chain lookup
-     * @returns ExecutionFlags.NOT_ENOUGH_TIME if time is only OBJECTIVELY invalid, otherwise `null`
-     * @throws InvalidTimestampException when timestamp is OBJECTIVELY invalid
      */
     private async validateTimeLogic(
         block: Block,
         previousblockOrSnapshot: BlockOrSnapshot,
         signedBlock: SignedBlockStruct,
         channelId: ChannelId
-    ): Promise<ExecutionFlags | null> {
+    ): Promise<ValidationResult | undefined> {
         let previousTimestamp: Timestamp;
         let previousBlock: Block | undefined;
         let previousStateSnapshot: StateSnapshot | undefined;
@@ -371,7 +381,10 @@ export default class ValidationService {
                     block.coordinates,
                     signedBlock
                 );
-                return ExecutionFlags.DISPUTE;
+                return {
+                    shouldDisconnect: true,
+                    action: BlockValidationAction.DISPUTE
+                };
             }
 
             // try to fetch later timestamp from on-chain data
@@ -386,7 +399,10 @@ export default class ValidationService {
                     block.coordinates,
                     signedBlock
                 );
-                return ExecutionFlags.DISPUTE;
+                return {
+                    shouldDisconnect: true,
+                    action: BlockValidationAction.DISPUTE
+                };
             }
 
             // Update the previous block with the on-chain timestamp
@@ -407,7 +423,10 @@ export default class ValidationService {
                     block.coordinates,
                     signedBlock
                 );
-                return ExecutionFlags.DISPUTE;
+                return {
+                    shouldDisconnect: true,
+                    action: BlockValidationAction.DISPUTE
+                };
             }
             // If valid, continue with rest of validation
 
@@ -418,12 +437,16 @@ export default class ValidationService {
                 if (
                     Math.abs(Clock.getTimeInSeconds() - block.timestamp) >=
                     this.timeConfig.agreementTime
-                )
-                    return ExecutionFlags.NOT_ENOUGH_TIME;
+                ) {
+                    return {
+                        shouldDisconnect: false,
+                        action: BlockValidationAction.NOT_ENOUGH_TIME
+                    };
+                }
             }
         }
 
-        return null; // Time validation passed
+        return; // Time validation passed
     }
 
     // ────────────────────── Helpers ─────────────────────
