@@ -11,7 +11,7 @@ import Clock from "@/Clock";
 import Storage from "@/storage";
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 import { difference, isSubset, hash } from "@/utils";
-import { ExecutionFlags, FraudType, TimeConfig } from "@/types";
+import { ExecutionFlags, TimeConfig } from "@/types";
 import {
     Address,
     ChannelId,
@@ -21,16 +21,7 @@ import {
     BlockOrSnapshot
 } from "@/types/types";
 
-import {
-    ValidationFraudException,
-    DoubleSignException,
-    InvalidStateTransitionException,
-    InvalidTimestampException,
-    InvalidLeaderException,
-    FraudProofService
-} from "./utils/FraudProofService";
-
-const NULL = "0x00";
+import FraudProofService from "./utils/FraudProofService";
 
 export default class ValidationService {
     constructor(
@@ -49,98 +40,90 @@ export default class ValidationService {
         const forkId = this.getForkId();
         const channelId = this.channelId;
 
-        try {
-            // 1. Check if channel is open
-            if (!isChannelOpen(forkId)) {
-                this.storage.queues.queueConfirmation(blockConfirmation);
-                return ExecutionFlags.NOT_READY;
-            }
+        // 1. Check if channel is open
+        if (!this.isChannelOpen(forkId)) {
+            this.storage.queues.queueConfirmation(blockConfirmation);
+            return ExecutionFlags.NOT_READY;
+        }
 
-            // 2. Authenticate the block and get participants
-            const block = this.authenticateBlock(blockConfirmation, channelId);
-            if (!block) {
-                return ExecutionFlags.DISCONNECT;
-            }
-            const participants = await this.getParticipants(
+        // 2. Authenticate the block and get participants
+        const block = this.authenticateBlock(blockConfirmation, channelId);
+        if (!block) {
+            return ExecutionFlags.DISCONNECT;
+        }
+        const participants = await this.getParticipants(
+            block.coordinates,
+            channelId
+        );
+
+        // 3. check duplicate blocks
+        const duplicateBlockFlag = this.checkDuplicateBlock(
+            blockConfirmation,
+            participants
+        );
+        // could be DISCONNECT, DUPLICATE, BROADCAST or undefined
+        if (duplicateBlockFlag !== null) {
+            return duplicateBlockFlag;
+        }
+
+        // 4. author is a participant
+        if (!participants.has(block.author)) {
+            return ExecutionFlags.DISCONNECT;
+        }
+
+        // 5. check conflicting block
+        const { conflict, executionFlag } = this.checkConflictingBlock(
+            block,
+            blockConfirmation.signedBlock
+        );
+        if (conflict) {
+            return executionFlag!;
+        }
+
+        if (await this.isDisputedFork(block.forkId, channelId)) {
+            this.storage.queues.queueConfirmation(blockConfirmation);
+            return ExecutionFlags.NOT_READY;
+        }
+        // isNext
+        if (block.height > this.storage.blocks.getNextBlockHeight(forkId)) {
+            this.storage.queues.queueConfirmation(blockConfirmation);
+            return ExecutionFlags.NOT_READY;
+        }
+
+        // Is linked
+        if (!this.isLinked(block)) {
+            return ExecutionFlags.DISCONNECT;
+        }
+
+        // previous block or snapshot
+        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
+            block.coordinates
+        );
+
+        // isNextLeader
+        const nextLeader = await this.stateMachine.getNextToWrite();
+        if (nextLeader !== block.author) {
+            // create invalid state transition proof
+            this.fraudProofService.createInvalidStateTransitionProof(
                 block.coordinates,
-                channelId
-            );
-
-            // 3. check duplicate blocks
-            const duplicateBlockFlag = this.checkDuplicateBlock(
-                blockConfirmation,
-                participants
-            );
-            // could be DISCONNECT, DUPLICATE, BROADCAST or undefined
-            if (duplicateBlockFlag !== null) {
-                return duplicateBlockFlag;
-            }
-
-            // 4. author is a participant
-            if (!participants.has(block.author)) {
-                return ExecutionFlags.DISCONNECT;
-            }
-
-            // 5. check conflicting block
-            const { conflict } = this.checkConflictingBlock(
-                block,
                 blockConfirmation.signedBlock
             );
-            if (conflict) {
-                return ExecutionFlags.DISCONNECT;
-            }
-
-            if (await this.isDisputedFork(block.forkId, channelId)) {
-                this.storage.queues.queueConfirmation(blockConfirmation);
-                return ExecutionFlags.NOT_READY;
-            }
-            // isNext
-            if (block.height > this.storage.blocks.getNextBlockHeight(forkId)) {
-                this.storage.queues.queueConfirmation(blockConfirmation);
-                return ExecutionFlags.NOT_READY;
-            }
-
-            // Is linked
-            if (!this.isLinked(block)) {
-                return ExecutionFlags.DISCONNECT;
-            }
-
-            // previous block or snapshot
-            const previousBlockOrSnapshot =
-                this.storage.getPreviousBlockOrSnapshot(block.coordinates);
-
-            // isNextLeader
-            const nextLeader = await this.stateMachine.getNextToWrite();
-            if (nextLeader !== block.author) {
-                // create invalid state transition proof
-                throw new InvalidLeaderException(
-                    previousBlockOrSnapshot,
-                    blockConfirmation.signedBlock
-                );
-            }
-
-            // Time logic
-            const timeValidationResult = await this.validateTimeLogic(
-                block,
-                previousBlockOrSnapshot,
-                blockConfirmation.signedBlock,
-                channelId
-            );
-            if (timeValidationResult !== null) {
-                // this can only be NOT_ENOUGH_TIME, other validation errors are OBJECTIVE and have thrown an exception
-                return timeValidationResult;
-            }
-
-            return ExecutionFlags.SUCCESS;
-        } catch (error) {
-            if (error instanceof ValidationFraudException) {
-                const fraudProof =
-                    this.fraudProofService.createFraudProof(error);
-                // TODO: Persist fraud proof to storage
-                return ExecutionFlags.DISPUTE;
-            }
-            throw error; // Re-throw non-fraud exceptions
+            return ExecutionFlags.DISPUTE;
         }
+
+        // Time logic
+        const timeValidationResult = await this.validateTimeLogic(
+            block,
+            previousBlockOrSnapshot,
+            blockConfirmation.signedBlock,
+            channelId
+        );
+        if (timeValidationResult !== null) {
+            // this can be NOT_ENOUGH_TIME or DISPUTE
+            return timeValidationResult;
+        }
+
+        return ExecutionFlags.SUCCESS;
     }
 
     // ────────────────────── VALIDATION METHODS ─────────────────────
@@ -151,7 +134,7 @@ export default class ValidationService {
      */
 
     isChannelOpen(forkId: ForkId): boolean {
-        return forkId !== ZeroHash && forkId !== NULL;
+        return forkId !== ZeroHash;
     }
     private isLinked(block: Block): boolean {
         const { forkId, height } = block.coordinates;
@@ -278,6 +261,7 @@ export default class ValidationService {
         signedBlock: SignedBlockStruct
     ): {
         conflict: boolean;
+        executionFlag?: ExecutionFlags;
     } {
         // conflicting block ?
         const blockEntry = this.storage.blocks.getBlockEntry(
@@ -300,19 +284,25 @@ export default class ValidationService {
 
         if (conflictingBlock.author === block.author) {
             // DOUBLE SIGN
-            throw new DoubleSignException(conflictingSignedBlock, signedBlock);
+            this.fraudProofService.createDoubleSignProof(
+                conflictingSignedBlock,
+                signedBlock
+            );
+            return { conflict: true, executionFlag: ExecutionFlags.DISPUTE };
         }
 
         // If not linked we can't slash since the peer could have been building on the wrong 'reality' since someone performed a double sign
         if (this.isLinked(block)) {
-            throw new InvalidStateTransitionException(
-                this.storage.getPreviousBlockOrSnapshot(block.coordinates),
+            this.fraudProofService.createInvalidStateTransitionProof(
+                block.coordinates,
                 signedBlock
             );
+            return { conflict: true, executionFlag: ExecutionFlags.DISPUTE };
         }
 
         return {
-            conflict: true
+            conflict: true,
+            executionFlag: ExecutionFlags.DISCONNECT
         };
     }
 
@@ -377,10 +367,11 @@ export default class ValidationService {
             ) {
                 // already has best timestamp
                 // no point in trying to update the timestamp => fraud proof
-                throw new InvalidTimestampException(
-                    previousblockOrSnapshot,
+                this.fraudProofService.createInvalidTimestampProof(
+                    block.coordinates,
                     signedBlock
                 );
+                return ExecutionFlags.DISPUTE;
             }
 
             // try to fetch later timestamp from on-chain data
@@ -391,10 +382,11 @@ export default class ValidationService {
 
             // Early return: Couldn't fetch or not better than current
             if (!onChainTimestamp || onChainTimestamp <= previousTimestamp) {
-                throw new InvalidTimestampException(
-                    previousblockOrSnapshot,
+                this.fraudProofService.createInvalidTimestampProof(
+                    block.coordinates,
                     signedBlock
                 );
+                return ExecutionFlags.DISPUTE;
             }
 
             // Update the previous block with the on-chain timestamp
@@ -411,10 +403,11 @@ export default class ValidationService {
                 block.timestamp <= onChainTimestamp + this.timeConfig.p2pTime;
 
             if (!isValidTimestamp) {
-                throw new InvalidTimestampException(
-                    previousblockOrSnapshot,
+                this.fraudProofService.createInvalidTimestampProof(
+                    block.coordinates,
                     signedBlock
                 );
+                return ExecutionFlags.DISPUTE;
             }
             // If valid, continue with rest of validation
 
