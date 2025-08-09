@@ -65,10 +65,7 @@ import {
     Timestamp
 } from "@/types/types";
 
-import {
-    isChannelOpen,
-    getPreviousBlockOrSnapshot
-} from "./utils/channelValidation";
+import { isChannelOpen } from "./utils/channelValidation";
 import {
     InvalidStateTransitionException,
     FraudProofService
@@ -308,9 +305,8 @@ class StateManager {
             } = await this.applyTransaction(block.transaction);
 
             if (!success) {
-                const previousEntity = getPreviousBlockOrSnapshot(
-                    block.coordinates,
-                    this.storage
+                const previousEntity = this.storage.getPreviousBlockOrSnapshot(
+                    block.coordinates
                 );
                 throw new InvalidStateTransitionException(
                     previousEntity,
@@ -324,9 +320,8 @@ class StateManager {
             );
 
             if (!stateTransitionFlag) {
-                const previousEntity = getPreviousBlockOrSnapshot(
-                    block.coordinates,
-                    this.storage
+                const previousEntity = this.storage.getPreviousBlockOrSnapshot(
+                    block.coordinates
                 );
                 throw new InvalidStateTransitionException(
                     previousEntity,

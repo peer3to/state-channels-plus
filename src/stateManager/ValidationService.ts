@@ -20,10 +20,7 @@ import {
     BlockOrSnapshot
 } from "@/types/types";
 
-import {
-    isChannelOpen,
-    getPreviousBlockOrSnapshot
-} from "./utils/channelValidation";
+import { isChannelOpen } from "./utils/channelValidation";
 import {
     ValidationFraudException,
     DoubleSignException,
@@ -83,9 +80,8 @@ export default class ValidationService {
             }
 
             // previous block or snapshot
-            const previousEntity = getPreviousBlockOrSnapshot(
-                block.coordinates,
-                this.storage
+            const previousEntity = this.storage.getPreviousBlockOrSnapshot(
+                block.coordinates
             );
 
             // 5. check conflicting block

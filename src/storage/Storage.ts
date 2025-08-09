@@ -9,7 +9,7 @@ import { DisputeStorage } from "./DisputeStorage";
 
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 import { deepCopyProxy } from "@/utils";
-import { ForkId, Bytes } from "@/types/types";
+import { ForkId, Bytes, BlockOrSnapshot } from "@/types/types";
 import { Address } from "@/types/types";
 
 export class Storage {
@@ -74,14 +74,37 @@ export class Storage {
         );
     }
 
-    getParticipants({ forkId, height }: BlockCoordinates): Address[] {
-        const previousSnapshot = this.getStateSnapshot({
-            forkId,
-            height: height - 1
+    private getPreviousStateSnapshot(
+        coordinates: BlockCoordinates
+    ): StateSnapshot | undefined {
+        return this.getStateSnapshot({
+            forkId: coordinates.forkId,
+            height: coordinates.height - 1
         });
+    }
+
+    getParticipants(coordinates: BlockCoordinates): Address[] {
+        const previousSnapshot = this.getPreviousStateSnapshot(coordinates);
         if (!previousSnapshot || !previousSnapshot.snapshotData.participants) {
             return [];
         }
         return previousSnapshot.snapshotData.participants;
+    }
+
+    getPreviousBlockOrSnapshot(coordinates: BlockCoordinates): BlockOrSnapshot {
+        const { forkId, height } = coordinates;
+
+        if (height > 0) {
+            const prevBlockEntry = this.blocks.getBlockEntry(
+                forkId,
+                height - 1
+            )!;
+
+            return { blockConfirmation: prevBlockEntry.blockConfirmation };
+        }
+
+        const genesisSnapshot =
+            this.stateSnapshots.getGenesisSnapshotDataByForkId(forkId)!;
+        return { stateSnapshot: genesisSnapshot };
     }
 }
