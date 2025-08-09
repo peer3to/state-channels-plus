@@ -23,7 +23,7 @@ import {
 import { SignedDisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 // TypeChain types - Contract interfaces
-import { StateChannelManagerProxy } from "@typechain-types";
+import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
 
 // Core components
 import AgreementManager from "../agreementManager/AgreementManager";
@@ -95,6 +95,7 @@ class StateManager {
         signer: ethers.Signer,
         signerAddress: Address,
         stateChannelManagerContract: StateChannelManagerProxy,
+        localDiamond: LocalDiamond,
         stateMachine: ADiamondStateMachine,
         timeConfig: TimeConfig,
         p2pEventHooks: P2pEventHooks,
@@ -106,7 +107,6 @@ class StateManager {
         this.timeConfig = timeConfig;
         this.stateChannelManagerContract = stateChannelManagerContract;
         this.storage = storage;
-
         this.stateChannelEventListener = new StateChannelEventListener(
             this.self,
             this.stateChannelManagerContract,
@@ -127,6 +127,7 @@ class StateManager {
             this.storage,
             this.stateMachine,
             this.stateChannelManagerContract,
+            localDiamond,
             this.timeConfig,
             this.channelId,
             () => this.forkId
