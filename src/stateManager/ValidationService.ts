@@ -4,6 +4,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 import { StateChannelManagerProxy } from "@typechain-types";
+import { ZeroHash } from "ethers";
 
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
@@ -20,7 +21,6 @@ import {
     BlockOrSnapshot
 } from "@/types/types";
 
-import { isChannelOpen } from "./utils/channelValidation";
 import {
     ValidationFraudException,
     DoubleSignException,
@@ -29,6 +29,8 @@ import {
     InvalidLeaderException,
     FraudProofService
 } from "./utils/FraudProofService";
+
+const NULL = "0x00";
 
 export default class ValidationService {
     constructor(
@@ -147,6 +149,10 @@ export default class ValidationService {
      * to its predecessor (or genesis snapshot).
 
      */
+
+    isChannelOpen(forkId: ForkId): boolean {
+        return forkId !== ZeroHash && forkId !== NULL;
+    }
     private isLinked(block: Block): boolean {
         const { forkId, height } = block.coordinates;
         if (height === 0) {

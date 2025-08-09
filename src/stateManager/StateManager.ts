@@ -65,7 +65,6 @@ import {
     Timestamp
 } from "@/types/types";
 
-import { isChannelOpen } from "./utils/channelValidation";
 import {
     InvalidStateTransitionException,
     FraudProofService
@@ -374,7 +373,7 @@ class StateManager {
 
         try {
             console.log("Play Transaction", this.forkId);
-            if (!isChannelOpen(this.forkId)) {
+            if (!this.validationService.isChannelOpen(this.forkId)) {
                 throw new Error("Channel not open");
             }
             if (!(await this.isMyTurn())) {
