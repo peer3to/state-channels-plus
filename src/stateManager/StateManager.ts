@@ -219,24 +219,9 @@ class StateManager {
         );
 
         for (const blockConfirmation of blockConfirmations) {
-            const executionFlag = await this.onSignedBlock(
-                blockConfirmation.signedBlock
-            );
+            const executionFlag =
+                await this.onBlockConfirmation(blockConfirmation);
             if (executionFlag == ExecutionFlags.DISPUTE) break;
-        }
-    }
-    private async tryConfirmFromQueue(): Promise<void> {
-        const nextBlockHeight = this.storage.blocks.getNextBlockHeight(
-            this.forkId
-        );
-        const confirmations = this.storage.queues.tryDequeueConfirmations(
-            this.forkId,
-            nextBlockHeight
-        );
-
-        for (const confirmation of confirmations) {
-            const executionFlag = await this.onBlockConfirmation(confirmation);
-            if (executionFlag == ExecutionFlags.DISPUTE) return;
         }
     }
     /**
@@ -703,14 +688,7 @@ class StateManager {
 
     private async onSuccessCommon() {
         // Immediately schedule a confirm/execute from queue on next tick
-        scheduleTask(
-            () => {
-                this.tryConfirmFromQueue();
-                this.tryExecuteFromQueue();
-            },
-            0,
-            "queueProcessing"
-        );
+        scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
 
         // Identify the fork/tx counts for the next participant
         const forkId = this.forkId;
