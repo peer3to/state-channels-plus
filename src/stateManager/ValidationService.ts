@@ -24,15 +24,17 @@ import {
 import FraudProofService from "./utils/FraudProofService";
 
 export default class ValidationService {
+    private readonly fraudProofService: FraudProofService;
     constructor(
         private readonly storage: Storage,
-        private readonly fraudProofService: FraudProofService,
         private readonly stateMachine: ADiamondStateMachine,
         private readonly stateChannelManagerContract: StateChannelManagerProxy,
         private readonly timeConfig: TimeConfig,
         private readonly channelId: ChannelId,
         private readonly getForkId: () => ForkId
-    ) {}
+    ) {
+        this.fraudProofService = new FraudProofService(this.storage);
+    }
 
     async validateBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct
