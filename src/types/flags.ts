@@ -12,6 +12,13 @@ export enum ExecutionFlags {
     DOUBLE_SIGN
 }
 
+export enum BlockValidationAction {
+    DISPUTE,
+    BROADCAST,
+    NOT_ENOUGH_TIME,
+    SUCCESS
+}
+
 export enum FraudType {
     DOUBLE_SIGN,
     INVALID_STATE_TRANSITION
