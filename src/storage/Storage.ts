@@ -6,6 +6,7 @@ import { StateMachineStateStorage } from "./StateMachineStateStorage";
 import { ExitPointsStorage } from "./ExitPointsStorage";
 import { QueueStorage } from "./QueueStorage";
 import { DisputeStorage } from "./DisputeStorage";
+import { FraudProofStorage } from "./FraudProofStorage";
 
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 import { deepCopyProxy } from "@/utils";
@@ -21,6 +22,7 @@ export class Storage {
     public readonly exitPoints: ExitPointsStorage;
     public readonly queues: QueueStorage;
     public readonly disputes: DisputeStorage;
+    public readonly fraudProofs: FraudProofStorage;
 
     constructor() {
         this.blocks = deepCopyProxy(new BlockStorage());
@@ -31,6 +33,7 @@ export class Storage {
         this.exitPoints = deepCopyProxy(new ExitPointsStorage());
         this.queues = deepCopyProxy(new QueueStorage());
         this.disputes = deepCopyProxy(new DisputeStorage());
+        this.fraudProofs = deepCopyProxy(new FraudProofStorage());
         return deepCopyProxy(this);
     }
 
