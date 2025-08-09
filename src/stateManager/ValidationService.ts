@@ -16,13 +16,13 @@ import {
     ChannelId,
     ForkId,
     Signature,
-    Timestamp
+    Timestamp,
+    BlockOrSnapshot
 } from "@/types/types";
 
 import {
     isChannelOpen,
-    getPreviousBlockOrSnapshot,
-    PreviousEntity
+    getPreviousBlockOrSnapshot
 } from "./utils/channelValidation";
 import {
     ValidationFraudException,
@@ -346,7 +346,7 @@ export default class ValidationService {
      * fetching a better on-chain timestamp if needed.
      *
      * @param block            – the new block to validate
-     * @param previousEntity   – prior block or snapshot data
+     * @param previousblockOrSnapshot   – prior block or snapshot data
      * @param signedBlock      – raw SignedBlockStruct
      * @param channelId        – for on-chain lookup
      * @returns ExecutionFlags.NOT_ENOUGH_TIME if time is only OBJECTIVELY invalid, otherwise `null`
@@ -354,7 +354,7 @@ export default class ValidationService {
      */
     private async validateTimeLogic(
         block: Block,
-        previousEntity: PreviousEntity,
+        previousblockOrSnapshot: BlockOrSnapshot,
         signedBlock: SignedBlockStruct,
         channelId: ChannelId
     ): Promise<ExecutionFlags | null> {
@@ -362,16 +362,17 @@ export default class ValidationService {
         let previousBlock: Block | undefined;
         let previousStateSnapshot: StateSnapshot | undefined;
 
-        if (previousEntity.blockConfirmation) {
+        if (previousblockOrSnapshot.blockConfirmation) {
             previousBlock = Block.decode(
-                previousEntity.blockConfirmation.signedBlock.encodedBlock
+                previousblockOrSnapshot.blockConfirmation.signedBlock
+                    .encodedBlock
             );
             previousTimestamp = previousBlock.getRelevantTimestamp(
                 block.author,
-                previousEntity.blockConfirmation.signatures
+                previousblockOrSnapshot.blockConfirmation.signatures
             );
         } else {
-            previousStateSnapshot = previousEntity.stateSnapshot;
+            previousStateSnapshot = previousblockOrSnapshot.stateSnapshot;
             previousTimestamp = previousStateSnapshot!.timestamp;
         }
 
@@ -388,7 +389,7 @@ export default class ValidationService {
                 // already has best timestamp
                 // no point in trying to update the timestamp => fraud proof
                 throw new InvalidTimestampException(
-                    previousEntity,
+                    previousblockOrSnapshot,
                     signedBlock
                 );
             }
@@ -402,7 +403,7 @@ export default class ValidationService {
             // Early return: Couldn't fetch or not better than current
             if (!onChainTimestamp || onChainTimestamp <= previousTimestamp) {
                 throw new InvalidTimestampException(
-                    previousEntity,
+                    previousblockOrSnapshot,
                     signedBlock
                 );
             }
@@ -422,7 +423,7 @@ export default class ValidationService {
 
             if (!isValidTimestamp) {
                 throw new InvalidTimestampException(
-                    previousEntity,
+                    previousblockOrSnapshot,
                     signedBlock
                 );
             }

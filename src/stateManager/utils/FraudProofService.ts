@@ -6,7 +6,7 @@ import {
     BlockInvalidStateTransitionProofStruct,
     InvalidTimestampProofStruct
 } from "@typechain-types/contracts/V1/types/FraudProofTypes";
-import { PreviousEntity } from "./channelValidation";
+import { BlockOrSnapshot } from "@/types/types";
 
 const NULL = "0x00";
 
@@ -33,7 +33,7 @@ export class DoubleSignException extends ValidationFraudException {
 
 export class InvalidStateTransitionException extends ValidationFraudException {
     constructor(
-        public readonly previousEntity: PreviousEntity,
+        public readonly previousBlockOrSnpashot: BlockOrSnapshot,
         public readonly invalidBlock: SignedBlockStruct
     ) {
         super("Invalid state transition fraud detected");
@@ -42,7 +42,7 @@ export class InvalidStateTransitionException extends ValidationFraudException {
 
 export class InvalidTimestampException extends ValidationFraudException {
     constructor(
-        public readonly previousEntity: PreviousEntity,
+        public readonly previousBlockOrSnpashot: BlockOrSnapshot,
         public readonly invalidBlock: SignedBlockStruct
     ) {
         super("Invalid timestamp fraud detected");
@@ -51,7 +51,7 @@ export class InvalidTimestampException extends ValidationFraudException {
 
 export class InvalidLeaderException extends ValidationFraudException {
     constructor(
-        public readonly previousEntity: PreviousEntity,
+        public readonly previousBlockOrSnpashot: BlockOrSnapshot,
         public readonly invalidBlock: SignedBlockStruct
     ) {
         super("Invalid leader fraud detected");
@@ -70,15 +70,16 @@ export class FraudProofService {
      * Create invalid state transition proof
      */
     createInvalidStateTransitionProof(
-        previousEntity: PreviousEntity,
+        previousBlockOrSnpashot: BlockOrSnapshot,
         signedBlock: SignedBlockStruct
     ): BlockInvalidStateTransitionProofStruct {
         let prevSignedBlock: SignedBlockStruct | undefined;
         let prevStateSnapshot: StateSnapshot;
 
-        if (previousEntity.blockConfirmation) {
+        if (previousBlockOrSnpashot.blockConfirmation) {
             // Height > 0 case - we have a previous block
-            prevSignedBlock = previousEntity.blockConfirmation.signedBlock;
+            prevSignedBlock =
+                previousBlockOrSnpashot.blockConfirmation.signedBlock;
             const prevBlock = Block.decode(prevSignedBlock!.encodedBlock);
             prevStateSnapshot =
                 this.storage.stateSnapshots.getStateSnapshotByHash(
@@ -87,7 +88,7 @@ export class FraudProofService {
         } else {
             // Height === 0 case - we have genesis state snapshot
             prevSignedBlock = NULL as unknown as SignedBlockStruct;
-            prevStateSnapshot = previousEntity.stateSnapshot!;
+            prevStateSnapshot = previousBlockOrSnpashot.stateSnapshot!;
         }
 
         return {
@@ -105,15 +106,16 @@ export class FraudProofService {
      * Create invalid timestamp proof
      */
     createInvalidTimestampProof(
-        previousEntity: PreviousEntity,
+        previousBlockOrSnpashot: BlockOrSnapshot,
         signedBlock: SignedBlockStruct
     ): InvalidTimestampProofStruct {
         let prevSignedBlock: SignedBlockStruct | undefined;
         let prevStateSnapshot: StateSnapshot;
 
-        if (previousEntity.blockConfirmation) {
+        if (previousBlockOrSnpashot.blockConfirmation) {
             // Height > 0 case - we have a previous block
-            prevSignedBlock = previousEntity.blockConfirmation.signedBlock;
+            prevSignedBlock =
+                previousBlockOrSnpashot.blockConfirmation.signedBlock;
             const prevBlock = Block.decode(prevSignedBlock!.encodedBlock);
             prevStateSnapshot =
                 this.storage.stateSnapshots.getStateSnapshotByHash(
@@ -122,7 +124,7 @@ export class FraudProofService {
         } else {
             // Height === 0 case - we have genesis state snapshot
             prevSignedBlock = NULL as unknown as SignedBlockStruct;
-            prevStateSnapshot = previousEntity.stateSnapshot!;
+            prevStateSnapshot = previousBlockOrSnpashot.stateSnapshot!;
         }
 
         return {
@@ -146,19 +148,20 @@ export class FraudProofService {
             error: ValidationFraudException
         ) =>
             this.createInvalidStateTransitionProof(
-                (error as InvalidStateTransitionException).previousEntity,
+                (error as InvalidStateTransitionException)
+                    .previousBlockOrSnpashot,
                 (error as InvalidStateTransitionException).invalidBlock
             ),
 
         [InvalidTimestampException.name]: (error: ValidationFraudException) =>
             this.createInvalidTimestampProof(
-                (error as InvalidTimestampException).previousEntity,
+                (error as InvalidTimestampException).previousBlockOrSnpashot,
                 (error as InvalidTimestampException).invalidBlock
             ),
 
         [InvalidLeaderException.name]: (error: ValidationFraudException) =>
             this.createInvalidStateTransitionProof(
-                (error as InvalidLeaderException).previousEntity,
+                (error as InvalidLeaderException).previousBlockOrSnpashot,
                 (error as InvalidLeaderException).invalidBlock
             )
     };

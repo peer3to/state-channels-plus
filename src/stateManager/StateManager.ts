@@ -337,7 +337,7 @@ class StateManager {
             if (error instanceof InvalidStateTransitionException) {
                 const fraudProof =
                     this.fraudProofService.createInvalidStateTransitionProof(
-                        error.previousEntity,
+                        error.previousBlockOrSnpashot,
                         error.invalidBlock
                     );
                 // TODO: Persist fraud proof to storage

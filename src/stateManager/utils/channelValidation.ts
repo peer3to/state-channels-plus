@@ -1,15 +1,9 @@
 import { ethers } from "ethers";
 import Storage from "@/storage";
-import { BlockCoordinates, StateSnapshot } from "@/models";
-import { ForkId } from "@/types/types";
-import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { BlockCoordinates } from "@/models";
+import { ForkId, BlockOrSnapshot } from "@/types/types";
 
 const NULL = "0x00";
-
-export type PreviousEntity = {
-    blockConfirmation?: BlockConfirmationStruct;
-    stateSnapshot?: StateSnapshot;
-};
 
 export function isChannelOpen(forkId: ForkId): boolean {
     return forkId !== ethers.ZeroHash && forkId !== NULL;
@@ -18,7 +12,7 @@ export function isChannelOpen(forkId: ForkId): boolean {
 export function getPreviousBlockOrSnapshot(
     coordinates: BlockCoordinates,
     storage: Storage
-): PreviousEntity {
+): BlockOrSnapshot {
     const { forkId, height } = coordinates;
 
     if (height > 0) {
