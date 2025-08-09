@@ -55,7 +55,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return stateMachineImplementation.getParticipants();
     }
 
-    function getNextToWrite(bytes32 channelId, bytes memory encodedState) public virtual returns (address) {
+    function getNextToWrite(bytes32, /* channelId */ bytes memory encodedState) public virtual returns (address) {
         //channelId not used currenlty since all channels have the same SM - later they can be mapped to different ones
         stateMachineImplementation.setState(encodedState);
         return stateMachineImplementation.getNextToWrite();

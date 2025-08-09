@@ -7,10 +7,8 @@ import "./Errors.sol";
 import "../types/FraudProofTypes.sol";
 
 contract FraudProofFacet is StateChannelCommon {
-    mapping(
-        FraudProofType
-            => function(bytes memory encodedFraudProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address)
-    ) private proofHandlers;
+    mapping(FraudProofType => function(bytes memory, FraudProofVerificationContext memory) internal returns (address))
+        private proofHandlers;
 
     constructor() {
         //If we endup having too many fraud proofs, we'll refactor them into a seperate 'facet' (ERC-2535)

@@ -8,10 +8,8 @@ import "../types/DisputeFraudProofTypes.sol";
 import "./utils/DisputeUtils.sol";
 
 contract DisputeFraudProofFacet is StateChannelCommon {
-    mapping(
-        DisputeFraudProofType
-            => function(bytes memory encodedFraudProof, Dispute memory dispute) internal returns (address)
-    ) private proofHandlers;
+    mapping(DisputeFraudProofType => function(bytes memory, Dispute memory) internal returns (address)) private
+        proofHandlers;
 
     constructor() {
         //If we endup having too many fraud proofs, we'll refactor them into a seperate 'facet' (ERC-2535)
@@ -58,7 +56,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
     function _handleTimeoutThreshold(bytes memory encodedFraudProof, Dispute memory dispute)
         internal
-        view
+        pure
         returns (address)
     {
         TimeoutThresholdProof memory timeoutThresholdProof = abi.decode(encodedFraudProof, (TimeoutThresholdProof));
@@ -122,9 +120,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return dispute.disputer;
     }
 
-    function _handleTimeoutParticipantNotNext(bytes memory encodedFraudProof, Dispute memory dispute)
+    function _handleTimeoutParticipantNotNext(bytes memory, /* encodedFraudProof */ Dispute memory dispute)
         internal
-        view
+        pure
         returns (address)
     {
         //Can be part of auditing instead of doing it here
@@ -134,9 +132,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return dispute.disputer;
     }
 
-    function _handleTimeoutTooEarly(bytes memory encodedFraudProof, Dispute memory dispute)
+    function _handleTimeoutTooEarly(bytes memory, /* encodedFraudProof */ Dispute memory dispute)
         internal
-        view
+        pure
         returns (address)
     {
         //TODO
@@ -145,7 +143,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
     function _handleDisputeNotLatestState(bytes memory encodedFraudProof, Dispute memory dispute)
         internal
-        view
+        pure
         returns (address)
     {
         DisputeNotLatestStateProof memory disputeNotLatestStateProof =
@@ -173,63 +171,63 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return dispute.disputer;
     }
 
-    function _handleDisputeInvalid(bytes memory encodedFraudProof, Dispute memory dispute)
+    function _handleDisputeInvalid(bytes memory, /* encodedFraudProof */ Dispute memory dispute)
         internal
-        view
+        pure
         returns (address)
     {
         //TODO
         return dispute.disputer;
     }
 
-    function _handleDisputeInvalidRecursive(bytes memory encodedFraudProof, Dispute memory dispute)
+    function _handleDisputeInvalidRecursive(bytes memory, /* encodedFraudProof */ Dispute memory dispute)
         internal
-        view
+        pure
         returns (address)
     {
         //TODO
         return dispute.disputer;
     }
 
-    function _handleDisputeOutOfGas(bytes memory encodedFraudProof, Dispute memory dispute)
+    function _handleDisputeOutOfGas(bytes memory, /* encodedFraudProof */ Dispute memory dispute)
         internal
-        view
+        pure
         returns (address)
     {
         //TODO
         return dispute.disputer;
     }
 
-    function _handleDisputeInvalidOutputState(bytes memory encodedFraudProof, Dispute memory dispute)
+    function _handleDisputeInvalidOutputState(bytes memory, /* encodedFraudProof */ Dispute memory dispute)
         internal
-        view
+        pure
         returns (address)
     {
         //TODO
         return dispute.disputer;
     }
 
-    function _handleDisputeInvalidStateProof(bytes memory encodedFraudProof, Dispute memory dispute)
+    function _handleDisputeInvalidStateProof(bytes memory, /* encodedFraudProof */ Dispute memory dispute)
         internal
-        view
+        pure
         returns (address)
     {
         //TODO
         return dispute.disputer;
     }
 
-    function _handleDisputeInvalidPreviousRecursive(bytes memory encodedFraudProof, Dispute memory dispute)
+    function _handleDisputeInvalidPreviousRecursive(bytes memory, /* encodedFraudProof */ Dispute memory dispute)
         internal
-        view
+        pure
         returns (address)
     {
         //TODO
         return dispute.disputer;
     }
 
-    function _handleDisputeInvalidExitChannelBlocks(bytes memory encodedFraudProof, Dispute memory dispute)
+    function _handleDisputeInvalidExitChannelBlocks(bytes memory, /* encodedFraudProof */ Dispute memory dispute)
         internal
-        view
+        pure
         returns (address)
     {
         //TODO

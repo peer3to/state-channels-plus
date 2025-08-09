@@ -66,7 +66,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
     function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public {
         uint256 gasLimit = getGasLimit();
         bytes memory data = abi.encodeCall(DisputeVerificationFacet.auditDispute, (dispute, disputeAuditingData));
-        (bool success, bytes memory returnData) = address(this).call{gas: gasLimit}(data);
+        (bool success,) = address(this).call{gas: gasLimit}(data);
         if (success) {
             // auditing passed - dispute is correct, slash the challenger
             if (_canParticipateInDisputes(dispute.channelId, msg.sender)) {
@@ -319,6 +319,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
     function _verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         internal
+        pure
         returns (bool isValid)
     {
         //This runs after verifying auditingData and genesisStateSnapshot => we can skip those checks here
@@ -327,12 +328,12 @@ contract DisputeVerificationFacet is StateChannelCommon {
         bytes32 latestSnanpshotHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot));
 
         // Milestone checking
-        (bool isValid, bytes memory lastBlockEncoded) = verifyMilestones(
+        (bool milestoneValid, bytes memory lastBlockEncoded) = verifyMilestones(
             dispute.stateProof.milestones,
             disputeAuditingData.milestoneSnapshots,
             disputeAuditingData.genesisStateSnapshot
         );
-        if (!isValid) {
+        if (!milestoneValid) {
             return false;
         }
         // If no blocks in milestones
@@ -441,7 +442,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         StateSnapshot memory genesisSnapshot
-    ) public returns (bool isValid, bytes memory lastBlockEncoded) {
+    ) public pure returns (bool isValid, bytes memory lastBlockEncoded) {
         StateSnapshot memory snapshot = genesisSnapshot;
         lastBlockEncoded = "";
 
@@ -468,7 +469,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return (true, lastBlockEncoded);
     }
 
-    function _isCorrectGenesis(Dispute memory dispute) internal view returns (bool) {
+    function _isCorrectGenesis(Dispute memory dispute) internal pure returns (bool) {
         return _areDisputeAndBlockSameFork(dispute, _getLatestBlock(dispute.stateProof));
     }
 
@@ -486,7 +487,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return previousJoinChannelBlockHash == latestJoinChannelBlockHash;
     }
 
-    function _verifyExitChannelBlocks(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+    function _verifyExitChannelBlocks(Dispute memory, /* dispute */ DisputeAuditingData memory disputeAuditingData)
         internal
         pure
         returns (bool)
@@ -575,7 +576,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         }
     }
 
-    function _calculateRemovals(Dispute memory dispute) internal view returns (address[] memory removals) {
+    function _calculateRemovals(Dispute memory dispute) internal pure returns (address[] memory removals) {
         //Try and combine timeout and selfRemoval -> max 2 removals per dispute
         uint256 removalCount = 0;
         address[] memory _removals = new address[](2);
@@ -600,7 +601,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
     function _isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         internal
-        view
+        pure
         returns (bool)
     {
         //check dispute commits to disputeData

@@ -84,7 +84,7 @@ contract JoinChannelFacet is StateChannelCommon {
         disputeData[jc.channelId].pendingParticipants.push(jc.participant);
     }
 
-    function _createJoinChannelBlock(JoinChannel memory jc) internal returns (JoinChannelBlock memory) {
+    function _createJoinChannelBlock(JoinChannel memory jc) internal view returns (JoinChannelBlock memory) {
         JoinChannel[] memory jcs = new JoinChannel[](1);
         ChannelBalance storage channelBalance = channelBalances[jc.channelId];
         jcs[0] = jc;

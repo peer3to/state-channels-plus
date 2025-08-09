@@ -209,8 +209,8 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     // ********** public/external DIAMOND functions **********
 
     /// @dev Callable only by diamond facets - performs the deposit of the specific assets by interpeting `joinChannel` - returns bool success
-    function depositAssetsComposable(JoinChannel memory joinChannel) public virtual onlySelf returns (bool) {
-        return consumerFacet.depositAssetsComposable(joinChannel);
+    function depositAssetsComposable(JoinChannel memory joinChannelData) public virtual onlySelf returns (bool) {
+        return consumerFacet.depositAssetsComposable(joinChannelData);
     }
 
     /// @dev Callable only by diamond facets - performs the withdrawal of the specific assets by interpeting `exitChannel` - returns bool success
@@ -234,7 +234,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return _removeParticipantsFromStateMachine(encodedState, participants);
     }
 
-    function executeStateTransition(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
+    function executeStateTransition(bytes32, /* channelId */ bytes memory encodedState, Transaction memory _tx)
         public
         override
         returns (bool, bytes memory encodedModifiedState)

@@ -92,13 +92,13 @@ contract MathConsumerFacet is AConsumerFacet {
         // Implementation for adding a new participant to the channel
     }
 
-    function depositAssetsComposable(JoinChannel memory joinChannel) external override returns (bool) {
+    function depositAssetsComposable(JoinChannel memory /* joinChannel */ ) external pure override returns (bool) {
         // Implementation for depositing assets when a participant joins
 
         return true; // Placeholder implementation
     }
 
-    function withdrawAssetsComposable(ExitChannel memory exitChannel) external override returns (bool) {
+    function withdrawAssetsComposable(ExitChannel memory /* exitChannel */ ) external pure override returns (bool) {
         // Implementation for withdrawing assets when a participant exits
         return true; // Placeholder implementation
     }

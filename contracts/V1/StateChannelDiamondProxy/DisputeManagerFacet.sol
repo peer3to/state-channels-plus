@@ -141,11 +141,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         SnapshotData storage snapshotData = stateSnapshots[dispute.channelId].snapshotData;
         uint256 thresholdCount = snapshotData.participants.length + disputeData.pendingParticipants.length
             - disputeData.onChainSlashes.length;
-        if (
-            disputeConfirmation.signatures.length + 1
-                < snapshotData.participants.length + disputeData.pendingParticipants.length
-                    - disputeData.onChainSlashes.length
-        ) return false;
+        if (disputeConfirmation.signatures.length + 1 < thresholdCount) return false;
         address[] memory thresholdSet = getOnChainThresholdSet(dispute.channelId);
         bytes[] memory signatures = StateChannelUtilLibrary.insertBytesInByteArray(
             disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures

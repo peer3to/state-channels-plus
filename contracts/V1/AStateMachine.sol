@@ -82,16 +82,16 @@ abstract contract AStateMachine {
         // emit SetStateA(encodedState);
     }
 
-    function joinChannel(JoinChannel memory joinChannel) external _nonReentrant returns (bool) {
-        return _joinChannel(joinChannel);
+    function joinChannel(JoinChannel memory joinChannelData) external _nonReentrant returns (bool) {
+        return _joinChannel(joinChannelData);
     }
 
     function slashParticipant(address adr) external _nonReentrant returns (bool, ExitChannel memory exitChannel) {
-        (bool success, ExitChannel memory exitChannel) = _slashParticipant(adr);
+        (bool success, ExitChannel memory exitChannelData) = _slashParticipant(adr);
         if (success) {
-            _addExitChannel(exitChannel);
+            _addExitChannel(exitChannelData);
         }
-        return (success, exitChannel);
+        return (success, exitChannelData);
     }
 
     function removeParticipant(address adr)
