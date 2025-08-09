@@ -79,37 +79,12 @@ export default class ValidationService {
                 return ExecutionFlags.DISCONNECT;
             }
 
-            // previous block or snapshot
-            const previousEntity = this.storage.getPreviousBlockOrSnapshot(
-                block.coordinates
-            );
-
             // 5. check conflicting block
-            const blockEntry = this.storage.blocks.getBlockEntry(
-                block.forkId,
-                block.height
-            );
-            const maybePreExistingBlockConfirmation =
-                blockEntry?.blockConfirmation;
-
-            const { conflict, fraudType } = this.checkConflictingBlock(
+            const { conflict } = this.checkConflictingBlock(
                 block,
-                maybePreExistingBlockConfirmation?.signedBlock
+                blockConfirmation.signedBlock
             );
             if (conflict) {
-                if (fraudType === FraudType.DOUBLE_SIGN) {
-                    throw new DoubleSignException(
-                        blockEntry!.blockConfirmation.signedBlock,
-                        blockConfirmation.signedBlock
-                    );
-                }
-                if (fraudType === FraudType.INVALID_STATE_TRANSITION) {
-                    throw new InvalidStateTransitionException(
-                        previousEntity,
-                        blockConfirmation.signedBlock
-                    );
-                }
-
                 return ExecutionFlags.DISCONNECT;
             }
 
@@ -128,12 +103,16 @@ export default class ValidationService {
                 return ExecutionFlags.DISCONNECT;
             }
 
+            // previous block or snapshot
+            const previousBlockOrSnapshot =
+                this.storage.getPreviousBlockOrSnapshot(block.coordinates);
+
             // isNextLeader
             const nextLeader = await this.stateMachine.getNextToWrite();
             if (nextLeader !== block.author) {
                 // create invalid state transition proof
                 throw new InvalidLeaderException(
-                    previousEntity,
+                    previousBlockOrSnapshot,
                     blockConfirmation.signedBlock
                 );
             }
@@ -141,7 +120,7 @@ export default class ValidationService {
             // Time logic
             const timeValidationResult = await this.validateTimeLogic(
                 block,
-                previousEntity,
+                previousBlockOrSnapshot,
                 blockConfirmation.signedBlock,
                 channelId
             );
@@ -290,18 +269,24 @@ export default class ValidationService {
 
     private checkConflictingBlock(
         block: Block,
-        maybePreExistingSignedBlock: SignedBlockStruct | undefined
+        signedBlock: SignedBlockStruct
     ): {
         conflict: boolean;
-        fraudType?: FraudType;
     } {
         // conflicting block ?
-        if (!maybePreExistingSignedBlock) {
+        const blockEntry = this.storage.blocks.getBlockEntry(
+            block.forkId,
+            block.height
+        );
+        const maybePreExistingBlockConfirmation = blockEntry?.blockConfirmation;
+
+        if (!maybePreExistingBlockConfirmation) {
             return { conflict: false };
         }
 
-        // name change for calirty, it isn't a maybe anymore
-        const conflictingSignedBlock = maybePreExistingSignedBlock;
+        // name change for clarity, it isn't a maybe anymore
+        const conflictingSignedBlock =
+            maybePreExistingBlockConfirmation.signedBlock;
 
         const conflictingBlock = Block.decode(
             conflictingSignedBlock.encodedBlock
@@ -309,17 +294,19 @@ export default class ValidationService {
 
         if (conflictingBlock.author === block.author) {
             // DOUBLE SIGN
-            return {
-                conflict: true,
-                fraudType: FraudType.DOUBLE_SIGN
-            };
+            throw new DoubleSignException(conflictingSignedBlock, signedBlock);
         }
+
+        // If not linked we can't slash since the peer could have been building on the wrong 'reality' since someone performed a double sign
+        if (this.isLinked(block)) {
+            throw new InvalidStateTransitionException(
+                this.storage.getPreviousBlockOrSnapshot(block.coordinates),
+                signedBlock
+            );
+        }
+
         return {
-            conflict: true,
-            //If not linked we can't slash since the peer could have been building on the wrong 'reality' since someone performed a double sign
-            fraudType: this.isLinked(block)
-                ? FraudType.INVALID_STATE_TRANSITION
-                : undefined
+            conflict: true
         };
     }
 
