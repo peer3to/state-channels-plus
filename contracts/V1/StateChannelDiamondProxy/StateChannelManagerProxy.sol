@@ -368,6 +368,16 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         }
     }
 
+    function getWindowCommitments(bytes32 channelId, bytes32 forkId)
+        public
+        view
+        returns (bytes32[] memory disputeCommitments)
+    {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        return disputeWindow.evidence.disputeCommitments;
+    }
+
     // ********** private/internal functions **********
 
     function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
