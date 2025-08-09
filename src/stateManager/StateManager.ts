@@ -264,19 +264,25 @@ class StateManager {
     public async onBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct
     ): Promise<ExecutionFlags> {
-        const validationFlag =
-            await this.validationService.validateBlockConfirmation(
-                blockConfirmation
+        // the try/catch is to ensure that the mutex is unlocked in case of an error
+        // no error is actually expected to happen, and the catch block just re-throws the error
+        try {
+            await this.mutex.lock();
+            const validationFlag =
+                await this.validationService.validateBlockConfirmation(
+                    blockConfirmation
+                );
+
+            // If validation failed or is not ready, return early
+            if (validationFlag !== ExecutionFlags.SUCCESS) {
+                return validationFlag;
+            }
+            const block = Block.decode(
+                blockConfirmation.signedBlock.encodedBlock
             );
 
-        // If validation failed or is not ready, return early
-        if (validationFlag !== ExecutionFlags.SUCCESS) {
-            return validationFlag;
-        }
-        const block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
+            // apply state transition and validate state transition result
 
-        // apply state transition and validate state transition result
-        try {
             const {
                 success,
                 encodedState,
@@ -286,13 +292,11 @@ class StateManager {
             } = await this.applyTransaction(block.transaction);
 
             if (!success) {
-                const previousEntity = this.storage.getPreviousBlockOrSnapshot(
-                    block.coordinates
-                );
-                throw new InvalidStateTransitionException(
-                    previousEntity,
+                this.fraudProofService.createInvalidStateTransitionProof(
+                    block.coordinates,
                     blockConfirmation.signedBlock
                 );
+                return ExecutionFlags.DISPUTE;
             }
             // validate state transition result
             const stateTransitionFlag = this.isValidStateTransition(
@@ -301,28 +305,19 @@ class StateManager {
             );
 
             if (!stateTransitionFlag) {
-                const previousEntity = this.storage.getPreviousBlockOrSnapshot(
-                    block.coordinates
-                );
-                throw new InvalidStateTransitionException(
-                    previousEntity,
+                this.fraudProofService.createInvalidStateTransitionProof(
+                    block.coordinates,
                     blockConfirmation.signedBlock
                 );
-            }
-        } catch (error) {
-            if (error instanceof InvalidStateTransitionException) {
-                const fraudProof =
-                    this.fraudProofService.createInvalidStateTransitionProof(
-                        error.previousBlockOrSnpashot,
-                        error.invalidBlock
-                    );
-                // TODO: Persist fraud proof to storage
                 return ExecutionFlags.DISPUTE;
             }
-            throw error; // Re-throw non-fraud exceptions
-        }
 
-        return ExecutionFlags.SUCCESS;
+            return ExecutionFlags.SUCCESS;
+        } catch (error) {
+            throw error;
+        } finally {
+            this.mutex.unlock();
+        }
     }
 
     //Aplies a transaction to the state machine and returns the encoded state with a success callback
