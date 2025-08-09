@@ -65,10 +65,7 @@ import {
     Timestamp
 } from "@/types/types";
 
-import {
-    InvalidStateTransitionException,
-    FraudProofService
-} from "./utils/FraudProofService";
+import FraudProofService from "./utils/FraudProofService";
 
 let DEBUG_STATE_MANAGER = false;
 
@@ -128,7 +125,6 @@ class StateManager {
         this.fraudProofService = new FraudProofService(this.storage);
         this.validationService = new ValidationService(
             this.storage,
-            this.fraudProofService,
             this.stateMachine,
             this.stateChannelManagerContract,
             this.timeConfig,
