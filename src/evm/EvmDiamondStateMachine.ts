@@ -134,7 +134,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     async getParticipants(): Promise<Address[]> {
         const callData = this.getEncodedCalldata("getParticipants");
 
-        const addresses = Codec.decodeEthersResult<Address[]>(
+        const addresses = Codec.decodeEvmResult<Address[]>(
             await this.contractExecuter.executeCall(callData),
             "address[]"
         );
@@ -144,7 +144,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     async getExitChannels(): Promise<ExitChannelStruct[]> {
         const callData = this.getEncodedCalldata("getExitChannels");
 
-        return Codec.decodeEthersResult<ExitChannelStruct[]>(
+        return Codec.decodeEvmResult<ExitChannelStruct[]>(
             await this.contractExecuter.executeCall(callData),
             `${ExitChannelEthersType}[]`
         );
@@ -153,7 +153,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     async getNextToWrite(): Promise<Address> {
         const callData = this.getEncodedCalldata("getNextToWrite");
         try {
-            return Codec.decodeEthersResult<Address>(
+            return Codec.decodeEvmResult<Address>(
                 await this.contractExecuter.executeCall(callData),
                 "address"
             );
@@ -179,7 +179,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const callData = this.getEncodedCalldata("getState");
 
         try {
-            return Codec.decodeEthersResult<Bytes>(
+            return Codec.decodeEvmResult<Bytes>(
                 await this.contractExecuter.executeCall(callData),
                 "bytes"
             );
@@ -192,7 +192,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const callData = this.getEncodedCalldata("getZeroBalance");
 
         try {
-            return Codec.decodeEthersResult<BalanceStruct>(
+            return Codec.decodeEvmResult<BalanceStruct>(
                 await this.contractExecuter.executeCall(callData),
                 BalanceEthersType
             );
@@ -211,7 +211,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         ]);
 
         try {
-            return Codec.decodeEthersResult<BalanceStruct>(
+            return Codec.decodeEvmResult<BalanceStruct>(
                 await this.contractExecuter.executeCall(callData),
                 BalanceEthersType
             );
@@ -230,7 +230,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         ]);
 
         try {
-            return Codec.decodeEthersResult<BalanceStruct>(
+            return Codec.decodeEvmResult<BalanceStruct>(
                 await this.contractExecuter.executeCall(callData),
                 BalanceEthersType
             );
@@ -243,7 +243,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const callData = this.getEncodedCalldata("getTotalStateBalance");
 
         try {
-            return Codec.decodeEthersResult<BalanceStruct>(
+            return Codec.decodeEvmResult<BalanceStruct>(
                 await this.contractExecuter.executeCall(callData),
                 BalanceEthersType,
                 { useObjectConversion: true }

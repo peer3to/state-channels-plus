@@ -457,6 +457,33 @@ describe("EvmDiamondStateMachine", function () {
             expect(Array.isArray(participants)).to.be.true;
         });
 
+        it("should decode participants correctly with different participant counts", async function () {
+            // Test with 3 participants
+            const threeParticipantState = {
+                number: 0n,
+                participants: [
+                    await signers[0].getAddress(),
+                    await signers[1].getAddress(),
+                    await signers[2].getAddress()
+                ],
+                balances: [100n, 200n, 300n]
+            };
+            await stateMachine.setState(encodeState(threeParticipantState));
+
+            const threeParticipants = await stateMachine.getParticipants();
+            expect(threeParticipants).to.be.an("array");
+            expect(threeParticipants).to.have.length(3);
+            expect(threeParticipants[0]).to.equal(
+                await signers[0].getAddress()
+            );
+            expect(threeParticipants[1]).to.equal(
+                await signers[1].getAddress()
+            );
+            expect(threeParticipants[2]).to.equal(
+                await signers[2].getAddress()
+            );
+        });
+
         it("should get next to write", async function () {
             const nextToWrite = await stateMachine.getNextToWrite();
 

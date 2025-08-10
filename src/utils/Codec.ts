@@ -143,7 +143,7 @@ export class Codec {
         return obj;
     }
 
-    public static decodeEthersResult<T>(
+    public static decodeEvmResult<T>(
         execResult: ExecResult,
         ethersType: string,
         options: {
