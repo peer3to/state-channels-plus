@@ -58,6 +58,10 @@ export default class StateSnapshot {
         ) as Hash;
     }
 
+    get stateMachineStateHash(): Hash {
+        return this.snapshot.snapshotData.stateMachineStateHash;
+    }
+
     get isGenesis(): boolean {
         return this.forkId === this.snapshotDataHash;
     }

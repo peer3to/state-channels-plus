@@ -7,7 +7,21 @@ export enum ExecutionFlags {
     TIMESTAMP_IN_FUTURE,
     TIMESTAMP_TOO_OLD,
     NOT_ENOUGH_TIME,
-    PAST_FORK
+    PAST_FORK,
+    BROADCAST,
+    DOUBLE_SIGN
+}
+
+export enum BlockValidationAction {
+    DISPUTE,
+    BROADCAST,
+    NOT_ENOUGH_TIME,
+    SUCCESS
+}
+
+export enum FraudType {
+    DOUBLE_SIGN,
+    INVALID_STATE_TRANSITION
 }
 
 export enum AgreementFlag {

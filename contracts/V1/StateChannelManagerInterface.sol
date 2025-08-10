@@ -85,5 +85,7 @@ abstract contract StateChannelManagerInterface {
 
     function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations) public virtual;
 
+    function isForkDisputed(bytes32 channelId, bytes32 forkId) public view virtual returns (bool);
+
     function multicall(bytes[] calldata calls) external virtual returns (bytes[] memory results);
 }

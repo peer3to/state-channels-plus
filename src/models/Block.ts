@@ -75,7 +75,7 @@ export default class Block {
     ): Timestamp {
         // internal type "conversion" so that the calling context doesnt have to deal with this
         const sigs = signatures as Signature[];
-        const { didSign } = this.getParticipantSignature(nextBlockAuthor, sigs);
+        const { didSign } = this.findSignature(nextBlockAuthor, sigs);
 
         if (didSign) {
             // If nextBlockAuthor has signed, return block timestamp

@@ -2,29 +2,23 @@ import {
     BlockConfirmationEthersType,
     ExitChannelBlockEthersType,
     SignedBlockEthersType,
-    TimeoutEthersType
+    TimeoutEthersType,
+    StateSnapshotEthersType
 } from "./ethers";
 
 export enum FraudProofType {
     // Block related fraud proofs
-    BlockDoubleSign = 0,
-    BlockEmptyBlock = 1,
-    BlockInvalidStateTransition = 2,
-    BlockOutOfGas = 3,
-    BlockInvalidPreviousLink = 4,
+    BlockDoubleSign,
+    BlockInvalidStateTransition,
     // Timeout related fraud proofs
-    TimeoutThreshold = 5,
-    TimeoutPriorInvalid = 6,
-    TimeoutParticipantNotNext = 7,
-    // Dispute fraud proofs
-    DisputeNotLatestState = 8,
-    DisputeInvalid = 9,
-    DisputeInvalidRecursive = 10,
-    DisputeOutOfGas = 11,
-    DisputeInvalidOutputState = 12,
-    DisputeInvalidStateProof = 13,
-    DisputeInvalidPreviousRecursive = 14,
-    DisputeInvalidExitChannelBlocks = 15
+    InvalidTimestamp
+}
+
+export enum DisputeFraudProofType {
+    DoubleSign,
+    IncorrectData,
+    NewerState,
+    BlockTooFarInFuture
 }
 
 export const MilestoneProofEthersType = `tuple(
@@ -36,7 +30,7 @@ export const StateProofEthersType = `tuple(
     ${SignedBlockEthersType}[] signedBlocks
 )`;
 
-export const ProofEthersType = `tuple(
+export const FraudProofEthersType = `tuple(
     uint8 proofType,
     address participant,
     bytes encodedProof
@@ -47,7 +41,7 @@ export const DisputeEthersType = `tuple(
     bytes32 genesisSnapshotDataHash,
     bytes32 latestStateSnapshotHash,
     ${StateProofEthersType} stateProof,
-    ${ProofEthersType}[] fraudProofs,
+    ${FraudProofEthersType}[] fraudProofs,
     address[] onChainSlashes,
     bytes32 onChainLatestJoinChannelBlockHash,
     bytes32 outputSnapshotDataHash,
@@ -67,50 +61,49 @@ export const DisputeConfirmationEthersType = `tuple(
         bytes[] signatures
 )`;
 
-export const FoldRechallengeProofEthersType = `tuple(
-    string encodedBlock,
-    bytes[] signatures
-)`;
+export const BlockDoubleSignProofEthersType = `tuple(
+    ${SignedBlockEthersType} block1,
+    ${SignedBlockEthersType} block2
+    )`;
 
-export const DoubleSignProofEthersType = `tuple(
-        tuple(${SignedBlockEthersType} block1, ${SignedBlockEthersType} block2)[] doubleSigns
-        )`;
+export const BlockInvalidStateTransitionProofEthersType = `tuple(
+            ${SignedBlockEthersType} invalidBlock,
+            ${SignedBlockEthersType} previousBlock,
+            ${StateSnapshotEthersType} previousBlockStateSnapshot,
+            bytes previousStateStateMachineState
+            )`;
+
+export const InvalidTimestampProofEthersType = `tuple(
+            ${SignedBlockEthersType} invalidBlock,
+            ${SignedBlockEthersType} previousBlock,
+            ${StateSnapshotEthersType} previousStateSnapshot
+            )`;
+
 export const IncorrectDataProofEthersType = `tuple(
     ${SignedBlockEthersType} block1,
     ${SignedBlockEthersType} block2,
     string encodedState
     )`;
+
 export const NewerStateProofEthersType = `tuple(
     string encodedBlock,
     string confirmationSignature
     )`;
-export const FoldPriorBlockProofEthersType = `tuple(
-    uint moveCnt
-    )`;
+
 export const BlockTooFarInFutureProofEthersType = `tuple(
     ${SignedBlockEthersType} block1
     )`;
 
-export enum FraudProofType {
-    FoldRechallenge,
-    DoubleSign,
-    IncorrectData,
-    NewerState,
-    FoldPriorBlock,
-    BlockTooFarInFuture
-}
-
-const DISPUTE_PROOF_ETHERS_TYPES: Record<FraudProofType, string> = {
-    [FraudProofType.FoldRechallenge]: FoldRechallengeProofEthersType,
-    [FraudProofType.DoubleSign]: DoubleSignProofEthersType,
-    [FraudProofType.IncorrectData]: IncorrectDataProofEthersType,
-    [FraudProofType.NewerState]: NewerStateProofEthersType,
-    [FraudProofType.FoldPriorBlock]: FoldPriorBlockProofEthersType,
-    [FraudProofType.BlockTooFarInFuture]: BlockTooFarInFutureProofEthersType
+const DISPUTE_PROOF_ETHERS_TYPES: Record<DisputeFraudProofType, string> = {
+    [DisputeFraudProofType.DoubleSign]: BlockDoubleSignProofEthersType,
+    [DisputeFraudProofType.IncorrectData]: IncorrectDataProofEthersType,
+    [DisputeFraudProofType.NewerState]: NewerStateProofEthersType,
+    [DisputeFraudProofType.BlockTooFarInFuture]:
+        BlockTooFarInFutureProofEthersType
 };
 
 export const getEthersTypeForDisputeProof = (
-    proofType: FraudProofType
+    proofType: DisputeFraudProofType
 ): string => {
     return DISPUTE_PROOF_ETHERS_TYPES[proofType];
 };

@@ -340,6 +340,12 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return StateChannelCommon.isChannelOpen(channelId);
     }
 
+    function isForkDisputed(bytes32 channelId, bytes32 forkId) public view override returns (bool) {
+        DisputeData storage disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[forkId];
+        return disputeWindow.evidence.creationTimestamp != 0;
+    }
+
     function verifyMilestones(
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
