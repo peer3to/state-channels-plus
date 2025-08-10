@@ -1,5 +1,5 @@
 import Storage from "@/storage";
-import { Block, BlockCoordinates, StateSnapshot } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     BlockDoubleSignProofStruct,
@@ -8,9 +8,8 @@ import {
 } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { ZeroHash } from "ethers";
-import { Address, Hash, Signature } from "@/types/types";
+import { Address, Hash } from "@/types/types";
 import { Codec, FraudStruct } from "@/utils/Codec";
-import { SignatureUtils } from "@/utils";
 import { FraudProofType } from "@/types";
 
 // ────────────────────── FRAUD PROOF SERVICE ─────────────────────
@@ -24,23 +23,19 @@ export default class FraudProofService {
     /**
      * Create invalid state transition proof
      */
-    createInvalidStateTransitionProof(
-        coordinates: BlockCoordinates,
-        signedBlock: SignedBlockStruct
-    ): Hash {
+    createInvalidStateTransitionProof(block: Block): Hash {
         let prevSignedBlock: SignedBlockStruct | undefined;
         let prevStateSnapshot: StateSnapshot;
-        const previousBlockOrSnapshot =
-            this.storage.getPreviousBlockOrSnapshot(coordinates);
+        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
+            block.coordinates
+        );
 
-        if (previousBlockOrSnapshot.blockConfirmation) {
+        if (previousBlockOrSnapshot.block) {
             // Height > 0 case - we have a previous block
-            prevSignedBlock =
-                previousBlockOrSnapshot.blockConfirmation.signedBlock;
-            const prevBlock = Block.decode(prevSignedBlock!.encodedBlock);
+            prevSignedBlock = previousBlockOrSnapshot.block.signedBlock;
             prevStateSnapshot =
                 this.storage.stateSnapshots.getStateSnapshotByHash(
-                    prevBlock.stateSnapshotHash
+                    previousBlockOrSnapshot.block.stateSnapshotHash
                 )!;
         } else {
             // Height === 0 case - we have genesis state snapshot
@@ -49,7 +44,7 @@ export default class FraudProofService {
         }
 
         const proof: BlockInvalidStateTransitionProofStruct = {
-            invalidBlock: signedBlock,
+            invalidBlock: block.signedBlock,
             previousBlock: prevSignedBlock,
             previousBlockStateSnapshot: prevStateSnapshot.toStruct(),
             previousStateStateMachineState:
@@ -58,12 +53,7 @@ export default class FraudProofService {
                 )!
         };
 
-        const participant = SignatureUtils.getSignerAddress(
-            signedBlock.encodedBlock,
-            signedBlock.signature as Signature
-        );
-
-        return this.storeFraudProof(participant, {
+        return this.storeFraudProof(block.signerAddress, {
             type: FraudProofType.BlockInvalidStateTransition,
             struct: proof
         });
@@ -72,20 +62,17 @@ export default class FraudProofService {
     /**
      * Create invalid timestamp proof
      */
-    createInvalidTimestampProof(
-        coordinates: BlockCoordinates,
-        signedBlock: SignedBlockStruct
-    ): Hash {
+    createInvalidTimestampProof(block: Block): Hash {
         let prevSignedBlock: SignedBlockStruct | undefined;
         let prevStateSnapshot: StateSnapshot;
-        const previousBlockOrSnapshot =
-            this.storage.getPreviousBlockOrSnapshot(coordinates);
+        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
+            block.coordinates
+        );
 
-        if (previousBlockOrSnapshot.blockConfirmation) {
+        if (previousBlockOrSnapshot.block) {
             // Height > 0 case - we have a previous block
-            prevSignedBlock =
-                previousBlockOrSnapshot.blockConfirmation.signedBlock;
-            const prevBlock = Block.decode(prevSignedBlock!.encodedBlock);
+            const prevBlock = previousBlockOrSnapshot.block;
+            prevSignedBlock = prevBlock.signedBlock;
             prevStateSnapshot =
                 this.storage.stateSnapshots.getStateSnapshotByHash(
                     prevBlock.stateSnapshotHash
@@ -97,37 +84,24 @@ export default class FraudProofService {
         }
 
         const proof: InvalidTimestampProofStruct = {
-            invalidBlock: signedBlock,
+            invalidBlock: block.signedBlock,
             previousBlock: prevSignedBlock,
             previousStateSnapshot: prevStateSnapshot.toStruct()
         };
 
-        const participant = SignatureUtils.getSignerAddress(
-            signedBlock.encodedBlock,
-            signedBlock.signature as Signature
-        );
-
-        return this.storeFraudProof(participant, {
+        return this.storeFraudProof(block.signerAddress, {
             type: FraudProofType.InvalidTimestamp,
             struct: proof
         });
     }
 
-    createDoubleSignProof(
-        conflictingSignedBlock: SignedBlockStruct,
-        signedBlock: SignedBlockStruct
-    ): Hash {
+    createDoubleSignProof(conflictingBlock: Block, originalBlock: Block): Hash {
         const proof: BlockDoubleSignProofStruct = {
-            block1: conflictingSignedBlock,
-            block2: signedBlock
+            block1: conflictingBlock.signedBlock,
+            block2: originalBlock.signedBlock
         };
 
-        const participant1 = SignatureUtils.getSignerAddress(
-            conflictingSignedBlock.encodedBlock,
-            conflictingSignedBlock.signature as Signature
-        );
-
-        return this.storeFraudProof(participant1, {
+        return this.storeFraudProof(originalBlock.signerAddress, {
             type: FraudProofType.BlockDoubleSign,
             struct: proof
         });

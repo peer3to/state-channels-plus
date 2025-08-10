@@ -10,7 +10,8 @@ import {
     JoinChannelBlockStruct,
     BalanceStruct,
     StateSnapshotStruct,
-    BlockConfirmationStruct
+    BlockConfirmationStruct,
+    BlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // TypeChain types - Proof types
@@ -190,7 +191,7 @@ class StateManager {
             signedBlock,
             Number(timestamp)
         );
-        let block = Block.decode(signedBlock.encodedBlock);
+        let block = Block.fromSignedBlock(signedBlock);
         let disputeProof: DisputeFraudProofStruct;
         if (flag == AgreementFlag.DOUBLE_SIGN) {
             console.log("StateManager - collectOnChainBlock - double sign");
@@ -224,8 +225,9 @@ class StateManager {
         );
 
         for (const blockConfirmation of blockConfirmations) {
-            const shouldDisconnect =
-                await this.onBlockConfirmation(blockConfirmation);
+            const shouldDisconnect = await this.onBlockConfirmation(
+                blockConfirmation.blockConfirmationStruct
+            );
             if (shouldDisconnect) break;
         }
     }
@@ -346,10 +348,17 @@ class StateManager {
             const posteriorStateHash = await this.diamondStateMachine
                 .getState()
                 .then(hash);
-            const block = await this.createBlock(tx, posteriorStateHash);
-            const signedBlock = await block.signedBlock(
-                this.p2pManager.p2pSigner
-            );
+            const blockStruct = await this.createBlock(tx, posteriorStateHash);
+            const encodedBlock = Codec.encode(blockStruct, Type.Block);
+            const blockHash = hash(encodedBlock);
+            const signedBlock: SignedBlockStruct = {
+                encodedBlock: encodedBlock,
+                signature: await this.p2pManager.p2pSigner.signMessage(
+                    ethers.getBytes(blockHash)
+                )
+            };
+
+            const block = Block.fromSignedBlock(signedBlock);
 
             this.agreementManager.addBlock(
                 block,
@@ -884,7 +893,7 @@ class StateManager {
     private async createBlock(
         tx: TransactionStruct,
         posteriorStateHash: Hash
-    ): Promise<Block> {
+    ): Promise<BlockStruct> {
         const forkId = this.forkId;
         const transactionCnt = Number(tx.header.transactionCnt);
 
@@ -901,11 +910,13 @@ class StateManager {
 
         const stateSnapshotHash = stateSnapshot.hash;
 
-        return Block.from({
+        const blockStruct: BlockStruct = {
             transaction: tx,
             stateSnapshotHash: stateSnapshotHash,
             previousBlockHash: previousBlockHash
-        });
+        };
+
+        return blockStruct;
     }
 
     private isValidStateTransition(
@@ -927,7 +938,7 @@ class StateManager {
     ): Promise<void> {
         // this function is still incomplete and should be considered as TODO
         // will be done in follow up PRs (after https://github.com/peer3to/state-channels-plus/pull/130)
-        const block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
+        const block = Block.fromBlockConfirmation(blockConfirmation);
 
         const {
             success,
@@ -938,10 +949,7 @@ class StateManager {
         } = await this.applyTransaction(block.transaction);
 
         if (!success) {
-            this.fraudProofService.createInvalidStateTransitionProof(
-                block.coordinates,
-                blockConfirmation.signedBlock
-            );
+            this.fraudProofService.createInvalidStateTransitionProof(block);
             await this.dispute(blockConfirmation);
             return;
         }
@@ -952,16 +960,13 @@ class StateManager {
         );
 
         if (!stateTransitionFlag) {
-            this.fraudProofService.createInvalidStateTransitionProof(
-                block.coordinates,
-                blockConfirmation.signedBlock
-            );
+            this.fraudProofService.createInvalidStateTransitionProof(block);
             await this.dispute(blockConfirmation);
             return;
         }
 
         // Store the block confirmation
-        this.storage.blocks.storeBlockConfirmation(blockConfirmation);
+        this.storage.blocks.storeBlock(block);
 
         // Handle state snapshot storage
         await this.handleStateSnapshotStorage(
