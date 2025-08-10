@@ -69,7 +69,7 @@ export class DisputeStorage {
         return this.disputes.get(disputeHash);
     }
 
-    getDisputedFork(forkId: ForkId): DidIDispute {
+    didIDispute(forkId: ForkId): DidIDispute {
         return this.disputedForks.get(forkId) ?? false;
     }
 

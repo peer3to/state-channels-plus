@@ -330,7 +330,7 @@ export default class ValidationService {
         channelId: ChannelId
     ): Promise<boolean> {
         return (
-            this.storage.disputes.getDisputedFork(forkId) ||
+            this.storage.disputes.didIDispute(forkId) ||
             (await this.diamondStateMachine.isForkDisputed(channelId, forkId))
         );
     }
