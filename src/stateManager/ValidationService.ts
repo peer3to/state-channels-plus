@@ -3,7 +3,7 @@ import {
     BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
-import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerProxy } from "@typechain-types";
 import { ZeroHash } from "ethers";
 
 import ADiamondStateMachine from "@/ADiamondStateMachine";
@@ -32,9 +32,8 @@ export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
     constructor(
         private readonly storage: Storage,
-        private readonly stateMachine: ADiamondStateMachine,
+        private readonly diamondStateMachine: ADiamondStateMachine,
         private readonly stateChannelManagerContract: StateChannelManagerProxy,
-        private readonly localDiamond: LocalDiamond,
         private readonly timeConfig: TimeConfig,
         private readonly channelId: ChannelId,
         private readonly getForkId: () => ForkId
@@ -113,7 +112,7 @@ export default class ValidationService {
         );
 
         // isNextLeader
-        const nextLeader = await this.stateMachine.getNextToWrite();
+        const nextLeader = await this.diamondStateMachine.getNextToWrite();
         if (nextLeader !== block.author) {
             // create invalid state transition proof
             this.fraudProofService.createInvalidStateTransitionProof(
@@ -332,7 +331,7 @@ export default class ValidationService {
     ): Promise<boolean> {
         return (
             this.storage.disputes.getDisputedFork(forkId) ||
-            (await this.localDiamond.isForkDisputed(channelId, forkId))
+            (await this.diamondStateMachine.isForkDisputed(channelId, forkId))
         );
     }
 

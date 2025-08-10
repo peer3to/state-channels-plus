@@ -13,7 +13,7 @@ import { DebugProxy, decodeErrorProxy, Codec } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
-import { Address, Bytes } from "@/types/types";
+import { Address, Bytes, ChannelId, ForkId } from "@/types/types";
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import Storage from "@/storage";
@@ -27,7 +27,7 @@ const DEBUG_CHANNEL_CONTRACT = true;
  */
 class EvmDiamondStateMachine extends ADiamondStateMachine {
     readonly contractExecuter: ContractExecuter;
-    readonly diamondExecuter?: ContractExecuter;
+    readonly diamondExecuter: ContractExecuter;
     readonly contractInterface: ethers.Interface;
     private p2pContractInstance?: AStateMachineContract;
     public stateManager?: StateManager;
@@ -35,7 +35,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     constructor(
         contractExecuter: ContractExecuter,
         contractInterface: ethers.Interface,
-        diamondExecuter?: ContractExecuter
+        diamondExecuter: ContractExecuter
     ) {
         super();
         this.contractExecuter = contractExecuter;
@@ -253,6 +253,24 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
     }
 
+    async isForkDisputed(
+        channelId: ChannelId,
+        forkId: ForkId
+    ): Promise<boolean> {
+        const callData = this.getEncodedCalldata("isForkDisputed", [
+            channelId,
+            forkId
+        ]);
+        try {
+            return Codec.decodeEvmResult<boolean>(
+                await this.diamondExecuter.executeCall(callData),
+                "bool"
+            );
+        } catch (error) {
+            throw this.createContextError("isForkDisputed", error);
+        }
+    }
+
     /**
      * Creates a standalone EVM state machine
      * @param deployStateMachineTx The transaction to deploy the state machine
@@ -317,10 +335,11 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
 
         // Create the EvmStateMachine instance (which extends AStateMachine)
-        const evmStateMachine = await EvmDiamondStateMachine.createStandalone(
-            deployStateMachineTx,
-            stateMachineContractInstance.interface
-        );
+        const evmDiamondStateMachine =
+            await EvmDiamondStateMachine.createStandalone(
+                deployStateMachineTx,
+                stateMachineContractInstance.interface
+            );
 
         // Get time configuration
         const configTimes =
@@ -340,14 +359,14 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             signer,
             signerAddress,
             deployedStateChannelContractInstance,
-            evmStateMachine,
+            evmDiamondStateMachine,
             timeConfig,
             p2pEventHooks || {},
             storage
         );
 
         // Set state manager on P2P communication manager
-        evmStateMachine.setStateManager(stateManager);
+        evmDiamondStateMachine.setStateManager(stateManager);
 
         // Create P2P contract instance
         const p2pContractInstance = stateMachineContractInstance.connect(
@@ -355,7 +374,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         ) as T;
 
         // Set P2P contract instance on P2P manager
-        evmStateMachine.setP2pContractInstance(p2pContractInstance);
+        evmDiamondStateMachine.setP2pContractInstance(p2pContractInstance);
 
         return new P2pInstance(
             p2pContractInstance,

@@ -72,7 +72,7 @@ let DEBUG_STATE_MANAGER = false;
 const NULL = "0x00";
 
 class StateManager {
-    stateMachine: ADiamondStateMachine;
+    diamondStateMachine: ADiamondStateMachine;
     p2pEventHooks: P2pEventHooks;
     signerAddress: Address;
     agreementManager: AgreementManager;
@@ -101,14 +101,13 @@ class StateManager {
         signer: ethers.Signer,
         signerAddress: Address,
         stateChannelManagerContract: StateChannelManagerProxy,
-        localDiamond: LocalDiamond,
-        stateMachine: ADiamondStateMachine,
+        diamondStateMachine: ADiamondStateMachine,
         timeConfig: TimeConfig,
         p2pEventHooks: P2pEventHooks,
         storage: Storage
     ) {
         this.signerAddress = signerAddress;
-        this.stateMachine = stateMachine;
+        this.diamondStateMachine = diamondStateMachine;
         this.p2pEventHooks = p2pEventHooks;
         this.timeConfig = timeConfig;
         this.stateChannelManagerContract = stateChannelManagerContract;
@@ -131,9 +130,8 @@ class StateManager {
         this.fraudProofService = new FraudProofService(this.storage);
         this.validationService = new ValidationService(
             this.storage,
-            this.stateMachine,
+            this.diamondStateMachine,
             this.stateChannelManagerContract,
-            localDiamond,
             this.timeConfig,
             this.channelId,
             () => this.forkId
@@ -162,7 +160,7 @@ class StateManager {
     }
     public getParticipantsCurrent(): Promise<Address[]> {
         //TODO? this can be done through the AgreementManager for the given fork or thought the stateMachine
-        return this.stateMachine.getParticipants();
+        return this.diamondStateMachine.getParticipants();
     }
     public get forkId(): ForkId {
         return this.latestForkId;
@@ -243,10 +241,10 @@ class StateManager {
         _timestamp: Timestamp
     ): Promise<void> {
         console.log("StateManager - SetState", _forkId, _timestamp);
-        await this.stateMachine.setState(encodedState);
+        await this.diamondStateMachine.setState(encodedState);
         this.agreementManager.newFork(
             encodedState,
-            await this.stateMachine.getParticipants(),
+            await this.diamondStateMachine.getParticipants(),
             _forkId,
             _timestamp
         );
@@ -298,10 +296,12 @@ class StateManager {
         successCallback: () => void;
         exitChannels: ExitChannelStruct[];
     }> {
-        const previousStateHash = await this.stateMachine.getState().then(hash);
+        const previousStateHash = await this.diamondStateMachine
+            .getState()
+            .then(hash);
         const { success, successCallback, exitChannels } =
-            await this.stateMachine.stateTransition(transaction);
-        const encodedState = await this.stateMachine.getState();
+            await this.diamondStateMachine.stateTransition(transaction);
+        const encodedState = await this.diamondStateMachine.getState();
 
         return {
             success,
@@ -325,7 +325,7 @@ class StateManager {
             }
             if (!(await this.isMyTurn())) {
                 throw new Error(
-                    `Not player turn - myAddress: ${String(this.signerAddress)} - nextToWrite: ${await this.stateMachine.getNextToWrite()}`
+                    `Not player turn - myAddress: ${String(this.signerAddress)} - nextToWrite: ${await this.diamondStateMachine.getNextToWrite()}`
                 );
             }
             this.adjustTimestampIfNeeded(tx);
@@ -343,7 +343,7 @@ class StateManager {
                 );
             }
 
-            const posteriorStateHash = await this.stateMachine
+            const posteriorStateHash = await this.diamondStateMachine
                 .getState()
                 .then(hash);
             const block = await this.createBlock(tx, posteriorStateHash);
@@ -660,7 +660,7 @@ class StateManager {
         const forkId = this.forkId;
         const nextTransactionCnt =
             this.storage.blocks.getNextBlockHeight(forkId);
-        const nextToWrite = await this.stateMachine.getNextToWrite();
+        const nextToWrite = await this.diamondStateMachine.getNextToWrite();
 
         // Notify any event hooks
         this.p2pEventHooks.onTurn?.(nextToWrite);
@@ -687,7 +687,7 @@ class StateManager {
     }
 
     private async isMyTurn(): Promise<boolean> {
-        const nextToWrite = await this.stateMachine.getNextToWrite();
+        const nextToWrite = await this.diamondStateMachine.getNextToWrite();
         return this.signerAddress === nextToWrite;
     }
 
@@ -703,7 +703,7 @@ class StateManager {
         stateMachineStateHash: Hash,
         forkId: ForkId
     ): Promise<StateSnapshot> {
-        const participants = await this.stateMachine.getParticipants();
+        const participants = await this.diamondStateMachine.getParticipants();
 
         const latestJoinChannelBlockHash =
             this.storage.joinChannelBlocks.getLatestJoinChannelBlockHash();
