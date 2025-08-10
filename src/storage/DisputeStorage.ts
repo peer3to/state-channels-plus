@@ -42,8 +42,8 @@ export class DisputeStorage {
         );
     }
 
-    storeDisputedFork(forkId: ForkId): void {
-        this.disputedForks.set(forkId, true);
+    storeDisputedFork(forkId: ForkId, disputed: boolean): void {
+        this.disputedForks.set(forkId, disputed);
     }
 
     /*────────────────────────────────────────────────────────────────────────────
