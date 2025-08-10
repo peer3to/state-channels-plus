@@ -8,7 +8,7 @@ import { QueueStorage } from "./QueueStorage";
 import { DisputeStorage } from "./DisputeStorage";
 import { FraudProofStorage } from "./FraudProofStorage";
 
-import { Block, BlockCoordinates, StateSnapshot } from "@/models";
+import { BlockCoordinates, StateSnapshot } from "@/models";
 import { deepCopyProxy } from "@/utils";
 import { ForkId, Bytes, BlockOrSnapshot } from "@/types/types";
 import { Address } from "@/types/types";
@@ -56,9 +56,7 @@ export class Storage {
             return undefined;
         }
 
-        const stateSnapshotHash = Block.decode(
-            blockEntry.blockConfirmation.signedBlock.encodedBlock
-        ).stateSnapshotHash;
+        const stateSnapshotHash = blockEntry.block.stateSnapshotHash;
 
         return this.stateSnapshots.getStateSnapshotByHash(stateSnapshotHash);
     }
@@ -103,7 +101,7 @@ export class Storage {
                 height - 1
             )!;
 
-            return { blockConfirmation: prevBlockEntry.blockConfirmation };
+            return { block: prevBlockEntry.block };
         }
 
         const genesisSnapshot =

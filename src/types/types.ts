@@ -1,5 +1,4 @@
-import { StateSnapshot } from "@/models";
-import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+import { Block, StateSnapshot } from "@/models";
 import { SignatureLike, BytesLike, AddressLike, BigNumberish } from "ethers";
 
 export type Hash = BytesLike;
@@ -15,6 +14,6 @@ export type Amount = BigNumberish;
 // composiite types
 
 export type BlockOrSnapshot = {
-    blockConfirmation?: BlockConfirmationStruct;
+    block?: Block;
     stateSnapshot?: StateSnapshot;
 };

@@ -1,7 +1,4 @@
-import {
-    SignedBlockStruct,
-    BlockConfirmationStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 import { StateChannelManagerProxy } from "@typechain-types";
 import { ZeroHash } from "ethers";
@@ -16,7 +13,6 @@ import {
     Address,
     ChannelId,
     ForkId,
-    Signature,
     Timestamp,
     BlockOrSnapshot
 } from "@/types/types";
@@ -53,22 +49,20 @@ export default class ValidationService {
             this.queueForLater(blockConfirmation);
             return { shouldDisconnect: false };
         }
-
-        // 2. Authenticate the block and get participants
+        // 2. Authenticate the block
         const block = this.authenticateBlock(blockConfirmation, channelId);
         if (!block) {
             return { shouldDisconnect: true };
         }
+
+        //  get participants
         const participants = await this.getParticipants(
             block.coordinates,
             channelId
         );
 
         // 3. check duplicate blocks
-        const duplicateResult = this.checkDuplicateBlock(
-            blockConfirmation,
-            participants
-        );
+        const duplicateResult = this.checkDuplicateBlock(block, participants);
 
         if (duplicateResult !== undefined) {
             return duplicateResult;
@@ -80,24 +74,21 @@ export default class ValidationService {
         }
 
         // 5. check conflicting block
-        const conflictResult = this.checkConflictingBlock(
-            block,
-            blockConfirmation.signedBlock
-        );
+        const conflictResult = this.checkConflictingBlock(block);
         if (conflictResult !== undefined) {
             return conflictResult;
         }
 
         if (await this.isDisputedFork(block.forkId, channelId)) {
             // not ready
-            this.queueForLater(blockConfirmation);
+            this.queueForLater(block);
             return { shouldDisconnect: false };
         }
 
         // isNext
         if (block.height > this.storage.blocks.getNextBlockHeight(forkId)) {
             // not ready
-            this.queueForLater(blockConfirmation);
+            this.queueForLater(block);
             return { shouldDisconnect: false };
         }
 
@@ -115,10 +106,7 @@ export default class ValidationService {
         const nextLeader = await this.diamondStateMachine.getNextToWrite();
         if (nextLeader !== block.author) {
             // create invalid state transition proof
-            this.fraudProofService.createInvalidStateTransitionProof(
-                block.coordinates,
-                blockConfirmation.signedBlock
-            );
+            this.fraudProofService.createInvalidStateTransitionProof(block);
             return {
                 shouldDisconnect: true,
                 action: BlockValidationAction.DISPUTE
@@ -129,7 +117,6 @@ export default class ValidationService {
         const timeResult = await this.validateTimeLogic(
             block,
             previousBlockOrSnapshot,
-            blockConfirmation.signedBlock,
             channelId
         );
 
@@ -144,8 +131,14 @@ export default class ValidationService {
 
     // ────────────────────── INTERNAL ACTION METHODS ─────────────────────
 
-    private queueForLater(blockConfirmation: BlockConfirmationStruct): void {
-        this.storage.queues.queueConfirmation(blockConfirmation);
+    private queueForLater(
+        blockConfirmation: Block | BlockConfirmationStruct
+    ): void {
+        if (blockConfirmation instanceof Block) {
+            this.storage.queues.queueBlock(blockConfirmation);
+        } else {
+            this.storage.queues.queueConfirmation(blockConfirmation);
+        }
     }
 
     // ────────────────────── VALIDATION METHODS ─────────────────────
@@ -165,53 +158,38 @@ export default class ValidationService {
         if (!prevBlockEntry) {
             return false;
         }
-        const prevBlockHash = hash(
-            prevBlockEntry.blockConfirmation.signedBlock.encodedBlock
-        );
-        return prevBlockHash === block.previousBlockHash;
+        return prevBlockEntry.block.hash === block.previousBlockHash;
     }
 
     private authenticateBlock(
         blockConfirmation: BlockConfirmationStruct,
         channelId: ChannelId
-    ): Block | null {
+    ): Block | undefined {
         let block: Block;
 
         try {
-            block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
-            if (block.channelId !== channelId) {
-                return null;
-            }
-            if (
-                block.getSignerAddress(
-                    blockConfirmation.signedBlock.signature
-                ) !== block.author
-            ) {
-                return null;
-            }
+            block = Block.fromBlockConfirmation(blockConfirmation);
+            if (block.channelId !== channelId) return;
+            if (block.signerAddress !== block.author) return;
         } catch (error) {
-            return null;
+            return;
         }
 
         return block;
     }
 
     private checkDuplicateBlock(
-        blockConfirmation: BlockConfirmationStruct,
+        block: Block,
         participants: Set<Address>
         // undefined is conceptually same as DUPLICATE => do nothing
     ): ValidationResult | undefined {
-        const block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
-
         // 1. Check if block is in queue
         if (
-            this.storage.queues.isBlockQueued(blockConfirmation, {
+            this.storage.queues.isBlockQueued(block, {
                 hash: block.hash
             })
         ) {
-            const signerAddresses = block.getSignerAddresses(
-                blockConfirmation.signatures as Signature[]
-            );
+            const signerAddresses = block.confirmationSignerAddresses;
             const areAllParticipants = isSubset(signerAddresses, participants);
 
             if (!areAllParticipants) {
@@ -219,7 +197,7 @@ export default class ValidationService {
             }
 
             // Store in queue (handles signature merging automatically)
-            this.storage.queues.queueConfirmation(blockConfirmation);
+            this.queueForLater(block);
             return;
         }
 
@@ -228,12 +206,9 @@ export default class ValidationService {
             block.hash
         );
         if (existingBlockEntry !== undefined) {
-            const existingSignatures = new Set(
-                this.storage.blocks.getSignatures(block.hash) as Signature[]
-            );
-            const incomingSignatures = new Set(
-                blockConfirmation.signatures as Signature[]
-            );
+            const existingSignatures =
+                existingBlockEntry.block.confirmationSignatures;
+            const incomingSignatures = block.confirmationSignatures;
             const newSignatures = difference(
                 incomingSignatures,
                 existingSignatures
@@ -245,9 +220,12 @@ export default class ValidationService {
             }
 
             // Validate new signatures are from participants
-            const newSignerAddresses: Set<Address> = block.getSignerAddresses(
-                Array.from(newSignatures)
+            const newSignerAddresses: Set<Address> = new Set(
+                Array.from(newSignatures).map((sig) =>
+                    block.signatureToAddress(sig)
+                )
             );
+
             const areNewSignersParticipants = isSubset(
                 newSignerAddresses,
                 participants
@@ -258,41 +236,33 @@ export default class ValidationService {
             }
 
             // Store new signatures and indicate broadcast
-            this.storage.blocks.storeBlockConfirmation(blockConfirmation);
+            this.storage.blocks.storeBlock(block);
             return { action: BlockValidationAction.BROADCAST };
         }
 
         return;
     }
 
-    private checkConflictingBlock(
-        block: Block,
-        signedBlock: SignedBlockStruct
-    ): ValidationResult | undefined {
+    private checkConflictingBlock(block: Block): ValidationResult | undefined {
         // conflicting block ?
         const blockEntry = this.storage.blocks.getBlockEntry(
             block.forkId,
             block.height
         );
-        const maybePreExistingBlockConfirmation = blockEntry?.blockConfirmation;
+        const maybePreExistingBlock = blockEntry?.block;
 
-        if (!maybePreExistingBlockConfirmation) {
+        if (!maybePreExistingBlock) {
             return;
         }
 
         // name change for clarity, it isn't a maybe anymore
-        const conflictingSignedBlock =
-            maybePreExistingBlockConfirmation.signedBlock;
-
-        const conflictingBlock = Block.decode(
-            conflictingSignedBlock.encodedBlock
-        );
+        const conflictingBlock = maybePreExistingBlock;
 
         if (conflictingBlock.author === block.author) {
             // DOUBLE SIGN
             this.fraudProofService.createDoubleSignProof(
-                conflictingSignedBlock,
-                signedBlock
+                conflictingBlock,
+                block
             );
             return {
                 shouldDisconnect: true,
@@ -302,10 +272,7 @@ export default class ValidationService {
 
         // If not linked we can't slash since the peer could have been building on the wrong 'reality' since someone performed a double sign
         if (this.isLinked(block)) {
-            this.fraudProofService.createInvalidStateTransitionProof(
-                block.coordinates,
-                signedBlock
-            );
+            this.fraudProofService.createInvalidStateTransitionProof(block);
             return {
                 shouldDisconnect: true,
                 action: BlockValidationAction.DISPUTE
@@ -333,21 +300,16 @@ export default class ValidationService {
     private async validateTimeLogic(
         block: Block,
         previousblockOrSnapshot: BlockOrSnapshot,
-        signedBlock: SignedBlockStruct,
         channelId: ChannelId
     ): Promise<ValidationResult | undefined> {
         let previousTimestamp: Timestamp;
         let previousBlock: Block | undefined;
         let previousStateSnapshot: StateSnapshot | undefined;
 
-        if (previousblockOrSnapshot.blockConfirmation) {
-            previousBlock = Block.decode(
-                previousblockOrSnapshot.blockConfirmation.signedBlock
-                    .encodedBlock
-            );
+        if (previousblockOrSnapshot.block) {
+            previousBlock = previousblockOrSnapshot.block;
             previousTimestamp = previousBlock.getRelevantTimestamp(
-                block.author,
-                previousblockOrSnapshot.blockConfirmation.signatures
+                block.author
             );
         } else {
             previousStateSnapshot = previousblockOrSnapshot.stateSnapshot;
@@ -366,10 +328,7 @@ export default class ValidationService {
             ) {
                 // already has best timestamp
                 // no point in trying to update the timestamp => fraud proof
-                this.fraudProofService.createInvalidTimestampProof(
-                    block.coordinates,
-                    signedBlock
-                );
+                this.fraudProofService.createInvalidTimestampProof(block);
                 return {
                     shouldDisconnect: true,
                     action: BlockValidationAction.DISPUTE
@@ -384,10 +343,7 @@ export default class ValidationService {
 
             // Early return: Couldn't fetch or not better than current
             if (!onChainTimestamp || onChainTimestamp <= previousTimestamp) {
-                this.fraudProofService.createInvalidTimestampProof(
-                    block.coordinates,
-                    signedBlock
-                );
+                this.fraudProofService.createInvalidTimestampProof(block);
                 return {
                     shouldDisconnect: true,
                     action: BlockValidationAction.DISPUTE
@@ -408,10 +364,7 @@ export default class ValidationService {
                 block.timestamp <= onChainTimestamp + this.timeConfig.p2pTime;
 
             if (!isValidTimestamp) {
-                this.fraudProofService.createInvalidTimestampProof(
-                    block.coordinates,
-                    signedBlock
-                );
+                this.fraudProofService.createInvalidTimestampProof(block);
                 return {
                     shouldDisconnect: true,
                     action: BlockValidationAction.DISPUTE

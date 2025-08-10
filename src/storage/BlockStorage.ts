@@ -1,16 +1,8 @@
 import {
-    BlockConfirmationStruct,
-    SignedBlockStruct
+    SignedBlockStruct,
+    BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import {
-    Hash,
-    ForkId,
-    BlockHeight,
-    Signature,
-    Bytes,
-    Timestamp
-} from "@/types/types";
-import { ethers } from "ethers";
+import { Hash, ForkId, BlockHeight, Signature, Timestamp } from "@/types/types";
 import { Block, BlockCoordinates } from "@/models";
 
 type CoordinateKey = string;
@@ -20,7 +12,7 @@ type StoreOptions = {
 };
 
 export type BlockEntry = {
-    blockConfirmation: BlockConfirmationStruct;
+    block: Block;
     onChainTimestamp?: Timestamp;
 };
 
@@ -52,7 +44,7 @@ export class BlockStorage {
     /*────────────────────────────────────────────────────────────────────────────
       STORE  BLOCK - IMPLEMENTATION
     ────────────────────────────────────────────────────────────────────────────*/
-    storeBlock(
+    storeSignedBlock(
         signedBlock: SignedBlockStruct,
         options?: StoreOptions
     ): Hash | undefined {
@@ -61,18 +53,16 @@ export class BlockStorage {
             signedBlock: signedBlock,
             signatures: [] // Starts empty, ready for peer confirmations
         };
+        const block = Block.fromBlockConfirmation(blockConfirmation);
 
-        return this._storeBlockEntryWithOptions({ blockConfirmation }, options);
+        return this._storeBlockEntryWithOptions({ block }, options);
     }
 
     /*────────────────────────────────────────────────────────────────────────────
       STORE BLOCK CONFIRMATION - IMPLEMENTATION
     ────────────────────────────────────────────────────────────────────────────*/
-    storeBlockConfirmation(
-        blockConfirmation: BlockConfirmationStruct,
-        options?: StoreOptions
-    ): Hash | undefined {
-        return this._storeBlockEntryWithOptions({ blockConfirmation }, options);
+    storeBlock(block: Block, options?: StoreOptions): Hash | undefined {
+        return this._storeBlockEntryWithOptions({ block }, options);
     }
 
     // ====================================
@@ -163,17 +153,14 @@ export class BlockStorage {
     ────────────────────────────────────────────────────────────────────────────*/
 
     /** [OVERLOAD 1] Insert signature by hash */
-    insertSignature(
-        signature: Signature,
-        blockHash: Hash
-    ): BlockConfirmationStruct | undefined;
+    insertSignature(signature: Signature, blockHash: Hash): Block | undefined;
 
     /** [OVERLOAD 2] Insert signature by coordinates */
     insertSignature(
         signature: Signature,
         forkId: ForkId,
         height: BlockHeight
-    ): BlockConfirmationStruct | undefined;
+    ): Block | undefined;
 
     /*────────────────────────────────────────────────────────────────────────────
       IMPLEMENTATION
@@ -182,7 +169,7 @@ export class BlockStorage {
         signature: Signature,
         hashOrForkId: Hash | ForkId,
         height?: BlockHeight
-    ): BlockConfirmationStruct | undefined {
+    ): Block | undefined {
         const blockEntry =
             height === undefined
                 ? this.hashToBlockMap.get(hashOrForkId as Hash)
@@ -193,15 +180,7 @@ export class BlockStorage {
                       })
                   );
 
-        if (blockEntry) {
-            const blockConfirmation = blockEntry.blockConfirmation;
-            // Check for duplicate signature before adding
-            if (!blockConfirmation.signatures.includes(signature as Bytes)) {
-                blockConfirmation.signatures.push(signature as Bytes);
-            }
-            return blockConfirmation;
-        }
-        return undefined;
+        return blockEntry?.block.expandSignatures([signature]);
     }
 
     // ====================================
@@ -228,9 +207,7 @@ export class BlockStorage {
             if (!blockEntry) return false;
 
             // Need to find and delete from coordinates map too
-            const block = Block.decode(
-                blockEntry.blockConfirmation.signedBlock.encodedBlock
-            );
+            const block = blockEntry.block;
             const coordinateKey = this.coordinatesToKey(block.coordinates);
 
             this.hashToBlockMap.delete(hashOrForkId as Hash);
@@ -257,9 +234,7 @@ export class BlockStorage {
         if (!blockEntry) return false;
 
         // Need to find and delete from hash map too
-        const blockHash = ethers.keccak256(
-            blockEntry.blockConfirmation.signedBlock.encodedBlock
-        );
+        const blockHash = blockEntry.block.hash;
 
         this.coordinatesToBlockMap.delete(coordinateKey);
         this.hashToBlockMap.delete(blockHash);
@@ -311,84 +286,6 @@ export class BlockStorage {
         }
     }
 
-    /*────────────────────────────────────────────────────────────────────────────
-      GET ORIGINAL SIGNATURE - OVERLOAD SIGNATURES
-    ────────────────────────────────────────────────────────────────────────────*/
-
-    /** [OVERLOAD 1] Get original signature by hash */
-    getOriginalSignature(blockHash: Hash): Signature | undefined;
-
-    /** [OVERLOAD 2] Get original signature by block object */
-    getOriginalSignature(block: Block): Signature | undefined;
-
-    /*────────────────────────────────────────────────────────────────────────────
-      IMPLEMENTATION
-    ────────────────────────────────────────────────────────────────────────────*/
-    getOriginalSignature(hashOrBlock: Hash | Block): Signature | undefined {
-        const blockHash =
-            hashOrBlock instanceof Block ? hashOrBlock.hash : hashOrBlock;
-
-        const blockEntry = this.hashToBlockMap.get(blockHash);
-        if (!blockEntry) return undefined;
-
-        return blockEntry.blockConfirmation.signedBlock.signature as Signature;
-    }
-
-    /*────────────────────────────────────────────────────────────────────────────
-      GET SIGNATURES - OVERLOAD SIGNATURES
-    ────────────────────────────────────────────────────────────────────────────*/
-
-    /** [OVERLOAD 1] Get all signatures by hash */
-    getSignatures(blockHash: Hash): Signature[];
-
-    /** [OVERLOAD 2] Get all signatures by block object */
-    getSignatures(block: Block): Signature[];
-
-    /*────────────────────────────────────────────────────────────────────────────
-      IMPLEMENTATION
-    ────────────────────────────────────────────────────────────────────────────*/
-    getSignatures(hashOrBlock: Hash | Block): Signature[] {
-        const blockHash =
-            hashOrBlock instanceof Block ? hashOrBlock.hash : hashOrBlock;
-
-        const blockEntry = this.hashToBlockMap.get(blockHash);
-        if (!blockEntry) return [];
-
-        return blockEntry.blockConfirmation.signatures as Signature[];
-    }
-
-    /*────────────────────────────────────────────────────────────────────────────
-      DOES SIGNATURE EXIST - OVERLOAD SIGNATURES
-    ────────────────────────────────────────────────────────────────────────────*/
-
-    /** [OVERLOAD 1] Check if signature exists by hash */
-    doesSignatureExist(blockHash: Hash, signature: Signature): boolean;
-
-    /** [OVERLOAD 2] Check if signature exists by block object */
-    doesSignatureExist(block: Block, signature: Signature): boolean;
-
-    /*────────────────────────────────────────────────────────────────────────────
-      IMPLEMENTATION
-    ────────────────────────────────────────────────────────────────────────────*/
-    doesSignatureExist(
-        hashOrBlock: Hash | Block,
-        signature: Signature
-    ): boolean {
-        const blockHash =
-            hashOrBlock instanceof Block ? hashOrBlock.hash : hashOrBlock;
-
-        const blockEntry = this.hashToBlockMap.get(blockHash);
-        if (!blockEntry) return false;
-
-        if (blockEntry.blockConfirmation.signedBlock.signature === signature) {
-            return true;
-        }
-
-        return blockEntry.blockConfirmation.signatures.includes(
-            signature as Bytes
-        );
-    }
-
     // ====================================
     // PRIVATE HELPERS
     // ====================================
@@ -402,17 +299,11 @@ export class BlockStorage {
         options?: StoreOptions
     ): Hash | undefined {
         // Determine hash - use provided or compute
-        const blockHash =
-            options?.hash ??
-            ethers.keccak256(
-                blockEntry.blockConfirmation.signedBlock.encodedBlock
-            );
+        const blockHash = options?.hash ?? blockEntry.block.hash;
 
         // Determine coordinates - use provided or compute
         const coordinates =
-            options?.coordinates ??
-            Block.decode(blockEntry.blockConfirmation.signedBlock.encodedBlock)
-                .coordinates;
+            options?.coordinates ?? blockEntry.block.coordinates;
 
         // Store the block entry
         const coordinateKey = this.coordinatesToKey(coordinates);
@@ -429,25 +320,15 @@ export class BlockStorage {
             return blockHash;
         }
 
-        // Compare incomingBlock.encodedBlock == existingBlock.encodedBlock
-        const incomingEncodedBlock =
-            blockEntry.blockConfirmation.signedBlock.encodedBlock;
-        const existingEncodedBlock =
-            existingEntry.blockConfirmation.signedBlock.encodedBlock;
-
-        if (incomingEncodedBlock !== existingEncodedBlock) {
+        if (!blockEntry.block.equals(existingEntry.block)) {
             // Not equal => abort
             return undefined;
         }
 
         // They are equal => merge signatures
-        const signaturesSet = new Set(
-            existingEntry.blockConfirmation.signatures
+        existingEntry.block.expandSignatures(
+            blockEntry.block.confirmationSignatures
         );
-        for (const newSignature of blockEntry.blockConfirmation.signatures) {
-            signaturesSet.add(newSignature);
-        }
-        existingEntry.blockConfirmation.signatures = Array.from(signaturesSet);
 
         // Update on-chain timestamp if provided
         if (existingEntry.onChainTimestamp === undefined) {

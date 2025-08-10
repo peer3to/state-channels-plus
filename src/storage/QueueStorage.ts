@@ -1,30 +1,29 @@
-import {
-    SignedBlockStruct,
-    BlockConfirmationStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
 import { Block } from "@/models";
 import { Hash, ForkId, BlockHeight } from "@/types/types";
-import { hash } from "@/utils";
+import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export class QueueStorage {
-    private queuedBlocks: Map<Hash, BlockConfirmationStruct> = new Map();
+    private queuedBlocks: Map<Hash, Block> = new Map();
 
     // Secondary index for efficient queries by coordinates
     private blocksByCoordinates: Map<string, Set<Hash>> = new Map();
 
     /** Queue a block for future processing */
-    queueBlock(signedBlock: SignedBlockStruct): Hash {
-        const block = Block.decode(signedBlock.encodedBlock);
+    queueBlock(block: Block): Hash {
+        // Check if block already exists in queue
+        const existingBlock = this.queuedBlocks.get(block.hash);
 
-        // Convert to BlockConfirmationStruct with empty signatures
-        const blockConfirmation: BlockConfirmationStruct = {
-            signedBlock: signedBlock,
-            signatures: []
-        };
+        if (existingBlock) {
+            // Merge signatures from the new confirmation
 
-        this.queuedBlocks.set(block.hash, blockConfirmation);
-
-        // Update coordinate index
+            const mergedSignaturesBlock = existingBlock.expandSignatures(
+                block.confirmationSignatures
+            );
+            this.queuedBlocks.set(block.hash, mergedSignaturesBlock);
+            return block.hash;
+        }
+        // Store the new block confirmation
+        this.queuedBlocks.set(block.hash, block);
         this.addHashToCoordinateIndex(block.hash, block.forkId, block.height);
 
         return block.hash;
@@ -32,32 +31,12 @@ export class QueueStorage {
 
     /** Queue a block confirmation for future processing */
     queueConfirmation(blockConfirmation: BlockConfirmationStruct): Hash {
-        const block = Block.decode(blockConfirmation.signedBlock.encodedBlock);
-
-        // Check if block already exists in queue
-        const existingBlockConfirmation = this.queuedBlocks.get(block.hash);
-
-        if (existingBlockConfirmation) {
-            // Merge signatures from the new confirmation
-            const updatedBlockConfirmation = this.expandSignatures(
-                existingBlockConfirmation,
-                blockConfirmation.signatures
-            );
-            this.queuedBlocks.set(block.hash, updatedBlockConfirmation);
-            return block.hash;
-        }
-        // Store the new block confirmation
-        this.queuedBlocks.set(block.hash, blockConfirmation);
-        this.addHashToCoordinateIndex(block.hash, block.forkId, block.height);
-
-        return block.hash;
+        const block = Block.fromBlockConfirmation(blockConfirmation);
+        return this.queueBlock(block);
     }
 
     /** Try to dequeue confirmations for a specific fork/height */
-    tryDequeueConfirmations(
-        forkId: ForkId,
-        height: BlockHeight
-    ): BlockConfirmationStruct[] {
+    tryDequeueConfirmations(forkId: ForkId, height: BlockHeight): Block[] {
         const coordinateKey = this.coordinatesToKey(forkId, height);
         const hashSet = this.blocksByCoordinates.get(coordinateKey);
 
@@ -65,13 +44,13 @@ export class QueueStorage {
             return [];
         }
 
-        const blockConfirmations: BlockConfirmationStruct[] = [];
+        const blocks: Block[] = [];
 
         // Collect all blocks for this coordinate
         for (const hash of hashSet) {
             const blockConfirmation = this.queuedBlocks.get(hash);
             if (blockConfirmation) {
-                blockConfirmations.push(blockConfirmation);
+                blocks.push(blockConfirmation);
 
                 // delete the block from the queue
                 this.queuedBlocks.delete(hash);
@@ -81,15 +60,14 @@ export class QueueStorage {
         // Remove from queue
         this.blocksByCoordinates.delete(coordinateKey);
 
-        return blockConfirmations;
+        return blocks;
     }
 
     isBlockQueued(
-        blockConfirmation: BlockConfirmationStruct,
+        blockConfirmation: Block,
         options?: { hash?: Hash }
     ): boolean {
-        const blockHash =
-            options?.hash || hash(blockConfirmation.signedBlock.encodedBlock);
+        const blockHash = options?.hash || blockConfirmation.hash;
 
         if (!this.queuedBlocks.has(blockHash)) {
             return false;
@@ -97,11 +75,10 @@ export class QueueStorage {
 
         const existingBlockConfirmation = this.queuedBlocks.get(blockHash);
         if (existingBlockConfirmation) {
-            const updatedBlockConfirmation = this.expandSignatures(
-                existingBlockConfirmation,
-                blockConfirmation.signatures
+            existingBlockConfirmation.expandSignatures(
+                blockConfirmation.confirmationSignatures
             );
-            this.queuedBlocks.set(blockHash, updatedBlockConfirmation);
+            this.queuedBlocks.set(blockHash, existingBlockConfirmation);
         }
 
         return true;
@@ -110,21 +87,6 @@ export class QueueStorage {
     // ====================================
     // PRIVATE HELPERS
     // ====================================
-
-    private expandSignatures(
-        existingBlockConfirmation: BlockConfirmationStruct,
-        newSignatures: any[]
-    ): BlockConfirmationStruct {
-        const signaturesSet = new Set(existingBlockConfirmation.signatures);
-        for (const newSignature of newSignatures) {
-            signaturesSet.add(newSignature);
-        }
-
-        return {
-            ...existingBlockConfirmation,
-            signatures: Array.from(signaturesSet)
-        };
-    }
 
     private coordinatesToKey(forkId: ForkId, height: BlockHeight): string {
         return `${forkId}:${height}`;

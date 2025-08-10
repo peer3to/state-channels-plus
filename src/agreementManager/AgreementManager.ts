@@ -1,7 +1,4 @@
-import {
-    SignedBlockStruct,
-    BlockConfirmationStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Storage, { SortOrder } from "@/storage";
 import { Address, BlockHeight, Bytes, ForkId, Signature } from "@/types/types";
@@ -26,15 +23,8 @@ class AgreementManager {
             SortOrder.DESC
         );
 
-        for (const { blockConfirmation } of blockEntries) {
-            const block = Block.decode(
-                blockConfirmation.signedBlock.encodedBlock
-            );
-
-            const { didSign, signature } = block.findSignature(
-                participantAdr,
-                this.getAllSignatures(blockConfirmation)
-            );
+        for (const { block } of blockEntries) {
+            const { didSign, signature } = block.findSignature(participantAdr);
 
             if (didSign) {
                 return {
@@ -48,60 +38,25 @@ class AgreementManager {
     }
 
     public didEveryoneSignBlock(block: Block): boolean {
-        const blockEntry = this.storage.blocks.getBlockEntry(block.hash);
-        if (!blockEntry) return false;
-
         const thresholdAddresses = new Set<Address>(
             this.storage.getParticipants(block.coordinates)
         );
 
-        const signersSet = block.getSignerAddresses(
-            this.getAllSignatures(blockEntry.blockConfirmation)
-        );
-
-        return SetUtils.isSubset(thresholdAddresses, signersSet);
-    }
-
-    public didParticipantSign(
-        block: Block,
-        participant: Address
-    ): { didSign: boolean; signature: Signature | undefined } {
-        const blockEntry = this.storage.blocks.getBlockEntry(block.hash);
-        if (!blockEntry) return { didSign: false, signature: undefined };
-
-        // Check if participant is the author
-        if (block.author === participant) {
-            return {
-                didSign: true,
-                signature: blockEntry.blockConfirmation.signedBlock
-                    .signature as Signature
-            };
-        }
-
-        // Check all signatures
-        return block.findSignature(
-            participant,
-            this.getAllSignatures(blockEntry.blockConfirmation)
-        );
+        return SetUtils.isSubset(thresholdAddresses, block.allSignerAddresses);
     }
 
     /**
      * Get participants who haven't signed a block
      */
     public getParticipantsWhoDidntSign(block: Block): Address[] {
-        const blockEntry = this.storage.blocks.getBlockEntry(block.hash);
-        if (!blockEntry) return [];
-
         const thresholdAddresses = this.storage.getParticipants(
             block.coordinates
         );
 
-        const signersSet = block.getSignerAddresses(
-            this.getAllSignatures(blockEntry.blockConfirmation)
-        );
-
         // Return addresses that haven't signed
-        return thresholdAddresses.filter((address) => !signersSet.has(address));
+        return thresholdAddresses.filter(
+            (address) => !block.allSignerAddresses.has(address)
+        );
     }
 
     /**
@@ -113,7 +68,7 @@ class AgreementManager {
     ): {
         encodedLatestFinalizedState: Bytes;
         encodedLatestCorrectState: Bytes;
-        virtualVotingBlocks: BlockConfirmationStruct[];
+        virtualVotingBlocks: Block[];
     } {
         const thresholdAddresses = new Set<Address>(
             this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId)
@@ -126,7 +81,7 @@ class AgreementManager {
 
         let encodedLatestFinalizedState: Bytes | undefined;
         let encodedLatestCorrectState: Bytes | undefined;
-        let virtualVotingBlocks: BlockConfirmationStruct[] = [];
+        let virtualVotingBlocks: Block[] = [];
         let requiredSignatures = new Set<Address>(thresholdAddresses);
 
         // Get all blocks sorted by height descending
@@ -135,14 +90,8 @@ class AgreementManager {
             SortOrder.DESC
         );
 
-        for (const blockEntry of blockEntries) {
-            const block = Block.decode(
-                blockEntry.blockConfirmation.signedBlock.encodedBlock
-            );
-
-            const signersAddresses = block.getSignerAddresses(
-                blockEntry.blockConfirmation.signatures as Signature[]
-            );
+        for (const { block } of blockEntries) {
+            const signersAddresses = block.confirmationSignerAddresses;
 
             // Find Latest Correct State
 
@@ -169,7 +118,7 @@ class AgreementManager {
             // Find Latest Finalized State
 
             // Add to virtual voting blocks
-            virtualVotingBlocks.unshift(blockEntry.blockConfirmation);
+            virtualVotingBlocks.unshift(block);
 
             // Remove the signers we found from required signatures
             requiredSignatures = SetUtils.difference(
@@ -230,11 +179,7 @@ class AgreementManager {
 
         if (!blockEntry.onChainTimestamp) return false;
 
-        const block = Block.decode(
-            blockEntry.blockConfirmation.signedBlock.encodedBlock
-        );
-
-        return block.author === participantAddress;
+        return blockEntry.block.author === participantAddress;
     }
 
     /**
@@ -243,8 +188,8 @@ class AgreementManager {
      */
     public getDoubleSignedBlock(
         signedBlock: SignedBlockStruct
-    ): SignedBlockStruct | undefined {
-        const block = Block.decode(signedBlock.encodedBlock);
+    ): Block | undefined {
+        const block = Block.fromSignedBlock(signedBlock);
 
         // Check if there's already a block at these coordinates
         const existingBlockEntry = this.storage.blocks.getBlockEntry(
@@ -253,16 +198,14 @@ class AgreementManager {
         );
         if (!existingBlockEntry) return undefined;
 
-        const existingBlock = Block.decode(
-            existingBlockEntry.blockConfirmation.signedBlock.encodedBlock
-        );
+        const existingBlock = existingBlockEntry.block;
 
         // Check if it's by the same author but different block (double sign)
         if (
             existingBlock.author === block.author &&
             !existingBlock.equals(block)
         ) {
-            return existingBlockEntry.blockConfirmation.signedBlock;
+            return existingBlock;
         }
 
         return undefined;
@@ -296,14 +239,6 @@ class AgreementManager {
         }
 
         return false;
-    }
-    private getAllSignatures(
-        blockConfirmation: BlockConfirmationStruct
-    ): Signature[] {
-        return [
-            blockConfirmation.signedBlock.signature as Signature,
-            ...(blockConfirmation.signatures as Signature[])
-        ];
     }
 }
 
