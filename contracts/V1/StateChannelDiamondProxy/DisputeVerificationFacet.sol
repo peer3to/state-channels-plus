@@ -291,7 +291,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         outputState.totalWithdrawals = latestStateSnapshot.snapshotData.totalWithdrawals;
 
         // Apply joins
-        outputState.encodedModifiedState =
+        (outputState.encodedModifiedState, outputState.totalDeposits) =
             _applyJoins(encodedStateMachineState, joinChannelBlocks, outputState.totalDeposits);
 
         // Apply slashes
