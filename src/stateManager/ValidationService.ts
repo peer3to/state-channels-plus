@@ -156,17 +156,7 @@ export default class ValidationService {
 
     private isLinked(block: Block): boolean {
         const { forkId, height } = block.coordinates;
-        if (height === 0) {
-            const genesisSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                    forkId
-                );
-            if (!genesisSnapshot) {
-                return false;
-            }
-
-            return genesisSnapshot.hash === block.previousBlockHash;
-        }
+        if (height === 0) return true;
 
         const prevBlockEntry = this.storage.blocks.getBlockEntry(
             forkId,
