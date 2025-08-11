@@ -115,14 +115,15 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         bytes memory encodedStateMachineState,
         JoinChannelBlock[] memory joinChannelBlocks,
         Balance memory totalDeposits
-    ) internal returns (bytes memory encodedModifiedState) {
+    ) internal returns (bytes memory encodedModifiedState, Balance memory newTotalDeposits) {
         encodedModifiedState = encodedStateMachineState;
+        newTotalDeposits = totalDeposits;
         for (uint256 i = 0; i < joinChannelBlocks.length; i++) {
             JoinChannelBlock memory joinChannelBlock = joinChannelBlocks[i];
             encodedModifiedState = applyJoinChannelToStateMachine(encodedModifiedState, joinChannelBlock.joinChannels);
             for (uint256 j = 0; j < joinChannelBlock.joinChannels.length; j++) {
-                totalDeposits =
-                    stateMachineImplementation.addBalance(totalDeposits, joinChannelBlock.joinChannels[j].balance);
+                newTotalDeposits =
+                    stateMachineImplementation.addBalance(newTotalDeposits, joinChannelBlock.joinChannels[j].balance);
             }
         }
     }
