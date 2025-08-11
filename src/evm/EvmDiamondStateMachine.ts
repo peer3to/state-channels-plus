@@ -18,6 +18,7 @@ import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import Storage from "@/storage";
 import { deployLocalDiamond, deployLocalFromTx } from "scripts/V1/deploy";
+import EventMirror from "@/EventMirror";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 

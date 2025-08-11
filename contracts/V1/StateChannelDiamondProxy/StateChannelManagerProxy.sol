@@ -74,6 +74,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         );
 
         blockCalldataCommitments[channelId][msg.sender][forkId][transactionCnt] = commitment;
+        emit BlockCalldataCommitmentSet(channelId, msg.sender, forkId, transactionCnt, commitment);
 
         emit BlockCalldataPosted(_block.transaction.header.channelId, msg.sender, signedBlock, block.timestamp);
     }

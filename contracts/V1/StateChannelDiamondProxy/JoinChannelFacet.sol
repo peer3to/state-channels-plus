@@ -69,8 +69,18 @@ contract JoinChannelFacet is StateChannelCommon {
             timestamp: block.timestamp,
             totalDeposits: newTotalDeposits
         });
+        emit OnChainJoinChannelSet(
+            channelId,
+            blockHash,
+            OnChainJoinChannel({
+                previousJoinChannelBlockHash: channelBalance.latestJoinChannelBlockHash,
+                timestamp: block.timestamp,
+                totalDeposits: newTotalDeposits
+            })
+        );
         // Update the latestJoinChannelBlockHash;
         channelBalance.latestJoinChannelBlockHash = blockHash;
+        emit LatestJoinChannelBlockHashSet(channelId, blockHash);
 
         // Update pending participants
         _updatePendingParticipants(jc);
@@ -82,6 +92,7 @@ contract JoinChannelFacet is StateChannelCommon {
 
     function _updatePendingParticipants(JoinChannel memory jc) internal {
         disputeData[jc.channelId].pendingParticipants.push(jc.participant);
+        emit PendingParticipantAdded(jc.channelId, jc.participant);
     }
 
     function _createJoinChannelBlock(JoinChannel memory jc) internal returns (JoinChannelBlock memory) {

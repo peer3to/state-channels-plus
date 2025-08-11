@@ -17,7 +17,7 @@ import JoinChannelFacetArtifact from "../../artifacts/contracts/V1/StateChannelD
 import StateChannelManagerProxyArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol/StateChannelManagerProxy.json";
 import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol/LocalDiamond.json";
 
-import { StateChannelManagerProxy } from "@typechain-types/index";
+import { StateChannelManagerProxy, LocalDiamond } from "@typechain-types/index";
 import { Artifact } from "hardhat/types";
 import { Address } from "@ethereumjs/util";
 
@@ -126,7 +126,11 @@ export async function deployLocalDiamond(
     stateMachineTx: ContractDeployTransaction,
     evm: EVM,
     signer?: Signer
-): Promise<{ address: Address; signer: Signer }> {
+): Promise<{
+    address: Address;
+    signer: Signer;
+    localDiamond: LocalDiamond;
+}> {
     const usedSigner = signer || Wallet.createRandom();
 
     const libAddress = await deployArtifactLocal(
@@ -152,7 +156,14 @@ export async function deployLocalDiamond(
         }
     );
 
-    return { address: diamondAddress, signer: usedSigner };
+    // Create the LocalDiamond contract instance
+    const localDiamond = new ethers.Contract(
+        diamondAddress.toString(),
+        LocalDiamondArtifact.abi,
+        usedSigner
+    ) as unknown as LocalDiamond;
+
+    return { address: diamondAddress, signer: usedSigner, localDiamond };
 }
 
 export async function deployLocalFromTx(

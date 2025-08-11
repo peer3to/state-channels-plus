@@ -210,6 +210,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         ) {
             addOnChainSlashedParticipant(channelId, disputeWindow.reducedResult.reducer);
             disputeWindow.reducedResult.forkId = bytes32(0); // unset
+            emit ReducedResultForkIdCleared(channelId, disputes[0].genesisSnapshotDataHash);
             _commitToDisputeReducedResult(
                 disputeWindow,
                 winningForkId,
@@ -563,12 +564,14 @@ contract DisputeVerificationFacet is StateChannelCommon {
         //if dispute window is empty, delete it
         if (disputeWindow.evidence.disputeCommitments.length == 0) {
             delete disputeData.disputeWindowMap[_getDisputeFork(dispute)];
+            emit DisputeWindowDeleted(dispute.channelId, _getDisputeFork(dispute));
 
             for (uint256 i = 0; i < disputeData.disputedForks.length; i++) {
                 if (disputeData.disputedForks[i] == _getDisputeFork(dispute)) {
                     //remove disputed fork from the list
                     disputeData.disputedForks[i] = disputeData.disputedForks[disputeData.disputedForks.length - 1];
                     disputeData.disputedForks.pop();
+                    emit DisputedForkRemoved(dispute.channelId, _getDisputeFork(dispute), i);
                     break;
                 }
             }

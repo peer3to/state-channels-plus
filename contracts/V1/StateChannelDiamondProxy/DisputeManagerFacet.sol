@@ -77,6 +77,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             //create the dispute window
             disputeWindow.forkId = forkId;
             disputeWindow.evidence.creationTimestamp = block.timestamp; //challenge period started
+            emit DisputeWindowCreated(dispute.channelId, forkId, disputeWindow.evidence.creationTimestamp);
         } else {
             require(
                 block.timestamp <= disputeWindow.evidence.creationTimestamp + getEvidenceTime(),
@@ -88,15 +89,30 @@ contract DisputeManagerFacet is StateChannelCommon {
         if (isThresholdFinal) {
             //finalize the dispute windown by making the kill period expired
             disputeWindow.evidence.creationTimestamp = block.timestamp - getKillTime() - 1;
+            emit DisputeWindowCreationTimestampSet(dispute.channelId, forkId, disputeWindow.evidence.creationTimestamp);
             //delete all previous commitments - free up storage (gas refund)
             delete disputeWindow.evidence.disputeCommitments;
+            emit DisputeCommitmentsCleared(dispute.channelId, forkId);
             //The reduced result is this dispute output. Finalize it by making it expired.
             _commitToDisputeReducedResult(
                 disputeWindow, dispute.outputSnapshotDataHash, block.timestamp - getEvidenceTime() - 1, block.timestamp
             );
+            emit ReducedResultCommitted(
+                dispute.channelId,
+                forkId,
+                dispute.outputSnapshotDataHash,
+                block.timestamp - getEvidenceTime() - 1,
+                block.timestamp,
+                msg.sender
+            );
         }
-        disputeWindow.evidence.disputeCommitments.push(keccak256(abi.encode(dispute)));
+        {
+            bytes32 c = keccak256(abi.encode(dispute));
+            disputeWindow.evidence.disputeCommitments.push(c);
+            emit DisputeCommitmentPushed(dispute.channelId, forkId, c);
+        }
         disputeWindow.evidence.hasPosted[dispute.disputer] = true; //disputer has posted the dispute
+        emit HasPostedSet(dispute.channelId, forkId, dispute.disputer, true);
         emit DisputeCommitted(
             dispute.channelId, dispute, block.timestamp, isThresholdFinal, disputeWindow.evidence.creationTimestamp
         );
