@@ -1182,6 +1182,152 @@ describe("AgreementManager", () => {
             // Since all 3 participants signed the same block, we should have exactly 1 block confirmation
             expect(milestoneWithOurBlock!.blockConfirmations).to.have.length(1);
         });
+
+        it("should throw error when milestone snapshot is missing", async () => {
+            // Store exit point
+            storage.exitPoints.storeExitPoint(forkId, 5);
+
+            // Create a block that will form a milestone
+            const blockAtHeight5 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 5,
+                        participant: participant1
+                    })
+                }),
+                stateSnapshotHash: genesisSnapshot.hash
+            });
+
+            const blockHash5 = ethers.keccak256(blockAtHeight5.encode());
+            const authorSignature = await signers[0].signMessage(
+                ethers.getBytes(blockHash5)
+            );
+            const participant2Signature = await signers[1].signMessage(
+                ethers.getBytes(blockHash5)
+            );
+            const participant3Signature = await signers[2].signMessage(
+                ethers.getBytes(blockHash5)
+            );
+
+            const blockConfirmationAtHeight5 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight5.encode(),
+                    signature: authorSignature
+                }),
+                signatures: [participant2Signature, participant3Signature]
+            });
+
+            // Store the block confirmation (which will allow milestone to be built)
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
+
+            // BUT DON'T store the snapshot that the block references
+            // This simulates the data integrity issue
+
+            await expect(
+                agreementManager.getStateProof(forkId, 10)
+            ).to.be.rejectedWith(
+                "Milestone built but corresponding snapshot not found"
+            );
+        });
+
+        it("should throw error when empty milestone is passed to getSnapshot", async () => {
+            // Create an empty milestone
+            const emptyMilestone = factory.milestoneProof({
+                blockConfirmations: []
+            });
+
+            expect(() => {
+                agreementManager.getSnapshot(emptyMilestone);
+            }).to.throw("Cannot get snapshot from empty milestone");
+        });
+
+        it("should break early when milestone cannot be built for exit point", async () => {
+            // Store multiple exit points
+            storage.exitPoints.storeExitPoint(forkId, 5);
+            storage.exitPoints.storeExitPoint(forkId, 10);
+
+            // Create snapshot for first exit point
+            const snapshotAtHeight5 = factory.stateSnapshot({
+                forkId: forkId,
+                snapshotData: {
+                    participants: [participant1, participant2, participant3],
+                    stateMachineStateHash: genesisStateMachineStateHash,
+                    latestJoinChannelBlockHash: factory.hash(),
+                    latestExitChannelBlockHash: factory.hash(),
+                    totalDeposits: { amount: BigInt(1000), data: "0x" },
+                    totalWithdrawals: { amount: BigInt(100), data: "0x" }
+                }
+            });
+            storage.stateSnapshots.storeStateSnapshot(snapshotAtHeight5);
+
+            // Create a block at height 5 with insufficient signatures (only author signed)
+            const blockAtHeight5 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 5,
+                        participant: participant1
+                    })
+                }),
+                stateSnapshotHash: snapshotAtHeight5.hash
+            });
+
+            const blockHash5 = ethers.keccak256(blockAtHeight5.encode());
+            const authorSignature = await signers[0].signMessage(
+                ethers.getBytes(blockHash5)
+            );
+
+            const blockConfirmationAtHeight5 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight5.encode(),
+                    signature: authorSignature
+                }),
+                signatures: [] // Only author signed, not enough for milestone
+            });
+
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
+
+            // Create a block at height 10 that could form a milestone
+            const blockAtHeight10 = factory.block({
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 10,
+                        participant: participant2
+                    })
+                }),
+                stateSnapshotHash: snapshotAtHeight5.hash
+            });
+
+            const blockHash10 = ethers.keccak256(blockAtHeight10.encode());
+            const authorSignature10 = await signers[1].signMessage(
+                ethers.getBytes(blockHash10)
+            );
+            const participant1Signature = await signers[0].signMessage(
+                ethers.getBytes(blockHash10)
+            );
+            const participant3Signature = await signers[2].signMessage(
+                ethers.getBytes(blockHash10)
+            );
+
+            const blockConfirmationAtHeight10 = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: blockAtHeight10.encode(),
+                    signature: authorSignature10
+                }),
+                signatures: [participant1Signature, participant3Signature]
+            });
+
+            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight10);
+
+            // The result should have no milestones because we can't build a milestone for exit point 5
+            // and the loop should break early, preventing processing of exit point 10
+            const result = await agreementManager.getStateProof(forkId, 15);
+
+            expect(result.milestones).to.have.length(0);
+            expect(result.signedBlocks).to.be.an("array");
+        });
     });
 
     describe("tryBuildMilestone", () => {
@@ -1598,6 +1744,41 @@ describe("AgreementManager", () => {
             );
 
             expect(result).to.be.false;
+        });
+    });
+
+    describe("getSnapshot error handling", () => {
+        it("should throw error when empty milestone is passed to getSnapshot", () => {
+            // Create an empty milestone
+            const emptyMilestone = {
+                blockConfirmations: []
+            };
+
+            expect(() => {
+                agreementManager.getSnapshot(emptyMilestone as any);
+            }).to.throw("Cannot get snapshot from empty milestone");
+        });
+
+        it("should throw error when milestone has no block confirmations", () => {
+            // Create a milestone with null block confirmations
+            const invalidMilestone = {
+                blockConfirmations: null
+            };
+
+            expect(() => {
+                agreementManager.getSnapshot(invalidMilestone as any);
+            }).to.throw("Cannot get snapshot from empty milestone");
+        });
+
+        it("should throw error when milestone has undefined block confirmations", () => {
+            // Create a milestone with undefined block confirmations
+            const invalidMilestone = {
+                blockConfirmations: undefined
+            };
+
+            expect(() => {
+                agreementManager.getSnapshot(invalidMilestone as any);
+            }).to.throw("Cannot get snapshot from empty milestone");
         });
     });
 });

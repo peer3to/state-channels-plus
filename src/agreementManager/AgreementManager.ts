@@ -151,9 +151,10 @@ class AgreementManager {
             if (milestone) {
                 milestones.push(milestone);
                 const newSnapshot = this.getSnapshot(milestone);
-                if (newSnapshot) {
-                    currentSnapshot = newSnapshot;
-                }
+                currentSnapshot = newSnapshot;
+            } else {
+                // Break early because we can't prove finality beyond this point
+                break;
             }
         }
 
@@ -172,9 +173,7 @@ class AgreementManager {
         if (milestone) {
             milestones.push(milestone);
             const newSnapshot = this.getSnapshot(milestone);
-            if (newSnapshot) {
-                currentSnapshot = newSnapshot;
-            }
+            currentSnapshot = newSnapshot;
 
             return {
                 milestones,
@@ -198,6 +197,8 @@ class AgreementManager {
                     blockEntry.blockConfirmation.signedBlock.encodedBlock
                 );
 
+                signedBlocks.push(blockEntry.blockConfirmation.signedBlock);
+
                 if (
                     block.height === 0 ||
                     block.stateSnapshotHash === currentSnapshot.hash
@@ -205,7 +206,6 @@ class AgreementManager {
                     break;
                 }
 
-                signedBlocks.push(blockEntry.blockConfirmation.signedBlock);
                 result = blockIterator.next();
             }
 
@@ -221,11 +221,9 @@ class AgreementManager {
     /**
      * Get snapshot from the first block confirmation in a milestone
      */
-    public getSnapshot(
-        milestone: MilestoneProofStruct
-    ): StateSnapshot | undefined {
+    public getSnapshot(milestone: MilestoneProofStruct): StateSnapshot {
         if (milestone.blockConfirmations.length === 0) {
-            return undefined;
+            throw new Error("Cannot get snapshot from empty milestone");
         }
 
         const firstBlockConfirmation = milestone.blockConfirmations[0];
@@ -233,9 +231,17 @@ class AgreementManager {
             firstBlockConfirmation.signedBlock.encodedBlock
         );
 
-        return this.storage.stateSnapshots.getStateSnapshotByHash(
+        const snapshot = this.storage.stateSnapshots.getStateSnapshotByHash(
             block.stateSnapshotHash
         );
+
+        if (!snapshot) {
+            throw new Error(
+                "Milestone built but corresponding snapshot not found"
+            );
+        }
+
+        return snapshot;
     }
 
     /**
@@ -258,18 +264,18 @@ class AgreementManager {
                 currentBlockConfirmation
             );
 
+            // Decode block once at the top
+            const block = Block.decode(
+                currentBlockConfirmation.signedBlock.encodedBlock
+            );
+
             const filteredBlockConfirmation: BlockConfirmationStruct = {
                 signedBlock: currentBlockConfirmation.signedBlock,
                 signatures: [] // Strip signatures but keep author's signature in signedBlock
             };
 
             for (const signature of allSignatures) {
-                const participantAddress = Block.decode(
-                    currentBlockConfirmation.signedBlock.encodedBlock
-                )
-                    .getSignerAddresses([signature])
-                    .values()
-                    .next().value;
+                const participantAddress = block.getSignerAddress(signature);
 
                 if (
                     participantAddress &&
@@ -278,9 +284,6 @@ class AgreementManager {
                     thresholdSet.delete(participantAddress); // Subtract participant from threshold set
 
                     // Add signature to filtered block confirmation if it's not the author's signature
-                    const block = Block.decode(
-                        currentBlockConfirmation.signedBlock.encodedBlock
-                    );
                     if (participantAddress !== block.author) {
                         filteredBlockConfirmation.signatures.push(
                             signature as BytesLike
@@ -290,6 +293,11 @@ class AgreementManager {
             }
 
             filteredBlockConfirmations.push(filteredBlockConfirmation);
+
+            // If this block commits to currentSnapshot, we can't build a milestone
+            if (block.stateSnapshotHash === currentSnapshot.hash) {
+                break;
+            }
 
             if (thresholdSet.size === 0) {
                 return {
