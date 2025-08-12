@@ -1,4 +1,4 @@
-import { Hash } from "@/types/types";
+import { ForkId, Hash } from "@/types/types";
 import { ethers } from "ethers";
 import {
     DisputeConfirmationStruct,
@@ -8,15 +8,18 @@ import {
 type StoreOptions = {
     hash?: Hash;
 };
+type DidIDispute = boolean;
 
 export class DisputeStorage {
     // ====================================
     // STORAGE MAPS
     // ====================================
     private disputes: Map<Hash, DisputeConfirmationStruct>;
+    private disputedForks: Map<ForkId, DidIDispute>;
 
     constructor() {
         this.disputes = new Map();
+        this.disputedForks = new Map();
     }
 
     // ====================================
@@ -37,6 +40,10 @@ export class DisputeStorage {
             disputeConfirmation,
             options
         );
+    }
+
+    storeDisputedFork(forkId: ForkId, disputed: boolean): void {
+        this.disputedForks.set(forkId, disputed);
     }
 
     /*────────────────────────────────────────────────────────────────────────────
@@ -60,6 +67,10 @@ export class DisputeStorage {
         disputeHash: Hash
     ): DisputeConfirmationStruct | undefined {
         return this.disputes.get(disputeHash);
+    }
+
+    didIDispute(forkId: ForkId): DidIDispute {
+        return this.disputedForks.get(forkId) ?? false;
     }
 
     // ====================================

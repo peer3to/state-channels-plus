@@ -6,7 +6,6 @@ import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes
 import DisputeHandler from "@/DisputeHandler";
 import AgreementManager from "@/agreementManager";
 import P2pEventHooks from "@/P2pEventHooks";
-import { EvmUtils } from "@/utils/EvmUtils";
 import * as factory from "../factory";
 import { Codec, Type } from "@/utils";
 

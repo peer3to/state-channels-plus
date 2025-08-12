@@ -1,22 +1,23 @@
 import { EVM } from "@ethereumjs/evm";
-import { ethers, Signer, hexlify } from "ethers";
+import { ethers, Signer, hexlify, ContractDeployTransaction } from "ethers";
 import {
-    AStateChannelManagerProxy,
+    StateChannelManagerProxy,
     AStateMachine as AStateMachineContract
 } from "@typechain-types";
 import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import StateManager from "@/stateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
-import { ExitChannelEthersType } from "@/types/ethers";
-import { DebugProxy } from "@/utils";
+import { ExitChannelEthersType, BalanceEthersType } from "@/types/ethers";
+import { DebugProxy, decodeErrorProxy, Codec } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
-import AStateMachine from "@/AStateMachine";
+import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
-import { Address, Bytes } from "@/types/types";
+import { Address, Bytes, ChannelId, ForkId } from "@/types/types";
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import Storage from "@/storage";
+import { deployLocalDiamond, deployLocalFromTx } from "scripts/V1/deploy";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 
@@ -24,19 +25,22 @@ const DEBUG_CHANNEL_CONTRACT = true;
  * Manages peer-to-peer communication and state machines
  * Also serves as the implementation of AStateMachine
  */
-class EvmStateMachine extends AStateMachine {
+class EvmDiamondStateMachine extends ADiamondStateMachine {
     readonly contractExecuter: ContractExecuter;
+    readonly diamondExecuter: ContractExecuter;
     readonly contractInterface: ethers.Interface;
     private p2pContractInstance?: AStateMachineContract;
     public stateManager?: StateManager;
 
     constructor(
         contractExecuter: ContractExecuter,
-        contractInterface: ethers.Interface
+        contractInterface: ethers.Interface,
+        diamondExecuter: ContractExecuter
     ) {
         super();
         this.contractExecuter = contractExecuter;
         this.contractInterface = contractInterface;
+        this.diamondExecuter = diamondExecuter;
     }
 
     private getEncodedCalldata(
@@ -130,37 +134,29 @@ class EvmStateMachine extends AStateMachine {
     async getParticipants(): Promise<Address[]> {
         const callData = this.getEncodedCalldata("getParticipants");
 
-        let result = await this.contractExecuter.executeCall(callData);
-        const hexResult = hexlify(result.returnValue);
-        const [addresses] = ethers.AbiCoder.defaultAbiCoder().decode(
-            ["address[]"],
-            hexResult
+        const addresses = Codec.decodeEvmResult<Address[]>(
+            await this.contractExecuter.executeCall(callData),
+            "address[]"
         );
-        return addresses.toArray();
+        return addresses;
     }
 
     async getExitChannels(): Promise<ExitChannelStruct[]> {
         const callData = this.getEncodedCalldata("getExitChannels");
 
-        let result = await this.contractExecuter.executeCall(callData);
-        const hexResult = hexlify(result.returnValue);
-        const [exitChannels] = ethers.AbiCoder.defaultAbiCoder().decode(
-            [`${ExitChannelEthersType}[]`],
-            hexResult
+        return Codec.decodeEvmResult<ExitChannelStruct[]>(
+            await this.contractExecuter.executeCall(callData),
+            `${ExitChannelEthersType}[]`
         );
-        return exitChannels;
     }
 
     async getNextToWrite(): Promise<Address> {
         const callData = this.getEncodedCalldata("getNextToWrite");
         try {
-            let result = await this.contractExecuter.executeCall(callData);
-            const hexResult = ethers.hexlify(result.returnValue);
-            const [address] = ethers.AbiCoder.defaultAbiCoder().decode(
-                ["address"],
-                hexResult
+            return Codec.decodeEvmResult<Address>(
+                await this.contractExecuter.executeCall(callData),
+                "address"
             );
-            return address;
         } catch (error) {
             throw this.createContextError("getNextToWrite", error);
         }
@@ -183,13 +179,10 @@ class EvmStateMachine extends AStateMachine {
         const callData = this.getEncodedCalldata("getState");
 
         try {
-            let result = await this.contractExecuter.executeCall(callData);
-            const hexResult = hexlify(result.returnValue);
-            const [encodedBytes] = ethers.AbiCoder.defaultAbiCoder().decode(
-                ["bytes"],
-                hexResult
+            return Codec.decodeEvmResult<Bytes>(
+                await this.contractExecuter.executeCall(callData),
+                "bytes"
             );
-            return encodedBytes;
         } catch (error) {
             throw this.createContextError("getState", error);
         }
@@ -199,15 +192,82 @@ class EvmStateMachine extends AStateMachine {
         const callData = this.getEncodedCalldata("getZeroBalance");
 
         try {
-            let result = await this.contractExecuter.executeCall(callData);
-            const hexResult = hexlify(result.returnValue);
-            const [balanceResult] = ethers.AbiCoder.defaultAbiCoder().decode(
-                ["tuple(uint256,bytes)"],
-                hexResult
+            return Codec.decodeEvmResult<BalanceStruct>(
+                await this.contractExecuter.executeCall(callData),
+                BalanceEthersType
             );
-            return balanceResult;
         } catch (error) {
             throw this.createContextError("getZeroBalance", error);
+        }
+    }
+
+    async addBalance(
+        balance1: BalanceStruct,
+        balance2: BalanceStruct
+    ): Promise<BalanceStruct> {
+        const callData = this.getEncodedCalldata("addBalance", [
+            balance1,
+            balance2
+        ]);
+
+        try {
+            return Codec.decodeEvmResult<BalanceStruct>(
+                await this.contractExecuter.executeCall(callData),
+                BalanceEthersType
+            );
+        } catch (error) {
+            throw this.createContextError("addBalance", error);
+        }
+    }
+
+    async subtractBalance(
+        balance1: BalanceStruct,
+        balance2: BalanceStruct
+    ): Promise<BalanceStruct> {
+        const callData = this.getEncodedCalldata("subtractBalance", [
+            balance1,
+            balance2
+        ]);
+
+        try {
+            return Codec.decodeEvmResult<BalanceStruct>(
+                await this.contractExecuter.executeCall(callData),
+                BalanceEthersType
+            );
+        } catch (error) {
+            throw this.createContextError("subtractBalance", error);
+        }
+    }
+
+    async getTotalStateBalance(): Promise<BalanceStruct> {
+        const callData = this.getEncodedCalldata("getTotalStateBalance");
+
+        try {
+            return Codec.decodeEvmResult<BalanceStruct>(
+                await this.contractExecuter.executeCall(callData),
+                BalanceEthersType,
+                { useObjectConversion: true }
+            );
+        } catch (error) {
+            throw this.createContextError("getTotalStateBalance", error);
+        }
+    }
+
+    async isForkDisputed(
+        channelId: ChannelId,
+        forkId: ForkId
+    ): Promise<boolean> {
+        const callData = this.getEncodedCalldata("isForkDisputed", [
+            channelId,
+            forkId
+        ]);
+        try {
+            return Codec.decodeEvmResult<boolean>(
+                await this.diamondExecuter.executeCall(callData),
+                "bool"
+            );
+        } catch (error) {
+            throw this.createContextError("isForkDisputed", error);
         }
     }
 
@@ -218,29 +278,25 @@ class EvmStateMachine extends AStateMachine {
      * @returns A new EvmStateMachine instance
      */
     public static async createStandalone(
-        deployStateMachineTx: any,
+        deployStateMachineTx: ContractDeployTransaction,
         contractInterface: ethers.Interface
-    ): Promise<EvmStateMachine> {
+    ): Promise<EvmDiamondStateMachine> {
         const evm = await EVM.create();
 
-        // Deploy the state machine contract
-        const deploymentResult = await evm.runCall({
-            data: ethers.getBytes(deployStateMachineTx.data)
-        });
+        const stateMachineAddress = await deployLocalFromTx(
+            deployStateMachineTx,
+            evm
+        );
 
-        if (deploymentResult.execResult.exceptionError) {
-            throw new Error("EvmStateMachine - create - deploymentTx failed");
-        }
+        const diamondResult = await deployLocalDiamond(
+            deployStateMachineTx,
+            evm
+        );
 
-        if (!deploymentResult.createdAddress) {
-            throw new Error(
-                "EvmStateMachine - create - deploymentTx didn't deploy a contract"
-            );
-        }
-
-        return new EvmStateMachine(
-            new ContractExecuter(evm, deploymentResult.createdAddress),
-            contractInterface
+        return new EvmDiamondStateMachine(
+            new ContractExecuter(evm, stateMachineAddress),
+            contractInterface,
+            new ContractExecuter(evm, diamondResult.address)
         );
     }
 
@@ -256,12 +312,15 @@ class EvmStateMachine extends AStateMachine {
     public static async p2pSetup<T extends AStateMachineContract>(
         signer: Signer,
         deployStateMachineTx: any,
-        deployedStateChannelContractInstance: AStateChannelManagerProxy,
+        deployedStateChannelContractInstance: StateChannelManagerProxy,
         stateMachineContractInstance: T,
         p2pEventHooks?: P2pEventHooks
     ): Promise<P2pInstance<T>> {
         // Sync clock to DLT
         await Clock.init(signer.provider!);
+        deployedStateChannelContractInstance = decodeErrorProxy(
+            deployedStateChannelContractInstance
+        ) as StateChannelManagerProxy;
 
         // Connect signer to state channel contract
         deployedStateChannelContractInstance =
@@ -276,10 +335,11 @@ class EvmStateMachine extends AStateMachine {
         }
 
         // Create the EvmStateMachine instance (which extends AStateMachine)
-        const evmStateMachine = await EvmStateMachine.createStandalone(
-            deployStateMachineTx,
-            stateMachineContractInstance.interface
-        );
+        const evmDiamondStateMachine =
+            await EvmDiamondStateMachine.createStandalone(
+                deployStateMachineTx,
+                stateMachineContractInstance.interface
+            );
 
         // Get time configuration
         const configTimes =
@@ -299,14 +359,14 @@ class EvmStateMachine extends AStateMachine {
             signer,
             signerAddress,
             deployedStateChannelContractInstance,
-            evmStateMachine,
+            evmDiamondStateMachine,
             timeConfig,
             p2pEventHooks || {},
             storage
         );
 
         // Set state manager on P2P communication manager
-        evmStateMachine.setStateManager(stateManager);
+        evmDiamondStateMachine.setStateManager(stateManager);
 
         // Create P2P contract instance
         const p2pContractInstance = stateMachineContractInstance.connect(
@@ -314,7 +374,7 @@ class EvmStateMachine extends AStateMachine {
         ) as T;
 
         // Set P2P contract instance on P2P manager
-        evmStateMachine.setP2pContractInstance(p2pContractInstance);
+        evmDiamondStateMachine.setP2pContractInstance(p2pContractInstance);
 
         return new P2pInstance(
             p2pContractInstance,
@@ -323,4 +383,4 @@ class EvmStateMachine extends AStateMachine {
     }
 }
 
-export default EvmStateMachine;
+export default EvmDiamondStateMachine;

@@ -4,9 +4,9 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./StateChannelManagerStorage.sol";
 import "../StateChannelManagerEvents.sol";
 import "./StateChannelUtilLibrary.sol";
-import "./AStateChannelManagerProxy.sol";
 import "./Errors.sol";
 import "./utils/DisputeUtils.sol";
+import "./utils/BlockUtils.sol";
 
 contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEvents {
     function getOnChainSlashes(bytes32 channelId) public view virtual returns (OnChainSlash[] memory) {
@@ -115,31 +115,17 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         bytes memory encodedStateMachineState,
         JoinChannelBlock[] memory joinChannelBlocks,
         Balance memory totalDeposits
-    ) internal returns (bytes memory encodedModifiedState) {
+    ) internal returns (bytes memory encodedModifiedState, Balance memory newTotalDeposits) {
         encodedModifiedState = encodedStateMachineState;
+        newTotalDeposits = totalDeposits;
         for (uint256 i = 0; i < joinChannelBlocks.length; i++) {
             JoinChannelBlock memory joinChannelBlock = joinChannelBlocks[i];
             encodedModifiedState = applyJoinChannelToStateMachine(encodedModifiedState, joinChannelBlock.joinChannels);
             for (uint256 j = 0; j < joinChannelBlock.joinChannels.length; j++) {
-                totalDeposits =
-                    stateMachineImplementation.addBalance(totalDeposits, joinChannelBlock.joinChannels[j].balance);
+                newTotalDeposits =
+                    stateMachineImplementation.addBalance(newTotalDeposits, joinChannelBlock.joinChannels[j].balance);
             }
         }
-    }
-
-    function _applySlashes(bytes memory encodedStateMachineState, address[] memory slashParticipants)
-        internal
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
-    {
-        (encodedModifiedState, exitChannels) = _applySlashesToStateMachine(encodedStateMachineState, slashParticipants);
-    }
-
-    function _applyRemovals(bytes memory encodedStateMachineState, address[] memory removeParticipants)
-        internal
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
-    {
-        (encodedModifiedState, exitChannels) =
-            _removeParticipantsFromStateMachine(encodedStateMachineState, removeParticipants);
     }
 
     function _calculateTotalWithdrawals(Balance memory totalWithdrawals, ExitChannel[] memory exitChannels)
@@ -151,62 +137,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             totalWithdrawals = stateMachineImplementation.addBalance(totalWithdrawals, exitChannels[i].balance);
         }
         return totalWithdrawals;
-    }
-
-    function _verifyFraudProofs(FraudProof[] memory fraudProofs, FraudProofVerificationContext memory proofContext)
-        internal
-        returns (address[] memory slashParticipants)
-    {
-        return AStateChannelManagerProxy(address(this)).verifyFraudProofs(fraudProofs, proofContext);
-    }
-
-    function _verifyDisputeFraudProofs(DisputeFraudProof[] memory disputeFraudProofs)
-        internal
-        returns (Dispute[] memory maliciousDisputes)
-    {
-        return abi.decode(
-            AStateChannelManagerProxy(address(this)).verifyDisputeFraudProofs(disputeFraudProofs), (Dispute[])
-        );
-    }
-
-    function _removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
-        internal
-        virtual
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
-    {
-        return AStateChannelManagerProxy(address(this)).removeParticipantsFromStateMachine(encodedState, participants);
-    }
-
-    function _areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks, bytes32 optionalPreviousHash)
-        internal
-        pure
-        returns (bool isLinked)
-    {
-        bytes32 previousBlockHash = optionalPreviousHash;
-        for (uint256 i = 0; i < signedBlocks.length; i++) {
-            bytes memory currentBlockEncoded = signedBlocks[i].encodedBlock;
-            Block memory currentBlock = abi.decode(currentBlockEncoded, (Block));
-            //check is linked
-            if (previousBlockHash != bytes32(0) && previousBlockHash != currentBlock.previousBlockHash) {
-                return false;
-            }
-            previousBlockHash = keccak256(currentBlockEncoded);
-            //verify original siganture
-            address signer =
-                StateChannelUtilLibrary.retriveSignerAddress(currentBlockEncoded, signedBlocks[i].signature);
-            if (signer != currentBlock.transaction.header.participant) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    function _formExitChannelBlock(bytes32 previousBlockHash, ExitChannel[] memory exitChannels)
-        internal
-        pure
-        returns (ExitChannelBlock memory _block)
-    {
-        return ExitChannelBlock({exitChannels: exitChannels, previousBlockHash: previousBlockHash});
     }
 
     /// @dev Callable only by diamond facets - applies the join to the given state of the state machine and returns the modified state
@@ -224,14 +154,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
     //stateless
 
-    function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
-        internal
-        virtual
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
-    {
-        return AStateChannelManagerProxy(address(this)).applySlashesToStateMachine(encodedState, slashedParticipants);
-    }
-
     function isDisputeCommitted(Dispute memory dispute) internal view returns (bool) {
         bytes32 channelId = dispute.channelId;
         DisputeData storage disputeData = disputeData[channelId];
@@ -244,5 +166,51 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             }
         }
         return false;
+    }
+
+    function _canParticipateInDisputes(bytes32 channelId, address participant) public view returns (bool) {
+        StateSnapshot storage stateSnapshot = stateSnapshots[channelId];
+        bool isParticipant = false;
+        //Check if normal participant
+        for (uint256 i = 0; i < stateSnapshot.snapshotData.participants.length; i++) {
+            if (stateSnapshot.snapshotData.participants[i] == participant) {
+                isParticipant = true;
+                break;
+            }
+        }
+        if (!isParticipant) {
+            //check pending participants
+            DisputeData storage _disputeData = disputeData[channelId];
+            for (uint256 i = 0; i < _disputeData.pendingParticipants.length; i++) {
+                if (_disputeData.pendingParticipants[i] == participant) {
+                    isParticipant = true;
+                    break;
+                }
+            }
+            if (!isParticipant) return false;
+        }
+
+        address[] memory onChainSlashedParticipants = getOnChainSlashedParticipants(channelId);
+        //check if slashed on-chain -> slashed participants can't participate in disputes
+        for (uint256 i = 0; i < onChainSlashedParticipants.length; i++) {
+            if (onChainSlashedParticipants[i] == participant) {
+                return false; //is slashed -> can't participate
+            }
+        }
+        return true; //is participant and not slashed -> can participate
+    }
+
+    function _commitToDisputeReducedResult(
+        DisputeWindow storage disputeWindow,
+        bytes32 reducedForkId,
+        uint256 reductionTimestamp,
+        uint256 forkGenesisTimestamp
+    ) internal {
+        require(_isKillPeriodExpired(disputeWindow, getKillTime()), ErrorDisputeKillPeriodNotExpired());
+        require(disputeWindow.reducedResult.forkId == bytes32(0), ErrorDisputeAlreadyReduced());
+        disputeWindow.reducedResult.forkId = reducedForkId;
+        disputeWindow.reducedResult.forkGenesisTimestamp = forkGenesisTimestamp;
+        disputeWindow.reducedResult.timestamp = reductionTimestamp;
+        disputeWindow.reducedResult.reducer = msg.sender; //calling function should check that msg.sender is part of channel 'can participate'
     }
 }

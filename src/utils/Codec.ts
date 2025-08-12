@@ -11,6 +11,11 @@ import {
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
+    BlockDoubleSignProofStruct,
+    BlockInvalidStateTransitionProofStruct,
+    InvalidTimestampProofStruct
+} from "@typechain-types/contracts/V1/types/FraudProofTypes";
+import {
     BlockEthersType,
     DisputeEthersType,
     JoinChannelEthersType,
@@ -20,12 +25,23 @@ import {
     ExitChannelEthersType,
     ExitChannelBlockEthersType,
     BlockConfirmationEthersType,
-    SnapshotDataEthersType
+    SnapshotDataEthersType,
+    BlockDoubleSignProofEthersType,
+    BlockInvalidStateTransitionProofEthersType,
+    InvalidTimestampProofEthersType,
+    FraudProofType
 } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Bytes } from "@/types/types";
+import { ExecResult } from "@ethereumjs/evm";
+
+export type FraudStruct =
+    | BlockDoubleSignProofStruct
+    | BlockInvalidStateTransitionProofStruct
+    | InvalidTimestampProofStruct;
 
 type StructType =
+    | FraudStruct
     | BlockStruct
     | BlockConfirmationStruct
     | JoinChannelStruct
@@ -52,7 +68,10 @@ export enum Type {
 }
 
 export class Codec {
-    private static readonly structToEthersType = new Map<Type, string>([
+    private static readonly structToEthersType = new Map<
+        Type | FraudProofType,
+        string
+    >([
         [Type.Block, BlockEthersType],
         [Type.JoinChannel, JoinChannelEthersType],
         [Type.BlockConfirmation, BlockConfirmationEthersType],
@@ -62,10 +81,19 @@ export class Codec {
         [Type.SnapshotData, SnapshotDataEthersType],
         [Type.JoinChannelBlock, JoinChannelBlockEthersType],
         [Type.ExitChannelBlock, ExitChannelBlockEthersType],
-        [Type.ExitChannel, ExitChannelEthersType]
+        [Type.ExitChannel, ExitChannelEthersType],
+        [FraudProofType.BlockDoubleSign, BlockDoubleSignProofEthersType],
+        [
+            FraudProofType.BlockInvalidStateTransition,
+            BlockInvalidStateTransitionProofEthersType
+        ],
+        [FraudProofType.InvalidTimestamp, InvalidTimestampProofEthersType]
     ]);
 
-    public static encode(struct: StructType, type: Type): Bytes {
+    public static encode(
+        struct: StructType,
+        type: Type | FraudProofType
+    ): Bytes {
         const ethersType = this.structToEthersType.get(type);
         if (!ethersType) {
             throw new Error(`No ethers type mapping found for ${type}`);
@@ -140,5 +168,26 @@ export class Codec {
             }
         }
         return obj;
+    }
+
+    public static decodeEvmResult<T>(
+        execResult: ExecResult,
+        ethersType: string,
+        options: {
+            useObjectConversion: boolean;
+        } = {
+            useObjectConversion: false
+        }
+    ): T {
+        const decoded = ethers.AbiCoder.defaultAbiCoder().decode(
+            [ethersType],
+            execResult.returnValue
+        );
+
+        if (options.useObjectConversion) {
+            return Codec.ethersResultToObjectRecursive(decoded[0]) as T;
+        }
+
+        return decoded[0] as T;
     }
 }

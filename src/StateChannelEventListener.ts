@@ -1,4 +1,4 @@
-import { AStateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerProxy } from "@typechain-types";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import StateManager from "@/stateManager";
@@ -9,13 +9,13 @@ import { ChannelId, Timestamp } from "@/types/types";
 
 class StateChannelEventListener {
     stateManager: StateManager;
-    stateChannelManagerContract: AStateChannelManagerProxy;
+    stateChannelManagerContract: StateChannelManagerProxy;
     p2pEventHooks: P2pEventHooks;
     filters: Record<string, any> = {};
 
     constructor(
         stateManager: StateManager,
-        stateChannelManagerContract: AStateChannelManagerProxy,
+        stateChannelManagerContract: StateChannelManagerProxy,
         p2pEventHooks: P2pEventHooks
     ) {
         this.stateManager = stateManager;

@@ -1,12 +1,12 @@
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Address, Bytes } from "./types/types";
+import { Address, Bytes, ChannelId, ForkId } from "./types/types";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 type TransitionResponse = {
     success: boolean;
     exitChannels: ExitChannelStruct[];
     successCallback: () => void;
 };
-abstract class AStateMachine {
+abstract class ADiamondStateMachine {
     public abstract stateTransition(tx: any): Promise<TransitionResponse>;
     public abstract runView(tx: any): Promise<any>;
     public abstract getParticipants(): Promise<Address[]>;
@@ -26,6 +26,11 @@ abstract class AStateMachine {
     public abstract getTotalStateBalance(): Promise<BalanceStruct>;
 
     public abstract getZeroBalance(): Promise<BalanceStruct>;
+
+    public abstract isForkDisputed(
+        channelId: ChannelId,
+        forkId: ForkId
+    ): Promise<boolean>;
 }
 
-export default AStateMachine;
+export default ADiamondStateMachine;

@@ -1,6 +1,6 @@
 import { ethers } from "hardhat";
 import { BigNumberish } from "ethers";
-import EvmStateMachine from "@/evm/EvmStateMachine";
+import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
 import { MathStateMachine } from "@typechain-types";
 
 describe("DisputesManagerContract", function () {
