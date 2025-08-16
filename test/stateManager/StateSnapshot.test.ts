@@ -1,9 +1,10 @@
 import { expect } from "chai";
 import { ethers } from "ethers";
 import StateManager from "@/stateManager/StateManager";
-import { factory } from "@/test/factory";
+import { stateSnapshot, exitChannelBlock } from "../factory";
 import { Address, BlockHeight, ForkId, Hash } from "@/types/types";
 import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import Clock from "@/Clock";
 
 describe("StateManager - StateSnapshot BlockHeight", () => {
     let stateManager: StateManager;
@@ -13,7 +14,12 @@ describe("StateManager - StateSnapshot BlockHeight", () => {
     let mockP2pEventHooks: any;
     let mockDiamondStateMachine: any;
 
-    beforeEach(() => {
+    beforeEach(async () => {
+        // Mock Clock for testing
+        const mockProvider = {
+            getBlock: async () => ({ timestamp: Math.floor(Date.now() / 1000) })
+        };
+        await Clock.init(mockProvider as any);
         // Create mock contract
         mockContract = {
             getStateSnapshot: async () => ({
@@ -27,15 +33,16 @@ describe("StateManager - StateSnapshot BlockHeight", () => {
         // Create mock storage
         mockStorage = {
             stateSnapshots: {
-                getGenesisSnapshotDataByForkId: () => factory.stateSnapshot(),
-                getStateSnapshotByHash: () => factory.stateSnapshot()
+                getGenesisSnapshotDataByForkId: () => stateSnapshot(),
+                getStateSnapshotByHash: () => stateSnapshot()
             },
             blocks: {
                 getLatestBlockHeight: () => 10
             },
             exitChannelBlocks: {
-                getExitChannelBlock: () => factory.exitChannelBlock(),
-                getLatestExitChannelBlockHash: () => "0x0000000000000000"
+                getExitChannelBlock: () => exitChannelBlock(),
+                getLatestExitChannelBlockHash: () => "0x0000000000000000",
+                getTotalWithdrawals: () => ({ amount: 0n, data: "0x" })
             },
             joinChannelBlocks: {
                 getLatestJoinChannelBlockHash: () => "0x0000000000000000",
@@ -46,7 +53,7 @@ describe("StateManager - StateSnapshot BlockHeight", () => {
         // Create mock agreement manager
         mockAgreementManager = {
             getStateProof: async () => ({
-                milestones: [factory.milestoneProof()],
+                milestones: [],
                 signedBlocks: []
             })
         };
@@ -75,8 +82,7 @@ describe("StateManager - StateSnapshot BlockHeight", () => {
                 p2pTime: 15,
                 agreementTime: 5,
                 chainFallbackTime: 30,
-                evidenceTime: 30,
-                killTime: 60
+                challengeTime: 30
             },
             mockP2pEventHooks as any,
             mockStorage as any
@@ -125,23 +131,6 @@ describe("StateManager - StateSnapshot BlockHeight", () => {
             ).createStateSnapshot(stateMachineStateHash, forkId, blockHeight);
 
             expect(stateSnapshot.toStruct().blockHeight).to.equal(0n);
-        });
-    });
-
-    describe("factory", () => {
-        it("should default blockHeight to 0 in factory", () => {
-            const snapshot = factory.stateSnapshot();
-            expect(snapshot.toStruct().blockHeight).to.equal(0n);
-        });
-
-        it("should allow overriding blockHeight in factory", () => {
-            const blockHeight = 42 as BlockHeight;
-            const snapshot = factory.stateSnapshot({
-                blockHeight: BigInt(blockHeight)
-            });
-            expect(snapshot.toStruct().blockHeight).to.equal(
-                BigInt(blockHeight)
-            );
         });
     });
 });
