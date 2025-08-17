@@ -556,8 +556,8 @@ class StateManager {
                     );
                 }
 
-                // Only include milestones that are newer than or equal to the current on-chain snapshot
-                if (snapshot.timestamp >= currentOnChainSnapshot.timestamp) {
+                // Only include milestones that are newer than the current on-chain block height
+                if (snapshot.blockHeight > currentOnChainSnapshot.blockHeight) {
                     milestoneProofs.push(milestoneProof);
                     milestoneSnapshots.push(snapshot);
                 }
@@ -575,7 +575,10 @@ class StateManager {
                 milestoneSnapshots[milestoneSnapshots.length - 1];
 
             // Latest snapshot is the same as current on-chain
-            if (latestSnapshot.timestamp === currentOnChainSnapshot.timestamp) {
+            if (
+                latestSnapshot.blockHeight ===
+                Number(currentOnChainSnapshot.blockHeight)
+            ) {
                 console.log("State is already up to date");
                 return;
             }
@@ -593,46 +596,40 @@ class StateManager {
             const currentOnChainExitBlockHash =
                 currentOnChainSnapshot.snapshotData.latestExitChannelBlockHash;
 
-            // Get all exit points for this fork
-            const exitPoints =
-                this.storage.exitPoints.getExitPointsInRange(forkId);
+            // Get the latest local exit channel block hash from the latest state snapshot
+            if (!latestSnapshot) {
+                throw new Error(
+                    "Latest snapshot is undefined - this should not happen"
+                );
+            }
+            const latestLocalExitBlockHash =
+                latestSnapshot.snapshotData.latestExitChannelBlockHash;
 
-            // Filter exit points to only include those newer than current on-chain block height
-            const currentOnChainBlockHeight =
-                currentOnChainSnapshot.blockHeight;
-            const relevantExitPoints = exitPoints.filter(
-                (height) => height > currentOnChainBlockHeight
-            );
+            // If the latest local exit block is different from what's on-chain,
+            // we need to include all exit blocks in the chain
+            if (latestLocalExitBlockHash !== currentOnChainExitBlockHash) {
+                // Build the chain of exit blocks from current on-chain to latest local
+                let currentHash = latestLocalExitBlockHash;
+                const exitBlockChain: ExitChannelBlockStruct[] = [];
 
-            // Collect exit channel blocks for each exit point
-            for (const exitPointHeight of relevantExitPoints) {
-                // Get the state snapshot at this exit point
-                const exitSnapshot = this.storage.getStateSnapshot({
-                    forkId,
-                    height: exitPointHeight
-                });
-
-                if (exitSnapshot) {
-                    // Get the exit channel block hash from the snapshot
-                    const exitChannelBlockHash =
-                        exitSnapshot.snapshotData.latestExitChannelBlockHash;
-
-                    // Only include exit channel blocks that are newer than the current on-chain state
-                    if (exitChannelBlockHash !== currentOnChainExitBlockHash) {
-                        // Get the exit channel block from storage
-                        const exitChannelBlock =
-                            this.storage.exitChannelBlocks.getExitChannelBlock(
-                                exitChannelBlockHash
-                            );
-
-                        if (exitChannelBlock) {
-                            exitChannelBlocks.push(exitChannelBlock);
-                        }
+                // Walk backwards through the chain until we reach the on-chain hash
+                while (currentHash !== currentOnChainExitBlockHash) {
+                    const exitBlock =
+                        this.storage.exitChannelBlocks.getExitChannelBlock(
+                            currentHash
+                        );
+                    if (!exitBlock) {
+                        throw new Error(
+                            `Exit channel block not found for hash: ${currentHash}`
+                        );
                     }
+                    exitBlockChain.unshift(exitBlock);
+                    currentHash = exitBlock.previousBlockHash;
                 }
+
+                exitChannelBlocks.push(...exitBlockChain);
             }
 
-            // Call the contract's updateStateSnapshotSameFork method
             const txResponse =
                 await this.stateChannelManagerContract.updateStateSnapshotSameFork(
                     this.channelId,
@@ -641,14 +638,13 @@ class StateManager {
                     exitChannelBlocks
                 );
 
-            // Wait for the transaction to be mined
             await txResponse.wait();
 
             console.log(
                 `Successfully updated state snapshot for fork ${forkId}`
             );
         } catch (error) {
-            console.error("Error updating snapshot same fork:", error);
+            console.error("Error updating snapshot for the same fork:", error);
             throw error;
         }
     }

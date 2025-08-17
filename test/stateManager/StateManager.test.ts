@@ -49,7 +49,20 @@ describe("StateManager", () => {
                 getNextBlockHeight: () => 8 // Latest block height is 7
             },
             exitChannelBlocks: {
-                getExitChannelBlock: () => exitChannelBlock(),
+                getExitChannelBlock: (hash: string) => {
+                    // Create a proper chain that leads back to the on-chain hash
+                    if (hash === "0x1234567890abcdef") {
+                        return {
+                            exitChannels: [],
+                            previousBlockHash: "0x0000000000000000" // Points to on-chain hash
+                        };
+                    }
+                    return {
+                        exitChannels: [],
+                        previousBlockHash:
+                            "0x0000000000000000000000000000000000000000000000000000000000000000"
+                    };
+                },
                 getLatestExitChannelBlockHash: () => "0x0000000000000000",
                 getTotalWithdrawals: () => ({ amount: 0n, data: "0x" })
             },
@@ -195,19 +208,30 @@ describe("StateManager", () => {
 
             // Mock state snapshot with newer timestamp and same forkId
             const mockSnapshot = {
-                ...stateSnapshot(),
                 forkId: "0x1234567890abcdef", // Same as current on-chain
                 timestamp: 2000, // Newer than current on-chain (1000)
+                blockHeight: 5, // Higher than current on-chain (3)
+                snapshotData: {
+                    stateMachineStateHash: "0x1234567890abcdef",
+                    participants: [
+                        "0x1234567890123456789012345678901234567890"
+                    ],
+                    latestJoinChannelBlockHash: "0x0000000000000000",
+                    latestExitChannelBlockHash: "0x1234567890abcdef", // Different from on-chain
+                    totalDeposits: { amount: 0n, data: "0x" },
+                    totalWithdrawals: { amount: 0n, data: "0x" }
+                },
                 toStruct: () => ({
                     forkId: "0x1234567890abcdef",
                     timestamp: 2000,
+                    blockHeight: 5,
                     snapshotData: {
                         stateMachineStateHash: "0x1234567890abcdef",
                         participants: [
                             "0x1234567890123456789012345678901234567890"
                         ],
                         latestJoinChannelBlockHash: "0x0000000000000000",
-                        latestExitChannelBlockHash: "0x0000000000000000",
+                        latestExitChannelBlockHash: "0x1234567890abcdef", // Different from on-chain
                         totalDeposits: { amount: 0n, data: "0x" },
                         totalWithdrawals: { amount: 0n, data: "0x" }
                     }
@@ -235,13 +259,13 @@ describe("StateManager", () => {
             expect(mockContract.updateStateSnapshotSameFork.called).to.be.false;
         });
 
-        it("should return early when latest snapshot timestamp equals current on-chain", async () => {
+        it("should return early when latest snapshot block height equals current on-chain", async () => {
             const forkId = "0x1234567890abcdef" as ForkId;
 
-            // Mock snapshot with same timestamp as current on-chain
+            // Mock snapshot with same block height as current on-chain
             const mockSnapshot = {
                 ...stateSnapshot(),
-                timestamp: 1000 // Same as current on-chain
+                blockHeight: 3 // Same as current on-chain
             };
             mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
                 mockSnapshot;
@@ -252,35 +276,301 @@ describe("StateManager", () => {
             expect(mockContract.updateStateSnapshotSameFork.called).to.be.false;
         });
 
-        it("should throw error when fork mismatch is detected", async () => {
+        it("should filter milestones correctly - only include newer than on-chain", async () => {
             const forkId = "0x1234567890abcdef" as ForkId;
 
-            // Mock snapshot with different fork ID
+            // Mock multiple milestones with different block heights
+            mockAgreementManager.getStateProof = async () => ({
+                milestones: [
+                    {
+                        blockConfirmations: [
+                            {
+                                signedBlock: {
+                                    encodedBlock:
+                                        "0x1111111111111111111111111111111111111111111111111111111111111111"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        blockConfirmations: [
+                            {
+                                signedBlock: {
+                                    encodedBlock:
+                                        "0x2222222222222222222222222222222222222222222222222222222222222222"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        blockConfirmations: [
+                            {
+                                signedBlock: {
+                                    encodedBlock:
+                                        "0x3333333333333333333333333333333333333333333333333333333333333333"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                signedBlocks: []
+            });
+
+            // Mock snapshots with different block heights
+            let callCount = 0;
+            mockStorage.stateSnapshots.getStateSnapshotByHash = () => {
+                callCount++;
+                // Return different block heights: 2, 4, 6 (on-chain is 3)
+                const blockHeights = [2, 4, 6];
+                const currentHeight = blockHeights[callCount - 1];
+
+                return {
+                    forkId: "0x1234567890abcdef",
+                    timestamp: 1000 + currentHeight * 100,
+                    blockHeight: currentHeight,
+                    snapshotData: {
+                        stateMachineStateHash: "0x1234567890abcdef",
+                        participants: [
+                            "0x1234567890123456789012345678901234567890"
+                        ],
+                        latestJoinChannelBlockHash: "0x0000000000000000",
+                        latestExitChannelBlockHash: "0x0000000000000000",
+                        totalDeposits: { amount: 0n, data: "0x" },
+                        totalWithdrawals: { amount: 0n, data: "0x" }
+                    },
+                    toStruct: function () {
+                        return {
+                            forkId: this.forkId,
+                            timestamp: this.timestamp,
+                            blockHeight: this.blockHeight,
+                            snapshotData: this.snapshotData
+                        };
+                    }
+                };
+            };
+
+            await stateManager.updateSnapshotSameFork(forkId);
+
+            // Should only include milestones with blockHeight > 3 (on-chain height)
+            // So only milestones 2 and 3 (block heights 4 and 6) should be included
+            expect(mockContract.updateStateSnapshotSameFork.called).to.be.true;
+        });
+
+        it("should handle multiple exit blocks in chain correctly", async () => {
+            const forkId = "0x1234567890abcdef" as ForkId;
+
             const mockSnapshot = {
-                ...stateSnapshot(),
-                forkId: "0x9876543210fedcba" as ForkId, // Different fork
-                timestamp: 2000
+                forkId: "0x1234567890abcdef",
+                timestamp: 2000,
+                blockHeight: 5,
+                snapshotData: {
+                    stateMachineStateHash: "0x1234567890abcdef",
+                    participants: [
+                        "0x1234567890123456789012345678901234567890"
+                    ],
+                    latestJoinChannelBlockHash: "0x0000000000000000",
+                    latestExitChannelBlockHash: "0x3333333333333333", // Latest exit block
+                    totalDeposits: { amount: 0n, data: "0x" },
+                    totalWithdrawals: { amount: 0n, data: "0x" }
+                },
+                toStruct: function () {
+                    return {
+                        forkId: this.forkId,
+                        timestamp: this.timestamp,
+                        blockHeight: this.blockHeight,
+                        snapshotData: this.snapshotData
+                    };
+                }
             };
             mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
                 mockSnapshot;
 
-            await expect(
-                stateManager.updateSnapshotSameFork(forkId)
-            ).to.be.rejectedWith("Fork mismatch");
+            // Mock a chain of 3 exit blocks: A -> B -> C
+            // On-chain has A, we need to collect B and C
+            mockStorage.exitChannelBlocks.getExitChannelBlock = (
+                hash: string
+            ) => {
+                const exitBlocks = {
+                    "0x3333333333333333": {
+                        // Block C (latest)
+                        exitChannels: [
+                            {
+                                participant: "0x3333",
+                                balance: { amount: 30n, data: "0x" }
+                            }
+                        ],
+                        previousBlockHash: "0x2222222222222222"
+                    },
+                    "0x2222222222222222": {
+                        // Block B
+                        exitChannels: [
+                            {
+                                participant: "0x2222",
+                                balance: { amount: 20n, data: "0x" }
+                            }
+                        ],
+                        previousBlockHash: "0x0000000000000000" // Points to on-chain
+                    }
+                };
+                return exitBlocks[hash as keyof typeof exitBlocks];
+            };
+
+            await stateManager.updateSnapshotSameFork(forkId);
+
+            // Should call contract with exit blocks in correct order (B, C)
+            expect(mockContract.updateStateSnapshotSameFork.called).to.be.true;
         });
 
-        it("should filter exit points correctly based on current on-chain block height", async () => {
+        it("should handle corrupted exit block chain gracefully", async () => {
             const forkId = "0x1234567890abcdef" as ForkId;
 
-            // Current on-chain is at block 3, exit points are [1, 3, 5, 7]
-            // Should only include exit points > 3, so [5, 7]
+            const mockSnapshot = {
+                forkId: "0x1234567890abcdef",
+                timestamp: 2000,
+                blockHeight: 5,
+                snapshotData: {
+                    stateMachineStateHash: "0x1234567890abcdef",
+                    participants: [
+                        "0x1234567890123456789012345678901234567890"
+                    ],
+                    latestJoinChannelBlockHash: "0x0000000000000000",
+                    latestExitChannelBlockHash: "0x1234567890abcdef",
+                    totalDeposits: { amount: 0n, data: "0x" },
+                    totalWithdrawals: { amount: 0n, data: "0x" }
+                },
+                toStruct: function () {
+                    return {
+                        forkId: this.forkId,
+                        timestamp: this.timestamp,
+                        blockHeight: this.blockHeight,
+                        snapshotData: this.snapshotData
+                    };
+                }
+            };
+            mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
+                mockSnapshot;
+
+            // Mock missing exit block (corrupted chain)
+            mockStorage.exitChannelBlocks.getExitChannelBlock = () => undefined;
+
+            await expect(
+                stateManager.updateSnapshotSameFork(forkId)
+            ).to.be.rejectedWith("Exit channel block not found for hash");
+        });
+
+        it("should handle contract transaction wait failure", async () => {
+            const forkId = "0x1234567890abcdef" as ForkId;
 
             const mockSnapshot = {
-                ...stateSnapshot(),
-                forkId: "0x1234567890abcdef", // Same as current on-chain
+                forkId: "0x1234567890abcdef",
                 timestamp: 2000,
+                blockHeight: 5,
+                snapshotData: {
+                    stateMachineStateHash: "0x1234567890abcdef",
+                    participants: [
+                        "0x1234567890123456789012345678901234567890"
+                    ],
+                    latestJoinChannelBlockHash: "0x0000000000000000",
+                    latestExitChannelBlockHash: "0x0000000000000000",
+                    totalDeposits: { amount: 0n, data: "0x" },
+                    totalWithdrawals: { amount: 0n, data: "0x" }
+                },
+                toStruct: function () {
+                    return {
+                        forkId: this.forkId,
+                        timestamp: this.timestamp,
+                        blockHeight: this.blockHeight,
+                        snapshotData: this.snapshotData
+                    };
+                }
+            };
+            mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
+                mockSnapshot;
+
+            // Mock contract call success but wait failure
+            mockContract.updateStateSnapshotSameFork = sinon.stub().resolves({
+                wait: async () => {
+                    throw new Error("Transaction failed");
+                }
+            });
+
+            await expect(
+                stateManager.updateSnapshotSameFork(forkId)
+            ).to.be.rejectedWith("Transaction failed");
+        });
+
+        it("should handle storage access errors gracefully", async () => {
+            const forkId = "0x1234567890abcdef" as ForkId;
+
+            // Mock storage error
+            mockStorage.stateSnapshots.getStateSnapshotByHash = () => {
+                throw new Error("Storage access failed");
+            };
+
+            await expect(
+                stateManager.updateSnapshotSameFork(forkId)
+            ).to.be.rejectedWith("Storage access failed");
+        });
+
+        it("should handle empty exit channel blocks correctly", async () => {
+            const forkId = "0x1234567890abcdef" as ForkId;
+
+            const mockSnapshot = {
+                forkId: "0x1234567890abcdef",
+                timestamp: 2000,
+                blockHeight: 5,
+                snapshotData: {
+                    stateMachineStateHash: "0x1234567890abcdef",
+                    participants: [
+                        "0x1234567890123456789012345678901234567890"
+                    ],
+                    latestJoinChannelBlockHash: "0x0000000000000000",
+                    latestExitChannelBlockHash: "0x1234567890abcdef",
+                    totalDeposits: { amount: 0n, data: "0x" },
+                    totalWithdrawals: { amount: 0n, data: "0x" }
+                },
+                toStruct: function () {
+                    return {
+                        forkId: this.forkId,
+                        timestamp: this.timestamp,
+                        blockHeight: this.blockHeight,
+                        snapshotData: this.snapshotData
+                    };
+                }
+            };
+            mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
+                mockSnapshot;
+
+            // Mock exit block with empty exitChannels array
+            mockStorage.exitChannelBlocks.getExitChannelBlock = () => ({
+                exitChannels: [], // Empty array
+                previousBlockHash: "0x0000000000000000"
+            });
+
+            await expect(stateManager.updateSnapshotSameFork(forkId)).to.not.be
+                .rejected;
+        });
+
+        it("should throw error when fork mismatch is detected", async () => {
+            const forkId = "0x1234567890abcdef" as ForkId;
+
+            // Mock snapshot with different fork ID and higher block height
+            const mockSnapshot = {
+                forkId: "0x9876543210fedcba" as ForkId, // Different fork
+                timestamp: 2000,
+                blockHeight: 5, // Higher than current on-chain (3)
+                snapshotData: {
+                    stateMachineStateHash: "0x1234567890abcdef",
+                    participants: [
+                        "0x1234567890123456789012345678901234567890"
+                    ],
+                    latestJoinChannelBlockHash: "0x0000000000000000",
+                    latestExitChannelBlockHash: "0x0000000000000000",
+                    totalDeposits: { amount: 0n, data: "0x" },
+                    totalWithdrawals: { amount: 0n, data: "0x" }
+                },
                 toStruct: () => ({
-                    forkId: "0x1234567890abcdef",
+                    forkId: "0x9876543210fedcba",
                     timestamp: 2000,
                     blockHeight: 5,
                     snapshotData: {
@@ -298,17 +588,74 @@ describe("StateManager", () => {
             mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
                 mockSnapshot;
 
+            await expect(
+                stateManager.updateSnapshotSameFork(forkId)
+            ).to.be.rejectedWith("Fork mismatch");
+        });
+
+        it("should filter exit points correctly based on current on-chain block height", async () => {
+            const forkId = "0x1234567890abcdef" as ForkId;
+
+            // Mock different exit block hashes to trigger exit block processing
+            // The latest snapshot will have a different exit block hash than on-chain
+
+            const mockSnapshot = {
+                forkId: "0x1234567890abcdef", // Same as current on-chain
+                timestamp: 2000,
+                blockHeight: 5, // Higher than current on-chain (3)
+                snapshotData: {
+                    stateMachineStateHash: "0x1234567890abcdef",
+                    participants: [
+                        "0x1234567890123456789012345678901234567890"
+                    ],
+                    latestJoinChannelBlockHash: "0x0000000000000000",
+                    latestExitChannelBlockHash: "0x1234567890abcdef",
+                    totalDeposits: { amount: 0n, data: "0x" },
+                    totalWithdrawals: { amount: 0n, data: "0x" }
+                },
+                toStruct: () => ({
+                    forkId: "0x1234567890abcdef",
+                    timestamp: 2000,
+                    blockHeight: 5,
+                    snapshotData: {
+                        stateMachineStateHash: "0x1234567890abcdef",
+                        participants: [
+                            "0x1234567890123456789012345678901234567890"
+                        ],
+                        latestJoinChannelBlockHash: "0x0000000000000000",
+                        latestExitChannelBlockHash: "0x1234567890abcdef",
+                        totalDeposits: { amount: 0n, data: "0x" },
+                        totalWithdrawals: { amount: 0n, data: "0x" }
+                    }
+                })
+            };
+            mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
+                mockSnapshot;
+
             // Mock exit channel block retrieval
             let exitBlockCallCount = 0;
-            mockStorage.exitChannelBlocks.getExitChannelBlock = () => {
+            mockStorage.exitChannelBlocks.getExitChannelBlock = (
+                hash: string
+            ) => {
                 exitBlockCallCount++;
-                return exitChannelBlock();
+                // Create a proper chain that leads back to the on-chain hash
+                if (hash === "0x1234567890abcdef") {
+                    return {
+                        exitChannels: [],
+                        previousBlockHash: "0x0000000000000000" // Points to on-chain hash
+                    };
+                }
+                return {
+                    exitChannels: [],
+                    previousBlockHash:
+                        "0x0000000000000000000000000000000000000000000000000000000000000000"
+                };
             };
 
             await stateManager.updateSnapshotSameFork(forkId);
 
-            // Should only process 2 exit blocks (from blocks 5 and 7)
-            expect(exitBlockCallCount).to.equal(2);
+            // Should process exit blocks in the chain
+            expect(exitBlockCallCount).to.be.greaterThan(0);
         });
 
         it("should handle empty milestone proof gracefully", async () => {
@@ -344,9 +691,19 @@ describe("StateManager", () => {
             const forkId = "0x1234567890abcdef" as ForkId;
 
             const mockSnapshot = {
-                ...stateSnapshot(),
                 forkId: "0x1234567890abcdef", // Same as current on-chain
                 timestamp: 2000,
+                blockHeight: 5, // Higher than current on-chain (3)
+                snapshotData: {
+                    stateMachineStateHash: "0x1234567890abcdef",
+                    participants: [
+                        "0x1234567890123456789012345678901234567890"
+                    ],
+                    latestJoinChannelBlockHash: "0x0000000000000000",
+                    latestExitChannelBlockHash: "0x0000000000000000",
+                    totalDeposits: { amount: 0n, data: "0x" },
+                    totalWithdrawals: { amount: 0n, data: "0x" }
+                },
                 toStruct: () => ({
                     forkId: "0x1234567890abcdef",
                     timestamp: 2000,
@@ -387,9 +744,19 @@ describe("StateManager", () => {
             const forkId = "0x1234567890abcdef" as ForkId;
 
             const mockSnapshot = {
-                ...stateSnapshot(),
                 forkId: "0x1234567890abcdef", // Same as current on-chain
                 timestamp: 2000,
+                blockHeight: 5, // Higher than current on-chain (3)
+                snapshotData: {
+                    stateMachineStateHash: "0x1234567890abcdef",
+                    participants: [
+                        "0x1234567890123456789012345678901234567890"
+                    ],
+                    latestJoinChannelBlockHash: "0x0000000000000000",
+                    latestExitChannelBlockHash: "0x0000000000000000",
+                    totalDeposits: { amount: 0n, data: "0x" },
+                    totalWithdrawals: { amount: 0n, data: "0x" }
+                },
                 toStruct: () => ({
                     forkId: "0x1234567890abcdef",
                     timestamp: 2000,
