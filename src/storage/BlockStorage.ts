@@ -283,14 +283,16 @@ export class BlockStorage {
     ────────────────────────────────────────────────────────────────────────────*/
     *getIterator(
         forkId: ForkId,
-        sortOrder?: SortOrder
+        sortOrder?: SortOrder,
+        startHeight?: BlockHeight
     ): Generator<BlockEntry, void, unknown> {
         const maxHeight = this.forkIdToMaxHeightMap.get(forkId);
         if (maxHeight === undefined) return;
 
         if (sortOrder === SortOrder.ASC) {
-            // Start from 0, go up to maxHeight
-            for (let height = 0; height <= maxHeight; height++) {
+            // Start from startHeight or 0, go up to maxHeight
+            const start = startHeight !== undefined ? startHeight : 0;
+            for (let height = start; height <= maxHeight; height++) {
                 const coordinateKey = this.coordinatesToKey({ forkId, height });
                 const blockEntry =
                     this.coordinatesToBlockMap.get(coordinateKey);
@@ -299,8 +301,9 @@ export class BlockStorage {
                 }
             }
         } else {
-            // Start from maxHeight, go down to 0
-            for (let height = maxHeight; height >= 0; height--) {
+            // Start from startHeight or maxHeight, go down to 0
+            const start = startHeight !== undefined ? startHeight : maxHeight;
+            for (let height = start; height >= 0; height--) {
                 const coordinateKey = this.coordinatesToKey({ forkId, height });
                 const blockEntry =
                     this.coordinatesToBlockMap.get(coordinateKey);

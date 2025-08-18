@@ -176,8 +176,10 @@ class DisputeHandler {
         const {
             encodedLatestFinalizedState,
             encodedLatestCorrectState,
-            virtualVotingBlocks
-        } = this.agreementManager.getFinalizedAndLatestWithVotes(
+            virtualVotingBlocks,
+            milestoneProofs,
+            milestoneSnapshots
+        } = this.agreementManager.getFinalizedAndLatestWithMilestones(
             forkId,
             this.signerAddress
         );
@@ -258,8 +260,10 @@ class DisputeHandler {
             const {
                 encodedLatestFinalizedState,
                 encodedLatestCorrectState,
-                virtualVotingBlocks
-            } = this.agreementManager.getFinalizedAndLatestWithVotes(
+                virtualVotingBlocks,
+                milestoneProofs,
+                milestoneSnapshots
+            } = this.agreementManager.getFinalizedAndLatestWithMilestones(
                 dispute.forkId,
                 this.signerAddress
             );
