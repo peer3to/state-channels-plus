@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.8;
 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -22,7 +23,7 @@ contract StateChannelCommon is
     }
 
     function getNextToWrite(
-        bytes32 channelId,
+        bytes32 /* _channelId */, //commened on "/* _channelId */"
         bytes memory encodedState
     ) public virtual returns (address) {
         //channelId not used currenlty since all channels have the same SM - later they can be mapped to different ones

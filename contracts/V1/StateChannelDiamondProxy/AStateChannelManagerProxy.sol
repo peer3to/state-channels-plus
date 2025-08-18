@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
@@ -203,7 +204,7 @@ abstract contract AStateChannelManagerProxy is
         address[] memory p = new address[](1);
         p[0] = leaveChannel.participant;
         (
-            bytes memory encodedState,
+            bytes memory _encodedState, //add underscore to this var
             ProcessExit[] memory pe,
             uint successCnt
         ) = removeParticipantsFromStateMachine(encodedState, p);
@@ -219,7 +220,7 @@ abstract contract AStateChannelManagerProxy is
         );
 
         //setState
-        setState(leaveChannel.channelId, encodedState);
+        setState(leaveChannel.channelId, _encodedState);
         //TODO? - what if somone lies and triggeres this later - should not be wated upon and should trigget dispute from others if they play a move -> they're not a particopant anymore
     }
 
@@ -300,14 +301,14 @@ abstract contract AStateChannelManagerProxy is
         bytes memory encodedState,
         JoinChannel[] memory joinCahnnels
     ) internal returns (bytes memory encodedModifiedState, uint successCnt) {
-        uint successCnt = 0;
+       uint _successCntLocal1 = 0;  //change var name
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < joinCahnnels.length; i++) {
             bool success = stateMachineImplementation.joinChannel(
                 joinCahnnels[i]
             );
             // require(success, "JoinChannel failed");
-            if (success) successCnt++;
+            if (success) _successCntLocal1++;
         }
         return (stateMachineImplementation.getState(), successCnt);
     }
@@ -326,14 +327,14 @@ abstract contract AStateChannelManagerProxy is
         ProcessExit[] memory processExits = new ProcessExit[](
             slashedParticipants.length
         );
-        uint successCnt = 0;
+        uint _successCntLocal2 = 0; //change var name
         stateMachineImplementation.setState(encodedState);
         for (uint i = 0; i < slashedParticipants.length; i++) {
             bool success;
-            (success, processExits[successCnt]) = stateMachineImplementation
+            (success, processExits[_successCntLocal2]) = stateMachineImplementation
                 .slashParticipant(slashedParticipants[i]);
             // require(success, "Slash failed");
-            if (success) successCnt++;
+            if (success) _successCntLocal2++;
         }
         return (
             stateMachineImplementation.getState(),
@@ -350,7 +351,7 @@ abstract contract AStateChannelManagerProxy is
         returns (
             bytes memory encodedModifiedState,
             ProcessExit[] memory,
-            uint successCnt
+            uint _successCnt  //add underscore
         )
     {
         ProcessExit[] memory processExits = new ProcessExit[](
@@ -373,13 +374,13 @@ abstract contract AStateChannelManagerProxy is
     }
 
     function executeStateTransitionOnState(
-        bytes32 channelId,
+         bytes32 /* _channelId */, //commened on here "_channelId"
         bytes memory encodedState,
         Transaction memory _tx
     ) public override returns (bool, bytes memory) {
         //channelId not used currenlty since all channels have the same SM - later they can be mapped to different ones
         stateMachineImplementation.setState(encodedState);
-        (bool success, bytes memory encodedReturnValue) = address(
+        (bool success, /*bytes memory encodedReturnValue*/) = address(
             stateMachineImplementation
         ).call(abi.encodeCall(stateMachineImplementation.stateTransition, _tx));
         return (success, stateMachineImplementation.getState());

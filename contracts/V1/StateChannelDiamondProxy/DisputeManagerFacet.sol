@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
@@ -947,7 +948,7 @@ contract DisputeManagerFacet is StateChannelCommon {
     function isGoodTimestampNonDeterministic(
         uint previousCanonicalTimestamp,
         Block memory block2
-    ) internal returns (bool) {
+    ) internal view returns (bool) { //change this funtion to view
         uint timestamp = block2.transaction.header.timestamp;
         uint lastTransactionTimestamp = previousCanonicalTimestamp;
 

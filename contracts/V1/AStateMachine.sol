@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.8;
 
 import "./DataTypes.sol";
@@ -27,7 +28,7 @@ abstract contract AStateMachine {
 
     // modifies the state to add a new participant to the channel
     function _joinChannel(
-        JoinChannel memory joinChannel
+        JoinChannel memory __joinChannel // use double underscore
     ) internal virtual returns (bool);
 
     // define the logic that punishes a participant for misbehaving (can also remove the participant from the state channel)
@@ -35,7 +36,7 @@ abstract contract AStateMachine {
         address adr
     ) internal virtual returns (bool, ProcessExit memory);
 
-    // similart to _slashParticipant, but doesn't have to punish the player - just removes them from the state channel
+    // similar to _slashParticipant, but doesn't have to punish the player - just removes them from the state channel
     function _removeParticipant(
         address adr
     ) internal virtual returns (bool, ProcessExit memory);
@@ -53,9 +54,9 @@ abstract contract AStateMachine {
     }
 
     function joinChannel(
-        JoinChannel memory joinChannel
+        JoinChannel memory __joinChannel
     ) external _nonReentrant returns (bool) {
-        return _joinChannel(joinChannel);
+        return _joinChannel(__joinChannel);
     }
 
     function slashParticipant(
