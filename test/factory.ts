@@ -228,6 +228,7 @@ export function stateSnapshot(
             }
         },
         forkId: ethers.hexlify(ethers.randomBytes(32)),
+        blockHeight: BigInt(randomInt(0, 500)),
         timestamp: Math.floor(Date.now() / 1000)
     };
 

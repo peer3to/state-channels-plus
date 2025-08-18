@@ -571,11 +571,13 @@ class StateManager {
 
     private async handleStateSnapshotStorage(
         encodedState: Bytes,
-        forkId: ForkId
+        forkId: ForkId,
+        blockHeight: BlockHeight
     ) {
         const stateSnapshot = await this.createStateSnapshot(
             encodedState,
-            forkId
+            forkId,
+            blockHeight
         );
         this.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
     }
@@ -701,7 +703,8 @@ class StateManager {
 
     private async createStateSnapshot(
         stateMachineStateHash: Hash,
-        forkId: ForkId
+        forkId: ForkId,
+        blockHeight: BlockHeight
     ): Promise<StateSnapshot> {
         const participants = await this.diamondStateMachine.getParticipants();
 
@@ -715,6 +718,7 @@ class StateManager {
 
         const stateSnapshot: StateSnapshotStruct = {
             forkId,
+            blockHeight: blockHeight,
             timestamp: Clock.getTimeInSeconds(),
             snapshotData: {
                 stateMachineStateHash: stateMachineStateHash,
@@ -749,7 +753,8 @@ class StateManager {
 
         const stateSnapshot = await this.createStateSnapshot(
             posteriorStateHash,
-            forkId
+            forkId,
+            transactionCnt
         );
 
         const stateSnapshotHash = stateSnapshot.hash;
@@ -817,7 +822,11 @@ class StateManager {
         this.storage.blocks.storeBlockConfirmation(blockConfirmation);
 
         // Handle state snapshot storage
-        await this.handleStateSnapshotStorage(encodedState, block.forkId);
+        await this.handleStateSnapshotStorage(
+            encodedState,
+            block.forkId,
+            block.coordinates.height
+        );
 
         // Store exit channel blocks if present
         if (exitChannels.length > 0) {
