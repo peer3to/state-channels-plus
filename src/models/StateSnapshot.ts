@@ -5,7 +5,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Codec, Type } from "../utils/Codec";
 
-import { Bytes, ForkId, Hash, Timestamp } from "@/types/types";
+import { BlockHeight, Bytes, ForkId, Hash, Timestamp } from "@/types/types";
 import { SnapshotDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 export default class StateSnapshot {
@@ -46,6 +46,10 @@ export default class StateSnapshot {
 
     get timestamp(): Timestamp {
         return Number(this.snapshot.timestamp);
+    }
+
+    get blockHeight(): BlockHeight {
+        return Number(this.snapshot.blockHeight);
     }
 
     get snapshotData(): SnapshotDataStruct {
