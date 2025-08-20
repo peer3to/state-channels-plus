@@ -1,22 +1,11 @@
-import {
-    SignedBlockStruct,
-    BlockConfirmationStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import {
     MilestoneProofStruct,
     StateProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import Storage, { BlockEntry, SortOrder } from "@/storage";
-import {
-    Address,
-    BlockHeight,
-    Bytes,
-    ForkId,
-    Signature,
-    Hash
-} from "@/types/types";
-import { BytesLike } from "ethers";
+import { Address, BlockHeight, ForkId, Signature } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import { Codec, Type } from "@/utils";
 import { ethers } from "ethers";
@@ -38,15 +27,8 @@ class AgreementManager {
             SortOrder.DESC
         );
 
-        for (const { blockConfirmation } of blockEntries) {
-            const block = Block.decode(
-                blockConfirmation.signedBlock.encodedBlock
-            );
-
-            const { didSign, signature } = block.findSignature(
-                participantAdr,
-                this.getAllSignatures(blockConfirmation)
-            );
+        for (const { block } of blockEntries) {
+            const { didSign, signature } = block.findSignature(participantAdr);
 
             if (didSign) {
                 return {
@@ -60,60 +42,25 @@ class AgreementManager {
     }
 
     public didEveryoneSignBlock(block: Block): boolean {
-        const blockEntry = this.storage.blocks.getBlockEntry(block.hash);
-        if (!blockEntry) return false;
-
         const thresholdAddresses = new Set<Address>(
             this.storage.getParticipants(block.coordinates)
         );
 
-        const signersSet = block.getSignerAddresses(
-            this.getAllSignatures(blockEntry.blockConfirmation)
-        );
-
-        return SetUtils.isSubset(thresholdAddresses, signersSet);
-    }
-
-    public didParticipantSign(
-        block: Block,
-        participant: Address
-    ): { didSign: boolean; signature: Signature | undefined } {
-        const blockEntry = this.storage.blocks.getBlockEntry(block.hash);
-        if (!blockEntry) return { didSign: false, signature: undefined };
-
-        // Check if participant is the author
-        if (block.author === participant) {
-            return {
-                didSign: true,
-                signature: blockEntry.blockConfirmation.signedBlock
-                    .signature as Signature
-            };
-        }
-
-        // Check all signatures
-        return block.findSignature(
-            participant,
-            this.getAllSignatures(blockEntry.blockConfirmation)
-        );
+        return SetUtils.isSubset(thresholdAddresses, block.allSignerAddresses);
     }
 
     /**
      * Get participants who haven't signed a block
      */
     public getParticipantsWhoDidntSign(block: Block): Address[] {
-        const blockEntry = this.storage.blocks.getBlockEntry(block.hash);
-        if (!blockEntry) return [];
-
         const thresholdAddresses = this.storage.getParticipants(
             block.coordinates
         );
 
-        const signersSet = block.getSignerAddresses(
-            this.getAllSignatures(blockEntry.blockConfirmation)
-        );
-
         // Return addresses that haven't signed
-        return thresholdAddresses.filter((address) => !signersSet.has(address));
+        return thresholdAddresses.filter(
+            (address) => !block.allSignerAddresses.has(address)
+        );
     }
 
     /**
@@ -190,14 +137,10 @@ class AgreementManager {
                 blockHeight
             );
 
-            let result = blockIterator.next();
-            while (!result.done) {
-                const blockEntry = result.value;
-                const block = Block.decode(
-                    blockEntry.blockConfirmation.signedBlock.encodedBlock
-                );
+            for (const blockEntry of blockIterator) {
+                const block = blockEntry.block;
 
-                signedBlocks.push(blockEntry.blockConfirmation.signedBlock);
+                signedBlocks.push(block.signedBlock);
 
                 if (
                     block.height === 0 ||
@@ -205,8 +148,6 @@ class AgreementManager {
                 ) {
                     break;
                 }
-
-                result = blockIterator.next();
             }
 
             signedBlocks.reverse();
@@ -227,9 +168,7 @@ class AgreementManager {
         }
 
         const firstBlockConfirmation = milestone.blockConfirmations[0];
-        const block = Block.decode(
-            firstBlockConfirmation.signedBlock.encodedBlock
-        );
+        const block = Block.fromSignedBlock(firstBlockConfirmation.signedBlock);
 
         const snapshot = this.storage.stateSnapshots.getStateSnapshotByHash(
             block.stateSnapshotHash
@@ -251,71 +190,46 @@ class AgreementManager {
         blockIterator: Generator<BlockEntry, void, unknown>,
         currentSnapshot: StateSnapshot
     ): MilestoneProofStruct | undefined {
-        const thresholdSet = new Set<Address>(
-            currentSnapshot.snapshotData.participants as Address[]
+        const requiredSignersSet = new Set<Address>(
+            currentSnapshot.snapshotData.participants
         );
-        const filteredBlockConfirmations: BlockConfirmationStruct[] = [];
 
-        let result = blockIterator.next();
-        while (!result.done) {
-            const blockEntry = result.value;
-            const currentBlockConfirmation = blockEntry.blockConfirmation;
-            const allSignatures = this.getAllSignatures(
-                currentBlockConfirmation
+        const filteredBlocks: Block[] = [];
+
+        for (const blockEntry of blockIterator) {
+            const currentBlock = blockEntry.block;
+
+            const filteredBlock = Block.fromSignedBlock(
+                currentBlock.signedBlock
             );
 
-            // Decode block once at the top
-            const block = Block.decode(
-                currentBlockConfirmation.signedBlock.encodedBlock
-            );
-
-            const filteredBlockConfirmation: BlockConfirmationStruct = {
-                signedBlock: currentBlockConfirmation.signedBlock,
-                signatures: [] // Strip signatures but keep author's signature in signedBlock
-            };
-
-            for (const signature of allSignatures) {
-                const participantAddress = block.getSignerAddress(signature);
+            for (const signature of currentBlock.confirmationSignatures) {
+                const participantAddress =
+                    currentBlock.signatureToAddress(signature);
 
                 if (
                     participantAddress &&
-                    thresholdSet.has(participantAddress)
+                    requiredSignersSet.has(participantAddress)
                 ) {
-                    thresholdSet.delete(participantAddress); // Subtract participant from threshold set
-
-                    // Add signature to filtered block confirmation if it's not the author's signature
-                    if (participantAddress !== block.author) {
-                        filteredBlockConfirmation.signatures.push(
-                            signature as BytesLike
-                        );
-                    }
+                    requiredSignersSet.delete(participantAddress);
+                    filteredBlock.expandSignatures([signature]);
                 }
             }
 
-            filteredBlockConfirmations.push(filteredBlockConfirmation);
+            filteredBlocks.push(filteredBlock);
 
             // If this block commits to currentSnapshot, we can't build a milestone
-            if (block.stateSnapshotHash === currentSnapshot.hash) {
+            if (currentBlock.stateSnapshotHash === currentSnapshot.hash) {
                 break;
             }
 
-            if (thresholdSet.size === 0) {
+            if (requiredSignersSet.size === 0) {
                 return {
-                    blockConfirmations: filteredBlockConfirmations.sort(
-                        (a, b) => {
-                            const blockA = Block.decode(
-                                a.signedBlock.encodedBlock
-                            );
-                            const blockB = Block.decode(
-                                b.signedBlock.encodedBlock
-                            );
-                            return blockA.height - blockB.height;
-                        }
-                    )
+                    blockConfirmations: filteredBlocks
+                        .sort((a, b) => a.height - b.height)
+                        .map((block) => block.blockConfirmationStruct)
                 };
             }
-
-            result = blockIterator.next();
         }
 
         return undefined;
@@ -337,11 +251,7 @@ class AgreementManager {
 
         if (!blockEntry.onChainTimestamp) return false;
 
-        const block = Block.decode(
-            blockEntry.blockConfirmation.signedBlock.encodedBlock
-        );
-
-        return block.author === participantAddress;
+        return blockEntry.block.author === participantAddress;
     }
 
     /**
@@ -350,8 +260,8 @@ class AgreementManager {
      */
     public getDoubleSignedBlock(
         signedBlock: SignedBlockStruct
-    ): SignedBlockStruct | undefined {
-        const block = Block.decode(signedBlock.encodedBlock);
+    ): Block | undefined {
+        const block = Block.fromSignedBlock(signedBlock);
 
         // Check if there's already a block at these coordinates
         const existingBlockEntry = this.storage.blocks.getBlockEntry(
@@ -360,16 +270,14 @@ class AgreementManager {
         );
         if (!existingBlockEntry) return undefined;
 
-        const existingBlock = Block.decode(
-            existingBlockEntry.blockConfirmation.signedBlock.encodedBlock
-        );
+        const existingBlock = existingBlockEntry.block;
 
         // Check if it's by the same author but different block (double sign)
         if (
             existingBlock.author === block.author &&
             !existingBlock.equals(block)
         ) {
-            return existingBlockEntry.blockConfirmation.signedBlock;
+            return existingBlock;
         }
 
         return undefined;
@@ -403,14 +311,6 @@ class AgreementManager {
         }
 
         return false;
-    }
-    private getAllSignatures(
-        blockConfirmation: BlockConfirmationStruct
-    ): Signature[] {
-        return [
-            blockConfirmation.signedBlock.signature as Signature,
-            ...(blockConfirmation.signatures as Signature[])
-        ];
     }
 }
 
