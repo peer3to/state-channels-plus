@@ -7,6 +7,7 @@ import { Address, BlockHeight, ForkId, Hash } from "@/types/types";
 import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import Clock from "@/Clock";
+import Block from "@/models/Block";
 
 describe("StateManager", () => {
     let stateManager: StateManager;
@@ -92,7 +93,30 @@ describe("StateManager", () => {
                     }
                 ],
                 signedBlocks: []
-            })
+            }),
+            getSnapshot: (milestone: any) => {
+                if (milestone.blockConfirmations.length === 0) {
+                    throw new Error("Cannot get snapshot from empty milestone");
+                }
+
+                const firstBlockConfirmation = milestone.blockConfirmations[0];
+                const block = Block.decode(
+                    firstBlockConfirmation.signedBlock.encodedBlock
+                );
+
+                const snapshot =
+                    mockStorage.stateSnapshots.getStateSnapshotByHash(
+                        block.stateSnapshotHash
+                    );
+
+                if (!snapshot) {
+                    throw new Error(
+                        "Milestone built but corresponding snapshot not found"
+                    );
+                }
+
+                return snapshot;
+            }
         };
 
         // Create mock P2P event hooks
@@ -128,8 +152,8 @@ describe("StateManager", () => {
         stateManager.setChannelId("0xabcdef1234567890" as any);
 
         // Mock Block.decode to avoid ethers decoding issues
-        const originalBlockDecode = require("@/models/Block").default.decode;
-        require("@/models/Block").default.decode = () => ({
+        const originalBlockDecode = Block.decode;
+        Block.decode = () => ({
             stateSnapshotHash:
                 "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
             height: 5,
@@ -684,7 +708,9 @@ describe("StateManager", () => {
 
             await expect(
                 stateManager.updateSnapshotSameFork(forkId)
-            ).to.be.rejectedWith("State snapshot not found for hash");
+            ).to.be.rejectedWith(
+                "Milestone built but corresponding snapshot not found"
+            );
         });
 
         it("should call contract with correct parameters", async () => {

@@ -513,10 +513,11 @@ class StateManager {
     public async updateSnapshotSameFork(forkId: ForkId): Promise<void> {
         try {
             // Get the current on-chain snapshot first
-            const currentOnChainSnapshot =
+            const currentOnChainSnapshot = StateSnapshot.from(
                 await this.stateChannelManagerContract.getStateSnapshot(
                     this.channelId
-                );
+                )
+            );
 
             // Get the latest block height for this fork from storage
             const latestBlockHeight =
@@ -537,24 +538,9 @@ class StateManager {
                     throw new Error("Empty milestone proof found");
                 }
 
-                // Get the first block confirmation to extract the snapshot
-                const firstBlockConfirmation =
-                    milestoneProof.blockConfirmations[0];
-                const block = Block.decode(
-                    firstBlockConfirmation.signedBlock.encodedBlock
-                );
-
-                // Get the state snapshot from storage
+                // Get the state snapshot using AgreementManager's getSnapshot method
                 const snapshot =
-                    this.storage.stateSnapshots.getStateSnapshotByHash(
-                        block.stateSnapshotHash
-                    );
-
-                if (!snapshot) {
-                    throw new Error(
-                        `State snapshot not found for hash: ${block.stateSnapshotHash}`
-                    );
-                }
+                    this.agreementManager.getSnapshot(milestoneProof);
 
                 // Only include milestones that are newer than the current on-chain block height
                 if (snapshot.blockHeight > currentOnChainSnapshot.blockHeight) {
@@ -577,7 +563,7 @@ class StateManager {
             // Latest snapshot is the same as current on-chain
             if (
                 latestSnapshot.blockHeight ===
-                Number(currentOnChainSnapshot.blockHeight)
+                currentOnChainSnapshot.blockHeight
             ) {
                 console.log("State is already up to date");
                 return;
@@ -605,30 +591,26 @@ class StateManager {
             const latestLocalExitBlockHash =
                 latestSnapshot.snapshotData.latestExitChannelBlockHash;
 
-            // If the latest local exit block is different from what's on-chain,
-            // we need to include all exit blocks in the chain
-            if (latestLocalExitBlockHash !== currentOnChainExitBlockHash) {
-                // Build the chain of exit blocks from current on-chain to latest local
-                let currentHash = latestLocalExitBlockHash;
-                const exitBlockChain: ExitChannelBlockStruct[] = [];
+            // Build the chain of exit blocks from current on-chain to latest local
+            let currentHash = latestLocalExitBlockHash;
+            const exitBlockChain: ExitChannelBlockStruct[] = [];
 
-                // Walk backwards through the chain until we reach the on-chain hash
-                while (currentHash !== currentOnChainExitBlockHash) {
-                    const exitBlock =
-                        this.storage.exitChannelBlocks.getExitChannelBlock(
-                            currentHash
-                        );
-                    if (!exitBlock) {
-                        throw new Error(
-                            `Exit channel block not found for hash: ${currentHash}`
-                        );
-                    }
-                    exitBlockChain.unshift(exitBlock);
-                    currentHash = exitBlock.previousBlockHash;
+            // Walk backwards through the chain until we reach the on-chain hash
+            while (currentHash !== currentOnChainExitBlockHash) {
+                const exitBlock =
+                    this.storage.exitChannelBlocks.getExitChannelBlock(
+                        currentHash
+                    );
+                if (!exitBlock) {
+                    throw new Error(
+                        `Exit channel block not found for hash: ${currentHash}`
+                    );
                 }
-
-                exitChannelBlocks.push(...exitBlockChain);
+                exitBlockChain.unshift(exitBlock);
+                currentHash = exitBlock.previousBlockHash;
             }
+
+            exitChannelBlocks.push(...exitBlockChain);
 
             const txResponse =
                 await this.stateChannelManagerContract.updateStateSnapshotSameFork(
