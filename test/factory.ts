@@ -81,7 +81,7 @@ export function transaction(
 /**
  * Creates a mock block for testing
  * @param overrides Optional overrides for the block properties
- * @returns A mock BlockStruct
+ * @returns A mock Block instance
  */
 export function block(overrides: Partial<BlockStruct> = {}): Block {
     const blockStruct: BlockStruct = {
@@ -97,7 +97,15 @@ export function block(overrides: Partial<BlockStruct> = {}): Block {
         });
     }
 
-    return Block.from({ ...blockStruct, ...overrides });
+    const finalBlockStruct = { ...blockStruct, ...overrides };
+
+    // Create a SignedBlockStruct to use with Block.fromSignedBlock
+    const signedBlockStruct: SignedBlockStruct = {
+        encodedBlock: Codec.encode(finalBlockStruct, Type.Block),
+        signature: signature()
+    };
+
+    return Block.fromSignedBlock(signedBlockStruct);
 }
 
 /**
@@ -166,7 +174,7 @@ export function signedBlock(
 ): SignedBlockStruct {
     const mockBlock = block();
     const defaultSignedBlock: SignedBlockStruct = {
-        encodedBlock: Codec.encode(mockBlock, Type.Block),
+        encodedBlock: Codec.encode(mockBlock.blockStruct, Type.Block),
         signature: signature()
     };
 
