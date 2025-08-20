@@ -128,7 +128,6 @@ describe("ValidationService.validateBlockConfirmation", () => {
 
         mockStorage = {
             queues: {
-                queueConfirmation: sinon.stub(),
                 queueBlock: sinon.stub(),
                 isBlockQueued: sinon.stub().returns(false)
             },
@@ -210,7 +209,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
             );
 
             expect(result).to.eql({ shouldDisconnect: false });
-            expect(mockStorage.queues.queueConfirmation.called).to.be.true;
+            expect(mockStorage.queues.queueBlock.called).to.be.true;
         });
     });
 

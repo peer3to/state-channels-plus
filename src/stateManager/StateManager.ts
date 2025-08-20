@@ -219,7 +219,7 @@ class StateManager {
         const nextBlockHeight = this.storage.blocks.getNextBlockHeight(
             this.forkId
         );
-        const blockConfirmations = this.storage.queues.tryDequeueConfirmations(
+        const blockConfirmations = this.storage.queues.tryDequeue(
             this.forkId,
             nextBlockHeight
         );

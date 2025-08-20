@@ -134,11 +134,11 @@ export default class ValidationService {
     private queueForLater(
         blockConfirmation: Block | BlockConfirmationStruct
     ): void {
-        if (blockConfirmation instanceof Block) {
-            this.storage.queues.queueBlock(blockConfirmation);
-        } else {
-            this.storage.queues.queueConfirmation(blockConfirmation);
-        }
+        const block =
+            blockConfirmation instanceof Block
+                ? blockConfirmation
+                : Block.fromBlockConfirmation(blockConfirmation);
+        this.storage.queues.queueBlock(block);
     }
 
     // ────────────────────── VALIDATION METHODS ─────────────────────
