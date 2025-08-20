@@ -7,9 +7,7 @@ import Storage from "@/storage";
 import { Block, StateSnapshot } from "@/models";
 import * as factory from "./factory";
 import { ForkId, Address, Hash } from "@/types/types";
-import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Codec, Type } from "@/utils";
 import { SortOrder } from "@/storage/BlockStorage";
 import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
@@ -25,8 +23,7 @@ describe("AgreementManager", () => {
     let genesisSnapshot: StateSnapshot;
     let block1: Block;
     let block2: Block;
-    let blockConfirmation1: BlockConfirmationStruct;
-    let blockConfirmation2: BlockConfirmationStruct;
+
     let signers: HardhatEthersSigner[];
     let genesisStateMachineStateHash: Hash;
 
@@ -79,32 +76,6 @@ describe("AgreementManager", () => {
             }),
             stateSnapshotHash: genesisSnapshot.hash
         });
-
-        const block1Hash = ethers.keccak256(block1.encode());
-        const block2Hash = ethers.keccak256(block2.encode());
-
-        const signature1 = await signers[0].signMessage(
-            ethers.getBytes(block1Hash)
-        );
-        const signature2 = await signers[1].signMessage(
-            ethers.getBytes(block2Hash)
-        );
-
-        blockConfirmation1 = factory.blockConfirmation({
-            signedBlock: factory.signedBlock({
-                encodedBlock: block1.encode(),
-                signature: signature1
-            }),
-            signatures: []
-        });
-
-        blockConfirmation2 = factory.blockConfirmation({
-            signedBlock: factory.signedBlock({
-                encodedBlock: block2.encode(),
-                signature: signature2
-            }),
-            signatures: []
-        });
     });
 
     beforeEach(() => {
@@ -119,7 +90,7 @@ describe("AgreementManager", () => {
 
     describe("didEveryoneSignBlock", () => {
         it("should return true when all participants signed", async () => {
-            const allSignedBlock = factory.block({
+            const block = factory.block({
                 transaction: factory.transaction({
                     header: factory.transactionHeader({
                         forkId: forkId,
@@ -129,34 +100,23 @@ describe("AgreementManager", () => {
                 }),
                 stateSnapshotHash: genesisSnapshot.hash
             });
+            const allSignedBlock = await block
+                .signAsAuthor(signers[0])
+                .then(async (b) =>
+                    b.expandSignatures([
+                        await b.sign(signers[1]),
+                        await b.sign(signers[2])
+                    ])
+                );
 
-            const blockHash = ethers.keccak256(allSignedBlock.encode());
-            const authorSignature = await signers[0].signMessage(
-                ethers.getBytes(blockHash)
-            );
-            const signature2 = await signers[1].signMessage(
-                ethers.getBytes(blockHash)
-            );
-            const signature3 = await signers[2].signMessage(
-                ethers.getBytes(blockHash)
-            );
-
-            const allSignedConfirmation = factory.blockConfirmation({
-                signedBlock: factory.signedBlock({
-                    encodedBlock: allSignedBlock.encode(),
-                    signature: authorSignature
-                }),
-                signatures: [signature2, signature3]
-            });
-
-            storage.blocks.storeBlockConfirmation(allSignedConfirmation);
+            storage.blocks.storeBlock(allSignedBlock);
 
             expect(agreementManager.didEveryoneSignBlock(allSignedBlock)).to.be
                 .true;
         });
 
         it("should return false when not all participants signed", () => {
-            storage.blocks.storeBlockConfirmation(blockConfirmation1);
+            storage.blocks.storeBlock(block1);
             expect(agreementManager.didEveryoneSignBlock(block1)).to.be.false;
         });
 
@@ -169,7 +129,7 @@ describe("AgreementManager", () => {
 
     describe("getDoubleSignedBlock", () => {
         it("should return existing block when same author signs different block at same coordinates", () => {
-            storage.blocks.storeBlockConfirmation(blockConfirmation1);
+            storage.blocks.storeBlock(block1);
 
             const differentBlock = factory.block({
                 transaction: factory.transaction({
@@ -182,14 +142,10 @@ describe("AgreementManager", () => {
                 stateSnapshotHash: ethers.hexlify(ethers.randomBytes(32))
             });
 
-            const differentSignedBlock = factory.signedBlock({
-                encodedBlock: differentBlock.encode(),
-                signature: factory.signature()
-            });
-
-            const result =
-                agreementManager.getDoubleSignedBlock(differentSignedBlock);
-            expect(result).to.deep.equal(blockConfirmation1.signedBlock);
+            const result = agreementManager.getDoubleSignedBlock(
+                differentBlock.signedBlock
+            );
+            expect(result).to.deep.equal(block1);
         });
 
         it("should return undefined when no existing block at coordinates", () => {
@@ -199,7 +155,7 @@ describe("AgreementManager", () => {
         });
 
         it("should return undefined when different author at same coordinates", () => {
-            storage.blocks.storeBlockConfirmation(blockConfirmation1);
+            storage.blocks.storeBlock(block1);
 
             const differentAuthorBlock = factory.block({
                 transaction: factory.transaction({
@@ -212,14 +168,9 @@ describe("AgreementManager", () => {
                 stateSnapshotHash: genesisSnapshot.hash
             });
 
-            const differentAuthorSignedBlock = factory.signedBlock({
-                encodedBlock: differentAuthorBlock.encode(),
-                signature: factory.signature()
-            });
-
             expect(
                 agreementManager.getDoubleSignedBlock(
-                    differentAuthorSignedBlock
+                    differentAuthorBlock.signedBlock
                 )
             ).to.be.undefined;
         });
@@ -305,9 +256,9 @@ describe("AgreementManager", () => {
     });
 
     describe("getLatestSignedBlockByParticipant", () => {
-        it("should return the latest block signed by a participant", () => {
-            storage.blocks.storeBlockConfirmation(blockConfirmation1);
-            storage.blocks.storeBlockConfirmation(blockConfirmation2);
+        it("should return the latest block signed by a participant", async () => {
+            storage.blocks.storeBlock(await block1.signAsAuthor(signers[0]));
+            storage.blocks.storeBlock(block2);
 
             const result = agreementManager.getLatestSignedBlockByParticipant(
                 forkId,
@@ -316,13 +267,11 @@ describe("AgreementManager", () => {
 
             expect(result).to.not.be.undefined;
             expect(result!.block.equals(block1)).to.be.true;
-            expect(result!.signature).to.equal(
-                blockConfirmation1.signedBlock.signature
-            );
+            expect(result!.signature).to.equal(block1.originalSignature);
         });
 
         it("should return undefined when participant has not signed any blocks", () => {
-            storage.blocks.storeBlockConfirmation(blockConfirmation1);
+            storage.blocks.storeBlock(block1);
 
             const result = agreementManager.getLatestSignedBlockByParticipant(
                 forkId,
@@ -342,92 +291,9 @@ describe("AgreementManager", () => {
         });
     });
 
-    describe("didParticipantSign", () => {
-        it("should return true when participant is the author", () => {
-            storage.blocks.storeBlockConfirmation(blockConfirmation1);
-
-            const result = agreementManager.didParticipantSign(
-                block1,
-                participant1
-            );
-
-            expect(result.didSign).to.be.true;
-            expect(result.signature).to.equal(
-                blockConfirmation1.signedBlock.signature
-            );
-        });
-
-        it("should return true when participant signed as additional signer", async () => {
-            const blockWithAdditionalSigner = factory.block({
-                transaction: factory.transaction({
-                    header: factory.transactionHeader({
-                        forkId: forkId,
-                        transactionCnt: 1,
-                        participant: participant2
-                    })
-                }),
-                stateSnapshotHash: genesisSnapshot.hash
-            });
-
-            const blockHash = ethers.keccak256(
-                blockWithAdditionalSigner.encode()
-            );
-            const authorSignature = await signers[1].signMessage(
-                ethers.getBytes(blockHash)
-            );
-            const additionalSignature = await signers[0].signMessage(
-                ethers.getBytes(blockHash)
-            );
-
-            const confirmationWithAdditionalSigner = factory.blockConfirmation({
-                signedBlock: factory.signedBlock({
-                    encodedBlock: blockWithAdditionalSigner.encode(),
-                    signature: authorSignature
-                }),
-                signatures: [additionalSignature]
-            });
-
-            storage.blocks.storeBlockConfirmation(
-                confirmationWithAdditionalSigner
-            );
-
-            const result = agreementManager.didParticipantSign(
-                blockWithAdditionalSigner,
-                participant1
-            );
-
-            expect(result.didSign).to.be.true;
-            expect(result.signature).to.not.be.undefined;
-        });
-
-        it("should return false when participant did not sign", () => {
-            storage.blocks.storeBlockConfirmation(blockConfirmation1);
-
-            const result = agreementManager.didParticipantSign(
-                block1,
-                participant3
-            );
-
-            expect(result.didSign).to.be.false;
-            expect(result.signature).to.be.undefined;
-        });
-
-        it("should return false when block does not exist", () => {
-            const nonExistentBlock = factory.block();
-
-            const result = agreementManager.didParticipantSign(
-                nonExistentBlock,
-                participant1
-            );
-
-            expect(result.didSign).to.be.false;
-            expect(result.signature).to.be.undefined;
-        });
-    });
-
     describe("getParticipantsWhoDidntSign", () => {
-        it("should return participants who did not sign the block", () => {
-            storage.blocks.storeBlockConfirmation(blockConfirmation1);
+        it("should return participants who did not sign the block", async () => {
+            storage.blocks.storeBlock(await block1.signAsAuthor(signers[0]));
 
             const result = agreementManager.getParticipantsWhoDidntSign(block1);
 
@@ -437,37 +303,16 @@ describe("AgreementManager", () => {
         });
 
         it("should return empty array when all participants signed", async () => {
-            const allSignedBlock = factory.block({
-                transaction: factory.transaction({
-                    header: factory.transactionHeader({
-                        forkId: forkId,
-                        transactionCnt: 1,
-                        participant: participant1
-                    })
-                }),
-                stateSnapshotHash: genesisSnapshot.hash
-            });
+            const allSignedBlock = await block1
+                .signAsAuthor(signers[0])
+                .then(async (b) =>
+                    b.expandSignatures([
+                        await b.sign(signers[1]),
+                        await b.sign(signers[2])
+                    ])
+                );
 
-            const blockHash = ethers.keccak256(allSignedBlock.encode());
-            const authorSignature = await signers[0].signMessage(
-                ethers.getBytes(blockHash)
-            );
-            const signature2 = await signers[1].signMessage(
-                ethers.getBytes(blockHash)
-            );
-            const signature3 = await signers[2].signMessage(
-                ethers.getBytes(blockHash)
-            );
-
-            const allSignedConfirmation = factory.blockConfirmation({
-                signedBlock: factory.signedBlock({
-                    encodedBlock: allSignedBlock.encode(),
-                    signature: authorSignature
-                }),
-                signatures: [signature2, signature3]
-            });
-
-            storage.blocks.storeBlockConfirmation(allSignedConfirmation);
+            storage.blocks.storeBlock(allSignedBlock);
 
             const result =
                 agreementManager.getParticipantsWhoDidntSign(allSignedBlock);
@@ -488,8 +333,8 @@ describe("AgreementManager", () => {
     describe("getStateProof", () => {
         it("should return StateProofStruct with milestones and signed blocks", async () => {
             // Store some blocks
-            storage.blocks.storeBlockConfirmation(blockConfirmation1);
-            storage.blocks.storeBlockConfirmation(blockConfirmation2);
+            storage.blocks.storeBlock(block1);
+            storage.blocks.storeBlock(block2);
 
             const result = await agreementManager.getStateProof(forkId, 10);
 
@@ -553,6 +398,15 @@ describe("AgreementManager", () => {
                 stateSnapshotHash: snapshotAtHeight5.hash
             });
 
+            const blockAtHeight5Signed = await blockAtHeight5
+                .signAsAuthor(signers[0])
+                .then(async (b) =>
+                    b.expandSignatures([
+                        await b.sign(signers[1]),
+                        await b.sign(signers[2])
+                    ])
+                );
+
             const blockAtHeight10 = factory.block({
                 transaction: factory.transaction({
                     header: factory.transactionHeader({
@@ -564,38 +418,17 @@ describe("AgreementManager", () => {
                 stateSnapshotHash: snapshotAtHeight10.hash
             });
 
-            // Store block confirmations with signatures from all participants
-            const blockHash5 = ethers.keccak256(blockAtHeight5.encode());
-            const blockHash10 = ethers.keccak256(blockAtHeight10.encode());
+            const blockAtHeight10Signed = await blockAtHeight10
+                .signAsAuthor(signers[1])
+                .then(async (b) =>
+                    b.expandSignatures([
+                        await b.sign(signers[0]),
+                        await b.sign(signers[2])
+                    ])
+                );
 
-            const blockConfirmationAtHeight5 = factory.blockConfirmation({
-                signedBlock: factory.signedBlock({
-                    encodedBlock: blockAtHeight5.encode(),
-                    signature: await signers[0].signMessage(
-                        ethers.getBytes(blockHash5)
-                    )
-                }),
-                signatures: [
-                    await signers[1].signMessage(ethers.getBytes(blockHash5)),
-                    await signers[2].signMessage(ethers.getBytes(blockHash5))
-                ]
-            });
-
-            const blockConfirmationAtHeight10 = factory.blockConfirmation({
-                signedBlock: factory.signedBlock({
-                    encodedBlock: blockAtHeight10.encode(),
-                    signature: await signers[1].signMessage(
-                        ethers.getBytes(blockHash10)
-                    )
-                }),
-                signatures: [
-                    await signers[0].signMessage(ethers.getBytes(blockHash10)),
-                    await signers[2].signMessage(ethers.getBytes(blockHash10))
-                ]
-            });
-
-            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
-            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight10);
+            storage.blocks.storeBlock(blockAtHeight5Signed);
+            storage.blocks.storeBlock(blockAtHeight10Signed);
 
             const result = await agreementManager.getStateProof(forkId, 15);
 
@@ -656,7 +489,7 @@ describe("AgreementManager", () => {
                         participant: participant2
                     })
                 }),
-                stateSnapshotHash: ethers.keccak256(block1.encode()) // Links to block1
+                stateSnapshotHash: block1.hash // Links to block1
             });
 
             const block3 = factory.block({
@@ -667,50 +500,17 @@ describe("AgreementManager", () => {
                         participant: participant3
                     })
                 }),
-                stateSnapshotHash: ethers.keccak256(block2.encode()) // Links to block2
+                stateSnapshotHash: block2.hash // Links to block2
             });
 
-            const block1Hash = ethers.keccak256(block1.encode());
-            const block2Hash = ethers.keccak256(block2.encode());
-            const block3Hash = ethers.keccak256(block3.encode());
+            // only author signed
+            const block1Signed = await block1.signAsAuthor(signers[0]);
+            const block2Signed = await block2.signAsAuthor(signers[1]);
+            const block3Signed = await block3.signAsAuthor(signers[2]);
 
-            const signature1 = await signers[0].signMessage(
-                ethers.getBytes(block1Hash)
-            );
-            const signature2 = await signers[1].signMessage(
-                ethers.getBytes(block2Hash)
-            );
-            const signature3 = await signers[2].signMessage(
-                ethers.getBytes(block3Hash)
-            );
-
-            const blockConfirmation1 = factory.blockConfirmation({
-                signedBlock: factory.signedBlock({
-                    encodedBlock: block1.encode(),
-                    signature: signature1
-                }),
-                signatures: [] // Only author signed
-            });
-
-            const blockConfirmation2 = factory.blockConfirmation({
-                signedBlock: factory.signedBlock({
-                    encodedBlock: block2.encode(),
-                    signature: signature2
-                }),
-                signatures: [] // Only author signed
-            });
-
-            const blockConfirmation3 = factory.blockConfirmation({
-                signedBlock: factory.signedBlock({
-                    encodedBlock: block3.encode(),
-                    signature: signature3
-                }),
-                signatures: [] // Only author signed
-            });
-
-            storage.blocks.storeBlockConfirmation(blockConfirmation1);
-            storage.blocks.storeBlockConfirmation(blockConfirmation2);
-            storage.blocks.storeBlockConfirmation(blockConfirmation3);
+            storage.blocks.storeBlock(block1Signed);
+            storage.blocks.storeBlock(block2Signed);
+            storage.blocks.storeBlock(block3Signed);
 
             const result = await agreementManager.getStateProof(
                 forkId,
@@ -788,48 +588,19 @@ describe("AgreementManager", () => {
                 }),
                 stateSnapshotHash: differentSnapshot.hash
             });
-
-            const blockHash5 = ethers.keccak256(blockAtHeight5.encode());
-            const blockHash6 = ethers.keccak256(blockAtHeight6.encode());
-            const blockHash7 = ethers.keccak256(blockAtHeight7.encode());
-
-            const signature5 = await signers[0].signMessage(
-                ethers.getBytes(blockHash5)
+            const blockAtHeight5Signed = await blockAtHeight5.signAsAuthor(
+                signers[0]
             );
-            const signature6 = await signers[1].signMessage(
-                ethers.getBytes(blockHash6)
+            const blockAtHeight6Signed = await blockAtHeight6.signAsAuthor(
+                signers[1]
             );
-            const signature7 = await signers[0].signMessage(
-                ethers.getBytes(blockHash7)
-            ); // participant1 signs again
+            const blockAtHeight7Signed = await blockAtHeight7.signAsAuthor(
+                signers[0]
+            );
 
-            const blockConfirmationAtHeight5 = factory.blockConfirmation({
-                signedBlock: factory.signedBlock({
-                    encodedBlock: blockAtHeight5.encode(),
-                    signature: signature5
-                }),
-                signatures: []
-            });
-
-            const blockConfirmationAtHeight6 = factory.blockConfirmation({
-                signedBlock: factory.signedBlock({
-                    encodedBlock: blockAtHeight6.encode(),
-                    signature: signature6
-                }),
-                signatures: []
-            });
-
-            const blockConfirmationAtHeight7 = factory.blockConfirmation({
-                signedBlock: factory.signedBlock({
-                    encodedBlock: blockAtHeight7.encode(),
-                    signature: signature7
-                }),
-                signatures: []
-            });
-
-            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
-            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight6);
-            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight7);
+            storage.blocks.storeBlock(blockAtHeight5Signed);
+            storage.blocks.storeBlock(blockAtHeight6Signed);
+            storage.blocks.storeBlock(blockAtHeight7Signed);
 
             const result = await agreementManager.getStateProof(forkId, 7);
 
@@ -841,30 +612,28 @@ describe("AgreementManager", () => {
             expect(result.signedBlocks.length).to.be.greaterThan(0);
 
             // Verify that signedBlocks contains the actual block confirmations
-            const signedBlockHeights = result.signedBlocks.map((sb) => {
-                const block = Block.decode(sb.encodedBlock);
-                return block.height;
-            });
+            const signedBlockHeights = result.signedBlocks.map(
+                (sb) => Block.fromSignedBlock(sb).height
+            );
 
             // Should contain all the blocks we created
-            expect(signedBlockHeights).to.include(5);
-            expect(signedBlockHeights).to.include(6);
-            expect(signedBlockHeights).to.include(7);
+            expect(signedBlockHeights.sort()).to.deep.equal([5, 6, 7]);
 
             // Verify the order is ascending (since we reverse the array)
             expect(signedBlockHeights).to.deep.equal([5, 6, 7]);
 
             // Verify that each signedBlock has the correct structure and content
             result.signedBlocks.forEach((signedBlock, index) => {
-                expect(signedBlock).to.have.property("encodedBlock");
-                expect(signedBlock).to.have.property("signature");
-
-                const block = Block.decode(signedBlock.encodedBlock);
+                const block = Block.fromSignedBlock(signedBlock);
                 expect(block.height).to.equal(5 + index); // Should be heights 5, 6, 7
 
                 // Verify the signature matches the expected signer
-                const expectedSignatures = [signature5, signature6, signature7];
-                expect(signedBlock.signature).to.equal(
+                const expectedSignatures = [
+                    blockAtHeight5Signed.originalSignature,
+                    blockAtHeight6Signed.originalSignature,
+                    blockAtHeight7Signed.originalSignature
+                ];
+                expect(block.originalSignature).to.equal(
                     expectedSignatures[index]
                 );
             });
@@ -939,37 +708,23 @@ describe("AgreementManager", () => {
                 }),
                 stateSnapshotHash: snapshotAtHeight5.hash
             });
+            const blockAtHeight5Signed = await blockAtHeight5
+                .signAsAuthor(signers[0])
+                .then(async (b) =>
+                    b.expandSignatures([
+                        await b.sign(signers[1]),
+                        await b.sign(signers[2])
+                    ])
+                );
 
-            const blockHash5 = ethers.keccak256(blockAtHeight5.encode());
-            const authorSignature = await signers[0].signMessage(
-                ethers.getBytes(blockHash5)
-            );
-            const participant2Signature = await signers[1].signMessage(
-                ethers.getBytes(blockHash5)
-            );
-            const participant3Signature = await signers[2].signMessage(
-                ethers.getBytes(blockHash5)
-            );
-
-            // Create block confirmation with all participants' signatures
-            const blockConfirmationAtHeight5 = factory.blockConfirmation({
-                signedBlock: factory.signedBlock({
-                    encodedBlock: blockAtHeight5.encode(),
-                    signature: authorSignature
-                }),
-                signatures: [participant2Signature, participant3Signature] // All participants signed
-            });
-
-            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
+            storage.blocks.storeBlock(blockAtHeight5Signed);
 
             const result = await agreementManager.getStateProof(forkId, 10);
 
             // Should have a milestone proof because all participants signed
-            expect(result).to.have.property("milestones");
-            expect(result).to.have.property("signedBlocks");
+
             expect(Array.isArray(result.milestones)).to.be.true;
             expect(Array.isArray(result.signedBlocks)).to.be.true;
-            // With new logic: we can have multiple milestones (exit point + latest)
             expect(result.milestones.length).to.be.greaterThan(0);
             // Find the milestone that contains our block
             const milestoneWithOurBlock = result.milestones.find((milestone) =>
@@ -1014,21 +769,11 @@ describe("AgreementManager", () => {
                 stateSnapshotHash: snapshotAtHeight5.hash
             });
 
-            const blockHash5 = ethers.keccak256(blockAtHeight5.encode());
-            const authorSignature = await signers[0].signMessage(
-                ethers.getBytes(blockHash5)
+            const blockAtHeight5Signed = await blockAtHeight5.signAsAuthor(
+                signers[0]
             );
 
-            // Create block confirmation with ONLY author's signature
-            const blockConfirmationAtHeight5 = factory.blockConfirmation({
-                signedBlock: factory.signedBlock({
-                    encodedBlock: blockAtHeight5.encode(),
-                    signature: authorSignature
-                }),
-                signatures: [] // No additional signatures - only author signed
-            });
-
-            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
+            storage.blocks.storeBlock(blockAtHeight5Signed);
 
             const result = await agreementManager.getStateProof(forkId, 10);
 
@@ -1066,28 +811,16 @@ describe("AgreementManager", () => {
                 }),
                 stateSnapshotHash: snapshotAtHeight5.hash
             });
+            const blockAtHeight5Signed = await blockAtHeight5
+                .signAsAuthor(signers[0])
+                .then(async (b) =>
+                    b.expandSignatures([
+                        await b.sign(signers[1]),
+                        await b.sign(signers[2])
+                    ])
+                );
 
-            const blockHash5 = ethers.keccak256(blockAtHeight5.encode());
-            const authorSignature = await signers[0].signMessage(
-                ethers.getBytes(blockHash5)
-            );
-            const participant2Signature = await signers[1].signMessage(
-                ethers.getBytes(blockHash5)
-            );
-            const participant3Signature = await signers[2].signMessage(
-                ethers.getBytes(blockHash5)
-            );
-
-            // Create block confirmation with ALL signatures
-            const blockConfirmationAtHeight5 = factory.blockConfirmation({
-                signedBlock: factory.signedBlock({
-                    encodedBlock: blockAtHeight5.encode(),
-                    signature: authorSignature
-                }),
-                signatures: [participant2Signature, participant3Signature] // participant2 is CURRENT, participant3 is NEW
-            });
-
-            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
+            storage.blocks.storeBlock(blockAtHeight5Signed);
 
             const result = await agreementManager.getStateProof(forkId, 10);
 
@@ -1140,33 +873,21 @@ describe("AgreementManager", () => {
                 }),
                 stateSnapshotHash: snapshotAtHeight5.hash
             });
+            const blockAtHeight5Signed = await blockAtHeight5
+                .signAsAuthor(signers[0])
+                .then(async (b) =>
+                    b.expandSignatures([
+                        await b.sign(signers[1]),
+                        await b.sign(signers[2])
+                    ])
+                );
 
-            const blockHash5 = ethers.keccak256(blockAtHeight5.encode());
-            const authorSignature = await signers[0].signMessage(
-                ethers.getBytes(blockHash5)
-            );
-            const participant2Signature = await signers[1].signMessage(
-                ethers.getBytes(blockHash5)
-            );
-            const participant3Signature = await signers[2].signMessage(
-                ethers.getBytes(blockHash5)
-            );
-
-            const blockConfirmationAtHeight5 = factory.blockConfirmation({
-                signedBlock: factory.signedBlock({
-                    encodedBlock: blockAtHeight5.encode(),
-                    signature: authorSignature
-                }),
-                signatures: [participant2Signature, participant3Signature]
-            });
-
-            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
+            storage.blocks.storeBlock(blockAtHeight5Signed);
 
             const result = await agreementManager.getStateProof(forkId, 10);
 
             // Should have a milestone proof because all participants signed
-            expect(result).to.have.property("milestones");
-            expect(result).to.have.property("signedBlocks");
+
             expect(Array.isArray(result.milestones)).to.be.true;
             expect(Array.isArray(result.signedBlocks)).to.be.true;
             // With new logic: we can have multiple milestones (exit point + latest)
@@ -1219,7 +940,9 @@ describe("AgreementManager", () => {
             });
 
             // Store the block confirmation (which will allow milestone to be built)
-            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
+            storage.blocks.storeBlock(
+                Block.fromBlockConfirmation(blockConfirmationAtHeight5)
+            );
 
             // BUT DON'T store the snapshot that the block references
             // This simulates the data integrity issue
@@ -1286,7 +1009,9 @@ describe("AgreementManager", () => {
                 signatures: [] // Only author signed, not enough for milestone
             });
 
-            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight5);
+            storage.blocks.storeBlock(
+                Block.fromBlockConfirmation(blockConfirmationAtHeight5)
+            );
 
             // Create a block at height 10 that could form a milestone
             const blockAtHeight10 = factory.block({
@@ -1319,7 +1044,9 @@ describe("AgreementManager", () => {
                 signatures: [participant1Signature, participant3Signature]
             });
 
-            storage.blocks.storeBlockConfirmation(blockConfirmationAtHeight10);
+            storage.blocks.storeBlock(
+                Block.fromBlockConfirmation(blockConfirmationAtHeight10)
+            );
 
             // The result should have no milestones because we can't build a milestone for exit point 5
             // and the loop should break early, preventing processing of exit point 10
@@ -1373,7 +1100,9 @@ describe("AgreementManager", () => {
                 signatures: [participant2Signature]
             });
 
-            storage.blocks.storeBlockConfirmation(blockConfirmation);
+            storage.blocks.storeBlock(
+                Block.fromBlockConfirmation(blockConfirmation)
+            );
 
             // Create iterator starting from the block
             const blockIterator = storage.blocks.getIterator(
@@ -1425,24 +1154,13 @@ describe("AgreementManager", () => {
                 }),
                 stateSnapshotHash: snapshot.hash
             });
+            const blockAtHeight5Signed = await block
+                .signAsAuthor(signers[0])
+                .then(async (b) =>
+                    b.expandSignatures([await b.sign(signers[1])])
+                );
 
-            const blockHash = ethers.keccak256(block.encode());
-            const authorSignature = await signers[0].signMessage(
-                ethers.getBytes(blockHash)
-            );
-            const participant2Signature = await signers[1].signMessage(
-                ethers.getBytes(blockHash)
-            );
-
-            const blockConfirmation = factory.blockConfirmation({
-                signedBlock: factory.signedBlock({
-                    encodedBlock: block.encode(),
-                    signature: authorSignature
-                }),
-                signatures: [participant2Signature] // Only 2 participants signed, need 3
-            });
-
-            storage.blocks.storeBlockConfirmation(blockConfirmation);
+            storage.blocks.storeBlock(blockAtHeight5Signed);
 
             const blockIterator = storage.blocks.getIterator(
                 forkId,
@@ -1503,7 +1221,9 @@ describe("AgreementManager", () => {
                 signatures: [participant2Signature, participant3Signature] // All 3 signed
             });
 
-            storage.blocks.storeBlockConfirmation(blockConfirmation);
+            storage.blocks.storeBlock(
+                Block.fromBlockConfirmation(blockConfirmation)
+            );
 
             const blockIterator = storage.blocks.getIterator(
                 forkId,
@@ -1597,8 +1317,12 @@ describe("AgreementManager", () => {
                 signatures: [participant1Signature2]
             });
 
-            storage.blocks.storeBlockConfirmation(blockConfirmation1);
-            storage.blocks.storeBlockConfirmation(blockConfirmation2);
+            storage.blocks.storeBlock(
+                Block.fromBlockConfirmation(blockConfirmation1)
+            );
+            storage.blocks.storeBlock(
+                Block.fromBlockConfirmation(blockConfirmation2)
+            );
 
             // Use DESC iterator
             const blockIterator = storage.blocks.getIterator(
@@ -1618,8 +1342,8 @@ describe("AgreementManager", () => {
             expect(milestone!.blockConfirmations).to.have.length(1);
 
             // The block should be sorted correctly (ascending order)
-            const firstBlock = Block.decode(
-                milestone!.blockConfirmations[0].signedBlock.encodedBlock
+            const firstBlock = Block.fromSignedBlock(
+                milestone!.blockConfirmations[0].signedBlock
             );
             expect(firstBlock.height).to.equal(2); // Should be the first block in DESC order
         });
@@ -1735,7 +1459,7 @@ describe("AgreementManager", () => {
         });
 
         it("should return false when block has no on-chain timestamp", () => {
-            storage.blocks.storeBlockConfirmation(blockConfirmation1);
+            storage.blocks.storeBlock(block1);
 
             const result = agreementManager.didParticipantPostOnChainLocal(
                 forkId,
@@ -1762,7 +1486,7 @@ describe("AgreementManager", () => {
         it("should throw error when milestone has no block confirmations", () => {
             // Create a milestone with null block confirmations
             const invalidMilestone = {
-                blockConfirmations: null
+                blockConfirmations: []
             };
 
             expect(() => {

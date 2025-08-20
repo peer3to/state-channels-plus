@@ -20,7 +20,17 @@ import { Codec, Type } from "@/utils";
 import { Block, StateSnapshot } from "@/models";
 
 export const hash = () => ethers.hexlify(ethers.randomBytes(32));
-export const signature = () => ethers.hexlify(ethers.randomBytes(65));
+
+// Create a dummy wallet for generating valid signatures
+const dummyWallet = new ethers.Wallet(
+    "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+);
+
+export const signature = () => {
+    // Sign a fixed message to get a valid signature
+    const message = "dummy message for testing";
+    return dummyWallet.signMessageSync(message);
+};
 
 /**
  * Creates a default transaction header
