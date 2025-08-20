@@ -535,7 +535,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         // require that the dispute window exists and is not expired
         require(
             disputeWindow.evidence.creationTimestamp != 0
-                && block.timestamp < disputeWindow.evidence.creationTimestamp + getEvidenceTime(),
+                && block.timestamp < disputeWindow.evidence.creationTimestamp + getKillTime(),
             ErrorDisputeExpired()
         );
 
