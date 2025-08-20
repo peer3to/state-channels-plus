@@ -181,7 +181,6 @@ export default class ValidationService {
     private checkDuplicateBlock(
         block: Block,
         participants: Set<Address>
-        // undefined is conceptually same as DUPLICATE => do nothing
     ): ValidationResult | undefined {
         // 1. Check if block is in queue
         if (
@@ -216,7 +215,7 @@ export default class ValidationService {
 
             // no new signatures
             if (newSignatures.size === 0) {
-                return;
+                return { shouldDisconnect: false };
             }
 
             // Validate new signatures are from participants
