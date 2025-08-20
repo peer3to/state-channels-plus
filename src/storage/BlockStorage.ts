@@ -41,26 +41,6 @@ export class BlockStorage {
     // CREATE
     // ====================================
 
-    /*────────────────────────────────────────────────────────────────────────────
-      STORE  BLOCK - IMPLEMENTATION
-    ────────────────────────────────────────────────────────────────────────────*/
-    storeSignedBlock(
-        signedBlock: SignedBlockStruct,
-        options?: StoreOptions
-    ): Hash | undefined {
-        // Convert SignedBlock to BlockConfirmation (empty signatures)
-        const blockConfirmation: BlockConfirmationStruct = {
-            signedBlock: signedBlock,
-            signatures: [] // Starts empty, ready for peer confirmations
-        };
-        const block = Block.fromBlockConfirmation(blockConfirmation);
-
-        return this._storeBlockEntryWithOptions({ block }, options);
-    }
-
-    /*────────────────────────────────────────────────────────────────────────────
-      STORE BLOCK CONFIRMATION - IMPLEMENTATION
-    ────────────────────────────────────────────────────────────────────────────*/
     storeBlock(block: Block, options?: StoreOptions): Hash | undefined {
         return this._storeBlockEntryWithOptions({ block }, options);
     }
