@@ -5,15 +5,7 @@ import {
     StateProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import Storage, { BlockEntry, SortOrder } from "@/storage";
-import {
-    Address,
-    BlockHeight,
-    Bytes,
-    ForkId,
-    Signature,
-    Hash
-} from "@/types/types";
-import { BytesLike } from "ethers";
+import { Address, BlockHeight, ForkId, Signature } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import { Codec, Type } from "@/utils";
 import { ethers } from "ethers";
@@ -145,14 +137,10 @@ class AgreementManager {
                 blockHeight
             );
 
-            let result = blockIterator.next();
-            while (!result.done) {
-                const blockEntry = result.value;
-                const block = Block.decode(
-                    blockEntry.blockConfirmation.signedBlock.encodedBlock
-                );
+            for (const blockEntry of blockIterator) {
+                const block = blockEntry.block;
 
-                signedBlocks.push(blockEntry.blockConfirmation.signedBlock);
+                signedBlocks.push(block.signedBlock);
 
                 if (
                     block.height === 0 ||
@@ -160,8 +148,6 @@ class AgreementManager {
                 ) {
                     break;
                 }
-
-                result = blockIterator.next();
             }
 
             signedBlocks.reverse();
@@ -182,9 +168,7 @@ class AgreementManager {
         }
 
         const firstBlockConfirmation = milestone.blockConfirmations[0];
-        const block = Block.decode(
-            firstBlockConfirmation.signedBlock.encodedBlock
-        );
+        const block = Block.fromSignedBlock(firstBlockConfirmation.signedBlock);
 
         const snapshot = this.storage.stateSnapshots.getStateSnapshotByHash(
             block.stateSnapshotHash
@@ -206,71 +190,46 @@ class AgreementManager {
         blockIterator: Generator<BlockEntry, void, unknown>,
         currentSnapshot: StateSnapshot
     ): MilestoneProofStruct | undefined {
-        const thresholdSet = new Set<Address>(
-            currentSnapshot.snapshotData.participants as Address[]
+        const requiredSignersSet = new Set<Address>(
+            currentSnapshot.snapshotData.participants
         );
-        const filteredBlockConfirmations: BlockConfirmationStruct[] = [];
 
-        let result = blockIterator.next();
-        while (!result.done) {
-            const blockEntry = result.value;
-            const currentBlockConfirmation = blockEntry.blockConfirmation;
-            const allSignatures = this.getAllSignatures(
-                currentBlockConfirmation
+        const filteredBlocks: Block[] = [];
+
+        for (const blockEntry of blockIterator) {
+            const currentBlock = blockEntry.block;
+
+            const filteredBlock = Block.fromSignedBlock(
+                currentBlock.signedBlock
             );
 
-            // Decode block once at the top
-            const block = Block.decode(
-                currentBlockConfirmation.signedBlock.encodedBlock
-            );
-
-            const filteredBlockConfirmation: BlockConfirmationStruct = {
-                signedBlock: currentBlockConfirmation.signedBlock,
-                signatures: [] // Strip signatures but keep author's signature in signedBlock
-            };
-
-            for (const signature of allSignatures) {
-                const participantAddress = block.getSignerAddress(signature);
+            for (const signature of currentBlock.confirmationSignatures) {
+                const participantAddress =
+                    currentBlock.signatureToAddress(signature);
 
                 if (
                     participantAddress &&
-                    thresholdSet.has(participantAddress)
+                    requiredSignersSet.has(participantAddress)
                 ) {
-                    thresholdSet.delete(participantAddress); // Subtract participant from threshold set
-
-                    // Add signature to filtered block confirmation if it's not the author's signature
-                    if (participantAddress !== block.author) {
-                        filteredBlockConfirmation.signatures.push(
-                            signature as BytesLike
-                        );
-                    }
+                    requiredSignersSet.delete(participantAddress);
+                    filteredBlock.expandSignatures([signature]);
                 }
             }
 
-            filteredBlockConfirmations.push(filteredBlockConfirmation);
+            filteredBlocks.push(filteredBlock);
 
             // If this block commits to currentSnapshot, we can't build a milestone
-            if (block.stateSnapshotHash === currentSnapshot.hash) {
+            if (currentBlock.stateSnapshotHash === currentSnapshot.hash) {
                 break;
             }
 
-            if (thresholdSet.size === 0) {
+            if (requiredSignersSet.size === 0) {
                 return {
-                    blockConfirmations: filteredBlockConfirmations.sort(
-                        (a, b) => {
-                            const blockA = Block.decode(
-                                a.signedBlock.encodedBlock
-                            );
-                            const blockB = Block.decode(
-                                b.signedBlock.encodedBlock
-                            );
-                            return blockA.height - blockB.height;
-                        }
-                    )
+                    blockConfirmations: filteredBlocks
+                        .sort((a, b) => a.height - b.height)
+                        .map((block) => block.blockConfirmationStruct)
                 };
             }
-
-            result = blockIterator.next();
         }
 
         return undefined;
