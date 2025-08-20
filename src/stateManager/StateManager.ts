@@ -538,7 +538,7 @@ class StateManager {
                     throw new Error("Empty milestone proof found");
                 }
 
-                // Get the state snapshot using AgreementManager's getSnapshot method
+                // Get the state snapshot
                 const snapshot =
                     this.agreementManager.getSnapshot(milestoneProof);
 
