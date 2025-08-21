@@ -1,6 +1,56 @@
 import { StateChannelManagerProxy, LocalDiamond } from "../typechain-types";
 
 export class EventMirror {
+    private eventConfigs = [
+        { event: "ChannelSnapshotSet", method: "setChannelSnapshot" },
+        {
+            event: "BlockCalldataCommitmentSet",
+            method: "setBlockCalldataCommitment"
+        },
+        { event: "OnChainJoinChannelSet", method: "setOnChainJoinChannel" },
+        {
+            event: "OnChainJoinChannelDeleted",
+            method: "deleteOnChainJoinChannel"
+        },
+        {
+            event: "LatestJoinChannelBlockHashSet",
+            method: "setLatestJoinChannelBlockHash"
+        },
+        {
+            event: "TotalOnChainWithdrawalsSet",
+            method: "setTotalOnChainWithdrawals"
+        },
+        {
+            event: "PendingParticipantAdded",
+            method: "addPendingParticipant"
+        },
+        { event: "DisputeWindowCreated", method: "createDisputeWindow" },
+        {
+            event: "DisputeWindowCreationTimestampSet",
+            method: "setDisputeWindowCreationTimestamp"
+        },
+        {
+            event: "DisputeCommitmentsCleared",
+            method: "clearDisputeCommitments"
+        },
+        {
+            event: "DisputeCommitmentPushed",
+            method: "pushDisputeCommitment"
+        },
+        {
+            event: "DisputeCommitmentRemoved",
+            method: "removeDisputeCommitment"
+        },
+        { event: "HasPostedSet", method: "setHasPosted" },
+        { event: "DisputeWindowDeleted", method: "deleteDisputeWindow" },
+        { event: "ReducedResultCommitted", method: "commitReducedResult" },
+        {
+            event: "ReducedResultForkIdCleared",
+            method: "clearReducedResultForkId"
+        },
+        { event: "DisputedForkRemoved", method: "removeDisputedFork" },
+        { event: "OnChainSlashedAdded", method: "addOnChainSlash" }
+    ];
     constructor(
         private onChainProxy: StateChannelManagerProxy,
         private localDiamond: LocalDiamond
@@ -11,59 +61,7 @@ export class EventMirror {
     }
 
     private setupEventListeners(): void {
-        const eventConfigs = [
-            { event: "ChannelSnapshotSet", method: "setChannelSnapshot" },
-            {
-                event: "BlockCalldataCommitmentSet",
-                method: "setBlockCalldataCommitment"
-            },
-            { event: "OnChainJoinChannelSet", method: "setOnChainJoinChannel" },
-            {
-                event: "OnChainJoinChannelDeleted",
-                method: "deleteOnChainJoinChannel"
-            },
-            {
-                event: "LatestJoinChannelBlockHashSet",
-                method: "setLatestJoinChannelBlockHash"
-            },
-            {
-                event: "TotalOnChainWithdrawalsSet",
-                method: "setTotalOnChainWithdrawals"
-            },
-            {
-                event: "PendingParticipantAdded",
-                method: "addPendingParticipant"
-            },
-            { event: "DisputeWindowCreated", method: "createDisputeWindow" },
-            {
-                event: "DisputeWindowCreationTimestampSet",
-                method: "setDisputeWindowCreationTimestamp"
-            },
-            {
-                event: "DisputeCommitmentsCleared",
-                method: "clearDisputeCommitments"
-            },
-            {
-                event: "DisputeCommitmentPushed",
-                method: "pushDisputeCommitment"
-            },
-            {
-                event: "DisputeCommitmentRemoved",
-                method: "removeDisputeCommitment"
-            },
-            { event: "HasPostedSet", method: "setHasPosted" },
-            { event: "DisputeWindowDeleted", method: "deleteDisputeWindow" },
-            { event: "ReducedResultCommitted", method: "commitReducedResult" },
-            {
-                event: "ReducedResultForkIdCleared",
-                method: "clearReducedResultForkId"
-            },
-            { event: "DisputedForkRemoved", method: "removeDisputedFork" },
-            { event: "OnChainSlashedAdded", method: "addOnChainSlash" }
-        ];
-
-        // Set up event listeners using the configuration
-        for (const config of eventConfigs) {
+        for (const config of this.eventConfigs) {
             const eventFilter = Reflect.get(
                 this.onChainProxy.filters,
                 config.event

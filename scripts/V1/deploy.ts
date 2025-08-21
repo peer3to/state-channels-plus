@@ -158,7 +158,6 @@ export async function deployLocalDiamond(
         }
     );
 
-    // Create the LocalDiamond contract instance
     const localDiamond = new ethers.Contract(
         diamondAddress.toString(),
         LocalDiamondArtifact.abi,
