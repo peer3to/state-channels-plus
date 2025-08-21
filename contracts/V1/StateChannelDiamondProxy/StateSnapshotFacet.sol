@@ -46,7 +46,8 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
         StateSnapshot memory newStateSnapshot = milestoneSnapshots[milestoneSnapshots.length - 1];
 
-        require(currentStateSnapshot.forkId == newStateSnapshot.forkId, ErrorStanpshotForkMismatch());
+        require(currentStateSnapshot.forkId == newStateSnapshot.forkId, ErrorSnapshotForkMismatch());
+        require(newStateSnapshot.blockHeight > currentStateSnapshot.blockHeight, ErrorBlockHeightTooOld());
         require(_verifyMilestones(milestoneProofs, milestoneSnapshots, currentStateSnapshot), ErrorInvalidStateProof());
 
         _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, exitChannelBlocks);
