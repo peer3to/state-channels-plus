@@ -11,6 +11,7 @@ import "./FraudProofFacet.sol";
 import "./DisputeFraudProofFacet.sol";
 import "./StateSnapshotFacet.sol";
 import "./JoinChannelFacet.sol";
+import "../types/DisputeTypes.sol";
 
 contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelCommon {
     DisputeManagerFacet disputeManagerFacet;
@@ -382,6 +383,41 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
         return disputeWindow.evidence.disputeCommitments;
+    }
+
+    function getDisputeWindowCreationTimestamp(bytes32 channelId, bytes32 forkId)
+        public
+        view
+        returns (uint256 creationTimestamp)
+    {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        return disputeWindow.evidence.creationTimestamp;
+    }
+
+    function reduce(Dispute[] memory disputes, uint256 disputeWindowCreationTimestamp)
+        public
+        view
+        returns (ReduceOutput memory reducedOutput)
+    {
+        return disputeVerificationFacet.reduce(disputes, disputeWindowCreationTimestamp);
+    }
+
+    function commitToReducedResult(
+        bytes32 channelId,
+        bytes32 disputedForkId,
+        bytes32 reducedForkId,
+        uint256 reducedForkGenesisTimestamps
+    ) public {
+        disputeManagerFacet.commitToReducedResult(
+            channelId, disputedForkId, reducedForkId, reducedForkGenesisTimestamps
+        );
+    }
+
+    function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        return _isReduceChallengePeriodExpired(disputeWindow);
     }
 
     // ********** private/internal functions **********

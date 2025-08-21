@@ -640,6 +640,180 @@ class StateManager {
         }
     }
 
+    /**
+     * Updates the state snapshot when the fork is different
+     */
+    public async updateSnapshotFork(): Promise<void> {
+        try {
+            // Get the current on-chain snapshot first
+            const currentOnChainSnapshot = StateSnapshot.from(
+                await this.stateChannelManagerContract.getStateSnapshot(
+                    this.channelId
+                )
+            );
+
+            let currentForkId = currentOnChainSnapshot.forkId;
+
+            // Traverse through dispute windows until we reach a fork with no disputes
+            let isDisputed =
+                await this.stateChannelManagerContract.isForkDisputed(
+                    this.channelId,
+                    currentForkId
+                );
+
+            while (isDisputed) {
+                // Check if reduce challenge period has expired
+                const isChallengePeriodExpired =
+                    await this.stateChannelManagerContract.isReduceChallengePeriodExpired(
+                        this.channelId,
+                        currentForkId
+                    );
+
+                if (!isChallengePeriodExpired) {
+                    console.log(
+                        `Challenge period not expired for fork ${currentForkId}`
+                    );
+                    break;
+                }
+
+                // Get the dispute data from the DisputeHandler for this fork
+                const dispute = this.disputeHandler.disputes.get(currentForkId);
+                if (!dispute) {
+                    console.log(
+                        `Reached final undisputed fork: ${currentForkId}`
+                    );
+                    break;
+                }
+
+                // Get the dispute window creation timestamp from the on-chain contract
+                const creationTimestamp =
+                    await this.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
+                        this.channelId,
+                        currentForkId
+                    );
+
+                // Call reduce on-chain to get the reduced result
+                const reducedOutput =
+                    await this.stateChannelManagerContract.reduce(
+                        [dispute],
+                        creationTimestamp
+                    );
+
+                // TODO, this is not implemented yet
+                // Also run reduce locally in the local EVM for validation
+                const localReducedOutput =
+                    await this.diamondStateMachine.reduce(
+                        [dispute],
+                        creationTimestamp
+                    );
+
+                // Validate that on-chain and local results match
+                if (
+                    reducedOutput.latestBlock.stateSnapshotHash !==
+                    localReducedOutput.latestBlock.stateSnapshotHash
+                ) {
+                    console.error(
+                        `On-chain and local reduce results don't match! On-chain: ${reducedOutput.latestBlock.stateSnapshotHash}, Local: ${localReducedOutput.latestBlock.stateSnapshotHash}`
+                    );
+                    throw new Error(
+                        "On-chain and local reduce results don't match"
+                    );
+                }
+
+                console.log(
+                    `Reduced fork ${currentForkId} -> ${reducedOutput.latestBlock.stateSnapshotHash} (validated locally)`
+                );
+
+                // Commit the reduced result to the dispute window so we can traverse the chain
+                const commitTx =
+                    await this.stateChannelManagerContract.commitToReducedResult(
+                        this.channelId,
+                        currentForkId,
+                        reducedOutput.latestBlock.stateSnapshotHash,
+                        reducedOutput.forkGenesisTimestamp
+                    );
+
+                await commitTx.wait();
+                console.log(
+                    `Committed reduced result for fork ${currentForkId}`
+                );
+
+                // Move to the next fork in the chain
+                currentForkId = reducedOutput.latestBlock.stateSnapshotHash;
+
+                // Check if the next fork has a dispute window
+                isDisputed =
+                    await this.stateChannelManagerContract.isForkDisputed(
+                        this.channelId,
+                        currentForkId
+                    );
+            }
+
+            // Get the state snapshot for the final fork
+            const latestBlockHeight =
+                this.storage.blocks.getNextBlockHeight(currentForkId) - 1;
+            const stateProof = await this.agreementManager.getStateProof(
+                currentForkId,
+                latestBlockHeight
+            );
+
+            if (stateProof.milestones.length === 0) {
+                throw new Error(
+                    `No milestones found for fork ${currentForkId}`
+                );
+            }
+
+            const latestMilestone =
+                stateProof.milestones[stateProof.milestones.length - 1];
+            const finalStateSnapshot =
+                this.agreementManager.getSnapshot(latestMilestone);
+
+            // Build exit channel blocks chain from current on-chain to final fork
+            const exitChannelBlocks: ExitChannelBlockStruct[] = [];
+            const currentOnChainExitBlockHash =
+                currentOnChainSnapshot.snapshotData.latestExitChannelBlockHash;
+            const finalForkExitBlockHash =
+                finalStateSnapshot.snapshotData.latestExitChannelBlockHash;
+
+            // Build the chain of exit blocks from current on-chain to final fork
+            let currentHash = finalForkExitBlockHash;
+            const exitBlockChain: ExitChannelBlockStruct[] = [];
+
+            // Walk backwards through the chain until we reach the on-chain hash
+            while (currentHash !== currentOnChainExitBlockHash) {
+                const exitBlock =
+                    this.storage.exitChannelBlocks.getExitChannelBlock(
+                        currentHash
+                    );
+                if (!exitBlock) {
+                    throw new Error(
+                        `Exit channel block not found for hash: ${currentHash}`
+                    );
+                }
+                exitBlockChain.unshift(exitBlock);
+                currentHash = exitBlock.previousBlockHash;
+            }
+
+            exitChannelBlocks.push(...exitBlockChain);
+
+            // Call the Solidity function to update the state
+            const txResponse =
+                await this.stateChannelManagerContract.updateStateSnapshotFork(
+                    this.channelId,
+                    finalStateSnapshot.toStruct(),
+                    exitChannelBlocks
+                );
+
+            await txResponse.wait();
+            console.log(
+                `Successfully updated state snapshot to final fork ${currentForkId}`
+            );
+        } catch (error) {
+            console.error("Error updating snapshot for fork:", error);
+            throw error;
+        }
+    }
+
     private async calculateTotalBalance(
         balances: { balance: BalanceStruct }[],
         initialTotal?: BalanceStruct
