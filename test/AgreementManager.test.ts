@@ -609,6 +609,32 @@ describe("AgreementManager", () => {
                     expect(milestone).to.not.be.undefined;
                     expect(milestone!.blockConfirmations).to.have.length(1);
                 });
+
+                it("should return empty signedBlocks when final milestone building succeeds", async () => {
+                    const snapshot = createSnapshot({
+                        participants: participants // Same participants as genesis
+                    });
+                    storage.stateSnapshots.storeStateSnapshot(snapshot);
+
+                    const block = createBlock({
+                        height: 10,
+                        author: participants[0],
+                        snapshotHash: snapshot.hash // Different from genesis
+                    });
+                    const signedBlock = await signBlock(block, {
+                        author: signers[0],
+                        additionalSigners: [signers[1], signers[2]] // All 3 genesis participants sign
+                    });
+                    storage.blocks.storeBlock(signedBlock);
+
+                    const result = await agreementManager.getStateProof(
+                        forkId,
+                        10
+                    );
+
+                    expect(result.milestones.length).to.be.greaterThan(0);
+                    expect(result.signedBlocks).to.have.length(0);
+                });
             });
 
             describe("with insufficient consensus", () => {
