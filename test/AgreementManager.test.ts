@@ -388,445 +388,378 @@ describe("AgreementManager", () => {
     });
 
     describe("getStateProof", () => {
-        it("should return StateProofStruct with milestones and signed blocks", async () => {
-            storage.blocks.storeBlock(block1);
-            storage.blocks.storeBlock(block2);
+        describe("basic functionality", () => {
+            it("should return StateProofStruct with milestones and signed blocks", async () => {
+                storage.blocks.storeBlock(block1);
+                storage.blocks.storeBlock(block2);
 
-            const result = await agreementManager.getStateProof(forkId, 10);
+                const result = await agreementManager.getStateProof(forkId, 10);
+                expect(result.milestones).to.be.an("array");
+                expect(result.signedBlocks).to.be.an("array");
+            });
 
-            expect(result).to.have.property("milestones");
-            expect(result).to.have.property("signedBlocks");
-            expect(result.milestones).to.be.an("array");
-            expect(result.signedBlocks).to.be.an("array");
+            it("should throw error when fork not found", async () => {
+                const nonExistentForkId = factory.hash();
+
+                await expect(
+                    agreementManager.getStateProof(nonExistentForkId, 10)
+                ).to.be.rejectedWith("Fork not found");
+            });
         });
 
-        it("should handle case with no exit points", async () => {
-            const result = await agreementManager.getStateProof(forkId, 10);
+        describe("when no exit points exis", () => {
+            it("should fall back signedBlocks", async () => {
+                const result = await agreementManager.getStateProof(forkId, 10);
 
-            expect(result.milestones).to.have.length(0);
-            expect(result.signedBlocks).to.be.an("array");
-        });
-
-        it("should process exit points and build milestone proofs", async () => {
-            storage.exitPoints.storeExitPoint(forkId, 5);
-
-            const snapshot = createSnapshot({
-                participants: [participants[0], participants[1]]
-            });
-            storage.stateSnapshots.storeStateSnapshot(snapshot);
-            const block = createBlock({
-                height: 5,
-                author: participants[0],
-                snapshotHash: snapshot.hash
-            });
-            const signedBlock = await signBlock(block, {
-                author: signers[0],
-                additionalSigners: [signers[1], signers[2]]
-            });
-            storage.blocks.storeBlock(signedBlock);
-
-            const result = await agreementManager.getStateProof(forkId, 10);
-
-            expect(result.milestones.length).to.be.greaterThan(0);
-            expect(result.signedBlocks).to.be.an("array");
-        });
-
-        it("should handle case where milestone proof cannot be built", async () => {
-            storage.exitPoints.storeExitPoint(forkId, 5);
-
-            const snapshot = createSnapshot({
-                participants: [participants[0], participants[1]]
-            });
-            storage.stateSnapshots.storeStateSnapshot(snapshot);
-            const block = createBlock({
-                height: 5,
-                author: participants[0],
-                snapshotHash: snapshot.hash
-            });
-            const signedBlock = await signBlock(block, { author: signers[0] }); // Only author signs - insufficient
-            storage.blocks.storeBlock(signedBlock);
-
-            const result = await agreementManager.getStateProof(forkId, 10);
-
-            expect(result.milestones).to.have.length(0);
-            expect(result.signedBlocks).to.be.an("array");
-        });
-
-        it("should handle case where exit point snapshot is not found", async () => {
-            storage.exitPoints.storeExitPoint(forkId, 5);
-
-            const result = await agreementManager.getStateProof(forkId, 10);
-
-            expect(result.milestones).to.have.length(0);
-            expect(result.signedBlocks).to.be.an("array");
-        });
-
-        it("should handle case where milestone proof cannot be built", async () => {
-            const snapshot = createSnapshot({
-                participants: [participants[0], participants[1]]
-            });
-            const block = createBlock({
-                height: 5,
-                author: participants[0],
-                snapshotHash: snapshot.hash
-            });
-            const signedBlock = await signBlock(block, {
-                author: signers[0],
-                additionalSigners: [signers[1]]
+                expect(result.milestones).to.have.length(0);
+                expect(result.signedBlocks).to.be.an("array");
             });
 
-            storage.blocks.storeBlock(signedBlock);
-
-            const result = await agreementManager.getStateProof(forkId, 10);
-
-            expect(result.milestones).to.have.length(0);
-            expect(result.signedBlocks).to.be.an("array");
-        });
-
-        it("should throw error when fork not found", async () => {
-            const nonExistentForkId = ethers.hexlify(ethers.randomBytes(32));
-
-            await expect(
-                agreementManager.getStateProof(nonExistentForkId, 10)
-            ).to.be.rejectedWith("Fork not found");
-        });
-
-        it("should collect signed blocks from backward iteration", async () => {
-            storage.exitPoints.storeExitPoint(forkId, 5);
-
-            // Create chain of blocks where each links to the previous
-            const block1 = createBlock({
-                height: 1,
-                author: participants[0],
-                snapshotHash: genesisSnapshot.hash
-            });
-            const block2 = createBlock({
-                height: 2,
-                author: participants[1],
-                snapshotHash: block1.hash
-            });
-            const block3 = createBlock({
-                height: 3,
-                author: participants[2],
-                snapshotHash: block2.hash
-            });
-
-            // Only authors sign (insufficient for milestones)
-            const signedBlocks = await Promise.all([
-                signBlock(block1, { author: signers[0] }),
-                signBlock(block2, { author: signers[1] }),
-                signBlock(block3, { author: signers[2] })
-            ]);
-
-            signedBlocks.forEach((block) => storage.blocks.storeBlock(block));
-
-            const result = await agreementManager.getStateProof(forkId, 3);
-
-            expect(result.signedBlocks).to.be.an("array");
-
-            // Should have either milestones or signed blocks, but not both
-            if (result.milestones.length > 0) {
-                expect(result.signedBlocks.length).to.equal(0);
-            } else {
-                expect(result.signedBlocks.length).to.be.greaterThan(0);
-                result.signedBlocks.forEach((signedBlock) => {
-                    expect(signedBlock).to.have.property("encodedBlock");
-                    expect(signedBlock).to.have.property("signature");
+            it("should collect all relevant block confirmations as evidence", async () => {
+                // Create scenario that forces signedBlocks collection (no exit points)
+                const differentSnapshot = createSnapshot({
+                    participants: participants
                 });
-            }
+                storage.stateSnapshots.storeStateSnapshot(differentSnapshot);
+
+                // Create blocks where only some participants sign (insufficient for milestones)
+                const blocks = [
+                    createBlock({
+                        height: 5,
+                        author: participants[0],
+                        snapshotHash: differentSnapshot.hash
+                    }),
+                    createBlock({
+                        height: 6,
+                        author: participants[1],
+                        snapshotHash: differentSnapshot.hash
+                    }),
+                    createBlock({
+                        height: 7,
+                        author: participants[0],
+                        snapshotHash: differentSnapshot.hash
+                    })
+                ];
+
+                const signedBlocks = await Promise.all([
+                    signBlock(blocks[0], { author: signers[0] }), // Only author signs
+                    signBlock(blocks[1], { author: signers[1] }), // Only author signs
+                    signBlock(blocks[2], { author: signers[0] }) // Only author signs
+                ]);
+
+                signedBlocks.forEach((block) =>
+                    storage.blocks.storeBlock(block)
+                );
+
+                const result = await agreementManager.getStateProof(forkId, 7);
+
+                expect(result.milestones).to.have.length(0);
+                expect(result.signedBlocks.length).to.equal(3);
+                expect(
+                    result.signedBlocks.map(
+                        (sb) => Block.fromSignedBlock(sb).height
+                    )
+                ).to.deep.equal([5, 6, 7]);
+            });
         });
 
-        it("should verify signedBlocks contains actual block confirmations", async () => {
-            // Create scenario that forces signedBlocks collection (no exit points)
-            const differentSnapshot = createSnapshot({
-                participants: participants
-            });
-            storage.stateSnapshots.storeStateSnapshot(differentSnapshot);
+        describe("when exit points exist", () => {
+            describe("with sufficient consensus", () => {
+                it("should create finality proofs when all participants signed", async () => {
+                    storage.exitPoints.storeExitPoint(forkId, 5);
 
-            // Create blocks where only some participants sign (insufficient for milestones)
-            const blocks = [
-                createBlock({
-                    height: 5,
-                    author: participants[0],
-                    snapshotHash: differentSnapshot.hash
-                }),
-                createBlock({
-                    height: 6,
-                    author: participants[1],
-                    snapshotHash: differentSnapshot.hash
-                }),
-                createBlock({
-                    height: 7,
-                    author: participants[0],
-                    snapshotHash: differentSnapshot.hash
-                })
-            ];
+                    const snapshot = createSnapshot({
+                        participants: [participants[0], participants[1]]
+                    });
+                    storage.stateSnapshots.storeStateSnapshot(snapshot);
+                    const block = createBlock({
+                        height: 5,
+                        author: participants[0],
+                        snapshotHash: snapshot.hash
+                    });
+                    const signedBlock = await signBlock(block, {
+                        author: signers[0],
+                        additionalSigners: [signers[1], signers[2]]
+                    });
+                    storage.blocks.storeBlock(signedBlock);
 
-            const signedBlocks = await Promise.all([
-                signBlock(blocks[0], { author: signers[0] }), // Only author signs
-                signBlock(blocks[1], { author: signers[1] }), // Only author signs
-                signBlock(blocks[2], { author: signers[0] }) // Only author signs
-            ]);
+                    const result = await agreementManager.getStateProof(
+                        forkId,
+                        10
+                    );
 
-            signedBlocks.forEach((block) => storage.blocks.storeBlock(block));
+                    expect(result.milestones.length).to.equal(1);
+                    expect(result.signedBlocks.length).to.equal(1);
+                });
 
-            const result = await agreementManager.getStateProof(forkId, 7);
+                it("should handle multiple exit points in correct order", async () => {
+                    // Store exit points in reverse order to test sorting
+                    storage.exitPoints.storeExitPoint(forkId, 100);
+                    storage.exitPoints.storeExitPoint(forkId, 50);
 
-            expect(result.milestones).to.have.length(0);
-            expect(result.signedBlocks.length).to.be.greaterThan(0);
-            expect(
-                result.signedBlocks.map(
-                    (sb) => Block.fromSignedBlock(sb).height
-                )
-            ).to.deep.equal([5, 6, 7]);
-        });
+                    const snapshot1 = createSnapshot({
+                        participants: [participants[0]],
+                        withdrawalAmount: BigInt(200)
+                    });
+                    storage.stateSnapshots.storeStateSnapshot(snapshot1);
+                    const block1 = createBlock({
+                        height: 100,
+                        author: participants[0],
+                        snapshotHash: snapshot1.hash
+                    });
+                    const signedBlock1 = await signBlock(block1, {
+                        author: signers[0],
+                        additionalSigners: [signers[1], signers[2]]
+                    });
+                    storage.blocks.storeBlock(signedBlock1);
 
-        it("should handle multiple exit points in correct order", async () => {
-            // Store exit points in reverse order to test sorting
-            storage.exitPoints.storeExitPoint(forkId, 100);
-            storage.exitPoints.storeExitPoint(forkId, 50);
+                    const snapshot2 = createSnapshot({
+                        participants: [participants[0], participants[1]],
+                        withdrawalAmount: BigInt(100)
+                    });
+                    storage.stateSnapshots.storeStateSnapshot(snapshot2);
+                    const block2 = createBlock({
+                        height: 50,
+                        author: participants[0],
+                        snapshotHash: snapshot2.hash
+                    });
+                    const signedBlock2 = await signBlock(block2, {
+                        author: signers[0],
+                        additionalSigners: [signers[1], signers[2]]
+                    });
+                    storage.blocks.storeBlock(signedBlock2);
 
-            const snapshot1 = createSnapshot({
-                participants: [participants[0]],
-                withdrawalAmount: BigInt(200)
-            });
-            storage.stateSnapshots.storeStateSnapshot(snapshot1);
-            const block1 = createBlock({
-                height: 100,
-                author: participants[0],
-                snapshotHash: snapshot1.hash
-            });
-            const signedBlock1 = await signBlock(block1, {
-                author: signers[0],
-                additionalSigners: [signers[1], signers[2]]
-            });
-            storage.blocks.storeBlock(signedBlock1);
+                    const result = await agreementManager.getStateProof(
+                        forkId,
+                        150
+                    );
 
-            const snapshot2 = createSnapshot({
-                participants: [participants[0], participants[1]],
-                withdrawalAmount: BigInt(100)
-            });
-            storage.stateSnapshots.storeStateSnapshot(snapshot2);
-            const block2 = createBlock({
-                height: 50,
-                author: participants[0],
-                snapshotHash: snapshot2.hash
-            });
-            const signedBlock2 = await signBlock(block2, {
-                author: signers[0],
-                additionalSigners: [signers[1], signers[2]]
-            });
-            storage.blocks.storeBlock(signedBlock2);
+                    expect(result.milestones.length).to.equal(2);
+                    expect(result.signedBlocks.length).to.equal(1);
+                });
 
-            const result = await agreementManager.getStateProof(forkId, 150);
+                it("should include author signature when building milestone proofs", async () => {
+                    storage.exitPoints.storeExitPoint(forkId, 5);
 
-            expect(result.milestones.length).to.be.greaterThan(0);
-            expect(result.signedBlocks).to.be.an("array");
-        });
+                    const snapshot = createSnapshot({
+                        participants: [participants[0], participants[1]],
+                        withdrawalAmount: BigInt(100)
+                    });
+                    storage.stateSnapshots.storeStateSnapshot(snapshot);
+                    const block = createBlock({
+                        height: 5,
+                        author: participants[0],
+                        snapshotHash: snapshot.hash
+                    });
+                    const signedBlock = await signBlock(block, {
+                        author: signers[0],
+                        additionalSigners: [signers[1], signers[2]]
+                    }); // All participants sign
+                    storage.blocks.storeBlock(signedBlock);
 
-        it("should include author signature when building milestone proofs", async () => {
-            storage.exitPoints.storeExitPoint(forkId, 5);
+                    const result = await agreementManager.getStateProof(
+                        forkId,
+                        10
+                    );
 
-            const snapshot = createSnapshot({
-                participants: [participants[0], participants[1]],
-                withdrawalAmount: BigInt(100)
-            });
-            storage.stateSnapshots.storeStateSnapshot(snapshot);
-            const block = createBlock({
-                height: 5,
-                author: participants[0],
-                snapshotHash: snapshot.hash
-            });
-            const signedBlock = await signBlock(block, {
-                author: signers[0],
-                additionalSigners: [signers[1], signers[2]]
-            }); // All participants sign
-            storage.blocks.storeBlock(signedBlock);
+                    expect(result.milestones.length).to.be.greaterThan(0);
+                    const milestone = result.milestones.find((m) =>
+                        m.blockConfirmations.some(
+                            (bc) =>
+                                bc.signedBlock.encodedBlock ===
+                                signedBlock.encode()
+                        )
+                    );
+                    expect(milestone).to.not.be.undefined;
+                    expect(milestone!.blockConfirmations).to.have.length(1);
+                });
 
-            const result = await agreementManager.getStateProof(forkId, 10);
+                it("should include all signatures when all participants are current", async () => {
+                    storage.exitPoints.storeExitPoint(forkId, 5);
 
-            expect(result.milestones.length).to.be.greaterThan(0);
-            const milestone = result.milestones.find((m) =>
-                m.blockConfirmations.some(
-                    (bc) => bc.signedBlock.encodedBlock === signedBlock.encode()
-                )
-            );
-            expect(milestone).to.not.be.undefined;
-            expect(milestone!.blockConfirmations).to.have.length(1);
-        });
+                    const snapshot = createSnapshot({
+                        participants: participants,
+                        withdrawalAmount: BigInt(100)
+                    });
+                    storage.stateSnapshots.storeStateSnapshot(snapshot);
+                    const block = createBlock({
+                        height: 5,
+                        author: participants[0],
+                        snapshotHash: snapshot.hash
+                    });
+                    const signedBlock = await signBlock(block, {
+                        author: signers[0],
+                        additionalSigners: [signers[1], signers[2]]
+                    });
+                    storage.blocks.storeBlock(signedBlock);
 
-        it("should not create milestone proof when only author signed", async () => {
-            storage.exitPoints.storeExitPoint(forkId, 5);
+                    const result = await agreementManager.getStateProof(
+                        forkId,
+                        10
+                    );
 
-            const snapshot = createSnapshot({
-                participants: [participants[0], participants[1]],
-                withdrawalAmount: BigInt(100)
-            });
-            storage.stateSnapshots.storeStateSnapshot(snapshot);
-            const block = createBlock({
-                height: 5,
-                author: participants[0],
-                snapshotHash: snapshot.hash
-            });
-            const signedBlock = await signBlock(block, { author: signers[0] }); // Only author signs
-            storage.blocks.storeBlock(signedBlock);
-
-            const result = await agreementManager.getStateProof(forkId, 10);
-
-            expect(result.milestones).to.have.length(0);
-        });
-
-        it("should filter out signatures from new participants", async () => {
-            storage.exitPoints.storeExitPoint(forkId, 5);
-
-            const snapshot = createSnapshot({
-                participants: [participants[0], participants[1]],
-                withdrawalAmount: BigInt(100)
-            });
-            storage.stateSnapshots.storeStateSnapshot(snapshot);
-            const block = createBlock({
-                height: 5,
-                author: participants[0],
-                snapshotHash: snapshot.hash
-            });
-            const signedBlock = await signBlock(block, {
-                author: signers[0],
-                additionalSigners: [signers[1], signers[2]]
-            }); // All 3 sign, but only 2 are participants
-            storage.blocks.storeBlock(signedBlock);
-
-            const result = await agreementManager.getStateProof(forkId, 10);
-
-            expect(result.milestones.length).to.be.greaterThan(0);
-            const milestone = result.milestones.find((m) =>
-                m.blockConfirmations.some(
-                    (bc) => bc.signedBlock.encodedBlock === signedBlock.encode()
-                )
-            );
-            expect(milestone).to.not.be.undefined;
-            expect(milestone!.blockConfirmations).to.have.length(1);
-        });
-
-        it("should include all signatures when all participants are current", async () => {
-            storage.exitPoints.storeExitPoint(forkId, 5);
-
-            const snapshot = createSnapshot({
-                participants: participants,
-                withdrawalAmount: BigInt(100)
-            });
-            storage.stateSnapshots.storeStateSnapshot(snapshot);
-            const block = createBlock({
-                height: 5,
-                author: participants[0],
-                snapshotHash: snapshot.hash
-            });
-            const signedBlock = await signBlock(block, {
-                author: signers[0],
-                additionalSigners: [signers[1], signers[2]]
-            });
-            storage.blocks.storeBlock(signedBlock);
-
-            const result = await agreementManager.getStateProof(forkId, 10);
-
-            expect(result.milestones.length).to.be.greaterThan(0);
-            const milestone = result.milestones.find((m) =>
-                m.blockConfirmations.some(
-                    (bc) => bc.signedBlock.encodedBlock === signedBlock.encode()
-                )
-            );
-            expect(milestone).to.not.be.undefined;
-            expect(milestone!.blockConfirmations).to.have.length(1);
-        });
-
-        it("should handle missing milestone snapshot gracefully", async () => {
-            storage.exitPoints.storeExitPoint(forkId, 5);
-
-            // Create block with snapshot but not exit point snapshot
-            const blockSnapshot = createSnapshot({
-                participants: participants
-            });
-            storage.stateSnapshots.storeStateSnapshot(blockSnapshot);
-
-            const block = createBlock({
-                height: 5,
-                author: participants[0],
-                snapshotHash: blockSnapshot.hash
-            });
-            const signedBlock = await signBlock(block, {
-                author: signers[0],
-                additionalSigners: [signers[1], signers[2]]
-            });
-            storage.blocks.storeBlock(signedBlock);
-
-            const result = await agreementManager.getStateProof(forkId, 10);
-
-            expect(result.milestones).to.have.length.greaterThan(0);
-        });
-
-        it("should throw error when empty milestone is passed to getSnapshot", async () => {
-            const emptyMilestone: MilestoneProofStruct = {
-                blockConfirmations: []
-            };
-
-            expect(() => {
-                agreementManager.getSnapshot(emptyMilestone);
-            }).to.throw("Cannot get snapshot from empty milestone");
-        });
-
-        it("should break early when milestone cannot be built for exit point", async () => {
-            storage.exitPoints.storeExitPoint(forkId, 5);
-
-            const snapshot = createSnapshot({ participants: participants });
-            storage.stateSnapshots.storeStateSnapshot(snapshot);
-
-            // Block at height 5 with insufficient signatures
-            const insufficientBlock = createBlock({
-                height: 5,
-                author: participants[0],
-                snapshotHash: snapshot.hash
-            });
-            const insufficientSigned = await signBlock(insufficientBlock, {
-                author: signers[0]
-            }); // Only author
-            storage.blocks.storeBlock(insufficientSigned);
-
-            // Block at height 10 with all signatures
-            const sufficientBlock = createBlock({
-                height: 10,
-                author: participants[1],
-                snapshotHash: snapshot.hash
-            });
-            const sufficientSigned = await signBlock(sufficientBlock, {
-                author: signers[1],
-                additionalSigners: [signers[0], signers[2]]
-            }); // All participants
-            storage.blocks.storeBlock(sufficientSigned);
-
-            const result = await agreementManager.getStateProof(forkId, 15);
-
-            expect(result.milestones.length).to.be.greaterThan(0);
-        });
-
-        it("should handle case where no exit point blocks exist", async () => {
-            const snapshot = createSnapshot({
-                participants: [participants[0], participants[1]]
-            });
-            const block = createBlock({
-                height: 5,
-                author: participants[0],
-                snapshotHash: snapshot.hash
-            });
-            const signedBlock = await signBlock(block, {
-                author: signers[0],
-                additionalSigners: [signers[1]]
+                    expect(result.milestones.length).to.be.greaterThan(0);
+                    const milestone = result.milestones.find((m) =>
+                        m.blockConfirmations.some(
+                            (bc) =>
+                                bc.signedBlock.encodedBlock ===
+                                signedBlock.encode()
+                        )
+                    );
+                    expect(milestone).to.not.be.undefined;
+                    expect(milestone!.blockConfirmations).to.have.length(1);
+                });
             });
 
-            storage.blocks.storeBlock(signedBlock);
+            describe("with insufficient consensus", () => {
+                it("should not create milestone proof when only author signed", async () => {
+                    storage.exitPoints.storeExitPoint(forkId, 5);
 
-            const result = await agreementManager.getStateProof(forkId, 10);
+                    const snapshot = createSnapshot({
+                        participants: [participants[0], participants[1]],
+                        withdrawalAmount: BigInt(100)
+                    });
+                    storage.stateSnapshots.storeStateSnapshot(snapshot);
+                    const block = createBlock({
+                        height: 5,
+                        author: participants[0],
+                        snapshotHash: snapshot.hash
+                    });
+                    const signedBlock = await signBlock(block, {
+                        author: signers[0]
+                    }); // Only author signs
+                    storage.blocks.storeBlock(signedBlock);
 
-            expect(result.milestones).to.have.length(0);
-            expect(result.signedBlocks).to.be.an("array");
+                    const result = await agreementManager.getStateProof(
+                        forkId,
+                        10
+                    );
+
+                    expect(result.milestones).to.have.length(0);
+                });
+            });
+
+            describe("participant filtering", () => {
+                it("should exclude signatures from non-participants", async () => {
+                    storage.exitPoints.storeExitPoint(forkId, 5);
+
+                    const snapshot = createSnapshot({
+                        participants: [participants[0], participants[1]],
+                        withdrawalAmount: BigInt(100)
+                    });
+                    storage.stateSnapshots.storeStateSnapshot(snapshot);
+                    const block = createBlock({
+                        height: 5,
+                        author: participants[0],
+                        snapshotHash: snapshot.hash
+                    });
+                    const signedBlock = await signBlock(block, {
+                        author: signers[0],
+                        additionalSigners: [signers[1], signers[2]]
+                    }); // All 3 sign, but only 2 are participants
+                    storage.blocks.storeBlock(signedBlock);
+
+                    const result = await agreementManager.getStateProof(
+                        forkId,
+                        10
+                    );
+
+                    expect(result.milestones.length).to.be.greaterThan(0);
+                    const milestone = result.milestones.find((m) =>
+                        m.blockConfirmations.some(
+                            (bc) =>
+                                bc.signedBlock.encodedBlock ===
+                                signedBlock.encode()
+                        )
+                    );
+                    expect(milestone).to.not.be.undefined;
+                    expect(milestone!.blockConfirmations).to.have.length(1);
+                });
+            });
+
+            describe("error handling and edge cases", () => {
+                it("should handle case where exit point snapshot is not found", async () => {
+                    storage.exitPoints.storeExitPoint(forkId, 5);
+
+                    const result = await agreementManager.getStateProof(
+                        forkId,
+                        10
+                    );
+
+                    expect(result.milestones).to.have.length(0);
+                    expect(result.signedBlocks).to.be.an("array");
+                });
+
+                it("should handle missing milestone snapshot gracefully", async () => {
+                    storage.exitPoints.storeExitPoint(forkId, 5);
+
+                    // Create block with snapshot but not exit point snapshot
+                    const blockSnapshot = createSnapshot({
+                        participants: participants
+                    });
+                    storage.stateSnapshots.storeStateSnapshot(blockSnapshot);
+
+                    const block = createBlock({
+                        height: 5,
+                        author: participants[0],
+                        snapshotHash: blockSnapshot.hash
+                    });
+                    const signedBlock = await signBlock(block, {
+                        author: signers[0],
+                        additionalSigners: [signers[1], signers[2]]
+                    });
+                    storage.blocks.storeBlock(signedBlock);
+
+                    const result = await agreementManager.getStateProof(
+                        forkId,
+                        10
+                    );
+
+                    expect(result.milestones).to.have.length.greaterThan(0);
+                });
+
+                it("should continue building proofs when early checkpoint fails but later ones succeed", async () => {
+                    storage.exitPoints.storeExitPoint(forkId, 5);
+
+                    const snapshot = createSnapshot({
+                        participants: participants
+                    });
+                    storage.stateSnapshots.storeStateSnapshot(snapshot);
+
+                    // Block at height 5 with insufficient signatures
+                    const insufficientBlock = createBlock({
+                        height: 5,
+                        author: participants[0],
+                        snapshotHash: snapshot.hash
+                    });
+                    const insufficientSigned = await signBlock(
+                        insufficientBlock,
+                        {
+                            author: signers[0]
+                        }
+                    ); // Only author
+                    storage.blocks.storeBlock(insufficientSigned);
+
+                    // Block at height 10 with all signatures
+                    const sufficientBlock = createBlock({
+                        height: 10,
+                        author: participants[1],
+                        snapshotHash: snapshot.hash
+                    });
+                    const sufficientSigned = await signBlock(sufficientBlock, {
+                        author: signers[1],
+                        additionalSigners: [signers[0], signers[2]]
+                    }); // All participants
+                    storage.blocks.storeBlock(sufficientSigned);
+
+                    const result = await agreementManager.getStateProof(
+                        forkId,
+                        15
+                    );
+
+                    expect(result.milestones.length).to.be.greaterThan(0);
+                });
+            });
         });
     });
 
@@ -927,7 +860,7 @@ describe("AgreementManager", () => {
             );
         });
 
-        it("should work with DESC iterator and sort correctly", async () => {
+        it("should process blocks correctly regardless of iteration order", async () => {
             const snapshot = createSnapshot({
                 participants: [participants[0], participants[1]]
             });
@@ -1010,6 +943,16 @@ describe("AgreementManager", () => {
 
             expect(result).to.not.be.undefined;
             expect(result!.hash).to.equal(snapshot.hash);
+        });
+
+        it("should throw error when empty milestone is passed", () => {
+            const emptyMilestone: MilestoneProofStruct = {
+                blockConfirmations: []
+            };
+
+            expect(() => {
+                agreementManager.getSnapshot(emptyMilestone);
+            }).to.throw("Cannot get snapshot from empty milestone");
         });
 
         it("should throw error when snapshot not found", async () => {
