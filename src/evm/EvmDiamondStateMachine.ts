@@ -17,7 +17,11 @@ import { Address, Bytes, ChannelId, ForkId } from "@/types/types";
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import Storage from "@/storage";
-import { deployLocalDiamond, deployLocalFromTx } from "scripts/V1/deploy";
+import {
+    deployLocalDiamond,
+    deployLocalFromTx,
+    DeploymentResult
+} from "scripts/V1/deploy";
 import EventMirror from "@/EventMirror";
 
 const DEBUG_CHANNEL_CONTRACT = true;
@@ -281,7 +285,10 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     public static async createStandalone(
         deployStateMachineTx: ContractDeployTransaction,
         contractInterface: ethers.Interface
-    ): Promise<EvmDiamondStateMachine> {
+    ): Promise<{
+        evmDiamondStateMachine: EvmDiamondStateMachine;
+        deploymentResult: DeploymentResult;
+    }> {
         const evm = await EVM.create();
 
         const stateMachineAddress = await deployLocalFromTx(
@@ -294,11 +301,14 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             evm
         );
 
-        return new EvmDiamondStateMachine(
-            new ContractExecuter(evm, stateMachineAddress),
-            contractInterface,
-            new ContractExecuter(evm, diamondResult.address)
-        );
+        return {
+            evmDiamondStateMachine: new EvmDiamondStateMachine(
+                new ContractExecuter(evm, stateMachineAddress),
+                contractInterface,
+                new ContractExecuter(evm, diamondResult.address)
+            ),
+            deploymentResult: diamondResult
+        };
     }
 
     /**
@@ -336,7 +346,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
 
         // Create the EvmStateMachine instance (which extends AStateMachine)
-        const evmDiamondStateMachine =
+        const { evmDiamondStateMachine, deploymentResult } =
             await EvmDiamondStateMachine.createStandalone(
                 deployStateMachineTx,
                 stateMachineContractInstance.interface
@@ -376,6 +386,13 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         // Set P2P contract instance on P2P manager
         evmDiamondStateMachine.setP2pContractInstance(p2pContractInstance);
+
+        // Setup event mirroring
+        const eventMirror = new EventMirror(
+            deployedStateChannelContractInstance,
+            deploymentResult.localDiamond
+        );
+        eventMirror.startMirroring();
 
         return new P2pInstance(
             p2pContractInstance,
