@@ -301,9 +301,63 @@ class StateManager {
                     blockConfirmation
                 );
 
-            await this.dispatcher.get(validationResult)!(blockConfirmation);
+     
 
-            return this.shouldDisconnect(validationResult);
+            if (validationResult !== BlockValidationResult.SUCCESS) {
+                // handle all non-success actions
+                await this.dispatcher.get(validationResult)!(
+                    blockConfirmation
+                );
+            }
+
+            // SUCCESS action: perform state transition validation
+            const block = Block.fromSignedBlock(blockConfirmation.signedBlock);
+
+            const {
+                success,
+                encodedState,
+                previousStateHash,
+                successCallback,
+                exitChannels
+            } = await this.applyTransaction(block.transaction);
+
+            if (!success) {
+                this.fraudProofService.createInvalidStateTransitionProof(block);
+                await this.dispute(blockConfirmation);
+                return false;
+            }
+
+            const stateChanged = this.isValidStateTransition(
+                encodedState as string,
+                previousStateHash
+            );
+
+            if (!stateChanged) {
+                this.fraudProofService.createInvalidStateTransitionProof(block);
+                await this.dispute(blockConfirmation);
+                return false;
+            }
+
+            // Validate state snapshot hash
+            const stateSnapshot = await this.createStateSnapshot(
+                hash(encodedState),
+                block.forkId,
+                block.coordinates.height
+            );
+
+            if (stateSnapshot.hash !== block.stateSnapshotHash) {
+                this.fraudProofService.createInvalidStateTransitionProof(block);
+                await this.dispute(blockConfirmation);
+                return false;
+            }
+
+            // All validations passed - proceed with success action
+            await this.dispatcher.get(BlockValidationResult.SUCCESS)!(
+                blockConfirmation
+            );
+
+            // sucess - no disconnect
+            return false;
         } catch (error) {
             throw error;
         } finally {
