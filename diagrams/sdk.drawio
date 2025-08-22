@@ -579,7 +579,7 @@
         </mxGraphModel>
     </diagram>
     <diagram id="-3QrUwy2nLPkMSnJrA5o" name="BlockConfirmation Message Lifecycle">
-        <mxGraphModel dx="2534" dy="824" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+        <mxGraphModel dx="2559" dy="824" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -1906,7 +1906,7 @@
         </mxGraphModel>
     </diagram>
     <diagram id="LqkWZOM_T8NzajkTzYGm" name="Disputes Mental Model">
-        <mxGraphModel dx="2076" dy="2598" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+        <mxGraphModel dx="1142" dy="1924" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -2294,10 +2294,10 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="wHsPAiKCuqyN2BUEE_Q1-1" value="Finality NOT reached in N blocks" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ODITfQRj00F-9atufKFF-8">
+                <mxCell id="wHsPAiKCuqyN2BUEE_Q1-1" value="Finality NOT reached in N blocks" style="rounded=1;whiteSpace=wrap;html=1;" parent="ODITfQRj00F-9atufKFF-8" vertex="1">
                     <mxGeometry x="885" y="200" width="130" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="wHsPAiKCuqyN2BUEE_Q1-3" style="edgeStyle=none;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="ODITfQRj00F-9atufKFF-8" target="wHsPAiKCuqyN2BUEE_Q1-1">
+                <mxCell id="wHsPAiKCuqyN2BUEE_Q1-3" style="edgeStyle=none;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="ODITfQRj00F-9atufKFF-8" target="wHsPAiKCuqyN2BUEE_Q1-1" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="490" y="90" as="sourcePoint"/>
                         <Array as="points">
@@ -2342,7 +2342,7 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="wHsPAiKCuqyN2BUEE_Q1-4" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="ODITfQRj00F-9atufKFF-8" source="wHsPAiKCuqyN2BUEE_Q1-1" target="ODITfQRj00F-9atufKFF-13">
+                <mxCell id="wHsPAiKCuqyN2BUEE_Q1-4" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="ODITfQRj00F-9atufKFF-8" source="wHsPAiKCuqyN2BUEE_Q1-1" target="ODITfQRj00F-9atufKFF-13" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="950" y="350"/>
@@ -3747,6 +3747,61 @@
                 </mxCell>
                 <mxCell id="Q22LJm39gkMQTBp-yN1j-4" value="Disputes are the &lt;b&gt;ONLY&lt;/b&gt; way to create a fork in the system.&amp;nbsp;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;This is not a typical fork as in blockchains, where you have multiple block producers produce a block and consensus picks the winning one following a fork choice rule.&amp;nbsp;&lt;/div&gt;&lt;div&gt;Our system is designed to not have such forks and if they happen it&#39;s a result of an objective deviation in the protocol and is handled by disputes by creating a new genesis where all the byzantine/malicious actors are removed. This is the resulting fork which all honest participants accept and build on top. All of this uses a deterministic algorithm so it&#39;s easy to prove later to an independent 3rd party (blockchain or an observer) what&#39;s the canonical reality that should be taken into account when settling on-chain.&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;&amp;nbsp;&lt;/span&gt;&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="Q22LJm39gkMQTBp-yN1j-3" vertex="1">
                     <mxGeometry y="30" width="500" height="180" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="ozl3Edwxn9MgnrYiludJ" name="Fraud Proofs + Dispute Fraud Proofs">
+        <mxGraphModel dx="1709" dy="824" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="njSmaYuxczKofcV0rh6d-1" value="DoubleSign" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=26;fillColor=#f8cecc;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;strokeColor=#b85450;" vertex="1" parent="1">
+                    <mxGeometry x="120" y="80" width="160" height="78" as="geometry"/>
+                </mxCell>
+                <mxCell id="njSmaYuxczKofcV0rh6d-2" value="+ block1: SignedBlock" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" vertex="1" parent="njSmaYuxczKofcV0rh6d-1">
+                    <mxGeometry y="26" width="160" height="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="njSmaYuxczKofcV0rh6d-3" value="+ block2: SignedBlock" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" vertex="1" parent="njSmaYuxczKofcV0rh6d-1">
+                    <mxGeometry y="52" width="160" height="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="njSmaYuxczKofcV0rh6d-5" value="InvalidStateTransition" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=26;fillColor=#f8cecc;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;strokeColor=#b85450;" vertex="1" parent="1">
+                    <mxGeometry x="120" y="320" width="320" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="njSmaYuxczKofcV0rh6d-6" value="+ invalidBlock: SignedBlock" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" vertex="1" parent="njSmaYuxczKofcV0rh6d-5">
+                    <mxGeometry y="26" width="320" height="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="njSmaYuxczKofcV0rh6d-7" value="+ previousBlock: SignedBlock" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" vertex="1" parent="njSmaYuxczKofcV0rh6d-5">
+                    <mxGeometry y="52" width="320" height="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="njSmaYuxczKofcV0rh6d-8" value="+ previousStateSnapshot: StateSnapshot" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" vertex="1" parent="njSmaYuxczKofcV0rh6d-5">
+                    <mxGeometry y="78" width="320" height="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="mYFCGekctdXEh3NGoH8I-5" value="+ previousStateMachineState: bytes" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" vertex="1" parent="njSmaYuxczKofcV0rh6d-5">
+                    <mxGeometry y="104" width="320" height="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="mYFCGekctdXEh3NGoH8I-1" value="InvalidTimestamp" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=26;fillColor=#f8cecc;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;strokeColor=#b85450;" vertex="1" parent="1">
+                    <mxGeometry x="120" y="520" width="300" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="oNWmNa7ofPwur-fx96nA-1" value="+ invalidBlock: SignedBlock" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" vertex="1" parent="mYFCGekctdXEh3NGoH8I-1">
+                    <mxGeometry y="26" width="300" height="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="oNWmNa7ofPwur-fx96nA-4" value="+ previousBlock: SignedBlock" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" vertex="1" parent="mYFCGekctdXEh3NGoH8I-1">
+                    <mxGeometry y="52" width="300" height="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="oNWmNa7ofPwur-fx96nA-9" value="+ previousBlockSingature: Signature" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" vertex="1" parent="mYFCGekctdXEh3NGoH8I-1">
+                    <mxGeometry y="78" width="300" height="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="oNWmNa7ofPwur-fx96nA-6" value="+ previousStateSnapshot: StateSnapshot" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" vertex="1" parent="mYFCGekctdXEh3NGoH8I-1">
+                    <mxGeometry y="104" width="300" height="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="oNWmNa7ofPwur-fx96nA-7" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+                    <mxGeometry x="480" y="520" width="330" height="170" as="geometry">
+                        <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="oNWmNa7ofPwur-fx96nA-8" value="&lt;br&gt;if( previousBlock not posted on-chain or invalidBlock author signed previousBlock) -&amp;gt; if(previousBlock.timestamp" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="oNWmNa7ofPwur-fx96nA-7">
+                    <mxGeometry y="30" width="330" height="140" as="geometry"/>
                 </mxCell>
             </root>
         </mxGraphModel>
