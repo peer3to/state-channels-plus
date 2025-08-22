@@ -213,7 +213,10 @@ class AgreementManager {
                     requiredSignersSet.has(participantAddress)
                 ) {
                     requiredSignersSet.delete(participantAddress);
-                    filteredBlock.expandSignatures([signature]);
+                    // don't expand the confirmation signatures with the authors signature
+                    if (participantAddress !== currentBlock.author) {
+                        filteredBlock.expandSignatures([signature]);
+                    }
                 }
             }
 

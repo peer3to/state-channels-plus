@@ -817,12 +817,9 @@ describe("AgreementManager", () => {
             expect(
                 milestone!.blockConfirmations[0].signedBlock.encodedBlock
             ).to.equal(signedBlock.encode());
-            expect(milestone!.blockConfirmations[0].signatures).to.have.length(
-                2
-            );
-            expect(milestone!.blockConfirmations[0].signatures).to.include(
+            expect(milestone!.blockConfirmations[0].signatures).to.deep.equal([
                 signedBlock.findSignature(signers[1].address).signature
-            );
+            ]);
         });
 
         it("should return undefined when not all participants sign", async () => {
@@ -875,15 +872,9 @@ describe("AgreementManager", () => {
             );
 
             expect(milestone).to.not.be.undefined;
-            expect(milestone!.blockConfirmations[0].signatures).to.have.length(
-                2
-            );
-            expect(milestone!.blockConfirmations[0].signatures).to.include(
+            expect(milestone!.blockConfirmations[0].signatures).to.deep.equal([
                 signedBlock.findSignature(signers[1].address).signature
-            );
-            expect(milestone!.blockConfirmations[0].signatures).to.not.include(
-                signedBlock.findSignature(signers[2].address).signature
-            );
+            ]);
         });
 
         it("should process blocks correctly regardless of iteration order", async () => {
