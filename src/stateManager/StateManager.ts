@@ -67,6 +67,7 @@ import {
 } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
+import LocalDiamondSigner from "@/evm/LocalDiamondSigner";
 
 let DEBUG_STATE_MANAGER = false;
 
@@ -89,6 +90,7 @@ class StateManager {
     validationService: ValidationService;
     storage: Storage;
     fraudProofService: FraudProofService;
+    localDiamondSigner: LocalDiamondSigner;
 
     private latestForkId: ForkId = NULL;
     private dispatcher = new Map([
@@ -105,7 +107,8 @@ class StateManager {
         diamondStateMachine: ADiamondStateMachine,
         timeConfig: TimeConfig,
         p2pEventHooks: P2pEventHooks,
-        storage: Storage
+        storage: Storage,
+        localDiamondSigner: LocalDiamondSigner
     ) {
         this.signerAddress = signerAddress;
         this.diamondStateMachine = diamondStateMachine;
@@ -113,10 +116,12 @@ class StateManager {
         this.timeConfig = timeConfig;
         this.stateChannelManagerContract = stateChannelManagerContract;
         this.storage = storage;
+        this.localDiamondSigner = localDiamondSigner;
         this.stateChannelEventListener = new StateChannelEventListener(
             this.self,
             this.stateChannelManagerContract,
-            this.p2pEventHooks
+            this.p2pEventHooks,
+            this.localDiamondSigner
         );
         this.agreementManager = new AgreementManager(this.storage);
         this.disputeHandler = new DisputeHandler(

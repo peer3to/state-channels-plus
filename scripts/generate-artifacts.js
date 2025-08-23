@@ -19,7 +19,8 @@ const facets = [
     "FraudProofFacet",
     "JoinChannelFacet",
     "StateChannelCommon",
-    "StateSnapshotFacet"
+    "StateSnapshotFacet",
+    "LocalDiamond"
 ];
 const stateMachineContracts = ["AStateMachine"];
 

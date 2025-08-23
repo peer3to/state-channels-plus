@@ -22,7 +22,7 @@ import {
     deployLocalFromTx,
     DeploymentResult
 } from "scripts/V1/deploy";
-import EventMirror from "@/EventMirror";
+import LocalDiamondSigner from "./LocalDiamondSigner";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 
@@ -32,20 +32,20 @@ const DEBUG_CHANNEL_CONTRACT = true;
  */
 class EvmDiamondStateMachine extends ADiamondStateMachine {
     readonly contractExecuter: ContractExecuter;
-    readonly diamondExecuter: ContractExecuter;
     readonly contractInterface: ethers.Interface;
     private p2pContractInstance?: AStateMachineContract;
     public stateManager?: StateManager;
+    public localDiamondSigner: LocalDiamondSigner;
 
     constructor(
         contractExecuter: ContractExecuter,
         contractInterface: ethers.Interface,
-        diamondExecuter: ContractExecuter
+        localDiamondSigner: LocalDiamondSigner
     ) {
         super();
         this.contractExecuter = contractExecuter;
         this.contractInterface = contractInterface;
-        this.diamondExecuter = diamondExecuter;
+        this.localDiamondSigner = localDiamondSigner;
     }
 
     private getEncodedCalldata(
@@ -262,14 +262,10 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         channelId: ChannelId,
         forkId: ForkId
     ): Promise<boolean> {
-        const callData = this.getEncodedCalldata("isForkDisputed", [
-            channelId,
-            forkId
-        ]);
         try {
-            return Codec.decodeEvmResult<boolean>(
-                await this.diamondExecuter.executeCall(callData),
-                "bool"
+            return await this.localDiamondSigner.isForkDisputed(
+                channelId.toString(),
+                forkId.toString()
             );
         } catch (error) {
             throw this.createContextError("isForkDisputed", error);
@@ -284,10 +280,12 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
      */
     public static async createStandalone(
         deployStateMachineTx: ContractDeployTransaction,
-        contractInterface: ethers.Interface
+        contractInterface: ethers.Interface,
+        signer: Signer
     ): Promise<{
         evmDiamondStateMachine: EvmDiamondStateMachine;
         deploymentResult: DeploymentResult;
+        localDiamondSigner: LocalDiamondSigner;
     }> {
         const evm = await EVM.create();
 
@@ -301,13 +299,19 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             evm
         );
 
+        const localDiamondSigner = new LocalDiamondSigner(
+            signer,
+            diamondResult.address
+        );
+
         return {
             evmDiamondStateMachine: new EvmDiamondStateMachine(
                 new ContractExecuter(evm, stateMachineAddress),
                 contractInterface,
-                new ContractExecuter(evm, diamondResult.address)
+                localDiamondSigner
             ),
-            deploymentResult: diamondResult
+            deploymentResult: diamondResult,
+            localDiamondSigner: localDiamondSigner
         };
     }
 
@@ -346,10 +350,11 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
 
         // Create the EvmStateMachine instance (which extends AStateMachine)
-        const { evmDiamondStateMachine, deploymentResult } =
+        const { evmDiamondStateMachine, deploymentResult, localDiamondSigner } =
             await EvmDiamondStateMachine.createStandalone(
                 deployStateMachineTx,
-                stateMachineContractInstance.interface
+                stateMachineContractInstance.interface,
+                signer
             );
 
         // Get time configuration
@@ -373,7 +378,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             evmDiamondStateMachine,
             timeConfig,
             p2pEventHooks || {},
-            storage
+            storage,
+            localDiamondSigner
         );
 
         // Set state manager on P2P communication manager
@@ -386,13 +392,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         // Set P2P contract instance on P2P manager
         evmDiamondStateMachine.setP2pContractInstance(p2pContractInstance);
-
-        // Setup event mirroring
-        const eventMirror = new EventMirror(
-            deployedStateChannelContractInstance,
-            deploymentResult.localDiamond
-        );
-        eventMirror.startMirroring();
 
         return new P2pInstance(
             p2pContractInstance,

@@ -17,7 +17,7 @@ import JoinChannelFacetArtifact from "../../artifacts/contracts/V1/StateChannelD
 import StateChannelManagerProxyArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol/StateChannelManagerProxy.json";
 import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol/LocalDiamond.json";
 
-import { StateChannelManagerProxy, LocalDiamond } from "@typechain-types/index";
+import { StateChannelManagerProxy } from "@typechain-types/index";
 import { Artifact } from "hardhat/types";
 import { Address } from "@ethereumjs/util";
 
@@ -33,7 +33,6 @@ const facetArtifacts = [
 export type DeploymentResult = {
     address: Address;
     signer: Signer;
-    localDiamond: LocalDiamond;
 };
 
 export async function deployArtifact<T>(
@@ -158,13 +157,7 @@ export async function deployLocalDiamond(
         }
     );
 
-    const localDiamond = new ethers.Contract(
-        diamondAddress.toString(),
-        LocalDiamondArtifact.abi,
-        usedSigner
-    ) as unknown as LocalDiamond;
-
-    return { address: diamondAddress, signer: usedSigner, localDiamond };
+    return { address: diamondAddress, signer: usedSigner };
 }
 
 export async function deployLocalFromTx(
