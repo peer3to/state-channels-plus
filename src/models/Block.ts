@@ -26,7 +26,7 @@ export type BlockCoordinates = {
 export default class Block {
     private _onChainTimestamp?: Timestamp;
     private readonly block: BlockStruct;
-    private readonly _originalSignature: Signature;
+    private _originalSignature: Signature;
     private _confirmationSignatures: Set<Signature>;
     private constructor(
         block: BlockStruct,
@@ -169,6 +169,12 @@ export default class Block {
             this.confirmationSignerAddresses,
             new Set([this.signerAddress])
         );
+    }
+
+    async signAsAuthor(signer: Signer): Promise<Block> {
+        const signature = await this.sign(signer);
+        this._originalSignature = signature;
+        return this;
     }
     expandSignatures(newSignatures: Signature[] | Set<Signature>): Block {
         const unionSet = union(
