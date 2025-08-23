@@ -64,7 +64,6 @@ contract StateSnapshotFacet is StateChannelCommon {
 
         // Update the state snapshot
         stateSnapshots[channelId] = newSnapshot;
-        emit ChannelSnapshotSet(channelId, newSnapshot);
 
         //check if last fork -> clearStorage
         if (disputeData[channelId].disputeWindowMap[newSnapshot.forkId].evidence.creationTimestamp == 0) {
@@ -146,12 +145,13 @@ contract StateSnapshotFacet is StateChannelCommon {
             }
         }
         cb.totalOnChainWithdrawals = totalWithdrawals;
-        emit TotalOnChainWithdrawalsSet(channelId, totalWithdrawals);
+        emit WithdrawalsUpdated(channelId, totalWithdrawals);
     }
 
     function _clearStorage(bytes32 channelId, bytes32 snapshotLatestJoinChannelBlockHash) internal {
         _clearDisputeData(channelId);
         _clearOldJoinChannels(channelId, snapshotLatestJoinChannelBlockHash);
+        emit ChannelStorageCleared(channelId, snapshotLatestJoinChannelBlockHash);
     }
 
     function _clearDisputeData(bytes32 channelId) internal {

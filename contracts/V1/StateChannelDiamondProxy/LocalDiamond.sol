@@ -3,6 +3,7 @@ pragma solidity ^0.8.8;
 import "./StateChannelManagerProxy.sol";
 import "../types/DataTypes.sol";
 import "../types/DisputeTypes.sol";
+import "../StateChannelManagerEvents.sol";
 
 /**
  * @title LocalDiamond
@@ -11,10 +12,6 @@ import "../types/DisputeTypes.sol";
  *
  */
 contract LocalDiamond is StateChannelManagerProxy {
-    // Events for storage sync
-    event StorageSet(bytes32 indexed slot, bytes32 value);
-    event StorageGet(bytes32 indexed slot, bytes32 value);
-
     constructor(
         address _stateMachineImplementation,
         address _disputeManagerFacet,
@@ -42,149 +39,139 @@ contract LocalDiamond is StateChannelManagerProxy {
         killTime = 10;
     }
 
-    // ========== Storage slot management (existing) ==========
-    function setStorageSlot(bytes32 slot, bytes32 value) external {
-        assembly {
-            sstore(slot, value)
-        }
-        emit StorageSet(slot, value);
-    }
+    // ========== Direct event handlers for existing events ==========
 
-    function getStorageSlot(bytes32 slot) external view returns (bytes32) {
-        bytes32 value;
-        assembly {
-            value := sload(slot)
-        }
-        return value;
-    }
-
-    function setStorageSlots(bytes32[] calldata slots, bytes32[] calldata values) external {
-        require(slots.length == values.length, "LocalDiamond: slots and values arrays must have same length");
-
-        for (uint256 i = 0; i < slots.length; i++) {
-            bytes32 slot = slots[i];
-            bytes32 value = values[i];
-            assembly {
-                sstore(slot, value)
-            }
-            emit StorageSet(slot, value);
-        }
-    }
-
-    function getStorageSlots(bytes32[] calldata slots) external view returns (bytes32[] memory) {
-        bytes32[] memory values = new bytes32[](slots.length);
-
-        for (uint256 i = 0; i < slots.length; i++) {
-            bytes32 slot = slots[i];
-            bytes32 value;
-            assembly {
-                value := sload(slot)
-            }
-            values[i] = value;
-        }
-
-        return values;
-    }
-
-    // ========== Typed setters for event mirroring ==========
-
-    function setChannelSnapshot(bytes32 channelId, StateSnapshot calldata stateSnapshot) external {
+    // Called by StateSnapshotUpdated event
+    function onStateSnapshotUpdated(bytes32 channelId, StateSnapshot calldata stateSnapshot, uint256 timestamp)
+        external
+    {
         stateSnapshots[channelId] = stateSnapshot;
     }
 
-    function setBlockCalldataCommitment(
+    // Called by JoinChannelProcessed event
+    function onJoinChannelProcessed(
         bytes32 channelId,
-        address participant,
-        bytes32 forkId,
-        uint256 blockHeight,
-        bytes32 commitment
+        JoinChannelBlock calldata joinChannelBlock,
+        uint256 timestamp,
+        Balance calldata totalDeposits
     ) external {
-        blockCalldataCommitments[channelId][participant][forkId][blockHeight] = commitment;
-    }
-
-    function setOnChainJoinChannel(bytes32 channelId, bytes32 blockHash, OnChainJoinChannel calldata value) external {
-        channelBalances[channelId].onChainJoinChannelMap[blockHash] = value;
-    }
-
-    function deleteOnChainJoinChannel(bytes32 channelId, bytes32 blockHash) external {
-        delete channelBalances[channelId].onChainJoinChannelMap[blockHash];
-    }
-
-    function setLatestJoinChannelBlockHash(bytes32 channelId, bytes32 blockHash) external {
+        // Extract the join channel data and update storage
+        bytes32 blockHash = keccak256(abi.encode(joinChannelBlock));
+        channelBalances[channelId].onChainJoinChannelMap[blockHash] = OnChainJoinChannel({
+            previousJoinChannelBlockHash: channelBalances[channelId].latestJoinChannelBlockHash,
+            timestamp: timestamp,
+            totalDeposits: totalDeposits
+        });
         channelBalances[channelId].latestJoinChannelBlockHash = blockHash;
+
+        // Add participants to pending participants
+        for (uint256 i = 0; i < joinChannelBlock.joinChannels.length; i++) {
+            disputeData[channelId].pendingParticipants.push(joinChannelBlock.joinChannels[i].participant);
+        }
     }
 
-    function setTotalOnChainWithdrawals(bytes32 channelId, Balance calldata balance) external {
-        channelBalances[channelId].totalOnChainWithdrawals = balance;
-    }
-
-    function addPendingParticipant(bytes32 channelId, address participant) external {
-        disputeData[channelId].pendingParticipants.push(participant);
-    }
-
-    function createDisputeWindow(bytes32 channelId, bytes32 forkId, uint256 creationTimestamp) external {
-        disputeData[channelId].disputeWindowMap[forkId].forkId = forkId;
-        disputeData[channelId].disputeWindowMap[forkId].evidence.creationTimestamp = creationTimestamp;
-    }
-
-    function setDisputeWindowCreationTimestamp(bytes32 channelId, bytes32 forkId, uint256 creationTimestamp) external {
-        disputeData[channelId].disputeWindowMap[forkId].evidence.creationTimestamp = creationTimestamp;
-    }
-
-    function clearDisputeCommitments(bytes32 channelId, bytes32 forkId) external {
-        delete disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments;
-    }
-
-    function pushDisputeCommitment(bytes32 channelId, bytes32 forkId, bytes32 commitment) external {
-        disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments.push(commitment);
-    }
-
-    function removeDisputeCommitment(bytes32 channelId, bytes32 forkId, uint256 index) external {
-        bytes32[] storage commitments = disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments;
-        require(index < commitments.length, "LocalDiamond: commitment index out of bounds");
-
-        // Move last element to index and pop
-        commitments[index] = commitments[commitments.length - 1];
-        commitments.pop();
-    }
-
-    function setHasPosted(bytes32 channelId, bytes32 forkId, address participant, bool hasPosted) external {
-        disputeData[channelId].disputeWindowMap[forkId].evidence.hasPosted[participant] = hasPosted;
-    }
-
-    function deleteDisputeWindow(bytes32 channelId, bytes32 forkId) external {
-        delete disputeData[channelId].disputeWindowMap[forkId];
-    }
-
-    function commitReducedResult(
+    // Called by BlockCalldataPosted event
+    function onBlockCalldataPosted(
         bytes32 channelId,
-        bytes32 disputedForkId,
+        address sender,
+        SignedBlock calldata signedBlock,
+        uint256 timestamp
+    ) external {
+        Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
+        bytes32 commitment = keccak256(abi.encode(_block, timestamp));
+        blockCalldataCommitments[channelId][sender][_block.transaction.header.forkId][_block
+            .transaction
+            .header
+            .transactionCnt] = commitment;
+    }
+
+    // Called by DisputeCommitted event
+    function onDisputeCommitted(
+        bytes32 channelId,
+        Dispute calldata dispute,
+        uint256 disputeCreationTimestamp,
+        bool isFinal,
+        uint256 windowCreationTimestamp
+    ) external {
+        // Update dispute data based on the dispute commitment
+        bytes32 forkId = keccak256(abi.encode(dispute.genesisSnapshotDataHash));
+        disputeData[channelId].disputeWindowMap[forkId].forkId = forkId;
+        disputeData[channelId].disputeWindowMap[forkId].evidence.creationTimestamp = windowCreationTimestamp;
+        disputeData[channelId].disputeWindowMap[forkId].evidence.hasPosted[dispute.disputer] = true;
+
+        bytes32 commitment = keccak256(abi.encode(dispute));
+        disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments.push(commitment);
+
+        // Handle reduced result if this is a final/threshold dispute
+        if (isFinal) {
+            disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkId = dispute.outputSnapshotDataHash;
+            disputeData[channelId].disputeWindowMap[forkId].reducedResult.timestamp = disputeCreationTimestamp;
+            disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkGenesisTimestamp =
+                disputeCreationTimestamp;
+            disputeData[channelId].disputeWindowMap[forkId].reducedResult.reducer = dispute.disputer;
+
+            // Clear dispute commitments (matches on-chain behavior)
+            delete disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments;
+        }
+    }
+
+    // Simple event handlers
+    function onOnChainSlashAdded(bytes32 channelId, address participant, uint256 timestamp) external {
+        disputeData[channelId].onChainSlashes.push(OnChainSlash(participant, timestamp));
+    }
+
+    function onDisputeKilled(bytes32 channelId, bytes32 forkId, address disputer) external {
+        // Remove dispute window and disputed fork (matches on-chain behavior)
+        delete disputeData[channelId].disputeWindowMap[forkId];
+
+        // Remove from disputed forks array
+        bytes32[] storage disputedForks = disputeData[channelId].disputedForks;
+        for (uint256 i = 0; i < disputedForks.length; i++) {
+            if (disputedForks[i] == forkId) {
+                disputedForks[i] = disputedForks[disputedForks.length - 1];
+                disputedForks.pop();
+                break;
+            }
+        }
+    }
+
+    function onDisputeReducedResultCommitted(
+        bytes32 channelId,
+        bytes32 forkId,
         bytes32 reducedForkId,
         uint256 reductionTimestamp,
         uint256 forkGenesisTimestamp,
         address reducer
     ) external {
-        disputeData[channelId].disputeWindowMap[disputedForkId].reducedResult.forkId = reducedForkId;
-        disputeData[channelId].disputeWindowMap[disputedForkId].reducedResult.timestamp = reductionTimestamp;
-        disputeData[channelId].disputeWindowMap[disputedForkId].reducedResult.forkGenesisTimestamp =
-            forkGenesisTimestamp;
-        disputeData[channelId].disputeWindowMap[disputedForkId].reducedResult.reducer = reducer;
+        // Update the reduced result in the dispute window
+        disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkId = reducedForkId;
+        disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkGenesisTimestamp = forkGenesisTimestamp;
+        disputeData[channelId].disputeWindowMap[forkId].reducedResult.timestamp = reductionTimestamp;
+        disputeData[channelId].disputeWindowMap[forkId].reducedResult.reducer = reducer;
     }
 
-    function clearReducedResultForkId(bytes32 channelId, bytes32 disputedForkId) external {
-        delete disputeData[channelId].disputeWindowMap[disputedForkId].reducedResult;
+    function onWithdrawalsUpdated(bytes32 channelId, Balance calldata totalWithdrawals) external {
+        channelBalances[channelId].totalOnChainWithdrawals = totalWithdrawals;
     }
 
-    function removeDisputedFork(bytes32 channelId, bytes32 forkId, uint256 index) external {
-        bytes32[] storage disputedForks = disputeData[channelId].disputedForks;
-        require(index < disputedForks.length, "LocalDiamond: disputed fork index out of bounds");
+    function onChannelStorageCleared(bytes32 channelId, bytes32 latestJoinChannelBlockHash) external {
+        // Clear dispute data
+        DisputeData storage disputeData = disputeData[channelId];
+        delete disputeData.onChainSlashes;
+        delete disputeData.pendingParticipants;
+        mapping(bytes32 => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
+        for (uint256 i = 0; i < disputeData.disputedForks.length; i++) {
+            delete disputeWindowMap[disputeData.disputedForks[i]];
+        }
+        delete disputeData.disputedForks;
 
-        // Move last element to index and pop
-        disputedForks[index] = disputedForks[disputedForks.length - 1];
-        disputedForks.pop();
-    }
-
-    function addOnChainSlash(bytes32 channelId, address participant, uint256 timestamp) external {
-        disputeData[channelId].onChainSlashes.push(OnChainSlash(participant, timestamp));
+        // Clear old join channels
+        ChannelBalance storage cb = channelBalances[channelId];
+        bytes32 keyToDelete = cb.onChainJoinChannelMap[latestJoinChannelBlockHash].previousJoinChannelBlockHash;
+        while (keyToDelete != bytes32(0)) {
+            bytes32 nextKeyToDelete = cb.onChainJoinChannelMap[keyToDelete].previousJoinChannelBlockHash;
+            delete cb.onChainJoinChannelMap[keyToDelete];
+            keyToDelete = nextKeyToDelete;
+        }
     }
 }

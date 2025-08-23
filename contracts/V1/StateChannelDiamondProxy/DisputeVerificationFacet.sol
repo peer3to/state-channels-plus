@@ -210,8 +210,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
         ) {
             addOnChainSlashedParticipant(channelId, disputeWindow.reducedResult.reducer);
             disputeWindow.reducedResult.forkId = bytes32(0); // unset
-            emit ReducedResultForkIdCleared(channelId, disputes[0].genesisSnapshotDataHash);
             _commitToDisputeReducedResult(
+                channelId,
                 disputeWindow,
                 winningForkId,
                 block.timestamp - getEvidenceTime() - 1,
@@ -320,6 +320,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
     function _verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         internal
+        pure
         returns (bool isValid)
     {
         //This runs after verifying auditingData and genesisStateSnapshot => we can skip those checks here
@@ -442,7 +443,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         StateSnapshot memory genesisSnapshot
-    ) public returns (bool isValid, bytes memory lastBlockEncoded) {
+    ) public pure returns (bool isValid, bytes memory lastBlockEncoded) {
         StateSnapshot memory snapshot = genesisSnapshot;
         lastBlockEncoded = "";
 
@@ -563,18 +564,18 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         //if dispute window is empty, delete it
         if (disputeWindow.evidence.disputeCommitments.length == 0) {
-            delete disputeData.disputeWindowMap[_getDisputeFork(dispute)];
-            emit DisputeWindowDeleted(dispute.channelId, _getDisputeFork(dispute));
+            bytes32 forkId = _getDisputeFork(dispute);
+            delete disputeData.disputeWindowMap[forkId];
 
             for (uint256 i = 0; i < disputeData.disputedForks.length; i++) {
-                if (disputeData.disputedForks[i] == _getDisputeFork(dispute)) {
+                if (disputeData.disputedForks[i] == forkId) {
                     //remove disputed fork from the list
                     disputeData.disputedForks[i] = disputeData.disputedForks[disputeData.disputedForks.length - 1];
                     disputeData.disputedForks.pop();
-                    emit DisputedForkRemoved(dispute.channelId, _getDisputeFork(dispute), i);
                     break;
                 }
             }
+            emit DisputeKilled(dispute.channelId, forkId, dispute.disputer);
         }
     }
 
