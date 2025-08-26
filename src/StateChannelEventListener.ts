@@ -1,9 +1,8 @@
-import { StateChannelManagerProxy } from "@typechain-types";
+import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
 import { ChannelId, Timestamp } from "@/types/types";
-import LocalDiamondSigner from "@/evm/LocalDiamondSigner";
 
 //TODO - made a PR to ethers.js to fix Deferred Topic Filter
 
@@ -11,19 +10,19 @@ class StateChannelEventListener {
     stateManager: StateManager;
     stateChannelManagerContract: StateChannelManagerProxy;
     p2pEventHooks: P2pEventHooks;
-    localDiamondSigner: LocalDiamondSigner;
+    localDiamondContract: LocalDiamond;
     filters: Record<string, any> = {};
 
     constructor(
         stateManager: StateManager,
         stateChannelManagerContract: StateChannelManagerProxy,
         p2pEventHooks: P2pEventHooks,
-        localDiamondSigner: LocalDiamondSigner
+        localDiamondContract: LocalDiamond
     ) {
         this.stateManager = stateManager;
         this.stateChannelManagerContract = stateChannelManagerContract;
         this.p2pEventHooks = p2pEventHooks;
-        this.localDiamondSigner = localDiamondSigner;
+        this.localDiamondContract = localDiamondContract;
     }
 
     private async setListener(
@@ -111,7 +110,7 @@ class StateChannelEventListener {
                 ),
             handler: (logObj: any) => {
                 const { channelId, stateSnapshot, timestamp } = logObj.args;
-                this.localDiamondSigner.onStateSnapshotUpdated(
+                this.localDiamondContract.onStateSnapshotUpdated(
                     channelId,
                     stateSnapshot,
                     timestamp
@@ -125,13 +124,11 @@ class StateChannelEventListener {
                 ),
             handler: (logObj: any) => {
                 const { channelId, participant, timestamp } = logObj.args;
-                if (this.localDiamondSigner) {
-                    this.localDiamondSigner.onOnChainSlashAdded(
-                        channelId,
-                        participant,
-                        timestamp
-                    );
-                }
+                this.localDiamondContract.onOnChainSlashAdded(
+                    channelId,
+                    participant,
+                    timestamp
+                );
             }
         },
         WithdrawalsUpdated: {
@@ -141,7 +138,7 @@ class StateChannelEventListener {
                 ),
             handler: (logObj: any) => {
                 const { channelId, totalWithdrawals } = logObj.args;
-                this.localDiamondSigner.onWithdrawalsUpdated(
+                this.localDiamondContract.onWithdrawalsUpdated(
                     channelId,
                     totalWithdrawals
                 );
@@ -154,7 +151,7 @@ class StateChannelEventListener {
                 ),
             handler: (logObj: any) => {
                 const { channelId, latestJoinChannelBlockHash } = logObj.args;
-                this.localDiamondSigner.onChannelStorageCleared(
+                this.localDiamondContract.onChannelStorageCleared(
                     channelId,
                     latestJoinChannelBlockHash
                 );
@@ -167,7 +164,7 @@ class StateChannelEventListener {
                 ),
             handler: (logObj: any) => {
                 const { channelId, forkId, disputer } = logObj.args;
-                this.localDiamondSigner.onDisputeKilled(
+                this.localDiamondContract.onDisputeKilled(
                     channelId,
                     forkId,
                     disputer
@@ -188,7 +185,7 @@ class StateChannelEventListener {
                     reducer
                 } = logObj.args;
                 const channelId = logObj.args.channelId;
-                this.localDiamondSigner.onDisputeReducedResultCommitted(
+                this.localDiamondContract.onDisputeReducedResultCommitted(
                     channelId,
                     forkId,
                     reducedForkId,

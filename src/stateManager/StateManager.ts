@@ -90,7 +90,7 @@ class StateManager {
     validationService: ValidationService;
     storage: Storage;
     fraudProofService: FraudProofService;
-    localDiamondSigner: LocalDiamondSigner;
+    localDiamondContract: LocalDiamond;
 
     private latestForkId: ForkId = NULL;
     private dispatcher = new Map([
@@ -108,7 +108,7 @@ class StateManager {
         timeConfig: TimeConfig,
         p2pEventHooks: P2pEventHooks,
         storage: Storage,
-        localDiamondSigner: LocalDiamondSigner
+        localDiamondContract: LocalDiamond
     ) {
         this.signerAddress = signerAddress;
         this.diamondStateMachine = diamondStateMachine;
@@ -116,12 +116,13 @@ class StateManager {
         this.timeConfig = timeConfig;
         this.stateChannelManagerContract = stateChannelManagerContract;
         this.storage = storage;
-        this.localDiamondSigner = localDiamondSigner;
+        this.localDiamondContract = localDiamondContract;
+
         this.stateChannelEventListener = new StateChannelEventListener(
             this.self,
             this.stateChannelManagerContract,
             this.p2pEventHooks,
-            this.localDiamondSigner
+            this.localDiamondContract
         );
         this.agreementManager = new AgreementManager(this.storage);
         this.disputeHandler = new DisputeHandler(
@@ -140,7 +141,8 @@ class StateManager {
             this.stateChannelManagerContract,
             this.timeConfig,
             this.channelId,
-            () => this.forkId
+            () => this.forkId,
+            this.localDiamondContract
         );
     }
     //Mark resources for garbage collection

@@ -2,7 +2,8 @@ import { EVM } from "@ethereumjs/evm";
 import { ethers, Signer, hexlify, ContractDeployTransaction } from "ethers";
 import {
     StateChannelManagerProxy,
-    AStateMachine as AStateMachineContract
+    AStateMachine as AStateMachineContract,
+    LocalDiamond
 } from "@typechain-types";
 import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import StateManager from "@/stateManager";
@@ -13,7 +14,7 @@ import { DebugProxy, decodeErrorProxy, Codec } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
-import { Address, Bytes, ChannelId, ForkId } from "@/types/types";
+import { Address, Bytes } from "@/types/types";
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import Storage from "@/storage";
@@ -23,6 +24,7 @@ import {
     DeploymentResult
 } from "scripts/V1/deploy";
 import LocalDiamondSigner from "./LocalDiamondSigner";
+import { LocalDiamondArtifact } from "@/utils/GeneratedArtifacts";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 
@@ -258,20 +260,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
     }
 
-    async isForkDisputed(
-        channelId: ChannelId,
-        forkId: ForkId
-    ): Promise<boolean> {
-        try {
-            return await this.localDiamondSigner.isForkDisputed(
-                channelId.toString(),
-                forkId.toString()
-            );
-        } catch (error) {
-            throw this.createContextError("isForkDisputed", error);
-        }
-    }
-
     /**
      * Creates a standalone EVM state machine
      * @param deployStateMachineTx The transaction to deploy the state machine
@@ -285,7 +273,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     ): Promise<{
         evmDiamondStateMachine: EvmDiamondStateMachine;
         deploymentResult: DeploymentResult;
-        localDiamondSigner: LocalDiamondSigner;
+        localDiamondContract: LocalDiamond;
     }> {
         const evm = await EVM.create();
 
@@ -299,9 +287,20 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             evm
         );
 
+        const diamondExecuter = new ContractExecuter(
+            evm,
+            diamondResult.address
+        );
         const localDiamondSigner = new LocalDiamondSigner(
             signer,
-            diamondResult.address
+            diamondExecuter
+        );
+
+        // Create LocalDiamond contract instance
+        const localDiamondContract = new ethers.Contract(
+            localDiamondSigner.getDiamondAddress(),
+            LocalDiamondArtifact.abi,
+            localDiamondSigner
         );
 
         return {
@@ -311,7 +310,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                 localDiamondSigner
             ),
             deploymentResult: diamondResult,
-            localDiamondSigner: localDiamondSigner
+            localDiamondContract:
+                localDiamondContract as unknown as LocalDiamond
         };
     }
 
@@ -350,7 +350,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
 
         // Create the EvmStateMachine instance (which extends AStateMachine)
-        const { evmDiamondStateMachine, deploymentResult, localDiamondSigner } =
+        const { evmDiamondStateMachine, localDiamondContract } =
             await EvmDiamondStateMachine.createStandalone(
                 deployStateMachineTx,
                 stateMachineContractInstance.interface,
@@ -379,7 +379,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             timeConfig,
             p2pEventHooks || {},
             storage,
-            localDiamondSigner
+            localDiamondContract
         );
 
         // Set state manager on P2P communication manager
