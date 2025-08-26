@@ -579,7 +579,7 @@
         </mxGraphModel>
     </diagram>
     <diagram id="-3QrUwy2nLPkMSnJrA5o" name="BlockConfirmation Message Lifecycle">
-        <mxGraphModel dx="2197" dy="659" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+        <mxGraphModel dx="5661" dy="2354" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -1565,9 +1565,9 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="Tkg7loyrQP702Ur1c9dN-112" value="Think(queue)" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1" collapsed="1">
-                    <mxGeometry x="262" y="1558" width="112" height="30" as="geometry">
-                        <mxRectangle x="-172" y="1558" width="140" height="170" as="alternateBounds"/>
+                <mxCell id="Tkg7loyrQP702Ur1c9dN-112" value="Think(queue)" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                    <mxGeometry x="262" y="1558" width="140" height="170" as="geometry">
+                        <mxRectangle x="262" y="1558" width="112" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="Tkg7loyrQP702Ur1c9dN-113" value="Past fork blocks that are not processed will be queues, same with future blocks - queue can be spammed - we need to protect it&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="Tkg7loyrQP702Ur1c9dN-112" vertex="1">
@@ -1997,7 +1997,7 @@
                         <mxRectangle x="120" y="500" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="-MXcLcMf_BDdAfsZCEQr-63" value="When a block is posted on-chain it has to be posted before previousTimestamp + p2pTime + agreementTime + chainFallbackTime and if it&#39;s posted later it&#39;s should be slashed -&amp;gt; this check is not done here - it can be done here but than it&#39;s only check on the current/next block - potentially better to ahve a geenral pipiline check for it on event trigger - since it&#39;s obective&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="-MXcLcMf_BDdAfsZCEQr-62" vertex="1">
+                <mxCell id="-MXcLcMf_BDdAfsZCEQr-63" value="When a block is posted on-chain it has to be posted before previousTimestamp + p2pTime + agreementTime + chainFallbackTime and if it&#39;s posted later it&#39;s should be slashed -&amp;gt; this check is not done here - it can be done here but than it&#39;s only check on the current/next block - potentially better to have a general pipeline check for it on event trigger - since it&#39;s obective&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="-MXcLcMf_BDdAfsZCEQr-62" vertex="1">
                     <mxGeometry y="30" width="200" height="220" as="geometry"/>
                 </mxCell>
                 <mxCell id="-MXcLcMf_BDdAfsZCEQr-64" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="-MXcLcMf_BDdAfsZCEQr-1" vertex="1">
