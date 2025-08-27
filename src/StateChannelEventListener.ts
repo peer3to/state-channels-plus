@@ -65,11 +65,16 @@ class StateChannelEventListener {
                     channelId
                 ),
             handler: (logObj: any) => {
-                console.log("BlockCalldataPosted EVENT !!!!!!!!!!!");
+                const { channelId, sender, signedBlock, timestamp } =
+                    logObj.args;
+                this.localDiamondContract.onBlockCalldataPosted(
+                    channelId,
+                    sender,
+                    signedBlock,
+                    timestamp
+                );
                 this.p2pEventHooks.onPostedCalldata?.();
-                const signedBlock = logObj.args
-                    .signedBlock as SignedBlockStruct;
-                const timestamp = logObj.args.timestamp as Timestamp;
+
                 this.stateManager.collectOnChainBlock(signedBlock, timestamp);
             }
         },
@@ -79,12 +84,22 @@ class StateChannelEventListener {
                     channelId
                 ),
             handler: (logObj: any) => {
-                const encodedDispute = logObj.args.encodedDispute;
-                const timestamp = Number(logObj.args.timestamp);
-                return this.stateManager.onDisputeCommitted(
-                    encodedDispute,
-                    timestamp
+                const {
+                    channelId,
+                    dispute,
+                    disputeCreationTimestamp,
+                    isFinal,
+                    windowCreationTimestamp
+                } = logObj.args;
+                this.localDiamondContract.onDisputeCommitted(
+                    channelId,
+                    dispute,
+                    disputeCreationTimestamp,
+                    isFinal,
+                    windowCreationTimestamp
                 );
+                const timestamp = Number(windowCreationTimestamp);
+                return this.stateManager.onDisputeCommitted(dispute, timestamp);
             }
         },
 
@@ -94,8 +109,18 @@ class StateChannelEventListener {
                     channelId
                 ),
             handler: (logObj: any) => {
-                const { joinChannelBlock, timestamp, totalDeposits } =
-                    logObj.args;
+                const {
+                    channelId,
+                    joinChannelBlock,
+                    timestamp,
+                    totalDeposits
+                } = logObj.args;
+                this.localDiamondContract.onJoinChannelProcessed(
+                    channelId,
+                    joinChannelBlock,
+                    timestamp,
+                    totalDeposits
+                );
                 this.stateManager.onJoinChannel(
                     joinChannelBlock,
                     timestamp,

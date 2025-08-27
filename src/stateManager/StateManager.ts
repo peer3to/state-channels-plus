@@ -21,7 +21,10 @@ import {
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 // TypeChain types - Dispute types
-import { SignedDisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    DisputeStruct,
+    SignedDisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 // TypeChain types - Contract interfaces
 import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
@@ -996,11 +999,9 @@ class StateManager {
 
     // ----- Event handlers -----
     public async onDisputeCommitted(
-        encodedDispute: string,
+        dispute: DisputeStruct,
         timestamp: Timestamp
     ) {
-        const dispute = Codec.decode(encodedDispute, Type.Dispute);
-
         // Validate dispute
         const valid = await this.validationService.validateDispute(
             dispute,
