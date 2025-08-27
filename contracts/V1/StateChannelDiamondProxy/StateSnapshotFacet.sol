@@ -145,11 +145,13 @@ contract StateSnapshotFacet is StateChannelCommon {
             }
         }
         cb.totalOnChainWithdrawals = totalWithdrawals;
+        emit WithdrawalsUpdated(channelId, totalWithdrawals);
     }
 
     function _clearStorage(bytes32 channelId, bytes32 snapshotLatestJoinChannelBlockHash) internal {
         _clearDisputeData(channelId);
         _clearOldJoinChannels(channelId, snapshotLatestJoinChannelBlockHash);
+        emit ChannelStorageCleared(channelId, snapshotLatestJoinChannelBlockHash);
     }
 
     function _clearDisputeData(bytes32 channelId) internal {

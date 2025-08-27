@@ -23,6 +23,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
 
     function addOnChainSlashedParticipant(bytes32 channelId, address slashedParticipant) internal virtual {
         disputeData[channelId].onChainSlashes.push(OnChainSlash(slashedParticipant, block.timestamp));
+        emit OnChainSlashAdded(channelId, slashedParticipant, block.timestamp);
     }
 
     function getOnChainThresholdSet(bytes32 channelId) public view virtual returns (address[] memory) {
@@ -201,6 +202,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function _commitToDisputeReducedResult(
+        bytes32 channelId,
         DisputeWindow storage disputeWindow,
         bytes32 reducedForkId,
         uint256 reductionTimestamp,
@@ -212,5 +214,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         disputeWindow.reducedResult.forkGenesisTimestamp = forkGenesisTimestamp;
         disputeWindow.reducedResult.timestamp = reductionTimestamp;
         disputeWindow.reducedResult.reducer = msg.sender; //calling function should check that msg.sender is part of channel 'can participate'
+
+        emit DisputeReducedResultCommitted(
+            channelId, disputeWindow.forkId, reducedForkId, reductionTimestamp, forkGenesisTimestamp, msg.sender
+        );
     }
 }

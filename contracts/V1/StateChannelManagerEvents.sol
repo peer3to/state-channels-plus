@@ -22,4 +22,17 @@ interface StateChannelManagerEvents {
     event JoinChannelProcessed(
         bytes32 indexed channelId, JoinChannelBlock joinChannelBlock, uint256 timestamp, Balance totalDeposits
     );
+
+    event OnChainSlashAdded(bytes32 indexed channelId, address participant, uint256 timestamp);
+    event WithdrawalsUpdated(bytes32 indexed channelId, Balance totalWithdrawals);
+    event ChannelStorageCleared(bytes32 indexed channelId, bytes32 latestJoinChannelBlockHash);
+    event DisputeKilled(bytes32 indexed channelId, bytes32 forkId, address disputer);
+    event DisputeReducedResultCommitted(
+        bytes32 indexed channelId,
+        bytes32 forkId,
+        bytes32 reducedForkId,
+        uint256 reductionTimestamp,
+        uint256 forkGenesisTimestamp,
+        address reducer
+    );
 }
