@@ -395,12 +395,27 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return disputeWindow.evidence.creationTimestamp;
     }
 
-    function reduce(Dispute[] memory disputes, uint256 disputeWindowCreationTimestamp)
+    function getReducedResult(bytes32 channelId, bytes32 forkId)
         public
         view
+        returns (bytes32 reducedForkId, uint256 forkGenesisTimestamp, uint256 timestamp, address reducer)
+    {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        DisputeWindowReducedResult storage reducedResult = disputeWindow.reducedResult;
+        return
+            (reducedResult.forkId, reducedResult.forkGenesisTimestamp, reducedResult.timestamp, reducedResult.reducer);
+    }
+
+    function reduce(Dispute[] memory disputes, uint256 disputeWindowCreationTimestamp)
+        public
         returns (ReduceOutput memory reducedOutput)
     {
-        return disputeVerificationFacet.reduce(disputes, disputeWindowCreationTimestamp);
+        bytes memory result = _delegatecall(
+            address(disputeVerificationFacet),
+            abi.encodeCall(disputeVerificationFacet.reduce, (disputes, disputeWindowCreationTimestamp))
+        );
+        return abi.decode(result, (ReduceOutput));
     }
 
     function commitToReducedResult(
@@ -409,8 +424,12 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         bytes32 reducedForkId,
         uint256 reducedForkGenesisTimestamps
     ) public {
-        disputeManagerFacet.commitToReducedResult(
-            channelId, disputedForkId, reducedForkId, reducedForkGenesisTimestamps
+        _delegatecall(
+            address(disputeManagerFacet),
+            abi.encodeCall(
+                disputeManagerFacet.commitToReducedResult,
+                (channelId, disputedForkId, reducedForkId, reducedForkGenesisTimestamps)
+            )
         );
     }
 

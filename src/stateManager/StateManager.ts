@@ -676,13 +676,28 @@ class StateManager {
                     break;
                 }
 
+                // TODO, this is not implemented yet
                 // Get the dispute data from the DisputeHandler for this fork
-                const dispute = this.disputeHandler.disputes.get(currentForkId);
-                if (!dispute) {
-                    console.log(
-                        `Reached final undisputed fork: ${currentForkId}`
+                const dispute =
+                    this.stateChannelManagerContract.getDisputeCommitments(
+                        currentForkId
                     );
-                    break;
+
+                // If reduced result already exists on-chain, skip reduce/commit
+                const reducedOutput =
+                    await this.stateChannelManagerContract.getReducedResult(
+                        this.channelId,
+                        currentForkId
+                    );
+                if (reducedOutput[0]) {
+                    currentForkId = reducedOutput[0];
+                    // Check if the next fork has a dispute window
+                    isDisputed =
+                        await this.stateChannelManagerContract.isForkDisputed(
+                            this.channelId,
+                            currentForkId
+                        );
+                    continue;
                 }
 
                 // Get the dispute window creation timestamp from the on-chain contract
@@ -749,64 +764,27 @@ class StateManager {
                     );
             }
 
-            // Get the state snapshot for the final fork
-            const latestBlockHeight =
-                this.storage.blocks.getNextBlockHeight(currentForkId) - 1;
-            const stateProof = await this.agreementManager.getStateProof(
-                currentForkId,
-                latestBlockHeight
-            );
-
-            if (stateProof.milestones.length === 0) {
+            // Get the genesis snapshot
+            const genesisSnapshot =
+                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                    currentForkId
+                );
+            if (!genesisSnapshot) {
                 throw new Error(
-                    `No milestones found for fork ${currentForkId}`
+                    `No genesis snapshot found for fork ${currentForkId}`
                 );
             }
 
-            const latestMilestone =
-                stateProof.milestones[stateProof.milestones.length - 1];
-            const finalStateSnapshot =
-                this.agreementManager.getSnapshot(latestMilestone);
-
-            // Build exit channel blocks chain from current on-chain to final fork
-            const exitChannelBlocks: ExitChannelBlockStruct[] = [];
-            const currentOnChainExitBlockHash =
-                currentOnChainSnapshot.snapshotData.latestExitChannelBlockHash;
-            const finalForkExitBlockHash =
-                finalStateSnapshot.snapshotData.latestExitChannelBlockHash;
-
-            // Build the chain of exit blocks from current on-chain to final fork
-            let currentHash = finalForkExitBlockHash;
-            const exitBlockChain: ExitChannelBlockStruct[] = [];
-
-            // Walk backwards through the chain until we reach the on-chain hash
-            while (currentHash !== currentOnChainExitBlockHash) {
-                const exitBlock =
-                    this.storage.exitChannelBlocks.getExitChannelBlock(
-                        currentHash
-                    );
-                if (!exitBlock) {
-                    throw new Error(
-                        `Exit channel block not found for hash: ${currentHash}`
-                    );
-                }
-                exitBlockChain.unshift(exitBlock);
-                currentHash = exitBlock.previousBlockHash;
-            }
-
-            exitChannelBlocks.push(...exitBlockChain);
-
-            // Call the Solidity function to update the state
+            // Update snapshot
             const txResponse =
                 await this.stateChannelManagerContract.updateStateSnapshotFork(
                     this.channelId,
-                    finalStateSnapshot.toStruct(),
-                    exitChannelBlocks
+                    genesisSnapshot.toStruct(),
+                    []
                 );
-
             await txResponse.wait();
             console.log(
-                `Successfully updated state snapshot to final fork ${currentForkId}`
+                `Updated to genesis snapshot for fork ${currentForkId}`
             );
         } catch (error) {
             console.error("Error updating snapshot for fork:", error);
