@@ -700,17 +700,22 @@ class StateManager {
                     break;
                 }
 
-                // Build Dispute[] from local storage;
-                // TODO, implement getDispute(commitment)
+                // Build Dispute[] from local storage confirmations
                 const disputes: DisputeStruct[] = [];
                 for (const commitment of disputeCommitments) {
-                    const dispute =
-                        this.storage.disputes.getDispute(commitment);
-                    if (!dispute) {
+                    const confirmation =
+                        this.storage.disputes.getDisputeConfirmation(
+                            commitment
+                        );
+                    if (!confirmation) {
                         throw new Error(
                             `Missing Data Availability for dispute commitment ${commitment}`
                         );
                     }
+                    const dispute = Codec.decode(
+                        confirmation.signedDispute.encodedDispute,
+                        Type.Dispute
+                    ) as DisputeStruct;
                     disputes.push(dispute);
                 }
 
