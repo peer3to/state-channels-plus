@@ -1,6 +1,6 @@
 import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
-import { StateChannelManagerProxy } from "@typechain-types";
+import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
 import { ZeroHash } from "ethers";
 
 import ADiamondStateMachine from "@/ADiamondStateMachine";
@@ -32,7 +32,8 @@ export default class ValidationService {
         private readonly stateChannelManagerContract: StateChannelManagerProxy,
         private readonly timeConfig: TimeConfig,
         private readonly channelId: ChannelId,
-        private readonly getForkId: () => ForkId
+        private readonly getForkId: () => ForkId,
+        private readonly localDiamondContract: LocalDiamond
     ) {
         this.fraudProofService = new FraudProofService(this.storage);
     }
@@ -134,11 +135,11 @@ export default class ValidationService {
     private queueForLater(
         blockConfirmation: Block | BlockConfirmationStruct
     ): void {
-        if (blockConfirmation instanceof Block) {
-            this.storage.queues.queueBlock(blockConfirmation);
-        } else {
-            this.storage.queues.queueConfirmation(blockConfirmation);
-        }
+        const block =
+            blockConfirmation instanceof Block
+                ? blockConfirmation
+                : Block.fromBlockConfirmation(blockConfirmation);
+        this.storage.queues.queueBlock(block);
     }
 
     // ────────────────────── VALIDATION METHODS ─────────────────────
@@ -181,7 +182,6 @@ export default class ValidationService {
     private checkDuplicateBlock(
         block: Block,
         participants: Set<Address>
-        // undefined is conceptually same as DUPLICATE => do nothing
     ): ValidationResult | undefined {
         // 1. Check if block is in queue
         if (
@@ -216,7 +216,7 @@ export default class ValidationService {
 
             // no new signatures
             if (newSignatures.size === 0) {
-                return;
+                return { shouldDisconnect: false };
             }
 
             // Validate new signatures are from participants
@@ -288,7 +288,7 @@ export default class ValidationService {
     ): Promise<boolean> {
         return (
             this.storage.disputes.didIDispute(forkId) ||
-            (await this.diamondStateMachine.isForkDisputed(channelId, forkId))
+            (await this.localDiamondContract.isForkDisputed(channelId, forkId))
         );
     }
 

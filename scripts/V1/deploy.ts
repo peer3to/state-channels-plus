@@ -30,6 +30,11 @@ const facetArtifacts = [
     JoinChannelFacetArtifact
 ];
 
+export type DeploymentResult = {
+    address: Address;
+    signer: Signer;
+};
+
 export async function deployArtifact<T>(
     artifact: Artifact,
     signer: Signer,
@@ -126,7 +131,7 @@ export async function deployLocalDiamond(
     stateMachineTx: ContractDeployTransaction,
     evm: EVM,
     signer?: Signer
-): Promise<{ address: Address; signer: Signer }> {
+): Promise<DeploymentResult> {
     const usedSigner = signer || Wallet.createRandom();
 
     const libAddress = await deployArtifactLocal(

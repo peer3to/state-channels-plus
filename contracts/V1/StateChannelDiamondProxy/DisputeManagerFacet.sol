@@ -49,8 +49,9 @@ contract DisputeManagerFacet is StateChannelCommon {
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputedForkId];
         require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
-        _commitToDisputeReducedResult(disputeWindow, reducedForkId, block.timestamp, reducedForkGenesisTimestamps);
-        //TODO - emit event
+        _commitToDisputeReducedResult(
+            channelId, disputeWindow, reducedForkId, block.timestamp, reducedForkGenesisTimestamps
+        );
     }
 
     // ********************** Internal/private functions
@@ -92,10 +93,17 @@ contract DisputeManagerFacet is StateChannelCommon {
             delete disputeWindow.evidence.disputeCommitments;
             //The reduced result is this dispute output. Finalize it by making it expired.
             _commitToDisputeReducedResult(
-                disputeWindow, dispute.outputSnapshotDataHash, block.timestamp - getEvidenceTime() - 1, block.timestamp
+                dispute.channelId,
+                disputeWindow,
+                dispute.outputSnapshotDataHash,
+                block.timestamp - getEvidenceTime() - 1,
+                block.timestamp
             );
         }
-        disputeWindow.evidence.disputeCommitments.push(keccak256(abi.encode(dispute)));
+        {
+            bytes32 c = keccak256(abi.encode(dispute));
+            disputeWindow.evidence.disputeCommitments.push(c);
+        }
         disputeWindow.evidence.hasPosted[dispute.disputer] = true; //disputer has posted the dispute
         emit DisputeCommitted(
             dispute.channelId, dispute, block.timestamp, isThresholdFinal, disputeWindow.evidence.creationTimestamp

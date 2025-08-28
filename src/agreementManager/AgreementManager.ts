@@ -45,6 +45,7 @@ class AgreementManager {
         const thresholdAddresses = new Set<Address>(
             this.storage.getParticipants(block.coordinates)
         );
+        if (thresholdAddresses.size === 0) return false;
 
         return SetUtils.isSubset(thresholdAddresses, block.allSignerAddresses);
     }
@@ -203,7 +204,7 @@ class AgreementManager {
                 currentBlock.signedBlock
             );
 
-            for (const signature of currentBlock.confirmationSignatures) {
+            for (const signature of currentBlock.allSignatures) {
                 const participantAddress =
                     currentBlock.signatureToAddress(signature);
 
@@ -212,7 +213,10 @@ class AgreementManager {
                     requiredSignersSet.has(participantAddress)
                 ) {
                     requiredSignersSet.delete(participantAddress);
-                    filteredBlock.expandSignatures([signature]);
+                    // don't expand the confirmation signatures with the authors signature
+                    if (participantAddress !== currentBlock.author) {
+                        filteredBlock.expandSignatures([signature]);
+                    }
                 }
             }
 

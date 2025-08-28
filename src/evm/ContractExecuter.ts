@@ -15,6 +15,10 @@ export default class ContractExecuter {
         return decodeErrorProxy(this);
     }
 
+    getContractAddress(): Address {
+        return this.contractAddress;
+    }
+
     async executeCall(data: Bytes): Promise<ExecResult> {
         const result = await this.evm.runCall({
             data: ethers.getBytes(data),

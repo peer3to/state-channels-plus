@@ -17,6 +17,7 @@ describe("QueueStorage", () => {
     let storage: QueueStorage;
     let mockSignedBlock: SignedBlockStruct;
     let mockBlockConfirmation: BlockConfirmationStruct;
+    let mockBlock: Block;
     let mockForkId: ForkId;
     let mockHeight: BlockHeight;
 
@@ -27,61 +28,57 @@ describe("QueueStorage", () => {
             signedBlock: mockSignedBlock
         });
 
-        const block = Block.decode(mockSignedBlock.encodedBlock);
-        const { forkId, height } = block.coordinates;
+        mockBlock = Block.fromSignedBlock(mockSignedBlock);
+        const { forkId, height } = mockBlock.coordinates;
         mockForkId = forkId;
         mockHeight = height;
     });
 
     describe("Queue Operations", () => {
-        it("should queue blocks and convert SignedBlock to BlockConfirmationStruct", () => {
-            const confirmation = {
-                signedBlock: mockSignedBlock,
-                signatures: [mockSignedBlock.signature]
-            };
-
-            const hash = storage.queueBlock(mockSignedBlock);
-            expect(storage.isBlockQueued(confirmation)).to.be.true;
-            expect(storage.isBlockQueued(confirmation, { hash })).to.be.true;
+        it("should queue blocks", () => {
+            const hash = storage.queueBlock(mockBlock);
+            expect(storage.isBlockQueued(mockBlock)).to.be.true;
+            expect(storage.isBlockQueued(mockBlock, { hash })).to.be.true;
         });
 
         it("should queue multiple blocks on same coordinates", () => {
-            const block1 = factory.signedBlock({
-                encodedBlock: factory
-                    .block({
-                        transaction: factory.transaction({
-                            header: factory.transactionHeader({
-                                forkId: mockForkId,
-                                transactionCnt: mockHeight
+            const block1 = Block.fromSignedBlock(
+                factory.signedBlock({
+                    encodedBlock: factory
+                        .block({
+                            transaction: factory.transaction({
+                                header: factory.transactionHeader({
+                                    forkId: mockForkId,
+                                    transactionCnt: mockHeight
+                                })
                             })
                         })
-                    })
-                    .encode()
-            });
+                        .encode()
+                })
+            );
 
-            const block2 = factory.signedBlock({
-                encodedBlock: factory
-                    .block({
-                        transaction: factory.transaction({
-                            header: factory.transactionHeader({
-                                forkId: mockForkId,
-                                transactionCnt: mockHeight
+            const block2 = Block.fromSignedBlock(
+                factory.signedBlock({
+                    encodedBlock: factory
+                        .block({
+                            transaction: factory.transaction({
+                                header: factory.transactionHeader({
+                                    forkId: mockForkId,
+                                    transactionCnt: mockHeight
+                                })
                             })
                         })
-                    })
-                    .encode()
-            });
+                        .encode()
+                })
+            );
 
             storage.queueBlock(block1);
             storage.queueBlock(block2);
 
-            const dequeued = storage.tryDequeueConfirmations(
-                mockForkId,
-                mockHeight
-            );
+            const dequeued = storage.tryDequeue(mockForkId, mockHeight);
             expect(dequeued).to.have.lengthOf(2);
-            expect(dequeued[0].signedBlock).to.equal(block1);
-            expect(dequeued[1].signedBlock).to.equal(block2);
+            expect(dequeued[0].equals(block1)).to.be.true;
+            expect(dequeued[1].equals(block2)).to.be.true;
         });
     });
 
@@ -92,100 +89,96 @@ describe("QueueStorage", () => {
             const uniqueSig2 = sig();
 
             // First confirmation
-            storage.queueConfirmation({
-                ...mockBlockConfirmation,
-                signatures: [sharedSig, uniqueSig1]
-            });
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [sharedSig, uniqueSig1]
+                })
+            );
 
             // Second confirmation with shared signature
-            storage.queueConfirmation({
-                ...mockBlockConfirmation,
-                signatures: [sharedSig, uniqueSig2]
-            });
-
-            const dequeued = storage.tryDequeueConfirmations(
-                mockForkId,
-                mockHeight
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [sharedSig, uniqueSig2]
+                })
             );
+
+            const dequeued = storage.tryDequeue(mockForkId, mockHeight);
             expect(dequeued).to.have.lengthOf(1);
-            expect(dequeued[0].signatures).to.have.lengthOf(3);
-            expect(dequeued[0].signatures).to.include.members([
-                sharedSig,
-                uniqueSig1,
-                uniqueSig2
-            ]);
+            expect(dequeued[0].confirmationSignatures.size).to.equal(3);
+            expect(dequeued[0].confirmationSignatures).to.deep.equal(
+                new Set([sharedSig, uniqueSig1, uniqueSig2])
+            );
         });
 
         it("should merge signatures with existing queued block", () => {
-            storage.queueBlock(mockSignedBlock);
-            storage.queueConfirmation({
-                ...mockBlockConfirmation,
-                signatures: [sig(), sig()]
-            });
-
-            const dequeued = storage.tryDequeueConfirmations(
-                mockForkId,
-                mockHeight
+            storage.queueBlock(mockBlock);
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [sig(), sig()]
+                })
             );
+
+            const dequeued = storage.tryDequeue(mockForkId, mockHeight);
             expect(dequeued).to.have.lengthOf(1);
-            expect(dequeued[0].signatures).to.have.lengthOf(2);
+            expect(dequeued[0].confirmationSignatures.size).to.equal(2);
         });
     });
 
     describe("Dequeue Operations", () => {
         it("should allow multiple dequeues on different coordinates", () => {
-            const block1 = factory.signedBlock({
-                encodedBlock: factory
-                    .block({
-                        transaction: factory.transaction({
-                            header: factory.transactionHeader({
-                                forkId: mockForkId,
-                                transactionCnt: mockHeight
+            const block1 = Block.fromSignedBlock(
+                factory.signedBlock({
+                    encodedBlock: factory
+                        .block({
+                            transaction: factory.transaction({
+                                header: factory.transactionHeader({
+                                    forkId: mockForkId,
+                                    transactionCnt: mockHeight
+                                })
                             })
                         })
-                    })
-                    .encode()
-            });
+                        .encode()
+                })
+            );
 
-            const block2 = factory.signedBlock({
-                encodedBlock: factory
-                    .block({
-                        transaction: factory.transaction({
-                            header: factory.transactionHeader({
-                                forkId: mockForkId,
-                                transactionCnt: mockHeight + 1
+            const block2 = Block.fromSignedBlock(
+                factory.signedBlock({
+                    encodedBlock: factory
+                        .block({
+                            transaction: factory.transaction({
+                                header: factory.transactionHeader({
+                                    forkId: mockForkId,
+                                    transactionCnt: mockHeight + 1
+                                })
                             })
                         })
-                    })
-                    .encode()
-            });
+                        .encode()
+                })
+            );
 
             storage.queueBlock(block1);
             storage.queueBlock(block2);
 
-            const dequeued1 = storage.tryDequeueConfirmations(
-                mockForkId,
-                mockHeight
-            );
-            const dequeued2 = storage.tryDequeueConfirmations(
-                mockForkId,
-                mockHeight + 1
-            );
+            const dequeued1 = storage.tryDequeue(mockForkId, mockHeight);
+            const dequeued2 = storage.tryDequeue(mockForkId, mockHeight + 1);
 
             expect(dequeued1).to.have.lengthOf(1);
             expect(dequeued2).to.have.lengthOf(1);
-            expect(dequeued1[0].signedBlock).to.equal(block1);
-            expect(dequeued2[0].signedBlock).to.equal(block2);
+            expect(dequeued1[0].equals(block1)).to.be.true;
+            expect(dequeued2[0].equals(block2)).to.be.true;
         });
 
         it("should return empty on subsequent dequeues", () => {
-            storage.queueBlock(mockSignedBlock);
-            expect(
-                storage.tryDequeueConfirmations(mockForkId, mockHeight)
-            ).to.have.lengthOf(1);
-            expect(
-                storage.tryDequeueConfirmations(mockForkId, mockHeight)
-            ).to.deep.equal([]);
+            storage.queueBlock(mockBlock);
+            expect(storage.tryDequeue(mockForkId, mockHeight)).to.have.lengthOf(
+                1
+            );
+            expect(storage.tryDequeue(mockForkId, mockHeight)).to.deep.equal(
+                []
+            );
         });
     });
 
@@ -202,22 +195,26 @@ describe("QueueStorage", () => {
             });
             const originalCount = originalConfirmation.signatures.length;
 
-            storageWithProxy.queues.queueConfirmation(originalConfirmation);
-            storageWithProxy.queues.queueConfirmation({
-                ...mockBlockConfirmation,
-                signatures: [sig()]
-            });
+            storageWithProxy.queues.queueBlock(
+                Block.fromBlockConfirmation(originalConfirmation)
+            );
+            storageWithProxy.queues.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [sig()]
+                })
+            );
 
             // Original object should be unchanged
             expect(originalConfirmation.signatures).to.have.lengthOf(
                 originalCount
             );
 
-            const dequeued = storageWithProxy.queues.tryDequeueConfirmations(
+            const dequeued = storageWithProxy.queues.tryDequeue(
                 mockForkId,
                 mockHeight
             );
-            expect(dequeued[0].signatures.length).to.be.greaterThan(
+            expect(dequeued[0].confirmationSignatures.size).to.be.greaterThan(
                 originalCount
             );
         });
@@ -228,25 +225,31 @@ describe("QueueStorage", () => {
                 signatures: [sig()]
             });
 
-            storageWithProxy.queues.queueConfirmation(confirmation);
-            const dequeued = storageWithProxy.queues.tryDequeueConfirmations(
+            storageWithProxy.queues.queueBlock(
+                Block.fromBlockConfirmation(confirmation)
+            );
+            const dequeued = storageWithProxy.queues.tryDequeue(
                 mockForkId,
                 mockHeight
             );
-            const originalCount = dequeued[0].signatures.length;
+            const originalCount = dequeued[0].confirmationSignatures.size;
 
             // Modify dequeued object
-            dequeued[0].signatures.push(sig());
+            dequeued[0].expandSignatures([sig()]);
 
             // Queue same confirmation again
-            storageWithProxy.queues.queueConfirmation(confirmation);
-            const dequeued2 = storageWithProxy.queues.tryDequeueConfirmations(
+            storageWithProxy.queues.queueBlock(
+                Block.fromBlockConfirmation(confirmation)
+            );
+            const dequeued2 = storageWithProxy.queues.tryDequeue(
                 mockForkId,
                 mockHeight
             );
 
             // Storage should not be affected
-            expect(dequeued2[0].signatures).to.have.lengthOf(originalCount);
+            expect(dequeued2[0].confirmationSignatures.size).to.equal(
+                originalCount
+            );
         });
     });
 });

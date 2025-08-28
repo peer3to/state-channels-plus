@@ -8,7 +8,7 @@ import {
 
 export enum FraudProofType {
     // Block related fraud proofs
-    BlockDoubleSign,
+    BlockDoubleSign = 100,
     BlockInvalidStateTransition,
     // Timeout related fraud proofs
     InvalidTimestamp

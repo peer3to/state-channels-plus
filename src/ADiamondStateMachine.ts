@@ -26,11 +26,6 @@ abstract class ADiamondStateMachine {
     public abstract getTotalStateBalance(): Promise<BalanceStruct>;
 
     public abstract getZeroBalance(): Promise<BalanceStruct>;
-
-    public abstract isForkDisputed(
-        channelId: ChannelId,
-        forkId: ForkId
-    ): Promise<boolean>;
 }
 
 export default ADiamondStateMachine;

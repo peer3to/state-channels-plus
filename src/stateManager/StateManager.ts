@@ -22,8 +22,8 @@ import {
 
 // TypeChain types - Dispute types
 import {
-    SignedDisputeStruct,
-    DisputeStruct
+    DisputeStruct,
+    SignedDisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 // TypeChain types - Contract interfaces
@@ -70,7 +70,8 @@ import {
 } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
-import { DisputeStorage } from "@/storage/DisputeStorage";
+import DisputeStorage from "@/storage/DisputeStorage";
+import LocalDiamondSigner from "@/evm/LocalDiamondSigner";
 
 let DEBUG_STATE_MANAGER = false;
 
@@ -93,6 +94,7 @@ class StateManager {
     validationService: ValidationService;
     storage: Storage;
     fraudProofService: FraudProofService;
+    localDiamondContract: LocalDiamond;
 
     private latestForkId: ForkId = NULL;
     private dispatcher = new Map([
@@ -109,7 +111,8 @@ class StateManager {
         diamondStateMachine: ADiamondStateMachine,
         timeConfig: TimeConfig,
         p2pEventHooks: P2pEventHooks,
-        storage: Storage
+        storage: Storage,
+        localDiamondContract: LocalDiamond
     ) {
         this.signerAddress = signerAddress;
         this.diamondStateMachine = diamondStateMachine;
@@ -117,10 +120,13 @@ class StateManager {
         this.timeConfig = timeConfig;
         this.stateChannelManagerContract = stateChannelManagerContract;
         this.storage = storage;
+        this.localDiamondContract = localDiamondContract;
+
         this.stateChannelEventListener = new StateChannelEventListener(
             this.self,
             this.stateChannelManagerContract,
-            this.p2pEventHooks
+            this.p2pEventHooks,
+            this.localDiamondContract
         );
         this.agreementManager = new AgreementManager(this.storage);
         this.disputeHandler = new DisputeHandler(
@@ -139,7 +145,8 @@ class StateManager {
             this.stateChannelManagerContract,
             this.timeConfig,
             this.channelId,
-            () => this.forkId
+            () => this.forkId,
+            this.localDiamondContract
         );
     }
     //Mark resources for garbage collection
@@ -223,7 +230,7 @@ class StateManager {
         const nextBlockHeight = this.storage.blocks.getNextBlockHeight(
             this.forkId
         );
-        const blockConfirmations = this.storage.queues.tryDequeueConfirmations(
+        const blockConfirmations = this.storage.queues.tryDequeue(
             this.forkId,
             nextBlockHeight
         );
@@ -1111,11 +1118,9 @@ class StateManager {
 
     // ----- Event handlers -----
     public async onDisputeCommitted(
-        encodedDispute: string,
+        dispute: DisputeStruct,
         timestamp: Timestamp
     ) {
-        const dispute = Codec.decode(encodedDispute, Type.Dispute);
-
         // Validate dispute
         const valid = await this.validationService.validateDispute(
             dispute,

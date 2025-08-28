@@ -1,6 +1,5 @@
 import { Block } from "@/models";
 import { Hash, ForkId, BlockHeight } from "@/types/types";
-import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export class QueueStorage {
     private queuedBlocks: Map<Hash, Block> = new Map();
@@ -29,14 +28,8 @@ export class QueueStorage {
         return block.hash;
     }
 
-    /** Queue a block confirmation for future processing */
-    queueConfirmation(blockConfirmation: BlockConfirmationStruct): Hash {
-        const block = Block.fromBlockConfirmation(blockConfirmation);
-        return this.queueBlock(block);
-    }
-
     /** Try to dequeue confirmations for a specific fork/height */
-    tryDequeueConfirmations(forkId: ForkId, height: BlockHeight): Block[] {
+    tryDequeue(forkId: ForkId, height: BlockHeight): Block[] {
         const coordinateKey = this.coordinatesToKey(forkId, height);
         const hashSet = this.blocksByCoordinates.get(coordinateKey);
 
@@ -63,11 +56,8 @@ export class QueueStorage {
         return blocks;
     }
 
-    isBlockQueued(
-        blockConfirmation: Block,
-        options?: { hash?: Hash }
-    ): boolean {
-        const blockHash = options?.hash || blockConfirmation.hash;
+    isBlockQueued(block: Block, options?: { hash?: Hash }): boolean {
+        const blockHash = options?.hash || block.hash;
 
         if (!this.queuedBlocks.has(blockHash)) {
             return false;
@@ -76,7 +66,7 @@ export class QueueStorage {
         const existingBlockConfirmation = this.queuedBlocks.get(blockHash);
         if (existingBlockConfirmation) {
             existingBlockConfirmation.expandSignatures(
-                blockConfirmation.confirmationSignatures
+                block.confirmationSignatures
             );
             this.queuedBlocks.set(blockHash, existingBlockConfirmation);
         }
