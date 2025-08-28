@@ -21,7 +21,10 @@ import {
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 // TypeChain types - Dispute types
-import { SignedDisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    SignedDisputeStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 // TypeChain types - Contract interfaces
 import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
@@ -67,6 +70,7 @@ import {
 } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
+import { DisputeStorage } from "@/storage/DisputeStorage";
 
 let DEBUG_STATE_MANAGER = false;
 
@@ -662,42 +666,45 @@ class StateManager {
                 );
 
             while (isDisputed) {
-                // Check if reduce challenge period has expired
-                const isChallengePeriodExpired =
-                    await this.stateChannelManagerContract.isReduceChallengePeriodExpired(
-                        this.channelId,
-                        currentForkId
-                    );
-
-                if (!isChallengePeriodExpired) {
-                    console.log(
-                        `Challenge period not expired for fork ${currentForkId}`
-                    );
-                    break;
-                }
-
-                // TODO, this is not implemented yet
-                // Get the dispute data from the DisputeHandler for this fork
-                const dispute =
-                    this.stateChannelManagerContract.getDisputeCommitments(
-                        currentForkId
-                    );
-
-                // If reduced result already exists on-chain, skip reduce/commit
-                const reducedOutput =
+                // If reduced result already exists on-chain, traverse to it
+                const existingReducedResult =
                     await this.stateChannelManagerContract.getReducedResult(
                         this.channelId,
                         currentForkId
                     );
-                if (reducedOutput[0]) {
-                    currentForkId = reducedOutput[0];
-                    // Check if the next fork has a dispute window
+                if (existingReducedResult[0]) {
+                    currentForkId = existingReducedResult[0];
                     isDisputed =
                         await this.stateChannelManagerContract.isForkDisputed(
                             this.channelId,
                             currentForkId
                         );
                     continue;
+                }
+
+                // Fetch dispute commitments for this window
+                const disputeCommitments =
+                    await this.stateChannelManagerContract.getWindowCommitments(
+                        this.channelId,
+                        currentForkId
+                    );
+                if (!disputeCommitments || disputeCommitments.length === 0) {
+                    // Nothing to reduce; wait for more data
+                    break;
+                }
+
+                // Build Dispute[] from local storage;
+                // TODO, implement getDispute(commitment)
+                const disputes: DisputeStruct[] = [];
+                for (const commitment of disputeCommitments) {
+                    const dispute =
+                        this.storage.disputes.getDispute(commitment);
+                    if (!dispute) {
+                        throw new Error(
+                            `Missing Data Availability for dispute commitment ${commitment}`
+                        );
+                    }
+                    disputes.push(dispute);
                 }
 
                 // Get the dispute window creation timestamp from the on-chain contract
@@ -707,56 +714,19 @@ class StateManager {
                         currentForkId
                     );
 
-                // Call reduce on-chain to get the reduced result
-                const reducedOutput =
-                    await this.stateChannelManagerContract.reduce(
-                        [dispute],
-                        creationTimestamp
-                    );
-
-                // TODO, this is not implemented yet
-                // Also run reduce locally in the local EVM for validation
-                const localReducedOutput =
-                    await this.diamondStateMachine.reduce(
-                        [dispute],
-                        creationTimestamp
-                    );
-
-                // Validate that on-chain and local results match
-                if (
-                    reducedOutput.latestBlock.stateSnapshotHash !==
-                    localReducedOutput.latestBlock.stateSnapshotHash
-                ) {
-                    console.error(
-                        `On-chain and local reduce results don't match! On-chain: ${reducedOutput.latestBlock.stateSnapshotHash}, Local: ${localReducedOutput.latestBlock.stateSnapshotHash}`
-                    );
-                    throw new Error(
-                        "On-chain and local reduce results don't match"
-                    );
-                }
-
-                console.log(
-                    `Reduced fork ${currentForkId} -> ${reducedOutput.latestBlock.stateSnapshotHash} (validated locally)`
+                // Reduce on-chain to obtain the reduced fork id
+                await this.stateChannelManagerContract.reduce(
+                    disputes,
+                    creationTimestamp
                 );
-
-                // Commit the reduced result to the dispute window so we can traverse the chain
-                const commitTx =
-                    await this.stateChannelManagerContract.commitToReducedResult(
+                const reducedResult =
+                    await this.stateChannelManagerContract.getReducedResult(
                         this.channelId,
-                        currentForkId,
-                        reducedOutput.latestBlock.stateSnapshotHash,
-                        reducedOutput.forkGenesisTimestamp
+                        currentForkId
                     );
 
-                await commitTx.wait();
-                console.log(
-                    `Committed reduced result for fork ${currentForkId}`
-                );
-
-                // Move to the next fork in the chain
-                currentForkId = reducedOutput.latestBlock.stateSnapshotHash;
-
-                // Check if the next fork has a dispute window
+                // Traverse to the reduced fork
+                currentForkId = reducedResult[0];
                 isDisputed =
                     await this.stateChannelManagerContract.isForkDisputed(
                         this.channelId,
