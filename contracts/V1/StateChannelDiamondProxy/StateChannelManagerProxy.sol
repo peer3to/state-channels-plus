@@ -409,6 +409,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     function reduce(Dispute[] memory disputes, uint256 disputeWindowCreationTimestamp)
         public
+        override
         returns (ReduceOutput memory reducedOutput)
     {
         bytes memory result = _delegatecall(
@@ -429,6 +430,22 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
             abi.encodeCall(
                 disputeManagerFacet.commitToReducedResult,
                 (channelId, disputedForkId, reducedForkId, reducedForkGenesisTimestamps)
+            )
+        );
+    }
+
+    function reduceAndFinalize(
+        Dispute[] memory disputes,
+        uint256 disputeWindowCreationTimestamp,
+        StateSnapshot memory stateSnapshot,
+        bytes memory encodedStateMachineState,
+        JoinChannelBlock[] memory joinChannelBlocks
+    ) public override {
+        _delegatecall(
+            address(disputeVerificationFacet),
+            abi.encodeCall(
+                disputeVerificationFacet.reduceAndFinalize,
+                (disputes, disputeWindowCreationTimestamp, stateSnapshot, encodedStateMachineState, joinChannelBlocks)
             )
         );
     }

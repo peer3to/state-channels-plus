@@ -23,6 +23,7 @@ import {
 // TypeChain types - Dispute types
 import {
     DisputeStruct,
+    ReduceOutputStruct,
     SignedDisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
@@ -70,7 +71,7 @@ import {
 } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
-import DisputeStorage from "@/storage/DisputeStorage";
+import { DisputeStorage } from "@/storage/DisputeStorage";
 import LocalDiamondSigner from "@/evm/LocalDiamondSigner";
 
 let DEBUG_STATE_MANAGER = false;
@@ -672,6 +673,17 @@ class StateManager {
                     currentForkId
                 );
 
+            // Get the genesis snapshot
+            const genesisSnapshot =
+                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                    currentForkId
+                );
+            if (!genesisSnapshot) {
+                throw new Error(
+                    `No genesis snapshot found for fork ${currentForkId}`
+                );
+            }
+
             while (isDisputed) {
                 // If reduced result already exists on-chain, traverse to it
                 const existingReducedResult =
@@ -679,6 +691,7 @@ class StateManager {
                         this.channelId,
                         currentForkId
                     );
+                // if reduceResult exists and is final
                 if (existingReducedResult[0]) {
                     currentForkId = existingReducedResult[0];
                     isDisputed =
@@ -700,7 +713,7 @@ class StateManager {
                     break;
                 }
 
-                // Build Dispute[] from local storage confirmations
+                // Build disputes from local storage confirmations
                 const disputes: DisputeStruct[] = [];
                 for (const commitment of disputeCommitments) {
                     const confirmation =
@@ -726,11 +739,69 @@ class StateManager {
                         currentForkId
                     );
 
-                // Reduce on-chain to obtain the reduced fork id
-                await this.stateChannelManagerContract.reduce(
+                // Get the genesis snapshot for the current fork ID
+                const forkSnapshot =
+                    this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                        currentForkId
+                    );
+                if (!forkSnapshot) {
+                    throw new Error(
+                        `No genesis snapshot found for fork ${currentForkId}`
+                    );
+                }
+
+                // Get the encoded state machine state for this fork
+                const encodedStateMachineState =
+                    this.storage.stateMachineStates.getStateMachineState(
+                        forkSnapshot.snapshotData.stateMachineStateHash
+                    );
+                if (!encodedStateMachineState) {
+                    throw new Error(
+                        "Encoded state for reduceAndFinalize not found in local storage"
+                    );
+                }
+                // Build join channel blocks for THIS fork
+                let latestJoinChannelBlockHash =
+                    genesisSnapshot.snapshotData.latestJoinChannelBlockHash;
+                let currentForkJoinChannelBlockHash =
+                    forkSnapshot.snapshotData.latestJoinChannelBlockHash;
+                let joinChannelBlocks: JoinChannelBlockStruct[] = [];
+                let currentJoinChannelBlock =
+                    this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
+                        latestJoinChannelBlockHash
+                    );
+
+                while (
+                    currentJoinChannelBlock &&
+                    latestJoinChannelBlockHash !==
+                        currentForkJoinChannelBlockHash
+                ) {
+                    joinChannelBlocks.unshift(currentJoinChannelBlock.block);
+                    currentJoinChannelBlock =
+                        this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
+                            currentJoinChannelBlock.block.previousBlockHash
+                        );
+                    if (!currentJoinChannelBlock) {
+                        break;
+                    }
+                    latestJoinChannelBlockHash = ethers.keccak256(
+                        Codec.encode(
+                            currentJoinChannelBlock.block,
+                            Type.JoinChannelBlock
+                        )
+                    );
+                }
+
+                // Reduce and finalize on-chain to obtain the reduced fork id
+                await this.stateChannelManagerContract.reduceAndFinalize(
                     disputes,
-                    creationTimestamp
+                    creationTimestamp,
+                    forkSnapshot.toStruct(),
+                    encodedStateMachineState,
+                    joinChannelBlocks
                 );
+
+                // Read canonical reduced result from chain and traverse
                 const reducedResult =
                     await this.stateChannelManagerContract.getReducedResult(
                         this.channelId,
@@ -746,14 +817,31 @@ class StateManager {
                     );
             }
 
-            // Get the genesis snapshot
-            const genesisSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                    currentForkId
+            // Build exit blocks
+            let latestExitBlockHash =
+                genesisSnapshot.snapshotData.latestExitChannelBlockHash;
+            let currentOnChainExitBlockHash =
+                currentOnChainSnapshot.snapshotData.latestExitChannelBlockHash;
+            let exitBlocks: ExitChannelBlockStruct[] = [];
+            let currentExitBlock =
+                this.storage.exitChannelBlocks.getExitChannelBlockEntry(
+                    latestExitBlockHash
                 );
-            if (!genesisSnapshot) {
-                throw new Error(
-                    `No genesis snapshot found for fork ${currentForkId}`
+
+            while (
+                currentExitBlock &&
+                latestExitBlockHash !== currentOnChainExitBlockHash
+            ) {
+                exitBlocks.unshift(currentExitBlock.block);
+                currentExitBlock =
+                    this.storage.exitChannelBlocks.getExitChannelBlockEntry(
+                        currentExitBlock.block.previousBlockHash
+                    );
+                if (!currentExitBlock) {
+                    break;
+                }
+                latestExitBlockHash = ethers.keccak256(
+                    Codec.encode(currentExitBlock.block, Type.ExitChannelBlock)
                 );
             }
 
@@ -762,7 +850,7 @@ class StateManager {
                 await this.stateChannelManagerContract.updateStateSnapshotFork(
                     this.channelId,
                     genesisSnapshot.toStruct(),
-                    []
+                    exitBlocks
                 );
             await txResponse.wait();
             console.log(

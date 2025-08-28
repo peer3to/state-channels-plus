@@ -88,4 +88,17 @@ abstract contract StateChannelManagerInterface {
     function isForkDisputed(bytes32 channelId, bytes32 forkId) public view virtual returns (bool);
 
     function multicall(bytes[] calldata calls) external virtual returns (bytes[] memory results);
+
+    function reduce(Dispute[] memory disputes, uint256 disputeWindowCreationTimestamp)
+        public
+        virtual
+        returns (ReduceOutput memory);
+
+    function reduceAndFinalize(
+        Dispute[] memory disputes,
+        uint256 disputeWindowCreationTimestamp,
+        StateSnapshot memory stateSnapshot,
+        bytes memory encodedStateMachineState,
+        JoinChannelBlock[] memory joinChannelBlocks
+    ) public virtual;
 }
