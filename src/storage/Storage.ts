@@ -75,7 +75,7 @@ export class Storage {
         );
     }
 
-    private getPreviousStateSnapshot(
+    getPreviousStateSnapshot(
         coordinates: BlockCoordinates
     ): StateSnapshot | undefined {
         return this.getStateSnapshot({

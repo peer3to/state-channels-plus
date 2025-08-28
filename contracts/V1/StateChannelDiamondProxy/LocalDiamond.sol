@@ -174,4 +174,13 @@ contract LocalDiamond is StateChannelManagerProxy {
             keyToDelete = nextKeyToDelete;
         }
     }
+
+    function getLatestJoinChannelBlockHash(bytes32 channelId) public view returns (bytes32) {
+        return channelBalances[channelId].latestJoinChannelBlockHash;
+    }
+
+    function getTotalDeposits(bytes32 channelId) public view returns (Balance memory) {
+        bytes32 latestJoinChannelBlockHash = channelBalances[channelId].latestJoinChannelBlockHash;
+        return channelBalances[channelId].onChainJoinChannelMap[latestJoinChannelBlockHash].totalDeposits;
+    }
 }
