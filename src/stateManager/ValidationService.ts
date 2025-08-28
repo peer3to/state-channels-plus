@@ -302,6 +302,7 @@ export default class ValidationService {
         previousblockOrSnapshot: BlockOrSnapshot,
         channelId: ChannelId
     ): Promise<ValidationResult | undefined> {
+        // Calculate previousTimestamp
         let previousTimestamp: Timestamp;
         let previousBlock: Block | undefined;
         let previousStateSnapshot: StateSnapshot | undefined;
@@ -316,18 +317,19 @@ export default class ValidationService {
             previousTimestamp = previousStateSnapshot!.timestamp;
         }
 
+        // OBJECTIVE: isValidTimestamp check
         const isValidTimestamp =
             block.timestamp >= previousTimestamp &&
             block.timestamp <= previousTimestamp + this.timeConfig.p2pTime;
 
         if (!isValidTimestamp) {
             if (
-                block.height <= 0 || // genesis block
-                previousBlock === undefined || // no previous block == genesis block
+                // first block
+                previousBlock === undefined ||
+                //  has on-chain timestamp
                 previousBlock.onChainTimestamp !== undefined
             ) {
-                // already has best timestamp
-                // no point in trying to update the timestamp => fraud proof
+                // Already has best timestamp - persist InvalidTimestamp fraud proof
                 this.fraudProofService.createInvalidTimestampProof(block);
                 return {
                     shouldDisconnect: true,
@@ -335,14 +337,15 @@ export default class ValidationService {
                 };
             }
 
-            // try to fetch later timestamp from on-chain data
+            // Try on-chain query to update block on-chain timestamp
             const onChainTimestamp = await this.fetchOnChainTimestamp(
                 previousBlock,
                 channelId
             );
 
-            // Early return: Couldn't fetch or not better than current
+            // onChainTimestamp updated?
             if (!onChainTimestamp || onChainTimestamp <= previousTimestamp) {
+                // False - persist InvalidTimestamp fraud proof
                 this.fraudProofService.createInvalidTimestampProof(block);
                 return {
                     shouldDisconnect: true,
@@ -350,7 +353,7 @@ export default class ValidationService {
                 };
             }
 
-            // Update the previous block with the on-chain timestamp
+            // True - Update the previous block with the on-chain timestamp
             previousBlock.onChainTimestamp = onChainTimestamp;
             this.storage.blocks.setOnChainTimestamp(
                 previousBlock.forkId,
@@ -358,37 +361,46 @@ export default class ValidationService {
                 onChainTimestamp
             );
 
-            // Re-validate with updated timestamp
-            const isValidTimestamp =
-                block.timestamp >= onChainTimestamp &&
-                block.timestamp <= onChainTimestamp + this.timeConfig.p2pTime;
-
-            if (!isValidTimestamp) {
-                this.fraudProofService.createInvalidTimestampProof(block);
-                return {
-                    shouldDisconnect: true,
-                    action: BlockValidationAction.DISPUTE
-                };
-            }
-            // If valid, continue with rest of validation
-
-            if (
-                block.onChainTimestamp === undefined ||
-                block.onChainTimestamp <= block.timestamp
-            ) {
-                if (
-                    Math.abs(Clock.getTimeInSeconds() - block.timestamp) >=
-                    this.timeConfig.agreementTime
-                ) {
-                    return {
-                        shouldDisconnect: false,
-                        action: BlockValidationAction.NOT_ENOUGH_TIME
-                    };
-                }
-            }
+            // Recursive call - go back to start of validation  with updated previous block
+            return this.validateTimeLogic(
+                block,
+                { block: previousBlock },
+                channelId
+            );
         }
 
-        return; // Time validation passed
+        // OBJECTIVE: Check if block was posted too late on-chain
+        const currentBlockTimestamp = block.onChainTimestamp ?? block.timestamp;
+        const maxAllowedTimestamp =
+            previousTimestamp +
+            this.timeConfig.p2pTime +
+            this.timeConfig.agreementTime +
+            this.timeConfig.chainFallbackTime;
+
+        if (currentBlockTimestamp > maxAllowedTimestamp) {
+            // Block posted too late - create InvalidTimestamp fraud proof
+            this.fraudProofService.createInvalidTimestampProof(block);
+            return {
+                shouldDisconnect: true,
+                action: BlockValidationAction.DISPUTE
+            };
+        }
+
+        if (block.onChainTimestamp !== undefined) return;
+
+        // SUBJECTIVE: hasOnChainTimestamp check
+        const receivedWithinAgreementTime =
+            Math.abs(Clock.getTimeInSeconds() - block.timestamp) <=
+            this.timeConfig.agreementTime;
+
+        if (!receivedWithinAgreementTime) {
+            return {
+                shouldDisconnect: false,
+                action: BlockValidationAction.NOT_ENOUGH_TIME
+            };
+        }
+
+        return;
     }
 
     // ────────────────────── Helpers ─────────────────────
