@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import AgreementManager from "./agreementManager";
-import { AStateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerProxy } from "@typechain-types";
 import {
     ProofStruct,
     DisputeStruct
@@ -21,7 +21,7 @@ class DisputeHandler {
     signer: ethers.Signer;
     signerAddress: Address;
     agreementManager: AgreementManager;
-    stateChannelManagerContract: AStateChannelManagerProxy;
+    stateChannelManagerContract: StateChannelManagerProxy;
     channelId: ChannelId;
     localProofs: Map<ForkId, ProofStruct[]> = new Map();
     disputes: Map<ForkId, DisputeStruct> = new Map();
@@ -35,7 +35,7 @@ class DisputeHandler {
         signer: ethers.Signer,
         signerAddress: Address,
         agreementManager: AgreementManager,
-        stateChannelManagerContract: AStateChannelManagerProxy,
+        stateChannelManagerContract: StateChannelManagerProxy,
         p2pEventHooks: P2pEventHooks
     ) {
         this.channelId = channelId;
@@ -176,8 +176,10 @@ class DisputeHandler {
         const {
             encodedLatestFinalizedState,
             encodedLatestCorrectState,
-            virtualVotingBlocks
-        } = this.agreementManager.getFinalizedAndLatestWithVotes(
+            virtualVotingBlocks,
+            milestoneProofs,
+            milestoneSnapshots
+        } = this.agreementManager.getFinalizedAndLatestWithMilestones(
             forkId,
             this.signerAddress
         );
@@ -258,8 +260,10 @@ class DisputeHandler {
             const {
                 encodedLatestFinalizedState,
                 encodedLatestCorrectState,
-                virtualVotingBlocks
-            } = this.agreementManager.getFinalizedAndLatestWithVotes(
+                virtualVotingBlocks,
+                milestoneProofs,
+                milestoneSnapshots
+            } = this.agreementManager.getFinalizedAndLatestWithMilestones(
                 dispute.forkId,
                 this.signerAddress
             );

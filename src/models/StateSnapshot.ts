@@ -5,7 +5,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Codec, Type } from "../utils/Codec";
 
-import { Bytes, ForkId, Hash, Timestamp } from "@/types/types";
+import { BlockHeight, Bytes, ForkId, Hash, Timestamp } from "@/types/types";
 import { SnapshotDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 export default class StateSnapshot {
@@ -48,6 +48,10 @@ export default class StateSnapshot {
         return Number(this.snapshot.timestamp);
     }
 
+    get blockHeight(): BlockHeight {
+        return Number(this.snapshot.blockHeight);
+    }
+
     get snapshotData(): SnapshotDataStruct {
         return this.snapshot.snapshotData;
     }
@@ -56,6 +60,10 @@ export default class StateSnapshot {
         return ethers.keccak256(
             Codec.encode(this.snapshot.snapshotData, Type.SnapshotData)
         ) as Hash;
+    }
+
+    get stateMachineStateHash(): Hash {
+        return this.snapshot.snapshotData.stateMachineStateHash;
     }
 
     get isGenesis(): boolean {

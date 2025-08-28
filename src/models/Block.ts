@@ -1,5 +1,9 @@
 import { Signer, ethers } from "ethers";
-import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    BlockStruct,
+    SignedBlockStruct,
+    BlockConfirmationStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import { Codec, Type } from "../utils/Codec";
 import {
     ForkId,
@@ -11,7 +15,8 @@ import {
     Signature,
     Bytes
 } from "@/types/types";
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+
+import { union } from "@/utils";
 
 export type BlockCoordinates = {
     forkId: ForkId;
@@ -21,22 +26,62 @@ export type BlockCoordinates = {
 export default class Block {
     private _onChainTimestamp?: Timestamp;
     private readonly block: BlockStruct;
-    private constructor(block: BlockStruct, onChainTimestamp?: Timestamp) {
+    private _originalSignature: Signature;
+    private _confirmationSignatures: Set<Signature>;
+    private constructor(
+        block: BlockStruct,
+        originalSignature: Signature,
+        confirmationSignatures: Set<Signature>,
+        onChainTimestamp?: Timestamp
+    ) {
         this.block = block;
         this._onChainTimestamp = onChainTimestamp;
+        this._originalSignature = originalSignature;
+        this._confirmationSignatures = confirmationSignatures;
     }
 
-    static from(block: BlockStruct, onChainTimestamp?: Timestamp): Block {
-        return new Block(block, onChainTimestamp);
+    static fromBlockConfirmation(
+        blockConfirmation: BlockConfirmationStruct,
+        onChainTimestamp?: Timestamp
+    ): Block {
+        const block = Codec.decode(
+            blockConfirmation.signedBlock.encodedBlock,
+            Type.Block
+        );
+        return new Block(
+            block,
+            blockConfirmation.signedBlock.signature as Signature,
+            new Set(blockConfirmation.signatures as Signature[]),
+            onChainTimestamp
+        );
+    }
+    static fromSignedBlock(
+        signedBlock: SignedBlockStruct,
+        onChainTimestamp?: Timestamp
+    ): Block {
+        return new Block(
+            Codec.decode(signedBlock.encodedBlock, Type.Block),
+            signedBlock.signature as Signature,
+            new Set(),
+            onChainTimestamp
+        );
     }
 
-    static decode(encodedBlock: Bytes): Block {
-        const block = Codec.decode(encodedBlock, Type.Block);
-        return new Block(block);
-    }
-
-    toStruct(): BlockStruct {
+    get blockStruct(): BlockStruct {
         return this.block;
+    }
+    get signedBlock(): SignedBlockStruct {
+        return {
+            encodedBlock: this.encode(),
+            signature: this._originalSignature as Bytes
+        };
+    }
+
+    get blockConfirmationStruct(): BlockConfirmationStruct {
+        return {
+            signedBlock: this.signedBlock,
+            signatures: Array.from(this.confirmationSignatures) as Bytes[]
+        };
     }
 
     encode(): Bytes {
@@ -69,28 +114,10 @@ export default class Block {
     get onChainTimestamp(): Timestamp | undefined {
         return this._onChainTimestamp;
     }
-    getRelevantTimestamp(
-        nextBlockAuthor: Address,
-        signatures: Signature[] | Bytes[]
-    ): Timestamp {
-        // internal type "conversion" so that the calling context doesnt have to deal with this
-        const sigs = signatures as Signature[];
-        const { didSign } = this.getParticipantSignature(nextBlockAuthor, sigs);
-
-        if (didSign) {
-            // If nextBlockAuthor has signed, return block timestamp
-            return this.timestamp;
-        }
-        // If nextBlockAuthor has NOT signed, return onChainTimestamp (or fallback)
-        return this._onChainTimestamp
-            ? Math.max(this._onChainTimestamp, this.timestamp)
-            : this.timestamp;
-    }
 
     set onChainTimestamp(onChainTimestamp: Timestamp) {
         this._onChainTimestamp = onChainTimestamp;
     }
-
     get author() {
         return this.block.transaction.header.participant as Address;
     }
@@ -111,27 +138,80 @@ export default class Block {
         return this.block.transaction;
     }
 
+    get originalSignature(): Signature {
+        return this._originalSignature;
+    }
+
+    get confirmationSignatures(): Set<Signature> {
+        return this._confirmationSignatures;
+    }
+
+    get allSignatures(): Set<Signature> {
+        return union(
+            this.confirmationSignatures,
+            new Set([this._originalSignature])
+        );
+    }
+
+    get signerAddress(): Address {
+        return this.signatureToAddress(this._originalSignature);
+    }
+    get confirmationSignerAddresses(): Set<Address> {
+        const addresses = new Set<Address>();
+        for (const sig of this.confirmationSignatures) {
+            addresses.add(this.signatureToAddress(sig));
+        }
+        return addresses;
+    }
+
+    get allSignerAddresses(): Set<Address> {
+        return union(
+            this.confirmationSignerAddresses,
+            new Set([this.signerAddress])
+        );
+    }
+
+    async signAsAuthor(signer: Signer): Promise<Block> {
+        const signature = await this.sign(signer);
+        this._originalSignature = signature;
+        return this;
+    }
+    expandSignatures(newSignatures: Signature[] | Set<Signature>): Block {
+        const unionSet = union(
+            this._confirmationSignatures,
+            new Set(newSignatures)
+        );
+        this._confirmationSignatures = unionSet;
+        return this;
+    }
+
+    getRelevantTimestamp(nextBlockAuthor: Address): Timestamp {
+        const { didSign } = this.findSignature(nextBlockAuthor);
+
+        if (didSign) {
+            // If nextBlockAuthor has signed, return block timestamp
+            return this.timestamp;
+        }
+        // If nextBlockAuthor has NOT signed, return onChainTimestamp (or fallback)
+        return this._onChainTimestamp
+            ? Math.max(this._onChainTimestamp, this.timestamp)
+            : this.timestamp;
+    }
+
     equals(other: Block): boolean {
         return this.encode() === other.encode();
     }
 
-    getSignerAddress(signature: Signature | Bytes): Address {
-        return ethers.verifyMessage(
-            ethers.getBytes(this.hash),
-            signature as Signature
-        );
+    signatureToAddress(signature: Signature): Address {
+        return ethers.verifyMessage(ethers.getBytes(this.hash), signature);
     }
 
-    getSignerAddresses(signatures: Signature[]): Set<Address> {
-        return new Set(signatures.map((sig) => this.getSignerAddress(sig)));
-    }
-
-    findSignature(
-        participant: Address,
-        signatures: Signature[]
-    ): { didSign: boolean; signature: Signature | undefined } {
-        for (const sig of signatures) {
-            if (this.getSignerAddress(sig) === participant) {
+    findSignature(participant: Address): {
+        didSign: boolean;
+        signature: Signature | undefined;
+    } {
+        for (const sig of this.allSignatures) {
+            if (this.signatureToAddress(sig) === participant) {
                 return { didSign: true, signature: sig };
             }
         }
@@ -142,7 +222,7 @@ export default class Block {
         return signer.signMessage(ethers.getBytes(this.hash));
     }
 
-    async signedBlock(signer: Signer): Promise<SignedBlockStruct> {
+    async signBlock(signer: Signer): Promise<SignedBlockStruct> {
         return {
             encodedBlock: this.encode(),
             signature: (await this.sign(signer)) as Bytes

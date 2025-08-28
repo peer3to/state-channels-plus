@@ -2,7 +2,7 @@ pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
 import "../types/DataTypes.sol";
-import "./AStateChannelManagerProxy.sol";
+import "./StateChannelManagerProxy.sol";
 import "./Errors.sol";
 import "./StateChannelUtilLibrary.sol";
 
@@ -46,7 +46,8 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
         StateSnapshot memory newStateSnapshot = milestoneSnapshots[milestoneSnapshots.length - 1];
 
-        require(currentStateSnapshot.forkId == newStateSnapshot.forkId, ErrorStanpshotForkMismatch());
+        require(currentStateSnapshot.forkId == newStateSnapshot.forkId, ErrorSnapshotForkMismatch());
+        require(newStateSnapshot.blockHeight > currentStateSnapshot.blockHeight, ErrorBlockHeightTooOld());
         require(_verifyMilestones(milestoneProofs, milestoneSnapshots, currentStateSnapshot), ErrorInvalidStateProof());
 
         _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, exitChannelBlocks);
@@ -76,7 +77,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot[] memory milestoneSnapshots,
         StateSnapshot memory genesisSnapshot
     ) internal returns (bool) {
-        (bool isValid,) = AStateChannelManagerProxy(address(this)).verifyMilestones(
+        (bool isValid,) = StateChannelManagerProxy(address(this)).verifyMilestones(
             milestoneProofs, milestoneSnapshots, genesisSnapshot
         );
         return isValid;
@@ -129,7 +130,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         Balance memory totalWithdrawals = cb.totalOnChainWithdrawals;
         for (uint256 i = 0; i < exitChannelBlocks.length; i++) {
             for (uint256 j = 0; j < exitChannelBlocks[i].exitChannels.length; j++) {
-                bool success = AStateChannelManagerProxy(address(this)).withdrawAssetsComposable(
+                bool success = StateChannelManagerProxy(address(this)).withdrawAssetsComposable(
                     exitChannelBlocks[i].exitChannels[j]
                 );
                 require(success, ErrorWithdrawalFailed());
@@ -144,11 +145,13 @@ contract StateSnapshotFacet is StateChannelCommon {
             }
         }
         cb.totalOnChainWithdrawals = totalWithdrawals;
+        emit WithdrawalsUpdated(channelId, totalWithdrawals);
     }
 
     function _clearStorage(bytes32 channelId, bytes32 snapshotLatestJoinChannelBlockHash) internal {
         _clearDisputeData(channelId);
         _clearOldJoinChannels(channelId, snapshotLatestJoinChannelBlockHash);
+        emit ChannelStorageCleared(channelId, snapshotLatestJoinChannelBlockHash);
     }
 
     function _clearDisputeData(bytes32 channelId) internal {

@@ -12,7 +12,8 @@ error ErrorExitChannelBlocksNotLinked();
 error ErrorLastSnapshotInvalid();
 error ErrorLastSnapshotDoesNotMatchGenesis();
 error ErrorSnapshotsNotProvided();
-error ErrorStanpshotForkMismatch();
+error ErrorSnapshotForkMismatch();
+error ErrorBlockHeightTooOld();
 
 //Join channel
 error ErrorJoinChannelExpired();

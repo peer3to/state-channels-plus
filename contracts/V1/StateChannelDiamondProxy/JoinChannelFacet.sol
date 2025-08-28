@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
-import "./AStateChannelManagerProxy.sol";
+import "./StateChannelManagerProxy.sol";
 import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
 
@@ -48,7 +48,7 @@ contract JoinChannelFacet is StateChannelCommon {
         bytes32 channelId = jc.channelId;
 
         // Process the deposit for the specific StateChannelManager
-        success = AStateChannelManagerProxy(address(this)).depositAssetsComposable(jc);
+        success = StateChannelManagerProxy(address(this)).depositAssetsComposable(jc);
         if (!success) return false;
 
         // Create JoinChannelBlock
@@ -73,18 +73,13 @@ contract JoinChannelFacet is StateChannelCommon {
         channelBalance.latestJoinChannelBlockHash = blockHash;
 
         // Update pending participants
-        _updatePendingParticipants(jc);
+        disputeData[channelId].pendingParticipants.push(jc.participant);
 
-        // Emit the event
         emit JoinChannelProcessed(channelId, jcb, block.timestamp, newTotalDeposits);
         return true;
     }
 
-    function _updatePendingParticipants(JoinChannel memory jc) internal {
-        disputeData[jc.channelId].pendingParticipants.push(jc.participant);
-    }
-
-    function _createJoinChannelBlock(JoinChannel memory jc) internal returns (JoinChannelBlock memory) {
+    function _createJoinChannelBlock(JoinChannel memory jc) internal view returns (JoinChannelBlock memory) {
         JoinChannel[] memory jcs = new JoinChannel[](1);
         ChannelBalance storage channelBalance = channelBalances[jc.channelId];
         jcs[0] = jc;

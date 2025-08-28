@@ -59,7 +59,9 @@ describe("Storage", () => {
             storage.stateSnapshots.storeStateSnapshot(blockSnapshot);
 
             // Store block confirmation (at forkId, height 1)
-            storage.blocks.storeBlockConfirmation(blockConfirmation);
+            storage.blocks.storeBlock(
+                Block.fromBlockConfirmation(blockConfirmation)
+            );
         });
 
         it("should return genesis state snapshot when height < 0", () => {

@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
-import "./AStateChannelManagerProxy.sol";
+import "./StateChannelManagerProxy.sol";
 import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
 import "../types/FraudProofTypes.sol";
@@ -146,7 +146,7 @@ contract FraudProofFacet is StateChannelCommon {
             );
         }
 
-        (bool isSuccess, bytes memory encodedModifiedState) = AStateChannelManagerProxy(address(this))
+        (bool isSuccess, bytes memory encodedModifiedState) = StateChannelManagerProxy(address(this))
             .executeStateTransition(
             fraudProofVerificationContext.channelId, previousStateStateMachineState, fraudBlock.transaction
         );
@@ -165,6 +165,7 @@ contract FraudProofFacet is StateChannelCommon {
         StateSnapshot memory newStateSnapshot = StateSnapshot({
             snapshotData: newSnapshotData,
             forkId: previousStateSnapshot.forkId,
+            blockHeight: previousStateSnapshot.blockHeight + 1,
             timestamp: fraudBlock.transaction.header.timestamp
         });
         require(fraudBlock.stateSnapshotHash == keccak256(abi.encode(newStateSnapshot)), ErrorValidStateTransition());

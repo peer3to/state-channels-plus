@@ -6,7 +6,7 @@ import * as factory from "../factory";
 describe("Codec", () => {
     describe("Round-trip encoding/decoding: decode(encode(T)) === T", () => {
         it("should encode and decode BlockStruct correctly", () => {
-            const original = factory.block().toStruct();
+            const original = factory.block().blockStruct;
             const encoded = Codec.encode(original, Type.Block);
             const decoded = Codec.decode(encoded, Type.Block);
 

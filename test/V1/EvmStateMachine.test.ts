@@ -8,7 +8,8 @@ import {
     getMathP2pEventHooks
 } from "@test/test_utils/testHelpers";
 import P2pEventHooks from "@/P2pEventHooks";
-import { EvmUtils } from "@/utils";
+import { SignatureUtils } from "@/utils";
+import { Bytes } from "@/types/types";
 
 describe("EvmStateMachine", function () {
     it("EvmStateMachine - P2P simulation - success", async function () {
@@ -99,11 +100,11 @@ describe("EvmStateMachine", function () {
             signerTwo.address
         );
 
-        let jc1Signed = await EvmUtils.signJoinChannel(
+        let jc1Signed = await SignatureUtils.signJoinChannel(
             joinChannelCommitment1,
             signerOne
         );
-        let jc2Signed = await EvmUtils.signJoinChannel(
+        let jc2Signed = await SignatureUtils.signJoinChannel(
             joinChannelCommitment2,
             signerTwo
         );
@@ -118,8 +119,8 @@ describe("EvmStateMachine", function () {
         //on-chain open the channel
         const re = await mathscm.openChannel(
             joinChannelCommitment1.channelId,
-            [jc1Signed.encodedJoinChannel, jc2Signed.encodedJoinChannel],
-            [jc1Signed.signature, jc2Signed.signature]
+            [jc1Signed.encoded, jc2Signed.encoded],
+            [jc1Signed.signature as Bytes, jc2Signed.signature as Bytes]
         );
         console.log(`Tx hash:${re.hash}`);
 

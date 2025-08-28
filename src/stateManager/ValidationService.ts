@@ -1,141 +1,353 @@
-import AgreementManager from "@/agreementManager";
-import { ExecutionFlags, TimeConfig, AgreementFlag } from "@/types";
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import DisputeHandler from "@/DisputeHandler";
-import { ethers } from "ethers";
-import { AStateChannelManagerProxy } from "@typechain-types/contracts/V1/StateChannelDiamondProxy";
-import {
-    SignatureUtils,
-    getActiveParticipants,
-    Codec,
-    Type,
-    hash
-} from "@/utils";
-import AStateMachine from "@/AStateMachine";
-import { Clock } from "..";
-import ProofManager from "@/ProofManager";
+import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+
+import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
+import { ZeroHash } from "ethers";
+
+import ADiamondStateMachine from "@/ADiamondStateMachine";
+import Clock from "@/Clock";
+import Storage from "@/storage";
+import { Block, BlockCoordinates, StateSnapshot } from "@/models";
+import { difference, isSubset, hash } from "@/utils";
+import { BlockValidationAction, TimeConfig } from "@/types";
 import {
     Address,
     ChannelId,
     ForkId,
-    Signature,
-    Timestamp
+    Timestamp,
+    BlockOrSnapshot
 } from "@/types/types";
-import { Block } from "@/models";
-import Storage from "@/storage";
 
-interface ValidationResult {
-    success: boolean;
-    flag: ExecutionFlags;
-    agreementFlag?: AgreementFlag;
-}
+import FraudProofService from "./utils/FraudProofService";
+
+export type ValidationResult = {
+    shouldDisconnect?: boolean;
+    action?: BlockValidationAction;
+};
 
 export default class ValidationService {
+    private readonly fraudProofService: FraudProofService;
     constructor(
-        private readonly agreementManager: AgreementManager,
-        private readonly stateMachine: AStateMachine,
-        private readonly disputeHandler: DisputeHandler,
-        private readonly scmContract: AStateChannelManagerProxy,
-        private readonly timeCfg: TimeConfig,
         private readonly storage: Storage,
-        /** getter keeps channelId reactive if StateManager changes it later */
-        private readonly getChannelId: () => ChannelId,
-        private readonly signerAddress: Address,
-        private readonly onSignedBlock: (
-            signedBlock: SignedBlockStruct,
-            block?: Block
-        ) => Promise<ExecutionFlags>
-    ) {}
+        private readonly diamondStateMachine: ADiamondStateMachine,
+        private readonly stateChannelManagerContract: StateChannelManagerProxy,
+        private readonly timeConfig: TimeConfig,
+        private readonly channelId: ChannelId,
+        private readonly getForkId: () => ForkId,
+        private readonly localDiamondContract: LocalDiamond
+    ) {
+        this.fraudProofService = new FraudProofService(this.storage);
+    }
 
-    /*──────────────────────── PUBLIC API ────────────────────────*/
-    public async validateSignedBlock(
-        signedBlock: SignedBlockStruct,
-        block?: Block
+    async validateBlockConfirmation(
+        blockConfirmation: BlockConfirmationStruct
     ): Promise<ValidationResult> {
-        const blk = block ?? Block.decode(signedBlock.encodedBlock);
+        const forkId = this.getForkId();
+        const channelId = this.channelId;
 
-        if (!this.isChannelOpen()) return notReady();
-
-        // Validate block
-        if (!this.isSignedBlockAuthentic(signedBlock, blk, this.getChannelId()))
-            return disconnect();
-
-        // Check fork status
-        if (
-            this.isPastFork(blk.forkId) ||
-            this.disputeHandler.isForkDisputed(blk.forkId)
-        )
-            return pastFork();
-
-        // Check for duplicate blocks
-        if (this.agreementManager.isBlockDuplicate(blk)) return duplicate();
-
-        // Check for future blocks
-        const isFutureFork = blk.forkId > this.getforkId();
-        const isFutureTransaction = blk.height > this.getNextHeight();
-        if (isFutureFork || isFutureTransaction) return notReady();
-
-        // Check if participant is in the fork
-        if (!this.agreementManager.isParticipantInLatestFork(blk.author))
-            return disconnect();
-
-        // Validate past block in current fork
-        if (blk.height < this.getNextHeight()) {
-            const agreementFlag = this.agreementManager.checkBlock(signedBlock);
-
-            if (
-                agreementFlag === AgreementFlag.DOUBLE_SIGN ||
-                agreementFlag === AgreementFlag.INCORRECT_DATA
-            ) {
-                return dispute(agreementFlag);
-            }
-
-            throw new Error(
-                "StateManager - OnSignedBlock - current fork in the past - INTERNAL ERROR"
-            );
+        // 1. Check if channel is open
+        if (!this.isChannelOpen(forkId)) {
+            // not ready
+            this.queueForLater(blockConfirmation);
+            return { shouldDisconnect: false };
+        }
+        // 2. Authenticate the block
+        const block = this.authenticateBlock(blockConfirmation, channelId);
+        if (!block) {
+            return { shouldDisconnect: true };
         }
 
-        const { timestamp: previousTimestamp, previousBlock } =
-            this.getPreviousTimestampAndBlock(blk);
+        //  get participants
+        const participants = await this.getParticipants(
+            block.coordinates,
+            channelId
+        );
+
+        // 3. check duplicate blocks
+        const duplicateResult = this.checkDuplicateBlock(block, participants);
+
+        if (duplicateResult !== undefined) {
+            return duplicateResult;
+        }
+
+        // 4. author is a participant
+        if (!participants.has(block.author)) {
+            return { shouldDisconnect: true };
+        }
+
+        // 5. check conflicting block
+        const conflictResult = this.checkConflictingBlock(block);
+        if (conflictResult !== undefined) {
+            return conflictResult;
+        }
+
+        if (await this.isDisputedFork(block.forkId, channelId)) {
+            // not ready
+            this.queueForLater(block);
+            return { shouldDisconnect: false };
+        }
+
+        // isNext
+        if (block.height > this.storage.blocks.getNextBlockHeight(forkId)) {
+            // not ready
+            this.queueForLater(block);
+            return { shouldDisconnect: false };
+        }
+
+        // Is linked
+        if (!this.isLinked(block)) {
+            return { shouldDisconnect: true };
+        }
+
+        // previous block or snapshot
+        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
+            block.coordinates
+        );
+
+        // isNextLeader
+        const nextLeader = await this.diamondStateMachine.getNextToWrite();
+        if (nextLeader !== block.author) {
+            // create invalid state transition proof
+            this.fraudProofService.createInvalidStateTransitionProof(block);
+            return {
+                shouldDisconnect: true,
+                action: BlockValidationAction.DISPUTE
+            };
+        }
+
+        // Time logic
+        const timeResult = await this.validateTimeLogic(
+            block,
+            previousBlockOrSnapshot,
+            channelId
+        );
+
+        if (timeResult) {
+            return timeResult;
+        }
+
+        return {
+            action: BlockValidationAction.SUCCESS
+        };
+    }
+
+    // ────────────────────── INTERNAL ACTION METHODS ─────────────────────
+
+    private queueForLater(
+        blockConfirmation: Block | BlockConfirmationStruct
+    ): void {
+        const block =
+            blockConfirmation instanceof Block
+                ? blockConfirmation
+                : Block.fromBlockConfirmation(blockConfirmation);
+        this.storage.queues.queueBlock(block);
+    }
+
+    // ────────────────────── VALIDATION METHODS ─────────────────────
+
+    isChannelOpen(forkId: ForkId): boolean {
+        return forkId !== ZeroHash;
+    }
+
+    private isLinked(block: Block): boolean {
+        const { forkId, height } = block.coordinates;
+        if (height === 0) return true;
+
+        const prevBlockEntry = this.storage.blocks.getBlockEntry(
+            forkId,
+            height - 1
+        );
+        if (!prevBlockEntry) {
+            return false;
+        }
+        return prevBlockEntry.block.hash === block.previousBlockHash;
+    }
+
+    private authenticateBlock(
+        blockConfirmation: BlockConfirmationStruct,
+        channelId: ChannelId
+    ): Block | undefined {
+        let block: Block;
+
+        try {
+            block = Block.fromBlockConfirmation(blockConfirmation);
+            if (block.channelId !== channelId) return;
+            if (block.signerAddress !== block.author) return;
+        } catch (error) {
+            return;
+        }
+
+        return block;
+    }
+
+    private checkDuplicateBlock(
+        block: Block,
+        participants: Set<Address>
+    ): ValidationResult | undefined {
+        // 1. Check if block is in queue
+        if (
+            this.storage.queues.isBlockQueued(block, {
+                hash: block.hash
+            })
+        ) {
+            const signerAddresses = block.confirmationSignerAddresses;
+            const areAllParticipants = isSubset(signerAddresses, participants);
+
+            if (!areAllParticipants) {
+                return { shouldDisconnect: true };
+            }
+
+            // Store in queue (handles signature merging automatically)
+            this.queueForLater(block);
+            return;
+        }
+
+        // 2. Check if block is in block storage
+        const existingBlockEntry = this.storage.blocks.getBlockEntry(
+            block.hash
+        );
+        if (existingBlockEntry !== undefined) {
+            const existingSignatures =
+                existingBlockEntry.block.confirmationSignatures;
+            const incomingSignatures = block.confirmationSignatures;
+            const newSignatures = difference(
+                incomingSignatures,
+                existingSignatures
+            );
+
+            // no new signatures
+            if (newSignatures.size === 0) {
+                return { shouldDisconnect: false };
+            }
+
+            // Validate new signatures are from participants
+            const newSignerAddresses: Set<Address> = new Set(
+                Array.from(newSignatures).map((sig) =>
+                    block.signatureToAddress(sig)
+                )
+            );
+
+            const areNewSignersParticipants = isSubset(
+                newSignerAddresses,
+                participants
+            );
+
+            if (!areNewSignersParticipants) {
+                return { shouldDisconnect: true };
+            }
+
+            // Store new signatures and indicate broadcast
+            this.storage.blocks.storeBlock(block);
+            return { action: BlockValidationAction.BROADCAST };
+        }
+
+        return;
+    }
+
+    private checkConflictingBlock(block: Block): ValidationResult | undefined {
+        // conflicting block ?
+        const blockEntry = this.storage.blocks.getBlockEntry(
+            block.forkId,
+            block.height
+        );
+        const maybePreExistingBlock = blockEntry?.block;
+
+        if (!maybePreExistingBlock) {
+            return;
+        }
+
+        // name change for clarity, it isn't a maybe anymore
+        const conflictingBlock = maybePreExistingBlock;
+
+        if (conflictingBlock.author === block.author) {
+            // DOUBLE SIGN
+            this.fraudProofService.createDoubleSignProof(
+                conflictingBlock,
+                block
+            );
+            return {
+                shouldDisconnect: true,
+                action: BlockValidationAction.DISPUTE
+            };
+        }
+
+        // If not linked we can't slash since the peer could have been building on the wrong 'reality' since someone performed a double sign
+        if (this.isLinked(block)) {
+            this.fraudProofService.createInvalidStateTransitionProof(block);
+            return {
+                shouldDisconnect: true,
+                action: BlockValidationAction.DISPUTE
+            };
+        }
+
+        return { shouldDisconnect: true };
+    }
+
+    private async isDisputedFork(
+        forkId: ForkId,
+        channelId: ChannelId
+    ): Promise<boolean> {
+        return (
+            this.storage.disputes.didIDispute(forkId) ||
+            (await this.localDiamondContract.isForkDisputed(channelId, forkId))
+        );
+    }
+
+    /**
+     * Ensure block.timestamp is within the allowed
+     * p2pTime window of the previous timestamp, optionally
+     * fetching a better on-chain timestamp if needed.
+     */
+    private async validateTimeLogic(
+        block: Block,
+        previousblockOrSnapshot: BlockOrSnapshot,
+        channelId: ChannelId
+    ): Promise<ValidationResult | undefined> {
+        let previousTimestamp: Timestamp;
+        let previousBlock: Block | undefined;
+        let previousStateSnapshot: StateSnapshot | undefined;
+
+        if (previousblockOrSnapshot.block) {
+            previousBlock = previousblockOrSnapshot.block;
+            previousTimestamp = previousBlock.getRelevantTimestamp(
+                block.author
+            );
+        } else {
+            previousStateSnapshot = previousblockOrSnapshot.stateSnapshot;
+            previousTimestamp = previousStateSnapshot!.timestamp;
+        }
 
         const isValidTimestamp =
-            blk.timestamp >= previousTimestamp &&
-            blk.timestamp <= previousTimestamp + this.timeCfg.p2pTime;
+            block.timestamp >= previousTimestamp &&
+            block.timestamp <= previousTimestamp + this.timeConfig.p2pTime;
 
-        // Objective timestamp validation
         if (!isValidTimestamp) {
             if (
-                blk.height <= 0 || // genesis block
+                block.height <= 0 || // genesis block
                 previousBlock === undefined || // no previous block == genesis block
                 previousBlock.onChainTimestamp !== undefined
             ) {
                 // already has best timestamp
-                // no point in trying to  update the timestamp => fraud proof
-                const fraudProof =
-                    this.disputeHandler.proofManager.createIncorrectDataProof(
-                        signedBlock
-                    );
-                await this.disputeHandler.createDispute(blk.forkId, "0x00", 0, [
-                    fraudProof
-                ]);
-                return dispute(AgreementFlag.INCORRECT_DATA);
+                // no point in trying to update the timestamp => fraud proof
+                this.fraudProofService.createInvalidTimestampProof(block);
+                return {
+                    shouldDisconnect: true,
+                    action: BlockValidationAction.DISPUTE
+                };
             }
 
             // try to fetch later timestamp from on-chain data
-            const onChainTimestamp =
-                await this.fetchOnChainTimestamp(previousBlock);
+            const onChainTimestamp = await this.fetchOnChainTimestamp(
+                previousBlock,
+                channelId
+            );
 
             // Early return: Couldn't fetch or not better than current
             if (!onChainTimestamp || onChainTimestamp <= previousTimestamp) {
-                const fraudProof =
-                    this.disputeHandler.proofManager.createIncorrectDataProof(
-                        signedBlock
-                    );
-                await this.disputeHandler.createDispute(blk.forkId, "0x00", 0, [
-                    fraudProof
-                ]);
-                return dispute(AgreementFlag.INCORRECT_DATA);
+                this.fraudProofService.createInvalidTimestampProof(block);
+                return {
+                    shouldDisconnect: true,
+                    action: BlockValidationAction.DISPUTE
+                };
             }
 
             // Update the previous block with the on-chain timestamp
@@ -148,202 +360,77 @@ export default class ValidationService {
 
             // Re-validate with updated timestamp
             const isValidTimestamp =
-                blk.timestamp >= onChainTimestamp &&
-                blk.timestamp <= onChainTimestamp + this.timeCfg.p2pTime;
+                block.timestamp >= onChainTimestamp &&
+                block.timestamp <= onChainTimestamp + this.timeConfig.p2pTime;
 
             if (!isValidTimestamp) {
-                const fraudProof =
-                    this.disputeHandler.proofManager.createIncorrectDataProof(
-                        signedBlock
-                    );
-                await this.disputeHandler.createDispute(blk.forkId, "0x00", 0, [
-                    fraudProof
-                ]);
-                return dispute(AgreementFlag.INCORRECT_DATA);
+                this.fraudProofService.createInvalidTimestampProof(block);
+                return {
+                    shouldDisconnect: true,
+                    action: BlockValidationAction.DISPUTE
+                };
             }
             // If valid, continue with rest of validation
-        }
 
-        // Subjective timestamp validation (requireS)
-        if (
-            blk.onChainTimestamp === undefined ||
-            blk.onChainTimestamp <= blk.timestamp
-        ) {
             if (
-                Math.abs(Clock.getTimeInSeconds() - blk.timestamp) >=
-                this.timeCfg.agreementTime
-            )
-                return timestampTooOld();
-        }
-
-        // Validate block producer
-        const nextToWrite = await this.stateMachine.getNextToWrite();
-        if (blk.author !== nextToWrite)
-            return dispute(AgreementFlag.INCORRECT_DATA);
-
-        // All validation passed - return success
-        return success();
-    }
-
-    public getPreviousTimestamp(blk: Block): Timestamp {
-        const { timestamp } = this.getPreviousTimestampAndBlock(blk);
-        return timestamp;
-    }
-
-    public getPreviousTimestampAndBlock(blk: Block): {
-        timestamp: Timestamp;
-        previousBlock?: Block;
-    } {
-        if (blk.height <= 0) {
-            return {
-                timestamp:
-                    this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                        blk.forkId
-                    )!.timestamp
-            };
-        }
-
-        const previousBlockEntry = this.storage.blocks.getBlockEntry(
-            blk.forkId,
-            blk.height - 1
-        )!;
-        const previousBlock = Block.decode(
-            previousBlockEntry.blockConfirmation.signedBlock.encodedBlock
-        );
-        const timestamp = previousBlock.getRelevantTimestamp(
-            blk.author,
-            previousBlockEntry.blockConfirmation.signatures
-        );
-
-        return {
-            timestamp,
-            previousBlock
-        };
-    }
-
-    public async validateBlockConfirmation(
-        signed: SignedBlockStruct,
-        confirmationSig: Signature,
-        block?: Block
-    ): Promise<ValidationResult> {
-        const blk = block ?? Block.decode(signed.encodedBlock);
-
-        if (!this.isChannelOpen()) return notReady();
-        if (!this.isSignedBlockAuthentic(signed, blk, this.getChannelId()))
-            return disconnect();
-        if (this.isPastFork(blk.forkId)) return pastFork();
-
-        // Ensure block in chain
-        if (!this.agreementManager.isBlockInChain(blk)) {
-            const flag = await this.onSignedBlock(signed, blk);
-
-            if (flag === ExecutionFlags.DUPLICATE) {
-                // Possibly it has become part of the chain now
-                if (!this.agreementManager.isBlockInChain(blk)) {
-                    return { success: false, flag: ExecutionFlags.NOT_READY };
+                block.onChainTimestamp === undefined ||
+                block.onChainTimestamp <= block.timestamp
+            ) {
+                if (
+                    Math.abs(Clock.getTimeInSeconds() - block.timestamp) >=
+                    this.timeConfig.agreementTime
+                ) {
+                    return {
+                        shouldDisconnect: false,
+                        action: BlockValidationAction.NOT_ENOUGH_TIME
+                    };
                 }
-            } else if (flag !== ExecutionFlags.SUCCESS) {
-                // If the processed result is anything else but SUCCESS, we must abort
-                return { success: false, flag };
             }
         }
 
-        /* confirmer inside fork */
-        const confirmer = blk.getSignerAddress(confirmationSig);
-        if (!this.agreementManager.isParticipantInLatestFork(confirmer))
-            return disconnect();
-
-        /* duplicate sig */
-        if (this.agreementManager.doesSignatureExist(blk, confirmationSig))
-            return duplicate();
-
-        return success();
+        return; // Time validation passed
     }
 
-    public async validateDispute(
-        disputeStruct: DisputeStruct,
-        timestamp: Timestamp
-    ): Promise<boolean> {
-        // triggered by StateManager.onDisputeCommitted, which is triggered by chain event 'DisputeCommitted'
-        // therefore it is assumed that validation has already happened on
+    // ────────────────────── Helpers ─────────────────────
 
-        // this is the place to add any validation that should run on a new dispute
-
-        // Note: disputeIndex property doesn't exist on DisputeStruct, removing this validation
-        // If dispute ordering validation is needed, it should be implemented differently
-
-        const allowedParticipantsSet = await getActiveParticipants(
-            this.scmContract,
-            this.getChannelId()
-        );
-        if (!allowedParticipantsSet.has(disputeStruct.disputer)) {
-            return false;
-        }
-
-        return true;
-    }
-
-    public async validateDisputeConfirmation(
-        disputeStruct: DisputeStruct,
-        confirmationSignature: Signature
-    ): Promise<ValidationResult> {
-        if (!this.isChannelOpen()) return notReady();
-
-        // Check if dispute exists
-        if (!this.agreementManager.isDisputeKnown(disputeStruct)) {
-            // Dispute not found - could be gossip arrived before event
-            // Return NOT_READY to allow retry
-            return notReady();
-        }
-
-        // Validate signature
-        let confirmer;
-        try {
-            confirmer = SignatureUtils.getSignerAddress(
-                Codec.encode(disputeStruct, Type.Dispute),
-                confirmationSignature
-            );
-        } catch (error) {
-            return dispute(AgreementFlag.INVALID_SIGNATURE);
-        }
-
-        // Check if participant already signed with a different signature
-        const hasParticipantSigned =
-            this.agreementManager.hasParticipantSignedDispute(
-                disputeStruct,
-                confirmer
-            );
-
-        if (hasParticipantSigned) {
-            return duplicate();
-        }
-
-        const allowedParticipantsSet = await getActiveParticipants(
-            this.scmContract,
-            this.getChannelId()
+    private async getParticipants(
+        blockCoordinates: BlockCoordinates,
+        channelId: ChannelId
+    ): Promise<Set<Address>> {
+        let participants = new Set(
+            this.storage.getParticipants(blockCoordinates)
         );
 
-        if (confirmer === disputeStruct.disputer) {
-            return dispute(AgreementFlag.DOUBLE_SIGN);
+        if (participants.size === 0) {
+            // get participants from chain
+            const [participantsFromChain, pendingParticipants] =
+                await Promise.all([
+                    this.stateChannelManagerContract.getParticipants(channelId),
+                    this.stateChannelManagerContract.getPendingParticipants(
+                        channelId
+                    )
+                ]);
+            participants = new Set([
+                ...participantsFromChain,
+                ...pendingParticipants
+            ]);
         }
 
-        if (!allowedParticipantsSet.has(confirmer)) {
-            return dispute(AgreementFlag.INVALID_SIGNATURE);
-        }
-
-        return success();
+        return participants;
     }
-
-    /*────────────────────── PRIVATE HELPERS ─────────────────────*/
 
     private async fetchOnChainTimestamp(
-        blk: Block
+        blk: Block | undefined,
+        channelId: ChannelId
     ): Promise<Timestamp | undefined> {
+        if (blk === undefined) {
+            return undefined;
+        }
         try {
             // Check if commitment exists on-chain
             const commitmentResult =
-                await this.scmContract.getBlockCallDataCommitment(
-                    this.getChannelId(),
+                await this.stateChannelManagerContract.getBlockCallDataCommitment(
+                    channelId,
                     blk.forkId,
                     blk.height,
                     blk.author
@@ -354,15 +441,16 @@ export default class ValidationService {
             }
 
             // filter BlockCalldataPosted calls by channelId and author
-            const filter = this.scmContract.filters.BlockCalldataPosted(
-                this.getChannelId(),
-                blk.author
-            );
+            const filter =
+                this.stateChannelManagerContract.filters.BlockCalldataPosted(
+                    channelId,
+                    blk.author
+                );
 
             // best will be to get exact block number from on-chain data
             // but idk how to AND it is added complexity
             // assumptoin here is that the block is within the recent 3 blocks (recent, recent-1, recent-2)
-            const logs = await this.scmContract.queryFilter(
+            const logs = await this.stateChannelManagerContract.queryFilter(
                 filter,
                 -2, // from block
                 "latest" // to block
@@ -382,80 +470,4 @@ export default class ValidationService {
             return undefined;
         }
     }
-
-    /* one-liners */
-    private getforkId(): ForkId {
-        return this.agreementManager.getLatestforkId();
-    }
-    private isChannelOpen(): boolean {
-        // Fix: Compare ForkId properly using ethers comparison
-        const currentForkId = this.getforkId();
-        return currentForkId !== ethers.ZeroHash && currentForkId !== "0x00";
-    }
-    private isPastFork(f: ForkId): boolean {
-        // Fix: Use proper comparison for BytesLike types
-        const currentForkId = this.getforkId();
-        // This is a simplified comparison - in practice you may need more sophisticated fork comparison logic
-        return f !== currentForkId;
-    }
-    private getNextHeight(): number {
-        return this.agreementManager.getNextBlockHeight();
-    }
-
-    private async isMyTurn(): Promise<boolean> {
-        return (
-            (await this.stateMachine.getNextToWrite()) === this.signerAddress
-        );
-    }
-
-    private isSignedBlockAuthentic(
-        signed: SignedBlockStruct,
-        block: Block,
-        expectedChannelId: ChannelId
-    ): boolean {
-        if (block.channelId !== expectedChannelId) return false;
-
-        const h = ethers.keccak256(signed.encodedBlock);
-        const signer = ethers.verifyMessage(
-            ethers.getBytes(h),
-            signed.signature as Signature
-        );
-
-        return signer === block.author;
-    }
 }
-
-/* small helpers for clarity */
-const success = (): ValidationResult => ({
-    success: true,
-    flag: ExecutionFlags.SUCCESS
-});
-const notReady = (): ValidationResult => ({
-    success: false,
-    flag: ExecutionFlags.NOT_READY
-});
-const pastFork = (): ValidationResult => ({
-    success: false,
-    flag: ExecutionFlags.PAST_FORK
-});
-const duplicate = (): ValidationResult => ({
-    success: false,
-    flag: ExecutionFlags.DUPLICATE
-});
-const disconnect = (): ValidationResult => ({
-    success: false,
-    flag: ExecutionFlags.DISCONNECT
-});
-const timestampTooOld = (): ValidationResult => ({
-    success: false,
-    flag: ExecutionFlags.TIMESTAMP_TOO_OLD
-});
-const timestampTooFarInFuture = (): ValidationResult => ({
-    success: false,
-    flag: ExecutionFlags.TIMESTAMP_IN_FUTURE
-});
-const dispute = (af: AgreementFlag): ValidationResult => ({
-    success: false,
-    flag: ExecutionFlags.DISPUTE,
-    agreementFlag: af
-});

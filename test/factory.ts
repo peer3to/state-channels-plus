@@ -20,7 +20,17 @@ import { Codec, Type } from "@/utils";
 import { Block, StateSnapshot } from "@/models";
 
 export const hash = () => ethers.hexlify(ethers.randomBytes(32));
-export const signature = () => ethers.hexlify(ethers.randomBytes(65));
+
+// Create a dummy wallet for generating valid signatures
+const dummyWallet = new ethers.Wallet(
+    "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+);
+
+export const signature = () => {
+    // Sign a fixed message to get a valid signature
+    const message = "dummy message for testing";
+    return dummyWallet.signMessageSync(message);
+};
 
 /**
  * Creates a default transaction header
@@ -81,7 +91,7 @@ export function transaction(
 /**
  * Creates a mock block for testing
  * @param overrides Optional overrides for the block properties
- * @returns A mock BlockStruct
+ * @returns A mock Block instance
  */
 export function block(overrides: Partial<BlockStruct> = {}): Block {
     const blockStruct: BlockStruct = {
@@ -97,7 +107,15 @@ export function block(overrides: Partial<BlockStruct> = {}): Block {
         });
     }
 
-    return Block.from({ ...blockStruct, ...overrides });
+    const finalBlockStruct = { ...blockStruct, ...overrides };
+
+    // Create a SignedBlockStruct to use with Block.fromSignedBlock
+    const signedBlockStruct: SignedBlockStruct = {
+        encodedBlock: Codec.encode(finalBlockStruct, Type.Block),
+        signature: signature()
+    };
+
+    return Block.fromSignedBlock(signedBlockStruct);
 }
 
 /**
@@ -166,7 +184,7 @@ export function signedBlock(
 ): SignedBlockStruct {
     const mockBlock = block();
     const defaultSignedBlock: SignedBlockStruct = {
-        encodedBlock: Codec.encode(mockBlock, Type.Block),
+        encodedBlock: Codec.encode(mockBlock.blockStruct, Type.Block),
         signature: signature()
     };
 
@@ -228,6 +246,7 @@ export function stateSnapshot(
             }
         },
         forkId: ethers.hexlify(ethers.randomBytes(32)),
+        blockHeight: BigInt(randomInt(0, 500)),
         timestamp: Math.floor(Date.now() / 1000)
     };
 

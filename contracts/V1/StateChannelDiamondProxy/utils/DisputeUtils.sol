@@ -29,3 +29,26 @@ function _getLatestBlock(StateProof memory stateProof) pure returns (Block memor
             (Block)
         );
 }
+
+//not used anywhere right now
+function _isEvidencePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime) view returns (bool) {
+    return block.timestamp > disputeWindow.evidence.creationTimestamp + evidenceTime;
+}
+
+function _isKillPeriodExpired(DisputeWindow storage disputeWindow, uint256 killTime) view returns (bool) {
+    return block.timestamp > disputeWindow.evidence.creationTimestamp + killTime;
+}
+
+function areDisputesCommitted(DisputeWindow storage disputeWindow, Dispute[] memory disputes) view returns (bool) {
+    if (disputes.length != disputeWindow.evidence.disputeCommitments.length) {
+        return false;
+    }
+    for (uint256 i = 0; i < disputes.length; i++) {
+        bytes32 commitment = keccak256(abi.encode(disputes[i]));
+        // off-chain client puts the disputes in correct order - save on gas
+        if (disputeWindow.evidence.disputeCommitments[i] != commitment) {
+            return false;
+        }
+    }
+    return true;
+}

@@ -6,10 +6,11 @@ import { StateMachineStateStorage } from "./StateMachineStateStorage";
 import { ExitPointsStorage } from "./ExitPointsStorage";
 import { QueueStorage } from "./QueueStorage";
 import { DisputeStorage } from "./DisputeStorage";
+import { FraudProofStorage } from "./FraudProofStorage";
 
-import { Block, BlockCoordinates, StateSnapshot } from "@/models";
+import { BlockCoordinates, StateSnapshot } from "@/models";
 import { deepCopyProxy } from "@/utils";
-import { ForkId, Bytes } from "@/types/types";
+import { ForkId, Bytes, BlockOrSnapshot } from "@/types/types";
 import { Address } from "@/types/types";
 
 export class Storage {
@@ -21,6 +22,7 @@ export class Storage {
     public readonly exitPoints: ExitPointsStorage;
     public readonly queues: QueueStorage;
     public readonly disputes: DisputeStorage;
+    public readonly fraudProofs: FraudProofStorage;
 
     constructor() {
         this.blocks = deepCopyProxy(new BlockStorage());
@@ -31,6 +33,7 @@ export class Storage {
         this.exitPoints = deepCopyProxy(new ExitPointsStorage());
         this.queues = deepCopyProxy(new QueueStorage());
         this.disputes = deepCopyProxy(new DisputeStorage());
+        this.fraudProofs = deepCopyProxy(new FraudProofStorage());
         return deepCopyProxy(this);
     }
 
@@ -53,9 +56,7 @@ export class Storage {
             return undefined;
         }
 
-        const stateSnapshotHash = Block.decode(
-            blockEntry.blockConfirmation.signedBlock.encodedBlock
-        ).stateSnapshotHash;
+        const stateSnapshotHash = blockEntry.block.stateSnapshotHash;
 
         return this.stateSnapshots.getStateSnapshotByHash(stateSnapshotHash);
     }
@@ -74,14 +75,37 @@ export class Storage {
         );
     }
 
-    getParticipants({ forkId, height }: BlockCoordinates): Address[] {
-        const previousSnapshot = this.getStateSnapshot({
-            forkId,
-            height: height - 1
+    private getPreviousStateSnapshot(
+        coordinates: BlockCoordinates
+    ): StateSnapshot | undefined {
+        return this.getStateSnapshot({
+            forkId: coordinates.forkId,
+            height: coordinates.height - 1
         });
+    }
+
+    getParticipants(coordinates: BlockCoordinates): Address[] {
+        const previousSnapshot = this.getPreviousStateSnapshot(coordinates);
         if (!previousSnapshot || !previousSnapshot.snapshotData.participants) {
             return [];
         }
         return previousSnapshot.snapshotData.participants;
+    }
+
+    getPreviousBlockOrSnapshot(coordinates: BlockCoordinates): BlockOrSnapshot {
+        const { forkId, height } = coordinates;
+
+        if (height > 0) {
+            const prevBlockEntry = this.blocks.getBlockEntry(
+                forkId,
+                height - 1
+            )!;
+
+            return { block: prevBlockEntry.block };
+        }
+
+        const genesisSnapshot =
+            this.stateSnapshots.getGenesisSnapshotDataByForkId(forkId)!;
+        return { stateSnapshot: genesisSnapshot };
     }
 }
