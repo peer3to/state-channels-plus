@@ -73,6 +73,7 @@ import {
 import FraudProofService from "./utils/FraudProofService";
 import { DisputeStorage } from "@/storage/DisputeStorage";
 import LocalDiamondSigner from "@/evm/LocalDiamondSigner";
+import { errorAbis } from "@/utils/GeneratedArtifacts";
 
 let DEBUG_STATE_MANAGER = false;
 
@@ -770,20 +771,19 @@ class StateManager {
                     );
                 }
 
-                // Build join channel blocks from latestSnapshot -> reducedOutput.latestJoinChannelBlockHash
-                let latestJoinChannelBlockHash =
-                    latestSnapshot.snapshotData.latestJoinChannelBlockHash;
-                const targetJoinChannelBlockHash =
+                // Build join channel blocks
+                let currentJoinChannelBlockHash =
                     reducedOutput.latestJoinChannelBlockHash;
                 let joinChannelBlocks: JoinChannelBlockStruct[] = [];
                 let currentJoinChannelBlock =
                     this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
-                        latestJoinChannelBlockHash
+                        currentJoinChannelBlockHash
                     );
 
                 while (
                     currentJoinChannelBlock &&
-                    latestJoinChannelBlockHash !== targetJoinChannelBlockHash
+                    currentJoinChannelBlockHash !==
+                        genesisSnapshot.snapshotData.latestJoinChannelBlockHash
                 ) {
                     joinChannelBlocks.unshift(currentJoinChannelBlock.block);
                     currentJoinChannelBlock =
@@ -793,7 +793,7 @@ class StateManager {
                     if (!currentJoinChannelBlock) {
                         break;
                     }
-                    latestJoinChannelBlockHash = ethers.keccak256(
+                    currentJoinChannelBlockHash = ethers.keccak256(
                         Codec.encode(
                             currentJoinChannelBlock.block,
                             Type.JoinChannelBlock
@@ -802,13 +802,29 @@ class StateManager {
                 }
 
                 // Reduce and finalize on-chain to obtain the reduced fork id
-                await this.stateChannelManagerContract.reduceAndFinalize(
-                    disputes,
-                    creationTimestamp,
-                    latestSnapshot.toStruct(),
-                    encodedStateForReduce,
-                    joinChannelBlocks
-                );
+                const txResponse =
+                    await this.stateChannelManagerContract.reduceAndFinalize(
+                        disputes,
+                        creationTimestamp,
+                        latestSnapshot.toStruct(),
+                        encodedStateForReduce,
+                        joinChannelBlocks
+                    );
+                const txReceipt = await txResponse.wait();
+                if (txReceipt?.status === 0) {
+                    const errorData = txReceipt.logs?.[0]?.data;
+                    const customError = errorData
+                        ? new ethers.Interface(errorAbis).parseError(errorData)
+                        : null;
+
+                    if (customError?.name === "ErrorDisputeAlreadyReduced") {
+                        break; // The reduced result was already computed, continue the pipeline
+                    }
+
+                    throw new Error(
+                        `reduceAndFinalize failed: ${customError?.name || "unknown error"}`
+                    );
+                }
 
                 // Read canonical reduced result from chain and traverse
                 const reducedResult =
