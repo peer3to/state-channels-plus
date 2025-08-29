@@ -739,32 +739,42 @@ class StateManager {
                         currentForkId
                     );
 
-                // Get the genesis snapshot for the current fork ID
-                const forkSnapshot =
-                    this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                        currentForkId
+                // Use proxy view to compute reduced output cheaply (no tx)
+                const reducedOutput =
+                    await this.stateChannelManagerContract.reduceProxyView(
+                        disputes,
+                        creationTimestamp
                     );
-                if (!forkSnapshot) {
+
+                // Derive latest snapshot and encoded state from reduced output's latest block
+                const latestSnapshotHash =
+                    reducedOutput.latestBlock.stateSnapshotHash;
+                const latestSnapshot =
+                    this.storage.stateSnapshots.getStateSnapshotByHash(
+                        latestSnapshotHash
+                    );
+                if (!latestSnapshot) {
                     throw new Error(
-                        `No genesis snapshot found for fork ${currentForkId}`
+                        "Latest snapshot for reduced output not found in local storage"
+                    );
+                }
+                const stateHash =
+                    latestSnapshot.snapshotData.stateMachineStateHash;
+                const encodedStateForReduce =
+                    this.storage.stateMachineStates.getStateMachineState(
+                        stateHash
+                    );
+                if (!encodedStateForReduce) {
+                    throw new Error(
+                        "Encoded state for reduced output not found in local storage"
                     );
                 }
 
-                // Get the encoded state machine state for this fork
-                const encodedStateMachineState =
-                    this.storage.stateMachineStates.getStateMachineState(
-                        forkSnapshot.snapshotData.stateMachineStateHash
-                    );
-                if (!encodedStateMachineState) {
-                    throw new Error(
-                        "Encoded state for reduceAndFinalize not found in local storage"
-                    );
-                }
-                // Build join channel blocks for THIS fork
+                // Build join channel blocks from latestSnapshot -> reducedOutput.latestJoinChannelBlockHash
                 let latestJoinChannelBlockHash =
-                    genesisSnapshot.snapshotData.latestJoinChannelBlockHash;
-                let currentForkJoinChannelBlockHash =
-                    forkSnapshot.snapshotData.latestJoinChannelBlockHash;
+                    latestSnapshot.snapshotData.latestJoinChannelBlockHash;
+                const targetJoinChannelBlockHash =
+                    reducedOutput.latestJoinChannelBlockHash;
                 let joinChannelBlocks: JoinChannelBlockStruct[] = [];
                 let currentJoinChannelBlock =
                     this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
@@ -773,8 +783,7 @@ class StateManager {
 
                 while (
                     currentJoinChannelBlock &&
-                    latestJoinChannelBlockHash !==
-                        currentForkJoinChannelBlockHash
+                    latestJoinChannelBlockHash !== targetJoinChannelBlockHash
                 ) {
                     joinChannelBlocks.unshift(currentJoinChannelBlock.block);
                     currentJoinChannelBlock =
@@ -796,8 +805,8 @@ class StateManager {
                 await this.stateChannelManagerContract.reduceAndFinalize(
                     disputes,
                     creationTimestamp,
-                    forkSnapshot.toStruct(),
-                    encodedStateMachineState,
+                    latestSnapshot.toStruct(),
+                    encodedStateForReduce,
                     joinChannelBlocks
                 );
 
