@@ -1729,7 +1729,7 @@
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="Tkg7loyrQP702Ur1c9dN-267" value="Validation Flags (BlockConfirmation)" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
-                    <mxGeometry x="1888" y="1200" width="770" height="2000" as="geometry"/>
+                    <mxGeometry x="1888" y="1200" width="770" height="2430" as="geometry"/>
                 </mxCell>
                 <mxCell id="Tkg7loyrQP702Ur1c9dN-270" value="&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;return SUCCESS&lt;/span&gt;" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.terminator;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="Tkg7loyrQP702Ur1c9dN-267" vertex="1">
                     <mxGeometry x="280" y="210" width="140" height="60" as="geometry"/>
@@ -1802,6 +1802,17 @@
                 </mxCell>
                 <mxCell id="Tkg7loyrQP702Ur1c9dN-292" value="&lt;h1 style=&quot;margin-top: 0px;&quot;&gt;&lt;font style=&quot;color: rgb(0, 204, 102);&quot;&gt;CONCLUSION&lt;/font&gt;&lt;/h1&gt;&lt;p&gt;After going over what each flag does and means we come to a conclusion they&#39;re not needed! Originally they we&#39;re desgined to pass more information back to the RPC/P2PManager so the calling context has more information on what to do, but the only decision that the calling context (RPC/P2PManager) do is decide do they disconnect the soccet and blacklist the peer or not - so the return value can just be &#39;shouldDisconnect&#39; and everything else can be initiated by the StateManager so these &#39;flags&#39; can become private helper functions of the validation pipeline: success(), notReady()...&amp;nbsp;&lt;/p&gt;" style="text;html=1;whiteSpace=wrap;overflow=hidden;rounded=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="Tkg7loyrQP702Ur1c9dN-267" vertex="1">
                     <mxGeometry x="520" y="200" width="180" height="370" as="geometry"/>
+                </mxCell>
+                <mxCell id="fpkLN9LVufnfCmGrl4Mu-1" value="&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;return DUPLICATE&lt;/span&gt;" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.terminator;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-267">
+                    <mxGeometry x="280" y="2020" width="140" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="fpkLN9LVufnfCmGrl4Mu-2" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="Tkg7loyrQP702Ur1c9dN-267">
+                    <mxGeometry x="10" y="2020" width="260" height="240" as="geometry">
+                        <mxRectangle x="90" y="210" width="70" height="30" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="fpkLN9LVufnfCmGrl4Mu-3" value="&lt;b&gt;Meaning&lt;/b&gt;:&lt;br&gt;Duplicate message - don&#39;t broadcast&lt;br&gt;&lt;br&gt;&lt;b&gt;RPC&lt;/b&gt;: Doesn&#39;t do anything.&amp;nbsp;&lt;br&gt;&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="fpkLN9LVufnfCmGrl4Mu-2">
+                    <mxGeometry y="30" width="260" height="210" as="geometry"/>
                 </mxCell>
                 <mxCell id="-MXcLcMf_BDdAfsZCEQr-1" value="Time Logic (block)" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;" parent="1" vertex="1">
                     <mxGeometry x="880" y="4983" width="1760" height="1756" as="geometry"/>
