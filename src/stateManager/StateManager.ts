@@ -850,16 +850,11 @@ class StateManager {
                 latestExitBlockHash !== currentOnChainExitBlockHash
             ) {
                 exitBlocks.unshift(currentExitBlock.block);
+                latestExitBlockHash = currentExitBlock.block.previousBlockHash;
                 currentExitBlock =
                     this.storage.exitChannelBlocks.getExitChannelBlockEntry(
                         currentExitBlock.block.previousBlockHash
                     );
-                if (!currentExitBlock) {
-                    break;
-                }
-                latestExitBlockHash = ethers.keccak256(
-                    Codec.encode(currentExitBlock.block, Type.ExitChannelBlock)
-                );
             }
 
             // Update snapshot
