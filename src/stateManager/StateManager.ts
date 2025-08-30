@@ -786,7 +786,8 @@ class StateManager {
                         genesisSnapshot.snapshotData.latestJoinChannelBlockHash
                 ) {
                     joinChannelBlocks.unshift(currentJoinChannelBlock.block);
-                    currentJoinChannelBlockHash = currentJoinChannelBlock.block.previousBlockHash;
+                    currentJoinChannelBlockHash =
+                        currentJoinChannelBlock.block.previousBlockHash;
                     currentJoinChannelBlock =
                         this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
                             currentJoinChannelBlock.block.previousBlockHash
@@ -809,13 +810,11 @@ class StateManager {
                         ? new ethers.Interface(errorAbis).parseError(errorData)
                         : null;
 
-                    if (customError?.name === "ErrorDisputeAlreadyReduced") {
-                        break; // The reduced result was already computed, continue the pipeline
+                    if (customError?.name !== "ErrorDisputeAlreadyReduced") {
+                        throw new Error(
+                            `reduceAndFinalize failed: ${customError?.name || "unknown error"}`
+                        );
                     }
-
-                    throw new Error(
-                        `reduceAndFinalize failed: ${customError?.name || "unknown error"}`
-                    );
                 }
 
                 // Read canonical reduced result from chain and traverse
