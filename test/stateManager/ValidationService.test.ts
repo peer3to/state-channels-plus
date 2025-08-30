@@ -1,5 +1,5 @@
 import ValidationService from "../../src/stateManager/ValidationService";
-import { BlockValidationAction, TimeConfig } from "../../src/types";
+import { BlockValidationResult, TimeConfig } from "../../src/types";
 import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Block } from "../../src/models";
 import { Codec } from "../../src/utils";
@@ -298,7 +298,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
                 createBlockConfirmation()
             );
 
-            expect(result.action).to.equal(BlockValidationAction.BROADCAST);
+            expect(result.action).to.equal(BlockValidationResult.BROADCAST);
         });
     });
 
@@ -327,7 +327,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
 
             expect(result).to.eql({
                 shouldDisconnect: true,
-                action: BlockValidationAction.DISPUTE
+                action: BlockValidationResult.DISPUTE
             });
         });
 
@@ -355,7 +355,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
 
             expect(result).to.eql({
                 shouldDisconnect: true,
-                action: BlockValidationAction.DISPUTE
+                action: BlockValidationResult.DISPUTE
             });
         });
 
@@ -422,7 +422,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
                 createBlockConfirmation()
             );
 
-            expect(result.action).to.equal(BlockValidationAction.SUCCESS);
+            expect(result.action).to.equal(BlockValidationResult.SUCCESS);
         });
     });
 
@@ -445,7 +445,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
             );
 
             expect(result.shouldDisconnect).to.be.true;
-            expect(result.action).to.equal(BlockValidationAction.DISPUTE);
+            expect(result.action).to.equal(BlockValidationResult.DISPUTE);
         });
     });
 
@@ -500,7 +500,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
                 createBlockConfirmation()
             );
 
-            expect(result.action).to.equal(BlockValidationAction.SUCCESS);
+            expect(result.action).to.equal(BlockValidationResult.SUCCESS);
         });
 
         // Test Case 2: Author didn't sign, previous has onChain, extends window
@@ -530,7 +530,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
                 createBlockConfirmation()
             );
 
-            expect(result.action).to.equal(BlockValidationAction.SUCCESS);
+            expect(result.action).to.equal(BlockValidationResult.SUCCESS);
         });
 
         // Test Case 3: Valid P2P timing but posted too late on-chain
@@ -564,7 +564,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
                 createBlockConfirmation()
             );
 
-            expect(result.action).to.equal(BlockValidationAction.DISPUTE);
+            expect(result.action).to.equal(BlockValidationResult.DISPUTE);
             expect(result.shouldDisconnect).to.be.true;
             expect(fraudProofStub.called).to.be.true;
         });
@@ -595,7 +595,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
                 createBlockConfirmation()
             );
 
-            expect(result.action).to.equal(BlockValidationAction.DISPUTE);
+            expect(result.action).to.equal(BlockValidationResult.DISPUTE);
             expect(fraudProofStub.called).to.be.true;
         });
 
@@ -626,7 +626,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
                 createBlockConfirmation()
             );
 
-            expect(result.action).to.equal(BlockValidationAction.DISPUTE);
+            expect(result.action).to.equal(BlockValidationResult.DISPUTE);
             expect(fraudProofStub.called).to.be.true;
         });
 
@@ -682,7 +682,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
                 createBlockConfirmation()
             );
 
-            expect(result.action).to.equal(BlockValidationAction.SUCCESS);
+            expect(result.action).to.equal(BlockValidationResult.SUCCESS);
         });
 
         // Test Case 7: Invalid timing, retry failed
@@ -719,7 +719,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
                 createBlockConfirmation()
             );
 
-            expect(result.action).to.equal(BlockValidationAction.DISPUTE);
+            expect(result.action).to.equal(BlockValidationResult.DISPUTE);
             expect(fraudProofStub.called).to.be.true;
             expect(fetchStub.called).to.be.true;
         });
@@ -751,7 +751,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
             );
 
             expect(result.action).to.equal(
-                BlockValidationAction.NOT_ENOUGH_TIME
+                BlockValidationResult.NOT_ENOUGH_TIME
             );
             expect(result.shouldDisconnect).to.be.false;
         });
@@ -781,7 +781,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
                 createBlockConfirmation()
             );
 
-            expect(result.action).to.equal(BlockValidationAction.SUCCESS);
+            expect(result.action).to.equal(BlockValidationResult.SUCCESS);
         });
     });
 
@@ -796,7 +796,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
                 createBlockConfirmation()
             );
 
-            expect(result.action).to.equal(BlockValidationAction.SUCCESS);
+            expect(result.action).to.equal(BlockValidationResult.SUCCESS);
         });
     });
 });

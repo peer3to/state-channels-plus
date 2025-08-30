@@ -65,10 +65,16 @@ class StateChannelEventListener {
                     channelId
                 ),
             handler: (logObj: any) => {
-                const { channelId, sender, signedBlock, timestamp } =
-                    logObj.args;
+                const {
+                    channelId,
+                    commitmentHash,
+                    sender,
+                    signedBlock,
+                    timestamp
+                } = logObj.args;
                 this.localDiamondContract.onBlockCalldataPosted(
                     channelId,
+                    commitmentHash,
                     sender,
                     signedBlock,
                     timestamp
