@@ -786,19 +786,11 @@ class StateManager {
                         genesisSnapshot.snapshotData.latestJoinChannelBlockHash
                 ) {
                     joinChannelBlocks.unshift(currentJoinChannelBlock.block);
+                    currentJoinChannelBlockHash = currentJoinChannelBlock.block.previousBlockHash;
                     currentJoinChannelBlock =
                         this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
                             currentJoinChannelBlock.block.previousBlockHash
                         );
-                    if (!currentJoinChannelBlock) {
-                        break;
-                    }
-                    currentJoinChannelBlockHash = ethers.keccak256(
-                        Codec.encode(
-                            currentJoinChannelBlock.block,
-                            Type.JoinChannelBlock
-                        )
-                    );
                 }
 
                 // Reduce and finalize on-chain to obtain the reduced fork id
