@@ -56,7 +56,8 @@ import {
     hash,
     isCustomEvmError,
     getActiveParticipants,
-    SignatureUtils
+    SignatureUtils,
+    decodeErrorProxy
 } from "@/utils";
 // Types
 import { AgreementFlag, BlockValidationAction, TimeConfig } from "@/types";
@@ -120,7 +121,9 @@ class StateManager {
         this.diamondStateMachine = diamondStateMachine;
         this.p2pEventHooks = p2pEventHooks;
         this.timeConfig = timeConfig;
-        this.stateChannelManagerContract = stateChannelManagerContract;
+        this.stateChannelManagerContract = decodeErrorProxy(
+            stateChannelManagerContract
+        );
         this.storage = storage;
         this.localDiamondContract = localDiamondContract;
 
@@ -786,8 +789,9 @@ class StateManager {
                         genesisSnapshot.snapshotData.latestJoinChannelBlockHash
                 ) {
                     joinChannelBlocks.unshift(currentJoinChannelBlock.block);
-                    currentJoinChannelBlockHash =
-                        currentJoinChannelBlock.block.previousBlockHash;
+                    currentJoinChannelBlockHash = ethers.hexlify(
+                        currentJoinChannelBlock.block.previousBlockHash
+                    );
                     currentJoinChannelBlock =
                         this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
                             currentJoinChannelBlock.block.previousBlockHash
@@ -795,25 +799,23 @@ class StateManager {
                 }
 
                 // Reduce and finalize on-chain to obtain the reduced fork id
-                const txResponse =
-                    await this.stateChannelManagerContract.reduceAndFinalize(
-                        disputes,
-                        creationTimestamp,
-                        latestSnapshot.toStruct(),
-                        encodedStateForReduce,
-                        joinChannelBlocks
-                    );
-                const txReceipt = await txResponse.wait();
-                if (txReceipt?.status === 0) {
-                    const errorData = txReceipt.logs?.[0]?.data;
-                    const customError = errorData
-                        ? new ethers.Interface(errorAbis).parseError(errorData)
-                        : null;
-
-                    if (customError?.name !== "ErrorDisputeAlreadyReduced") {
-                        throw new Error(
-                            `reduceAndFinalize failed: ${customError?.name || "unknown error"}`
+                try {
+                    const txResponse =
+                        await this.stateChannelManagerContract.reduceAndFinalize(
+                            disputes,
+                            creationTimestamp,
+                            latestSnapshot.toStruct(),
+                            encodedStateForReduce,
+                            joinChannelBlocks
                         );
+                    await txResponse.wait();
+                } catch (error) {
+                    if (
+                        isCustomEvmError(error) &&
+                        error.errorDescription.name !==
+                            "ErrorDisputeAlreadyReduced"
+                    ) {
+                        throw error; // Re-throw other errors
                     }
                 }
 
