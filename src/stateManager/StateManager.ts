@@ -775,7 +775,7 @@ class StateManager {
                 }
 
                 // Build join channel blocks
-                let currentJoinChannelBlockHash =
+                let currentJoinChannelBlockHash: Hash =
                     reducedOutput.latestJoinChannelBlockHash;
                 let joinChannelBlocks: JoinChannelBlockStruct[] = [];
                 let currentJoinChannelBlock =
@@ -789,9 +789,8 @@ class StateManager {
                         genesisSnapshot.snapshotData.latestJoinChannelBlockHash
                 ) {
                     joinChannelBlocks.unshift(currentJoinChannelBlock.block);
-                    currentJoinChannelBlockHash = ethers.hexlify(
-                        currentJoinChannelBlock.block.previousBlockHash
-                    );
+                    currentJoinChannelBlockHash =
+                        currentJoinChannelBlock.block.previousBlockHash;
                     currentJoinChannelBlock =
                         this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
                             currentJoinChannelBlock.block.previousBlockHash
