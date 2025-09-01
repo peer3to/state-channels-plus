@@ -1080,14 +1080,14 @@ class StateManager {
         const previousStateSnapshot = this.storage.getPreviousStateSnapshot(
             block.coordinates
         )!;
+        const genesisStateSnapshot =
+            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                block.forkId
+            )!;
 
         const latestJoinChannelBlockHash =
-            (await this.localDiamondContract.getLatestJoinChannelBlockHash(
-                this.channelId
-            )) as Hash;
-        const totalDeposits = await this.localDiamondContract.getTotalDeposits(
-            this.channelId
-        );
+            genesisStateSnapshot.snapshotData.latestJoinChannelBlockHash;
+        const totalDeposits = genesisStateSnapshot.snapshotData.totalDeposits;
 
         let { latestExitChannelBlockHash, totalWithdrawals, participants } =
             previousStateSnapshot.snapshotData;
@@ -1095,16 +1095,7 @@ class StateManager {
         let exitChannelBlock: ExitChannelBlockStruct | undefined;
 
         if (exitChannels && exitChannels.length > 0) {
-            participants = Array.from(
-                difference(
-                    new Set(participants),
-                    new Set(
-                        exitChannels.map(
-                            (exitChannel) => exitChannel.participant
-                        )
-                    )
-                )
-            );
+            participants = await this.diamondStateMachine.getParticipants();
             exitChannelBlock = {
                 exitChannels,
                 previousBlockHash: latestExitChannelBlockHash
@@ -1123,7 +1114,7 @@ class StateManager {
         const stateSnapshot: StateSnapshotStruct = {
             forkId: block.coordinates.forkId,
             blockHeight: BigInt(block.coordinates.height),
-            timestamp: BigInt(Clock.getTimeInSeconds()),
+            timestamp: block.timestamp,
             snapshotData: {
                 stateMachineStateHash: stateMachineStateHash,
                 participants,
