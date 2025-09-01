@@ -7,15 +7,9 @@ import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
 import Storage from "@/storage";
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
-import { difference, isSubset, hash } from "@/utils";
+import { difference, isSubset } from "@/utils";
 import { BlockValidationResult, TimeConfig } from "@/types";
-import {
-    Address,
-    ChannelId,
-    ForkId,
-    Timestamp,
-    BlockOrSnapshot
-} from "@/types/types";
+import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
 
@@ -424,8 +418,8 @@ export default class ValidationService {
                 );
 
             // Calculate how many blocks back should we look for the log on-chain
-            let avgBlockTime = Clock.getAverageOnChainBlockTime();
-            let maxTime =
+            const avgBlockTime = Clock.getAverageOnChainBlockTime();
+            const maxTime =
                 this.timeConfig.p2pTime +
                 this.timeConfig.agreementTime +
                 this.timeConfig.chainFallbackTime;
@@ -459,7 +453,7 @@ export default class ValidationService {
     ): Promise<boolean> {
         // if doesn't have on-chain timestamp try and fetch it
         if (!block.onChainTimestamp) {
-            let onChainTimestamp = await this.fetchOnChainTimestamp(block);
+            const onChainTimestamp = await this.fetchOnChainTimestamp(block);
             // if still doesn't have on-chain timestamp return false - not posted at all
             if (!onChainTimestamp) return false;
             block.onChainTimestamp = onChainTimestamp;
@@ -478,9 +472,6 @@ export default class ValidationService {
             this.timeConfig.agreementTime +
             this.timeConfig.chainFallbackTime;
 
-        if (block.onChainTimestamp > maxAllowedTimestamp) {
-            return true;
-        }
-        return false;
+        return block.onChainTimestamp > maxAllowedTimestamp;
     }
 }
