@@ -28,7 +28,8 @@ export default class ValidationService {
     }
 
     async validateBlockConfirmation(
-        blockConfirmation: BlockConfirmationStruct
+        blockConfirmation: BlockConfirmationStruct,
+        onChainTimestamp?: Timestamp
     ): Promise<BlockValidationResult> {
         const forkId = this.getForkId();
         const channelId = this.channelId;
@@ -40,7 +41,11 @@ export default class ValidationService {
             return BlockValidationResult.DISCONNECT;
         }
         // 2. Authenticate the block
-        const block = this.authenticateBlock(blockConfirmation, channelId);
+        const block = this.authenticateBlock(
+            blockConfirmation,
+            channelId,
+            onChainTimestamp
+        );
         if (!block) {
             return BlockValidationResult.DISCONNECT;
         }
@@ -141,12 +146,16 @@ export default class ValidationService {
 
     private authenticateBlock(
         blockConfirmation: BlockConfirmationStruct,
-        channelId: ChannelId
+        channelId: ChannelId,
+        onChainTimestamp?: Timestamp
     ): Block | undefined {
         let block: Block;
 
         try {
-            block = Block.fromBlockConfirmation(blockConfirmation);
+            block = Block.fromBlockConfirmation(
+                blockConfirmation,
+                onChainTimestamp
+            );
             if (block.channelId !== channelId) return;
             if (block.signerAddress !== block.author) return;
         } catch (error) {

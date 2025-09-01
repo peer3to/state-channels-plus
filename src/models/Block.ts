@@ -16,7 +16,7 @@ import {
     Bytes
 } from "@/types/types";
 
-import { union } from "@/utils";
+import { union, isSubset } from "@/utils";
 
 export type BlockCoordinates = {
     forkId: ForkId;
@@ -216,6 +216,13 @@ export default class Block {
             }
         }
         return { didSign: false, signature: undefined };
+    }
+
+    didEveryoneSign(participants: Address[] | Set<Address>): boolean {
+        const participantsSet =
+            participants instanceof Set ? participants : new Set(participants);
+        if (participantsSet.size === 0) return false;
+        return isSubset(participantsSet, this.allSignerAddresses);
     }
 
     sign(signer: Signer): Promise<Signature> {

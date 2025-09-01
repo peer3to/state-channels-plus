@@ -269,6 +269,12 @@ export class BlockStorage {
         }
     }
 
+    getLatestBlockEntry(forkId: ForkId): BlockEntry | undefined {
+        const blockIterator = this.getIterator(forkId, SortOrder.DESC);
+        const iteratorResult = blockIterator.next();
+        return iteratorResult.done ? undefined : iteratorResult.value;
+    }
+
     // ====================================
     // PRIVATE HELPERS
     // ====================================

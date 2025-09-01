@@ -201,38 +201,16 @@ class StateManager {
         );
     }
     //Triggered by the On-chain Event Listener when block calldata is posted on-chain
-    public collectOnChainBlock(
+    public async collectOnChainBlock(
         signedBlock: SignedBlockStruct,
         timestamp: Timestamp
     ) {
-        console.log("StateManager - collectOnChainBlock");
-        let flag = this.agreementManager.collectOnChainBlock(
+        const blockConfirmation: BlockConfirmationStruct = {
             signedBlock,
-            Number(timestamp)
-        );
-        let block = Block.fromSignedBlock(signedBlock);
-        let disputeProof: DisputeFraudProofStruct;
-        if (flag == AgreementFlag.DOUBLE_SIGN) {
-            console.log("StateManager - collectOnChainBlock - double sign");
-            disputeProof =
-                this.disputeHandler.proofManager.createDoubleSignProof([
-                    signedBlock
-                ]);
-            this.disputeHandler.createDispute(block.forkId, NULL, 0, [
-                disputeProof
-            ]);
-        } else if (flag == AgreementFlag.INCORRECT_DATA) {
-            console.log("StateManager - collectOnChainBlock - incorrect data");
-            disputeProof =
-                this.disputeHandler.proofManager.createIncorrectDataProof(
-                    signedBlock
-                );
-            this.disputeHandler.createDispute(block.forkId, NULL, 0, [
-                disputeProof
-            ]);
-        }
-        console.log("StateManager - collectOnChainBlock - done");
-        this.onSuccessCommon();
+            signatures: []
+        };
+
+        return this.onBlockConfirmation(blockConfirmation, timestamp);
     }
     private async tryExecuteFromQueue() {
         const nextBlockHeight = this.storage.blocks.getNextBlockHeight(
@@ -263,12 +241,6 @@ class StateManager {
     ): Promise<void> {
         console.log("StateManager - SetState", _forkId, _timestamp);
         await this.diamondStateMachine.setState(encodedState);
-        this.agreementManager.newFork(
-            encodedState,
-            await this.diamondStateMachine.getParticipants(),
-            _forkId,
-            _timestamp
-        );
 
         //Try timeout next participant
         this.p2pEventHooks.onSetState?.();
@@ -287,7 +259,8 @@ class StateManager {
     // returns true if the block is valid and the state transition is successful
     // returns false -> the calling context should disconnect from the peer
     public async onBlockConfirmation(
-        blockConfirmation: BlockConfirmationStruct
+        blockConfirmation: BlockConfirmationStruct,
+        onChainTimestamp?: Timestamp
     ): Promise<boolean> {
         // the try/catch is to ensure that the mutex is unlocked in case of an error
         // no error is actually expected to happen, and the catch block just re-throws the error
@@ -296,7 +269,8 @@ class StateManager {
 
             const validationResult =
                 await this.validationService.validateBlockConfirmation(
-                    blockConfirmation
+                    blockConfirmation,
+                    onChainTimestamp
                 );
 
             if (validationResult !== BlockValidationResult.SUCCESS) {
@@ -436,11 +410,7 @@ class StateManager {
 
             const block = Block.fromSignedBlock(signedBlock);
 
-            this.agreementManager.addBlock(
-                block,
-                signedBlock.signature,
-                encodedState
-            );
+            this.storage.blocks.storeBlock(block);
 
             successCallback();
             await this.onSuccessCommon();
@@ -462,7 +432,9 @@ class StateManager {
         signedBlock: SignedBlockStruct
     ): Promise<void> {
         // If not everyone has signed, do the on-chain post
-        if (!this.agreementManager.didEveryoneSignBlock(block)) {
+        const participants = this.storage.getParticipants(block.coordinates);
+
+        if (!block.didEveryoneSign(participants)) {
             console.log("Posting calldata on chain!");
             this.p2pEventHooks.onPostingCalldata?.();
 
@@ -954,52 +926,57 @@ class StateManager {
     // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute
     private async tryTimeoutParticipant(
         forkId: ForkId,
-        transactionCnt: BlockHeight,
+        blockHeight: BlockHeight,
         participantAdr: Address
     ) {
         if (participantAdr == this.signerAddress) return;
-        const block = this.agreementManager.getBlock(forkId, transactionCnt);
-        if (block) {
-            if (this.agreementManager.didEveryoneSignBlock(block)) return;
-        }
-        //if there is no block -> check if player posted on chain and try timeout
-        if (
-            this.agreementManager.didParticipantPostOnChainLocal(
-                forkId,
-                transactionCnt,
-                participantAdr
-            )
-        )
-            return;
 
-        if (
-            Clock.getTimeInSeconds() <
-            this.agreementManager.getChainLatestBlockTimestamp(
-                forkId,
-                transactionCnt
-            ) +
-                this.getTimeoutWaitTimeSeconds()
-        )
-            return;
+        const blockEntry = this.storage.blocks.getBlockEntry(
+            forkId,
+            blockHeight
+        );
+        if (blockEntry) {
+            const block = blockEntry.block;
+            const participants = this.storage.getParticipants(
+                block.coordinates
+            );
+
+            if (block.didEveryoneSign(participants)) return;
+
+            if (blockEntry.onChainTimestamp !== undefined) return;
+        }
+
         const response =
             await this.stateChannelManagerContract.getBlockCallDataCommitment(
                 this.channelId,
                 forkId,
-                transactionCnt,
+                blockHeight,
                 participantAdr
             );
         if (response.found) return;
-        //This should be enough since Clock should always lag behind DLT clock
+
+        const latestBlockEntry =
+            this.storage.blocks.getLatestBlockEntry(forkId);
+        if (!latestBlockEntry) return; // No blocks yet, can't determine timeout
+
+        const expectedBlockTime =
+            latestBlockEntry.block.getRelevantTimestamp(participantAdr);
+
+        if (
+            Clock.getTimeInSeconds() <
+            expectedBlockTime + this.getTimeoutWaitTimeSeconds()
+        )
+            return;
+
         const delayTimeSeconds =
             this.getTimeoutWaitTimeSeconds() -
-            (Clock.getTimeInSeconds() -
-                this.agreementManager.getLatestBlockTimestamp(forkId));
+            (Clock.getTimeInSeconds() - expectedBlockTime);
 
         if (delayTimeSeconds < 0) {
             this.disputeHandler.createDispute(
                 forkId,
                 participantAdr,
-                transactionCnt,
+                blockHeight,
                 []
             );
             console.log("Timeout participant!");
@@ -1009,7 +986,7 @@ class StateManager {
                     this.disputeHandler.createDispute(
                         forkId,
                         participantAdr,
-                        transactionCnt,
+                        blockHeight,
                         []
                     );
                     console.log(
@@ -1063,8 +1040,10 @@ class StateManager {
     }
 
     private adjustTimestampIfNeeded(tx: TransactionStruct): void {
-        const latestBlockTimestamp =
-            this.agreementManager.getLatestBlockTimestamp(this.forkId);
+        const latestBlockTimestamp = this.storage.blocks.getLatestBlockEntry(
+            this.forkId
+        )!.block.timestamp;
+
         if (Number(tx.header.timestamp) < latestBlockTimestamp) {
             tx.header.timestamp = latestBlockTimestamp + 1;
         }
@@ -1139,17 +1118,27 @@ class StateManager {
         posteriorStateHash: Hash
     ): Promise<BlockStruct> {
         const forkId = this.forkId;
-        const transactionCnt = Number(tx.header.transactionCnt);
+        const blockHeight = Number(tx.header.transactionCnt);
 
-        const previousBlockHash = this.storageModule.getPreviousBlockHash(
-            forkId,
-            transactionCnt - 1
+        let previousHash: Hash;
+
+        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
+            {
+                forkId,
+                height: blockHeight
+            }
         );
+
+        if (previousBlockOrSnapshot.block) {
+            previousHash = previousBlockOrSnapshot.block.hash;
+        } else {
+            previousHash = previousBlockOrSnapshot.stateSnapshot!.hash;
+        }
 
         const stateSnapshot = await this.createStateSnapshot(
             posteriorStateHash,
             forkId,
-            transactionCnt
+            blockHeight
         );
 
         const stateSnapshotHash = stateSnapshot.hash;
@@ -1157,7 +1146,7 @@ class StateManager {
         const blockStruct: BlockStruct = {
             transaction: tx,
             stateSnapshotHash: stateSnapshotHash,
-            previousBlockHash: previousBlockHash
+            previousBlockHash: previousHash
         };
 
         return blockStruct;
