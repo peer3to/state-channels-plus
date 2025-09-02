@@ -927,40 +927,106 @@ class StateManager {
     private async tryTimeoutParticipant(
         forkId: ForkId,
         blockHeight: BlockHeight,
-        participantAdr: Address
-    ) {
-        if (participantAdr == this.signerAddress) return;
+        participantAddress: Address
+    ): Promise<void> {
+        if (participantAddress === this.signerAddress) {
+            return;
+        }
 
+        // Get the block entry - if it doesn't exist (can happen ONLY from setState), skip timeout
         const blockEntry = this.storage.blocks.getBlockEntry(
             forkId,
             blockHeight
         );
-        if (blockEntry) {
-            const block = blockEntry.block;
-            const participants = this.storage.getParticipants(
-                block.coordinates
-            );
-
-            if (block.didEveryoneSign(participants)) return;
-
-            if (blockEntry.onChainTimestamp !== undefined) return;
+        if (!blockEntry) {
+            return;
         }
 
-        const response =
+        const block = blockEntry.block;
+        const participants = this.storage.getParticipants(block.coordinates);
+
+        // If everyone already signed or block has already onChainTimestamp, no timeout needed
+        if (
+            block.didEveryoneSign(participants) ||
+            blockEntry.onChainTimestamp !== undefined
+        ) {
+            return;
+        }
+
+        // Check if participant posted a commitment on-chain
+        const commitmentResponse =
             await this.stateChannelManagerContract.getBlockCallDataCommitment(
                 this.channelId,
                 forkId,
                 blockHeight,
-                participantAdr
+                participantAddress
             );
-        if (response.found) return;
 
-        // we have a "block" hash, but we need to make sure it is a commitment to a real block
-        // can re-use fetchOnChainTimestamp to get the real block and time stamp (underlying commitment)
-        // if the block commited is junk the we force timeout (see bool isForced on Timeout struct)
+        if (!commitmentResponse.found) {
+            // No commitment posted - proceed with timeout
+            await this.createTimeOutDispute(
+                forkId,
+                blockHeight,
+                participantAddress
+            );
+            return;
+        }
 
-        // after getting the block we feed it to the event handler that was suppose to fire when the block data was posted
+        // Validate the on-chain commitment is legitimate
+        const isValidCommitment = await this.validateBlockCommitment(
+            blockEntry.block,
+            commitmentResponse.blockCalldataCommitment,
+            participantAddress
+        );
 
+        if (!isValidCommitment) {
+            // Invalid commitment - force timeout
+            // TODO
+        }
+    }
+
+    private async validateBlockCommitment(
+        block: Block,
+        blockCalldataCommitment: Hash,
+        participantAddress: Address
+    ): Promise<boolean> {
+        const onChainResult =
+            await this.validationService.fetchBlockCommitmentCalldata(
+                block,
+                blockCalldataCommitment
+            );
+
+        if (!onChainResult) {
+            return false;
+        }
+
+        const { signedBlock, timestamp } = onChainResult;
+        const expectedCommitment = hash(
+            Codec.encode({ signedBlock, timestamp }, Type.BlockCommitment)
+        );
+
+        const isValid = expectedCommitment === blockCalldataCommitment;
+
+        if (isValid) {
+            // we should have already notified the event listener.
+            // calling the same handler the event lister would have called
+            this.stateChannelEventListener.handleBlockCalldataPosted(
+                this.channelId,
+                blockCalldataCommitment,
+                participantAddress,
+                block.signedBlock,
+                timestamp
+            );
+        }
+
+        return isValid;
+    }
+
+    private async createTimeOutDispute(
+        forkId: ForkId,
+        blockHeight: BlockHeight,
+        participantAddress: Address
+    ): Promise<void> {
         const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
             {
                 forkId,
@@ -968,46 +1034,50 @@ class StateManager {
             }
         );
 
-        // if block use getRelevantTimestamp
-        // if snapshot use the snapshot timestamp
+        // Calculate when the participant should have acted
+        const expectedBlockTime: Timestamp = previousBlockOrSnapshot.block
+            ? previousBlockOrSnapshot.block.getRelevantTimestamp(
+                  participantAddress
+              )
+            : previousBlockOrSnapshot.stateSnapshot!.timestamp;
 
-        const expectedBlockTime =
-            latestBlockEntry.block.getRelevantTimestamp(participantAdr);
+        const currentTime = Clock.getTimeInSeconds();
+        const timeoutDeadline =
+            expectedBlockTime + this.getTimeoutWaitTimeSeconds();
 
-        if (
-            Clock.getTimeInSeconds() <
-            expectedBlockTime + this.getTimeoutWaitTimeSeconds()
-        )
+        // If timeout period hasn't elapsed yet, don't create dispute
+        if (currentTime < timeoutDeadline) {
             return;
+        }
 
-        const delayTimeSeconds =
-            this.getTimeoutWaitTimeSeconds() -
-            (Clock.getTimeInSeconds() - expectedBlockTime);
+        const elapsedTime = currentTime - expectedBlockTime;
+        const remainingDelay = this.getTimeoutWaitTimeSeconds() - elapsedTime;
 
-        if (delayTimeSeconds < 0) {
+        if (remainingDelay <= 0) {
+            // Time has fully elapsed - create dispute immediately
             this.disputeHandler.createDispute(
                 forkId,
-                participantAdr,
+                participantAddress,
                 blockHeight,
                 []
             );
-            console.log("Timeout participant!");
+            console.log(
+                `Timeout dispute created for participant: ${participantAddress}`
+            );
         } else {
-            // should re-call tryTimeoutParticipant again, not create dispute
+            // Schedule another timeout check after remaining delay
             scheduleTask(
                 async () => {
-                    this.disputeHandler.createDispute(
+                    await this.tryTimeoutParticipant(
                         forkId,
-                        participantAdr,
                         blockHeight,
-                        []
+                        participantAddress
                     );
                     console.log(
-                        "Timeout participant! - delayed",
-                        delayTimeSeconds
+                        `Delayed timeout executed for participant: ${participantAddress}, delay: ${remainingDelay}s`
                     );
                 },
-                delayTimeSeconds * 1000,
+                remainingDelay * 1000,
                 "timeoutParticipantDelayed"
             );
         }

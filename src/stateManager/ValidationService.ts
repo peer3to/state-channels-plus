@@ -1,4 +1,7 @@
-import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    BlockConfirmationStruct,
+    SignedBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 
 import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
 import { ZeroHash } from "ethers";
@@ -9,7 +12,7 @@ import Storage from "@/storage";
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 import { difference, isSubset } from "@/utils";
 import { BlockValidationResult, TimeConfig } from "@/types";
-import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
+import { Address, ChannelId, ForkId, Hash, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
 
@@ -400,13 +403,9 @@ export default class ValidationService {
     }
 
     private async fetchOnChainTimestamp(
-        block: Block | undefined
+        block: Block
     ): Promise<Timestamp | undefined> {
-        if (block === undefined) {
-            return undefined;
-        }
         try {
-            // Check if commitment exists on-chain
             const commitmentResult =
                 await this.stateChannelManagerContract.getBlockCallDataCommitment(
                     block.channelId,
@@ -414,16 +413,33 @@ export default class ValidationService {
                     block.height,
                     block.author
                 );
-
             if (!commitmentResult.found) {
                 return undefined;
             }
+            return (
+                await this.fetchBlockCommitmentCalldata(
+                    block,
+                    commitmentResult.blockCalldataCommitment
+                )
+            )?.timestamp;
+        } catch (error) {
+            console.error("Error fetching on-chain timestamp:", error);
+            return undefined;
+        }
+    }
 
+    async fetchBlockCommitmentCalldata(
+        block: Block,
+        blockCommitment: Hash
+    ): Promise<
+        { signedBlock: SignedBlockStruct; timestamp: Timestamp } | undefined
+    > {
+        try {
             // filter BlockCalldataPosted calls by channelId and blockCalldataCommitment
             const filter =
                 this.stateChannelManagerContract.filters.BlockCalldataPosted(
                     block.channelId,
-                    commitmentResult.blockCalldataCommitment
+                    blockCommitment
                 );
 
             // Calculate how many blocks back should we look for the log on-chain
@@ -446,10 +462,14 @@ export default class ValidationService {
             }
             if (logs.length > 1) {
                 throw new Error(
-                    `Multiple logs found for commitment: ${commitmentResult.blockCalldataCommitment} - logs: ${logs}`
+                    `Multiple logs found for commitment: ${blockCommitment} - logs: ${logs}`
                 );
             }
-            return Number(logs[0].args.timestamp);
+
+            return {
+                signedBlock: logs[0].args.signedBlock,
+                timestamp: Number(logs[0].args.timestamp)
+            };
         } catch (error) {
             console.error("Error fetching on-chain timestamp:", error);
             return undefined;

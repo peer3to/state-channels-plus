@@ -8,7 +8,8 @@ import {
     BlockConfirmationStruct,
     ExitChannelStruct,
     JoinChannelBlockStruct,
-    SnapshotDataStruct
+    SnapshotDataStruct,
+    SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     BlockDoubleSignProofStruct,
@@ -17,6 +18,7 @@ import {
 } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 import {
     BlockEthersType,
+    BlockCommitmentEthersType,
     DisputeEthersType,
     JoinChannelEthersType,
     TransactionEthersType,
@@ -32,7 +34,7 @@ import {
     FraudProofType
 } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { Bytes } from "@/types/types";
+import { Bytes, Timestamp } from "@/types/types";
 import { ExecResult } from "@ethereumjs/evm";
 
 export type FraudStruct =
@@ -43,6 +45,7 @@ export type FraudStruct =
 type StructType =
     | FraudStruct
     | BlockStruct
+    | { signedBlock: SignedBlockStruct; timestamp: Timestamp }
     | BlockConfirmationStruct
     | JoinChannelStruct
     | TransactionStruct
@@ -56,6 +59,7 @@ type StructType =
 // Enum for better autocomplete and type safety
 export enum Type {
     Block,
+    BlockCommitment,
     JoinChannel,
     BlockConfirmation,
     Transaction,
@@ -73,6 +77,7 @@ export class Codec {
         string
     >([
         [Type.Block, BlockEthersType],
+        [Type.BlockCommitment, BlockCommitmentEthersType],
         [Type.JoinChannel, JoinChannelEthersType],
         [Type.BlockConfirmation, BlockConfirmationEthersType],
         [Type.Transaction, TransactionEthersType],
