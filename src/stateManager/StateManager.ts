@@ -1298,12 +1298,6 @@ class StateManager {
         }
     }
 
-    public onOutputStateSnapshotVerified(
-        outputStateSnapshot: StateSnapshot,
-        commitment: Hash
-    ) {
-        this.outputStateSnapshotData.set(commitment, outputStateSnapshot);
-    }
     public async onDisputeConfirmation(
         signedDispute: SignedDisputeStruct
     ): Promise<ExecutionFlags> {
