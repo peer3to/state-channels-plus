@@ -955,9 +955,21 @@ class StateManager {
             );
         if (response.found) return;
 
-        const latestBlockEntry =
-            this.storage.blocks.getLatestBlockEntry(forkId);
-        if (!latestBlockEntry) return; // No blocks yet, can't determine timeout
+        // we have a "block" hash, but we need to make sure it is a commitment to a real block
+        // can re-use fetchOnChainTimestamp to get the real block and time stamp (underlying commitment)
+        // if the block commited is junk the we force timeout (see bool isForced on Timeout struct)
+
+        // after getting the block we feed it to the event handler that was suppose to fire when the block data was posted
+
+        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
+            {
+                forkId,
+                height: blockHeight
+            }
+        );
+
+        // if block use getRelevantTimestamp
+        // if snapshot use the snapshot timestamp
 
         const expectedBlockTime =
             latestBlockEntry.block.getRelevantTimestamp(participantAdr);
@@ -981,6 +993,7 @@ class StateManager {
             );
             console.log("Timeout participant!");
         } else {
+            // should re-call tryTimeoutParticipant again, not create dispute
             scheduleTask(
                 async () => {
                     this.disputeHandler.createDispute(
