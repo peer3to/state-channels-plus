@@ -4,7 +4,13 @@ import "./types/DisputeTypes.sol";
 import "./types/DataTypes.sol";
 
 interface StateChannelManagerEvents {
-    event BlockCalldataPosted(bytes32 indexed channelId, address sender, SignedBlock signedBlock, uint256 timestamp);
+    event BlockCalldataPosted(
+        bytes32 indexed channelId,
+        bytes32 indexed commitmentHash,
+        address sender,
+        SignedBlock signedBlock,
+        uint256 timestamp
+    );
     event SetState(bytes32 indexed channelId, bytes encodedState, bytes32 forkId, uint256 timestamp);
     event DisputeCommitted(
         bytes32 indexed channelId,

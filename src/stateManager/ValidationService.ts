@@ -7,22 +7,11 @@ import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
 import Storage from "@/storage";
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
-import { difference, isSubset, hash } from "@/utils";
-import { BlockValidationAction, TimeConfig } from "@/types";
-import {
-    Address,
-    ChannelId,
-    ForkId,
-    Timestamp,
-    BlockOrSnapshot
-} from "@/types/types";
+import { difference, isSubset } from "@/utils";
+import { BlockValidationResult, TimeConfig } from "@/types";
+import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
-
-export type ValidationResult = {
-    shouldDisconnect?: boolean;
-    action?: BlockValidationAction;
-};
 
 export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
@@ -40,7 +29,7 @@ export default class ValidationService {
 
     async validateBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct
-    ): Promise<ValidationResult> {
+    ): Promise<BlockValidationResult> {
         const forkId = this.getForkId();
         const channelId = this.channelId;
 
@@ -48,12 +37,12 @@ export default class ValidationService {
         if (!this.isChannelOpen(forkId)) {
             // not ready
             this.queueForLater(blockConfirmation);
-            return { shouldDisconnect: false };
+            return BlockValidationResult.DISCONNECT;
         }
         // 2. Authenticate the block
         const block = this.authenticateBlock(blockConfirmation, channelId);
         if (!block) {
-            return { shouldDisconnect: true };
+            return BlockValidationResult.DISCONNECT;
         }
 
         //  get participants
@@ -65,69 +54,57 @@ export default class ValidationService {
         // 3. check duplicate blocks
         const duplicateResult = this.checkDuplicateBlock(block, participants);
 
-        if (duplicateResult !== undefined) {
+        if (duplicateResult !== BlockValidationResult.SUCCESS) {
             return duplicateResult;
         }
 
         // 4. author is a participant
         if (!participants.has(block.author)) {
-            return { shouldDisconnect: true };
+            return BlockValidationResult.DISCONNECT;
         }
 
         // 5. check conflicting block
         const conflictResult = this.checkConflictingBlock(block);
-        if (conflictResult !== undefined) {
+        if (conflictResult !== BlockValidationResult.SUCCESS) {
             return conflictResult;
         }
 
         if (await this.isDisputedFork(block.forkId, channelId)) {
             // not ready
             this.queueForLater(block);
-            return { shouldDisconnect: false };
+            return BlockValidationResult.NOT_READY;
         }
 
         // isNext
         if (block.height > this.storage.blocks.getNextBlockHeight(forkId)) {
             // not ready
             this.queueForLater(block);
-            return { shouldDisconnect: false };
+            return BlockValidationResult.NOT_READY;
         }
 
         // Is linked
         if (!this.isLinked(block)) {
-            return { shouldDisconnect: true };
+            // if first block -> wrong genesis fraud proof
+            if (block.height === 0) {
+                //TODO
+                throw new Error("Not implemented");
+                return BlockValidationResult.DISPUTE;
+            }
+            return BlockValidationResult.DISCONNECT;
         }
-
-        // previous block or snapshot
-        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
-            block.coordinates
-        );
 
         // isNextLeader
         const nextLeader = await this.diamondStateMachine.getNextToWrite();
         if (nextLeader !== block.author) {
             // create invalid state transition proof
             this.fraudProofService.createInvalidStateTransitionProof(block);
-            return {
-                shouldDisconnect: true,
-                action: BlockValidationAction.DISPUTE
-            };
+            return BlockValidationResult.DISPUTE;
         }
 
         // Time logic
-        const timeResult = await this.validateTimeLogic(
-            block,
-            previousBlockOrSnapshot,
-            channelId
-        );
+        const timeResult = await this.validateTimeLogic(block);
 
-        if (timeResult) {
-            return timeResult;
-        }
-
-        return {
-            action: BlockValidationAction.SUCCESS
-        };
+        return timeResult;
     }
 
     // ────────────────────── INTERNAL ACTION METHODS ─────────────────────
@@ -182,7 +159,7 @@ export default class ValidationService {
     private checkDuplicateBlock(
         block: Block,
         participants: Set<Address>
-    ): ValidationResult | undefined {
+    ): BlockValidationResult {
         // 1. Check if block is in queue
         if (
             this.storage.queues.isBlockQueued(block, {
@@ -193,12 +170,12 @@ export default class ValidationService {
             const areAllParticipants = isSubset(signerAddresses, participants);
 
             if (!areAllParticipants) {
-                return { shouldDisconnect: true };
+                return BlockValidationResult.DISCONNECT;
             }
 
             // Store in queue (handles signature merging automatically)
             this.queueForLater(block);
-            return;
+            return BlockValidationResult.SUCCESS;
         }
 
         // 2. Check if block is in block storage
@@ -216,7 +193,7 @@ export default class ValidationService {
 
             // no new signatures
             if (newSignatures.size === 0) {
-                return { shouldDisconnect: false };
+                return BlockValidationResult.DUPLICATE;
             }
 
             // Validate new signatures are from participants
@@ -232,18 +209,18 @@ export default class ValidationService {
             );
 
             if (!areNewSignersParticipants) {
-                return { shouldDisconnect: true };
+                return BlockValidationResult.DISCONNECT;
             }
 
             // Store new signatures and indicate broadcast
             this.storage.blocks.storeBlock(block);
-            return { action: BlockValidationAction.BROADCAST };
+            return BlockValidationResult.BROADCAST;
         }
 
-        return;
+        return BlockValidationResult.SUCCESS;
     }
 
-    private checkConflictingBlock(block: Block): ValidationResult | undefined {
+    private checkConflictingBlock(block: Block): BlockValidationResult {
         // conflicting block ?
         const blockEntry = this.storage.blocks.getBlockEntry(
             block.forkId,
@@ -252,7 +229,7 @@ export default class ValidationService {
         const maybePreExistingBlock = blockEntry?.block;
 
         if (!maybePreExistingBlock) {
-            return;
+            return BlockValidationResult.SUCCESS;
         }
 
         // name change for clarity, it isn't a maybe anymore
@@ -264,22 +241,23 @@ export default class ValidationService {
                 conflictingBlock,
                 block
             );
-            return {
-                shouldDisconnect: true,
-                action: BlockValidationAction.DISPUTE
-            };
+            return BlockValidationResult.DISPUTE;
         }
 
         // If not linked we can't slash since the peer could have been building on the wrong 'reality' since someone performed a double sign
         if (this.isLinked(block)) {
             this.fraudProofService.createInvalidStateTransitionProof(block);
-            return {
-                shouldDisconnect: true,
-                action: BlockValidationAction.DISPUTE
-            };
+            return BlockValidationResult.DISPUTE;
         }
 
-        return { shouldDisconnect: true };
+        // if first block -> wrong genesis
+        if (conflictingBlock.height === 0) {
+            //TODO
+            throw new Error("Not implemented");
+            return BlockValidationResult.DISPUTE;
+        }
+
+        return BlockValidationResult.DISCONNECT;
     }
 
     private async isDisputedFork(
@@ -298,97 +276,90 @@ export default class ValidationService {
      * fetching a better on-chain timestamp if needed.
      */
     private async validateTimeLogic(
-        block: Block,
-        previousblockOrSnapshot: BlockOrSnapshot,
-        channelId: ChannelId
-    ): Promise<ValidationResult | undefined> {
+        block: Block
+    ): Promise<BlockValidationResult> {
+        // Calculate previousTimestamp
         let previousTimestamp: Timestamp;
         let previousBlock: Block | undefined;
         let previousStateSnapshot: StateSnapshot | undefined;
-
-        if (previousblockOrSnapshot.block) {
-            previousBlock = previousblockOrSnapshot.block;
+        // previous block or snapshot
+        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
+            block.coordinates
+        );
+        if (previousBlockOrSnapshot.block) {
+            previousBlock = previousBlockOrSnapshot.block;
             previousTimestamp = previousBlock.getRelevantTimestamp(
                 block.author
             );
         } else {
-            previousStateSnapshot = previousblockOrSnapshot.stateSnapshot;
+            previousStateSnapshot = previousBlockOrSnapshot.stateSnapshot;
             previousTimestamp = previousStateSnapshot!.timestamp;
         }
 
+        // OBJECTIVE: isValidTimestamp check
         const isValidTimestamp =
             block.timestamp >= previousTimestamp &&
             block.timestamp <= previousTimestamp + this.timeConfig.p2pTime;
 
         if (!isValidTimestamp) {
+            // if first block or previous block has on-chain timestamp -> we have all the data (best timestamp) -> safe to create a fraud proof
             if (
-                block.height <= 0 || // genesis block
-                previousBlock === undefined || // no previous block == genesis block
+                // first block
+                previousBlock === undefined ||
+                //  previous block has on-chain timestamp
                 previousBlock.onChainTimestamp !== undefined
             ) {
-                // already has best timestamp
-                // no point in trying to update the timestamp => fraud proof
+                // Already has best timestamp - persist InvalidTimestamp fraud proof
                 this.fraudProofService.createInvalidTimestampProof(block);
-                return {
-                    shouldDisconnect: true,
-                    action: BlockValidationAction.DISPUTE
-                };
+                return BlockValidationResult.DISPUTE;
             }
 
-            // try to fetch later timestamp from on-chain data
-            const onChainTimestamp = await this.fetchOnChainTimestamp(
-                previousBlock,
-                channelId
-            );
+            // Try on-chain query to update previous block on-chain timestamp
+            const previousBlockOnChainTimestamp =
+                await this.fetchOnChainTimestamp(previousBlock);
 
-            // Early return: Couldn't fetch or not better than current
-            if (!onChainTimestamp || onChainTimestamp <= previousTimestamp) {
+            // if previousBlockOnChainTimestamp not set/updated or less than previousTimestamp -> we have the best timestamp already -> safe to create a fraud proof
+            if (
+                !previousBlockOnChainTimestamp ||
+                previousBlockOnChainTimestamp <= previousTimestamp
+            ) {
+                // False - persist InvalidTimestamp fraud proof
                 this.fraudProofService.createInvalidTimestampProof(block);
-                return {
-                    shouldDisconnect: true,
-                    action: BlockValidationAction.DISPUTE
-                };
+                return BlockValidationResult.DISPUTE;
             }
 
-            // Update the previous block with the on-chain timestamp
-            previousBlock.onChainTimestamp = onChainTimestamp;
+            // True - Update the previous block with the on-chain timestamp
+            previousBlock.onChainTimestamp = previousBlockOnChainTimestamp;
             this.storage.blocks.setOnChainTimestamp(
                 previousBlock.forkId,
                 previousBlock.height,
-                onChainTimestamp
+                previousBlockOnChainTimestamp
             );
 
-            // Re-validate with updated timestamp
-            const isValidTimestamp =
-                block.timestamp >= onChainTimestamp &&
-                block.timestamp <= onChainTimestamp + this.timeConfig.p2pTime;
-
-            if (!isValidTimestamp) {
-                this.fraudProofService.createInvalidTimestampProof(block);
-                return {
-                    shouldDisconnect: true,
-                    action: BlockValidationAction.DISPUTE
-                };
-            }
-            // If valid, continue with rest of validation
-
-            if (
-                block.onChainTimestamp === undefined ||
-                block.onChainTimestamp <= block.timestamp
-            ) {
-                if (
-                    Math.abs(Clock.getTimeInSeconds() - block.timestamp) >=
-                    this.timeConfig.agreementTime
-                ) {
-                    return {
-                        shouldDisconnect: false,
-                        action: BlockValidationAction.NOT_ENOUGH_TIME
-                    };
-                }
-            }
+            // previousBlockOnChainTimestamp set - rerun validation - this time we have all the data to deduct the result
+            return this.validateTimeLogic(block);
         }
 
-        return; // Time validation passed
+        // OBJECTIVE: Check if block was posted too late on-chain
+        if (await this.isPostedOnChainTooLate(previousTimestamp, block)) {
+            // Block posted too late - create InvalidTimestamp fraud proof
+            this.fraudProofService.createInvalidTimestampProof(block);
+            return BlockValidationResult.DISPUTE;
+        }
+
+        if (block.onChainTimestamp !== undefined)
+            return BlockValidationResult.SUCCESS;
+
+        // SUBJECTIVE: hasOnChainTimestamp check
+        const receivedWithinAgreementTime =
+            Math.abs(Clock.getTimeInSeconds() - block.timestamp) <=
+            this.timeConfig.agreementTime;
+
+        if (!receivedWithinAgreementTime) {
+            return BlockValidationResult.NOT_ENOUGH_TIME;
+        }
+
+        return BlockValidationResult.SUCCESS;
     }
 
     // ────────────────────── Helpers ─────────────────────
@@ -420,54 +391,87 @@ export default class ValidationService {
     }
 
     private async fetchOnChainTimestamp(
-        blk: Block | undefined,
-        channelId: ChannelId
+        block: Block | undefined
     ): Promise<Timestamp | undefined> {
-        if (blk === undefined) {
+        if (block === undefined) {
             return undefined;
         }
         try {
             // Check if commitment exists on-chain
             const commitmentResult =
                 await this.stateChannelManagerContract.getBlockCallDataCommitment(
-                    channelId,
-                    blk.forkId,
-                    blk.height,
-                    blk.author
+                    block.channelId,
+                    block.forkId,
+                    block.height,
+                    block.author
                 );
 
             if (!commitmentResult.found) {
                 return undefined;
             }
 
-            // filter BlockCalldataPosted calls by channelId and author
+            // filter BlockCalldataPosted calls by channelId and blockCalldataCommitment
             const filter =
                 this.stateChannelManagerContract.filters.BlockCalldataPosted(
-                    channelId,
-                    blk.author
+                    block.channelId,
+                    commitmentResult.blockCalldataCommitment
                 );
 
-            // best will be to get exact block number from on-chain data
-            // but idk how to AND it is added complexity
-            // assumptoin here is that the block is within the recent 3 blocks (recent, recent-1, recent-2)
+            // Calculate how many blocks back should we look for the log on-chain
+            const avgBlockTime = Clock.getAverageOnChainBlockTime();
+            const maxTime =
+                this.timeConfig.p2pTime +
+                this.timeConfig.agreementTime +
+                this.timeConfig.chainFallbackTime;
+            const blocksToLookBack = Math.ceil(maxTime / avgBlockTime) * 2; // *2 to be safe and account for some delay/failure
+
             const logs = await this.stateChannelManagerContract.queryFilter(
                 filter,
-                -2, // from block
+                -blocksToLookBack, // from block
                 "latest" // to block
             );
 
-            // Find matching log
-
-            for (let i = logs.length - 1; i >= 0; i--) {
-                const log = logs[i];
-                if (hash(log.args.signedBlock.encodedBlock) === blk.hash) {
-                    return Number(log.args.timestamp);
-                }
+            // There should be a single log if the commitment exists or none
+            if (logs.length == 0) {
+                return undefined;
             }
-            return undefined;
+            if (logs.length > 1) {
+                throw new Error(
+                    `Multiple logs found for commitment: ${commitmentResult.blockCalldataCommitment} - logs: ${logs}`
+                );
+            }
+            return Number(logs[0].args.timestamp);
         } catch (error) {
             console.error("Error fetching on-chain timestamp:", error);
             return undefined;
         }
+    }
+
+    private async isPostedOnChainTooLate(
+        previousTimestamp: Timestamp,
+        block: Block
+    ): Promise<boolean> {
+        // if doesn't have on-chain timestamp try and fetch it
+        if (!block.onChainTimestamp) {
+            const onChainTimestamp = await this.fetchOnChainTimestamp(block);
+            // if still doesn't have on-chain timestamp return false - not posted at all
+            if (!onChainTimestamp) return false;
+            block.onChainTimestamp = onChainTimestamp;
+            this.storage.blocks.setOnChainTimestamp(
+                block.forkId,
+                block.height,
+                onChainTimestamp
+            );
+        }
+
+        // => Block has on-chain timestamp
+
+        const maxAllowedTimestamp =
+            previousTimestamp +
+            this.timeConfig.p2pTime +
+            this.timeConfig.agreementTime +
+            this.timeConfig.chainFallbackTime;
+
+        return block.onChainTimestamp > maxAllowedTimestamp;
     }
 }

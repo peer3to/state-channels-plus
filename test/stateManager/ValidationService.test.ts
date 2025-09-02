@@ -1,5 +1,5 @@
 import ValidationService from "../../src/stateManager/ValidationService";
-import { BlockValidationAction, TimeConfig } from "../../src/types";
+import { BlockValidationResult, TimeConfig } from "../../src/types";
 import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Block } from "../../src/models";
 import { Codec } from "../../src/utils";
@@ -15,6 +15,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
     let mockTimeConfig: TimeConfig;
     let mockChannelId: string;
     let mockGetForkId: sinon.SinonStub;
+    let mockLocalDiamond: any;
 
     // Helper functions for creating meaningful hex values
     const createHexFromString = (str: string) =>
@@ -158,8 +159,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
         };
 
         mockStateMachine = {
-            getNextToWrite: sinon.stub().resolves("0xauthor"),
-            isForkDisputed: sinon.stub().resolves(false)
+            getNextToWrite: sinon.stub().resolves("0xauthor")
         };
 
         mockStateChannelManagerContract = {
@@ -179,6 +179,9 @@ describe("ValidationService.validateBlockConfirmation", () => {
 
         mockChannelId = "0xchannel";
         mockGetForkId = sinon.stub().returns("0xfork");
+        mockLocalDiamond = {
+            isForkDisputed: sinon.stub().resolves(false)
+        };
 
         sinon
             .stub(Block, "fromBlockConfirmation")
@@ -190,7 +193,8 @@ describe("ValidationService.validateBlockConfirmation", () => {
             mockStateChannelManagerContract,
             mockTimeConfig,
             mockChannelId,
-            mockGetForkId
+            mockGetForkId,
+            mockLocalDiamond as any
         );
     });
 
@@ -294,7 +298,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
                 createBlockConfirmation()
             );
 
-            expect(result.action).to.equal(BlockValidationAction.BROADCAST);
+            expect(result.action).to.equal(BlockValidationResult.BROADCAST);
         });
     });
 
@@ -323,7 +327,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
 
             expect(result).to.eql({
                 shouldDisconnect: true,
-                action: BlockValidationAction.DISPUTE
+                action: BlockValidationResult.DISPUTE
             });
         });
 
@@ -351,7 +355,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
 
             expect(result).to.eql({
                 shouldDisconnect: true,
-                action: BlockValidationAction.DISPUTE
+                action: BlockValidationResult.DISPUTE
             });
         });
 
@@ -372,7 +376,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
 
     describe("Fork and Height Validation", () => {
         it("should return shouldDisconnect false when fork is disputed", async () => {
-            mockStateMachine.isForkDisputed.resolves(true);
+            mockLocalDiamond.isForkDisputed.resolves(true);
 
             const result = await validationService.validateBlockConfirmation(
                 createBlockConfirmation()
@@ -418,7 +422,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
                 createBlockConfirmation()
             );
 
-            expect(result.action).to.equal(BlockValidationAction.SUCCESS);
+            expect(result.action).to.equal(BlockValidationResult.SUCCESS);
         });
     });
 
@@ -441,39 +445,343 @@ describe("ValidationService.validateBlockConfirmation", () => {
             );
 
             expect(result.shouldDisconnect).to.be.true;
-            expect(result.action).to.equal(BlockValidationAction.DISPUTE);
+            expect(result.action).to.equal(BlockValidationResult.DISPUTE);
         });
     });
 
     describe("Time Logic Validation", () => {
-        it("should return NOT_ENOUGH_TIME when insufficient time has passed", async () => {
-            sinon.stub(validationService as any, "isLinked").returns(true);
-            sinon.stub(validationService as any, "validateTimeLogic").resolves({
-                action: BlockValidationAction.NOT_ENOUGH_TIME,
-                shouldDisconnect: false
+        let clockStub: sinon.SinonStub;
+        const TIMING = {
+            BASE_TIMESTAMP: 1000,
+            GENESIS_TIMESTAMP: 1000,
+            CLOCK_TIME: 1100,
+            LATE_CLOCK_TIME: 8000,
+            ON_CHAIN_TIMESTAMP: 1200,
+            VERY_LATE_ON_CHAIN: 8000
+        };
+
+        beforeEach(() => {
+            // Mock Clock.getTimeInSeconds for subjective validation
+            clockStub = sinon
+                .stub(require("../../src/Clock").default, "getTimeInSeconds")
+                .returns(5000);
+        });
+
+        afterEach(() => {
+            clockStub.restore();
+        });
+
+        // Test Case 1: Author signed previous, valid timing, no on-chain timestamps
+        it("Case 1: Author signed previous, valid P2P timing, passes subjective check", async () => {
+            const previousBlock = createBlock({
+                timestamp: TIMING.BASE_TIMESTAMP,
+                onChainTimestamp: undefined,
+                getRelevantTimestamp: sinon
+                    .stub()
+                    .returns(TIMING.BASE_TIMESTAMP) // Author signed
             });
+
+            const currentBlock = createBlock({
+                timestamp: TIMING.BASE_TIMESTAMP + 50, // Within p2pTime (1050)
+                onChainTimestamp: undefined,
+                author: "0xauthor"
+            });
+
+            mockStorage.getPreviousBlockOrSnapshot.returns({
+                block: previousBlock
+            });
+            (Block.fromBlockConfirmation as any).returns(currentBlock);
+            sinon.stub(validationService as any, "isLinked").returns(true);
+
+            // Mock Clock to be within agreementTime
+            clockStub.returns(1100); // abs(1100 - 1050) = 50 <= 2000 (agreementTime)
+
+            const result = await validationService.validateBlockConfirmation(
+                createBlockConfirmation()
+            );
+
+            expect(result.action).to.equal(BlockValidationResult.SUCCESS);
+        });
+
+        // Test Case 2: Author didn't sign, previous has onChain, extends window
+        it("Case 2: Author didn't sign previous, onChain extends window, valid", async () => {
+            const previousBlock = createBlock({
+                timestamp: TIMING.BASE_TIMESTAMP,
+                onChainTimestamp: TIMING.ON_CHAIN_TIMESTAMP, // Later on-chain timestamp
+                getRelevantTimestamp: sinon
+                    .stub()
+                    .returns(TIMING.ON_CHAIN_TIMESTAMP) // Author didn't sign, uses onChain
+            });
+
+            const currentBlock = createBlock({
+                timestamp: TIMING.ON_CHAIN_TIMESTAMP + 50, // Would fail with original (1000) but passes with onChain (1200)
+                onChainTimestamp: undefined
+            });
+
+            mockStorage.getPreviousBlockOrSnapshot.returns({
+                block: previousBlock
+            });
+            (Block.fromBlockConfirmation as any).returns(currentBlock);
+            sinon.stub(validationService as any, "isLinked").returns(true);
+
+            clockStub.returns(1300); // Within agreementTime
+
+            const result = await validationService.validateBlockConfirmation(
+                createBlockConfirmation()
+            );
+
+            expect(result.action).to.equal(BlockValidationResult.SUCCESS);
+        });
+
+        // Test Case 3: Valid P2P timing but posted too late on-chain
+        it("Case 3: Valid P2P timing but posted too late on-chain → DISPUTE", async () => {
+            const previousBlock = createBlock({
+                timestamp: TIMING.BASE_TIMESTAMP,
+                onChainTimestamp: undefined,
+                getRelevantTimestamp: sinon
+                    .stub()
+                    .returns(TIMING.BASE_TIMESTAMP)
+            });
+
+            const currentBlock = createBlock({
+                timestamp: TIMING.BASE_TIMESTAMP + 50, // Valid P2P timing
+                onChainTimestamp: TIMING.VERY_LATE_ON_CHAIN // Way too late: 8000 > 1000 + 1000 + 2000 + 3000 = 7000
+            });
+
+            mockStorage.getPreviousBlockOrSnapshot.returns({
+                block: previousBlock
+            });
+            (Block.fromBlockConfirmation as any).returns(currentBlock);
+            sinon.stub(validationService as any, "isLinked").returns(true);
+
+            // Expect fraud proof creation
+            const fraudProofStub = sinon.stub(
+                validationService["fraudProofService"],
+                "createInvalidTimestampProof"
+            );
+
+            const result = await validationService.validateBlockConfirmation(
+                createBlockConfirmation()
+            );
+
+            expect(result.action).to.equal(BlockValidationResult.DISPUTE);
+            expect(result.shouldDisconnect).to.be.true;
+            expect(fraudProofStub.called).to.be.true;
+        });
+
+        // Test Case 4: Invalid timing, first block (genesis)
+        it("Case 4: Invalid timing on genesis block → DISPUTE", async () => {
+            const genesisSnapshot = {
+                timestamp: TIMING.BASE_TIMESTAMP
+            };
+
+            const currentBlock = createBlock({
+                timestamp: TIMING.BASE_TIMESTAMP + 1500, // Way beyond p2pTime from genesis
+                height: 0
+            });
+
+            mockStorage.getPreviousBlockOrSnapshot.returns({
+                stateSnapshot: genesisSnapshot
+            });
+            (Block.fromBlockConfirmation as any).returns(currentBlock);
+            sinon.stub(validationService as any, "isLinked").returns(true);
+
+            const fraudProofStub = sinon.stub(
+                validationService["fraudProofService"],
+                "createInvalidTimestampProof"
+            );
+
+            const result = await validationService.validateBlockConfirmation(
+                createBlockConfirmation()
+            );
+
+            expect(result.action).to.equal(BlockValidationResult.DISPUTE);
+            expect(fraudProofStub.called).to.be.true;
+        });
+
+        // Test Case 5: Invalid timing, previous has onChain, no retry needed
+        it("Case 5: Invalid timing, previous already has onChain → DISPUTE", async () => {
+            const previousBlock = createBlock({
+                timestamp: TIMING.BASE_TIMESTAMP,
+                onChainTimestamp: 1100, // Already has onChain
+                getRelevantTimestamp: sinon.stub().returns(1100)
+            });
+
+            const currentBlock = createBlock({
+                timestamp: 2500 // Way beyond p2pTime (1100 + 1000 = 2100)
+            });
+
+            mockStorage.getPreviousBlockOrSnapshot.returns({
+                block: previousBlock
+            });
+            (Block.fromBlockConfirmation as any).returns(currentBlock);
+            sinon.stub(validationService as any, "isLinked").returns(true);
+
+            const fraudProofStub = sinon.stub(
+                validationService["fraudProofService"],
+                "createInvalidTimestampProof"
+            );
+
+            const result = await validationService.validateBlockConfirmation(
+                createBlockConfirmation()
+            );
+
+            expect(result.action).to.equal(BlockValidationResult.DISPUTE);
+            expect(fraudProofStub.called).to.be.true;
+        });
+
+        // Test Case 6: Invalid timing, retry successful
+        it("Case 6: Invalid timing, fetch onChain successful, recursive validation passes", async () => {
+            const previousBlock = createBlock({
+                timestamp: TIMING.BASE_TIMESTAMP,
+                onChainTimestamp: undefined, // IMPORTANT: No onChain initially
+                forkId: "0xfork",
+                height: 1 // NOT genesis (height 0)
+            });
+
+            // Create a mock that will change behavior after the onChainTimestamp is set
+            let timestampUpdated = false;
+            previousBlock.getRelevantTimestamp = sinon.stub().callsFake(() => {
+                return timestampUpdated ? 1200 : 1000; // Return updated timestamp after fetch
+            });
+
+            const currentBlock = createBlock({
+                timestamp: 1250, // Invalid with original (1000 + 1000 = 2000) but valid after update (1200 + 1000 = 2200)
+                onChainTimestamp: undefined,
+                author: "0xauthor",
+                height: 2, // Next block
+                forkId: "0xfork"
+            });
+
+            mockStorage.getPreviousBlockOrSnapshot.returns({
+                block: previousBlock
+            });
+            mockStorage.blocks.getNextBlockHeight.returns(2); // Expect height 2
+            (Block.fromBlockConfirmation as any).returns(currentBlock);
+            sinon.stub(validationService as any, "isLinked").returns(true);
+
+            // Mock successful fetch that returns better timestamp
+            const fetchStub = sinon.stub(
+                validationService as any,
+                "fetchOnChainTimestamp"
+            );
+            fetchStub.resolves(1200); // Better timestamp that makes currentBlock valid
+
+            // Mock the setOnChainTimestamp to trigger our flag
+            const originalSetOnChain = mockStorage.blocks.setOnChainTimestamp;
+            mockStorage.blocks.setOnChainTimestamp = sinon
+                .stub()
+                .callsFake((...args) => {
+                    timestampUpdated = true; // Set flag when timestamp is updated
+                    return originalSetOnChain.apply(mockStorage.blocks, args);
+                });
+
+            clockStub.returns(1300); // Within agreementTime
+
+            const result = await validationService.validateBlockConfirmation(
+                createBlockConfirmation()
+            );
+
+            expect(result.action).to.equal(BlockValidationResult.SUCCESS);
+        });
+
+        // Test Case 7: Invalid timing, retry failed
+        it("Case 7: Invalid timing, fetch onChain fails → DISPUTE", async () => {
+            const previousBlock = createBlock({
+                timestamp: 1000,
+                onChainTimestamp: undefined,
+                getRelevantTimestamp: sinon.stub().returns(1000)
+            });
+
+            const currentBlock = createBlock({
+                timestamp: 2500 // Way beyond p2pTime
+            });
+
+            mockStorage.getPreviousBlockOrSnapshot.returns({
+                block: previousBlock
+            });
+            (Block.fromBlockConfirmation as any).returns(currentBlock);
+            sinon.stub(validationService as any, "isLinked").returns(true);
+
+            // Mock failed fetch
+            const fetchStub = sinon.stub(
+                validationService as any,
+                "fetchOnChainTimestamp"
+            );
+            fetchStub.resolves(undefined); // No better timestamp available
+
+            const fraudProofStub = sinon.stub(
+                validationService["fraudProofService"],
+                "createInvalidTimestampProof"
+            );
+
+            const result = await validationService.validateBlockConfirmation(
+                createBlockConfirmation()
+            );
+
+            expect(result.action).to.equal(BlockValidationResult.DISPUTE);
+            expect(fraudProofStub.called).to.be.true;
+            expect(fetchStub.called).to.be.true;
+        });
+
+        // Test Case 8: Valid P2P but outside agreementTime
+        it("Case 8: Valid P2P timing but outside agreementTime → NOT_ENOUGH_TIME", async () => {
+            const previousBlock = createBlock({
+                timestamp: 1000,
+                onChainTimestamp: undefined,
+                getRelevantTimestamp: sinon.stub().returns(1000)
+            });
+
+            const currentBlock = createBlock({
+                timestamp: 1050, // Valid P2P timing
+                onChainTimestamp: undefined
+            });
+
+            mockStorage.getPreviousBlockOrSnapshot.returns({
+                block: previousBlock
+            });
+            (Block.fromBlockConfirmation as any).returns(currentBlock);
+            sinon.stub(validationService as any, "isLinked").returns(true);
+
+            // Mock Clock to be outside agreementTime
+            clockStub.returns(8000); // abs(8000 - 1050) = 6950 > 2000 (agreementTime)
 
             const result = await validationService.validateBlockConfirmation(
                 createBlockConfirmation()
             );
 
             expect(result.action).to.equal(
-                BlockValidationAction.NOT_ENOUGH_TIME
+                BlockValidationResult.NOT_ENOUGH_TIME
             );
+            expect(result.shouldDisconnect).to.be.false;
         });
 
-        it("should return DISPUTE for invalid timestamps", async () => {
-            sinon.stub(validationService as any, "isLinked").returns(true);
-            sinon.stub(validationService as any, "validateTimeLogic").resolves({
-                action: BlockValidationAction.DISPUTE,
-                shouldDisconnect: true
+        // Test Case 9: Current block has onChain, skips subjective check
+        it("Case 9: Current block has onChainTimestamp, skips subjective validation", async () => {
+            const previousBlock = createBlock({
+                timestamp: 1000,
+                getRelevantTimestamp: sinon.stub().returns(1000)
             });
+
+            const currentBlock = createBlock({
+                timestamp: 1050,
+                onChainTimestamp: 1060 // Has onChain timestamp
+            });
+
+            mockStorage.getPreviousBlockOrSnapshot.returns({
+                block: previousBlock
+            });
+            (Block.fromBlockConfirmation as any).returns(currentBlock);
+            sinon.stub(validationService as any, "isLinked").returns(true);
+
+            // Set clock way outside agreementTime - should be ignored
+            clockStub.returns(10000);
 
             const result = await validationService.validateBlockConfirmation(
                 createBlockConfirmation()
             );
 
-            expect(result.action).to.equal(BlockValidationAction.DISPUTE);
+            expect(result.action).to.equal(BlockValidationResult.SUCCESS);
         });
     });
 
@@ -488,7 +796,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
                 createBlockConfirmation()
             );
 
-            expect(result.action).to.equal(BlockValidationAction.SUCCESS);
+            expect(result.action).to.equal(BlockValidationResult.SUCCESS);
         });
     });
 });

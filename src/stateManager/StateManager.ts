@@ -58,7 +58,11 @@ import {
     SignatureUtils
 } from "@/utils";
 // Types
-import { AgreementFlag, BlockValidationAction, TimeConfig } from "@/types";
+import {
+    AgreementFlag,
+    BlockValidationResult as BlockValidationResult,
+    TimeConfig
+} from "@/types";
 import {
     Address,
     BlockHeight,
@@ -97,10 +101,13 @@ class StateManager {
 
     private latestForkId: ForkId = NULL;
     private dispatcher = new Map([
-        [BlockValidationAction.DISPUTE, this.dispute],
-        [BlockValidationAction.BROADCAST, this.broadcast],
-        [BlockValidationAction.NOT_ENOUGH_TIME, this.notEnoughTime],
-        [BlockValidationAction.SUCCESS, this.success]
+        [BlockValidationResult.SUCCESS, this.success],
+        [BlockValidationResult.NOT_READY, this.notReady],
+        [BlockValidationResult.DISCONNECT, this.disconnect],
+        [BlockValidationResult.DISPUTE, this.dispute],
+        [BlockValidationResult.BROADCAST, this.broadcast],
+        [BlockValidationResult.NOT_ENOUGH_TIME, this.notEnoughTime],
+        [BlockValidationResult.DUPLICATE, this.duplicate]
     ]);
 
     constructor(
@@ -287,12 +294,10 @@ class StateManager {
                 await this.validationService.validateBlockConfirmation(
                     blockConfirmation
                 );
-            if (validationResult.action) {
-                await this.dispatcher.get(validationResult.action)!(
-                    blockConfirmation
-                );
-            }
-            return !!validationResult.shouldDisconnect;
+
+            await this.dispatcher.get(validationResult)!(blockConfirmation);
+
+            return this.shouldDisconnect(validationResult);
         } catch (error) {
             throw error;
         } finally {
@@ -976,11 +981,26 @@ class StateManager {
         await this.onSuccessCommon();
     }
 
+    private async notReady(
+        _blockConfirmation: BlockConfirmationStruct
+    ): Promise<void> {
+        // TODO
+        throw new Error("Not implemented");
+    }
+
+    private async disconnect(
+        _blockConfirmation: BlockConfirmationStruct
+    ): Promise<void> {
+        // TODO
+        throw new Error("Not implemented");
+    }
+
     private async dispute(
         _blockConfirmation: BlockConfirmationStruct
     ): Promise<void> {
         // The fraud proof has already been stored by ValidationService
         // rest is left as TODO for now
+        throw new Error("Not implemented");
     }
 
     private async broadcast(
@@ -989,12 +1009,42 @@ class StateManager {
         // The block has already been stored by ValidationService with merged signatures
         // We would trigger P2P broadcast here: this.p2pManager.broadcastBlockConfirmation(blockConfirmation);
         // For now, this is left as TODO
+        throw new Error("Not implemented");
     }
 
     private async notEnoughTime(
         _blockConfirmation: BlockConfirmationStruct
     ): Promise<void> {
         // No-op - abstain from applying/signing
+        throw new Error("Not implemented");
+    }
+
+    private async duplicate(
+        _blockConfirmation: BlockConfirmationStruct
+    ): Promise<void> {
+        // TODO
+        throw new Error("Not implemented");
+    }
+
+    private shouldDisconnect(validationResult: BlockValidationResult): boolean {
+        switch (validationResult) {
+            case BlockValidationResult.SUCCESS:
+                return false;
+            case BlockValidationResult.NOT_READY:
+                return false;
+            case BlockValidationResult.DISCONNECT:
+                return true;
+            case BlockValidationResult.DISPUTE:
+                return true;
+            case BlockValidationResult.BROADCAST:
+                return false;
+            case BlockValidationResult.NOT_ENOUGH_TIME:
+                return false;
+            case BlockValidationResult.DUPLICATE:
+                return false;
+            default:
+                return false;
+        }
     }
 
     // ----- Event handlers -----

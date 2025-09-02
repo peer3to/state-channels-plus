@@ -12,11 +12,14 @@ export enum ExecutionFlags {
     DOUBLE_SIGN
 }
 
-export enum BlockValidationAction {
+export enum BlockValidationResult {
+    SUCCESS,
+    NOT_READY,
+    DISCONNECT,
     DISPUTE,
     BROADCAST,
     NOT_ENOUGH_TIME,
-    SUCCESS
+    DUPLICATE
 }
 
 export enum FraudType {
