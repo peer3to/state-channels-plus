@@ -37,19 +37,20 @@ export default class ValidationService {
         const forkId = this.getForkId();
         const channelId = this.channelId;
 
-        // 1. Check if channel is open
-        if (!this.isChannelOpen(forkId)) {
-            // not ready
-            this.queueForLater(blockConfirmation);
-            return BlockValidationResult.DISCONNECT;
-        }
-        // 2. Authenticate the block
+        // 1. Authenticate the block
         const block = this.authenticateBlock(
             blockConfirmation,
             channelId,
             onChainTimestamp
         );
         if (!block) {
+            return BlockValidationResult.DISCONNECT;
+        }
+
+        // 2. Check if channel is open
+        if (!this.isChannelOpen(forkId)) {
+            // not ready
+            this.storage.queues.queueBlock(block);
             return BlockValidationResult.DISCONNECT;
         }
 
@@ -79,14 +80,14 @@ export default class ValidationService {
 
         if (await this.isDisputedFork(block.forkId, channelId)) {
             // not ready
-            this.queueForLater(block);
+            this.storage.queues.queueBlock(block);
             return BlockValidationResult.NOT_READY;
         }
 
         // isNext
         if (block.height > this.storage.blocks.getNextBlockHeight(forkId)) {
             // not ready
-            this.queueForLater(block);
+            this.storage.queues.queueBlock(block);
             return BlockValidationResult.NOT_READY;
         }
 
@@ -116,16 +117,6 @@ export default class ValidationService {
     }
 
     // ────────────────────── INTERNAL ACTION METHODS ─────────────────────
-
-    private queueForLater(
-        blockConfirmation: Block | BlockConfirmationStruct
-    ): void {
-        const block =
-            blockConfirmation instanceof Block
-                ? blockConfirmation
-                : Block.fromBlockConfirmation(blockConfirmation);
-        this.storage.queues.queueBlock(block);
-    }
 
     // ────────────────────── VALIDATION METHODS ─────────────────────
 
@@ -186,7 +177,7 @@ export default class ValidationService {
             }
 
             // Store in queue (handles signature merging automatically)
-            this.queueForLater(block);
+            this.storage.queues.queueBlock(block);
             return BlockValidationResult.SUCCESS;
         }
 
