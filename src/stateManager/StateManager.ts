@@ -934,7 +934,7 @@ class StateManager {
         // If I already signed or block has already onChainTimestamp, no timeout needed
         if (
             block.didISign(this.signerAddress) ||
-            blockEntry.onChainTimestamp !== undefined
+            block.onChainTimestamp !== undefined
         ) {
             return;
         }
@@ -986,9 +986,14 @@ class StateManager {
             return false;
         }
 
-        const { signedBlock, timestamp } = onChainResult;
         const expectedCommitment = hash(
-            Codec.encode({ signedBlock, timestamp }, Type.BlockCommitment)
+            Codec.encode(
+                {
+                    signedBlock: block.signedBlock,
+                    timestamp: onChainResult.timestamp
+                },
+                Type.BlockCommitment
+            )
         );
 
         const isValid = expectedCommitment === blockCalldataCommitment;
