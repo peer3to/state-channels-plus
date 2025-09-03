@@ -999,14 +999,16 @@ class StateManager {
         const isValid = expectedCommitment === blockCalldataCommitment;
 
         if (isValid) {
-            // we should have already notified the event listener.
+            // we should have already been notified the event listener.
             // calling the same handler the event lister would have called
+            // this will call collectOnChainBlock on trigger  the block validation pipeline
+            // if the  the block is invalid, the signer will get slashed
             this.stateChannelEventListener.handleBlockCalldataPosted(
                 this.channelId,
                 blockCalldataCommitment,
                 participantAddress,
-                block.signedBlock,
-                timestamp
+                onChainResult.signedBlock,
+                onChainResult.timestamp
             );
         }
 
