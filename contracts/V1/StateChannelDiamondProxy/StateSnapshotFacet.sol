@@ -15,6 +15,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
         DisputeData storage disputeData = disputeData[channelId];
         bytes32 targetForkId = newStateSnapshot.forkId;
+        require(newStateSnapshot.blockHeight == 0, ErrorInvalidStateSnapshot());
         require(keccak256(abi.encode(newStateSnapshot.snapshotData)) == targetForkId, ErrorInvalidStateSnapshot());
         mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
         DisputeWindow storage disputeWindow = disputeWindowMap[currentStateSnapshot.forkId];

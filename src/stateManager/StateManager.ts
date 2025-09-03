@@ -23,6 +23,7 @@ import {
 // TypeChain types - Dispute types
 import {
     DisputeStruct,
+    ReduceOutputStruct,
     SignedDisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
@@ -55,7 +56,8 @@ import {
     hash,
     isCustomEvmError,
     getActiveParticipants,
-    SignatureUtils
+    SignatureUtils,
+    decodeErrorProxy
 } from "@/utils";
 // Types
 import {
@@ -74,7 +76,9 @@ import {
 } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
+import { DisputeStorage } from "@/storage/DisputeStorage";
 import LocalDiamondSigner from "@/evm/LocalDiamondSigner";
+import { errorAbis } from "@/utils/GeneratedArtifacts";
 
 let DEBUG_STATE_MANAGER = false;
 
@@ -124,7 +128,9 @@ class StateManager {
         this.diamondStateMachine = diamondStateMachine;
         this.p2pEventHooks = p2pEventHooks;
         this.timeConfig = timeConfig;
-        this.stateChannelManagerContract = stateChannelManagerContract;
+        this.stateChannelManagerContract = decodeErrorProxy(
+            stateChannelManagerContract
+        );
         this.storage = storage;
         this.localDiamondContract = localDiamondContract;
 
@@ -651,6 +657,224 @@ class StateManager {
             );
         } catch (error) {
             console.error("Error updating snapshot for the same fork:", error);
+            throw error;
+        }
+    }
+
+    /**
+     * Updates the state snapshot when the fork is different
+     */
+    public async updateSnapshotFork(): Promise<void> {
+        try {
+            // Get the current on-chain snapshot first
+            const currentOnChainSnapshot = StateSnapshot.from(
+                await this.stateChannelManagerContract.getStateSnapshot(
+                    this.channelId
+                )
+            );
+
+            let currentForkId = currentOnChainSnapshot.forkId;
+
+            // Traverse through dispute windows until we reach a fork with no disputes
+            let isDisputed =
+                await this.stateChannelManagerContract.isForkDisputed(
+                    this.channelId,
+                    currentForkId
+                );
+
+            // Get the genesis snapshot
+            const genesisSnapshot =
+                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                    currentForkId
+                );
+            if (!genesisSnapshot) {
+                throw new Error(
+                    `No genesis snapshot found for fork ${currentForkId}`
+                );
+            }
+
+            while (isDisputed) {
+                // If reduced result already exists on-chain, traverse to it
+                const existingReducedResult =
+                    await this.stateChannelManagerContract.getReducedResult(
+                        this.channelId,
+                        currentForkId
+                    );
+                // if reduceResult exists and is final
+                if (existingReducedResult[0]) {
+                    currentForkId = existingReducedResult[0];
+                    isDisputed =
+                        await this.stateChannelManagerContract.isForkDisputed(
+                            this.channelId,
+                            currentForkId
+                        );
+                    continue;
+                }
+
+                // Fetch dispute commitments for this window
+                const disputeCommitments =
+                    await this.stateChannelManagerContract.getWindowCommitments(
+                        this.channelId,
+                        currentForkId
+                    );
+                if (!disputeCommitments || disputeCommitments.length === 0) {
+                    // Nothing to reduce; wait for more data
+                    break;
+                }
+
+                // Build disputes from local storage confirmations
+                const disputes: DisputeStruct[] = [];
+                for (const commitment of disputeCommitments) {
+                    const confirmation =
+                        this.storage.disputes.getDisputeConfirmation(
+                            commitment
+                        );
+                    if (!confirmation) {
+                        throw new Error(
+                            `Missing Data Availability for dispute commitment ${commitment}`
+                        );
+                    }
+                    const dispute = Codec.decode(
+                        confirmation.signedDispute.encodedDispute,
+                        Type.Dispute
+                    ) as DisputeStruct;
+                    disputes.push(dispute);
+                }
+
+                // Get the dispute window creation timestamp from the on-chain contract
+                const creationTimestamp =
+                    await this.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
+                        this.channelId,
+                        currentForkId
+                    );
+
+                // Use proxy view to compute reduced output cheaply (no tx)
+                const reducedOutput =
+                    await this.stateChannelManagerContract.reduceProxyView(
+                        disputes,
+                        creationTimestamp
+                    );
+
+                // Derive latest snapshot and encoded state from reduced output's latest block
+                const latestSnapshotHash =
+                    reducedOutput.latestBlock.stateSnapshotHash;
+                const latestSnapshot =
+                    this.storage.stateSnapshots.getStateSnapshotByHash(
+                        latestSnapshotHash
+                    );
+                if (!latestSnapshot) {
+                    throw new Error(
+                        "Latest snapshot for reduced output not found in local storage"
+                    );
+                }
+                const stateHash =
+                    latestSnapshot.snapshotData.stateMachineStateHash;
+                const encodedStateForReduce =
+                    this.storage.stateMachineStates.getStateMachineState(
+                        stateHash
+                    );
+                if (!encodedStateForReduce) {
+                    throw new Error(
+                        "Encoded state for reduced output not found in local storage"
+                    );
+                }
+
+                // Build join channel blocks
+                let currentJoinChannelBlockHash: Hash =
+                    reducedOutput.latestJoinChannelBlockHash;
+                let joinChannelBlocks: JoinChannelBlockStruct[] = [];
+                let currentJoinChannelBlock =
+                    this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
+                        currentJoinChannelBlockHash
+                    );
+
+                while (
+                    currentJoinChannelBlock &&
+                    currentJoinChannelBlockHash !==
+                        genesisSnapshot.snapshotData.latestJoinChannelBlockHash
+                ) {
+                    joinChannelBlocks.unshift(currentJoinChannelBlock.block);
+                    currentJoinChannelBlockHash =
+                        currentJoinChannelBlock.block.previousBlockHash;
+                    currentJoinChannelBlock =
+                        this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
+                            currentJoinChannelBlock.block.previousBlockHash
+                        );
+                }
+
+                // Reduce and finalize on-chain to obtain the reduced fork id
+                try {
+                    const txResponse =
+                        await this.stateChannelManagerContract.reduceAndFinalize(
+                            disputes,
+                            creationTimestamp,
+                            latestSnapshot.toStruct(),
+                            encodedStateForReduce,
+                            joinChannelBlocks
+                        );
+                    await txResponse.wait();
+                } catch (error) {
+                    if (
+                        isCustomEvmError(error) &&
+                        error.errorDescription.name !==
+                            "ErrorDisputeAlreadyReduced"
+                    ) {
+                        throw error; // Re-throw other errors
+                    }
+                }
+
+                // Read canonical reduced result from chain and traverse
+                const reducedResult =
+                    await this.stateChannelManagerContract.getReducedResult(
+                        this.channelId,
+                        currentForkId
+                    );
+
+                // Traverse to the reduced fork
+                currentForkId = reducedResult[0];
+                isDisputed =
+                    await this.stateChannelManagerContract.isForkDisputed(
+                        this.channelId,
+                        currentForkId
+                    );
+            }
+
+            // Build exit blocks
+            let latestExitBlockHash =
+                genesisSnapshot.snapshotData.latestExitChannelBlockHash;
+            let currentOnChainExitBlockHash =
+                currentOnChainSnapshot.snapshotData.latestExitChannelBlockHash;
+            let exitBlocks: ExitChannelBlockStruct[] = [];
+            let currentExitBlock =
+                this.storage.exitChannelBlocks.getExitChannelBlockEntry(
+                    latestExitBlockHash
+                );
+
+            while (
+                currentExitBlock &&
+                latestExitBlockHash !== currentOnChainExitBlockHash
+            ) {
+                exitBlocks.unshift(currentExitBlock.block);
+                latestExitBlockHash = currentExitBlock.block.previousBlockHash;
+                currentExitBlock =
+                    this.storage.exitChannelBlocks.getExitChannelBlockEntry(
+                        currentExitBlock.block.previousBlockHash
+                    );
+            }
+
+            // Update snapshot
+            const txResponse =
+                await this.stateChannelManagerContract.updateStateSnapshotFork(
+                    this.channelId,
+                    genesisSnapshot.toStruct(),
+                    exitBlocks
+                );
+            await txResponse.wait();
+            console.log(
+                `Updated to genesis snapshot for fork ${currentForkId}`
+            );
+        } catch (error) {
+            console.error("Error updating snapshot for fork:", error);
             throw error;
         }
     }

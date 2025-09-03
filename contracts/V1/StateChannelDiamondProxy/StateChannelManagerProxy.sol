@@ -11,6 +11,7 @@ import "./FraudProofFacet.sol";
 import "./DisputeFraudProofFacet.sol";
 import "./StateSnapshotFacet.sol";
 import "./JoinChannelFacet.sol";
+import "../types/DisputeTypes.sol";
 
 contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelCommon {
     DisputeManagerFacet disputeManagerFacet;
@@ -384,6 +385,87 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
         return disputeWindow.evidence.disputeCommitments;
+    }
+
+    function getDisputeWindowCreationTimestamp(bytes32 channelId, bytes32 forkId)
+        public
+        view
+        returns (uint256 creationTimestamp)
+    {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        return disputeWindow.evidence.creationTimestamp;
+    }
+
+    function getReducedResult(bytes32 channelId, bytes32 forkId)
+        public
+        view
+        returns (bytes32 reducedForkId, uint256 forkGenesisTimestamp, uint256 timestamp, address reducer)
+    {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        DisputeWindowReducedResult storage reducedResult = disputeWindow.reducedResult;
+        return
+            (reducedResult.forkId, reducedResult.forkGenesisTimestamp, reducedResult.timestamp, reducedResult.reducer);
+    }
+
+    function reduceProxyView(Dispute[] memory disputes, uint256 disputeWindowCreationTimestamp)
+        external
+        view
+        returns (ReduceOutput memory reducedOutput)
+    {
+        // This should trick the compiler, but still use delegatecall under the hood. This doesn't magically allow us to mutate the state in view functions that use delegate call.
+        // Ethers and other tools won't issue a transaction, but a call that runs on a single node so even if it did modify the state it wouldn't be reflected on-chain/persisted.
+        return DisputeVerificationFacet(address(this)).reduce(disputes, disputeWindowCreationTimestamp);
+    }
+
+    function reduce(Dispute[] memory disputes, uint256 disputeWindowCreationTimestamp)
+        public
+        override
+        returns (ReduceOutput memory reducedOutput)
+    {
+        bytes memory result = _delegatecall(
+            address(disputeVerificationFacet),
+            abi.encodeCall(disputeVerificationFacet.reduce, (disputes, disputeWindowCreationTimestamp))
+        );
+        return abi.decode(result, (ReduceOutput));
+    }
+
+    function commitToReducedResult(
+        bytes32 channelId,
+        bytes32 disputedForkId,
+        bytes32 reducedForkId,
+        uint256 reducedForkGenesisTimestamps
+    ) public {
+        _delegatecall(
+            address(disputeManagerFacet),
+            abi.encodeCall(
+                disputeManagerFacet.commitToReducedResult,
+                (channelId, disputedForkId, reducedForkId, reducedForkGenesisTimestamps)
+            )
+        );
+    }
+
+    function reduceAndFinalize(
+        Dispute[] memory disputes,
+        uint256 disputeWindowCreationTimestamp,
+        StateSnapshot memory stateSnapshot,
+        bytes memory encodedStateMachineState,
+        JoinChannelBlock[] memory joinChannelBlocks
+    ) public override {
+        _delegatecall(
+            address(disputeVerificationFacet),
+            abi.encodeCall(
+                disputeVerificationFacet.reduceAndFinalize,
+                (disputes, disputeWindowCreationTimestamp, stateSnapshot, encodedStateMachineState, joinChannelBlocks)
+            )
+        );
+    }
+
+    function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        return _isReduceChallengePeriodExpired(disputeWindow);
     }
 
     // ********** private/internal functions **********

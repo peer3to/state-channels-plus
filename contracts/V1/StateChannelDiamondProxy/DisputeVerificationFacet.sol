@@ -222,6 +222,47 @@ contract DisputeVerificationFacet is StateChannelCommon {
         }
     }
 
+    /**
+     * @notice Reduces disputes and finalizes by committing the reduced result to the dispute window
+     * @dev This performs reduction and commitment. It requires that the caller an participate in
+     *      disputes. The actual commit enforces that the kill period has expired
+     *      via _commitToDisputeReducedResult.
+     */
+    function reduceAndFinalize(
+        Dispute[] memory disputes,
+        uint256 disputeWindowCreationTimestamp,
+        StateSnapshot memory stateSnapshot,
+        bytes memory encodedStateMachineState,
+        JoinChannelBlock[] memory joinChannelBlocks
+    ) public {
+        require(disputes.length > 0, ErrorNoDisputesProvided());
+        bytes32 channelId = disputes[0].channelId;
+        require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
+
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[disputes[0].genesisSnapshotDataHash];
+
+        // require that provided disputes correspond to committed set
+        require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
+
+        // compute reduced output and derive snapshot data
+        ReduceOutput memory reducedOutput = reduce(disputes, disputeWindowCreationTimestamp);
+        SnapshotData memory snapshotData =
+            reduceOutputToSnapshotData(reducedOutput, stateSnapshot, encodedStateMachineState, joinChannelBlocks);
+
+        // compute the new forkId
+        bytes32 winningForkId = keccak256(abi.encode(snapshotData));
+
+        // commit reduced result (enforces kill period expiration inside)
+        _commitToDisputeReducedResult(
+            channelId,
+            disputeWindow,
+            winningForkId,
+            block.timestamp - getEvidenceTime() - 1,
+            reducedOutput.forkGenesisTimestamp
+        );
+    }
+
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public {
         bytes memory result = StateChannelManagerProxy(address(this)).verifyDisputeFraudProofs(proofs);
         Dispute[] memory maliciousDisputes = abi.decode(result, (Dispute[]));
