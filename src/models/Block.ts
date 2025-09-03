@@ -225,6 +225,10 @@ export default class Block {
         return isSubset(participantsSet, this.allSignerAddresses);
     }
 
+    didISign(participant: Address): boolean {
+        return this.allSignerAddresses.has(participant);
+    }
+
     sign(signer: Signer): Promise<Signature> {
         return signer.signMessage(ethers.getBytes(this.hash));
     }

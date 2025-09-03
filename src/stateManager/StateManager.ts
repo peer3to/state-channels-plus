@@ -15,10 +15,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // TypeChain types - Proof types
-import {
-    DisputeFraudProofStruct,
-    MilestoneProofStruct
-} from "@typechain-types/contracts/V1/types/ProofTypes";
+import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 // TypeChain types - Dispute types
 import {
@@ -56,15 +53,10 @@ import {
     isCustomEvmError,
     getActiveParticipants,
     SignatureUtils,
-    difference,
     decodeErrorProxy
 } from "@/utils";
 // Types
-import {
-    AgreementFlag,
-    BlockValidationResult as BlockValidationResult,
-    TimeConfig
-} from "@/types";
+import { BlockValidationResult, TimeConfig } from "@/types";
 import {
     Address,
     BlockHeight,
@@ -296,12 +288,7 @@ class StateManager {
                 return false;
             }
 
-            const stateChanged = this.isValidStateTransition(
-                encodedState as string,
-                previousStateHash
-            );
-
-            if (!stateChanged) {
+            if (hash(encodedState) !== previousStateHash) {
                 this.fraudProofService.createInvalidStateTransitionProof(block);
                 await this.dispute(blockConfirmation);
                 // disconnect
@@ -943,11 +930,10 @@ class StateManager {
         }
 
         const block = blockEntry.block;
-        const participants = this.storage.getParticipants(block.coordinates);
 
-        // If everyone already signed or block has already onChainTimestamp, no timeout needed
+        // If I already signed or block has already onChainTimestamp, no timeout needed
         if (
-            block.didEveryoneSign(participants) ||
+            block.didISign(this.signerAddress) ||
             blockEntry.onChainTimestamp !== undefined
         ) {
             return;
@@ -1233,18 +1219,6 @@ class StateManager {
         };
 
         return blockStruct;
-    }
-
-    private isValidStateTransition(
-        encodedState: string,
-        previousStateHash: Hash
-    ): boolean {
-        // state did not change
-        if (hash(encodedState) === previousStateHash) {
-            return false;
-        }
-
-        return true;
     }
 
     // ─────────────────────── ACTION HANDLERS ───────────────────────
