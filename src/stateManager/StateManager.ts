@@ -283,7 +283,9 @@ class StateManager {
         });
     }
 
-    // Passes the block confirmation through a verification pipeline and returns shouldDisconnect flag
+    // Passes the block confirmation through a verification pipeline
+    // returns true if the block is valid and the state transition is successful
+    // returns false -> the calling context should disconnect from the peer
     public async onBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct
     ): Promise<boolean> {
@@ -355,8 +357,8 @@ class StateManager {
                 exitChannelBlock
             );
 
-            // sucess - no disconnect
-            return false;
+            // success - no disconnect
+            return true;
         } catch (error) {
             throw error;
         } finally {
