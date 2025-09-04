@@ -18,11 +18,12 @@ import {
     WebRTCSetupService,
     SpectateService
 } from "./services";
+import { SnapshotPayload } from "./services/SpectateService";
 import { DEBUG_RPC } from "@/utils/config";
 import { Address, ChannelId, Hash, Signature, Timestamp } from "@/types/types";
 
 //TODO! refactor this
-type JoinChanenelConfirmation = {
+type JoinChannelConfirmation = {
     signedJoinChannel: SignedJoinChannelStruct;
     confirmationSignatures: Signature[];
 };
@@ -137,16 +138,12 @@ class MainRpcService {
 
     public async onSpectateResponse(
         channelId: ChannelId,
-        forkProofData: any,
-        stateProofData: any,
-        onChainSnapshot: any,
+        snapshotPayload: SnapshotPayload,
         responseTime: Timestamp
     ) {
         this.spectateService.onSpectateResponse(
             channelId,
-            forkProofData,
-            stateProofData,
-            onChainSnapshot,
+            snapshotPayload,
             responseTime
         );
     }

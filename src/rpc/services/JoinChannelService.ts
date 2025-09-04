@@ -2,9 +2,9 @@ import { ARpcService, MainRpcService } from "@/rpc";
 import {
     SignedJoinChannelStruct,
     JoinChannelStruct,
-    MilestoneProofStruct,
     ExitChannelBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Codec, SignatureCollectionMap, SignatureUtils, Type } from "@/utils";
 import Clock from "@/Clock";
 import { getActiveParticipants } from "@/utils/participantUtils";
