@@ -24,6 +24,11 @@ bytes encodedBlock,
 bytes signature
 )`;
 
+export const BlockCommitmentEthersType = `tuple(
+${SignedBlockEthersType} signedBlock,
+uint timestamp
+)`;
+
 export const SnapshotDataEthersType = `tuple(
 bytes32 stateMachineStateHash,
 address[] participants,

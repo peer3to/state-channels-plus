@@ -15,10 +15,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // TypeChain types - Proof types
-import {
-    DisputeFraudProofStruct,
-    MilestoneProofStruct
-} from "@typechain-types/contracts/V1/types/ProofTypes";
+import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 // TypeChain types - Dispute types
 import {
@@ -56,15 +53,10 @@ import {
     isCustomEvmError,
     getActiveParticipants,
     SignatureUtils,
-    difference,
     decodeErrorProxy
 } from "@/utils";
 // Types
-import {
-    AgreementFlag,
-    BlockValidationResult as BlockValidationResult,
-    TimeConfig
-} from "@/types";
+import { BlockValidationResult, TimeConfig } from "@/types";
 import {
     Address,
     BlockHeight,
@@ -201,38 +193,16 @@ class StateManager {
         );
     }
     //Triggered by the On-chain Event Listener when block calldata is posted on-chain
-    public collectOnChainBlock(
+    public async collectOnChainBlock(
         signedBlock: SignedBlockStruct,
         timestamp: Timestamp
     ) {
-        console.log("StateManager - collectOnChainBlock");
-        let flag = this.agreementManager.collectOnChainBlock(
+        const blockConfirmation: BlockConfirmationStruct = {
             signedBlock,
-            Number(timestamp)
-        );
-        let block = Block.fromSignedBlock(signedBlock);
-        let disputeProof: DisputeFraudProofStruct;
-        if (flag == AgreementFlag.DOUBLE_SIGN) {
-            console.log("StateManager - collectOnChainBlock - double sign");
-            disputeProof =
-                this.disputeHandler.proofManager.createDoubleSignProof([
-                    signedBlock
-                ]);
-            this.disputeHandler.createDispute(block.forkId, NULL, 0, [
-                disputeProof
-            ]);
-        } else if (flag == AgreementFlag.INCORRECT_DATA) {
-            console.log("StateManager - collectOnChainBlock - incorrect data");
-            disputeProof =
-                this.disputeHandler.proofManager.createIncorrectDataProof(
-                    signedBlock
-                );
-            this.disputeHandler.createDispute(block.forkId, NULL, 0, [
-                disputeProof
-            ]);
-        }
-        console.log("StateManager - collectOnChainBlock - done");
-        this.onSuccessCommon();
+            signatures: []
+        };
+
+        return this.onBlockConfirmation(blockConfirmation, timestamp);
     }
     private async tryExecuteFromQueue() {
         const nextBlockHeight = this.storage.blocks.getNextBlockHeight(
@@ -263,12 +233,6 @@ class StateManager {
     ): Promise<void> {
         console.log("StateManager - SetState", _forkId, _timestamp);
         await this.diamondStateMachine.setState(encodedState);
-        this.agreementManager.newFork(
-            encodedState,
-            await this.diamondStateMachine.getParticipants(),
-            _forkId,
-            _timestamp
-        );
 
         //Try timeout next participant
         this.p2pEventHooks.onSetState?.();
@@ -287,7 +251,8 @@ class StateManager {
     // returns true if the block is valid and the state transition is successful
     // returns false -> the calling context should disconnect from the peer
     public async onBlockConfirmation(
-        blockConfirmation: BlockConfirmationStruct
+        blockConfirmation: BlockConfirmationStruct,
+        onChainTimestamp?: Timestamp
     ): Promise<boolean> {
         // the try/catch is to ensure that the mutex is unlocked in case of an error
         // no error is actually expected to happen, and the catch block just re-throws the error
@@ -296,7 +261,8 @@ class StateManager {
 
             const validationResult =
                 await this.validationService.validateBlockConfirmation(
-                    blockConfirmation
+                    blockConfirmation,
+                    onChainTimestamp
                 );
 
             if (validationResult !== BlockValidationResult.SUCCESS) {
@@ -322,12 +288,7 @@ class StateManager {
                 return false;
             }
 
-            const stateChanged = this.isValidStateTransition(
-                encodedState as string,
-                previousStateHash
-            );
-
-            if (!stateChanged) {
+            if (hash(encodedState) === previousStateHash) {
                 this.fraudProofService.createInvalidStateTransitionProof(block);
                 await this.dispute(blockConfirmation);
                 // disconnect
@@ -436,11 +397,7 @@ class StateManager {
 
             const block = Block.fromSignedBlock(signedBlock);
 
-            this.agreementManager.addBlock(
-                block,
-                signedBlock.signature,
-                encodedState
-            );
+            this.storage.blocks.storeBlock(block);
 
             successCallback();
             await this.onSuccessCommon();
@@ -462,7 +419,9 @@ class StateManager {
         signedBlock: SignedBlockStruct
     ): Promise<void> {
         // If not everyone has signed, do the on-chain post
-        if (!this.agreementManager.didEveryoneSignBlock(block)) {
+        const participants = this.storage.getParticipants(block.coordinates);
+
+        if (!block.didEveryoneSign(participants)) {
             console.log("Posting calldata on chain!");
             this.p2pEventHooks.onPostingCalldata?.();
 
@@ -954,70 +913,164 @@ class StateManager {
     // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute
     private async tryTimeoutParticipant(
         forkId: ForkId,
-        transactionCnt: BlockHeight,
-        participantAdr: Address
-    ) {
-        if (participantAdr == this.signerAddress) return;
-        const block = this.agreementManager.getBlock(forkId, transactionCnt);
-        if (block) {
-            if (this.agreementManager.didEveryoneSignBlock(block)) return;
+        blockHeight: BlockHeight,
+        participantAddress: Address
+    ): Promise<void> {
+        if (participantAddress === this.signerAddress) {
+            return;
         }
-        //if there is no block -> check if player posted on chain and try timeout
-        if (
-            this.agreementManager.didParticipantPostOnChainLocal(
-                forkId,
-                transactionCnt,
-                participantAdr
-            )
-        )
-            return;
 
-        if (
-            Clock.getTimeInSeconds() <
-            this.agreementManager.getChainLatestBlockTimestamp(
-                forkId,
-                transactionCnt
-            ) +
-                this.getTimeoutWaitTimeSeconds()
-        )
+        // Get the block entry - if it doesn't exist (can happen ONLY from setState), skip timeout
+        const blockEntry = this.storage.blocks.getBlockEntry(
+            forkId,
+            blockHeight
+        );
+        if (!blockEntry) {
             return;
-        const response =
+        }
+
+        const block = blockEntry.block;
+
+        // If I already signed or block has already onChainTimestamp, no timeout needed
+        if (
+            block.didISign(this.signerAddress) ||
+            block.onChainTimestamp !== undefined
+        ) {
+            return;
+        }
+
+        // Check if participant posted a commitment on-chain
+        const commitmentResponse =
             await this.stateChannelManagerContract.getBlockCallDataCommitment(
                 this.channelId,
                 forkId,
-                transactionCnt,
-                participantAdr
+                blockHeight,
+                participantAddress
             );
-        if (response.found) return;
-        //This should be enough since Clock should always lag behind DLT clock
-        const delayTimeSeconds =
-            this.getTimeoutWaitTimeSeconds() -
-            (Clock.getTimeInSeconds() -
-                this.agreementManager.getLatestBlockTimestamp(forkId));
 
-        if (delayTimeSeconds < 0) {
+        if (!commitmentResponse.found) {
+            // No commitment posted - proceed with timeout
+            await this.createTimeOutDispute(
+                forkId,
+                blockHeight,
+                participantAddress
+            );
+            return;
+        }
+
+        // Validate the on-chain commitment is legitimate
+        const isValidCommitment = await this.validateBlockCommitment(
+            blockEntry.block,
+            commitmentResponse.blockCalldataCommitment,
+            participantAddress
+        );
+
+        if (!isValidCommitment) {
+            // Invalid commitment - force timeout
+            // TODO
+        }
+    }
+
+    private async validateBlockCommitment(
+        block: Block,
+        blockCalldataCommitment: Hash,
+        participantAddress: Address
+    ): Promise<boolean> {
+        const onChainResult =
+            await this.validationService.fetchBlockCommitmentCalldata(
+                block,
+                blockCalldataCommitment
+            );
+
+        if (!onChainResult) {
+            return false;
+        }
+
+        const expectedCommitment = hash(
+            Codec.encode(
+                {
+                    signedBlock: block.signedBlock,
+                    timestamp: onChainResult.timestamp
+                },
+                Type.BlockCommitment
+            )
+        );
+
+        const isValid = expectedCommitment === blockCalldataCommitment;
+
+        if (isValid) {
+            // we should have already been notified the event listener.
+            // calling the same handler the event lister would have called
+            // this will call collectOnChainBlock on trigger  the block validation pipeline
+            // if the  the block is invalid, the signer will get slashed
+            this.stateChannelEventListener.handleBlockCalldataPosted(
+                this.channelId,
+                blockCalldataCommitment,
+                participantAddress,
+                onChainResult.signedBlock,
+                onChainResult.timestamp
+            );
+        }
+
+        return isValid;
+    }
+
+    private async createTimeOutDispute(
+        forkId: ForkId,
+        blockHeight: BlockHeight,
+        participantAddress: Address
+    ): Promise<void> {
+        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
+            {
+                forkId,
+                height: blockHeight
+            }
+        );
+
+        // Calculate when the participant should have acted
+        const expectedBlockTime: Timestamp = previousBlockOrSnapshot.block
+            ? previousBlockOrSnapshot.block.getRelevantTimestamp(
+                  participantAddress
+              )
+            : previousBlockOrSnapshot.stateSnapshot!.timestamp;
+
+        const currentTime = Clock.getTimeInSeconds();
+        const timeoutDeadline =
+            expectedBlockTime + this.getTimeoutWaitTimeSeconds();
+
+        // If timeout period hasn't elapsed yet, don't create dispute
+        if (currentTime < timeoutDeadline) {
+            return;
+        }
+
+        const elapsedTime = currentTime - expectedBlockTime;
+        const remainingDelay = this.getTimeoutWaitTimeSeconds() - elapsedTime;
+
+        if (remainingDelay <= 0) {
+            // Time has fully elapsed - create dispute immediately
             this.disputeHandler.createDispute(
                 forkId,
-                participantAdr,
-                transactionCnt,
+                participantAddress,
+                blockHeight,
                 []
             );
-            console.log("Timeout participant!");
+            console.log(
+                `Timeout dispute created for participant: ${participantAddress}`
+            );
         } else {
+            // Schedule another timeout check after remaining delay
             scheduleTask(
                 async () => {
-                    this.disputeHandler.createDispute(
+                    await this.tryTimeoutParticipant(
                         forkId,
-                        participantAdr,
-                        transactionCnt,
-                        []
+                        blockHeight,
+                        participantAddress
                     );
                     console.log(
-                        "Timeout participant! - delayed",
-                        delayTimeSeconds
+                        `Delayed timeout executed for participant: ${participantAddress}, delay: ${remainingDelay}s`
                     );
                 },
-                delayTimeSeconds * 1000,
+                remainingDelay * 1000,
                 "timeoutParticipantDelayed"
             );
         }
@@ -1063,8 +1116,10 @@ class StateManager {
     }
 
     private adjustTimestampIfNeeded(tx: TransactionStruct): void {
-        const latestBlockTimestamp =
-            this.agreementManager.getLatestBlockTimestamp(this.forkId);
+        const latestBlockTimestamp = this.storage.blocks.getLatestBlockEntry(
+            this.forkId
+        )!.block.timestamp;
+
         if (Number(tx.header.timestamp) < latestBlockTimestamp) {
             tx.header.timestamp = latestBlockTimestamp + 1;
         }
@@ -1139,17 +1194,27 @@ class StateManager {
         posteriorStateHash: Hash
     ): Promise<BlockStruct> {
         const forkId = this.forkId;
-        const transactionCnt = Number(tx.header.transactionCnt);
+        const blockHeight = Number(tx.header.transactionCnt);
 
-        const previousBlockHash = this.storageModule.getPreviousBlockHash(
-            forkId,
-            transactionCnt - 1
+        let previousHash: Hash;
+
+        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
+            {
+                forkId,
+                height: blockHeight
+            }
         );
+
+        if (previousBlockOrSnapshot.block) {
+            previousHash = previousBlockOrSnapshot.block.hash;
+        } else {
+            previousHash = previousBlockOrSnapshot.stateSnapshot!.hash;
+        }
 
         const stateSnapshot = await this.createStateSnapshot(
             posteriorStateHash,
             forkId,
-            transactionCnt
+            blockHeight
         );
 
         const stateSnapshotHash = stateSnapshot.hash;
@@ -1157,22 +1222,10 @@ class StateManager {
         const blockStruct: BlockStruct = {
             transaction: tx,
             stateSnapshotHash: stateSnapshotHash,
-            previousBlockHash: previousBlockHash
+            previousBlockHash: previousHash
         };
 
         return blockStruct;
-    }
-
-    private isValidStateTransition(
-        encodedState: string,
-        previousStateHash: Hash
-    ): boolean {
-        // state did not change
-        if (hash(encodedState) === previousStateHash) {
-            return false;
-        }
-
-        return true;
     }
 
     // ─────────────────────── ACTION HANDLERS ───────────────────────
@@ -1296,12 +1349,6 @@ class StateManager {
         }
     }
 
-    public onOutputStateSnapshotVerified(
-        outputStateSnapshot: StateSnapshot,
-        commitment: Hash
-    ) {
-        this.outputStateSnapshotData.set(commitment, outputStateSnapshot);
-    }
     public async onDisputeConfirmation(
         signedDispute: SignedDisputeStruct
     ): Promise<ExecutionFlags> {

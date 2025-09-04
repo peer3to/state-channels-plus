@@ -45,9 +45,8 @@ class AgreementManager {
         const thresholdAddresses = new Set<Address>(
             this.storage.getParticipants(block.coordinates)
         );
-        if (thresholdAddresses.size === 0) return false;
 
-        return SetUtils.isSubset(thresholdAddresses, block.allSignerAddresses);
+        return block.didEveryoneSign(thresholdAddresses);
     }
 
     /**
@@ -244,12 +243,12 @@ class AgreementManager {
      */
     public didParticipantPostOnChainLocal(
         forkId: ForkId,
-        transactionCnt: BlockHeight,
+        blockHeight: BlockHeight,
         participantAddress: Address
     ): boolean {
         const blockEntry = this.storage.blocks.getBlockEntry(
             forkId,
-            transactionCnt
+            blockHeight
         );
         if (!blockEntry) return false;
 

@@ -1,4 +1,7 @@
-import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    BlockConfirmationStruct,
+    SignedBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 
 import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
 import { ZeroHash } from "ethers";
@@ -9,7 +12,7 @@ import Storage from "@/storage";
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 import { difference, isSubset } from "@/utils";
 import { BlockValidationResult, TimeConfig } from "@/types";
-import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
+import { Address, ChannelId, ForkId, Hash, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
 
@@ -28,20 +31,26 @@ export default class ValidationService {
     }
 
     async validateBlockConfirmation(
-        blockConfirmation: BlockConfirmationStruct
+        blockConfirmation: BlockConfirmationStruct,
+        onChainTimestamp?: Timestamp
     ): Promise<BlockValidationResult> {
         const forkId = this.getForkId();
         const channelId = this.channelId;
 
-        // 1. Check if channel is open
-        if (!this.isChannelOpen(forkId)) {
-            // not ready
-            this.queueForLater(blockConfirmation);
+        // 1. Authenticate the block
+        const block = this.authenticateBlock(
+            blockConfirmation,
+            channelId,
+            onChainTimestamp
+        );
+        if (!block) {
             return BlockValidationResult.DISCONNECT;
         }
-        // 2. Authenticate the block
-        const block = this.authenticateBlock(blockConfirmation, channelId);
-        if (!block) {
+
+        // 2. Check if channel is open
+        if (!this.isChannelOpen(forkId)) {
+            // not ready
+            this.storage.queues.queueBlock(block);
             return BlockValidationResult.DISCONNECT;
         }
 
@@ -71,14 +80,14 @@ export default class ValidationService {
 
         if (await this.isDisputedFork(block.forkId, channelId)) {
             // not ready
-            this.queueForLater(block);
+            this.storage.queues.queueBlock(block);
             return BlockValidationResult.NOT_READY;
         }
 
         // isNext
         if (block.height > this.storage.blocks.getNextBlockHeight(forkId)) {
             // not ready
-            this.queueForLater(block);
+            this.storage.queues.queueBlock(block);
             return BlockValidationResult.NOT_READY;
         }
 
@@ -109,16 +118,6 @@ export default class ValidationService {
 
     // ────────────────────── INTERNAL ACTION METHODS ─────────────────────
 
-    private queueForLater(
-        blockConfirmation: Block | BlockConfirmationStruct
-    ): void {
-        const block =
-            blockConfirmation instanceof Block
-                ? blockConfirmation
-                : Block.fromBlockConfirmation(blockConfirmation);
-        this.storage.queues.queueBlock(block);
-    }
-
     // ────────────────────── VALIDATION METHODS ─────────────────────
 
     isChannelOpen(forkId: ForkId): boolean {
@@ -141,12 +140,16 @@ export default class ValidationService {
 
     private authenticateBlock(
         blockConfirmation: BlockConfirmationStruct,
-        channelId: ChannelId
+        channelId: ChannelId,
+        onChainTimestamp?: Timestamp
     ): Block | undefined {
         let block: Block;
 
         try {
-            block = Block.fromBlockConfirmation(blockConfirmation);
+            block = Block.fromBlockConfirmation(
+                blockConfirmation,
+                onChainTimestamp
+            );
             if (block.channelId !== channelId) return;
             if (block.signerAddress !== block.author) return;
         } catch (error) {
@@ -174,7 +177,7 @@ export default class ValidationService {
             }
 
             // Store in queue (handles signature merging automatically)
-            this.queueForLater(block);
+            this.storage.queues.queueBlock(block);
             return BlockValidationResult.SUCCESS;
         }
 
@@ -391,13 +394,9 @@ export default class ValidationService {
     }
 
     private async fetchOnChainTimestamp(
-        block: Block | undefined
+        block: Block
     ): Promise<Timestamp | undefined> {
-        if (block === undefined) {
-            return undefined;
-        }
         try {
-            // Check if commitment exists on-chain
             const commitmentResult =
                 await this.stateChannelManagerContract.getBlockCallDataCommitment(
                     block.channelId,
@@ -405,16 +404,33 @@ export default class ValidationService {
                     block.height,
                     block.author
                 );
-
             if (!commitmentResult.found) {
                 return undefined;
             }
+            return (
+                await this.fetchBlockCommitmentCalldata(
+                    block,
+                    commitmentResult.blockCalldataCommitment
+                )
+            )?.timestamp;
+        } catch (error) {
+            console.error("Error fetching on-chain timestamp:", error);
+            return undefined;
+        }
+    }
 
+    async fetchBlockCommitmentCalldata(
+        block: Block,
+        blockCommitment: Hash
+    ): Promise<
+        { signedBlock: SignedBlockStruct; timestamp: Timestamp } | undefined
+    > {
+        try {
             // filter BlockCalldataPosted calls by channelId and blockCalldataCommitment
             const filter =
                 this.stateChannelManagerContract.filters.BlockCalldataPosted(
                     block.channelId,
-                    commitmentResult.blockCalldataCommitment
+                    blockCommitment
                 );
 
             // Calculate how many blocks back should we look for the log on-chain
@@ -437,10 +453,14 @@ export default class ValidationService {
             }
             if (logs.length > 1) {
                 throw new Error(
-                    `Multiple logs found for commitment: ${commitmentResult.blockCalldataCommitment} - logs: ${logs}`
+                    `Multiple logs found for commitment: ${blockCommitment} - logs: ${logs}`
                 );
             }
-            return Number(logs[0].args.timestamp);
+
+            return {
+                signedBlock: logs[0].args.signedBlock,
+                timestamp: Number(logs[0].args.timestamp)
+            };
         } catch (error) {
             console.error("Error fetching on-chain timestamp:", error);
             return undefined;
