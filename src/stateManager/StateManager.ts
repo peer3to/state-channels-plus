@@ -288,7 +288,7 @@ class StateManager {
                 return false;
             }
 
-            if (hash(encodedState) !== previousStateHash) {
+            if (hash(encodedState) === previousStateHash) {
                 this.fraudProofService.createInvalidStateTransitionProof(block);
                 await this.dispute(blockConfirmation);
                 // disconnect
