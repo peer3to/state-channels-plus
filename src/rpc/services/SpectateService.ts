@@ -98,7 +98,6 @@ class SpectateService extends ARpcService {
         );
 
         // Try to apply blocks from queue in blockConfirmationPipeline
-        // (this means transition the state using existing pipeline)
         await this.applyQueuedBlocksFromPipeline(channelId);
 
         console.log("Spectator successfully synced to latest proven state");
@@ -117,7 +116,6 @@ class SpectateService extends ARpcService {
         // Get the current fork ID
         const forkId = stateManager.forkId;
 
-        // Get the latest block height for this fork
         const latestBlockHeight =
             stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
 
@@ -127,8 +125,6 @@ class SpectateService extends ARpcService {
             latestBlockHeight
         );
 
-        // Reuse the same logic as updateStateSnapshotFork but just call reduce locally
-        // This is deterministic and produces the same result as the on-chain version
         const disputeWindows: DisputeStruct[] = [];
 
         // Get the latest fork genesis snapshot to include in the payload
@@ -224,10 +220,6 @@ class SpectateService extends ARpcService {
         try {
             const stateManager = this.mainRpcService.p2pManager.stateManager;
 
-            // Run the same verification logic that would happen on-chain
-            // This mimics the updateStateSnapshotFork algorithm
-
-            // Step 1: Traverse from on-chain snapshot to latest fork using disputes (updateStateSnapshotFork algorithm)
             // Start with on-chain snapshot and traverse dispute windows until we reach the latest fork
             let currentForkId = onChainSnapshot.forkId;
             let isDisputed =
@@ -307,7 +299,7 @@ class SpectateService extends ARpcService {
                 `Computed fork genesis snapshot: forkId=${computedLatestForkGenesisSnapshot.forkId}`
             );
 
-            // Step 4: Verify state proof to prove the latest state from the proven fork
+            // Verify state proof to prove the latest state from the proven fork
             if (snapshotPayload.stateProof.milestones.length > 0) {
                 console.log(`Verifying state proof from proven fork`);
 
