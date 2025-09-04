@@ -23,7 +23,6 @@ import {
 // TypeChain types - Dispute types
 import {
     DisputeStruct,
-    ReduceOutputStruct,
     SignedDisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
@@ -44,7 +43,7 @@ import Storage from "@/storage";
 import P2pEventHooks from "@/P2pEventHooks";
 
 // Models
-import { Block, BlockCoordinates, StateSnapshot } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 
 // Utils
 import {
@@ -57,6 +56,7 @@ import {
     isCustomEvmError,
     getActiveParticipants,
     SignatureUtils,
+    difference,
     decodeErrorProxy
 } from "@/utils";
 // Types
@@ -76,9 +76,6 @@ import {
 } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
-import { DisputeStorage } from "@/storage/DisputeStorage";
-import LocalDiamondSigner from "@/evm/LocalDiamondSigner";
-import { errorAbis } from "@/utils/GeneratedArtifacts";
 
 let DEBUG_STATE_MANAGER = false;
 
@@ -105,7 +102,6 @@ class StateManager {
 
     private latestForkId: ForkId = NULL;
     private dispatcher = new Map([
-        [BlockValidationResult.SUCCESS, this.success],
         [BlockValidationResult.NOT_READY, this.notReady],
         [BlockValidationResult.DISCONNECT, this.disconnect],
         [BlockValidationResult.DISPUTE, this.dispute],
@@ -287,7 +283,9 @@ class StateManager {
         });
     }
 
-    // Passes the block confirmation through a verification pipeline and returns shouldDisconnect flag
+    // Passes the block confirmation through a verification pipeline
+    // returns true if the block is valid and the state transition is successful
+    // returns false -> the calling context should disconnect from the peer
     public async onBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct
     ): Promise<boolean> {
@@ -301,9 +299,66 @@ class StateManager {
                     blockConfirmation
                 );
 
-            await this.dispatcher.get(validationResult)!(blockConfirmation);
+            if (validationResult !== BlockValidationResult.SUCCESS) {
+                // handle all non-success actions
+                await this.dispatcher.get(validationResult)!(blockConfirmation);
+            }
 
-            return this.shouldDisconnect(validationResult);
+            // SUCCESS action: perform state transition validation
+            const block = Block.fromSignedBlock(blockConfirmation.signedBlock);
+
+            const {
+                success,
+                encodedState,
+                previousStateHash,
+                successCallback,
+                exitChannels
+            } = await this.applyTransaction(block.transaction);
+
+            if (!success) {
+                this.fraudProofService.createInvalidStateTransitionProof(block);
+                await this.dispute(blockConfirmation);
+                // disconnect
+                return false;
+            }
+
+            const stateChanged = this.isValidStateTransition(
+                encodedState as string,
+                previousStateHash
+            );
+
+            if (!stateChanged) {
+                this.fraudProofService.createInvalidStateTransitionProof(block);
+                await this.dispute(blockConfirmation);
+                // disconnect
+                return false;
+            }
+
+            // Validate state snapshot hash
+            const { stateSnapshot, exitChannelBlock, totalWithdrawals } =
+                await this.createStateSnapshot(
+                    hash(encodedState),
+                    block,
+                    exitChannels
+                );
+
+            if (stateSnapshot.hash !== block.stateSnapshotHash) {
+                this.fraudProofService.createInvalidStateTransitionProof(block);
+                await this.dispute(blockConfirmation);
+                return false;
+            }
+
+            // All validations passed - proceed with success action
+            this.success(
+                block,
+                stateSnapshot,
+                successCallback,
+                totalWithdrawals,
+                exitChannelBlock
+            );
+
+            // success - no disconnect
+            return true;
         } catch (error) {
             throw error;
         } finally {
@@ -883,75 +938,17 @@ class StateManager {
         balances: { balance: BalanceStruct }[],
         initialTotal?: BalanceStruct
     ): Promise<BalanceStruct> {
-        let total = initialTotal ?? (await this.stateMachine.getZeroBalance());
+        let total =
+            initialTotal ?? (await this.diamondStateMachine.getZeroBalance());
 
         for (const balance of balances) {
-            total = await this.stateMachine.addBalance(total, balance.balance);
+            total = await this.diamondStateMachine.addBalance(
+                total,
+                balance.balance
+            );
         }
 
         return total;
-    }
-
-    private async storeExitChannelBlock(
-        exitChannels: ExitChannelStruct[],
-        coordinates: BlockCoordinates
-    ) {
-        const previousStateSnapshot = this.storage.getStateSnapshot({
-            forkId: coordinates.forkId,
-            height: coordinates.height - 1
-        });
-        if (!previousStateSnapshot) {
-            // This should never happen, but just in case
-            throw new Error(
-                `Previous state snapshot not found for forkId: ${coordinates.forkId} and height: ${coordinates.height - 1}`
-            );
-        }
-
-        const previousBlockHash =
-            previousStateSnapshot.snapshotData.latestExitChannelBlockHash;
-
-        const exitChannelBlock: ExitChannelBlockStruct = {
-            exitChannels,
-            previousBlockHash: previousBlockHash
-        };
-
-        // Get previous block's total withdrawals or zero balance if first block
-        const prevBlock =
-            this.storage.exitChannelBlocks.getExitChannelBlockEntry(
-                previousBlockHash
-            );
-        if (prevBlock == undefined && previousBlockHash != NULL)
-            throw Error(
-                ` previous ExitChannelBlock missing in storage ${previousBlockHash}`
-            );
-
-        const totalWithdrawals = await this.calculateTotalBalance(
-            exitChannels,
-            prevBlock?.totalWithdrawals
-        );
-
-        // Store the new block with calculated total withdrawals
-        this.storage.exitChannelBlocks.storeExitChannelBlock(
-            exitChannelBlock,
-            totalWithdrawals
-        );
-        this.storage.exitPoints.storeExitPoint(
-            coordinates.forkId,
-            coordinates.height
-        );
-    }
-
-    private async handleStateSnapshotStorage(
-        encodedState: Bytes,
-        forkId: ForkId,
-        blockHeight: BlockHeight
-    ) {
-        const stateSnapshot = await this.createStateSnapshot(
-            encodedState,
-            forkId,
-            blockHeight
-        );
-        this.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
     }
 
     // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute
@@ -1075,40 +1072,66 @@ class StateManager {
 
     private async createStateSnapshot(
         stateMachineStateHash: Hash,
-        forkId: ForkId,
-        blockHeight: BlockHeight
-    ): Promise<StateSnapshot> {
-        const participants = await this.diamondStateMachine.getParticipants();
+        block: Block,
+        exitChannels?: ExitChannelStruct[]
+    ): Promise<{
+        stateSnapshot: StateSnapshot;
+        exitChannelBlock?: ExitChannelBlockStruct;
+        totalWithdrawals: BalanceStruct;
+    }> {
+        const previousStateSnapshot = this.storage.getPreviousStateSnapshot(
+            block.coordinates
+        )!;
+        const genesisStateSnapshot =
+            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                block.forkId
+            )!;
 
         const latestJoinChannelBlockHash =
-            this.storage.joinChannelBlocks.getLatestJoinChannelBlockHash();
-        const latestExitChannelBlockHash =
-            this.storage.exitChannelBlocks.getLatestExitChannelBlockHash();
-        const totalDeposits = this.storage.joinChannelBlocks.getTotalDeposits();
-        const totalWithdrawals =
-            this.storage.exitChannelBlocks.getTotalWithdrawals();
+            genesisStateSnapshot.snapshotData.latestJoinChannelBlockHash;
+        const totalDeposits = genesisStateSnapshot.snapshotData.totalDeposits;
+
+        let { latestExitChannelBlockHash, totalWithdrawals, participants } =
+            previousStateSnapshot.snapshotData;
+
+        let exitChannelBlock: ExitChannelBlockStruct | undefined;
+
+        if (exitChannels && exitChannels.length > 0) {
+            participants = await this.diamondStateMachine.getParticipants();
+            exitChannelBlock = {
+                exitChannels,
+                previousBlockHash: latestExitChannelBlockHash
+            };
+
+            latestExitChannelBlockHash = hash(
+                Codec.encode(exitChannelBlock, Type.ExitChannelBlock)
+            );
+
+            totalWithdrawals = await this.calculateTotalBalance(
+                exitChannels,
+                totalWithdrawals
+            );
+        }
 
         const stateSnapshot: StateSnapshotStruct = {
-            forkId,
-            blockHeight: blockHeight,
-            timestamp: Clock.getTimeInSeconds(),
+            forkId: block.coordinates.forkId,
+            blockHeight: BigInt(block.coordinates.height),
+            timestamp: block.timestamp,
             snapshotData: {
                 stateMachineStateHash: stateMachineStateHash,
                 participants,
-                latestJoinChannelBlockHash: latestJoinChannelBlockHash as Hash,
-                latestExitChannelBlockHash: latestExitChannelBlockHash as Hash,
-                totalDeposits: {
-                    amount: totalDeposits.amount,
-                    data: totalDeposits.data
-                },
-                totalWithdrawals: {
-                    amount: totalWithdrawals.amount,
-                    data: totalWithdrawals.data
-                }
+                latestJoinChannelBlockHash,
+                latestExitChannelBlockHash,
+                totalDeposits,
+                totalWithdrawals
             }
         };
 
-        return StateSnapshot.from(stateSnapshot);
+        return {
+            stateSnapshot: StateSnapshot.from(stateSnapshot),
+            exitChannelBlock,
+            totalWithdrawals
+        };
     }
 
     private async createBlock(
@@ -1155,50 +1178,25 @@ class StateManager {
     // ─────────────────────── ACTION HANDLERS ───────────────────────
 
     private async success(
-        blockConfirmation: BlockConfirmationStruct
+        block: Block,
+        stateSnapshot: StateSnapshot,
+        successCallback: () => void,
+        totalWithdrawals: BalanceStruct,
+        exitChannelBlock?: ExitChannelBlockStruct
     ): Promise<void> {
         // this function is still incomplete and should be considered as TODO
         // will be done in follow up PRs (after https://github.com/peer3to/state-channels-plus/pull/130)
-        const block = Block.fromBlockConfirmation(blockConfirmation);
-
-        const {
-            success,
-            encodedState,
-            previousStateHash,
-            successCallback,
-            exitChannels
-        } = await this.applyTransaction(block.transaction);
-
-        if (!success) {
-            this.fraudProofService.createInvalidStateTransitionProof(block);
-            await this.dispute(blockConfirmation);
-            return;
-        }
-
-        const stateTransitionFlag = this.isValidStateTransition(
-            encodedState as string,
-            previousStateHash
-        );
-
-        if (!stateTransitionFlag) {
-            this.fraudProofService.createInvalidStateTransitionProof(block);
-            await this.dispute(blockConfirmation);
-            return;
-        }
 
         // Store the block confirmation
         this.storage.blocks.storeBlock(block);
-
-        // Handle state snapshot storage
-        await this.handleStateSnapshotStorage(
-            encodedState,
-            block.forkId,
-            block.coordinates.height
-        );
+        this.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
 
         // Store exit channel blocks if present
-        if (exitChannels.length > 0) {
-            await this.storeExitChannelBlock(exitChannels, block.coordinates);
+        if (exitChannelBlock) {
+            this.storage.exitChannelBlocks.storeExitChannelBlock(
+                exitChannelBlock,
+                totalWithdrawals
+            );
         }
 
         successCallback();
