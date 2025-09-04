@@ -15,7 +15,8 @@ import {
     TESTJoinChannelService,
     DHTDiscoveryService,
     JoinChannelService,
-    WebRTCSetupService
+    WebRTCSetupService,
+    SpectateService
 } from "./services";
 import { DEBUG_RPC } from "@/utils/config";
 import { Address, ChannelId, Hash, Signature, Timestamp } from "@/types/types";
@@ -41,6 +42,7 @@ class MainRpcService {
     testJoinChannelService = new TESTJoinChannelService(this.self);
     dhtDiscoveryService = new DHTDiscoveryService(this.self);
     joinChannelService = new JoinChannelService(this.self);
+    spectateService = new SpectateService(this.self);
 
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
@@ -126,6 +128,27 @@ class MainRpcService {
 
     public async onDisputeConfirmation(signedDispute: SignedDisputeStruct) {
         this.stateTransitionService.onDisputeConfirmation(signedDispute);
+    }
+
+    // ********************* SpectateService *********************
+    public async onSpectateRequest(channelId: ChannelId, time: Timestamp) {
+        this.spectateService.onSpectateRequest(channelId, time);
+    }
+
+    public async onSpectateResponse(
+        channelId: ChannelId,
+        forkProofData: any,
+        stateProofData: any,
+        onChainSnapshot: any,
+        responseTime: Timestamp
+    ) {
+        this.spectateService.onSpectateResponse(
+            channelId,
+            forkProofData,
+            stateProofData,
+            onChainSnapshot,
+            responseTime
+        );
     }
 }
 export default MainRpcService;
