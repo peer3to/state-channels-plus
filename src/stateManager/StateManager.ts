@@ -446,109 +446,58 @@ class StateManager {
         milestoneSnapshots: StateSnapshot[],
         exitChannelBlocks: ExitChannelBlockStruct[] = []
     ) {
-        // Get on-chain state
-        const onChainforkId = await this.stateChannelManagerContract.getforkId(
-            this.channelId
-        );
-        const onChainDisputeLength =
-            await this.stateChannelManagerContract.getDisputeLength(
+        // Get current on-chain state
+        const currentOnChainSnapshot = StateSnapshot.from(
+            await this.stateChannelManagerContract.getStateSnapshot(
                 this.channelId
-            );
-
-        if (onChainDisputeLength == onChainforkId) {
-            // Call contract without dispute
-            return this.stateChannelManagerContract.updateStateSnapshotWithoutDispute(
-                this.channelId,
-                milestoneProofs,
-                milestoneSnapshots,
-                exitChannelBlocks
-            );
-        }
-
-        // Need to include a dispute
-        const disputeData = this.agreementManager.forks.getLatestDispute();
-        if (!disputeData) {
-            throw new Error(
-                "No dispute data available but dispute length > fork count"
-            );
-        }
-
-        // Get output state snapshot data
-        const encodedDispute = Codec.encode(disputeData.dispute, Type.Dispute);
-        const commitment = ethers.keccak256(
-            ethers.AbiCoder.defaultAbiCoder().encode(
-                ["bytes", "uint256"],
-                [encodedDispute, disputeData.timestamp]
             )
         );
 
-        const outputStateSnapshot =
-            this.outputStateSnapshotData.get(commitment);
-        if (!outputStateSnapshot) {
-            throw new Error("No output state snapshot data available");
+        // Get the target fork ID from the latest milestone snapshot
+        const targetForkId =
+            milestoneSnapshots[milestoneSnapshots.length - 1].forkId;
+
+        // Update to the correct fork if needed
+        if (currentOnChainSnapshot.forkId !== targetForkId) {
+            console.log(
+                `Fork mismatch: on-chain=${currentOnChainSnapshot.forkId}, target=${targetForkId}`
+            );
+            console.log("Updating to correct fork first...");
+
+            // Call updateSnapshotFork to transition to the correct fork
+            await this.updateSnapshotFork();
+
+            // Get the updated on-chain snapshot after fork transition
+            const updatedOnChainSnapshot = StateSnapshot.from(
+                await this.stateChannelManagerContract.getStateSnapshot(
+                    this.channelId
+                )
+            );
+
+            // Verify we're now on the correct fork
+            if (updatedOnChainSnapshot.forkId !== targetForkId) {
+                throw new Error(
+                    `Failed to transition to target fork. Expected: ${targetForkId}, Got: ${updatedOnChainSnapshot.forkId}`
+                );
+            }
+
+            console.log(`Successfully transitioned to fork ${targetForkId}`);
         }
 
-        const disputeProof: DisputeProofStruct = {
-            dispute: disputeData.dispute,
-            outputStateSnapshot: outputStateSnapshot,
-            timestamp: disputeData.timestamp,
-            signatures: []
-        };
+        // Update to the latest state within the same fork
+        console.log("Updating to latest state within the same fork...");
 
-        // Check if dispute is within agreement time
-        const currentTime = Clock.getTimeInSeconds();
-        const timeSinceDispute = currentTime - disputeData.timestamp;
-
-        if (timeSinceDispute > this.timeConfig.challengeTime) {
-            // dispute is already finalized, no need for threshold finaliztion
-            return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
+        // Call updateStateSnapshotSameFork to advance to the latest state
+        const txResponse =
+            await this.stateChannelManagerContract.updateStateSnapshotSameFork(
                 this.channelId,
                 milestoneProofs,
                 milestoneSnapshots,
-                disputeProof,
                 exitChannelBlocks
             );
-        }
 
-        // Check if we have threshold signatures on the dispute
-        const fork = this.agreementManager.forks.latestFork();
-        if (!fork) {
-            throw new Error("No latest fork found");
-        }
-
-        // Get all participants who have signed the dispute
-        const disputeSignatures = this.agreementManager.getDisputeSignatures(
-            disputeData.dispute
-        );
-
-        const allowedParticipantsSet = await getActiveParticipants(
-            this.stateChannelManagerContract,
-            this.getChannelId()
-        );
-
-        const hasThreshold = SignatureUtils.hasSignatureThreshold(
-            allowedParticipantsSet,
-            Codec.encode(disputeData.dispute, Type.Dispute),
-            disputeSignatures
-        );
-
-        if (hasThreshold) {
-            // Create dispute proof from the latest dispute
-            // Call contract with dispute and signatures
-            disputeProof.signatures = disputeSignatures;
-            return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
-                this.channelId,
-                milestoneProofs,
-                milestoneSnapshots,
-                disputeProof,
-                exitChannelBlocks
-            );
-        }
-
-        // Dispute is not finalized
-        console.log(
-            "Dispute is not finalized, state snapshot was not submitted"
-        );
+        await txResponse.wait();
+        console.log("Successfully updated to latest state snapshot");
     }
 
     /**
