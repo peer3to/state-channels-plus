@@ -236,7 +236,6 @@ class StateManager {
 
         //Try timeout next participant
         this.p2pEventHooks.onSetState?.();
-        return this.onSuccessCommon();
     }
 
     // Passes the signedBlock through a verification pipeline and returns shouldDisconnect flag
@@ -400,7 +399,6 @@ class StateManager {
             this.storage.blocks.storeBlock(block);
 
             successCallback();
-            await this.onSuccessCommon();
 
             scheduleTask(
                 () => this.maybePostBlockOnChain(block, signedBlock),
@@ -1076,32 +1074,6 @@ class StateManager {
         }
     }
 
-    private async onSuccessCommon() {
-        // Immediately schedule a confirm/execute from queue on next tick
-        scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
-
-        // Identify the fork/tx counts for the next participant
-        const forkId = this.forkId;
-        const nextTransactionCnt =
-            this.storage.blocks.getNextBlockHeight(forkId);
-        const nextToWrite = await this.diamondStateMachine.getNextToWrite();
-
-        // Notify any event hooks
-        this.p2pEventHooks.onTurn?.(nextToWrite);
-
-        // Schedule a timeout check for the next participant
-        scheduleTask(
-            () =>
-                this.tryTimeoutParticipant(
-                    forkId,
-                    nextTransactionCnt,
-                    nextToWrite
-                ),
-            this.getTimeoutWaitTimeSeconds() * 1000,
-            "participantTimeout"
-        );
-    }
-
     private getTimeoutWaitTimeSeconds() {
         return (
             this.timeConfig.p2pTime +
@@ -1253,7 +1225,30 @@ class StateManager {
         }
 
         successCallback();
-        await this.onSuccessCommon();
+
+        // Immediately schedule a confirm/execute from queue on next tick
+        scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
+
+        // Identify the fork/tx counts for the next participant
+        const forkId = this.forkId;
+        const nextTransactionCnt =
+            this.storage.blocks.getNextBlockHeight(forkId);
+        const nextToWrite = await this.diamondStateMachine.getNextToWrite();
+
+        // Notify any event hooks
+        this.p2pEventHooks.onTurn?.(nextToWrite);
+
+        // Schedule a timeout check for the next participant
+        scheduleTask(
+            () =>
+                this.tryTimeoutParticipant(
+                    forkId,
+                    nextTransactionCnt,
+                    nextToWrite
+                ),
+            this.getTimeoutWaitTimeSeconds() * 1000,
+            "participantTimeout"
+        );
     }
 
     private async notReady(
