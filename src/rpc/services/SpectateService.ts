@@ -9,6 +9,7 @@ import {
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Codec, Type } from "@/utils";
+import { isEqual } from "lodash";
 
 export interface SnapshotPayload {
     disputeWindows: DisputeStruct[];
@@ -314,14 +315,11 @@ class SpectateService extends ARpcService {
                         latestBlockHeight
                     );
 
-                // Compare the state proof objects directly
-                if (
-                    computedStateProof.milestones.length !==
-                    snapshotPayload.stateProof.milestones.length
-                ) {
+                // Compare the state proof objects
+                if (!isEqual(computedStateProof, snapshotPayload.stateProof)) {
                     return {
                         isValid: false,
-                        error: "State proof milestone count mismatch"
+                        error: "State proof does not match computed state proof"
                     };
                 }
 
