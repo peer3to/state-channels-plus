@@ -1,5 +1,3 @@
-import { DisputeEthersType } from "./disputes";
-
 export const BalanceEthersType = `tuple(
   uint256 amount,
   bytes data
