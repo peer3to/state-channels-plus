@@ -1,11 +1,11 @@
 import {
-    SignedBlockStruct,
-    SignedDisputeStruct
+    BlockConfirmationStruct,
+    SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import { SignedDisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { ExecutionFlags } from "@/types";
 import { ARpcService, MainRpcService } from "@/rpc";
 import { retry } from "@/utils/retry";
-import { Signature } from "@/types/types";
 
 class StateTransitionService extends ARpcService {
     constructor(mainRpcService: MainRpcService) {
@@ -30,25 +30,22 @@ class StateTransitionService extends ARpcService {
     }
 
     public async onBlockConfirmation(
-        originalSignedBlock: SignedBlockStruct,
-        confirmationSignature: Signature
+        blockConfirmation: BlockConfirmationStruct
     ) {
-        let flag =
+        const keepConnection =
             await this.mainRpcService.p2pManager.stateManager.onBlockConfirmation(
-                originalSignedBlock,
-                confirmationSignature
+                blockConfirmation
             );
-        if (
-            flag == ExecutionFlags.DISCONNECT ||
-            flag == ExecutionFlags.DISPUTE
-        ) {
-            //TODO - disconnect from peer
+        if (!keepConnection) {
+            // Disconnect from peer and blacklist them
+            const senderTransport = this.mainRpcService.senderTransport;
+            if (senderTransport) {
+                this.mainRpcService.p2pManager.disconnectAndBlacklistPeer(
+                    senderTransport
+                );
+            }
             return;
         }
-        if (flag == ExecutionFlags.SUCCESS)
-            this.mainRpcService.rpcProxy
-                .onBlockConfirmation(originalSignedBlock, confirmationSignature)
-                .broadcast();
     }
 
     public async onDisputeConfirmation(signedDispute: SignedDisputeStruct) {
