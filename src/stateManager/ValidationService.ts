@@ -84,8 +84,7 @@ export default class ValidationService {
         if (!this.isLinked(block)) {
             // if first block -> wrong genesis fraud proof
             if (block.height === 0) {
-                //TODO
-                throw new Error("Not implemented");
+                this.fraudProofService.createWrongGenesisProof(block);
                 return BlockValidationResult.DISPUTE;
             }
             return BlockValidationResult.DISCONNECT;
@@ -115,7 +114,14 @@ export default class ValidationService {
 
     private isLinked(block: Block): boolean {
         const { forkId, height } = block.coordinates;
-        if (height === 0) return true;
+        if (height === 0) {
+            const genesisSnapshot =
+                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                    forkId
+                );
+
+            return genesisSnapshot?.hash === block.previousBlockHash;
+        }
 
         const prevBlockEntry = this.storage.blocks.getBlockEntry(
             forkId,

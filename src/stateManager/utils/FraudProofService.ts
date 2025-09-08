@@ -4,7 +4,8 @@ import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes
 import {
     BlockDoubleSignProofStruct,
     BlockInvalidStateTransitionProofStruct,
-    InvalidTimestampProofStruct
+    InvalidTimestampProofStruct,
+    WrongGenesisProofStruct
 } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { ZeroHash } from "ethers";
@@ -103,6 +104,20 @@ export default class FraudProofService {
 
         return this.storeFraudProof(originalBlock.signerAddress, {
             type: FraudProofType.BlockDoubleSign,
+            struct: proof
+        });
+    }
+    createWrongGenesisProof(block: Block): Hash {
+        const proof: WrongGenesisProofStruct = {
+            invalidBlock: block.signedBlock,
+            genesisSnapshot:
+                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                    block.forkId
+                )!
+        };
+
+        return this.storeFraudProof(block.signerAddress, {
+            type: FraudProofType.WrongGenesis,
             struct: proof
         });
     }
