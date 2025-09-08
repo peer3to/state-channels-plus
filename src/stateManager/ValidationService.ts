@@ -31,48 +31,37 @@ export default class ValidationService {
     }
 
     async validateBlockConfirmation(
-        blockConfirmation: BlockConfirmationStruct,
-        onChainTimestamp?: Timestamp
+        block: Block
     ): Promise<BlockValidationResult> {
         const forkId = this.getForkId();
         const channelId = this.channelId;
 
-        // 1. Authenticate the block
-        const block = this.authenticateBlock(
-            blockConfirmation,
-            channelId,
-            onChainTimestamp
-        );
-        if (!block) {
-            return BlockValidationResult.DISCONNECT;
-        }
-
-        // 2. Check if channel is open
+        // Check if channel is open
         if (!this.isChannelOpen(forkId)) {
             // not ready
             this.storage.queues.queueBlock(block);
             return BlockValidationResult.DISCONNECT;
         }
 
-        //  get participants
+        //  Get participants
         const participants = await this.getParticipants(
             block.coordinates,
             channelId
         );
 
-        // 3. check duplicate blocks
+        // Check duplicate blocks
         const duplicateResult = this.checkDuplicateBlock(block, participants);
 
         if (duplicateResult !== BlockValidationResult.SUCCESS) {
             return duplicateResult;
         }
 
-        // 4. author is a participant
+        // Author is a participant
         if (!participants.has(block.author)) {
             return BlockValidationResult.DISCONNECT;
         }
 
-        // 5. check conflicting block
+        // Check conflicting block
         const conflictResult = this.checkConflictingBlock(block);
         if (conflictResult !== BlockValidationResult.SUCCESS) {
             return conflictResult;
@@ -138,7 +127,7 @@ export default class ValidationService {
         return prevBlockEntry.block.hash === block.previousBlockHash;
     }
 
-    private authenticateBlock(
+    authenticateBlock(
         blockConfirmation: BlockConfirmationStruct,
         channelId: ChannelId,
         onChainTimestamp?: Timestamp

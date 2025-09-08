@@ -102,6 +102,16 @@ class InitHandshakeService extends ARpcService {
         //verify signature
         let challengeHashBytes = ethers.getBytes(challenge.randomChallengeHash);
         let signerAddress = ethers.verifyMessage(challengeHashBytes, signature);
+
+        // Check if this peer is blacklisted
+        if (this.mainRpcService.p2pManager.isBlacklisted(signerAddress)) {
+            console.log(
+                `Rejecting handshake from blacklisted peer: ${signerAddress}`
+            );
+            this.mainRpcService.p2pManager.removeConnection(senderTransport);
+            return;
+        }
+
         // let p =
         //     this.p2pManager.profileManager.getProfileByEvmAddress(
         //         signerAddress
