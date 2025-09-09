@@ -481,7 +481,7 @@ class StateManager {
             const txResponse =
                 await this.stateChannelManagerContract.multicall(callData);
             await txResponse.wait();
-            console.log("Successfully posted state snapshot using multicall");
+            console.log("Successfully posted state snapshot");
         } else {
             console.log("No state snapshot updates needed");
         }
