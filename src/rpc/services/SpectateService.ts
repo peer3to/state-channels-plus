@@ -78,7 +78,7 @@ class SpectateService extends ARpcService {
         // Fetch latest on-chain snapshot from RPC node
         const onChainSnapshot = await this.fetchOnChainSnapshot(channelId);
 
-        // Run the payload in local EVM to verify it
+        // Run the payload locally to verify it
         const verificationResult = await this.verifyPayload(
             channelId,
             onChainSnapshot,
@@ -344,7 +344,7 @@ class SpectateService extends ARpcService {
                 provenState: participantProvidedSnapshot
             };
         } catch (error) {
-            console.error("Failed to verify payload in local EVM:", error);
+            console.error("Failed to verify payload:", error);
             return {
                 isValid: false,
                 error: error instanceof Error ? error.message : String(error)
