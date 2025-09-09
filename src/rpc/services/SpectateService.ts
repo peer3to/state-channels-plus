@@ -14,6 +14,7 @@ import { isEqual } from "lodash";
 export interface SnapshotPayload {
     disputeWindows: DisputeStruct[];
     stateProof: StateProofStruct;
+    latestForkGenesisSnapshot: StateSnapshot;
 }
 
 class SpectateService extends ARpcService {
@@ -158,7 +159,8 @@ class SpectateService extends ARpcService {
             // No disputes or commitments available, keep empty arrays
             return {
                 disputeWindows,
-                stateProof: latestStateProof
+                stateProof: latestStateProof,
+                latestForkGenesisSnapshot
             };
         }
 
@@ -190,7 +192,8 @@ class SpectateService extends ARpcService {
 
         return {
             disputeWindows,
-            stateProof: latestStateProof
+            stateProof: latestStateProof,
+            latestForkGenesisSnapshot
         };
     }
 
@@ -284,20 +287,27 @@ class SpectateService extends ARpcService {
                 }
             }
 
-            // Get the computed latest fork genesis snapshot
-            const computedLatestForkGenesisSnapshot =
-                stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                    currentForkId
-                );
-            if (!computedLatestForkGenesisSnapshot) {
+            // Get the fork genesis snapshot from the participant's payload
+            const participantProvidedSnapshot =
+                snapshotPayload.latestForkGenesisSnapshot;
+
+            // Verify that the computed fork ID matches the participant's claimed fork ID
+            if (currentForkId !== participantProvidedSnapshot.forkId) {
                 return {
                     isValid: false,
-                    error: `No genesis snapshot found for computed fork ${currentForkId}`
+                    error: `Computed fork ID ${currentForkId} does not match participant provided fork ID ${participantProvidedSnapshot.forkId}`
                 };
             }
 
+            console.log(`Verified fork ID matches: ${currentForkId}`);
+
+            // Store the participant's fork genesis snapshot to storage
+            stateManager.storage.stateSnapshots.storeStateSnapshot(
+                participantProvidedSnapshot,
+                { hash: participantProvidedSnapshot.hash }
+            );
             console.log(
-                `Computed fork genesis snapshot: forkId=${computedLatestForkGenesisSnapshot.forkId}`
+                `Stored participant's fork genesis snapshot to storage`
             );
 
             // Verify state proof to prove the latest state from the proven fork
@@ -328,10 +338,10 @@ class SpectateService extends ARpcService {
                 );
             }
 
-            // Return the proven fork genesis snapshot as the proven state
+            // Return the participant's fork genesis snapshot as the proven state
             return {
                 isValid: true,
-                provenState: computedLatestForkGenesisSnapshot
+                provenState: participantProvidedSnapshot
             };
         } catch (error) {
             console.error("Failed to verify payload in local EVM:", error);
@@ -354,10 +364,8 @@ class SpectateService extends ARpcService {
         console.log(`Syncing to latest proven state for channel ${channelId}`);
 
         // Update the local state to match the proven state
-        // This involves updating the local storage with the proven snapshot
         try {
             // Store the proven state snapshot in local storage
-            // This ensures the spectator has the same state as participants
             stateManager.storage.stateSnapshots.storeStateSnapshot(
                 provenState,
                 { hash: provenState.hash }
@@ -388,7 +396,6 @@ class SpectateService extends ARpcService {
         try {
             // The spectator can now process blocks like a normal participant
             // The existing block processing pipeline will handle incoming blocks automatically
-            // Since tryExecuteFromQueue is private, we'll rely on the normal block processing flow
             console.log(
                 `Spectator is now ready to process blocks for channel ${channelId}`
             );
