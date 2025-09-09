@@ -236,9 +236,6 @@ class StateManager {
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();
 
         this.p2pEventHooks.onTurn?.(nextToWrite);
-
-        scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
-
         const nextTransactionCnt =
             this.storage.blocks.getNextBlockHeight(_forkId);
         scheduleTask(
@@ -251,6 +248,8 @@ class StateManager {
             this.getTimeoutWaitTimeSeconds() * 1000,
             "participantTimeout"
         );
+        
+         scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
     }
 
     // Passes the signedBlock through a verification pipeline and returns shouldDisconnect flag
