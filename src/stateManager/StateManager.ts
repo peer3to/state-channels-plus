@@ -40,7 +40,7 @@ import Storage from "@/storage";
 import P2pEventHooks from "@/P2pEventHooks";
 
 // Models
-import { Block, StateSnapshot } from "@/models";
+import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 
 // Utils
 import {
@@ -248,8 +248,8 @@ class StateManager {
             this.getTimeoutWaitTimeSeconds() * 1000,
             "participantTimeout"
         );
-        
-         scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
+
+        scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
     }
 
     // Passes the signedBlock through a verification pipeline and returns shouldDisconnect flag
@@ -344,7 +344,8 @@ class StateManager {
             const { stateSnapshot, exitChannelBlock, totalWithdrawals } =
                 await this.createStateSnapshot(
                     hash(encodedState),
-                    block,
+                    block.coordinates,
+                    block.timestamp,
                     exitChannels
                 );
 
@@ -441,10 +442,19 @@ class StateManager {
                 );
             }
 
-            const posteriorStateHash = await this.diamondStateMachine
-                .getState()
-                .then(hash);
-            const blockStruct = await this.createBlock(tx, posteriorStateHash);
+            const { stateSnapshot, exitChannelBlock, totalWithdrawals } =
+                await this.createStateSnapshot(
+                    hash(encodedState),
+                    {
+                        forkId: this.forkId,
+                        height: Number(tx.header.transactionCnt)
+                    },
+                    Number(tx.header.timestamp),
+                    exitChannels
+                );
+
+            const blockStruct = await this.createBlock(tx, stateSnapshot.hash);
+
             const encodedBlock = Codec.encode(blockStruct, Type.Block);
             const blockHash = hash(encodedBlock);
             const signedBlock: SignedBlockStruct = {
@@ -455,12 +465,6 @@ class StateManager {
             };
 
             const block = Block.fromSignedBlock(signedBlock);
-            const { stateSnapshot, exitChannelBlock, totalWithdrawals } =
-                await this.createStateSnapshot(
-                    hash(encodedState),
-                    block,
-                    exitChannels
-                );
 
             await this.success(
                 block,
@@ -1161,19 +1165,19 @@ class StateManager {
 
     private async createStateSnapshot(
         stateMachineStateHash: Hash,
-        block: Block,
+        coordinates: BlockCoordinates,
+        timestamp: Timestamp,
         exitChannels?: ExitChannelStruct[]
     ): Promise<{
         stateSnapshot: StateSnapshot;
         exitChannelBlock?: ExitChannelBlockStruct;
         totalWithdrawals: BalanceStruct;
     }> {
-        const previousStateSnapshot = this.storage.getPreviousStateSnapshot(
-            block.coordinates
-        )!;
+        const previousStateSnapshot =
+            this.storage.getPreviousStateSnapshot(coordinates)!;
         const genesisStateSnapshot =
             this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                block.forkId
+                coordinates.forkId
             )!;
 
         const latestJoinChannelBlockHash =
@@ -1203,9 +1207,9 @@ class StateManager {
         }
 
         const stateSnapshot: StateSnapshotStruct = {
-            forkId: block.coordinates.forkId,
-            blockHeight: BigInt(block.coordinates.height),
-            timestamp: block.timestamp,
+            forkId: coordinates.forkId,
+            blockHeight: BigInt(coordinates.height),
+            timestamp: timestamp,
             snapshotData: {
                 stateMachineStateHash: stateMachineStateHash,
                 participants,
@@ -1225,7 +1229,7 @@ class StateManager {
 
     private async createBlock(
         tx: TransactionStruct,
-        posteriorStateHash: Hash
+        stateSnapshotHash: Hash
     ): Promise<BlockStruct> {
         const forkId = this.forkId;
         const blockHeight = Number(tx.header.transactionCnt);
@@ -1244,14 +1248,6 @@ class StateManager {
         } else {
             previousHash = previousBlockOrSnapshot.stateSnapshot!.hash;
         }
-
-        const stateSnapshot = await this.createStateSnapshot(
-            posteriorStateHash,
-            forkId,
-            blockHeight
-        );
-
-        const stateSnapshotHash = stateSnapshot.hash;
 
         const blockStruct: BlockStruct = {
             transaction: tx,
