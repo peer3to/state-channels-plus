@@ -217,6 +217,7 @@ class StateManager {
     }
     /**
      * Triggered by the On-chain Event Listener when a new state is set on-chain
+     * called after a dispute to set the genesis of a new fork
      * @param encodedState - Encoded state of the state machine
      * @param _forkId - new fork count
      * @param _timestamp - on-chain timestamp
@@ -229,9 +230,26 @@ class StateManager {
         console.log("StateManager - SetState", _forkId, _timestamp);
         await this.diamondStateMachine.setState(encodedState);
 
-        //Try timeout next participant
-        this.p2pEventHooks.onSetState?.();
-        return this.onSuccessCommon();
+        // Update the forkId to the new fork
+        this.forkId = _forkId;
+
+        const nextToWrite = await this.diamondStateMachine.getNextToWrite();
+
+        this.p2pEventHooks.onTurn?.(nextToWrite);
+        const nextTransactionCnt =
+            this.storage.blocks.getNextBlockHeight(_forkId);
+        scheduleTask(
+            () =>
+                this.tryTimeoutParticipant(
+                    _forkId,
+                    nextTransactionCnt,
+                    nextToWrite
+                ),
+            this.getTimeoutWaitTimeSeconds() * 1000,
+            "participantTimeout"
+        );
+        
+         scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
     }
 
     // Passes the signedBlock through a verification pipeline and returns shouldDisconnect flag
@@ -412,7 +430,9 @@ class StateManager {
                 success,
                 encodedState,
                 previousStateHash: _previousStateHash,
-                successCallback
+                successCallback,
+                exitChannels,
+                leftParticipants
             } = await this.applyTransaction(tx);
 
             if (!success) {
@@ -435,16 +455,20 @@ class StateManager {
             };
 
             const block = Block.fromSignedBlock(signedBlock);
+            const { stateSnapshot, exitChannelBlock, totalWithdrawals } =
+                await this.createStateSnapshot(
+                    hash(encodedState),
+                    block,
+                    exitChannels
+                );
 
-            this.storage.blocks.storeBlock(block);
-
-            successCallback();
-            await this.onSuccessCommon();
-
-            scheduleTask(
-                () => this.maybePostBlockOnChain(block),
-                this.timeConfig.agreementTime * 1000,
-                "maybePostBlockOnChain"
+            await this.success(
+                block,
+                stateSnapshot,
+                successCallback,
+                totalWithdrawals,
+                leftParticipants,
+                exitChannelBlock
             );
 
             return signedBlock;
@@ -1110,32 +1134,6 @@ class StateManager {
                 "timeoutParticipantDelayed"
             );
         }
-    }
-
-    private async onSuccessCommon() {
-        // Immediately schedule a confirm/execute from queue on next tick
-        scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
-
-        // Identify the fork/tx counts for the next participant
-        const forkId = this.forkId;
-        const nextTransactionCnt =
-            this.storage.blocks.getNextBlockHeight(forkId);
-        const nextToWrite = await this.diamondStateMachine.getNextToWrite();
-
-        // Notify any event hooks
-        this.p2pEventHooks.onTurn?.(nextToWrite);
-
-        // Schedule a timeout check for the next participant
-        scheduleTask(
-            () =>
-                this.tryTimeoutParticipant(
-                    forkId,
-                    nextTransactionCnt,
-                    nextToWrite
-                ),
-            this.getTimeoutWaitTimeSeconds() * 1000,
-            "participantTimeout"
-        );
     }
 
     private getTimeoutWaitTimeSeconds() {
