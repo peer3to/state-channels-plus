@@ -198,7 +198,7 @@ class SpectateService extends ARpcService {
     }
 
     /**
-     * Fetch latest on-chain snapshot from RPC node
+     * Fetch latest on-chain snapshot
      */
     private async fetchOnChainSnapshot(
         channelId: ChannelId
@@ -214,7 +214,7 @@ class SpectateService extends ARpcService {
     }
 
     /**
-     * Run the payload in local EVM to verify it
+     * Run the payload in locally to verify it
      */
     private async verifyPayload(
         channelId: ChannelId,
@@ -258,14 +258,14 @@ class SpectateService extends ARpcService {
                             currentForkId
                         );
 
-                    // Use proxy view to compute reduced output cheaply (same as StateManager)
+                    // Use proxy view to compute reduced output
                     const reducedOutput =
                         await stateManager.stateChannelManagerContract.reduceProxyView(
                             snapshotPayload.disputeWindows,
                             creationTimestamp
                         );
                     console.log(
-                        `Computed reduced output locally: forkGenesisTimestamp=${reducedOutput.forkGenesisTimestamp}`
+                        `Computed reduced output: forkGenesisTimestamp=${reducedOutput.forkGenesisTimestamp}`
                     );
 
                     // The reduced output gives us the next fork ID to traverse to
