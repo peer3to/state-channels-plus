@@ -248,8 +248,8 @@ class StateManager {
             this.getTimeoutWaitTimeSeconds() * 1000,
             "participantTimeout"
         );
-        
-         scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
+
+        scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
     }
 
     // Passes the signedBlock through a verification pipeline and returns shouldDisconnect flag
@@ -465,12 +465,6 @@ class StateManager {
             };
 
             const block = Block.fromSignedBlock(signedBlock);
-            const { stateSnapshot, exitChannelBlock, totalWithdrawals } =
-                await this.createStateSnapshot(
-                    hash(encodedState),
-                    block,
-                    exitChannels
-                );
 
             await this.success(
                 block,
