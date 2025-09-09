@@ -442,7 +442,48 @@ class StateManager {
     }
 
     public async postStateSnapshot(forkId: ForkId): Promise<void> {
-        // Prepare data for the final two snapshot update calls
+        // Get the current on-chain snapshot to check if we're on the same fork
+        const currentOnChainSnapshot = StateSnapshot.from(
+            await this.stateChannelManagerContract.getStateSnapshot(
+                this.channelId
+            )
+        );
+
+        // If we're on the same fork, call updateStateSnapshotSameFork directly
+        if (currentOnChainSnapshot.forkId === forkId) {
+            const sameForkData =
+                await this.prepareUpdateSnapshotSameFork(forkId);
+            if (sameForkData) {
+                try {
+                    const txResponse =
+                        await this.stateChannelManagerContract.updateStateSnapshotSameFork(
+                            this.channelId,
+                            sameForkData.milestoneProofs,
+                            sameForkData.milestoneSnapshots.map((snapshot) =>
+                                snapshot.toStruct()
+                            ),
+                            sameForkData.exitChannelBlocks
+                        );
+                    await txResponse.wait();
+                    console.log("Successfully posted state snapshot");
+                } catch (error) {
+                    if (isCustomEvmError(error)) {
+                        console.error(
+                            "Error posting state snapshot:",
+                            error.errorDescription
+                        );
+                    } else {
+                        console.error("Error posting state snapshot:", error);
+                    }
+                    throw error;
+                }
+            } else {
+                console.log("No state snapshot updates needed");
+            }
+            return;
+        }
+
+        // Different fork - use multicall for both fork update and same-fork update
         const forkData = await this.prepareUpdateStateSnapshotFork();
         const sameForkData = await this.prepareUpdateSnapshotSameFork(forkId);
 
@@ -478,10 +519,22 @@ class StateManager {
 
         // Execute the final snapshot updates in a single multicall transaction
         if (callData.length > 0) {
-            const txResponse =
-                await this.stateChannelManagerContract.multicall(callData);
-            await txResponse.wait();
-            console.log("Successfully posted state snapshot");
+            try {
+                const txResponse =
+                    await this.stateChannelManagerContract.multicall(callData);
+                await txResponse.wait();
+                console.log("Successfully posted state snapshot");
+            } catch (error) {
+                if (isCustomEvmError(error)) {
+                    console.error(
+                        "Error posting state snapshot:",
+                        error.errorDescription
+                    );
+                } else {
+                    console.error("Error posting state snapshot:", error);
+                }
+                throw error;
+            }
         } else {
             console.log("No state snapshot updates needed");
         }
@@ -610,28 +663,6 @@ class StateManager {
                 error
             );
             throw error;
-        }
-    }
-
-    /**
-     * Updates the state snapshot when the fork is the same
-     */
-    public async updateSnapshotSameFork(forkId: ForkId): Promise<void> {
-        const data = await this.prepareUpdateSnapshotSameFork(forkId);
-        if (data) {
-            const txResponse =
-                await this.stateChannelManagerContract.updateStateSnapshotSameFork(
-                    this.channelId,
-                    data.milestoneProofs,
-                    data.milestoneSnapshots.map((snapshot) =>
-                        snapshot.toStruct()
-                    ),
-                    data.exitChannelBlocks
-                );
-            await txResponse.wait();
-            console.log(
-                `Successfully updated state snapshot for fork ${forkId}`
-            );
         }
     }
 
@@ -853,23 +884,6 @@ class StateManager {
         } catch (error) {
             console.error("Error preparing update state snapshot fork:", error);
             throw error;
-        }
-    }
-
-    /**
-     * Updates the state snapshot when the fork is different
-     */
-    public async updateSnapshotFork(): Promise<void> {
-        const data = await this.prepareUpdateStateSnapshotFork();
-        if (data) {
-            const txResponse =
-                await this.stateChannelManagerContract.updateStateSnapshotFork(
-                    this.channelId,
-                    data.genesisSnapshot.toStruct(),
-                    data.exitBlocks
-                );
-            await txResponse.wait();
-            console.log("Successfully updated snapshot for fork");
         }
     }
 
