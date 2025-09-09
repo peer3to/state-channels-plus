@@ -441,69 +441,63 @@ class StateManager {
         }
     }
 
-    public async postStateSnapshot(
-        milestoneProofs: MilestoneProofStruct[],
-        milestoneSnapshots: StateSnapshot[],
-        exitChannelBlocks: ExitChannelBlockStruct[] = []
-    ) {
-        // Get current on-chain state
-        const currentOnChainSnapshot = StateSnapshot.from(
-            await this.stateChannelManagerContract.getStateSnapshot(
-                this.channelId
-            )
-        );
+    public async postStateSnapshot(forkId: ForkId): Promise<void> {
+        // Prepare data for the final two snapshot update calls
+        const forkData = await this.prepareUpdateStateSnapshotFork();
+        const sameForkData = await this.prepareUpdateSnapshotSameFork(forkId);
 
-        // Get the target fork ID from the latest milestone snapshot
-        const targetForkId =
-            milestoneSnapshots[milestoneSnapshots.length - 1].forkId;
-
-        // Update to the correct fork if needed
-        if (currentOnChainSnapshot.forkId !== targetForkId) {
-            console.log(
-                `Fork mismatch: on-chain=${currentOnChainSnapshot.forkId}, target=${targetForkId}`
-            );
-            console.log("Updating to correct fork first...");
-
-            // Call updateSnapshotFork to transition to the correct fork
-            await this.updateSnapshotFork();
-
-            // Get the updated on-chain snapshot after fork transition
-            const updatedOnChainSnapshot = StateSnapshot.from(
-                await this.stateChannelManagerContract.getStateSnapshot(
-                    this.channelId
-                )
-            );
-
-            // Verify we're now on the correct fork
-            if (updatedOnChainSnapshot.forkId !== targetForkId) {
-                throw new Error(
-                    `Failed to transition to target fork. Expected: ${targetForkId}, Got: ${updatedOnChainSnapshot.forkId}`
+        // Encode data for multicall
+        const callData: string[] = [];
+        if (forkData) {
+            const forkCalldata =
+                this.stateChannelManagerContract.interface.encodeFunctionData(
+                    "updateStateSnapshotFork",
+                    [
+                        this.channelId,
+                        forkData.genesisSnapshot.toStruct(),
+                        forkData.exitBlocks
+                    ]
                 );
-            }
-
-            console.log(`Successfully transitioned to fork ${targetForkId}`);
+            callData.push(forkCalldata);
+        }
+        if (sameForkData) {
+            const sameForkCalldata =
+                this.stateChannelManagerContract.interface.encodeFunctionData(
+                    "updateStateSnapshotSameFork",
+                    [
+                        this.channelId,
+                        sameForkData.milestoneProofs,
+                        sameForkData.milestoneSnapshots.map((snapshot) =>
+                            snapshot.toStruct()
+                        ),
+                        sameForkData.exitChannelBlocks
+                    ]
+                );
+            callData.push(sameForkCalldata);
         }
 
-        // Update to the latest state within the same fork
-        console.log("Updating to latest state within the same fork...");
-
-        // Call updateStateSnapshotSameFork to advance to the latest state
-        const txResponse =
-            await this.stateChannelManagerContract.updateStateSnapshotSameFork(
-                this.channelId,
-                milestoneProofs,
-                milestoneSnapshots,
-                exitChannelBlocks
-            );
-
-        await txResponse.wait();
-        console.log("Successfully updated to latest state snapshot");
+        // Execute the final snapshot updates in a single multicall transaction
+        if (callData.length > 0) {
+            const txResponse =
+                await this.stateChannelManagerContract.multicall(callData);
+            await txResponse.wait();
+            console.log("Successfully posted state snapshot using multicall");
+        } else {
+            console.log("No state snapshot updates needed");
+        }
     }
 
     /**
-     * Updates the state snapshot when the fork is the same
+     * Prepares data for updating the state snapshot when the fork is the same
      */
-    public async updateSnapshotSameFork(forkId: ForkId): Promise<void> {
+    public async prepareUpdateSnapshotSameFork(forkId: ForkId): Promise<
+        | {
+              milestoneProofs: MilestoneProofStruct[];
+              milestoneSnapshots: StateSnapshot[];
+              exitChannelBlocks: ExitChannelBlockStruct[];
+          }
+        | undefined
+    > {
         try {
             // Get the current on-chain snapshot first
             const currentOnChainSnapshot = StateSnapshot.from(
@@ -547,7 +541,7 @@ class StateManager {
                 console.log(
                     "No relevant milestones found - state is already up to date"
                 );
-                return;
+                return undefined;
             }
 
             const latestSnapshot =
@@ -559,7 +553,7 @@ class StateManager {
                 currentOnChainSnapshot.blockHeight
             ) {
                 console.log("State is already up to date");
-                return;
+                return undefined;
             }
 
             // Verify that both snapshots belong to the same fork
@@ -605,29 +599,52 @@ class StateManager {
 
             exitChannelBlocks.push(...exitBlockChain);
 
-            const txResponse =
-                await this.stateChannelManagerContract.updateStateSnapshotSameFork(
-                    this.channelId,
-                    milestoneProofs,
-                    milestoneSnapshots.map((snapshot) => snapshot.toStruct()),
-                    exitChannelBlocks
-                );
-
-            await txResponse.wait();
-
-            console.log(
-                `Successfully updated state snapshot for fork ${forkId}`
-            );
+            return {
+                milestoneProofs,
+                milestoneSnapshots,
+                exitChannelBlocks
+            };
         } catch (error) {
-            console.error("Error updating snapshot for the same fork:", error);
+            console.error(
+                "Error preparing update snapshot for the same fork:",
+                error
+            );
             throw error;
         }
     }
 
     /**
-     * Updates the state snapshot when the fork is different
+     * Updates the state snapshot when the fork is the same
      */
-    public async updateSnapshotFork(): Promise<void> {
+    public async updateSnapshotSameFork(forkId: ForkId): Promise<void> {
+        const data = await this.prepareUpdateSnapshotSameFork(forkId);
+        if (data) {
+            const txResponse =
+                await this.stateChannelManagerContract.updateStateSnapshotSameFork(
+                    this.channelId,
+                    data.milestoneProofs,
+                    data.milestoneSnapshots.map((snapshot) =>
+                        snapshot.toStruct()
+                    ),
+                    data.exitChannelBlocks
+                );
+            await txResponse.wait();
+            console.log(
+                `Successfully updated state snapshot for fork ${forkId}`
+            );
+        }
+    }
+
+    /**
+     * Prepares data for updateStateSnapshotFork
+     */
+    public async prepareUpdateStateSnapshotFork(): Promise<
+        | {
+              genesisSnapshot: StateSnapshot;
+              exitBlocks: ExitChannelBlockStruct[];
+          }
+        | undefined
+    > {
         try {
             // Get the current on-chain snapshot first
             const currentOnChainSnapshot = StateSnapshot.from(
@@ -644,6 +661,10 @@ class StateManager {
                     this.channelId,
                     currentForkId
                 );
+
+            if (!isDisputed) {
+                return undefined; // No fork update needed
+            }
 
             // Get the genesis snapshot
             const genesisSnapshot =
@@ -825,20 +846,30 @@ class StateManager {
                     );
             }
 
-            // Update snapshot
+            return {
+                genesisSnapshot,
+                exitBlocks
+            };
+        } catch (error) {
+            console.error("Error preparing update state snapshot fork:", error);
+            throw error;
+        }
+    }
+
+    /**
+     * Updates the state snapshot when the fork is different
+     */
+    public async updateSnapshotFork(): Promise<void> {
+        const data = await this.prepareUpdateStateSnapshotFork();
+        if (data) {
             const txResponse =
                 await this.stateChannelManagerContract.updateStateSnapshotFork(
                     this.channelId,
-                    genesisSnapshot.toStruct(),
-                    exitBlocks
+                    data.genesisSnapshot.toStruct(),
+                    data.exitBlocks
                 );
             await txResponse.wait();
-            console.log(
-                `Updated to genesis snapshot for fork ${currentForkId}`
-            );
-        } catch (error) {
-            console.error("Error updating snapshot for fork:", error);
-            throw error;
+            console.log("Successfully updated snapshot for fork");
         }
     }
 
