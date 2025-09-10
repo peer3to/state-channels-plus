@@ -32,7 +32,11 @@ struct BlockDoubleSignProof {
 
 struct InvalidTimestampProof {
     SignedBlock invalidBlock;
+    uint256 invalidBlockOnChainTimestamp;
     SignedBlock previousBlock;
+    SignedBlock previousBlockCalldata;
+    uint256 previousBlockOnChainTimestamp;
+    bytes signatureOnPreviousBlock;
     StateSnapshot previousStateSnapshot;
 }
 

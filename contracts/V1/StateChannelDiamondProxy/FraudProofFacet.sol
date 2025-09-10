@@ -7,6 +7,22 @@ import "./Errors.sol";
 import "../types/FraudProofTypes.sol";
 
 contract FraudProofFacet is StateChannelCommon {
+    mapping(
+        FraudProofType
+            => function(bytes memory encodedFraudProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address)
+    ) private proofHandlers;
+
+    constructor() {
+        //If we endup having too many fraud proofs, we'll refactor them into a seperate 'facet' (ERC-2535)
+        proofHandlers[FraudProofType.BlockDoubleSign] = _handleBlockDoubleSign;
+        proofHandlers[FraudProofType.BlockEmptyBlock] = _handleBlockEmptyBlock;
+        proofHandlers[FraudProofType.BlockInvalidStateTransition] = _handleBlockInvalidStateTransition;
+        proofHandlers[FraudProofType.InvalidTimestamp] = _handleInvalidTimestamp;
+        // proofHandlers[FraudProofType.TimeoutThreshold] = _handleTimeoutThreshold;
+        // proofHandlers[FraudProofType.TimeoutPriorInvalid] = _handleTimeoutPriorInvalid;
+        // proofHandlers[FraudProofType.DisputeInvalidPreviousRecursive] = _handleDisputeInvalidPreviousRecursive;
+    }
+
     //This is a bit inefficient, since public/external functions always do a deep copy unlike internal/private that pas by reference, but this shares the context
     function applyFraudProofs(
         FraudProof[] memory fraudProofs,
@@ -172,5 +188,109 @@ contract FraudProofFacet is StateChannelCommon {
         require(fraudBlock.stateSnapshotHash == keccak256(abi.encode(newStateSnapshot)), ErrorValidStateTransition());
 
         return signer;
+    }
+
+    function _handleInvalidTimestamp(
+        bytes memory encodedProof,
+        FraudProofVerificationContext memory fraudProofVerificationContext
+    ) internal view returns (address) {
+        InvalidTimestampProof memory invalidTimestampProof = abi.decode(encodedProof, (InvalidTimestampProof));
+        Block memory invalidBlock = abi.decode(invalidTimestampProof.invalidBlock.encodedBlock, (Block));
+        StateSnapshot memory previousStateSnapshot = invalidTimestampProof.previousStateSnapshot;
+
+        bytes32 channelId = invalidBlock.transaction.header.channelId;
+        bytes32 forkId = invalidBlock.transaction.header.forkId;
+        address invalidBlockAuthor = invalidBlock.transaction.header.participant;
+
+        // Validate channelId matches fraud proof verification context
+        require(fraudProofVerificationContext.channelId == channelId, ErrorNotSameChannelId());
+
+        // determine previous timestamp
+        uint256 previousTimestamp;
+
+        if (invalidBlock.transaction.header.transactionCnt == 0) {
+            // Validate previous block hash matches previous snapshot
+            require(
+                invalidBlock.previousBlockHash == keccak256(abi.encode(previousStateSnapshot)),
+                ErrorInvalidPreviousSnapshotHash()
+            );
+            previousTimestamp = previousStateSnapshot.timestamp;
+        } else {
+            // Validate previous block hash matches previous block
+            Block memory previousBlock = abi.decode(invalidTimestampProof.previousBlock.encodedBlock, (Block));
+            require(
+                invalidBlock.previousBlockHash == keccak256(abi.encode(previousBlock)), ErrorInvalidPreviousBlockHash()
+            );
+
+            // Check if calldata is posted - previous block
+            (bool found, bytes32 commitment) = getBlockCallDataCommitment(
+                channelId,
+                forkId,
+                previousBlock.transaction.header.transactionCnt,
+                previousBlock.transaction.header.participant
+            );
+            // default case: use previous block timestamp
+            previousTimestamp = previousBlock.transaction.header.timestamp;
+
+            if (found) {
+                bytes32 expectedCommitment = keccak256(
+                    abi.encode(
+                        invalidTimestampProof.previousBlockCalldata, invalidTimestampProof.previousBlockOnChainTimestamp
+                    )
+                );
+                require(commitment == expectedCommitment, ErrorInvalidPreviousBlockCalldataCommitment());
+
+                bool calldatasSame = keccak256(invalidTimestampProof.previousBlockCalldata.encodedBlock)
+                    == keccak256(invalidTimestampProof.previousBlock.encodedBlock);
+                bool authorSignedPrevious = false;
+
+                // Check if invalid block author signed the previous block
+                if (invalidTimestampProof.signatureOnPreviousBlock.length > 0) {
+                    address recoveredSigner = StateChannelUtilLibrary.retriveSignerAddress(
+                        invalidTimestampProof.previousBlock.encodedBlock, invalidTimestampProof.signatureOnPreviousBlock
+                    );
+                    authorSignedPrevious = (recoveredSigner == invalidBlock.transaction.header.participant);
+                }
+
+                if (calldatasSame && !authorSignedPrevious) {
+                    previousTimestamp = invalidTimestampProof.previousBlockOnChainTimestamp;
+                }
+            }
+        }
+        // END - determine previous timestamp
+
+        // Check current block commitment and timestamp
+        (bool currentBlockFound, bytes32 currentBlockCommitment) = getBlockCallDataCommitment(
+            channelId, forkId, invalidBlock.transaction.header.transactionCnt, invalidBlockAuthor
+        );
+
+        uint256 currentBlockTimestamp;
+        if (currentBlockFound) {
+            bytes32 expectedCurrentCommitment = keccak256(
+                abi.encode(invalidTimestampProof.invalidBlock, invalidTimestampProof.invalidBlockOnChainTimestamp)
+            );
+            require(currentBlockCommitment == expectedCurrentCommitment, ErrorInvalidCurrentBlockCalldataCommitment());
+            currentBlockTimestamp = invalidTimestampProof.invalidBlockOnChainTimestamp;
+        } else {
+            currentBlockTimestamp = invalidBlock.transaction.header.timestamp;
+        }
+
+        // Block timestamp is too early (before previous timestamp)
+        if (invalidBlock.transaction.header.timestamp < previousTimestamp) {
+            return invalidBlockAuthor;
+        }
+
+        // Block timestamp exceeds p2p time limit
+        if (invalidBlock.transaction.header.timestamp > previousTimestamp + getP2pTime()) {
+            return invalidBlockAuthor;
+        }
+
+        // Current block timestamp exceeds total time limit
+        if (currentBlockTimestamp > previousTimestamp + getP2pTime() + getAgreementTime() + getChainFallbackTime()) {
+            return invalidBlockAuthor;
+        }
+
+        // If we reach here, no timestamp fraud was proven
+        return address(0);
     }
 }

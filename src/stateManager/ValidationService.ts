@@ -14,7 +14,9 @@ import { difference, isSubset } from "@/utils";
 import { BlockValidationResult, TimeConfig } from "@/types";
 import { Address, ChannelId, ForkId, Hash, Timestamp } from "@/types/types";
 
-import FraudProofService from "./utils/FraudProofService";
+import FraudProofService, {
+    InvalidTimestampProofData
+} from "./utils/FraudProofService";
 
 export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
@@ -303,7 +305,9 @@ export default class ValidationService {
                 previousBlock.onChainTimestamp !== undefined
             ) {
                 // Already has best timestamp - persist InvalidTimestamp fraud proof
-                this.fraudProofService.createInvalidTimestampProof(block);
+                const proofData =
+                    await this.prepareInvalidTimestampProofData(block);
+                this.fraudProofService.createInvalidTimestampProof(proofData);
                 return BlockValidationResult.DISPUTE;
             }
 
@@ -317,7 +321,9 @@ export default class ValidationService {
                 previousBlockOnChainTimestamp <= previousTimestamp
             ) {
                 // False - persist InvalidTimestamp fraud proof
-                this.fraudProofService.createInvalidTimestampProof(block);
+                const proofData =
+                    await this.prepareInvalidTimestampProofData(block);
+                this.fraudProofService.createInvalidTimestampProof(proofData);
                 return BlockValidationResult.DISPUTE;
             }
 
@@ -335,7 +341,9 @@ export default class ValidationService {
         // OBJECTIVE: Check if block was posted too late on-chain
         if (await this.isPostedOnChainTooLate(previousTimestamp, block)) {
             // Block posted too late - create InvalidTimestamp fraud proof
-            this.fraudProofService.createInvalidTimestampProof(block);
+            const proofData =
+                await this.prepareInvalidTimestampProofData(block);
+            this.fraudProofService.createInvalidTimestampProof(proofData);
             return BlockValidationResult.DISPUTE;
         }
 
@@ -386,22 +394,7 @@ export default class ValidationService {
         block: Block
     ): Promise<Timestamp | undefined> {
         try {
-            const commitmentResult =
-                await this.stateChannelManagerContract.getBlockCallDataCommitment(
-                    block.channelId,
-                    block.forkId,
-                    block.height,
-                    block.author
-                );
-            if (!commitmentResult.found) {
-                return undefined;
-            }
-            return (
-                await this.fetchBlockCommitmentCalldata(
-                    block,
-                    commitmentResult.blockCalldataCommitment
-                )
-            )?.timestamp;
+            return (await this.fetchBlockCalldata(block))?.timestamp;
         } catch (error) {
             console.error("Error fetching on-chain timestamp:", error);
             return undefined;
@@ -481,5 +474,78 @@ export default class ValidationService {
             this.timeConfig.chainFallbackTime;
 
         return block.onChainTimestamp > maxAllowedTimestamp;
+    }
+
+    private async prepareInvalidTimestampProofData(
+        block: Block
+    ): Promise<InvalidTimestampProofData> {
+        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
+            block.coordinates
+        );
+
+        const invalidBlockOnChainTimestamp =
+            block.onChainTimestamp ??
+            (await this.fetchOnChainTimestamp(block)) ??
+            0;
+
+        if (previousBlockOrSnapshot.stateSnapshot) {
+            // there is no previous block (block height = 0)
+            return {
+                invalidBlock: block,
+                invalidBlockOnChainTimestamp,
+                previousBlock: undefined,
+                previousBlockCalldata: undefined,
+                previousBlockOnChainTimestamp: undefined,
+                previousStateSnapshot: previousBlockOrSnapshot.stateSnapshot!
+            };
+        }
+        // there is a previous block
+        const previousBlock = previousBlockOrSnapshot.block!;
+
+        const previousStateSnapshot =
+            this.storage.stateSnapshots.getStateSnapshotByHash(
+                previousBlock.stateSnapshotHash
+            )!;
+
+        const previousBlockCalldata =
+            await this.fetchBlockCalldata(previousBlock);
+        if (!previousBlockCalldata) {
+            throw new Error("Previous block calldata not found");
+        }
+
+        return {
+            invalidBlock: block,
+            invalidBlockOnChainTimestamp,
+            previousBlock: previousBlockOrSnapshot.block,
+            previousBlockCalldata: previousBlockCalldata.signedBlock,
+            previousBlockOnChainTimestamp:
+                previousBlock.onChainTimestamp ??
+                previousBlockCalldata.timestamp,
+            previousStateSnapshot
+        };
+    }
+
+    private async fetchBlockCalldata(block: Block) {
+        try {
+            const commitmentResult =
+                await this.stateChannelManagerContract.getBlockCallDataCommitment(
+                    block.channelId,
+                    block.forkId,
+                    block.height,
+                    block.author
+                );
+
+            if (!commitmentResult.found) {
+                return undefined;
+            }
+
+            return this.fetchBlockCommitmentCalldata(
+                block,
+                commitmentResult.blockCalldataCommitment
+            );
+        } catch (error) {
+            console.error("Error fetching block calldata:", error);
+            return undefined;
+        }
     }
 }

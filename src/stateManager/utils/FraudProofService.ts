@@ -9,9 +9,18 @@ import {
 } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { ZeroHash } from "ethers";
-import { Address, Hash } from "@/types/types";
+import { Address, Bytes, Hash, Signature, Timestamp } from "@/types/types";
 import { Codec, FraudStruct } from "@/utils/Codec";
 import { FraudProofType } from "@/types";
+
+export interface InvalidTimestampProofData {
+    invalidBlock: Block;
+    invalidBlockOnChainTimestamp: Timestamp;
+    previousBlock?: Block;
+    previousBlockCalldata?: SignedBlockStruct;
+    previousBlockOnChainTimestamp?: Timestamp;
+    previousStateSnapshot: StateSnapshot;
+}
 
 // ────────────────────── FRAUD PROOF SERVICE ─────────────────────
 
@@ -60,37 +69,37 @@ export default class FraudProofService {
         });
     }
 
-    /**
-     * Create invalid timestamp proof
-     */
-    createInvalidTimestampProof(block: Block): Hash {
-        let prevSignedBlock: SignedBlockStruct | undefined;
-        let prevStateSnapshot: StateSnapshot;
-        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
-            block.coordinates
-        );
+    createInvalidTimestampProof(proofData: InvalidTimestampProofData): Hash {
+        const prevSignedBlock: SignedBlockStruct =
+            proofData.previousBlock?.signedBlock ||
+            ("0x" as unknown as SignedBlockStruct);
+        let signatureOnPreviousBlock: Signature = "0x";
 
-        if (previousBlockOrSnapshot.block) {
-            // Height > 0 case - we have a previous block
-            const prevBlock = previousBlockOrSnapshot.block;
-            prevSignedBlock = prevBlock.signedBlock;
-            prevStateSnapshot =
-                this.storage.stateSnapshots.getStateSnapshotByHash(
-                    prevBlock.stateSnapshotHash
-                )!;
-        } else {
-            // Height === 0 case - we have genesis state snapshot
-            prevSignedBlock = ZeroHash as unknown as SignedBlockStruct;
-            prevStateSnapshot = previousBlockOrSnapshot.stateSnapshot!;
+        if (proofData.previousBlock) {
+            const invalidBlockAuthor = proofData.invalidBlock.signerAddress;
+            const { didSign, signature } =
+                proofData.previousBlock.findSignature(invalidBlockAuthor);
+            if (didSign) {
+                signatureOnPreviousBlock = signature!;
+            }
         }
 
         const proof: InvalidTimestampProofStruct = {
-            invalidBlock: block.signedBlock,
+            invalidBlock: proofData.invalidBlock.signedBlock,
+            invalidBlockOnChainTimestamp:
+                proofData.invalidBlockOnChainTimestamp,
             previousBlock: prevSignedBlock,
-            previousStateSnapshot: prevStateSnapshot.toStruct()
+            previousBlockCalldata:
+                proofData.previousBlockCalldata ||
+                ("0x" as unknown as SignedBlockStruct),
+            previousBlockOnChainTimestamp:
+                proofData.previousBlockOnChainTimestamp ||
+                ("0x" as unknown as Timestamp),
+            signatureOnPreviousBlock: signatureOnPreviousBlock as Bytes,
+            previousStateSnapshot: proofData.previousStateSnapshot.toStruct()
         };
 
-        return this.storeFraudProof(block.signerAddress, {
+        return this.storeFraudProof(proofData.invalidBlock.signerAddress, {
             type: FraudProofType.InvalidTimestamp,
             struct: proof
         });

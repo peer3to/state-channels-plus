@@ -81,4 +81,10 @@ error ErrorValidStateTransition();
 //Incorrect data
 error ErrorIncorrectLatestStateSnapshot();
 
+//Invalid timestamp fraud proof errors
+error ErrorInvalidPreviousSnapshotHash();
+error ErrorInvalidPreviousBlockHash();
+error ErrorInvalidPreviousBlockCalldataCommitment();
+error ErrorInvalidCurrentBlockCalldataCommitment();
+
 // ========================== DisputeManagerFacet ==========================

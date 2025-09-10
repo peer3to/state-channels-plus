@@ -32,7 +32,9 @@ enum FraudProofType {
     BlockDoubleSign,
     BlockEmptyBlock,
     BlockInvalidStateTransition,
-    BlockOutOfGas
+    BlockOutOfGas,
+    InvalidTimestamp,
+    WrongGenesis
 }
 
 struct DisputeFraudProof {
