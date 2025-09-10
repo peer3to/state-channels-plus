@@ -195,23 +195,6 @@ contract LocalDiamond is StateChannelManagerProxy {
         bytes memory latestStateMachineState,
         bytes32 latestJoinChannelBlockHash
     ) public returns (SnapshotData memory outputSnapshotData) {
-        _delegatecall(
-            address(disputeVerificationFacet),
-            abi.encodeCall(
-                disputeVerificationFacet.computeDisputeOutputSnapshotData,
-                (
-                    channelId,
-                    fraudProofs,
-                    selfRemoval,
-                    onChainSlashes,
-                    disputer,
-                    timeout,
-                    latestStateSnapshot,
-                    latestStateMachineState,
-                    latestJoinChannelBlockHash
-                )
-            )
-        );
         // Encode the function selector and arguments
         bytes memory data = abi.encodeCall(
             DisputeVerificationFacet.computeDisputeOutputSnapshotData,
