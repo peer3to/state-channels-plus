@@ -1,15 +1,10 @@
-import { Hash, ForkId, BlockHeight, Signature, Timestamp } from "@/types/types";
+import { Hash, ForkId, BlockHeight, Signature } from "@/types/types";
 import { Block, BlockCoordinates } from "@/models";
 
 type CoordinateKey = string;
 type StoreOptions = {
     hash?: Hash;
     coordinates?: BlockCoordinates;
-};
-
-export type BlockEntry = {
-    block: Block;
-    onChainTimestamp?: Timestamp;
 };
 
 export enum SortOrder {
@@ -21,8 +16,8 @@ export class BlockStorage {
     // ====================================
     // STORAGE MAPS
     // ====================================
-    private hashToBlockMap: Map<Hash, BlockEntry>;
-    private coordinatesToBlockMap: Map<CoordinateKey, BlockEntry>;
+    private hashToBlockMap: Map<Hash, Block>;
+    private coordinatesToBlockMap: Map<CoordinateKey, Block>;
 
     // NEW: Track highest height for each forkId
     private forkIdToMaxHeightMap: Map<ForkId, BlockHeight>;
@@ -38,7 +33,7 @@ export class BlockStorage {
     // ====================================
 
     storeBlock(block: Block, options?: StoreOptions): Hash | undefined {
-        return this._storeBlockEntryWithOptions({ block }, options);
+        return this._storeBlockWithOptions(block, options);
     }
 
     // ====================================
@@ -50,18 +45,18 @@ export class BlockStorage {
     ────────────────────────────────────────────────────────────────────────────*/
 
     /** [OVERLOAD 1] Get block entry by hash */
-    getBlockEntry(blockHash: Hash): BlockEntry | undefined;
+    getBlock(blockHash: Hash): Block | undefined;
 
     /** [OVERLOAD 2] Get block entry by coordinates */
-    getBlockEntry(forkId: ForkId, height: BlockHeight): BlockEntry | undefined;
+    getBlock(forkId: ForkId, height: BlockHeight): Block | undefined;
 
     /*────────────────────────────────────────────────────────────────────────────
       IMPLEMENTATION
     ────────────────────────────────────────────────────────────────────────────*/
-    getBlockEntry(
+    getBlock(
         hashOrForkId: Hash | ForkId,
         height?: BlockHeight
-    ): BlockEntry | undefined {
+    ): Block | undefined {
         if (height === undefined) {
             // ┌─ ROUTES TO: [OVERLOAD 1] - by hash
             return this.hashToBlockMap.get(hashOrForkId as Hash);
@@ -75,54 +70,8 @@ export class BlockStorage {
     }
 
     // ====================================
-    // UPDATE - Signature insertion and on-chain timestamp setting
+    // UPDATE - Signature insertion
     // ====================================
-
-    /*────────────────────────────────────────────────────────────────────────────
-      SET ON-CHAIN TIMESTAMP - OVERLOAD SIGNATURES
-    ────────────────────────────────────────────────────────────────────────────*/
-
-    /** [OVERLOAD 1] Set on-chain timestamp by hash */
-    setOnChainTimestamp(blockHash: Hash, timestamp: Timestamp): boolean;
-
-    /** [OVERLOAD 2] Set on-chain timestamp by coordinates */
-    setOnChainTimestamp(
-        forkId: ForkId,
-        height: BlockHeight,
-        timestamp: Timestamp
-    ): boolean;
-
-    /*────────────────────────────────────────────────────────────────────────────
-      IMPLEMENTATION
-    ────────────────────────────────────────────────────────────────────────────*/
-    setOnChainTimestamp(
-        hashOrForkId: Hash | ForkId,
-        timestampOrHeight: Timestamp | BlockHeight,
-        timestamp?: Timestamp
-    ): boolean {
-        let blockEntry: BlockEntry | undefined;
-
-        if (timestamp === undefined) {
-            // ┌─ ROUTES TO: [OVERLOAD 1] - by hash
-            blockEntry = this.hashToBlockMap.get(hashOrForkId as Hash);
-            if (blockEntry) {
-                blockEntry.onChainTimestamp = timestampOrHeight as Timestamp;
-                return true;
-            }
-            return false;
-        }
-        // ┌─ ROUTES TO: [OVERLOAD 2] - by coordinates
-        const coordinateKey = this.coordinatesToKey({
-            forkId: hashOrForkId as ForkId,
-            height: timestampOrHeight as BlockHeight
-        });
-        blockEntry = this.coordinatesToBlockMap.get(coordinateKey);
-        if (blockEntry) {
-            blockEntry.onChainTimestamp = timestamp;
-            return true;
-        }
-        return false;
-    }
 
     /*────────────────────────────────────────────────────────────────────────────
       INSERT SIGNATURE - OVERLOAD SIGNATURES
@@ -146,7 +95,7 @@ export class BlockStorage {
         hashOrForkId: Hash | ForkId,
         height?: BlockHeight
     ): Block | undefined {
-        const blockEntry =
+        const block =
             height === undefined
                 ? this.hashToBlockMap.get(hashOrForkId as Hash)
                 : this.coordinatesToBlockMap.get(
@@ -156,7 +105,7 @@ export class BlockStorage {
                       })
                   );
 
-        return blockEntry?.block.expandSignatures([signature]);
+        return block?.expandSignatures([signature]);
     }
 
     // ====================================
@@ -179,11 +128,10 @@ export class BlockStorage {
     deleteBlock(hashOrForkId: Hash | ForkId, height?: BlockHeight): boolean {
         if (height === undefined) {
             // ┌─ ROUTES TO: [OVERLOAD 1] - delete by hash
-            const blockEntry = this.hashToBlockMap.get(hashOrForkId as Hash);
-            if (!blockEntry) return false;
+            const block = this.hashToBlockMap.get(hashOrForkId as Hash);
+            if (!block) return false;
 
             // Need to find and delete from coordinates map too
-            const block = blockEntry.block;
             const coordinateKey = this.coordinatesToKey(block.coordinates);
 
             this.hashToBlockMap.delete(hashOrForkId as Hash);
@@ -206,11 +154,11 @@ export class BlockStorage {
             forkId: forkId,
             height
         });
-        const blockEntry = this.coordinatesToBlockMap.get(coordinateKey);
-        if (!blockEntry) return false;
+        const block = this.coordinatesToBlockMap.get(coordinateKey);
+        if (!block) return false;
 
         // Need to find and delete from hash map too
-        const blockHash = blockEntry.block.hash;
+        const blockHash = block.hash;
 
         this.coordinatesToBlockMap.delete(coordinateKey);
         this.hashToBlockMap.delete(blockHash);
@@ -236,7 +184,7 @@ export class BlockStorage {
         forkId: ForkId,
         sortOrder?: SortOrder,
         startHeight?: BlockHeight
-    ): Generator<BlockEntry, void, unknown> {
+    ): Generator<Block, void, unknown> {
         const maxHeight = this.forkIdToMaxHeightMap.get(forkId);
         if (maxHeight === undefined) return;
 
@@ -245,10 +193,9 @@ export class BlockStorage {
             const start = startHeight !== undefined ? startHeight : 0;
             for (let height = start; height <= maxHeight; height++) {
                 const coordinateKey = this.coordinatesToKey({ forkId, height });
-                const blockEntry =
-                    this.coordinatesToBlockMap.get(coordinateKey);
-                if (blockEntry) {
-                    yield blockEntry;
+                const block = this.coordinatesToBlockMap.get(coordinateKey);
+                if (block) {
+                    yield block;
                 }
             }
         } else {
@@ -256,16 +203,15 @@ export class BlockStorage {
             const start = startHeight !== undefined ? startHeight : maxHeight;
             for (let height = start; height >= 0; height--) {
                 const coordinateKey = this.coordinatesToKey({ forkId, height });
-                const blockEntry =
-                    this.coordinatesToBlockMap.get(coordinateKey);
-                if (blockEntry) {
-                    yield blockEntry;
+                const block = this.coordinatesToBlockMap.get(coordinateKey);
+                if (block) {
+                    yield block;
                 }
             }
         }
     }
 
-    getLatestBlockEntry(forkId: ForkId): BlockEntry | undefined {
+    getLatestBlock(forkId: ForkId): Block | undefined {
         const blockIterator = this.getIterator(forkId, SortOrder.DESC);
         const iteratorResult = blockIterator.next();
         return iteratorResult.done ? undefined : iteratorResult.value;
@@ -279,25 +225,24 @@ export class BlockStorage {
         return `${coordinates.forkId}:${coordinates.height}`;
     }
 
-    private _storeBlockEntryWithOptions(
-        blockEntry: BlockEntry,
+    private _storeBlockWithOptions(
+        block: Block,
         options?: StoreOptions
     ): Hash | undefined {
         // Determine hash - use provided or compute
-        const blockHash = options?.hash ?? blockEntry.block.hash;
+        const blockHash = options?.hash ?? block.hash;
 
         // Determine coordinates - use provided or compute
-        const coordinates =
-            options?.coordinates ?? blockEntry.block.coordinates;
+        const coordinates = options?.coordinates ?? block.coordinates;
 
         // Store the block entry
         const coordinateKey = this.coordinatesToKey(coordinates);
-        const existingEntry = this.coordinatesToBlockMap.get(coordinateKey);
+        const existingBlock = this.coordinatesToBlockMap.get(coordinateKey);
 
-        if (!existingEntry) {
+        if (!existingBlock) {
             // Store new block entry
-            this.hashToBlockMap.set(blockHash, blockEntry);
-            this.coordinatesToBlockMap.set(coordinateKey, blockEntry);
+            this.hashToBlockMap.set(blockHash, block);
+            this.coordinatesToBlockMap.set(coordinateKey, block);
 
             // Update max height
             this._updateMaxHeight(coordinates.forkId, coordinates.height);
@@ -305,26 +250,13 @@ export class BlockStorage {
             return blockHash;
         }
 
-        if (!blockEntry.block.equals(existingEntry.block)) {
+        if (!block.equals(existingBlock)) {
             // Not equal => abort
             return undefined;
         }
 
         // They are equal => merge signatures
-        existingEntry.block.expandSignatures(
-            blockEntry.block.confirmationSignatures
-        );
-
-        // Update on-chain timestamp if provided
-        if (existingEntry.onChainTimestamp === undefined) {
-            existingEntry.onChainTimestamp = blockEntry.onChainTimestamp;
-        } else if (
-            blockEntry.onChainTimestamp !== undefined &&
-            blockEntry.onChainTimestamp > existingEntry.onChainTimestamp
-        ) {
-            // Replace only if new timestamp is greater
-            existingEntry.onChainTimestamp = blockEntry.onChainTimestamp;
-        }
+        existingBlock.expandSignatures(block.confirmationSignatures);
 
         // Return the hash (same object in both maps)
         return blockHash;

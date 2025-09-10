@@ -987,15 +987,10 @@ class StateManager {
         }
 
         // Get the block entry - if it doesn't exist (can happen ONLY from setState), skip timeout
-        const blockEntry = this.storage.blocks.getBlockEntry(
-            forkId,
-            blockHeight
-        );
-        if (!blockEntry) {
+        const block = this.storage.blocks.getBlock(forkId, blockHeight);
+        if (!block) {
             return;
         }
-
-        const block = blockEntry.block;
 
         // If I already signed or block has already onChainTimestamp, no timeout needed
         if (
@@ -1026,7 +1021,7 @@ class StateManager {
 
         // Validate the on-chain commitment is legitimate
         const isValidCommitment = await this.validateBlockCommitment(
-            blockEntry.block,
+            block,
             commitmentResponse.blockCalldataCommitment,
             participantAddress
         );
@@ -1156,9 +1151,9 @@ class StateManager {
     }
 
     private adjustTimestampIfNeeded(tx: TransactionStruct): void {
-        const latestBlockTimestamp = this.storage.blocks.getLatestBlockEntry(
+        const latestBlockTimestamp = this.storage.blocks.getLatestBlock(
             this.forkId
-        )!.block.timestamp;
+        )!.timestamp;
 
         if (Number(tx.header.timestamp) < latestBlockTimestamp) {
             tx.header.timestamp = latestBlockTimestamp + 1;
