@@ -127,10 +127,13 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         view
         returns (address)
     {
-        //Can be part of auditing instead of doing it here
-        Block memory latestBlock = _getLatestBlock(dispute.stateProof);
-        if (_getBlockAuthor(latestBlock) == dispute.timeout.participant) revert();
+        // //Can be part of auditing instead of doing it here
+        // bool hasBlock;
+        // Block memory latestBlock;
+        // (hasBlock, latestBlock) = _getLatestBlock(dispute.stateProof);
+        // if (!hasBlock || _getBlockAuthor(latestBlock) == dispute.timeout.participant) revert();
 
+        // TODO - the check is -> proove latest state that the dispute commits to -> prove getNextToWrite(latestState) != dispute.timeout.participant
         return dispute.disputer;
     }
 
@@ -151,18 +154,24 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         DisputeNotLatestStateProof memory disputeNotLatestStateProof =
             abi.decode(encodedFraudProof, (DisputeNotLatestStateProof));
         Block memory newerBlock = abi.decode(disputeNotLatestStateProof.encodedBlock, (Block));
-        Block memory latestBlock = _getLatestBlock(dispute.stateProof);
+        (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.stateProof);
 
-        // Check channelId
-        if (!_areDisputeAndBlockSameChannel(dispute, newerBlock) || !_areBlocksSameChannel(newerBlock, latestBlock)) {
-            revert();
+        // Check newBlock same channelId
+        if (!_areDisputeAndBlockSameChannel(dispute, newerBlock)) revert();
+        // Check newBlock same forkId
+        if (!_areDisputeAndBlockSameFork(dispute, newerBlock)) revert();
+
+        if (hasBlock) {
+            // Check latestBlock and newerBlock same channelId
+            if (!_areBlocksSameChannel(newerBlock, latestBlock)) revert();
+
+            // Check latestBlock and newerBlock same forkId
+            if (!_areBlocksSameFork(newerBlock, latestBlock)) revert();
+
+            // Check is block newer
+            if (_getBlockHeight(newerBlock) <= _getBlockHeight(latestBlock)) revert();
         }
-
-        // Check forkId
-        if (!_areDisputeAndBlockSameFork(dispute, newerBlock) || !_areBlocksSameFork(newerBlock, latestBlock)) revert();
-
-        // Check is block newer
-        if (_getBlockHeight(newerBlock) <= _getBlockHeight(latestBlock)) revert();
+        // if !hasBlock -> latestState should be genesis state -> if the disputer signed any block this proof is valid
 
         // Check siganture
         address retrivedAddress = StateChannelUtilLibrary.retriveSignerAddress(

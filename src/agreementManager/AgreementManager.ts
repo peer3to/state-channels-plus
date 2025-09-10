@@ -97,7 +97,7 @@ class AgreementManager {
 
             if (milestone) {
                 milestones.push(milestone);
-                const newSnapshot = this.getSnapshot(milestone);
+                const newSnapshot = this.getSnapshotFromMilestone(milestone);
                 currentSnapshot = newSnapshot;
             } else {
                 // Break early because we can't prove finality beyond this point
@@ -119,7 +119,7 @@ class AgreementManager {
 
         if (milestone) {
             milestones.push(milestone);
-            const newSnapshot = this.getSnapshot(milestone);
+            const newSnapshot = this.getSnapshotFromMilestone(milestone);
             currentSnapshot = newSnapshot;
 
             return {
@@ -162,7 +162,9 @@ class AgreementManager {
     /**
      * Get snapshot from the first block confirmation in a milestone
      */
-    public getSnapshot(milestone: MilestoneProofStruct): StateSnapshot {
+    public getSnapshotFromMilestone(
+        milestone: MilestoneProofStruct
+    ): StateSnapshot {
         if (milestone.blockConfirmations.length === 0) {
             throw new Error("Cannot get snapshot from empty milestone");
         }
@@ -181,6 +183,38 @@ class AgreementManager {
         }
 
         return snapshot;
+    }
+
+    public getLastBlockFromMilestone(
+        milestone: MilestoneProofStruct
+    ): Block | undefined {
+        if (milestone.blockConfirmations.length === 0) return undefined;
+
+        const lastBlockConfirmation =
+            milestone.blockConfirmations[
+                milestone.blockConfirmations.length - 1
+            ];
+        return Block.fromBlockConfirmation(lastBlockConfirmation);
+    }
+
+    public getLatestBlockFromStateProof(
+        stateProof: StateProofStruct
+    ): Block | undefined {
+        // orignaly wanted to reuse solidity implementation for this, but the solidity implementation returns a BlockStruct which is a subset of information compared to BlockConfirmation/SignedBlock.
+        // reimplemented it here since the logic is simple, but in general - reuse the solidity stuff!
+        if (
+            stateProof.milestones.length === 0 &&
+            stateProof.signedBlocks.length === 0
+        )
+            return undefined;
+
+        if (stateProof.signedBlocks.length > 0)
+            return Block.fromSignedBlock(stateProof.signedBlocks[0]);
+
+        // else - milestones.length > 0
+        return this.getLastBlockFromMilestone(
+            stateProof.milestones[stateProof.milestones.length - 1]
+        );
     }
 
     /**

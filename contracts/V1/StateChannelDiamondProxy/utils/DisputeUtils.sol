@@ -19,8 +19,12 @@ function _areDisputeAndBlockSameChannel(Dispute memory dispute, Block memory _bl
     return _getBlockChannel(_block) == _getDisputeChannel(dispute);
 }
 
-function _getLatestBlock(StateProof memory stateProof) pure returns (Block memory) {
-    return stateProof.signedBlocks.length > 0
+function _getLatestBlock(StateProof memory stateProof) pure returns (bool hasBlock, Block memory) {
+    Block memory _block;
+    if (stateProof.milestones.length == 0 && stateProof.signedBlocks.length == 0) {
+        return (false, _block);
+    }
+    _block = stateProof.signedBlocks.length > 0
         ? abi.decode(stateProof.signedBlocks[stateProof.signedBlocks.length - 1].encodedBlock, (Block))
         : abi.decode(
             stateProof.milestones[stateProof.milestones.length - 1].blockConfirmations[stateProof.milestones[stateProof
@@ -28,6 +32,7 @@ function _getLatestBlock(StateProof memory stateProof) pure returns (Block memor
                 .length - 1].blockConfirmations.length - 1].signedBlock.encodedBlock,
             (Block)
         );
+    return (true, _block);
 }
 
 //not used anywhere right now

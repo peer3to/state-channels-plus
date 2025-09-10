@@ -30,7 +30,7 @@ import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
 import AgreementManager from "../agreementManager/AgreementManager";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
-import DisputeHandler from "@/DisputeHandler";
+import DisputeManager from "@/disputeManager/DisputeManager";
 import P2PManager from "@/P2PManager";
 import StateChannelEventListener from "@/StateChannelEventListener";
 import ValidationService from "./ValidationService";
@@ -81,7 +81,7 @@ class StateManager {
     signerAddress: Address;
     agreementManager: AgreementManager;
     stateChannelEventListener: StateChannelEventListener;
-    disputeHandler: DisputeHandler;
+    disputeHandler: DisputeManager;
     stateChannelManagerContract: StateChannelManagerProxy;
     p2pManager: P2PManager;
     timeConfig: TimeConfig;
@@ -124,13 +124,15 @@ class StateManager {
             this.localDiamondContract
         );
         this.agreementManager = new AgreementManager(this.storage);
-        this.disputeHandler = new DisputeHandler(
+        this.disputeHandler = new DisputeManager(
             this.channelId,
             signer,
             signerAddress,
             this.agreementManager,
             this.stateChannelManagerContract,
-            this.p2pEventHooks
+            this.p2pEventHooks,
+            this.storage,
+            this.diamondStateMachine
         );
         this.p2pManager = new P2PManager(this.self, signer);
         this.fraudProofService = new FraudProofService(this.storage);
@@ -320,20 +322,12 @@ class StateManager {
             const {
                 success,
                 encodedState,
-                previousStateHash,
                 successCallback,
                 exitChannels,
                 leftParticipants
             } = await this.applyTransaction(block.transaction);
 
             if (!success) {
-                this.fraudProofService.createInvalidStateTransitionProof(block);
-                await this.dispute(blockConfirmation);
-                // disconnect
-                return false;
-            }
-
-            if (hash(encodedState) === previousStateHash) {
                 this.fraudProofService.createInvalidStateTransitionProof(block);
                 await this.dispute(blockConfirmation);
                 // disconnect
@@ -355,10 +349,18 @@ class StateManager {
                 return false;
             }
 
+            if (hash(encodedState) === stateSnapshot.stateMachineStateHash) {
+                this.fraudProofService.createInvalidStateTransitionProof(block);
+                await this.dispute(blockConfirmation);
+                // disconnect
+                return false;
+            }
+
             // All validations passed - proceed with success action
             this.success(
                 block,
                 stateSnapshot,
+                encodedState,
                 successCallback,
                 totalWithdrawals,
                 leftParticipants,
@@ -378,14 +380,10 @@ class StateManager {
     public async applyTransaction(transaction: TransactionStruct): Promise<{
         success: boolean;
         encodedState: Bytes;
-        previousStateHash: Hash;
         successCallback: () => void;
         exitChannels: ExitChannelStruct[];
         leftParticipants: Set<Address>;
     }> {
-        const previousStateHash = await this.diamondStateMachine
-            .getState()
-            .then(hash);
         const previousParticipants =
             await this.diamondStateMachine.getParticipants();
         const { success, successCallback, exitChannels } =
@@ -402,7 +400,6 @@ class StateManager {
         return {
             success,
             encodedState,
-            previousStateHash,
             successCallback,
             exitChannels,
             leftParticipants
@@ -430,7 +427,6 @@ class StateManager {
             const {
                 success,
                 encodedState,
-                previousStateHash: _previousStateHash,
                 successCallback,
                 exitChannels,
                 leftParticipants
@@ -469,6 +465,7 @@ class StateManager {
             await this.success(
                 block,
                 stateSnapshot,
+                encodedState,
                 successCallback,
                 totalWithdrawals,
                 leftParticipants,
@@ -648,7 +645,9 @@ class StateManager {
 
                 // Get the state snapshot
                 const snapshot =
-                    this.agreementManager.getSnapshot(milestoneProof);
+                    this.agreementManager.getSnapshotFromMilestone(
+                        milestoneProof
+                    );
 
                 // Only include milestones that are newer than the current on-chain block height
                 if (snapshot.blockHeight > currentOnChainSnapshot.blockHeight) {
@@ -1262,6 +1261,7 @@ class StateManager {
     private async success(
         block: Block,
         stateSnapshot: StateSnapshot,
+        encodedStateMachineState: Bytes,
         successCallback: () => void,
         totalWithdrawals: BalanceStruct,
         leftParticipants: Set<Address>,
@@ -1284,7 +1284,13 @@ class StateManager {
         // step 3 - persist the state snapshot
         this.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
 
-        // step 4 - persist the exit channel blocks if any
+        // step 4 - persist state machine state
+        this.storage.stateMachineStates.storeStateMachineState(
+            encodedStateMachineState,
+            { hash: stateSnapshot.snapshotData.stateMachineStateHash }
+        );
+
+        // step 5 - persist the exit channel blocks if any
         if (exitChannelBlock) {
             this.storage.exitChannelBlocks.storeExitChannelBlock(
                 exitChannelBlock,
@@ -1292,12 +1298,12 @@ class StateManager {
             );
         }
 
-        // step 5 - persist exit points
+        // step 6 - persist exit points
         if (leftParticipants.size > 0) {
             this.storage.exitPoints.storeExitPoint(block.forkId, block.height);
         }
 
-        // step 6 - startMaybeExitOnChain
+        // step 7 - startMaybeExitOnChain
         await this.startMaybeExitOnChain(
             block,
             stateSnapshot,
@@ -1305,13 +1311,13 @@ class StateManager {
             exitChannelBlock
         );
 
-        // step 7 - success callback
+        // step 8 - success callback
         successCallback();
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();
-        // step 8 - Notify any event hooks
+        // step 9 - Notify any event hooks
         this.p2pEventHooks.onTurn?.(nextToWrite);
 
-        // step 9 - maybe post block on chain
+        // step 10 - maybe post block on chain
         if (block.author === this.signerAddress) {
             scheduleTask(
                 () => this.maybePostBlockOnChain(block),
@@ -1320,7 +1326,7 @@ class StateManager {
             );
         }
 
-        // step 10 - schedule a timeout check for the next participant
+        // step 11 - schedule a timeout check for the next participant
         scheduleTask(
             () =>
                 this.tryTimeoutParticipant(
@@ -1331,7 +1337,7 @@ class StateManager {
             this.getTimeoutWaitTimeSeconds() * 1000,
             "participantTimeout"
         );
-        // step 11 - try execute from queue
+        // step 12 - try execute from queue
         scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
     }
 

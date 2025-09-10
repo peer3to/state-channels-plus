@@ -18,26 +18,53 @@ contract DisputeVerificationFacet is StateChannelCommon {
         require(_verifyStateProof(dispute, disputeAuditingData), ErrorDisputeStateProofInvalid());
         require(_verifyExitChannelBlocks(dispute, disputeAuditingData), ErrorDisputeExitChannelBlocksInvalid());
 
-        FraudProofVerificationContext memory proofContext =
-            FraudProofVerificationContext({channelId: dispute.channelId});
-        address[] memory slashes =
-            StateChannelManagerProxy(address(this)).verifyFraudProofs(dispute.fraudProofs, proofContext);
-        slashes = StateChannelUtilLibrary.concatAddressArraysNoDuplicates(slashes, dispute.onChainSlashes);
-        address[] memory removals = _calculateRemovals(dispute);
+        // ***************** Generate output snapshot ***************
+        (SnapshotData memory outputSnapshotData, address[] memory slashes) = computeDisputeOutputSnapshotData(
+            dispute.channelId,
+            dispute.fraudProofs,
+            dispute.selfRemoval,
+            dispute.onChainSlashes,
+            dispute.disputer,
+            dispute.timeout,
+            disputeAuditingData.latestStateSnapshot,
+            disputeAuditingData.latestStateStateMachineState,
+            disputeAuditingData.genesisStateSnapshot.snapshotData.latestJoinChannelBlockHash
+        );
+
+        //verify outputStateSnapshot commitment
+        if (keccak256(abi.encode(outputSnapshotData)) != dispute.outputSnapshotDataHash) {
+            revert ErrorDisputeOutputStateSnapshotInvalid();
+        }
+
+        return slashes;
+    }
+
+    function computeDisputeOutputSnapshotData(
+        bytes32 channelId,
+        FraudProof[] memory fraudProofs,
+        bool selfRemoval,
+        address[] memory onChainSlashes,
+        address disputer,
+        Timeout memory timeout,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory latestStateMachineState,
+        bytes32 latestJoinChannelBlockHash
+    ) public returns (SnapshotData memory outputSnapshotData, address[] memory slashes) {
+        // TODO - DisputeStruct should be split into dispute.input and dispute.output so all these input fields are not expanded here
+        FraudProofVerificationContext memory proofContext = FraudProofVerificationContext({channelId: channelId});
+        slashes = StateChannelManagerProxy(address(this)).verifyFraudProofs(fraudProofs, proofContext);
+        slashes = StateChannelUtilLibrary.concatAddressArraysNoDuplicates(slashes, onChainSlashes);
+        address[] memory removals = _calculateRemovals(selfRemoval, disputer, fraudProofs, onChainSlashes, timeout);
 
         // Disputes don't apply joins directly, just reduce
         JoinChannelBlock[] memory emptyJoinChannelBlocks = new JoinChannelBlock[](0);
         DisputeOutputState memory disputeOutputState = generateDisputeOutputState(
-            disputeAuditingData.latestStateStateMachineState,
-            slashes,
-            removals,
-            emptyJoinChannelBlocks,
-            disputeAuditingData.latestStateSnapshot
+            latestStateMachineState, slashes, removals, emptyJoinChannelBlocks, latestStateSnapshot
         );
-        SnapshotData memory latestSnapshotData = disputeAuditingData.latestStateSnapshot.snapshotData;
+        SnapshotData memory latestSnapshotData = latestStateSnapshot.snapshotData;
         require(
             _verifyBalanceInvariantCheck(
-                dispute.channelId,
+                channelId,
                 latestSnapshotData.totalDeposits,
                 latestSnapshotData.totalWithdrawals,
                 latestSnapshotData.latestJoinChannelBlockHash
@@ -46,21 +73,14 @@ contract DisputeVerificationFacet is StateChannelCommon {
         );
 
         // ***************** Generate output snapshot ***************
-        SnapshotData memory outputSnapshotData = SnapshotData({
+        outputSnapshotData = SnapshotData({
             stateMachineStateHash: keccak256(disputeOutputState.encodedModifiedState),
             participants: getStatemachineParticipants(disputeOutputState.encodedModifiedState),
-            latestJoinChannelBlockHash: disputeAuditingData.genesisStateSnapshot.snapshotData.latestJoinChannelBlockHash, // Joins are not applied in disputes, but in reduce
+            latestJoinChannelBlockHash: latestJoinChannelBlockHash, // Joins are not applied in disputes, but in reduce -> same hash as in the genesis snapshot
             latestExitChannelBlockHash: keccak256(abi.encode(disputeOutputState.exitBlock)),
             totalDeposits: disputeOutputState.totalDeposits,
             totalWithdrawals: disputeOutputState.totalWithdrawals
         });
-
-        //verify outputStateSnapshot commitment
-        if (keccak256(abi.encode(outputSnapshotData)) != dispute.outputSnapshotDataHash) {
-            revert ErrorDisputeOutputStateSnapshotInvalid();
-        }
-
-        return slashes;
     }
 
     function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public {
@@ -124,12 +144,13 @@ contract DisputeVerificationFacet is StateChannelCommon {
             // ***** reducedOutput.latestBlock *****
             // Extract the latest block from the state proof - it's either the last signed block or the last one in milestones
             StateProof memory stateProof = dispute.stateProof;
-            Block memory disputeLatestBlock = _getLatestBlock(stateProof);
+            (bool hasBlock, Block memory disputeLatestBlock) = _getLatestBlock(stateProof);
 
             // Take the latest block possible
             if (
-                disputeLatestBlock.transaction.header.transactionCnt
-                    >= reducedOutput.latestBlock.transaction.header.transactionCnt
+                hasBlock
+                    && disputeLatestBlock.transaction.header.transactionCnt
+                        >= reducedOutput.latestBlock.transaction.header.transactionCnt
             ) {
                 reducedOutput.latestBlock = disputeLatestBlock;
             }
@@ -188,6 +209,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
     ) public {
         require(disputes.length > 0, ErrorNoDisputesProvided());
         bytes32 channelId = disputes[0].channelId;
+        bytes32 forkId = disputes[0].genesisSnapshotDataHash;
         require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].genesisSnapshotDataHash];
@@ -199,8 +221,9 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         ReduceOutput memory reducedOutput = reduce(disputes, disputeWindowCreationTimestamp);
 
-        SnapshotData memory snapshotData =
-            reduceOutputToSnapshotData(reducedOutput, stateSnapshot, encodedStateMachineState, joinChannelBlocks);
+        SnapshotData memory snapshotData = reduceOutputToSnapshotData(
+            forkId, reducedOutput, stateSnapshot, encodedStateMachineState, joinChannelBlocks
+        );
 
         bytes32 winningForkId = keccak256(abi.encode(snapshotData));
 
@@ -237,6 +260,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
     ) public {
         require(disputes.length > 0, ErrorNoDisputesProvided());
         bytes32 channelId = disputes[0].channelId;
+        bytes32 forkId = disputes[0].genesisSnapshotDataHash;
         require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
 
         DisputeData storage _disputeData = disputeData[channelId];
@@ -247,8 +271,9 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         // compute reduced output and derive snapshot data
         ReduceOutput memory reducedOutput = reduce(disputes, disputeWindowCreationTimestamp);
-        SnapshotData memory snapshotData =
-            reduceOutputToSnapshotData(reducedOutput, stateSnapshot, encodedStateMachineState, joinChannelBlocks);
+        SnapshotData memory snapshotData = reduceOutputToSnapshotData(
+            forkId, reducedOutput, stateSnapshot, encodedStateMachineState, joinChannelBlocks
+        );
 
         // compute the new forkId
         bytes32 winningForkId = keccak256(abi.encode(snapshotData));
@@ -272,6 +297,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
     }
 
     function reduceOutputToSnapshotData(
+        bytes32 forkId,
         ReduceOutput memory reducedOutput,
         StateSnapshot memory latestStateSnapshot,
         bytes memory encodedStateMachineState,
@@ -279,9 +305,16 @@ contract DisputeVerificationFacet is StateChannelCommon {
     ) public returns (SnapshotData memory outputSnapshotData) {
         //verify snapshot linked to reducedOutput.latestBlock
         Block memory latestBlock = reducedOutput.latestBlock;
-        require(
-            latestBlock.stateSnapshotHash == keccak256(abi.encode(latestStateSnapshot)), ErrorInvalidStateSnapshot()
-        );
+        if (latestBlock.transaction.header.forkId == bytes32(0)) {
+            //no blocks in reducedOutput - must be genesis
+            // TODO - think - this ensures that snapshotData is correct, not the snapshot, which means someone can lie about the time, but it shouldn't matter here - we just care to perform the correct State Transition
+            require(keccak256(abi.encode(latestStateSnapshot.snapshotData)) == forkId, ErrorInvalidStateSnapshot());
+        } else {
+            // reducedOutput.latestBlock is a defined block - verify it links to the snapshot
+            require(
+                latestBlock.stateSnapshotHash == keccak256(abi.encode(latestStateSnapshot)), ErrorInvalidStateSnapshot()
+            );
+        }
         //verify encodedStateMachineState linked to snapshot
         require(
             latestStateSnapshot.snapshotData.stateMachineStateHash == keccak256(encodedStateMachineState),
@@ -512,7 +545,12 @@ contract DisputeVerificationFacet is StateChannelCommon {
     }
 
     function _isCorrectGenesis(Dispute memory dispute) internal view returns (bool) {
-        return _areDisputeAndBlockSameFork(dispute, _getLatestBlock(dispute.stateProof));
+        (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.stateProof);
+        if (!hasBlock) {
+            //no blocks in state proof - must be genesis
+            return true; // TODO This will be a dispute fraud proof, since the dispute struct doesn't have enough information to deduct this
+        }
+        return _areDisputeAndBlockSameFork(dispute, latestBlock);
     }
 
     function _verifyJoinChannelBlocks(
@@ -620,20 +658,23 @@ contract DisputeVerificationFacet is StateChannelCommon {
         }
     }
 
-    function _calculateRemovals(Dispute memory dispute) internal view returns (address[] memory removals) {
+    function _calculateRemovals(
+        bool selfRemoval,
+        address disputer,
+        FraudProof[] memory fraudProofs,
+        address[] memory onChainSlashes,
+        Timeout memory timeout
+    ) internal view returns (address[] memory removals) {
         //Try and combine timeout and selfRemoval -> max 2 removals per dispute
         uint256 removalCount = 0;
         address[] memory _removals = new address[](2);
         // Always apply selfRemoval if set
-        if (dispute.selfRemoval) {
-            _removals[removalCount++] = dispute.disputer;
+        if (selfRemoval) {
+            _removals[removalCount++] = disputer;
         }
         // Ignore timeout if unset or if there are slashes
-        if (
-            dispute.fraudProofs.length == 0 && dispute.onChainSlashes.length == 0
-                && dispute.timeout.participant != address(0)
-        ) {
-            _removals[removalCount++] = dispute.timeout.participant;
+        if (fraudProofs.length == 0 && onChainSlashes.length == 0 && timeout.participant != address(0)) {
+            _removals[removalCount++] = timeout.participant;
         }
 
         removals = new address[](removalCount);

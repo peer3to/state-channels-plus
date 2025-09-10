@@ -183,4 +183,58 @@ contract LocalDiamond is StateChannelManagerProxy {
         bytes32 latestJoinChannelBlockHash = channelBalances[channelId].latestJoinChannelBlockHash;
         return channelBalances[channelId].onChainJoinChannelMap[latestJoinChannelBlockHash].totalDeposits;
     }
+
+    function computeDisputeOutputSnapshotData(
+        bytes32 channelId,
+        FraudProof[] memory fraudProofs,
+        bool selfRemoval,
+        address[] memory onChainSlashes,
+        address disputer,
+        Timeout memory timeout,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory latestStateMachineState,
+        bytes32 latestJoinChannelBlockHash
+    ) public returns (SnapshotData memory outputSnapshotData) {
+        _delegatecall(
+            address(disputeVerificationFacet),
+            abi.encodeCall(
+                disputeVerificationFacet.computeDisputeOutputSnapshotData,
+                (
+                    channelId,
+                    fraudProofs,
+                    selfRemoval,
+                    onChainSlashes,
+                    disputer,
+                    timeout,
+                    latestStateSnapshot,
+                    latestStateMachineState,
+                    latestJoinChannelBlockHash
+                )
+            )
+        );
+        // Encode the function selector and arguments
+        bytes memory data = abi.encodeCall(
+            DisputeVerificationFacet.computeDisputeOutputSnapshotData,
+            (
+                channelId,
+                fraudProofs,
+                selfRemoval,
+                onChainSlashes,
+                disputer,
+                timeout,
+                latestStateSnapshot,
+                latestStateMachineState,
+                latestJoinChannelBlockHash
+            )
+        );
+        // Perform the low-level call with a gas limit
+        (bool success, bytes memory returnData) =
+            address(disputeVerificationFacet).delegatecall{gas: getGasLimit()}(data);
+        if (!success) {
+            assembly {
+                revert(add(returnData, 0x20), mload(returnData))
+            }
+        }
+        (outputSnapshotData,) = abi.decode(returnData, (SnapshotData, address[]));
+    }
 }

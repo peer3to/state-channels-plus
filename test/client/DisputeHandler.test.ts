@@ -3,14 +3,14 @@ import sinon from "sinon";
 import { ethers } from "hardhat";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
-import DisputeHandler from "@/DisputeHandler";
+import DisputeManager from "@/disputeManager/DisputeManager";
 import AgreementManager from "@/agreementManager";
 import P2pEventHooks from "@/P2pEventHooks";
 import * as factory from "../factory";
 import { Codec, Type } from "@/utils";
 
 describe("DisputeHandler", () => {
-    let disputeHandler: DisputeHandler;
+    let disputeHandler: DisputeManager;
     let agreementManager: AgreementManager;
     let stateChannelManagerContract: any;
     let p2pEventHooks: P2pEventHooks;
@@ -43,7 +43,7 @@ describe("DisputeHandler", () => {
         };
 
         // Create the dispute handler
-        disputeHandler = new DisputeHandler(
+        disputeHandler = new DisputeManager(
             channelId,
             signer,
             signerAddress,

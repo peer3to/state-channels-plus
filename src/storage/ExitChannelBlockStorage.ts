@@ -66,4 +66,32 @@ export class ExitChannelBlockStorage {
     ): ExitChannelBlockEntry | undefined {
         return this.blockMap.get(blockHash);
     }
+
+    *getIterator(
+        fromBlockHash: Hash,
+        toBlockHash?: Hash
+    ): Generator<ExitChannelBlockEntry, void, unknown> {
+        if (fromBlockHash == ethers.ZeroHash) return;
+        let currentHash = fromBlockHash;
+        while (
+            currentHash != ethers.ZeroHash &&
+            (!toBlockHash || currentHash != toBlockHash)
+        ) {
+            const entry = this.blockMap.get(currentHash);
+            if (!entry) return;
+            yield entry;
+            currentHash = entry.block.previousBlockHash;
+        }
+    }
+
+    getBlocksInRange(
+        fromBlockHash: Hash,
+        toBlockHash: Hash
+    ): ExitChannelBlockStruct[] {
+        const blocks: ExitChannelBlockStruct[] = [];
+        for (const entry of this.getIterator(fromBlockHash, toBlockHash)) {
+            blocks.push(entry.block);
+        }
+        return blocks;
+    }
 }
