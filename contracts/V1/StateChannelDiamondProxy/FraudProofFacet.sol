@@ -219,7 +219,7 @@ contract FraudProofFacet is StateChannelCommon {
             // Validate previous block hash matches previous block
             Block memory previousBlock = abi.decode(invalidTimestampProof.previousBlock.encodedBlock, (Block));
             require(
-                invalidBlock.previousBlockHash == keccak256(abi.encode(previousBlock)), ErrorInvalidPreviousBlockHash()
+                invalidBlock.previousBlockHash == keccak256(invalidTimestampProof.previousBlock.encodedBlock), ErrorInvalidPreviousBlockHash()
             );
 
             // Check if calldata is posted - previous block
