@@ -1,5 +1,5 @@
 import { ARpcService, MainRpcService } from "@/rpc";
-import { ChannelId, Timestamp } from "@/types/types";
+import { ChannelId, Timestamp, Hash } from "@/types/types";
 import { StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
@@ -12,12 +12,15 @@ import { Codec, Type } from "@/utils";
 import { isEqual } from "lodash";
 
 export interface SnapshotPayload {
-    disputeWindows: DisputeStruct[];
-    stateProof: StateProofStruct;
     latestForkGenesisSnapshot: StateSnapshot;
+    disputeWindows?: DisputeStruct[];
+    stateProof?: StateProofStruct;
+    encodedState?: Hash;
 }
 
 class SpectateService extends ARpcService {
+    private spectateInitTime: number | null = null;
+
     constructor(mainRpcService: MainRpcService) {
         super(mainRpcService);
     }
@@ -26,28 +29,21 @@ class SpectateService extends ARpcService {
     public spectateSync(transport: ATransport, channelId: ChannelId) {
         console.log("spectateSync !");
         let time = Clock.getTimeInSeconds();
+
+        // Store the init time for RTT calculation
+        this.spectateInitTime = time;
+
         this.mainRpcService.rpcProxy
             .onSpectateRequest(channelId, time)
             .sendOne(transport);
     }
 
     public async onSpectateRequest(channelId: ChannelId, time: Timestamp) {
-        let localTime = Clock.getTimeInSeconds();
-        if (
-            Math.abs(time - localTime) >
-            this.mainRpcService.p2pManager.stateManager.timeConfig.agreementTime
-        ) {
-            console.log(
-                `onSpectateRequest - time difference too big - time:${time} localTime:${localTime} diff:${
-                    time - localTime
-                } aggreeTime:${
-                    this.mainRpcService.p2pManager.stateManager.timeConfig
-                        .agreementTime
-                }`
-            );
-            return;
-        }
-        console.log(`onSpectateRequest - localTime:${localTime} time:${time}`);
+        const localTime = Clock.getTimeInSeconds();
+
+        console.log(
+            `onSpectateRequest - localTime: ${localTime}, remoteTime: ${time}`
+        );
 
         // Generate payload to prove the latest possible snapshot
         // (but don't send it on-chain - send it to the spectator)
@@ -65,13 +61,28 @@ class SpectateService extends ARpcService {
         responseTime: Timestamp
     ) {
         console.log(`onSpectateResponse - start`);
+
+        if (!this.spectateInitTime) {
+            console.log("onSpectateResponse - no init time found, ignoring");
+            return;
+        }
+
         let localTime = Clock.getTimeInSeconds();
-        let rtt = localTime - responseTime;
+        let rtt = localTime - this.spectateInitTime;
+
+        console.log(
+            `onSpectateResponse - RTT: ${rtt}s, initTime: ${this.spectateInitTime}, responseTime: ${localTime}`
+        );
+
+        // If RTT is too high, disconnect from all peers
         if (
             rtt >
             this.mainRpcService.p2pManager.stateManager.timeConfig.agreementTime
         ) {
-            console.log("onSpectateResponse - RTT too high, ignoring");
+            console.log(
+                `onSpectateResponse - RTT too high (${rtt}s), disconnecting from all peers`
+            );
+            this.mainRpcService.p2pManager.disconnectAll();
             return;
         }
 
@@ -118,17 +129,6 @@ class SpectateService extends ARpcService {
         // Get the current fork ID
         const forkId = stateManager.forkId;
 
-        const latestBlockHeight =
-            stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
-
-        // Get the latest state proof data
-        const latestStateProof = await agreementManager.getStateProof(
-            forkId,
-            latestBlockHeight
-        );
-
-        const disputeWindows: DisputeStruct[] = [];
-
         // Get the latest fork genesis snapshot to include in the payload
         const latestForkGenesisSnapshot =
             stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
@@ -136,6 +136,42 @@ class SpectateService extends ARpcService {
             );
         if (!latestForkGenesisSnapshot) {
             throw new Error(`No genesis snapshot found for fork ${forkId}`);
+        }
+
+        const latestBlockHeight =
+            stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
+
+        // Get the latest state proof data (only if there are blocks for same-fork update)
+        let latestStateProof: StateProofStruct | undefined;
+        let encodedState: Hash | undefined;
+
+        if (latestBlockHeight >= 0) {
+            // There are blocks, so we can do a same-fork update
+            latestStateProof = await agreementManager.getStateProof(
+                forkId,
+                latestBlockHeight
+            );
+
+            // Get the encoded state that the stateProof proves
+            if (latestStateProof.milestones.length > 0) {
+                const latestMilestone =
+                    latestStateProof.milestones[
+                        latestStateProof.milestones.length - 1
+                    ];
+                const latestSnapshot =
+                    agreementManager.getSnapshot(latestMilestone);
+                const stateHash =
+                    latestSnapshot.snapshotData.stateMachineStateHash;
+                encodedState =
+                    stateManager.storage.stateMachineStates.getStateMachineState(
+                        stateHash
+                    );
+                if (!encodedState) {
+                    throw new Error(
+                        `No encoded state found for state hash ${stateHash}`
+                    );
+                }
+            }
         }
 
         // Check if we have disputes and commitments for this fork
@@ -151,49 +187,36 @@ class SpectateService extends ARpcService {
               )
             : [];
 
-        if (
-            !isDisputed ||
-            !disputeCommitments ||
-            disputeCommitments.length === 0
-        ) {
-            // No disputes or commitments available, keep empty arrays
-            return {
-                disputeWindows,
-                stateProof: latestStateProof,
-                latestForkGenesisSnapshot
-            };
-        }
-
-        // Build disputes from local storage confirmations
-        for (const commitment of disputeCommitments) {
-            const confirmation =
-                stateManager.storage.disputes.getDisputeConfirmation(
-                    commitment
-                );
-            if (!confirmation) {
-                throw new Error(
-                    `Missing Data Availability for dispute commitment ${commitment}`
-                );
+        // Build disputes from local storage confirmations (if any)
+        const disputeWindows: DisputeStruct[] = [];
+        if (isDisputed && disputeCommitments && disputeCommitments.length > 0) {
+            for (const commitment of disputeCommitments) {
+                const confirmation =
+                    stateManager.storage.disputes.getDisputeConfirmation(
+                        commitment
+                    );
+                if (!confirmation) {
+                    throw new Error(
+                        `Missing Data Availability for dispute commitment ${commitment}`
+                    );
+                }
+                const dispute = Codec.decode(
+                    confirmation.signedDispute.encodedDispute,
+                    Type.Dispute
+                ) as DisputeStruct;
+                disputeWindows.push(dispute);
             }
-            const dispute = Codec.decode(
-                confirmation.signedDispute.encodedDispute,
-                Type.Dispute
-            ) as DisputeStruct;
-            disputeWindows.push(dispute);
+            console.log(
+                `Generated ${disputeWindows.length} disputes for fork ${forkId}`
+            );
         }
 
-        console.log(
-            `Generated ${disputeWindows.length} disputes for fork ${forkId}`
-        );
-
-        if (!latestForkGenesisSnapshot) {
-            throw new Error(`No genesis snapshot found for fork ${forkId}`);
-        }
-
+        // Return payload with all available data
         return {
-            disputeWindows,
-            stateProof: latestStateProof,
-            latestForkGenesisSnapshot
+            latestForkGenesisSnapshot,
+            ...(disputeWindows.length > 0 && { disputeWindows }),
+            ...(latestStateProof && { stateProof: latestStateProof }),
+            ...(encodedState && { encodedState })
         };
     }
 
@@ -251,7 +274,10 @@ class SpectateService extends ARpcService {
                 }
 
                 // No existing reduced result, use the disputes provided by participant
-                if (snapshotPayload.disputeWindows.length > 0) {
+                if (
+                    snapshotPayload.disputeWindows &&
+                    snapshotPayload.disputeWindows.length > 0
+                ) {
                     const creationTimestamp =
                         await stateManager.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
                             channelId,
@@ -301,17 +327,11 @@ class SpectateService extends ARpcService {
 
             console.log(`Verified fork ID matches: ${currentForkId}`);
 
-            // Store the participant's fork genesis snapshot to storage
-            stateManager.storage.stateSnapshots.storeStateSnapshot(
-                participantProvidedSnapshot,
-                { hash: participantProvidedSnapshot.hash }
-            );
-            console.log(
-                `Stored participant's fork genesis snapshot to storage`
-            );
-
             // Verify state proof to prove the latest state from the proven fork
-            if (snapshotPayload.stateProof.milestones.length > 0) {
+            if (
+                snapshotPayload.stateProof &&
+                snapshotPayload.stateProof.milestones.length > 0
+            ) {
                 console.log(`Verifying state proof from proven fork`);
 
                 // Get the latest state proof from the proven fork to compare with participant's state proof
@@ -336,6 +356,38 @@ class SpectateService extends ARpcService {
                 console.log(
                     `Verified state proof matches computed state proof`
                 );
+
+                // Verify the encoded state by generating a state proof from it and comparing
+                if (snapshotPayload.encodedState) {
+                    // Set the state machine to the provided encoded state
+                    await stateManager.diamondStateMachine.setState(
+                        snapshotPayload.encodedState
+                    );
+
+                    // Generate state proof from this encoded state
+                    const generatedStateProof =
+                        await stateManager.agreementManager.getStateProof(
+                            currentForkId,
+                            latestBlockHeight
+                        );
+
+                    // Compare with the provided state proof
+                    if (
+                        !isEqual(
+                            generatedStateProof,
+                            snapshotPayload.stateProof
+                        )
+                    ) {
+                        return {
+                            isValid: false,
+                            error: "Generated state proof from encoded state does not match provided state proof"
+                        };
+                    }
+
+                    console.log(
+                        `Verified encoded state by generating matching state proof`
+                    );
+                }
             }
 
             // Return the participant's fork genesis snapshot as the proven state
