@@ -13,7 +13,7 @@ import { isEqual } from "lodash";
 
 export interface SnapshotPayload {
     latestForkGenesisSnapshot: StateSnapshot;
-    disputeWindows?: DisputeStruct[];
+    disputeWindows?: DisputeStruct[][];
     stateProof?: StateProofStruct;
     encodedState?: Hash;
 }
@@ -178,42 +178,96 @@ class SpectateService extends ARpcService {
             }
         }
 
-        // Check if we have disputes and commitments for this fork
-        const isDisputed =
+        // Get current on-chain snapshot to start the fork traversal
+        const currentOnChainSnapshot = StateSnapshot.from(
+            await stateManager.stateChannelManagerContract.getStateSnapshot(
+                channelId
+            )
+        );
+
+        // Traverse from on-chain snapshot to latest fork, collecting disputes per dispute window
+        const disputeWindows: DisputeStruct[][] = [];
+        let currentForkId = currentOnChainSnapshot.forkId;
+        let isDisputed =
             await stateManager.stateChannelManagerContract.isForkDisputed(
                 channelId,
-                forkId
+                currentForkId
             );
-        const disputeCommitments = isDisputed
-            ? await stateManager.stateChannelManagerContract.getWindowCommitments(
-                  channelId,
-                  forkId
-              )
-            : [];
 
-        // Build disputes from local storage confirmations (if any)
-        const disputeWindows: DisputeStruct[] = [];
-        if (isDisputed && disputeCommitments && disputeCommitments.length > 0) {
-            for (const commitment of disputeCommitments) {
-                const confirmation =
-                    stateManager.storage.disputes.getDisputeConfirmation(
-                        commitment
+        while (isDisputed) {
+            // Check if reduced result already exists on-chain
+            const existingReducedResult =
+                await stateManager.stateChannelManagerContract.getReducedResult(
+                    channelId,
+                    currentForkId
+                );
+
+            if (existingReducedResult[0]) {
+                // Traverse to the reduced fork
+                currentForkId = existingReducedResult[0];
+                isDisputed =
+                    await stateManager.stateChannelManagerContract.isForkDisputed(
+                        channelId,
+                        currentForkId
                     );
-                if (!confirmation) {
-                    throw new Error(
-                        `Missing Data Availability for dispute commitment ${commitment}`
-                    );
-                }
-                const dispute = Codec.decode(
-                    confirmation.signedDispute.encodedDispute,
-                    Type.Dispute
-                ) as DisputeStruct;
-                disputeWindows.push(dispute);
+                continue;
             }
-            console.log(
-                `Generated ${disputeWindows.length} disputes for fork ${forkId}`
-            );
+
+            // No existing reduced result, collect disputes for this dispute window
+            const disputeCommitments =
+                await stateManager.stateChannelManagerContract.getWindowCommitments(
+                    channelId,
+                    currentForkId
+                );
+
+            if (disputeCommitments && disputeCommitments.length > 0) {
+                // Collect all disputes for this dispute window
+                const currentWindowDisputes: DisputeStruct[] = [];
+                for (const commitment of disputeCommitments) {
+                    const confirmation =
+                        stateManager.storage.disputes.getDisputeConfirmation(
+                            commitment
+                        );
+                    if (!confirmation) {
+                        throw new Error(
+                            `Missing Data Availability for dispute commitment ${commitment}`
+                        );
+                    }
+                    const dispute = Codec.decode(
+                        confirmation.signedDispute.encodedDispute,
+                        Type.Dispute
+                    ) as DisputeStruct;
+                    currentWindowDisputes.push(dispute);
+                }
+
+                disputeWindows.push(currentWindowDisputes);
+
+                // After collecting disputes for this window, reduce to get the next fork
+                const creationTimestamp =
+                    await stateManager.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
+                        channelId,
+                        currentForkId
+                    );
+                const reducedOutput =
+                    await stateManager.stateChannelManagerContract.reduceProxyView(
+                        currentWindowDisputes,
+                        creationTimestamp
+                    );
+
+                // Move to the next fork based on reduce result
+                currentForkId = reducedOutput.latestBlock.stateSnapshotHash;
+                isDisputed =
+                    await stateManager.stateChannelManagerContract.isForkDisputed(
+                        channelId,
+                        currentForkId
+                    );
+            } else {
+                // No disputes available, can't proceed
+                break;
+            }
         }
+
+        console.log(`Collected ${disputeWindows.length} dispute windows`);
 
         // Return payload with all available data
         return {
@@ -282,24 +336,27 @@ class SpectateService extends ARpcService {
                     snapshotPayload.disputeWindows &&
                     snapshotPayload.disputeWindows.length > 0
                 ) {
+                    // Pop the next dispute window
+                    const currentWindowDisputes =
+                        snapshotPayload.disputeWindows.shift()!;
+
                     const creationTimestamp =
                         await stateManager.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
                             channelId,
                             currentForkId
                         );
 
-                    // Use proxy view to compute reduced output
+                    // Reduce only this window
                     const reducedOutput =
                         await stateManager.stateChannelManagerContract.reduceProxyView(
-                            snapshotPayload.disputeWindows,
+                            currentWindowDisputes,
                             creationTimestamp
                         );
                     console.log(
                         `Computed reduced output: forkGenesisTimestamp=${reducedOutput.forkGenesisTimestamp}`
                     );
 
-                    // The reduced output gives us the next fork ID to traverse to
-                    // We can derive the fork ID from the reduced output's latest block
+                    // Move to next fork
                     const nextForkId =
                         reducedOutput.latestBlock.stateSnapshotHash;
                     currentForkId = nextForkId;
