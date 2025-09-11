@@ -101,6 +101,10 @@ class SpectateService extends ARpcService {
                 "Payload verification failed:",
                 verificationResult.error
             );
+            console.log(
+                "Disconnecting from all peers due to verification failure"
+            );
+            this.mainRpcService.p2pManager.disconnectAll();
             return;
         }
 
