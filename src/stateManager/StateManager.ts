@@ -490,16 +490,24 @@ class StateManager {
         // Encode data for multicall
         const callData: string[] = [];
         if (forkData) {
-            const forkCalldata =
-                this.stateChannelManagerContract.interface.encodeFunctionData(
-                    "updateStateSnapshotFork",
-                    [
-                        this.channelId,
-                        forkData.genesisSnapshot.toStruct(),
-                        forkData.exitBlocks
-                    ]
+            // Check if the fork update will result in the same fork as the target
+            if (forkData.genesisSnapshot.forkId === forkId) {
+                const forkCalldata =
+                    this.stateChannelManagerContract.interface.encodeFunctionData(
+                        "updateStateSnapshotFork",
+                        [
+                            this.channelId,
+                            forkData.genesisSnapshot.toStruct(),
+                            forkData.exitBlocks
+                        ]
+                    );
+                callData.push(forkCalldata);
+            } else {
+                // Fork update results in a different fork
+                throw new Error(
+                    `Fork mismatch: update will result in fork ${forkData.genesisSnapshot.forkId}, but target fork is ${forkId}.`
                 );
-            callData.push(forkCalldata);
+            }
         }
         if (sameForkData) {
             const sameForkCalldata =
