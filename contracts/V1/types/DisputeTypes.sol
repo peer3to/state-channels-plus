@@ -29,8 +29,6 @@ struct Dispute {
     bytes32 latestStateSnapshotHash;
     /// @notice State proof for the dispute
     StateProof stateProof;
-    /// @notice Fraud proofs for the dispute
-    FraudProof[] fraudProofs;
     /// @notice participants that were slashed on chain
     address[] onChainSlashes;
     /// @notice Hash of output state (latest on-chain state)

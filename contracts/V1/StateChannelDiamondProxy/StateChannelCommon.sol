@@ -21,7 +21,20 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return slashedParticipants;
     }
 
+    function isParticipantSlashedOnChain(bytes32 channelId, address participant) public view virtual returns (bool) {
+        address[] memory slashedParticipants = getOnChainSlashedParticipants(channelId);
+        for (uint256 i = 0; i < slashedParticipants.length; i++) {
+            if (slashedParticipants[i] == participant) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     function addOnChainSlashedParticipant(bytes32 channelId, address slashedParticipant) internal virtual {
+        if (isParticipantSlashedOnChain(channelId, slashedParticipant)) {
+            return; //already slashed
+        }
         disputeData[channelId].onChainSlashes.push(OnChainSlash(slashedParticipant, block.timestamp));
         emit OnChainSlashAdded(channelId, slashedParticipant, block.timestamp);
     }

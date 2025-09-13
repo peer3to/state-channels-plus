@@ -21,7 +21,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
         // ***************** Generate output snapshot ***************
         (SnapshotData memory outputSnapshotData, address[] memory slashes) = computeDisputeOutputSnapshotData(
             dispute.channelId,
-            dispute.fraudProofs,
             dispute.selfRemoval,
             dispute.onChainSlashes,
             dispute.disputer,
@@ -41,7 +40,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
     function computeDisputeOutputSnapshotData(
         bytes32 channelId,
-        FraudProof[] memory fraudProofs,
         bool selfRemoval,
         address[] memory onChainSlashes,
         address disputer,
@@ -51,10 +49,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
         bytes32 latestJoinChannelBlockHash
     ) public returns (SnapshotData memory outputSnapshotData, address[] memory slashes) {
         // TODO - DisputeStruct should be split into dispute.input and dispute.output so all these input fields are not expanded here
-        FraudProofVerificationContext memory proofContext = FraudProofVerificationContext({channelId: channelId});
-        slashes = StateChannelManagerProxy(address(this)).verifyFraudProofs(fraudProofs, proofContext);
-        slashes = StateChannelUtilLibrary.concatAddressArraysNoDuplicates(slashes, onChainSlashes);
-        address[] memory removals = _calculateRemovals(selfRemoval, disputer, fraudProofs, onChainSlashes, timeout);
+        slashes = onChainSlashes;
+        address[] memory removals = _calculateRemovals(selfRemoval, disputer, onChainSlashes, timeout);
 
         // Disputes don't apply joins directly, just reduce
         JoinChannelBlock[] memory emptyJoinChannelBlocks = new JoinChannelBlock[](0);
@@ -156,17 +152,16 @@ contract DisputeVerificationFacet is StateChannelCommon {
             }
 
             // ***** reducedOutput.slashedParticipants *****
-            for (uint256 j = 0; j < dispute.fraudProofs.length; j++) {
-                FraudProof memory fraudProof = dispute.fraudProofs[j];
+            for (uint256 j = 0; j < dispute.onChainSlashes.length; j++) {
                 bool isAlreadySlashed = false;
                 for (uint256 k = 0; k < slashCount; k++) {
-                    if (slashParticipants[k] == fraudProof.participant) {
+                    if (slashParticipants[k] == dispute.onChainSlashes[j]) {
                         isAlreadySlashed = true;
                         break;
                     }
                 }
                 if (!isAlreadySlashed) {
-                    slashParticipants[slashCount++] = fraudProof.participant;
+                    slashParticipants[slashCount++] = dispute.onChainSlashes[j];
                 }
             }
 
@@ -661,7 +656,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
     function _calculateRemovals(
         bool selfRemoval,
         address disputer,
-        FraudProof[] memory fraudProofs,
         address[] memory onChainSlashes,
         Timeout memory timeout
     ) internal view returns (address[] memory removals) {
@@ -673,7 +667,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             _removals[removalCount++] = disputer;
         }
         // Ignore timeout if unset or if there are slashes
-        if (fraudProofs.length == 0 && onChainSlashes.length == 0 && timeout.participant != address(0)) {
+        if (onChainSlashes.length == 0 && timeout.participant != address(0)) {
             _removals[removalCount++] = timeout.participant;
         }
 

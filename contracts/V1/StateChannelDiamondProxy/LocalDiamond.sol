@@ -186,7 +186,6 @@ contract LocalDiamond is StateChannelManagerProxy {
 
     function computeDisputeOutputSnapshotData(
         bytes32 channelId,
-        FraudProof[] memory fraudProofs,
         bool selfRemoval,
         address[] memory onChainSlashes,
         address disputer,
@@ -200,7 +199,6 @@ contract LocalDiamond is StateChannelManagerProxy {
             DisputeVerificationFacet.computeDisputeOutputSnapshotData,
             (
                 channelId,
-                fraudProofs,
                 selfRemoval,
                 onChainSlashes,
                 disputer,

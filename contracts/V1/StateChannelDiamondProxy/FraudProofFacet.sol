@@ -23,23 +23,25 @@ contract FraudProofFacet is StateChannelCommon {
     }
 
     //This is a bit inefficient, since public/external functions always do a deep copy unlike internal/private that pas by reference, but this shares the context
-    function verifyFraudProofs(
+    function applyFraudProofs(
         FraudProof[] memory fraudProofs,
         FraudProofVerificationContext memory fraudProofVerificationContext
-    ) public returns (address[] memory slashParticipants) {
+    ) public {
         FraudProof[] memory proofs = fraudProofs;
-        slashParticipants = new address[](proofs.length);
-        uint256 slashCount = 0;
         for (uint256 i = 0; i < proofs.length; i++) {
-            address slashedParticipant =
-                proofHandlers[proofs[i].proofType](proofs[i].encodedProof, fraudProofVerificationContext);
-            if (slashedParticipant == address(0) || slashedParticipant != proofs[i].participant) {
-                revert ErrorInvalidFraudProof();
+            if (!isParticipantSlashedOnChain(fraudProofVerificationContext.channelId, proofs[i].participant)) {
+                address slashedParticipant =
+                    proofHandlers[proofs[i].proofType](proofs[i].encodedProof, fraudProofVerificationContext);
+                if (slashedParticipant == address(0) || slashedParticipant != proofs[i].participant) {
+                    // slash the disputer
+                    slashedParticipant = msg.sender;
+                }
+                // if in (participants || pendingParticipants) && !slashedOnChain
+                if (_canParticipateInDisputes(fraudProofVerificationContext.channelId, slashedParticipant)) {
+                    addOnChainSlashedParticipant(fraudProofVerificationContext.channelId, slashedParticipant);
+                }
             }
-            slashParticipants[slashCount] = slashedParticipant;
-            slashCount++;
         }
-        return slashParticipants;
     }
 
     // ******************************* FRAUD PROOF IMPLEMENTATION *******************************

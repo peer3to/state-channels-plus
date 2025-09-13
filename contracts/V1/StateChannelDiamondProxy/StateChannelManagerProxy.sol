@@ -249,16 +249,14 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return (success, stateMachineImplementation.getState());
     }
 
-    function verifyFraudProofs(
+    function applyFraudProofs(
         FraudProof[] memory fraudProofs,
-        FraudProofVerificationContext memory fraudProofVerificationContext
-    ) public returns (address[] memory slashParticipants) {
-        bytes memory slashedParticipants = _delegatecall(
+        FraudProofVerificationContext memory fraudProofVerificationContext //TODO - think is it safe to expose this - currently I don't see any issue
+    ) public {
+        _delegatecall(
             address(fraudProofFacet),
-            abi.encodeCall(fraudProofFacet.verifyFraudProofs, (fraudProofs, fraudProofVerificationContext))
+            abi.encodeCall(fraudProofFacet.applyFraudProofs, (fraudProofs, fraudProofVerificationContext))
         );
-
-        return abi.decode(slashedParticipants, (address[]));
     }
 
     function verifyDisputeFraudProofs(DisputeFraudProof[] memory disputeFraudProofs)
