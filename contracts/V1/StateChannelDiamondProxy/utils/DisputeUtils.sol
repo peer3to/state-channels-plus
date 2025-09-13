@@ -4,11 +4,11 @@ import "../../types/DisputeTypes.sol";
 import "./BlockUtils.sol";
 
 function _getDisputeChannel(Dispute memory dispute) pure returns (bytes32) {
-    return dispute.channelId;
+    return dispute.input.channelId;
 }
 
 function _getDisputeFork(Dispute memory dispute) pure returns (bytes32) {
-    return dispute.genesisSnapshotDataHash;
+    return dispute.input.genesisSnapshotDataHash;
 }
 
 function _areDisputeAndBlockSameFork(Dispute memory dispute, Block memory _block) pure returns (bool) {

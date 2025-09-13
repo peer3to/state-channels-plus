@@ -73,7 +73,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (!_areDisputeAndBlockSameFork(dispute, thresholdBlock)) revert();
 
         // Check timeout == thresholdBlock
-        if (dispute.timeout.blockHeight != _getBlockHeight(thresholdBlock)) revert();
+        if (dispute.input.timeout.blockHeight != _getBlockHeight(thresholdBlock)) revert();
 
         //check correct snapshot
         if (!_doesBlockCommitToSnapshot(thresholdBlock, timeoutThresholdProof.latestStateSnapshot)) revert();
@@ -86,7 +86,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         (bool isValid,) = StateChannelUtilLibrary.verifyThresholdSigned(thresholdParticipants, encodedBlock, signatures);
         if (!isValid) revert();
 
-        return dispute.disputer;
+        return dispute.input.disputer;
     }
 
     function _handleTimeoutCalldataPosted(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -105,21 +105,21 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (!_areDisputeAndBlockSameFork(dispute, postedBlock)) revert();
 
         // Check timeout == postedBlock
-        if (dispute.timeout.blockHeight != _getBlockHeight(postedBlock)) revert();
+        if (dispute.input.timeout.blockHeight != _getBlockHeight(postedBlock)) revert();
 
         // Check timeout participant == block author
-        if (dispute.timeout.participant != _getBlockAuthor(postedBlock)) revert();
+        if (dispute.input.timeout.participant != _getBlockAuthor(postedBlock)) revert();
 
         // Check block calldata posted
         (bool isFound,) = getBlockCallDataCommitment(
             _getDisputeChannel(dispute),
             _getDisputeFork(dispute),
-            dispute.timeout.blockHeight,
-            dispute.timeout.participant
+            dispute.input.timeout.blockHeight,
+            dispute.input.timeout.participant
         );
         if (!isFound) revert();
 
-        return dispute.disputer;
+        return dispute.input.disputer;
     }
 
     function _handleTimeoutParticipantNotNext(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -130,11 +130,11 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // //Can be part of auditing instead of doing it here
         // bool hasBlock;
         // Block memory latestBlock;
-        // (hasBlock, latestBlock) = _getLatestBlock(dispute.stateProof);
-        // if (!hasBlock || _getBlockAuthor(latestBlock) == dispute.timeout.participant) revert();
+        // (hasBlock, latestBlock) = _getLatestBlock(dispute.input.stateProof);
+        // if (!hasBlock || _getBlockAuthor(latestBlock) == dispute.input.timeout.participant) revert();
 
-        // TODO - the check is -> proove latest state that the dispute commits to -> prove getNextToWrite(latestState) != dispute.timeout.participant
-        return dispute.disputer;
+        // TODO - the check is -> proove latest state that the dispute commits to -> prove getNextToWrite(latestState) != dispute.input.timeout.participant
+        return dispute.input.disputer;
     }
 
     function _handleTimeoutTooEarly(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -143,7 +143,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         //TODO
-        return dispute.disputer;
+        return dispute.input.disputer;
     }
 
     function _handleDisputeNotLatestState(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -154,7 +154,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         DisputeNotLatestStateProof memory disputeNotLatestStateProof =
             abi.decode(encodedFraudProof, (DisputeNotLatestStateProof));
         Block memory newerBlock = abi.decode(disputeNotLatestStateProof.encodedBlock, (Block));
-        (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.stateProof);
+        (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
 
         // Check newBlock same channelId
         if (!_areDisputeAndBlockSameChannel(dispute, newerBlock)) revert();
@@ -177,9 +177,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         address retrivedAddress = StateChannelUtilLibrary.retriveSignerAddress(
             disputeNotLatestStateProof.encodedBlock, disputeNotLatestStateProof.signature
         );
-        if (retrivedAddress != dispute.disputer) revert();
+        if (retrivedAddress != dispute.input.disputer) revert();
 
-        return dispute.disputer;
+        return dispute.input.disputer;
     }
 
     function _handleDisputeInvalid(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -188,7 +188,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         //TODO
-        return dispute.disputer;
+        return dispute.input.disputer;
     }
 
     function _handleDisputeInvalidRecursive(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -197,7 +197,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         //TODO
-        return dispute.disputer;
+        return dispute.input.disputer;
     }
 
     function _handleDisputeOutOfGas(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -206,7 +206,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         //TODO
-        return dispute.disputer;
+        return dispute.input.disputer;
     }
 
     function _handleDisputeInvalidOutputState(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -215,7 +215,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         //TODO
-        return dispute.disputer;
+        return dispute.input.disputer;
     }
 
     function _handleDisputeInvalidStateProof(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -224,7 +224,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         //TODO
-        return dispute.disputer;
+        return dispute.input.disputer;
     }
 
     function _handleDisputeInvalidPreviousRecursive(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -233,7 +233,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         //TODO
-        return dispute.disputer;
+        return dispute.input.disputer;
     }
 
     function _handleDisputeInvalidExitChannelBlocks(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -242,7 +242,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         //TODO
-        return dispute.disputer;
+        return dispute.input.disputer;
     }
 
     // function _handleTimeoutThreshold(

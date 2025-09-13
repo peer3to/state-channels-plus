@@ -94,10 +94,10 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 windowCreationTimestamp
     ) external {
         // Update dispute data based on the dispute commitment
-        bytes32 forkId = keccak256(abi.encode(dispute.genesisSnapshotDataHash));
+        bytes32 forkId = keccak256(abi.encode(dispute.input.genesisSnapshotDataHash));
         disputeData[channelId].disputeWindowMap[forkId].forkId = forkId;
         disputeData[channelId].disputeWindowMap[forkId].evidence.creationTimestamp = windowCreationTimestamp;
-        disputeData[channelId].disputeWindowMap[forkId].evidence.hasPosted[dispute.disputer] = true;
+        disputeData[channelId].disputeWindowMap[forkId].evidence.hasPosted[dispute.input.disputer] = true;
 
         bytes32 commitment = keccak256(abi.encode(dispute));
         disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments.push(commitment);
@@ -108,7 +108,7 @@ contract LocalDiamond is StateChannelManagerProxy {
             disputeData[channelId].disputeWindowMap[forkId].reducedResult.timestamp = disputeCreationTimestamp;
             disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkGenesisTimestamp =
                 disputeCreationTimestamp;
-            disputeData[channelId].disputeWindowMap[forkId].reducedResult.reducer = dispute.disputer;
+            disputeData[channelId].disputeWindowMap[forkId].reducedResult.reducer = dispute.input.disputer;
 
             // Clear dispute commitments (matches on-chain behavior)
             delete disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments;
@@ -185,11 +185,7 @@ contract LocalDiamond is StateChannelManagerProxy {
     }
 
     function computeDisputeOutputSnapshotData(
-        bytes32 channelId,
-        bool selfRemoval,
-        address[] memory onChainSlashes,
-        address disputer,
-        Timeout memory timeout,
+        DisputeInput memory disputeInput,
         StateSnapshot memory latestStateSnapshot,
         bytes memory latestStateMachineState,
         bytes32 latestJoinChannelBlockHash
@@ -197,16 +193,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         // Encode the function selector and arguments
         bytes memory data = abi.encodeCall(
             DisputeVerificationFacet.computeDisputeOutputSnapshotData,
-            (
-                channelId,
-                selfRemoval,
-                onChainSlashes,
-                disputer,
-                timeout,
-                latestStateSnapshot,
-                latestStateMachineState,
-                latestJoinChannelBlockHash
-            )
+            (disputeInput, latestStateSnapshot, latestStateMachineState, latestJoinChannelBlockHash)
         );
         // Perform the low-level call with a gas limit
         (bool success, bytes memory returnData) =

@@ -20,6 +20,14 @@ contract DisputeTypes {
 }
 
 struct Dispute {
+    // @notice Dispute input data
+    DisputeInput input;
+    /// @notice Hash of output state (latest on-chain state)
+    /// @dev created after from dispute resolution
+    bytes32 outputSnapshotDataHash;
+}
+
+struct DisputeInput {
     /// @notice Channel ID
     bytes32 channelId;
     /// @notice Hash of genesis state (previous dispute output or latest on-chain state)
@@ -31,9 +39,6 @@ struct Dispute {
     StateProof stateProof;
     /// @notice participants that were slashed on chain
     address[] onChainSlashes;
-    /// @notice Hash of output state (latest on-chain state)
-    /// @dev created after from dispute resolution
-    bytes32 outputSnapshotDataHash;
     /// @notice hash(DisputeAuditingData)
     bytes32 disputeAuditingDataHash;
     /// @notice Address of the disputer, this can be anyone who have a stake in the dispute on chain

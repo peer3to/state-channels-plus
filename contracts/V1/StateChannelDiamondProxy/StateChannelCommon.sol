@@ -169,7 +169,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     //stateless
 
     function isDisputeCommitted(Dispute memory dispute) internal view returns (bool) {
-        bytes32 channelId = dispute.channelId;
+        bytes32 channelId = dispute.input.channelId;
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[_getDisputeFork(dispute)];
         bytes32 commitment = keccak256(abi.encode(dispute));
