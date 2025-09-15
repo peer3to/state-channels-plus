@@ -10,7 +10,7 @@ import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
 import Storage from "@/storage";
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
-import { difference, isSubset } from "@/utils";
+import { Codec, difference, isSubset, Type } from "@/utils";
 import { BlockValidationResult, TimeConfig } from "@/types";
 import { Address, ChannelId, ForkId, Hash, Timestamp } from "@/types/types";
 
@@ -34,10 +34,24 @@ export default class DisputeValidationService {
     }
 
     async validateDisputeConfirmation(
-        dispute: DisputeConfirmationStruct,
+        disputeConfirmation: DisputeConfirmationStruct,
         onChainDisputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<void> {
-        if (!onChainDisputeAuditingData) {
+        const dispute = Codec.decode(
+            disputeConfirmation.signedDispute.encodedDispute,
+            Type.Dispute
+        );
+        if (onChainDisputeAuditingData) {
+            let isValid =
+                await this.diamondStateMachine.localDiamondContract.checkDisputeAuditingDataCommitment(
+                    dispute,
+                    onChainDisputeAuditingData
+                );
+            if (!isValid)
+                throw new Error(
+                    "validateDisputeConfirmation - sanity check failed for onChainDisputeAuditingData"
+                );
+        } else {
         }
     }
 }
