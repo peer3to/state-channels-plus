@@ -350,12 +350,12 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     function verifyMilestones(
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
-        StateSnapshot memory genesisSnapshot
+        SnapshotData memory genesisSnapshotData
     ) public returns (bool isValid, bytes memory lastBlockEncoded) {
         bytes memory result = _delegatecall(
             address(disputeVerificationFacet),
             abi.encodeCall(
-                disputeVerificationFacet.verifyMilestones, (milestoneProofs, milestoneSnapshots, genesisSnapshot)
+                disputeVerificationFacet.verifyMilestones, (milestoneProofs, milestoneSnapshots, genesisSnapshotData)
             )
         );
         return abi.decode(result, (bool, bytes));

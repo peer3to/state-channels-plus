@@ -49,7 +49,10 @@ contract StateSnapshotFacet is StateChannelCommon {
 
         require(currentStateSnapshot.forkId == newStateSnapshot.forkId, ErrorSnapshotForkMismatch());
         require(newStateSnapshot.blockHeight > currentStateSnapshot.blockHeight, ErrorBlockHeightTooOld());
-        require(_verifyMilestones(milestoneProofs, milestoneSnapshots, currentStateSnapshot), ErrorInvalidStateProof());
+        require(
+            _verifyMilestones(milestoneProofs, milestoneSnapshots, currentStateSnapshot.snapshotData),
+            ErrorInvalidStateProof()
+        );
 
         _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, exitChannelBlocks);
     }
@@ -76,10 +79,10 @@ contract StateSnapshotFacet is StateChannelCommon {
     function _verifyMilestones(
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
-        StateSnapshot memory genesisSnapshot
+        SnapshotData memory genesisSnapshotData
     ) internal returns (bool) {
         (bool isValid,) = StateChannelManagerProxy(address(this)).verifyMilestones(
-            milestoneProofs, milestoneSnapshots, genesisSnapshot
+            milestoneProofs, milestoneSnapshots, genesisSnapshotData
         );
         return isValid;
     }

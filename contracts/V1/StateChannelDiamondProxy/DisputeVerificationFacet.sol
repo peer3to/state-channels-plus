@@ -13,9 +13,9 @@ contract DisputeVerificationFacet is StateChannelCommon {
         onlySelf
         returns (address[] memory slashParticipants)
     {
-        require(_isCorrectAuditingData(dispute, disputeAuditingData), ErrorDisputeWrongAuditingData());
+        require(isCorrectAuditingData(dispute, disputeAuditingData), ErrorDisputeWrongAuditingData());
         require(_isCorrectGenesis(dispute), ErrorDisputeGenesisInvalid());
-        require(_verifyStateProof(dispute, disputeAuditingData), ErrorDisputeStateProofInvalid());
+        require(verifyStateProof(dispute, disputeAuditingData), ErrorDisputeStateProofInvalid());
         require(_verifyExitChannelBlocks(dispute, disputeAuditingData), ErrorDisputeExitChannelBlocksInvalid());
 
         // ***************** Generate output snapshot ***************
@@ -23,7 +23,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             dispute.input,
             disputeAuditingData.latestStateSnapshot,
             disputeAuditingData.latestStateStateMachineState,
-            disputeAuditingData.genesisStateSnapshot.snapshotData.latestJoinChannelBlockHash
+            disputeAuditingData.genesisStateSnapshotData.latestJoinChannelBlockHash
         );
 
         //verify outputStateSnapshot commitment
@@ -47,15 +47,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
             latestStateMachineState, disputeInput.onChainSlashes, removals, emptyJoinChannelBlocks, latestStateSnapshot
         );
         SnapshotData memory latestSnapshotData = latestStateSnapshot.snapshotData;
-        require(
-            _verifyBalanceInvariantCheck(
-                disputeInput.channelId,
-                latestSnapshotData.totalDeposits,
-                latestSnapshotData.totalWithdrawals,
-                latestSnapshotData.latestJoinChannelBlockHash
-            ),
-            ErrorDisputeBalanceInvariantInvalid()
-        );
 
         // ***************** Generate output snapshot ***************
         outputSnapshotData = SnapshotData({
@@ -376,21 +367,28 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
     // =============================== State Proofs Verification  ===============================
 
-    function _verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        internal
+    function verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+        public
         pure
-        returns (bool isValid)
+        returns (bool)
     {
-        //This runs after verifying auditingData and genesisStateSnapshot => we can skip those checks here
+        require(
+            dispute.input.genesisSnapshotDataHash == keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData)),
+            ErrorDisputeGenesisInvalid()
+        );
 
         bytes32 latestSnapshotDataHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData));
         bytes32 latestSnanpshotHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot));
+
+        if (dispute.input.stateProof.milestones.length != 0 && dispute.input.stateProof.signedBlocks.length != 0) {
+            return false;
+        }
 
         // Milestone checking
         (bool isValid, bytes memory lastBlockEncoded) = verifyMilestones(
             dispute.input.stateProof.milestones,
             disputeAuditingData.milestoneSnapshots,
-            disputeAuditingData.genesisStateSnapshot
+            disputeAuditingData.genesisStateSnapshotData
         );
         if (!isValid) {
             return false;
@@ -398,11 +396,13 @@ contract DisputeVerificationFacet is StateChannelCommon {
         // If no blocks in milestones
         if (lastBlockEncoded.length == 0) {
             if (dispute.input.stateProof.signedBlocks.length == 0) {
-                //no blocks at all => genesis == latest
-                if (
-                    dispute.input.genesisSnapshotDataHash != latestSnapshotDataHash
-                        || dispute.input.latestStateSnapshotHash != latestSnanpshotHash
-                ) return false;
+                // no blocks at all => genesis == latest
+                // Require the disputer to submit correct snapshots
+                require(
+                    dispute.input.genesisSnapshotDataHash == latestSnapshotDataHash
+                        && dispute.input.latestStateSnapshotHash == latestSnanpshotHash,
+                    ErrorIncorrectSnapshotProvided()
+                );
             } else {
                 //check if signedBlocks are linked, signed and build on genesis
                 if (
@@ -419,17 +419,13 @@ contract DisputeVerificationFacet is StateChannelCommon {
                 if (lastBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash) return false;
             }
         } else {
-            //check if signedBlocks are linked, signed and build on lastBlock from the milestones
-            if (!_areSignedBlocksLinkedAndVerified(dispute.input.stateProof.signedBlocks, keccak256(lastBlockEncoded)))
-            {
-                return false;
-            }
+            // - At least one milestone with at least one block -
+            // Think this will never trigger, since we only build signedBlocks if there is not finality (linked to genesis), otherwise the latest state is included in a milestone
+            // TODO - think could this be exploited
 
-            //check if lastBlock commits to the latestStateSnapshot
-            if (dispute.input.stateProof.signedBlocks.length != 0) {
-                lastBlockEncoded =
-                    dispute.input.stateProof.signedBlocks[dispute.input.stateProof.signedBlocks.length - 1].encodedBlock;
-            }
+            // This check is redundant since we already have this check at the beginning of the function, but have it here for clarity
+            if (dispute.input.stateProof.signedBlocks.length != 0) return false;
+
             Block memory lastBlock = abi.decode(lastBlockEncoded, (Block));
             //check if lastBlock commits to the latestStateSnapshot
             if (lastBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash) {
@@ -437,24 +433,21 @@ contract DisputeVerificationFacet is StateChannelCommon {
             }
         }
         //check commitment to latestStateSnapshot
-        if (dispute.input.latestStateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))) {
-            return false;
-        }
-        //check commitment to latestStateStateMachineState
-        if (
-            disputeAuditingData.latestStateSnapshot.snapshotData.stateMachineStateHash
-                != keccak256(disputeAuditingData.latestStateStateMachineState)
-        ) return false;
+        require(
+            dispute.input.latestStateSnapshotHash == keccak256(abi.encode(disputeAuditingData.latestStateSnapshot)),
+            ErrorIncorrectSnapshotProvided()
+        );
+
         return true;
     }
 
-    function _isMilestoneFinal(StateSnapshot memory genesisSnapshot, MilestoneProof memory milestone)
+    function _isMilestoneFinal(SnapshotData memory genesisSnapshotData, MilestoneProof memory milestone)
         internal
         pure
         returns (bool isFinal, bytes32 finalizedSnapshotHash)
     {
-        bytes32 genesisForkId = genesisSnapshot.forkId;
-        address[] memory expectedParticipants = genesisSnapshot.snapshotData.participants;
+        bytes32 genesisForkId = keccak256(abi.encode(genesisSnapshotData));
+        address[] memory expectedParticipants = genesisSnapshotData.participants;
         address[] memory thresholdSet = new address[](expectedParticipants.length);
         uint256 thresholdCount = 0;
         bytes memory previousEncodedBlock;
@@ -504,26 +497,29 @@ contract DisputeVerificationFacet is StateChannelCommon {
     function verifyMilestones(
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
-        StateSnapshot memory genesisSnapshot
+        SnapshotData memory genesisSnapshotData
     ) public pure returns (bool isValid, bytes memory lastBlockEncoded) {
-        StateSnapshot memory snapshot = genesisSnapshot;
+        SnapshotData memory snapshotData = genesisSnapshotData;
         lastBlockEncoded = "";
 
         // For K milestones, K-1 snapshots are needed to prove the last milestone is final, but for cleaner code we include the K-th snapshot too, even though it doesn't have to be used
         if (milestoneProofs.length != milestoneSnapshots.length) {
-            return (false, "");
+            return (false, lastBlockEncoded);
         }
 
         for (uint256 i = 0; i < milestoneProofs.length; i++) {
             MilestoneProof memory milestone = milestoneProofs[i];
-            (bool isFinal, bytes32 finalizedSnapshotHash) = _isMilestoneFinal(snapshot, milestone);
+            (bool isFinal, bytes32 finalizedSnapshotHash) = _isMilestoneFinal(snapshotData, milestone);
             if (!isFinal) {
-                return (false, "");
+                return (false, lastBlockEncoded);
             }
-            if (keccak256(abi.encode(milestoneSnapshots[i])) != finalizedSnapshotHash) {
-                return (false, "");
-            }
-            snapshot = milestoneSnapshots[i];
+            // isFinal - since this runs in isolation now (not atomically with auditing where everthing is checked), revert the transaction if the disputer didn't provide the correct snapshot
+            // Since it's final, the disputer for sure has the correct snapshot, so we can just revert if it's not provided
+            require(
+                keccak256(abi.encode(milestoneSnapshots[i])) == finalizedSnapshotHash, ErrorIncorrectSnapshotProvided()
+            );
+
+            snapshotData = milestoneSnapshots[i].snapshotData;
             if (i == milestoneProofs.length - 1 && milestone.blockConfirmations.length > 0) {
                 lastBlockEncoded =
                     milestone.blockConfirmations[milestone.blockConfirmations.length - 1].signedBlock.encodedBlock;
@@ -561,8 +557,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         returns (bool)
     {
         //check joinChannelBlocks (linked to latestSateSnapshot, chained internally and outputStateSnapshot commits to the head)
-        bytes32 previousExitChannelBlockHash =
-            disputeAuditingData.genesisStateSnapshot.snapshotData.latestExitChannelBlockHash;
+        bytes32 previousExitChannelBlockHash = disputeAuditingData.genesisStateSnapshotData.latestExitChannelBlockHash;
         for (uint256 i = 0; i < disputeAuditingData.exitChannelBlocks.length; i++) {
             if (previousExitChannelBlockHash != disputeAuditingData.exitChannelBlocks[i].previousBlockHash) {
                 return false;
@@ -574,12 +569,12 @@ contract DisputeVerificationFacet is StateChannelCommon {
     }
 
     /// @dev Verify latestState balance invariant - output state is calculated with correct state transition that's audited -> if input is ok -> output is ok
-    function _verifyBalanceInvariantCheck(
+    function verifyBalanceInvariantCheck(
         bytes32 channelId,
         Balance memory totalDeposits,
         Balance memory totalWithdrawals,
         bytes32 latestJoinChannelBlockHash
-    ) internal view returns (bool) {
+    ) public view returns (bool) {
         ChannelBalance storage channelBalance = channelBalances[channelId];
         Balance memory onChainDeposits = channelBalance.onChainJoinChannelMap[latestJoinChannelBlockHash].totalDeposits;
         Balance memory onChainWithdrawals = channelBalance.totalOnChainWithdrawals;
@@ -666,31 +661,78 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return removals;
     }
 
-    function _isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        internal
-        view
+    function checkDisputeAuditingDataCommitment(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+        public
+        pure
         returns (bool)
     {
-        //check dispute commits to disputeData
-        if (dispute.input.disputeAuditingDataHash != keccak256(abi.encode(disputeAuditingData))) {
+        return dispute.input.disputeAuditingDataHash == keccak256(abi.encode(disputeAuditingData));
+    }
+
+    function isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+        public
+        pure
+        returns (bool)
+    {
+        // Doesn't check data integrity (disputeAuditingDataHash == hash(disputeAuditingData))
+
+        // Check dispute commits to genesisStateSnapshot
+        if (
+            dispute.input.genesisSnapshotDataHash != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData))
+        ) return false;
+
+        // Check latestStateSnapshot
+        (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
+        if (hasBlock && latestBlock.stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot)))
+        {
             return false;
         }
-        //check dispute commits to genesisStateSnapshot
         if (
-            dispute.input.genesisSnapshotDataHash
-                != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshot.snapshotData))
+            !hasBlock
+                && dispute.input.genesisSnapshotDataHash
+                    != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData))
         ) {
             return false;
         }
-        //check latestStateSnapshot
-        if (dispute.input.latestStateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))) {
-            return false;
+
+        // Check milestones
+        Block[] memory milestoneBlocks = _getMilestoneBlocks(dispute.input.stateProof);
+        if (milestoneBlocks.length != disputeAuditingData.milestoneSnapshots.length) return false;
+        for (uint256 i = 0; i < milestoneBlocks.length; i++) {
+            if (
+                milestoneBlocks[i].stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.milestoneSnapshots[i]))
+            ) {
+                return false;
+            }
         }
-        //check latestStateStateMachineState
+
+        // Check latest stateMachineState
         if (
             disputeAuditingData.latestStateSnapshot.snapshotData.stateMachineStateHash
                 != keccak256(disputeAuditingData.latestStateStateMachineState)
         ) return false;
+
+        // Check exitChannelBlocks
+        if (!_verifyExitChannelBlocks(dispute, disputeAuditingData)) return false;
+
         return true;
+    }
+
+    function isDisputeOutputCorrect(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+        public
+        returns (bool)
+    {
+        // It's anoying that this function can not be view/pure since the way we modify encoedState is semanticaly 'stateful' even though logicaly it's stateless
+
+        // ***************** Generate output snapshot ***************
+        (SnapshotData memory outputSnapshotData, address[] memory slashes) = computeDisputeOutputSnapshotData(
+            dispute.input,
+            disputeAuditingData.latestStateSnapshot,
+            disputeAuditingData.latestStateStateMachineState,
+            disputeAuditingData.genesisStateSnapshotData.latestJoinChannelBlockHash
+        );
+
+        //verify outputStateSnapshot commitment
+        return (keccak256(abi.encode(outputSnapshotData)) == dispute.outputSnapshotDataHash);
     }
 }

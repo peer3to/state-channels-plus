@@ -112,7 +112,7 @@ struct OnChainSlash {
 /// @dev data for dispute auditing
 
 struct DisputeAuditingData {
-    StateSnapshot genesisStateSnapshot;
+    SnapshotData genesisStateSnapshotData;
     StateSnapshot latestStateSnapshot;
     StateSnapshot[] milestoneSnapshots; //for K milestones there will be K-1 snapshots, since the first milestone is the genesisSnapshot
     bytes latestStateStateMachineState;

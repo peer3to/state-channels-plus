@@ -14,6 +14,7 @@ error ErrorLastSnapshotDoesNotMatchGenesis();
 error ErrorSnapshotsNotProvided();
 error ErrorSnapshotForkMismatch();
 error ErrorBlockHeightTooOld();
+error ErrorIncorrectSnapshotProvided();
 
 //Join channel
 error ErrorJoinChannelExpired();
