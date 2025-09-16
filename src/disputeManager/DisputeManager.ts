@@ -15,13 +15,15 @@ import {
     SignatureUtils
 } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
-import { Address, ChannelId, ForkId } from "../types/types";
+import { Address, Bytes, ChannelId, ForkId } from "../types/types";
 import { StateSnapshot } from "../models";
 import Storage from "@/storage";
 import ADiamondStateMachine from "../ADiamondStateMachine";
 import {
     DisputeAuditingDataStruct,
     DisputeInputStruct,
+    ExitChannelBlockStruct,
+    SnapshotDataStruct,
     StateProofStruct,
     TimeoutStruct
 } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
@@ -149,10 +151,15 @@ class DisputeManager {
         }
 
         // AuditingData
-        const disputeAuditingData: DisputeAuditingDataStruct =
-            this.getAuditingData(forkId, stateProof);
+        const { isPartial, auditingData } = this.getAuditingData(
+            forkId,
+            stateProof
+        );
+        if (isPartial)
+            throw new Error("createDispute - isPartial auditingData");
+
         const disputeAuditingDataHash = hash(
-            Codec.encode(disputeAuditingData, Type.DisputeAuditingData)
+            Codec.encode(auditingData, Type.DisputeAuditingData)
         );
 
         // disputer
@@ -176,8 +183,7 @@ class DisputeManager {
                 disputeInput,
                 latestStateSnapshot.toStruct(),
                 latestStateMachineState,
-                disputeAuditingData.genesisStateSnapshotData
-                    .latestJoinChannelBlockHash // latestJoinChannelBlockHash
+                auditingData.genesisStateSnapshotData.latestJoinChannelBlockHash // latestJoinChannelBlockHash
             );
         const outputSnapshotDataHash = hash(
             Codec.encode(outputSnapshotData, Type.SnapshotData)
@@ -209,19 +215,11 @@ class DisputeManager {
         this.stateChannelManagerContract.uploadDispute(disputeConfirmation);
     }
 
-    public getDisputeAuditingData(
-        dispute: DisputeStruct
-    ): DisputeAuditingDataStruct {
-        return this.getAuditingData(
-            dispute.input.genesisSnapshotDataHash,
-            dispute.input.stateProof
-        );
-    }
-
-    private getAuditingData(
+    public getAuditingData(
         forkId: ForkId,
         stateProof: StateProofStruct
-    ): DisputeAuditingDataStruct {
+    ): { isPartial: boolean; auditingData: DisputeAuditingDataStruct } {
+        let isPartial = false;
         // genesisStateSnapshot
         const genesisStateSnapshot =
             this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
@@ -229,6 +227,17 @@ class DisputeManager {
             throw new Error(
                 "getDisputeAuditingData - genesisStateSnapshot not found"
             );
+
+        // milestoneSnapshots
+        const milestoneSnapshots: StateSnapshot[] = [];
+        for (const milestone of stateProof.milestones) {
+            const snapshot =
+                this.agreementManager.getSnapshotFromMilestone(milestone);
+            if (!snapshot) {
+                isPartial = true;
+                milestoneSnapshots.push(genesisStateSnapshot); // this is just to push something to satisfy the soldity length requirement in `verifyMilestone`
+            } else milestoneSnapshots.push(snapshot);
+        }
 
         // latestStateSnapshot
         const latestBlock =
@@ -240,11 +249,10 @@ class DisputeManager {
             const snapshot = this.storage.stateSnapshots.getStateSnapshotByHash(
                 latestBlock.hash
             );
-            if (!snapshot)
-                throw new Error(
-                    "getDisputeAuditingData - latestStateSnapshot not found"
-                );
-            latestStateSnapshot = snapshot;
+            if (!snapshot) {
+                isPartial = true;
+                latestStateSnapshot = genesisStateSnapshot; // just to use the field, verifyStateProof check will fail up to this point
+            } else latestStateSnapshot = snapshot;
         }
 
         // latestStateStateMachineState
@@ -257,14 +265,6 @@ class DisputeManager {
                 "getDisputeAuditingData - latestStateStateMachineState not found"
             );
 
-        // milestoneSnapshots
-        const milestoneSnapshots: StateSnapshot[] = [];
-        for (const milestone of stateProof.milestones) {
-            const snapshot =
-                this.agreementManager.getSnapshotFromMilestone(milestone);
-            milestoneSnapshots.push(snapshot);
-        }
-
         // exitChannelBlocks
         const fromBlockHash = latestStateSnapshot.latestExitBlockHash;
         const toBlockHash = genesisStateSnapshot.latestExitBlockHash;
@@ -275,13 +275,16 @@ class DisputeManager {
             );
 
         return {
-            genesisStateSnapshotData: genesisStateSnapshot.snapshotData,
-            latestStateSnapshot: latestStateSnapshot.toStruct(),
-            latestStateStateMachineState: latestStateStateMachineState,
-            milestoneSnapshots: milestoneSnapshots.map((snapshot) =>
-                snapshot.toStruct()
-            ),
-            exitChannelBlocks: exitChannelBlocks
+            isPartial,
+            auditingData: {
+                genesisStateSnapshotData: genesisStateSnapshot.snapshotData,
+                latestStateSnapshot: latestStateSnapshot.toStruct(),
+                latestStateStateMachineState: latestStateStateMachineState,
+                milestoneSnapshots: milestoneSnapshots.map((snapshot) =>
+                    snapshot.toStruct()
+                ),
+                exitChannelBlocks: exitChannelBlocks
+            }
         };
     }
 

@@ -258,6 +258,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         );
     }
 
+    // Data provided from the latestStateSnapshot
     function verifyBalanceInvariantCheck(
         bytes32 channelId,
         Balance memory totalDeposits,
@@ -279,12 +280,12 @@ contract LocalDiamond is StateChannelManagerProxy {
         return abi.decode(returnData, (bool));
     }
 
-    function verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        public
-        view
-        returns (bool)
-    {
+    function verifyStateProof(
+        Dispute memory dispute,
+        DisputeAuditingData memory disputeAuditingData,
+        bool auditingDataIntegrityVerified
+    ) public view returns (bool) {
         // The underlying function is pure, so no need for a delegatecall
-        return disputeVerificationFacet.verifyStateProof(dispute, disputeAuditingData);
+        return disputeVerificationFacet.verifyStateProof(dispute, disputeAuditingData, auditingDataIntegrityVerified);
     }
 }

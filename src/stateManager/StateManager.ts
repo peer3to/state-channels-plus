@@ -148,7 +148,9 @@ class StateManager {
             this.stateChannelManagerContract,
             this.timeConfig,
             this.channelId,
-            () => this.forkId
+            () => this.forkId,
+            this.disputeManager,
+            this.agreementManager
         );
     }
     //Mark resources for garbage collection
@@ -548,6 +550,10 @@ class StateManager {
                 const snapshot =
                     this.agreementManager.getSnapshotFromMilestone(
                         milestoneProof
+                    );
+                if (!snapshot)
+                    throw new Error(
+                        "Milestone built but corresponding snapshot not found"
                     );
 
                 // Only include milestones that are newer than the current on-chain block height

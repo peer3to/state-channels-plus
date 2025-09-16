@@ -15,7 +15,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
     {
         require(isCorrectAuditingData(dispute, disputeAuditingData), ErrorDisputeWrongAuditingData());
         require(_isCorrectGenesis(dispute), ErrorDisputeGenesisInvalid());
-        require(verifyStateProof(dispute, disputeAuditingData), ErrorDisputeStateProofInvalid());
+        require(verifyStateProof(dispute, disputeAuditingData, true), ErrorDisputeStateProofInvalid());
         require(_verifyExitChannelBlocks(dispute, disputeAuditingData), ErrorDisputeExitChannelBlocksInvalid());
 
         // ***************** Generate output snapshot ***************
@@ -367,15 +367,23 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
     // =============================== State Proofs Verification  ===============================
 
-    function verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        public
-        pure
-        returns (bool)
-    {
-        require(
-            dispute.input.genesisSnapshotDataHash == keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData)),
-            ErrorDisputeGenesisInvalid()
-        );
+    function verifyStateProof(
+        Dispute memory dispute,
+        DisputeAuditingData memory disputeAuditingData,
+        bool auditingDataIntegrityVerified
+    ) public pure returns (bool) {
+        if (auditingDataIntegrityVerified) {
+            if (
+                dispute.input.genesisSnapshotDataHash
+                    != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData))
+            ) return false;
+        } else {
+            require(
+                dispute.input.genesisSnapshotDataHash
+                    == keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData)),
+                ErrorDisputeGenesisInvalid()
+            );
+        }
 
         bytes32 latestSnapshotDataHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData));
         bytes32 latestSnanpshotHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot));
@@ -397,12 +405,18 @@ contract DisputeVerificationFacet is StateChannelCommon {
         if (lastBlockEncoded.length == 0) {
             if (dispute.input.stateProof.signedBlocks.length == 0) {
                 // no blocks at all => genesis == latest
-                // Require the disputer to submit correct snapshots
-                require(
-                    dispute.input.genesisSnapshotDataHash == latestSnapshotDataHash
-                        && dispute.input.latestStateSnapshotHash == latestSnanpshotHash,
-                    ErrorIncorrectSnapshotProvided()
-                );
+                if (auditingDataIntegrityVerified) {
+                    if (
+                        dispute.input.genesisSnapshotDataHash != latestSnapshotDataHash
+                            || dispute.input.latestStateSnapshotHash != latestSnanpshotHash
+                    ) return false;
+                } else {
+                    require(
+                        dispute.input.genesisSnapshotDataHash == latestSnapshotDataHash
+                            && dispute.input.latestStateSnapshotHash == latestSnanpshotHash,
+                        ErrorIncorrectSnapshotProvided()
+                    );
+                }
             } else {
                 //check if signedBlocks are linked, signed and build on genesis
                 if (
@@ -432,12 +446,13 @@ contract DisputeVerificationFacet is StateChannelCommon {
                 return false;
             }
         }
-        //check commitment to latestStateSnapshot
-        require(
-            dispute.input.latestStateSnapshotHash == keccak256(abi.encode(disputeAuditingData.latestStateSnapshot)),
-            ErrorIncorrectSnapshotProvided()
-        );
-
+        if (auditingDataIntegrityVerified) {
+            //check commitment to latestStateSnapshot
+            if (dispute.input.latestStateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot)))
+            {
+                return false;
+            }
+        }
         return true;
     }
 
@@ -683,8 +698,13 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         // Check latestStateSnapshot
         (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
-        if (hasBlock && latestBlock.stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot)))
-        {
+        if (
+            hasBlock
+                && (
+                    latestBlock.stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))
+                        || latestBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash
+                )
+        ) {
             return false;
         }
         if (
