@@ -1,5 +1,5 @@
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Address, Bytes, ChannelId, ForkId, Hash } from "./types/types";
+import { Address, Bytes, ChannelId, Hash } from "./types/types";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { LocalDiamond } from "@typechain-types/index";
 import {

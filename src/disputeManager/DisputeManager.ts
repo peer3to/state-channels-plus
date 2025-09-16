@@ -1,7 +1,10 @@
 import { ethers } from "ethers";
 import AgreementManager from "../agreementManager";
 import { StateChannelManagerProxy } from "@typechain-types";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    DisputeConfirmationStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import {
     DebugProxy,
     hash,
@@ -18,13 +21,12 @@ import Storage from "@/storage";
 import ADiamondStateMachine from "../ADiamondStateMachine";
 import {
     DisputeAuditingDataStruct,
-    FraudProofStruct,
     StateProofStruct,
     TimeoutStruct
 } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 import Clock from "../Clock";
-import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 import { BytesLike } from "ethers";
+import { FraudProofStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/FraudProofFacet";
 
 let DEBUG_DISPUTE_HANDLER = true;
 
@@ -171,7 +173,6 @@ class DisputeManager {
         const outputSnapshotData =
             await this.diamondStateMachine.computeDisputeOutputSnapshotData(
                 this.channelId,
-                fraudProofs,
                 selfRemoval,
                 Array.from(onChainSlashes),
                 disputer,
@@ -186,17 +187,18 @@ class DisputeManager {
         );
 
         const dispute: DisputeStruct = {
-            channelId: this.channelId,
-            genesisSnapshotDataHash: forkId,
-            latestStateSnapshotHash: latestStateSnapshot.hash,
-            stateProof: stateProof,
-            fraudProofs: fraudProofs,
-            onChainSlashes: Array.from(onChainSlashes),
-            outputSnapshotDataHash: outputSnapshotDataHash,
-            disputeAuditingDataHash: disputeAuditingDataHash,
-            disputer: disputer,
-            timeout: timeoutStruct,
-            selfRemoval: selfRemoval
+            input: {
+                channelId: this.channelId,
+                genesisSnapshotDataHash: forkId,
+                latestStateSnapshotHash: latestStateSnapshot.hash,
+                stateProof: stateProof,
+                onChainSlashes: Array.from(onChainSlashes),
+                disputeAuditingDataHash: disputeAuditingDataHash,
+                disputer: disputer,
+                timeout: timeoutStruct,
+                selfRemoval: selfRemoval
+            },
+            outputSnapshotDataHash: outputSnapshotDataHash
         };
 
         // ****** TODO - run auditing as a sanity check *******
@@ -209,7 +211,7 @@ class DisputeManager {
             dispute,
             this.signer
         );
-        const disputeConfirmationn: DisputeConfirmationStruct = {
+        const disputeConfirmation: DisputeConfirmationStruct = {
             signedDispute: {
                 encodedDispute: signedDispute.encoded,
                 signature: signedDispute.signature as BytesLike
@@ -217,15 +219,15 @@ class DisputeManager {
             signatures: []
         };
 
-        this.stateChannelManagerContract.uploadDispute(disputeConfirmationn);
+        this.stateChannelManagerContract.uploadDispute(disputeConfirmation);
     }
 
     public getDisputeAuditingData(
         dispute: DisputeStruct
     ): DisputeAuditingDataStruct {
         return this.getAuditingData(
-            dispute.genesisSnapshotDataHash,
-            dispute.stateProof
+            dispute.input.genesisSnapshotDataHash,
+            dispute.input.stateProof
         );
     }
 
@@ -305,6 +307,14 @@ class DisputeManager {
             previousBlockProducer: ethers.ZeroAddress,
             previousBlockProducerPostedCalldata: false
         };
+    }
+
+    public setChannelId(channelId: ChannelId) {
+        this.channelId = channelId;
+    }
+
+    public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
+        this.p2pEventHooks = p2pEventHooks;
     }
 }
 

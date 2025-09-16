@@ -30,7 +30,7 @@ import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
 import AgreementManager from "../agreementManager/AgreementManager";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
-import DisputeManager from "@/disputeManager/DisputeManager";
+import DisputeManager from "@/disputeManager";
 import P2PManager from "@/P2PManager";
 import StateChannelEventListener from "@/StateChannelEventListener";
 import ValidationService from "./ValidationService";
@@ -1012,12 +1012,12 @@ class StateManager {
 
         if (remainingDelay <= 0) {
             // Time has fully elapsed - create dispute immediately
-            this.disputeManager.createDispute(
-                forkId,
-                participantAddress,
-                blockHeight,
-                []
-            );
+            this.disputeManager.createDispute(forkId, false, {
+                blockHeightToTimeout: blockHeight + 1,
+                isForced: false,
+                previousBlockProducer: participantAddress,
+                previousBlockProducerPostedCalldata: false
+            });
             console.log(
                 `Timeout dispute created for participant: ${participantAddress}`
             );
@@ -1188,7 +1188,7 @@ class StateManager {
         // step 4 - persist state machine state
         this.storage.stateMachineStates.storeStateMachineState(
             encodedStateMachineState,
-            { hash: stateSnapshot.snapshotData.stateMachineStateHash }
+            { hash: stateSnapshot.stateMachineStateHash }
         );
 
         // step 5 - persist the exit channel blocks if any
