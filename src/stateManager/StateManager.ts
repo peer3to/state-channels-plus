@@ -505,120 +505,124 @@ class StateManager {
         }
     }
 
-    public async postStateSnapshot(
-        milestoneProofs: MilestoneProofStruct[],
-        milestoneSnapshots: StateSnapshot[],
-        exitChannelBlocks: ExitChannelBlockStruct[] = []
-    ) {
-        // Get on-chain state
-        const onChainforkId = await this.stateChannelManagerContract.getforkId(
-            this.channelId
-        );
-        const onChainDisputeLength =
-            await this.stateChannelManagerContract.getDisputeLength(
+    public async postStateSnapshot(forkId: ForkId): Promise<void> {
+        // Get the current on-chain snapshot to check if we're on the same fork
+        const currentOnChainSnapshot = StateSnapshot.from(
+            await this.stateChannelManagerContract.getStateSnapshot(
                 this.channelId
-            );
-
-        if (onChainDisputeLength == onChainforkId) {
-            // Call contract without dispute
-            return this.stateChannelManagerContract.updateStateSnapshotWithoutDispute(
-                this.channelId,
-                milestoneProofs,
-                milestoneSnapshots,
-                exitChannelBlocks
-            );
-        }
-
-        // Need to include a dispute
-        const disputeData = this.agreementManager.forks.getLatestDispute();
-        if (!disputeData) {
-            throw new Error(
-                "No dispute data available but dispute length > fork count"
-            );
-        }
-
-        // Get output state snapshot data
-        const encodedDispute = Codec.encode(disputeData.dispute, Type.Dispute);
-        const commitment = ethers.keccak256(
-            ethers.AbiCoder.defaultAbiCoder().encode(
-                ["bytes", "uint256"],
-                [encodedDispute, disputeData.timestamp]
             )
         );
 
-        const outputStateSnapshot =
-            this.outputStateSnapshotData.get(commitment);
-        if (!outputStateSnapshot) {
-            throw new Error("No output state snapshot data available");
+        // If we're on the same fork, call updateStateSnapshotSameFork directly
+        if (currentOnChainSnapshot.forkId === forkId) {
+            const sameForkData =
+                await this.prepareUpdateSnapshotSameFork(forkId);
+            if (sameForkData) {
+                try {
+                    const txResponse =
+                        await this.stateChannelManagerContract.updateStateSnapshotSameFork(
+                            this.channelId,
+                            sameForkData.milestoneProofs,
+                            sameForkData.milestoneSnapshots.map((snapshot) =>
+                                snapshot.toStruct()
+                            ),
+                            sameForkData.exitChannelBlocks
+                        );
+                    await txResponse.wait();
+                    console.log("Successfully posted state snapshot");
+                } catch (error) {
+                    if (isCustomEvmError(error)) {
+                        console.error(
+                            "Error posting state snapshot:",
+                            error.errorDescription
+                        );
+                    } else {
+                        console.error("Error posting state snapshot:", error);
+                    }
+                    throw error;
+                }
+            } else {
+                console.log("No state snapshot updates needed");
+            }
+            return;
         }
 
-        const disputeProof: DisputeProofStruct = {
-            dispute: disputeData.dispute,
-            outputStateSnapshot: outputStateSnapshot,
-            timestamp: disputeData.timestamp,
-            signatures: []
-        };
+        // Different fork - use multicall for both fork update and same-fork update
+        const forkData = await this.prepareUpdateStateSnapshotFork();
+        const sameForkData = await this.prepareUpdateSnapshotSameFork(forkId);
 
-        // Check if dispute is within agreement time
-        const currentTime = Clock.getTimeInSeconds();
-        const timeSinceDispute = currentTime - disputeData.timestamp;
-
-        if (timeSinceDispute > this.timeConfig.challengeTime) {
-            // dispute is already finalized, no need for threshold finaliztion
-            return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
-                this.channelId,
-                milestoneProofs,
-                milestoneSnapshots,
-                disputeProof,
-                exitChannelBlocks
-            );
+        // Encode data for multicall
+        const callData: string[] = [];
+        if (forkData) {
+            // Check if the fork update will result in the same fork as the target
+            if (forkData.genesisSnapshot.forkId === forkId) {
+                const forkCalldata =
+                    this.stateChannelManagerContract.interface.encodeFunctionData(
+                        "updateStateSnapshotFork",
+                        [
+                            this.channelId,
+                            forkData.genesisSnapshot.toStruct(),
+                            forkData.exitBlocks
+                        ]
+                    );
+                callData.push(forkCalldata);
+            } else {
+                // Fork update results in a different fork
+                throw new Error(
+                    `Fork mismatch: update will result in fork ${forkData.genesisSnapshot.forkId}, but target fork is ${forkId}.`
+                );
+            }
+        }
+        if (sameForkData) {
+            const sameForkCalldata =
+                this.stateChannelManagerContract.interface.encodeFunctionData(
+                    "updateStateSnapshotSameFork",
+                    [
+                        this.channelId,
+                        sameForkData.milestoneProofs,
+                        sameForkData.milestoneSnapshots.map((snapshot) =>
+                            snapshot.toStruct()
+                        ),
+                        sameForkData.exitChannelBlocks
+                    ]
+                );
+            callData.push(sameForkCalldata);
         }
 
-        // Check if we have threshold signatures on the dispute
-        const fork = this.agreementManager.forks.latestFork();
-        if (!fork) {
-            throw new Error("No latest fork found");
+        // Execute the final snapshot updates in a single multicall transaction
+        if (callData.length > 0) {
+            try {
+                const txResponse =
+                    await this.stateChannelManagerContract.multicall(callData);
+                await txResponse.wait();
+                console.log("Successfully posted state snapshot");
+            } catch (error) {
+                if (isCustomEvmError(error)) {
+                    console.error(
+                        "Error posting state snapshot:",
+                        error.errorDescription
+                    );
+                } else {
+                    console.error("Error posting state snapshot:", error);
+                }
+                throw error;
+            }
+        } else {
+            console.log("No state snapshot updates needed");
         }
-
-        // Get all participants who have signed the dispute
-        const disputeSignatures = this.agreementManager.getDisputeSignatures(
-            disputeData.dispute
-        );
-
-        const allowedParticipantsSet = await getActiveParticipants(
-            this.stateChannelManagerContract,
-            this.getChannelId()
-        );
-
-        const hasThreshold = SignatureUtils.hasSignatureThreshold(
-            allowedParticipantsSet,
-            Codec.encode(disputeData.dispute, Type.Dispute),
-            disputeSignatures
-        );
-
-        if (hasThreshold) {
-            // Create dispute proof from the latest dispute
-            // Call contract with dispute and signatures
-            disputeProof.signatures = disputeSignatures;
-            return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
-                this.channelId,
-                milestoneProofs,
-                milestoneSnapshots,
-                disputeProof,
-                exitChannelBlocks
-            );
-        }
-
-        // Dispute is not finalized
-        console.log(
-            "Dispute is not finalized, state snapshot was not submitted"
-        );
     }
 
     /**
-     * Updates the state snapshot when the fork is the same
+     * Prepares data for updating the state snapshot when the fork is the same
      */
-    public async updateSnapshotSameFork(forkId: ForkId): Promise<void> {
+    public async prepareUpdateSnapshotSameFork(forkId: ForkId): Promise<
+        | {
+              milestoneProofs: MilestoneProofStruct[];
+              milestoneSnapshots: StateSnapshot[];
+              exitChannelBlocks: ExitChannelBlockStruct[];
+          }
+        | undefined
+    > {
         try {
             // Get the current on-chain snapshot first
             const currentOnChainSnapshot = StateSnapshot.from(
@@ -662,7 +666,7 @@ class StateManager {
                 console.log(
                     "No relevant milestones found - state is already up to date"
                 );
-                return;
+                return undefined;
             }
 
             const latestSnapshot =
@@ -674,7 +678,7 @@ class StateManager {
                 currentOnChainSnapshot.blockHeight
             ) {
                 console.log("State is already up to date");
-                return;
+                return undefined;
             }
 
             // Verify that both snapshots belong to the same fork
@@ -720,29 +724,30 @@ class StateManager {
 
             exitChannelBlocks.push(...exitBlockChain);
 
-            const txResponse =
-                await this.stateChannelManagerContract.updateStateSnapshotSameFork(
-                    this.channelId,
-                    milestoneProofs,
-                    milestoneSnapshots.map((snapshot) => snapshot.toStruct()),
-                    exitChannelBlocks
-                );
-
-            await txResponse.wait();
-
-            console.log(
-                `Successfully updated state snapshot for fork ${forkId}`
-            );
+            return {
+                milestoneProofs,
+                milestoneSnapshots,
+                exitChannelBlocks
+            };
         } catch (error) {
-            console.error("Error updating snapshot for the same fork:", error);
+            console.error(
+                "Error preparing update snapshot for the same fork:",
+                error
+            );
             throw error;
         }
     }
 
     /**
-     * Updates the state snapshot when the fork is different
+     * Prepares data for updateStateSnapshotFork
      */
-    public async updateSnapshotFork(): Promise<void> {
+    public async prepareUpdateStateSnapshotFork(): Promise<
+        | {
+              genesisSnapshot: StateSnapshot;
+              exitBlocks: ExitChannelBlockStruct[];
+          }
+        | undefined
+    > {
         try {
             // Get the current on-chain snapshot first
             const currentOnChainSnapshot = StateSnapshot.from(
@@ -759,6 +764,10 @@ class StateManager {
                     this.channelId,
                     currentForkId
                 );
+
+            if (!isDisputed) {
+                return undefined; // No fork update needed
+            }
 
             // Get the genesis snapshot
             const genesisSnapshot =
@@ -940,19 +949,12 @@ class StateManager {
                     );
             }
 
-            // Update snapshot
-            const txResponse =
-                await this.stateChannelManagerContract.updateStateSnapshotFork(
-                    this.channelId,
-                    genesisSnapshot.toStruct(),
-                    exitBlocks
-                );
-            await txResponse.wait();
-            console.log(
-                `Updated to genesis snapshot for fork ${currentForkId}`
-            );
+            return {
+                genesisSnapshot,
+                exitBlocks
+            };
         } catch (error) {
-            console.error("Error updating snapshot for fork:", error);
+            console.error("Error preparing update state snapshot fork:", error);
             throw error;
         }
     }
