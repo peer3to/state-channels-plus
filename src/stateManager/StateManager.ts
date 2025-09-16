@@ -70,7 +70,7 @@ import {
 
 import FraudProofService from "./utils/FraudProofService";
 
-let DEBUG_STATE_MANAGER = false;
+const DEBUG_STATE_MANAGER = false;
 
 const NULL = "0x00";
 
@@ -869,7 +869,7 @@ class StateManager {
                 // Build join channel blocks
                 let currentJoinChannelBlockHash: Hash =
                     reducedOutput.latestJoinChannelBlockHash;
-                let joinChannelBlocks: JoinChannelBlockStruct[] = [];
+                const joinChannelBlocks: JoinChannelBlockStruct[] = [];
                 let currentJoinChannelBlock =
                     this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
                         currentJoinChannelBlockHash
@@ -929,9 +929,9 @@ class StateManager {
             // Build exit blocks
             let latestExitBlockHash =
                 genesisSnapshot.snapshotData.latestExitChannelBlockHash;
-            let currentOnChainExitBlockHash =
+            const currentOnChainExitBlockHash =
                 currentOnChainSnapshot.snapshotData.latestExitChannelBlockHash;
-            let exitBlocks: ExitChannelBlockStruct[] = [];
+            const exitBlocks: ExitChannelBlockStruct[] = [];
             let currentExitBlock =
                 this.storage.exitChannelBlocks.getExitChannelBlockEntry(
                     latestExitBlockHash

@@ -9,7 +9,6 @@ import { Address, BlockHeight, ForkId, Signature } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import { Codec, Type } from "@/utils";
 import { ethers } from "ethers";
-import * as SetUtils from "@/utils/set";
 
 /**
  * AgreementManager acts as a higher logic layer over storage

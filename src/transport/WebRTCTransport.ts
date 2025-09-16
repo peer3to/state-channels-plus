@@ -31,7 +31,7 @@ class WebRTCTransport extends ATransport {
         this.p2pManager.localRpcService.senderTransport = this;
         if (data instanceof Uint8Array) data = Buffer.from(data);
         if (data instanceof Buffer) data = data.toString();
-        let serializedRPC = data;
+        const serializedRPC = data;
         console.log("WebRTC - onMessage", serializedRPC);
         this.p2pManager.onRpc(serializedRPC);
     }

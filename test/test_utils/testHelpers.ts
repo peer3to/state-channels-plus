@@ -20,7 +20,7 @@ export const createJoinChannelTestObject = (
     } catch (e) {
         currentTime = Math.floor(Date.now() / 1000);
     }
-    let jc: JoinChannelStruct = {
+    const jc: JoinChannelStruct = {
         participant: address,
         channelId: channelId
             ? ethers.keccak256(
@@ -53,19 +53,20 @@ export async function deployLibraryTestContract(
     _ethers: typeof ethers & HardhatEthersHelpers
 ): Promise<StateChannelUtilLibrary> {
     //Deploy library
-    let stateChannelUtilLibraryFactory = await _ethers.getContractFactory(
+    const stateChannelUtilLibraryFactory = await _ethers.getContractFactory(
         "StateChannelUtilLibrary"
     );
-    let stateChannelUtilLibrary = await stateChannelUtilLibraryFactory.deploy();
-    let libraryAddress = await stateChannelUtilLibrary.getAddress();
+    const stateChannelUtilLibrary =
+        await stateChannelUtilLibraryFactory.deploy();
+    const libraryAddress = await stateChannelUtilLibrary.getAddress();
 
     //Deploy DisputeManagerFacet
-    let libraryTestContractFactory = await _ethers.getContractFactory(
+    const libraryTestContractFactory = await _ethers.getContractFactory(
         "LibraryTestContract"
     );
-    let libraryTestContract =
+    const libraryTestContract =
         await libraryTestContractFactory.deploy(libraryAddress);
-    let proxy = stateChannelUtilLibraryFactory.attach(
+    const proxy = stateChannelUtilLibraryFactory.attach(
         await libraryTestContract.getAddress()
     );
     return proxy as StateChannelUtilLibrary;
@@ -79,11 +80,12 @@ export async function deployMathChannelProxyFixture(
     mathInstance: MathStateMachine;
 }> {
     //Deploy library
-    let stateChannelUtilLibraryFactory = await _ethers.getContractFactory(
+    const stateChannelUtilLibraryFactory = await _ethers.getContractFactory(
         "StateChannelUtilLibrary"
     );
-    let stateChannelUtilLibrary = await stateChannelUtilLibraryFactory.deploy();
-    let libraryAddress = await stateChannelUtilLibrary.getAddress();
+    const stateChannelUtilLibrary =
+        await stateChannelUtilLibraryFactory.deploy();
+    const libraryAddress = await stateChannelUtilLibrary.getAddress();
 
     const libs = { StateChannelUtilLibrary: libraryAddress };
 
@@ -119,14 +121,14 @@ export async function deployMathChannelProxyFixture(
     const facetAddresses = await deployFacets(facetConfigs);
 
     //State machine logic
-    let mathSmFactory = await _ethers.getContractFactory("MathStateMachine");
-    let mathContactInstance = await mathSmFactory.deploy(500000);
+    const mathSmFactory = await _ethers.getContractFactory("MathStateMachine");
+    const mathContactInstance = await mathSmFactory.deploy(500000);
 
     //Deploy MathStateChannelManager with all facet addresses
-    let mathSmcFactory = await _ethers.getContractFactory(
+    const mathSmcFactory = await _ethers.getContractFactory(
         "MathStateChannelManagerProxy"
     );
-    let mathStateChannelContactInstance = await mathSmcFactory.deploy(
+    const mathStateChannelContactInstance = await mathSmcFactory.deploy(
         await mathContactInstance.getAddress(),
         ...facetAddresses
     );
@@ -149,7 +151,7 @@ export function getMathP2pEventHooks(
     onTurnCallback: () => void,
     myAddress: string
 ) {
-    let hooks: P2pEventHooks = {
+    const hooks: P2pEventHooks = {
         onTurn(address: AddressLike): void {
             (address as string) == myAddress && onTurnCallback();
         }
@@ -160,8 +162,8 @@ export async function getSigners(
     _ethers: typeof ethers & HardhatEthersHelpers
 ) {
     const signers = await _ethers.getSigners();
-    let firstSigner = signers[0];
-    let secondSigner = signers[1];
-    let thirdSigner = signers[2];
+    const firstSigner = signers[0];
+    const secondSigner = signers[1];
+    const thirdSigner = signers[2];
     return { firstSigner, secondSigner, thirdSigner, signers };
 }
