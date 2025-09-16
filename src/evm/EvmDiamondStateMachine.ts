@@ -6,6 +6,8 @@ import {
     LocalDiamond
 } from "@typechain-types";
 import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { DisputeInputStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+
 import StateManager from "@/stateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
@@ -14,7 +16,7 @@ import {
     BalanceEthersType,
     SnapshotDataEthersType
 } from "@/types/ethers";
-import { DebugProxy, decodeErrorProxy, Codec } from "@/utils";
+import { DebugProxy, decodeErrorProxy, Codec, Type } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
@@ -30,11 +32,11 @@ import {
 import LocalDiamondSigner from "./LocalDiamondSigner";
 import { LocalDiamondArtifact } from "@/utils/GeneratedArtifacts";
 import {
-    FraudProofStruct,
     SnapshotDataStruct,
     StateSnapshotStruct,
     TimeoutStruct
 } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+import { FraudProofStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/FraudProofFacet";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 
@@ -284,7 +286,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
     async computeDisputeOutputSnapshotData(
         channelId: ChannelId,
-        fraudProofs: FraudProofStruct[],
         selfRemoval: boolean,
         onChainSlashes: Address[],
         disputer: Address,
@@ -297,7 +298,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             "computeDisputeOutputSnapshotData",
             [
                 channelId,
-                fraudProofs,
                 selfRemoval,
                 onChainSlashes,
                 disputer,

@@ -1,9 +1,8 @@
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Address, Bytes, ChannelId, ForkId, Hash } from "./types/types";
+import { Address, Bytes, ChannelId, Hash } from "./types/types";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { LocalDiamond } from "@typechain-types/index";
 import {
-    FraudProofStruct,
     SnapshotDataStruct,
     StateSnapshotStruct,
     TimeoutStruct
@@ -42,7 +41,6 @@ abstract class ADiamondStateMachine {
     public abstract getZeroBalance(): Promise<BalanceStruct>;
     public abstract computeDisputeOutputSnapshotData(
         channelId: ChannelId,
-        fraudProofs: FraudProofStruct[],
         selfRemoval: boolean,
         onChainSlashes: Address[],
         disputer: Address,

@@ -30,7 +30,7 @@ import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
 import AgreementManager from "../agreementManager/AgreementManager";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
-import DisputeManager from "@/disputeManager/DisputeManager";
+import DisputeManager from "@/disputeManager";
 import P2PManager from "@/P2PManager";
 import StateChannelEventListener from "@/StateChannelEventListener";
 import ValidationService from "./ValidationService";
@@ -81,7 +81,7 @@ class StateManager {
     signerAddress: Address;
     agreementManager: AgreementManager;
     stateChannelEventListener: StateChannelEventListener;
-    disputeHandler: DisputeManager;
+    disputeManager: DisputeManager;
     stateChannelManagerContract: StateChannelManagerProxy;
     p2pManager: P2PManager;
     timeConfig: TimeConfig;
@@ -124,7 +124,7 @@ class StateManager {
             this.localDiamondContract
         );
         this.agreementManager = new AgreementManager(this.storage);
-        this.disputeHandler = new DisputeManager(
+        this.disputeManager = new DisputeManager(
             this.channelId,
             signer,
             signerAddress,
@@ -154,11 +154,11 @@ class StateManager {
     }
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
         this.p2pEventHooks = p2pEventHooks;
-        this.disputeHandler.setP2pEventHooks(p2pEventHooks);
+        this.disputeManager.setP2pEventHooks(p2pEventHooks);
     }
     public setChannelId(channelId: ChannelId) {
         this.channelId = channelId;
-        this.disputeHandler.setChannelId(channelId);
+        this.disputeManager.setChannelId(channelId);
         this.stateChannelEventListener.setChannelId(channelId);
     }
     public getChannelId(): ChannelId {
@@ -1111,12 +1111,12 @@ class StateManager {
 
         if (remainingDelay <= 0) {
             // Time has fully elapsed - create dispute immediately
-            this.disputeHandler.createDispute(
-                forkId,
-                participantAddress,
-                blockHeight,
-                []
-            );
+            this.disputeManager.createDispute(forkId, false, {
+                blockHeightToTimeout: blockHeight + 1,
+                isForced: false,
+                previousBlockProducer: participantAddress,
+                previousBlockProducerPostedCalldata: false
+            });
             console.log(
                 `Timeout dispute created for participant: ${participantAddress}`
             );
@@ -1287,7 +1287,7 @@ class StateManager {
         // step 4 - persist state machine state
         this.storage.stateMachineStates.storeStateMachineState(
             encodedStateMachineState,
-            { hash: stateSnapshot.snapshotData.stateMachineStateHash }
+            { hash: stateSnapshot.stateMachineStateHash }
         );
 
         // step 5 - persist the exit channel blocks if any
