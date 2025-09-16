@@ -21,6 +21,7 @@ import Storage from "@/storage";
 import ADiamondStateMachine from "../ADiamondStateMachine";
 import {
     DisputeAuditingDataStruct,
+    DisputeInputStruct,
     StateProofStruct,
     TimeoutStruct
 } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
@@ -78,19 +79,30 @@ class DisputeManager {
     ): Promise<void> {
         const latestBlockHeight =
             this.storage.blocks.getNextBlockHeight(forkId) - 1;
-        // StateProof
-        const stateProof = await this.agreementManager.getStateProof(
-            forkId,
-            latestBlockHeight
-        );
-        // LatestStateSnapshot
-        const latestStateSnapshot = this.storage.getStateSnapshot({
-            forkId: forkId,
-            height: latestBlockHeight
-        });
-        // LatestStateMachineState
-        const latestStateMachineState =
-            await this.diamondStateMachine.getState();
+
+        // StateProof, LatestStateSnapshot, LatestStateMachineState
+        const [
+            stateProof,
+            latestStateSnapshot,
+            latestStateMachineState,
+            _onChainSlashes,
+            _participants
+        ] = await Promise.all([
+            this.agreementManager.getStateProof(forkId, latestBlockHeight),
+            this.storage.getStateSnapshot({
+                forkId,
+                height: latestBlockHeight
+            }),
+            this.diamondStateMachine.getState(), //TODO - this should be from storage
+            this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
+                this.channelId
+            ),
+            this.diamondStateMachine.getParticipants()
+        ]);
+        // onChainSlasshes
+        // this can be a subset of on-chain slashes, so we don't need to run any race condition checks
+        let onChainSlashes = new Set<Address>(_onChainSlashes);
+        const participants = new Set<Address>(_participants);
 
         //sanity check
         if (!latestStateSnapshot || !latestStateMachineState) {
@@ -105,32 +117,9 @@ class DisputeManager {
                 "createDispute - latestStateSnapshot.stateMachineStateHash !== hash(latestStateMachineState)"
             );
         }
-        // onChainSlasshes
-        // this can be a subset of on-chain slashes, so we don't need to run any race condition checks
-        let onChainSlashes = new Set<Address>(
-            await this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
-                this.channelId
-            )
-        );
-        let participants = new Set<Address>(
-            await this.diamondStateMachine.getParticipants()
-        );
 
         // to make sure we're trying to slash only participants - even though onChainSlashes should always be a subset of participants
         onChainSlashes = intersection(onChainSlashes, participants);
-
-        // fraudProofs
-        let fraudProofs: FraudProofStruct[] = [];
-        let remainingParticipants = difference(participants, onChainSlashes);
-        for (const participant of remainingParticipants) {
-            const proofs =
-                await this.storage.fraudProofs.getFraudProofsForParticipant(
-                    participant
-                );
-            if (proofs.length > 0) {
-                fraudProofs.push(proofs[0]); // only one is enough
-            }
-        }
 
         // timeout
         let timeoutStruct: TimeoutStruct;
@@ -169,17 +158,25 @@ class DisputeManager {
         // disputer
         const disputer = this.signerAddress;
 
+        const disputeInput: DisputeInputStruct = {
+            channelId: this.channelId,
+            genesisSnapshotDataHash: forkId,
+            latestStateSnapshotHash: latestStateSnapshot.hash,
+            stateProof: stateProof,
+            onChainSlashes: Array.from(onChainSlashes),
+            disputeAuditingDataHash: disputeAuditingDataHash,
+            disputer: disputer,
+            timeout: timeoutStruct,
+            selfRemoval: selfRemoval
+        };
+
         // generateDisputeOutputState
         const outputSnapshotData =
             await this.diamondStateMachine.computeDisputeOutputSnapshotData(
-                this.channelId,
-                selfRemoval,
-                Array.from(onChainSlashes),
-                disputer,
-                timeoutStruct,
+                disputeInput,
                 latestStateSnapshot.toStruct(),
                 latestStateMachineState,
-                disputeAuditingData.genesisStateSnapshot.snapshotData
+                disputeAuditingData.genesisStateSnapshotData
                     .latestJoinChannelBlockHash // latestJoinChannelBlockHash
             );
         const outputSnapshotDataHash = hash(
@@ -187,17 +184,7 @@ class DisputeManager {
         );
 
         const dispute: DisputeStruct = {
-            input: {
-                channelId: this.channelId,
-                genesisSnapshotDataHash: forkId,
-                latestStateSnapshotHash: latestStateSnapshot.hash,
-                stateProof: stateProof,
-                onChainSlashes: Array.from(onChainSlashes),
-                disputeAuditingDataHash: disputeAuditingDataHash,
-                disputer: disputer,
-                timeout: timeoutStruct,
-                selfRemoval: selfRemoval
-            },
+            input: disputeInput,
             outputSnapshotDataHash: outputSnapshotDataHash
         };
 
@@ -288,7 +275,7 @@ class DisputeManager {
             );
 
         return {
-            genesisStateSnapshot: genesisStateSnapshot.toStruct(),
+            genesisStateSnapshotData: genesisStateSnapshot.snapshotData,
             latestStateSnapshot: latestStateSnapshot.toStruct(),
             latestStateStateMachineState: latestStateStateMachineState,
             milestoneSnapshots: milestoneSnapshots.map((snapshot) =>
