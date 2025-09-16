@@ -2,10 +2,8 @@ import { expect } from "chai";
 import { ethers } from "ethers";
 import sinon from "sinon";
 import StateManager from "@/stateManager/StateManager";
-import { stateSnapshot, exitChannelBlock } from "../factory";
+import { stateSnapshot } from "../factory";
 import { Address, BlockHeight, ForkId, Hash } from "@/types/types";
-import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import Clock from "@/Clock";
 import Block from "@/models/Block";
 
