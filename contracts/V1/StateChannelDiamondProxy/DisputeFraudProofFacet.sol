@@ -61,7 +61,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         view
         returns (address)
     {
-        TimeoutThresholdProof memory timeoutThresholdProof = abi.decode(encodedFraudProof, (TimeoutThresholdProof));
+        TimeoutThreshold memory timeoutThresholdProof = abi.decode(encodedFraudProof, (TimeoutThreshold));
         SignedBlock memory signedBlock = timeoutThresholdProof.thresholdBlock.signedBlock;
         bytes memory encodedBlock = signedBlock.encodedBlock;
         Block memory thresholdBlock = abi.decode(encodedBlock, (Block));
@@ -76,10 +76,13 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (dispute.input.timeout.blockHeight != _getBlockHeight(thresholdBlock)) revert();
 
         //check correct snapshot
-        if (!_doesBlockCommitToSnapshot(thresholdBlock, timeoutThresholdProof.latestStateSnapshot)) revert();
+        if (!_doesBlockCommitToSnapshot(thresholdBlock, timeoutThresholdProof.auditingData.latestStateSnapshot)) {
+            revert();
+        }
 
         //check threshold
-        address[] memory thresholdParticipants = timeoutThresholdProof.latestStateSnapshot.snapshotData.participants;
+        address[] memory thresholdParticipants =
+            timeoutThresholdProof.auditingData.latestStateSnapshot.snapshotData.participants;
         bytes[] memory signatures = StateChannelUtilLibrary.insertBytesInByteArray(
             signedBlock.signature, timeoutThresholdProof.thresholdBlock.signatures
         );
@@ -94,8 +97,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         view
         returns (address)
     {
-        TimeoutCalldataPostedProof memory timeoutCalldataPostedProof =
-            abi.decode(encodedFraudProof, (TimeoutCalldataPostedProof));
+        TimeoutCalldataPosted memory timeoutCalldataPostedProof = abi.decode(encodedFraudProof, (TimeoutCalldataPosted));
         Block memory postedBlock = timeoutCalldataPostedProof.postedBlock;
 
         // Check channelId

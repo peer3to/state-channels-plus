@@ -131,7 +131,7 @@ contract FraudProofFacet is StateChannelCommon {
             revert ErrorNotSameChannelId();
         }
 
-        if (previousStateSnapshot != fraudBlock.transaction.header.forkId) return signer;
+        if (previousStateSnapshot.forkId != fraudBlock.transaction.header.forkId) return signer;
         if (fraudBlock.transaction.header.transactionCnt == 0) {
             require(fraudBlock.previousBlockHash == keccak256(abi.encode(previousStateSnapshot)));
             require(

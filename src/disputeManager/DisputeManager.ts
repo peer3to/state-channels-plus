@@ -15,7 +15,7 @@ import {
     SignatureUtils
 } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
-import { Address, Bytes, ChannelId, ForkId } from "../types/types";
+import { Address, Bytes, ChannelId, ForkId, Signature } from "../types/types";
 import { StateSnapshot } from "../models";
 import Storage from "@/storage";
 import ADiamondStateMachine from "../ADiamondStateMachine";
@@ -40,6 +40,7 @@ type TimeoutOptions = {
     // on-chain race condition checks
     previousBlockProducer?: Address;
     previousBlockProducerPostedCalldata?: boolean;
+    participantSignatureOnPreviousBlock?: Signature;
 };
 
 class DisputeManager {
@@ -144,7 +145,10 @@ class DisputeManager {
                 previousBlockProducer:
                     timeoutOptions.previousBlockProducer || ethers.ZeroAddress,
                 previousBlockProducerPostedCalldata:
-                    timeoutOptions.previousBlockProducerPostedCalldata || false
+                    timeoutOptions.previousBlockProducerPostedCalldata || false,
+                participantSignatureOnPreviousBlock:
+                    (timeoutOptions.participantSignatureOnPreviousBlock as Bytes) ||
+                    ""
             };
         } else {
             timeoutStruct = this.getEmptyTimeoutStruct();
@@ -295,7 +299,8 @@ class DisputeManager {
             minTimeStamp: 0,
             isForced: false,
             previousBlockProducer: ethers.ZeroAddress,
-            previousBlockProducerPostedCalldata: false
+            previousBlockProducerPostedCalldata: false,
+            participantSignatureOnPreviousBlock: ""
         };
     }
 

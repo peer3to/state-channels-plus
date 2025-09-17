@@ -72,6 +72,7 @@ struct Timeout {
     // ================== optional ==================
     address previousBlockProducer;
     bool previousBlockProducerPostedCalldata;
+    bytes participantSignatureOnPreviousBlock;
 }
 
 struct DisputeWindow {
