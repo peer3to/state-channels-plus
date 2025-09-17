@@ -82,9 +82,9 @@ export default class DisputeValidationService {
                 if (isValidStateProof) {
                     // *********** TODO ******************
                     // *********** This is anoying and needs some thought ********************
-                    // we have to run the block confirmation pipeline on unfinalized blocks and deduct are we 'behind' an honest history and in that ase accept it
-                    // or reuse the failue in fraudProofs to kill the malicious dispute + this time all valilures are objective since it's commited on-chain
-                    // if we deduct we're at a honest state we need to sync and try and build auditingData again
+                    // we have to run the block confirmation pipeline on unfinalized blocks and deduct are we 'behind' an honest history and in that case accept it
+                    // or reuse the failue in fraudProofs to kill the malicious dispute + this time all falilures are objective since it's commited on-chain
+                    // if we deduct we're at an honest state we need to sync and try and build auditingData again
                     // if we can't build it AGAIN - error since something is wrong
                     // else build it and `cotinueValidationAuditingDataConstructed`
                 } else {
@@ -179,7 +179,7 @@ export default class DisputeValidationService {
             //TODO - create Dispute Fraud Proof InvalidStateProofWithAuditingDataVerified
         }
 
-        // (STATEFL - view, no compiler trick) check on-chain slashes
+        // (STATEFUL - view, no compiler trick) check on-chain slashes
         let onChainSlashes = new Set<Address>(
             await this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
                 dispute.input.channelId
