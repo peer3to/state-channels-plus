@@ -50,6 +50,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         // ***************** Generate output snapshot ***************
         outputSnapshotData = SnapshotData({
+            originForkId: disputeInput.forkId,
             stateMachineStateHash: keccak256(disputeOutputState.encodedModifiedState),
             participants: getStatemachineParticipants(disputeOutputState.encodedModifiedState),
             latestJoinChannelBlockHash: latestJoinChannelBlockHash, // Joins are not applied in disputes, but in reduce -> same hash as in the genesis snapshot
@@ -320,6 +321,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         );
 
         return SnapshotData({
+            originForkId: forkId,
             stateMachineStateHash: keccak256(outputState.encodedModifiedState),
             participants: getStatemachineParticipants(outputState.encodedModifiedState),
             latestJoinChannelBlockHash: reducedOutput.latestJoinChannelBlockHash, // This has been verified in _verifyJoinChannelBlocks

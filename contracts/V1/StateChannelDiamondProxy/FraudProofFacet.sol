@@ -131,6 +131,7 @@ contract FraudProofFacet is StateChannelCommon {
             revert ErrorNotSameChannelId();
         }
 
+        if (previousStateSnapshot != fraudBlock.transaction.header.forkId) return signer;
         if (fraudBlock.transaction.header.transactionCnt == 0) {
             require(fraudBlock.previousBlockHash == keccak256(abi.encode(previousStateSnapshot)));
             require(
@@ -156,6 +157,7 @@ contract FraudProofFacet is StateChannelCommon {
             return signer;
         }
         SnapshotData memory newSnapshotData = SnapshotData({
+            originForkId: previousStateSnapshot.forkId,
             stateMachineStateHash: keccak256(encodedModifiedState),
             participants: getStatemachineParticipants(encodedModifiedState),
             latestJoinChannelBlockHash: previousStateSnapshot.snapshotData.latestJoinChannelBlockHash,

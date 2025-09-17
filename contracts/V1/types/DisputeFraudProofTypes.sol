@@ -5,64 +5,77 @@ import "./DataTypes.sol";
 contract DisputeFraudProofTypes {
     constructor(
         DisputeNotLatestStateProof memory a,
-        DisputeOutOfGasProof memory b,
-        DisputeInvalidOutputStateProof memory c,
-        DisputeInvalidStateProof memory d,
-        DisputeInvalidPreviousRecursiveProof memory e,
-        DisputeInvalidExitChannelBlocksProof memory f,
-        TimeoutThresholdProof memory g,
-        TimeoutCalldataPostedProof memory h,
-        TimeoutParticipantNotNextProof memory i
+        DisputeInvalidOutputStateProof memory b,
+        DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifed memory c,
+        DisputeInvalidStateProofWithAuditingDataIntegrityVerifed memory d,
+        DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks memory e,
+        DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed memory f,
+        DisputeInvalidBalanceInvariant memory g,
+        TimeoutThreshold memory h,
+        TimeoutCalldataPosted memory i,
+        TimeoutNotLinkedToLatestState memory j,
+        TimeoutParticipantNotNext memory k,
+        TimeoutTooEarly memory l
     ) {}
 }
 
 // ========================== Dispute related fraud proofs ==========================
-// This is sematically equivalent to SignedBlock, but logically it's any signature not only from the original block author
+// Every Dispute Fraud Proof has an implicit argument/field `Dispute dispute`
 
+// This is sematically equivalent to SignedBlock, but logically it's any signature not only from the original block author
 struct DisputeNotLatestStateProof {
     bytes encodedBlock;
     bytes signature;
 }
 
-struct DisputeOutOfGasProof {
-    Dispute dispute;
-}
-
 struct DisputeInvalidOutputStateProof {
-    Dispute dispute;
+    DisputeAuditingData auditingData;
 }
 
-struct DisputeInvalidStateProof {
-    Dispute dispute;
+struct DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifed {
+    DisputeAuditingData auditingData;
 }
 
-struct DisputeInvalidPreviousRecursiveProof {
-    Dispute invalidRecursiveDispute;
-    Dispute originalDispute;
-    uint256 originalDisputeTimestamp;
-    uint256 invalidRecursiveDisputeTimestamp;
-    bytes latestStateSnapshot;
-    bytes invalidRecursiveDisputeOutputState;
+struct DisputeInvalidStateProofWithAuditingDataIntegrityVerifed {
+    DisputeAuditingData auditingData;
 }
 
-struct DisputeInvalidExitChannelBlocksProof {
-    Dispute dispute;
+struct DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks {
+    DisputeAuditingData auditingData;
+}
+
+struct DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed {
+    DisputeAuditingData auditingData;
+}
+
+struct DisputeInvalidBalanceInvariant {
+    DisputeAuditingData auditingData;
+}
+
+struct DisputeOnChainSlashesNotSubset {
+    bool __; // this is not used, the implicit dispute field is enough to deduct
 }
 
 // ========================== Timeout related fraud proofs ==========================
 
-struct TimeoutThresholdProof {
+struct TimeoutThreshold {
     BlockConfirmation thresholdBlock; // only N/N on single block - no virtual voting
-    StateSnapshot latestStateSnapshot;
+    DisputeAuditingData auditingData;
 }
 
-struct TimeoutCalldataPostedProof {
+struct TimeoutNotLinkedToLatestState {
+    bool __; // this is not used, the implicit dispute field is enough to deduct
+}
+// Linked to latestState, but participant is not next block author
+
+struct TimeoutParticipantNotNext {
+    DisputeAuditingData auditingData;
+}
+
+struct TimeoutTooEarly {
     Block postedBlock;
 }
 
-struct TimeoutParticipantNotNextProof {
-    Dispute originalDispute;
-    Dispute recursiveDispute;
-    uint256 originalDisputeTimestamp;
-    uint256 recursiveDisputeTimestamp;
+struct TimeoutCalldataPosted {
+    Block postedBlock;
 }

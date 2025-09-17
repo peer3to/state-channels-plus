@@ -166,7 +166,7 @@ export default class DisputeValidationService {
                 true
             ))
         ) {
-            //TODO - create Dispute Fraud Proof IncorrectAuditingData
+            //TODO - create Dispute Fraud Proof DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed
         }
 
         // isCorrectAuditingData - majority cheked already with stateProof - just checking exitChannelBlocks
@@ -196,7 +196,7 @@ export default class DisputeValidationService {
                 )
             );
             if (!isSubset(onChainSlashes, disputeOnChainSlashes)) {
-                // TODO - Dispute Fraud Proof - dispute.onChainSlashes is not a subset onChainSlashes
+                // TODO - Dispute Fraud Proof - DisputeOnChainSlashesNotSubset - dispute.onChainSlashes is not a subset onChainSlashes
             }
         }
 
@@ -209,7 +209,7 @@ export default class DisputeValidationService {
         ) {
             // TODO - double check with RPC node, maybe local state not synced - I didn't expose this in the normal diamond
             // we first need to test the staticcall does it work
-            // TODO - Dispute Fraud Proof InvalidBalanceInvariant
+            // TODO - Dispute Fraud Proof DisputeInvalidBalanceInvariant
         }
 
         // isLatestState
