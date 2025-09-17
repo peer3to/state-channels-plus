@@ -71,7 +71,7 @@ import {
 import FraudProofService from "./utils/FraudProofService";
 import DisputeValidationService from "./DisputeValidationService";
 
-let DEBUG_STATE_MANAGER = false;
+const DEBUG_STATE_MANAGER = false;
 
 const NULL = "0x00";
 
@@ -507,18 +507,124 @@ class StateManager {
         }
     }
 
-    public async postStateSnapshot(
-        milestoneProofs: MilestoneProofStruct[],
-        milestoneSnapshots: StateSnapshot[],
-        exitChannelBlocks: ExitChannelBlockStruct[] = []
-    ) {
-        throw new Error("TODO - Not implemented");
+    public async postStateSnapshot(forkId: ForkId): Promise<void> {
+        // Get the current on-chain snapshot to check if we're on the same fork
+        const currentOnChainSnapshot = StateSnapshot.from(
+            await this.stateChannelManagerContract.getStateSnapshot(
+                this.channelId
+            )
+        );
+
+        // If we're on the same fork, call updateStateSnapshotSameFork directly
+        if (currentOnChainSnapshot.forkId === forkId) {
+            const sameForkData =
+                await this.prepareUpdateSnapshotSameFork(forkId);
+            if (sameForkData) {
+                try {
+                    const txResponse =
+                        await this.stateChannelManagerContract.updateStateSnapshotSameFork(
+                            this.channelId,
+                            sameForkData.milestoneProofs,
+                            sameForkData.milestoneSnapshots.map((snapshot) =>
+                                snapshot.toStruct()
+                            ),
+                            sameForkData.exitChannelBlocks
+                        );
+                    await txResponse.wait();
+                    console.log("Successfully posted state snapshot");
+                } catch (error) {
+                    if (isCustomEvmError(error)) {
+                        console.error(
+                            "Error posting state snapshot:",
+                            error.errorDescription
+                        );
+                    } else {
+                        console.error("Error posting state snapshot:", error);
+                    }
+                    throw error;
+                }
+            } else {
+                console.log("No state snapshot updates needed");
+            }
+            return;
+        }
+
+        // Different fork - use multicall for both fork update and same-fork update
+        const forkData = await this.prepareUpdateStateSnapshotFork();
+        const sameForkData = await this.prepareUpdateSnapshotSameFork(forkId);
+
+        // Encode data for multicall
+        const callData: string[] = [];
+        if (forkData) {
+            // Check if the fork update will result in the same fork as the target
+            if (forkData.genesisSnapshot.forkId === forkId) {
+                const forkCalldata =
+                    this.stateChannelManagerContract.interface.encodeFunctionData(
+                        "updateStateSnapshotFork",
+                        [
+                            this.channelId,
+                            forkData.genesisSnapshot.toStruct(),
+                            forkData.exitBlocks
+                        ]
+                    );
+                callData.push(forkCalldata);
+            } else {
+                // Fork update results in a different fork
+                throw new Error(
+                    `Fork mismatch: update will result in fork ${forkData.genesisSnapshot.forkId}, but target fork is ${forkId}.`
+                );
+            }
+        }
+        if (sameForkData) {
+            const sameForkCalldata =
+                this.stateChannelManagerContract.interface.encodeFunctionData(
+                    "updateStateSnapshotSameFork",
+                    [
+                        this.channelId,
+                        sameForkData.milestoneProofs,
+                        sameForkData.milestoneSnapshots.map((snapshot) =>
+                            snapshot.toStruct()
+                        ),
+                        sameForkData.exitChannelBlocks
+                    ]
+                );
+            callData.push(sameForkCalldata);
+        }
+
+        // Execute the final snapshot updates in a single multicall transaction
+        if (callData.length > 0) {
+            try {
+                const txResponse =
+                    await this.stateChannelManagerContract.multicall(callData);
+                await txResponse.wait();
+                console.log("Successfully posted state snapshot");
+            } catch (error) {
+                if (isCustomEvmError(error)) {
+                    console.error(
+                        "Error posting state snapshot:",
+                        error.errorDescription
+                    );
+                } else {
+                    console.error("Error posting state snapshot:", error);
+                }
+                throw error;
+            }
+        } else {
+            console.log("No state snapshot updates needed");
+        }
     }
 
     /**
-     * Updates the state snapshot when the fork is the same
+     * Prepares data for updating the state snapshot when the fork is the same
      */
-    public async updateSnapshotSameFork(forkId: ForkId): Promise<void> {
+    public async prepareUpdateSnapshotSameFork(forkId: ForkId): Promise<
+        | {
+              milestoneProofs: MilestoneProofStruct[];
+              milestoneSnapshots: StateSnapshot[];
+              exitChannelBlocks: ExitChannelBlockStruct[];
+          }
+        | undefined
+    > {
         try {
             // Get the current on-chain snapshot first
             const currentOnChainSnapshot = StateSnapshot.from(
@@ -568,7 +674,7 @@ class StateManager {
                 console.log(
                     "No relevant milestones found - state is already up to date"
                 );
-                return;
+                return undefined;
             }
 
             const latestSnapshot =
@@ -580,7 +686,7 @@ class StateManager {
                 currentOnChainSnapshot.blockHeight
             ) {
                 console.log("State is already up to date");
-                return;
+                return undefined;
             }
 
             // Verify that both snapshots belong to the same fork
@@ -626,29 +732,30 @@ class StateManager {
 
             exitChannelBlocks.push(...exitBlockChain);
 
-            const txResponse =
-                await this.stateChannelManagerContract.updateStateSnapshotSameFork(
-                    this.channelId,
-                    milestoneProofs,
-                    milestoneSnapshots.map((snapshot) => snapshot.toStruct()),
-                    exitChannelBlocks
-                );
-
-            await txResponse.wait();
-
-            console.log(
-                `Successfully updated state snapshot for fork ${forkId}`
-            );
+            return {
+                milestoneProofs,
+                milestoneSnapshots,
+                exitChannelBlocks
+            };
         } catch (error) {
-            console.error("Error updating snapshot for the same fork:", error);
+            console.error(
+                "Error preparing update snapshot for the same fork:",
+                error
+            );
             throw error;
         }
     }
 
     /**
-     * Updates the state snapshot when the fork is different
+     * Prepares data for updateStateSnapshotFork
      */
-    public async updateSnapshotFork(): Promise<void> {
+    public async prepareUpdateStateSnapshotFork(): Promise<
+        | {
+              genesisSnapshot: StateSnapshot;
+              exitBlocks: ExitChannelBlockStruct[];
+          }
+        | undefined
+    > {
         try {
             // Get the current on-chain snapshot first
             const currentOnChainSnapshot = StateSnapshot.from(
@@ -665,6 +772,10 @@ class StateManager {
                     this.channelId,
                     currentForkId
                 );
+
+            if (!isDisputed) {
+                return undefined; // No fork update needed
+            }
 
             // Get the genesis snapshot
             const genesisSnapshot =
@@ -766,7 +877,7 @@ class StateManager {
                 // Build join channel blocks
                 let currentJoinChannelBlockHash: Hash =
                     reducedOutput.latestJoinChannelBlockHash;
-                let joinChannelBlocks: JoinChannelBlockStruct[] = [];
+                const joinChannelBlocks: JoinChannelBlockStruct[] = [];
                 let currentJoinChannelBlock =
                     this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
                         currentJoinChannelBlockHash
@@ -826,9 +937,9 @@ class StateManager {
             // Build exit blocks
             let latestExitBlockHash =
                 genesisSnapshot.snapshotData.latestExitChannelBlockHash;
-            let currentOnChainExitBlockHash =
+            const currentOnChainExitBlockHash =
                 currentOnChainSnapshot.snapshotData.latestExitChannelBlockHash;
-            let exitBlocks: ExitChannelBlockStruct[] = [];
+            const exitBlocks: ExitChannelBlockStruct[] = [];
             let currentExitBlock =
                 this.storage.exitChannelBlocks.getExitChannelBlockEntry(
                     latestExitBlockHash
@@ -846,19 +957,12 @@ class StateManager {
                     );
             }
 
-            // Update snapshot
-            const txResponse =
-                await this.stateChannelManagerContract.updateStateSnapshotFork(
-                    this.channelId,
-                    genesisSnapshot.toStruct(),
-                    exitBlocks
-                );
-            await txResponse.wait();
-            console.log(
-                `Updated to genesis snapshot for fork ${currentForkId}`
-            );
+            return {
+                genesisSnapshot,
+                exitBlocks
+            };
         } catch (error) {
-            console.error("Error updating snapshot for fork:", error);
+            console.error("Error preparing update state snapshot fork:", error);
             throw error;
         }
     }

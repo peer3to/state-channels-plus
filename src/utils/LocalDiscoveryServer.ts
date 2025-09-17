@@ -10,9 +10,9 @@ export class LocalDiscoveryServer {
     private constructor() {}
 
     public static tryStart() {
-        let wss = new WebSocketServer({ port: PORT });
+        const wss = new WebSocketServer({ port: PORT });
         let connections: WebSocket[] = [];
-        let disoveryInfo: DiscoveryInfo[] = [];
+        const disoveryInfo: DiscoveryInfo[] = [];
         wss.on("connection", (ws) => {
             console.log("Discovery WSS connection");
             connections.push(ws);
@@ -39,14 +39,14 @@ export class LocalDiscoveryServer {
     }
 
     public static connectToPeers(p2pManager: P2PManager, channelId?: string) {
-        let myPort = Math.floor(Math.random() * 1000) + 2000;
+        const myPort = Math.floor(Math.random() * 1000) + 2000;
         // console.log("RANOM PORT ######", myPort);
         // console.log(new Error().stack);
-        let myServer = new WebSocketServer({ port: myPort });
-        let duplicateSet = new Set<number>();
+        const myServer = new WebSocketServer({ port: myPort });
+        const duplicateSet = new Set<number>();
         myServer.on("connection", (ws) => {
             console.log("Local WSS connection established");
-            let lt = new LocalTransport(ws, p2pManager);
+            const lt = new LocalTransport(ws, p2pManager);
             p2pManager.addConnection(lt);
             ws.on("close", () => {
                 console.log("Connection closed");
@@ -71,9 +71,9 @@ export class LocalDiscoveryServer {
                 console.log(
                     `Connecting to peer on port %%%%%%%%%%%%%%%%%%%%%% ${peerPort} - my port ${myPort} - my channel ${channelId} - peer channel ${peerChannelId}`
                 );
-                let ws2 = new WebSocket(`ws://localhost:${peerPort}`);
+                const ws2 = new WebSocket(`ws://localhost:${peerPort}`);
                 ws2.on("open", () => {
-                    let lt = new LocalTransport(ws2, p2pManager);
+                    const lt = new LocalTransport(ws2, p2pManager);
                     p2pManager.addConnection(lt);
                 });
             }

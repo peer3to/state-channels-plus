@@ -1,7 +1,4 @@
 import { ethers } from "hardhat";
-import { BigNumberish } from "ethers";
-import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
-import { MathStateMachine } from "@typechain-types";
 
 describe("DisputesManagerContract", function () {
     let peerOne: any;
