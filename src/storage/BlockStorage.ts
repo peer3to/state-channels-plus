@@ -1,4 +1,4 @@
-import { Hash, ForkId, BlockHeight, Signature } from "@/types/types";
+import { Hash, ForkId, BlockHeight, Signature, Timestamp } from "@/types/types";
 import { Block, BlockCoordinates } from "@/models";
 
 type CoordinateKey = string;
@@ -106,6 +106,56 @@ export class BlockStorage {
                   );
 
         return block?.expandSignatures([signature]);
+    }
+
+    // ====================================
+    // UPDATE - On-chain timestamp
+    // ====================================
+
+    /*────────────────────────────────────────────────────────────────────────────
+      SET ON-CHAIN TIMESTAMP - OVERLOAD SIGNATURES
+    ────────────────────────────────────────────────────────────────────────────*/
+
+    /** [OVERLOAD 1] Set on-chain timestamp by hash */
+    setOnChainTimestamp(blockHash: Hash, timestamp: Timestamp): boolean;
+
+    /** [OVERLOAD 2] Set on-chain timestamp by coordinates */
+    setOnChainTimestamp(
+        forkId: ForkId,
+        height: BlockHeight,
+        timestamp: Timestamp
+    ): boolean;
+
+    /*────────────────────────────────────────────────────────────────────────────
+      IMPLEMENTATION
+    ────────────────────────────────────────────────────────────────────────────*/
+    setOnChainTimestamp(
+        hashOrForkId: Hash | ForkId,
+        timestampOrHeight: Timestamp | BlockHeight,
+        timestamp?: Timestamp
+    ): boolean {
+        let block: Block | undefined;
+
+        if (timestamp === undefined) {
+            // ┌─ ROUTES TO: [OVERLOAD 1] - by hash
+            block = this.hashToBlockMap.get(hashOrForkId as Hash);
+            if (block) {
+                block.onChainTimestamp = timestampOrHeight as Timestamp;
+                return true;
+            }
+            return false;
+        }
+        // ┌─ ROUTES TO: [OVERLOAD 2] - by coordinates
+        const coordinateKey = this.coordinatesToKey({
+            forkId: hashOrForkId as ForkId,
+            height: timestampOrHeight as BlockHeight
+        });
+        block = this.coordinatesToBlockMap.get(coordinateKey);
+        if (block) {
+            block.onChainTimestamp = timestamp;
+            return true;
+        }
+        return false;
     }
 
     // ====================================

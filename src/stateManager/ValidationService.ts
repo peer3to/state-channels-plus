@@ -321,6 +321,10 @@ export default class ValidationService {
 
             // True - Update the previous block with the on-chain timestamp
             previousBlock.onChainTimestamp = previousBlockOnChainTimestamp;
+            this.storage.blocks.setOnChainTimestamp(
+                previousBlock.hash,
+                previousBlockOnChainTimestamp
+            );
 
             // previousBlockOnChainTimestamp set - rerun validation - this time we have all the data to deduct the result
             return this.validateTimeLogic(block);
@@ -460,6 +464,10 @@ export default class ValidationService {
             // if still doesn't have on-chain timestamp return false - not posted at all
             if (!onChainTimestamp) return false;
             block.onChainTimestamp = onChainTimestamp;
+            this.storage.blocks.setOnChainTimestamp(
+                block.hash,
+                onChainTimestamp
+            );
         }
 
         // => Block has on-chain timestamp
