@@ -51,8 +51,6 @@ import {
     Type,
     hash,
     isCustomEvmError,
-    getActiveParticipants,
-    SignatureUtils,
     decodeErrorProxy,
     difference
 } from "@/utils";
