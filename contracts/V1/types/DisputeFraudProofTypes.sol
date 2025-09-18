@@ -4,8 +4,8 @@ import "./DataTypes.sol";
 
 contract DisputeFraudProofTypes {
     constructor(
-        DisputeNotLatestStateProof memory a,
-        DisputeInvalidOutputStateProof memory b,
+        DisputeNotLatestState memory a,
+        DisputeInvalidOutputState memory b,
         DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifed memory c,
         DisputeInvalidStateProofWithAuditingDataIntegrityVerifed memory d,
         DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks memory e,
@@ -23,12 +23,12 @@ contract DisputeFraudProofTypes {
 // Every Dispute Fraud Proof has an implicit argument/field `Dispute dispute`
 
 // This is sematically equivalent to SignedBlock, but logically it's any signature not only from the original block author
-struct DisputeNotLatestStateProof {
+struct DisputeNotLatestState {
     bytes encodedBlock;
     bytes signature;
 }
 
-struct DisputeInvalidOutputStateProof {
+struct DisputeInvalidOutputState {
     DisputeAuditingData auditingData;
 }
 

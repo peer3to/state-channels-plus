@@ -62,6 +62,7 @@ error ErrorDisputeTimeoutNotMinTimestamp();
 
 //FraudProofs
 error ErrorInvalidFraudProof();
+error ErrorInvalidFraudProofType();
 
 //Double sign
 error ErrorDoubleSignBlocksNotSame();

@@ -8,27 +8,6 @@ import "../types/DisputeFraudProofTypes.sol";
 import "./utils/DisputeUtils.sol";
 
 contract DisputeFraudProofFacet is StateChannelCommon {
-    mapping(
-        DisputeFraudProofType
-            => function(bytes memory encodedFraudProof, Dispute memory dispute) internal returns (address)
-    ) private proofHandlers;
-
-    constructor() {
-        //If we endup having too many fraud proofs, we'll refactor them into a seperate 'facet' (ERC-2535)
-        proofHandlers[DisputeFraudProofType.TimeoutThreshold] = _handleTimeoutThreshold;
-        proofHandlers[DisputeFraudProofType.TimeoutCalldataPosted] = _handleTimeoutCalldataPosted;
-        proofHandlers[DisputeFraudProofType.TimeoutParticipantNotNext] = _handleTimeoutParticipantNotNext;
-        proofHandlers[DisputeFraudProofType.TimeoutTooEarly] = _handleTimeoutTooEarly;
-        proofHandlers[DisputeFraudProofType.DisputeNotLatestState] = _handleDisputeNotLatestState;
-        proofHandlers[DisputeFraudProofType.DisputeInvalid] = _handleDisputeInvalid;
-        proofHandlers[DisputeFraudProofType.DisputeInvalidRecursive] = _handleDisputeInvalidRecursive;
-        proofHandlers[DisputeFraudProofType.DisputeOutOfGas] = _handleDisputeOutOfGas;
-        proofHandlers[DisputeFraudProofType.DisputeInvalidOutputState] = _handleDisputeInvalidOutputState;
-        proofHandlers[DisputeFraudProofType.DisputeInvalidStateProof] = _handleDisputeInvalidStateProof;
-        proofHandlers[DisputeFraudProofType.DisputeInvalidPreviousRecursive] = _handleDisputeInvalidPreviousRecursive;
-        proofHandlers[DisputeFraudProofType.DisputeInvalidExitChannelBlocks] = _handleDisputeInvalidExitChannelBlocks;
-    }
-
     //This is a bit inefficient, since public/external functions always do a deep copy unlike internal/private that pas by reference, but this shares the context
     function verifyDisputeFraudProofs(DisputeFraudProof[] memory disputeFraudProofs)
         public
@@ -40,7 +19,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             Dispute memory dispute = disputeFraudProofs[i].dispute;
             if (!isDisputeCommitted(dispute)) continue;
             address slashedParticipant =
-                proofHandlers[disputeFraudProofs[i].proofType](disputeFraudProofs[i].encodedProof, dispute);
+                _getHandle(disputeFraudProofs[i].proofType)(disputeFraudProofs[i].encodedProof, dispute);
             if (slashedParticipant == address(0) || slashedParticipant != disputeFraudProofs[i].participant) {
                 revert ErrorInvalidFraudProof();
             }
@@ -54,7 +33,122 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return finalDisputes;
     }
 
-    // ----------------------------------- Timeout Fraud Proofs -----------------------------------
+    function _getHandle(DisputeFraudProofType proofType)
+        internal
+        returns (function(bytes memory encodedFraudProof, Dispute memory dispute) internal returns (address))
+    {
+        if (proofType == DisputeFraudProofType.DisputeNotLatestState) return _handleDisputeNotLatestState;
+        if (proofType == DisputeFraudProofType.DisputeInvalidOutputState) return _handleDisputeInvalidOutputState;
+        if (proofType == DisputeFraudProofType.DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifed) {
+            return _handleDisputeInvalidStateProofWithoutAuditingDataIntegrityVerifed;
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidStateProofWithAuditingDataIntegrityVerifed) {
+            return _handleDisputeInvalidStateProofWithAuditingDataIntegrityVerifed;
+        }
+        if (
+            proofType
+                == DisputeFraudProofType.DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks
+        ) return _handleDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks;
+        if (proofType == DisputeFraudProofType.DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed) {
+            return _handleDisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed;
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidBalanceInvariant) {
+            return _handleDisputeInvalidBalanceInvariant;
+        }
+        if (proofType == DisputeFraudProofType.TimeoutThreshold) return _handleTimeoutThreshold;
+        if (proofType == DisputeFraudProofType.TimeoutCalldataPosted) return _handleTimeoutCalldataPosted;
+        if (proofType == DisputeFraudProofType.TimeoutNotLinkedToLatestState) {
+            return _handleTimeoutNotLinkedToLatestState;
+        }
+        if (proofType == DisputeFraudProofType.TimeoutParticipantNotNext) return _handleTimeoutParticipantNotNext;
+        if (proofType == DisputeFraudProofType.TimeoutTooEarly) return _handleTimeoutTooEarly;
+        revert ErrorInvalidFraudProofType();
+    }
+
+    function _handleDisputeNotLatestState(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
+        DisputeNotLatestState memory disputeNotLatestStateProof = abi.decode(encodedFraudProof, (DisputeNotLatestState));
+        Block memory newerBlock = abi.decode(disputeNotLatestStateProof.encodedBlock, (Block));
+        (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
+
+        // Check newBlock same channelId
+        if (!_areDisputeAndBlockSameChannel(dispute, newerBlock)) revert();
+        // Check newBlock same forkId
+        if (!_areDisputeAndBlockSameFork(dispute, newerBlock)) revert();
+
+        if (hasBlock) {
+            // Check latestBlock and newerBlock same channelId
+            if (!_areBlocksSameChannel(newerBlock, latestBlock)) revert();
+
+            // Check latestBlock and newerBlock same forkId
+            if (!_areBlocksSameFork(newerBlock, latestBlock)) revert();
+
+            // Check is block newer
+            if (_getBlockHeight(newerBlock) <= _getBlockHeight(latestBlock)) revert();
+        }
+        // if !hasBlock -> latestState should be genesis state -> if the disputer signed any block this proof is valid
+
+        // Check siganture
+        address retrivedAddress = StateChannelUtilLibrary.retriveSignerAddress(
+            disputeNotLatestStateProof.encodedBlock, disputeNotLatestStateProof.signature
+        );
+        if (retrivedAddress != dispute.input.disputer) revert();
+
+        return dispute.input.disputer;
+    }
+
+    function _handleDisputeInvalidOutputState(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
+        //TODO
+        return dispute.input.disputer;
+    }
+
+    function _handleDisputeInvalidStateProofWithoutAuditingDataIntegrityVerifed(
+        bytes memory encodedFraudProof,
+        Dispute memory dispute
+    ) internal view returns (address) {
+        //TODO
+        return dispute.input.disputer;
+    }
+
+    function _handleDisputeInvalidStateProofWithAuditingDataIntegrityVerifed(
+        bytes memory encodedFraudProof,
+        Dispute memory dispute
+    ) internal view returns (address) {
+        //TODO
+        return dispute.input.disputer;
+    }
+
+    function _handleDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks(
+        bytes memory encodedFraudProof,
+        Dispute memory dispute
+    ) internal view returns (address) {
+        //TODO
+        return dispute.input.disputer;
+    }
+
+    function _handleDisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed(
+        bytes memory encodedFraudProof,
+        Dispute memory dispute
+    ) internal view returns (address) {
+        //TODO
+        return dispute.input.disputer;
+    }
+
+    function _handleDisputeInvalidBalanceInvariant(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
+        //TODO
+        return dispute.input.disputer;
+    }
 
     function _handleTimeoutThreshold(bytes memory encodedFraudProof, Dispute memory dispute)
         internal
@@ -124,6 +218,15 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return dispute.input.disputer;
     }
 
+    function _handleTimeoutNotLinkedToLatestState(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
+        //TODO
+        return dispute.input.disputer;
+    }
+
     function _handleTimeoutParticipantNotNext(bytes memory encodedFraudProof, Dispute memory dispute)
         internal
         view
@@ -147,170 +250,4 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         //TODO
         return dispute.input.disputer;
     }
-
-    function _handleDisputeNotLatestState(bytes memory encodedFraudProof, Dispute memory dispute)
-        internal
-        view
-        returns (address)
-    {
-        DisputeNotLatestStateProof memory disputeNotLatestStateProof =
-            abi.decode(encodedFraudProof, (DisputeNotLatestStateProof));
-        Block memory newerBlock = abi.decode(disputeNotLatestStateProof.encodedBlock, (Block));
-        (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
-
-        // Check newBlock same channelId
-        if (!_areDisputeAndBlockSameChannel(dispute, newerBlock)) revert();
-        // Check newBlock same forkId
-        if (!_areDisputeAndBlockSameFork(dispute, newerBlock)) revert();
-
-        if (hasBlock) {
-            // Check latestBlock and newerBlock same channelId
-            if (!_areBlocksSameChannel(newerBlock, latestBlock)) revert();
-
-            // Check latestBlock and newerBlock same forkId
-            if (!_areBlocksSameFork(newerBlock, latestBlock)) revert();
-
-            // Check is block newer
-            if (_getBlockHeight(newerBlock) <= _getBlockHeight(latestBlock)) revert();
-        }
-        // if !hasBlock -> latestState should be genesis state -> if the disputer signed any block this proof is valid
-
-        // Check siganture
-        address retrivedAddress = StateChannelUtilLibrary.retriveSignerAddress(
-            disputeNotLatestStateProof.encodedBlock, disputeNotLatestStateProof.signature
-        );
-        if (retrivedAddress != dispute.input.disputer) revert();
-
-        return dispute.input.disputer;
-    }
-
-    function _handleDisputeInvalid(bytes memory encodedFraudProof, Dispute memory dispute)
-        internal
-        view
-        returns (address)
-    {
-        //TODO
-        return dispute.input.disputer;
-    }
-
-    function _handleDisputeInvalidRecursive(bytes memory encodedFraudProof, Dispute memory dispute)
-        internal
-        view
-        returns (address)
-    {
-        //TODO
-        return dispute.input.disputer;
-    }
-
-    function _handleDisputeOutOfGas(bytes memory encodedFraudProof, Dispute memory dispute)
-        internal
-        view
-        returns (address)
-    {
-        //TODO
-        return dispute.input.disputer;
-    }
-
-    function _handleDisputeInvalidOutputState(bytes memory encodedFraudProof, Dispute memory dispute)
-        internal
-        view
-        returns (address)
-    {
-        //TODO
-        return dispute.input.disputer;
-    }
-
-    function _handleDisputeInvalidStateProof(bytes memory encodedFraudProof, Dispute memory dispute)
-        internal
-        view
-        returns (address)
-    {
-        //TODO
-        return dispute.input.disputer;
-    }
-
-    function _handleDisputeInvalidPreviousRecursive(bytes memory encodedFraudProof, Dispute memory dispute)
-        internal
-        view
-        returns (address)
-    {
-        //TODO
-        return dispute.input.disputer;
-    }
-
-    function _handleDisputeInvalidExitChannelBlocks(bytes memory encodedFraudProof, Dispute memory dispute)
-        internal
-        view
-        returns (address)
-    {
-        //TODO
-        return dispute.input.disputer;
-    }
-
-    // function _handleTimeoutThreshold(
-    //     bytes memory encodedProof,
-    //     FraudProofVerificationContext memory fraudProofVerificationContext
-    // ) internal view returns (address) {
-    //     TimeoutThresholdProof memory timeoutThresholdProof = abi.decode(encodedProof, (TimeoutThresholdProof));
-    //     BlockConfirmation memory thresholdBlockConfirmation = timeoutThresholdProof.thresholdBlock;
-    //     Block memory thresholdBlock = abi.decode(thresholdBlockConfirmation.signedBlock.encodedBlock, (Block));
-    //     Dispute memory originalTimedOutDispute = timeoutThresholdProof.timedOutDispute;
-
-    //     bytes32 originalDisputeCommitment =
-    //         keccak256(abi.encode(originalTimedOutDispute, timeoutThresholdProof.timedOutDisputeTimestamp));
-
-    //     (bool isAvailable, bytes32 commitment) =
-    //         getDisputeCommitment(fraudProofVerificationContext.channelId, originalTimedOutDispute.disputeIndex);
-    //     if (!isAvailable && commitment != originalDisputeCommitment) {
-    //         return address(0);
-    //     }
-    //     if (originalTimedOutDispute.latestStateSnapshotHash != keccak256(timeoutThresholdProof.latestStateSnapshot)) {
-    //         revert ErrorIncorrectLatestStateSnapshot();
-    //     }
-    //     address[] memory participants =
-    //         abi.decode(timeoutThresholdProof.latestStateSnapshot, (StateSnapshot)).participants;
-
-    //     if (
-    //         thresholdBlock.transaction.header.forkId != originalTimedOutDispute.timeout.forkId
-    //             && thresholdBlock.transaction.header.transactionCnt != originalTimedOutDispute.timeout.blockHeight
-    //     ) {
-    //         revert ErrorInvalidBlock();
-    //     }
-    //     // check signatures
-    //     bytes[] memory singleSignerArray = new bytes[](1);
-    //     singleSignerArray[0] = thresholdBlockConfirmation.signedBlock.signature;
-    //     bytes[] memory signatures =
-    //         StateChannelUtilLibrary.concatBytesArrays(thresholdBlockConfirmation.signatures, singleSignerArray);
-    //     address[] memory signers = StateChannelUtilLibrary.concatAddressArrays(
-    //         participants,
-    //         _collectBlockConfirmationAddresses(thresholdBlockConfirmation.signedBlock.encodedBlock, signatures)
-    //     );
-
-    //     (bool isVerified, string memory errorMessage) = StateChannelUtilLibrary.verifyThresholdSigned(
-    //         signers, thresholdBlockConfirmation.signedBlock.encodedBlock, signatures
-    //     );
-    //     if (!isVerified) {
-    //         revert ErrorInvalidBlock();
-    //     }
-    //     if (keccak256(abi.encode(participants)) != keccak256(abi.encode(signers))) {
-    //         revert ErrorInvalidBlock();
-    //     }
-    //     // If calldata check also fails, return false with the last error message
-    //     return originalTimedOutDispute.disputer;
-    // }
-
-    // ------------------------------------ Dispute Fraud Proofs ------------------------------------
-
-    // function _collectBlockConfirmationAddresses(bytes memory encodedBlock, bytes[] memory signatures)
-    //     internal
-    //     pure
-    //     returns (address[] memory confirmationAddress)
-    // {
-    //     address[] memory collectedAddresses = new address[](signatures.length);
-    //     for (uint256 i = 0; i < signatures.length; i++) {
-    //         address signer = StateChannelUtilLibrary.retriveSignerAddress(encodedBlock, signatures[i]);
-    //         collectedAddresses[i] = signer;
-    //     }
-    //     return collectedAddresses;
-    // }
 }

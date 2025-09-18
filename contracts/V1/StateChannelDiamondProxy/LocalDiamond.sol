@@ -196,8 +196,7 @@ contract LocalDiamond is StateChannelManagerProxy {
             (disputeInput, latestStateSnapshot, latestStateMachineState, latestJoinChannelBlockHash)
         );
         // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) =
-            address(disputeVerificationFacet).delegatecall{gas: getGasLimit()}(data);
+        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: getGasLimit()}(data);
         if (!success) {
             assembly {
                 revert(add(returnData, 0x20), mload(returnData))
@@ -212,7 +211,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         returns (bool)
     {
         // The underlying function is pure, so no need for a delegatecall
-        return disputeVerificationFacet.checkDisputeAuditingDataCommitment(dispute, disputeAuditingData);
+        return DisputeVerificationFacet(disputeVerificationFacetAddress).checkDisputeAuditingDataCommitment(
+            dispute, disputeAuditingData
+        );
     }
 
     function isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
@@ -221,7 +222,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         returns (bool)
     {
         // The underlying function is pure, so no need for a delegatecall
-        return disputeVerificationFacet.isCorrectAuditingData(dispute, disputeAuditingData);
+        return DisputeVerificationFacet(disputeVerificationFacetAddress).isCorrectAuditingData(
+            dispute, disputeAuditingData
+        );
     }
 
     function isDisputeOutputCorrect(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
@@ -232,8 +235,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         bytes memory data =
             abi.encodeCall(DisputeVerificationFacet.isDisputeOutputCorrect, (dispute, disputeAuditingData));
         // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) =
-            address(disputeVerificationFacet).delegatecall{gas: getGasLimit()}(data);
+        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: getGasLimit()}(data);
         if (!success) {
             assembly {
                 revert(add(returnData, 0x20), mload(returnData))
@@ -271,7 +273,7 @@ contract LocalDiamond is StateChannelManagerProxy {
             (channelId, totalDeposits, totalWithdrawals, latestJoinChannelBlockHash)
         );
         // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) = address(disputeVerificationFacet).delegatecall(data);
+        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall(data);
         if (!success) {
             assembly {
                 revert(add(returnData, 0x20), mload(returnData))
@@ -286,6 +288,8 @@ contract LocalDiamond is StateChannelManagerProxy {
         bool auditingDataIntegrityVerified
     ) public view returns (bool) {
         // The underlying function is pure, so no need for a delegatecall
-        return disputeVerificationFacet.verifyStateProof(dispute, disputeAuditingData, auditingDataIntegrityVerified);
+        return DisputeVerificationFacet(disputeVerificationFacetAddress).verifyStateProof(
+            dispute, disputeAuditingData, auditingDataIntegrityVerified
+        );
     }
 }

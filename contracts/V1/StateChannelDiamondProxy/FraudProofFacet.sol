@@ -7,21 +7,6 @@ import "./Errors.sol";
 import "../types/FraudProofTypes.sol";
 
 contract FraudProofFacet is StateChannelCommon {
-    mapping(
-        FraudProofType
-            => function(bytes memory encodedFraudProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address)
-    ) private proofHandlers;
-
-    constructor() {
-        //If we endup having too many fraud proofs, we'll refactor them into a seperate 'facet' (ERC-2535)
-        proofHandlers[FraudProofType.BlockDoubleSign] = _handleBlockDoubleSign;
-        proofHandlers[FraudProofType.BlockEmptyBlock] = _handleBlockEmptyBlock;
-        proofHandlers[FraudProofType.BlockInvalidStateTransition] = _handleBlockInvalidStateTransition;
-        // proofHandlers[FraudProofType.TimeoutThreshold] = _handleTimeoutThreshold;
-        // proofHandlers[FraudProofType.TimeoutPriorInvalid] = _handleTimeoutPriorInvalid;
-        // proofHandlers[FraudProofType.DisputeInvalidPreviousRecursive] = _handleDisputeInvalidPreviousRecursive;
-    }
-
     //This is a bit inefficient, since public/external functions always do a deep copy unlike internal/private that pas by reference, but this shares the context
     function applyFraudProofs(
         FraudProof[] memory fraudProofs,
@@ -31,7 +16,7 @@ contract FraudProofFacet is StateChannelCommon {
         for (uint256 i = 0; i < proofs.length; i++) {
             if (!isParticipantSlashedOnChain(fraudProofVerificationContext.channelId, proofs[i].participant)) {
                 address slashedParticipant =
-                    proofHandlers[proofs[i].proofType](proofs[i].encodedProof, fraudProofVerificationContext);
+                    _getHandle(proofs[i].proofType)(proofs[i].encodedProof, fraudProofVerificationContext);
                 if (slashedParticipant == address(0) || slashedParticipant != proofs[i].participant) {
                     // slash the disputer
                     slashedParticipant = msg.sender;
@@ -42,6 +27,18 @@ contract FraudProofFacet is StateChannelCommon {
                 }
             }
         }
+    }
+
+    function _getHandle(FraudProofType proofType)
+        internal
+        returns (
+            function(bytes memory encodedFraudProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address)
+        )
+    {
+        if (proofType == FraudProofType.BlockDoubleSign) return _handleBlockDoubleSign;
+        if (proofType == FraudProofType.BlockEmptyBlock) return _handleBlockEmptyBlock;
+        if (proofType == FraudProofType.BlockInvalidStateTransition) return _handleBlockInvalidStateTransition;
+        revert ErrorInvalidFraudProofType();
     }
 
     // ******************************* FRAUD PROOF IMPLEMENTATION *******************************

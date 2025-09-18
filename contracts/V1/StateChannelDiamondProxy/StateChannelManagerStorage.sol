@@ -17,6 +17,15 @@ contract StateChannelManagerStorage {
 
     AStateMachine stateMachineImplementation;
 
+    // Facets
+    address disputeManagerFacetAddress;
+    address disputeVerificationFacetAddress;
+    address fraudProofFacetAddress;
+    address disputeFraudProofFacetAddress;
+    address stateSnapshotFacetAddress;
+    address joinChannelFacetAddress;
+    address consumerFacetAddress;
+
     // =================== State on chain storage ==================
     /// @dev Channel balance tracker
     mapping(bytes32 channelId => ChannelBalance) channelBalances;
