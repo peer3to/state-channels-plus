@@ -1,5 +1,7 @@
+const { Project } = require("ts-morph");
 const fs = require("fs");
 const path = require("path");
+const config = require("./config");
 
 function extractStructsFromABI(abi) {
     const structs = new Map();
@@ -66,8 +68,11 @@ function generateEthersTypeString(structName, components, allStructs) {
 }
 
 function generateEthersTypes() {
-    const typesDir = path.join(__dirname, "../artifacts/contracts/V1/types/");
-    const outputPath = path.join(__dirname, "../src/types/generated-ethers.ts");
+    const typesDir = path.join(__dirname, config.TYPES_DIR);
+    const outputPath = path.join(
+        __dirname,
+        config.GENERATED_ETHERS_OUTPUT_PATH
+    );
     const allStructs = new Map();
 
     const typeDirs = fs
@@ -93,19 +98,35 @@ function generateEthersTypes() {
         }
     }
 
-    let generatedCode = `// Auto-generated. Do not edit.\n\n`;
+    // Use ts-morph to generate the file
+    const project = new Project();
+    const file = project.createSourceFile(outputPath, "", { overwrite: true });
 
+    // Add file header comment
+    file.insertText(0, `${config.FILE_HEADER}\n\n`);
+
+    // Add exports for each struct
     for (const [structName, components] of allStructs) {
         const ethersType = generateEthersTypeString(
             structName,
             components,
             allStructs
         );
-        generatedCode += `export const ${structName}EthersType = \`${ethersType}\`;\n\n`;
+
+        file.addVariableStatement({
+            isExported: true,
+            declarationKind: "const",
+            declarations: [
+                {
+                    name: `${structName}EthersType`,
+                    initializer: `\`${ethersType}\``
+                }
+            ]
+        });
     }
 
-    fs.writeFileSync(outputPath, generatedCode);
-    console.log(`Generated ${allStructs.size} ethers types`);
+    file.saveSync();
+    console.log(config.ETHERS_SUCCESS_MESSAGE(allStructs.size));
 }
 
 if (require.main === module) {

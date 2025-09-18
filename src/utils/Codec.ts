@@ -18,24 +18,10 @@ import {
     WrongGenesisProofStruct
 } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 import {
-    BlockEthersType,
-    BlockCommitmentEthersType,
-    DisputeEthersType,
-    JoinChannelEthersType,
-    TransactionEthersType,
-    StateSnapshotEthersType,
-    JoinChannelBlockEthersType,
-    ExitChannelEthersType,
-    ExitChannelBlockEthersType,
-    BlockConfirmationEthersType,
-    SnapshotDataEthersType,
-    BlockDoubleSignProofEthersType,
-    BlockInvalidStateTransitionProofEthersType,
-    InvalidTimestampProofEthersType,
-    WrongGenesisProofEthersType,
-    FraudProofType,
-    DisputeAuditingDataEthersType
-} from "@/types";
+    Type,
+    TYPE_TO_ETHERS_TYPE_MAP,
+    FraudProofType
+} from "./generated-codec";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Bytes, Timestamp } from "@/types/types";
 import { ExecResult } from "@ethereumjs/evm";
@@ -62,56 +48,46 @@ type StructType =
     | ExitChannelStruct
     | DisputeAuditingDataStruct;
 
-// Enum for better autocomplete and type safety
-export enum Type {
-    Block,
-    BlockCommitment,
-    JoinChannel,
-    BlockConfirmation,
-    Transaction,
-    Dispute,
-    StateSnapshot,
-    SnapshotData,
-    JoinChannelBlock,
-    ExitChannelBlock,
-    ExitChannel,
-    DisputeAuditingData
-}
+// Export the generated Type enum
+export { Type } from "./generated-codec";
+
+const CUSTOM_TYPE_MAPPINGS: Record<string, string> = {
+    // Example custom mappings
+    // "MyCustomType": "tuple(address,uint256)",
+    // "MyStruct": "tuple(string,bool,uint256[])",
+};
 
 export class Codec {
-    private static readonly structToEthersType = new Map<
-        Type | FraudProofType,
-        string
-    >([
-        [Type.Block, BlockEthersType],
-        [Type.BlockCommitment, BlockCommitmentEthersType],
-        [Type.JoinChannel, JoinChannelEthersType],
-        [Type.BlockConfirmation, BlockConfirmationEthersType],
-        [Type.Transaction, TransactionEthersType],
-        [Type.Dispute, DisputeEthersType],
-        [Type.StateSnapshot, StateSnapshotEthersType],
-        [Type.SnapshotData, SnapshotDataEthersType],
-        [Type.JoinChannelBlock, JoinChannelBlockEthersType],
-        [Type.ExitChannelBlock, ExitChannelBlockEthersType],
-        [Type.ExitChannel, ExitChannelEthersType],
-        [Type.DisputeAuditingData, DisputeAuditingDataEthersType],
-        [FraudProofType.BlockDoubleSign, BlockDoubleSignProofEthersType],
-        [
-            FraudProofType.BlockInvalidStateTransition,
-            BlockInvalidStateTransitionProofEthersType
-        ],
-        [FraudProofType.InvalidTimestamp, InvalidTimestampProofEthersType],
-        [FraudProofType.WrongGenesis, WrongGenesisProofEthersType]
-    ]);
+    private static readonly structToEthersType = TYPE_TO_ETHERS_TYPE_MAP;
 
-    public static encode(
-        struct: StructType,
-        type: Type | FraudProofType
-    ): Bytes {
+    private static getEthersType(type: Type | FraudProofType | string): string {
+        if (typeof type === "string") {
+            const customType = CUSTOM_TYPE_MAPPINGS[type];
+            if (customType) {
+                return customType;
+            }
+            throw new Error(
+                `No ethers type mapping found for custom type ${type}`
+            );
+        }
+
         const ethersType = this.structToEthersType.get(type);
         if (!ethersType) {
             throw new Error(`No ethers type mapping found for ${type}`);
         }
+        return ethersType;
+    }
+
+    public static encode(
+        struct: StructType,
+        type: Type | FraudProofType
+    ): Bytes;
+    public static encode(struct: any, type: string): Bytes;
+    public static encode(
+        struct: any,
+        type: Type | FraudProofType | string
+    ): Bytes {
+        const ethersType = this.getEthersType(type);
         return ethers.AbiCoder.defaultAbiCoder().encode([ethersType], [struct]);
     }
 
@@ -129,7 +105,6 @@ export class Codec {
         encoded: Bytes,
         type: Type.Transaction
     ): TransactionStruct;
-    public static decode(encoded: Bytes, type: Type.Dispute): DisputeStruct;
     public static decode(
         encoded: Bytes,
         type: Type.StateSnapshot
@@ -146,12 +121,11 @@ export class Codec {
         encoded: Bytes,
         type: Type.ExitChannelBlock
     ): ExitChannelBlockStruct;
+    public static decode<T = any>(encoded: Bytes, type: string): T;
 
-    public static decode<T extends StructType>(encoded: Bytes, type: Type): T {
-        const ethersType = this.structToEthersType.get(type);
-        if (!ethersType) {
-            throw new Error(`No ethers type mapping found for ${type}`);
-        }
+    public static decode<T extends StructType>(encoded: Bytes, type: Type): T;
+    public static decode<T = any>(encoded: Bytes, type: Type | string): T {
+        const ethersType = this.getEthersType(type as any);
 
         const decoded = ethers.AbiCoder.defaultAbiCoder().decode(
             [ethersType],

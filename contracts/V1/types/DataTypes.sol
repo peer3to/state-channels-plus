@@ -20,7 +20,8 @@ contract DataTypes {
         ExitChannelBlock memory m,
         StateSnapshot memory n,
         SnapshotData memory o,
-        OnChainJoinChannel memory p
+        OnChainJoinChannel memory p,
+        BlockCommitment memory q
     ) {}
 }
 
@@ -38,6 +39,11 @@ struct SignedBlock {
 struct BlockConfirmation {
     SignedBlock signedBlock;
     bytes[] signatures;
+}
+
+struct BlockCommitment {
+    SignedBlock signedBlock;
+    uint256 timestamp;
 }
 
 struct TransactionHeader {

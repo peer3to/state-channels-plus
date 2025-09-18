@@ -1,60 +1,125 @@
 const fs = require("fs");
 const path = require("path");
+const { Project, VariableDeclarationKind } = require("ts-morph");
+const config = require("./config");
 
-const artifactsPath = path.join(
-    __dirname,
-    "../artifacts/contracts/V1/StateChannelDiamondProxy/"
-);
-const stateMachineArtifactsPath = path.join(
-    __dirname,
-    "../artifacts/contracts/V1/"
-);
-const outputPath = path.join(__dirname, "../src/utils/GeneratedArtifacts.ts");
+function generateArtifacts() {
+    const {
+        DIAMOND_PROXY_PATH,
+        STATE_MACHINE_PATH,
+        OUTPUT_PATH,
+        FACETS,
+        STATE_MACHINE_CONTRACTS
+    } = config.ARTIFACTS_CONFIG;
 
-const facets = [
-    "StateChannelManagerProxy",
-    "AConsumerFacet",
-    "DisputeManagerFacet",
-    "DisputeFraudProofFacet",
-    "FraudProofFacet",
-    "JoinChannelFacet",
-    "StateChannelCommon",
-    "StateSnapshotFacet",
-    "LocalDiamond"
-];
-const stateMachineContracts = ["AStateMachine"];
+    // Resolve paths relative to script directory
+    const artifactsPath = path.join(__dirname, DIAMOND_PROXY_PATH);
+    const stateMachineArtifactsPath = path.join(__dirname, STATE_MACHINE_PATH);
+    const outputPath = path.join(__dirname, OUTPUT_PATH);
 
-const artifacts = facets.map((facet) => {
-    const artifactPath = path.join(artifactsPath, `${facet}.sol/${facet}.json`);
-    return JSON.parse(fs.readFileSync(artifactPath, "utf8"));
-});
-const stateMachineArtifacts = stateMachineContracts.map((artifact) => {
-    const artifactPath = path.join(
-        stateMachineArtifactsPath,
-        `${artifact}.sol/${artifact}.json`
+    // Load artifacts
+    const artifacts = FACETS.map((facet) => {
+        const artifactPath = path.join(
+            artifactsPath,
+            `${facet}.sol/${facet}.json`
+        );
+        return JSON.parse(fs.readFileSync(artifactPath, "utf8"));
+    });
+
+    const stateMachineArtifacts = STATE_MACHINE_CONTRACTS.map((contract) => {
+        const artifactPath = path.join(
+            stateMachineArtifactsPath,
+            `${contract}.sol/${contract}.json`
+        );
+        return JSON.parse(fs.readFileSync(artifactPath, "utf8"));
+    });
+
+    const allArtifacts = [...artifacts, ...stateMachineArtifacts];
+
+    // Extract error ABIs
+    const errorAbis = allArtifacts.flatMap((artifact) => {
+        return artifact.abi.filter((item) => item.type === "error");
+    });
+
+    // Generate TypeScript file using ts-morph
+    const project = new Project();
+    const sourceFile = project.createSourceFile(outputPath, "", {
+        overwrite: true
+    });
+
+    // Add file header
+    sourceFile.insertText(
+        0,
+        `${config.FILE_HEADER}\n// Generated from build artifacts\n\n`
     );
-    return JSON.parse(fs.readFileSync(artifactPath, "utf8"));
-});
 
-const allArtifacts = [...artifacts, ...stateMachineArtifacts];
+    // Add main artifacts export
+    sourceFile.addVariableStatement({
+        isExported: true,
+        declarationKind: VariableDeclarationKind.Const,
+        declarations: [
+            {
+                name: "artifacts",
+                initializer: `${JSON.stringify(allArtifacts, null, 2)} as const`
+            }
+        ]
+    });
 
-const errorAbis = allArtifacts.flatMap((artifact) => {
-    return artifact.abi.filter((item) => item.type === "error");
-});
+    // Add error ABIs export
+    sourceFile.addVariableStatement({
+        isExported: true,
+        declarationKind: VariableDeclarationKind.Const,
+        declarations: [
+            {
+                name: "errorAbis",
+                initializer: `${JSON.stringify(errorAbis, null, 2)} as const`
+            }
+        ]
+    });
 
-// Generate TypeScript module
-const generatedCode = `// This file is auto-generated. Do not edit manually.
-// Generated from build artifacts
+    // Add comment for individual exports
+    sourceFile.insertText(
+        sourceFile.getEnd(),
+        "\n// Individual artifact exports for convenience\n"
+    );
 
-export const artifacts = ${JSON.stringify(allArtifacts, null, 2)} as const;
+    // Add individual facet exports
+    FACETS.forEach((facet) => {
+        sourceFile.addVariableStatement({
+            isExported: true,
+            declarationKind: VariableDeclarationKind.Const,
+            declarations: [
+                {
+                    name: `${facet}Artifact`,
+                    initializer: `artifacts.find(a => a.contractName === "${facet}")!`
+                }
+            ]
+        });
+    });
 
-export const errorAbis = ${JSON.stringify(errorAbis, null, 2)} as const;
+    // Add individual state machine exports
+    STATE_MACHINE_CONTRACTS.forEach((contract) => {
+        sourceFile.addVariableStatement({
+            isExported: true,
+            declarationKind: VariableDeclarationKind.Const,
+            declarations: [
+                {
+                    name: `${contract}Artifact`,
+                    initializer: `artifacts.find(a => a.contractName === "${contract}")!`
+                }
+            ]
+        });
+    });
 
-// Individual artifact exports for convenience
-${facets.map((facet) => `export const ${facet}Artifact = artifacts.find(a => a.contractName === "${facet}")!;`).join("\n")}
+    // Save file
+    sourceFile.saveSync();
+    console.log(config.ARTIFACTS_SUCCESS_MESSAGE(outputPath));
+}
 
-${stateMachineContracts.map((contract) => `export const ${contract}Artifact = artifacts.find(a => a.contractName === "${contract}")!;`).join("\n")}
-`;
+// Export for use in generate-all.js
+module.exports = { generateArtifacts };
 
-fs.writeFileSync(outputPath, generatedCode);
-console.log(`Generated artifacts module at ${outputPath}`);
+// Run directly if called as script
+if (require.main === module) {
+    generateArtifacts();
+}
