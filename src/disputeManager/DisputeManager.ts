@@ -3,33 +3,29 @@ import AgreementManager from "../agreementManager";
 import { StateChannelManagerProxy } from "@typechain-types";
 import {
     DisputeConfirmationStruct,
-    DisputeStruct
+    DisputeStruct,
+    DisputeAuditingDataStruct,
+    DisputeInputStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import {
     DebugProxy,
     hash,
     intersection,
-    difference,
     Codec,
     Type,
     SignatureUtils
 } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
-import { Address, Bytes, ChannelId, ForkId } from "../types/types";
+import { Address, ChannelId, ForkId } from "../types/types";
 import { StateSnapshot } from "../models";
 import Storage from "@/storage";
 import ADiamondStateMachine from "../ADiamondStateMachine";
 import {
-    DisputeAuditingDataStruct,
-    DisputeInputStruct,
-    ExitChannelBlockStruct,
-    SnapshotDataStruct,
     StateProofStruct,
     TimeoutStruct
 } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
-import { FraudProofStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/FraudProofFacet";
 
 let DEBUG_DISPUTE_HANDLER = true;
 

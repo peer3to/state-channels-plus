@@ -16,11 +16,11 @@ import {
     BalanceEthersType,
     SnapshotDataEthersType
 } from "@/types/ethers";
-import { DebugProxy, decodeErrorProxy, Codec, Type } from "@/utils";
+import { DebugProxy, decodeErrorProxy, Codec } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
-import { Address, Bytes, ChannelId, Hash } from "@/types/types";
+import { Address, Bytes, Hash } from "@/types/types";
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import Storage from "@/storage";
@@ -35,10 +35,8 @@ import {
     DisputeAuditingDataStruct,
     DisputeStruct,
     SnapshotDataStruct,
-    StateSnapshotStruct,
-    TimeoutStruct
+    StateSnapshotStruct
 } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
-import { FraudProofStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/FraudProofFacet";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 

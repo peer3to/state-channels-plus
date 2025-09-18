@@ -1,11 +1,6 @@
-import {
-    BlockConfirmationStruct,
-    SignedBlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
-import { SignedDisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { ExecutionFlags } from "@/types";
+import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+
 import { ARpcService, MainRpcService } from "@/rpc";
-import { retry } from "@/utils/retry";
 
 class StateTransitionService extends ARpcService {
     constructor(mainRpcService: MainRpcService) {
