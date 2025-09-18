@@ -1,5 +1,5 @@
 import { ARpcService, MainRpcService } from "@/rpc";
-import { ChannelId, Timestamp, Hash } from "@/types/types";
+import { ChannelId, Timestamp, Bytes } from "@/types/types";
 import { StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
@@ -15,11 +15,12 @@ export interface SnapshotPayload {
     latestForkGenesisSnapshot: StateSnapshot;
     disputeWindows?: DisputeStruct[][];
     stateProof?: StateProofStruct;
-    encodedState?: Hash;
+    milestoneSnapshots?: StateSnapshot[];
+    encodedState?: Bytes;
 }
 
 class SpectateService extends ARpcService {
-    private spectateInitTime: number | null = null;
+    private spectateInitTimes: Map<ChannelId, number> = new Map();
 
     constructor(mainRpcService: MainRpcService) {
         super(mainRpcService);
@@ -30,8 +31,8 @@ class SpectateService extends ARpcService {
         console.log("spectateSync !");
         let time = Clock.getTimeInSeconds();
 
-        // Store the init time for RTT calculation
-        this.spectateInitTime = time;
+        // Store the init time for RTT calculation per channel
+        this.spectateInitTimes.set(channelId, time);
 
         this.mainRpcService.rpcProxy
             .onSpectateRequest(channelId, time)
@@ -62,16 +63,19 @@ class SpectateService extends ARpcService {
     ) {
         console.log(`onSpectateResponse - start`);
 
-        if (!this.spectateInitTime) {
-            console.log("onSpectateResponse - no init time found, ignoring");
+        const initTime = this.spectateInitTimes.get(channelId);
+        if (!initTime) {
+            console.log(
+                "onSpectateResponse - no init time found for channel, ignoring"
+            );
             return;
         }
 
         let localTime = Clock.getTimeInSeconds();
-        let rtt = localTime - this.spectateInitTime;
+        let rtt = localTime - initTime;
 
         console.log(
-            `onSpectateResponse - RTT: ${rtt}s, initTime: ${this.spectateInitTime}, responseTime: ${localTime}`
+            `onSpectateResponse - RTT: ${rtt}s, initTime: ${initTime}, responseTime: ${localTime}`
         );
 
         // If RTT is too high, disconnect from all peers
@@ -105,6 +109,7 @@ class SpectateService extends ARpcService {
                 "Disconnecting from all peers due to verification failure"
             );
             this.mainRpcService.p2pManager.disconnectAll();
+            this.spectateInitTimes.delete(channelId);
             return;
         }
 
@@ -118,6 +123,8 @@ class SpectateService extends ARpcService {
         await this.applyQueuedBlocksFromPipeline(channelId);
 
         console.log("Spectator successfully synced to latest proven state");
+
+        this.spectateInitTimes.delete(channelId);
     }
 
     /**
@@ -147,34 +154,35 @@ class SpectateService extends ARpcService {
 
         // Get the latest state proof data (only if there are blocks for same-fork update)
         let latestStateProof: StateProofStruct | undefined;
-        let encodedState: Hash | undefined;
+        let encodedState: Bytes | undefined;
 
-        if (latestBlockHeight >= 0) {
-            // There are blocks, so we can do a same-fork update
-            latestStateProof = await agreementManager.getStateProof(
-                forkId,
-                latestBlockHeight
+        // There are blocks, so we can do a same-fork update
+        latestStateProof = await agreementManager.getStateProof(
+            forkId,
+            latestBlockHeight
+        );
+        // Collect the concrete milestone snapshots for the state proof
+        const milestoneSnapshots: StateSnapshot[] =
+            latestStateProof.milestones.map((m) =>
+                agreementManager.getSnapshot(m)
             );
-
-            // Get the encoded state that the stateProof proves
-            if (latestStateProof.milestones.length > 0) {
-                const latestMilestone =
-                    latestStateProof.milestones[
-                        latestStateProof.milestones.length - 1
-                    ];
-                const latestSnapshot =
-                    agreementManager.getSnapshot(latestMilestone);
-                const stateHash =
-                    latestSnapshot.snapshotData.stateMachineStateHash;
-                encodedState =
-                    stateManager.storage.stateMachineStates.getStateMachineState(
-                        stateHash
-                    );
-                if (!encodedState) {
-                    throw new Error(
-                        `No encoded state found for state hash ${stateHash}`
-                    );
-                }
+        // Get the encoded state that the stateProof proves
+        if (latestStateProof.milestones.length > 0) {
+            const latestMilestone =
+                latestStateProof.milestones[
+                    latestStateProof.milestones.length - 1
+                ];
+            const latestSnapshot =
+                agreementManager.getSnapshot(latestMilestone);
+            const stateHash = latestSnapshot.snapshotData.stateMachineStateHash;
+            encodedState =
+                stateManager.storage.stateMachineStates.getStateMachineState(
+                    stateHash
+                );
+            if (!encodedState) {
+                throw new Error(
+                    `No encoded state found for state hash ${stateHash}`
+                );
             }
         }
 
@@ -195,25 +203,7 @@ class SpectateService extends ARpcService {
             );
 
         while (isDisputed) {
-            // Check if reduced result already exists on-chain
-            const existingReducedResult =
-                await stateManager.stateChannelManagerContract.getReducedResult(
-                    channelId,
-                    currentForkId
-                );
-
-            if (existingReducedResult[0]) {
-                // Traverse to the reduced fork
-                currentForkId = existingReducedResult[0];
-                isDisputed =
-                    await stateManager.stateChannelManagerContract.isForkDisputed(
-                        channelId,
-                        currentForkId
-                    );
-                continue;
-            }
-
-            // No existing reduced result, collect disputes for this dispute window
+            // Collect disputes for this dispute window (no on-chain shortcuts)
             const disputeCommitments =
                 await stateManager.stateChannelManagerContract.getWindowCommitments(
                     channelId,
@@ -274,6 +264,7 @@ class SpectateService extends ARpcService {
             latestForkGenesisSnapshot,
             ...(disputeWindows.length > 0 && { disputeWindows }),
             ...(latestStateProof && { stateProof: latestStateProof }),
+            ...(milestoneSnapshots.length > 0 && { milestoneSnapshots }),
             ...(encodedState && { encodedState })
         };
     }
