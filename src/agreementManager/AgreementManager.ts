@@ -4,7 +4,7 @@ import {
     MilestoneProofStruct,
     StateProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
-import Storage, { BlockEntry, SortOrder } from "@/storage";
+import Storage, { SortOrder } from "@/storage";
 import { Address, BlockHeight, ForkId, Signature } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import { Codec, Type } from "@/utils";
@@ -21,12 +21,9 @@ class AgreementManager {
         forkId: ForkId,
         participantAdr: Address
     ): { block: Block; signature: Signature } | undefined {
-        const blockEntries = this.storage.blocks.getIterator(
-            forkId,
-            SortOrder.DESC
-        );
+        const blocks = this.storage.blocks.getIterator(forkId, SortOrder.DESC);
 
-        for (const { block } of blockEntries) {
+        for (const block of blocks) {
             const { didSign, signature } = block.findSignature(participantAdr);
 
             if (didSign) {
@@ -136,9 +133,7 @@ class AgreementManager {
                 blockHeight
             );
 
-            for (const blockEntry of blockIterator) {
-                const block = blockEntry.block;
-
+            for (const block of blockIterator) {
                 signedBlocks.push(block.signedBlock);
 
                 if (
@@ -186,7 +181,7 @@ class AgreementManager {
      * Try to build a milestone from a block iterator and current snapshot
      */
     public tryBuildMilestone(
-        blockIterator: Generator<BlockEntry, void, unknown>,
+        blockIterator: Generator<Block, void, unknown>,
         currentSnapshot: StateSnapshot
     ): MilestoneProofStruct | undefined {
         const requiredSignersSet = new Set<Address>(
@@ -195,9 +190,7 @@ class AgreementManager {
 
         const filteredBlocks: Block[] = [];
 
-        for (const blockEntry of blockIterator) {
-            const currentBlock = blockEntry.block;
-
+        for (const currentBlock of blockIterator) {
             const filteredBlock = Block.fromSignedBlock(
                 currentBlock.signedBlock
             );
@@ -245,15 +238,12 @@ class AgreementManager {
         blockHeight: BlockHeight,
         participantAddress: Address
     ): boolean {
-        const blockEntry = this.storage.blocks.getBlockEntry(
-            forkId,
-            blockHeight
-        );
-        if (!blockEntry) return false;
+        const block = this.storage.blocks.getBlock(forkId, blockHeight);
+        if (!block) return false;
 
-        if (!blockEntry.onChainTimestamp) return false;
+        if (!block.onChainTimestamp) return false;
 
-        return blockEntry.block.author === participantAddress;
+        return block.author === participantAddress;
     }
 
     /**
@@ -266,13 +256,11 @@ class AgreementManager {
         const block = Block.fromSignedBlock(signedBlock);
 
         // Check if there's already a block at these coordinates
-        const existingBlockEntry = this.storage.blocks.getBlockEntry(
+        const existingBlock = this.storage.blocks.getBlock(
             block.forkId,
             block.height
         );
-        if (!existingBlockEntry) return undefined;
-
-        const existingBlock = existingBlockEntry.block;
+        if (!existingBlock) return undefined;
 
         // Check if it's by the same author but different block (double sign)
         if (
