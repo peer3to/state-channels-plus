@@ -65,7 +65,7 @@
     "yarn": ">=1.15"
   },
   "scripts": {
-    "compile": "yarn hardhat clean && yarn hardhat compile --force && yarn hardhat typechain",
+    "compile": "yarn hardhat clean && yarn hardhat compile --force && yarn hardhat typechain && node scripts/generate-ethers-types.js",
     "generate-artifacts": "node scripts/generate-artifacts.js",
     "testts": "yarn hardhat test --no-compile",
     "testc": "yarn lint && yarn compile && yarn hardhat test",
