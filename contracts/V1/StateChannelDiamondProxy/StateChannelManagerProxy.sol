@@ -36,7 +36,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         agreementTime = 5;
         chainFallbackTime = 30;
         evidenceTime = 30;
-        killTime = 60;
     }
 
     // ********** public/external functions **********
@@ -141,16 +140,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         _delegatecall(
             disputeManagerFacetAddress,
             abi.encodeCall(DisputeManagerFacet.uploadDisputeWithCalldata, (disputeConfirmation, disputeAuditingData))
-        );
-    }
-
-    function uploadDisputeAndAudit(
-        DisputeConfirmation memory disputeConfirmation,
-        DisputeAuditingData memory disputeAuditingData
-    ) public override {
-        _delegatecall(
-            disputeManagerFacetAddress,
-            abi.encodeCall(DisputeManagerFacet.uploadDisputeAndAudit, (disputeConfirmation, disputeAuditingData))
         );
     }
 
@@ -298,15 +287,11 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return StateChannelCommon.getEvidenceTime();
     }
 
-    function getKillTime() public view override(StateChannelCommon, StateChannelManagerInterface) returns (uint256) {
-        return StateChannelCommon.getKillTime();
-    }
-
     function getAllTimes()
         public
         view
         override(StateChannelCommon, StateChannelManagerInterface)
-        returns (uint256, uint256, uint256, uint256, uint256)
+        returns (uint256, uint256, uint256, uint256)
     {
         return StateChannelCommon.getAllTimes();
     }
@@ -395,25 +380,15 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
             (reducedResult.forkId, reducedResult.forkGenesisTimestamp, reducedResult.timestamp, reducedResult.reducer);
     }
 
-    function reduceProxyView(Dispute[] memory disputes, uint256 disputeWindowCreationTimestamp)
-        external
-        view
-        returns (ReduceOutput memory reducedOutput)
-    {
+    function reduceProxyView(Dispute[] memory disputes) external view returns (ReduceOutput memory reducedOutput) {
         // This should trick the compiler, but still use delegatecall under the hood. This doesn't magically allow us to mutate the state in view functions that use delegate call.
         // Ethers and other tools won't issue a transaction, but a call that runs on a single node so even if it did modify the state it wouldn't be reflected on-chain/persisted.
-        return DisputeVerificationFacet(address(this)).reduce(disputes, disputeWindowCreationTimestamp);
+        return DisputeVerificationFacet(address(this)).reduce(disputes);
     }
 
-    function reduce(Dispute[] memory disputes, uint256 disputeWindowCreationTimestamp)
-        public
-        override
-        returns (ReduceOutput memory reducedOutput)
-    {
-        bytes memory result = _delegatecall(
-            disputeVerificationFacetAddress,
-            abi.encodeCall(DisputeVerificationFacet.reduce, (disputes, disputeWindowCreationTimestamp))
-        );
+    function reduce(Dispute[] memory disputes) public override returns (ReduceOutput memory reducedOutput) {
+        bytes memory result =
+            _delegatecall(disputeVerificationFacetAddress, abi.encodeCall(DisputeVerificationFacet.reduce, (disputes)));
         return abi.decode(result, (ReduceOutput));
     }
 
@@ -434,7 +409,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     function reduceAndFinalize(
         Dispute[] memory disputes,
-        uint256 disputeWindowCreationTimestamp,
         StateSnapshot memory stateSnapshot,
         bytes memory encodedStateMachineState,
         JoinChannelBlock[] memory joinChannelBlocks
@@ -443,7 +417,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
             disputeVerificationFacetAddress,
             abi.encodeCall(
                 DisputeVerificationFacet.reduceAndFinalize,
-                (disputes, disputeWindowCreationTimestamp, stateSnapshot, encodedStateMachineState, joinChannelBlocks)
+                (disputes, stateSnapshot, encodedStateMachineState, joinChannelBlocks)
             )
         );
     }

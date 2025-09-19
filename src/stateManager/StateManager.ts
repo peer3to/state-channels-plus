@@ -836,18 +836,10 @@ class StateManager {
                     disputes.push(dispute);
                 }
 
-                // Get the dispute window creation timestamp from the on-chain contract
-                const creationTimestamp =
-                    await this.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
-                        this.channelId,
-                        currentForkId
-                    );
-
                 // Use proxy view to compute reduced output cheaply (no tx)
                 const reducedOutput =
                     await this.stateChannelManagerContract.reduceProxyView(
-                        disputes,
-                        creationTimestamp
+                        disputes
                     );
 
                 // Derive latest snapshot and encoded state from reduced output's latest block
@@ -902,7 +894,6 @@ class StateManager {
                     const txResponse =
                         await this.stateChannelManagerContract.reduceAndFinalize(
                             disputes,
-                            creationTimestamp,
                             latestSnapshot.toStruct(),
                             encodedStateForReduce,
                             joinChannelBlocks
@@ -1184,15 +1175,15 @@ class StateManager {
         totalWithdrawals: BalanceStruct;
     }> {
         const previousStateSnapshot =
-            this.storage.getPreviousStateSnapshot(coordinates)!;
-        const genesisStateSnapshot =
-            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                coordinates.forkId
-            )!;
+            this.storage.getPreviousStateSnapshot(coordinates);
+        if (!previousStateSnapshot)
+            throw new Error(
+                "createStateSnapshot for block - previousStateSnapshot undefined"
+            );
 
         const latestJoinChannelBlockHash =
-            genesisStateSnapshot.snapshotData.latestJoinChannelBlockHash;
-        const totalDeposits = genesisStateSnapshot.snapshotData.totalDeposits;
+            previousStateSnapshot.snapshotData.latestJoinChannelBlockHash;
+        const totalDeposits = previousStateSnapshot.snapshotData.totalDeposits;
 
         let { latestExitChannelBlockHash, totalWithdrawals, participants } =
             previousStateSnapshot.snapshotData;
@@ -1221,6 +1212,7 @@ class StateManager {
             blockHeight: BigInt(coordinates.height),
             timestamp: timestamp,
             snapshotData: {
+                originForkId: previousStateSnapshot.snapshotData.originForkId,
                 stateMachineStateHash: stateMachineStateHash,
                 participants,
                 latestJoinChannelBlockHash,

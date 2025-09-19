@@ -54,11 +54,11 @@ function _getMilestoneBlocks(StateProof memory stateProof) pure returns (Block[]
 
 //not used anywhere right now
 function _isEvidencePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime) view returns (bool) {
-    return block.timestamp > disputeWindow.evidence.creationTimestamp + evidenceTime;
+    return block.timestamp >= disputeWindow.evidence.creationTimestamp + evidenceTime;
 }
 
-function _isKillPeriodExpired(DisputeWindow storage disputeWindow, uint256 killTime) view returns (bool) {
-    return block.timestamp > disputeWindow.evidence.creationTimestamp + killTime;
+function _isKillPeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime) view returns (bool) {
+    return block.timestamp >= disputeWindow.evidence.lastEvidenceSubmissionTimestamp + evidenceTime;
 }
 
 function areDisputesCommitted(DisputeWindow storage disputeWindow, Dispute[] memory disputes) view returns (bool) {

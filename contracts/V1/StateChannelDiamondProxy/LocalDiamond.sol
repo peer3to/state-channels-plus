@@ -36,7 +36,6 @@ contract LocalDiamond is StateChannelManagerProxy {
         agreementTime = 5;
         chainFallbackTime = 5;
         evidenceTime = 5;
-        killTime = 10;
     }
 
     // ========== Direct event handlers for existing events ==========

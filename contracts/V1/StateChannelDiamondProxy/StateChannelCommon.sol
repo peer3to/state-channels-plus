@@ -125,16 +125,12 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return evidenceTime;
     }
 
-    function getKillTime() public view virtual returns (uint256) {
-        return killTime;
-    }
-
     function getGasLimit() public view virtual returns (uint256) {
         return gasLimit;
     }
 
-    function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256, uint256) {
-        return (p2pTime, agreementTime, chainFallbackTime, evidenceTime, killTime);
+    function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256) {
+        return (p2pTime, agreementTime, chainFallbackTime, evidenceTime);
     }
 
     function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow) internal view returns (bool) {
@@ -255,7 +251,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         uint256 reductionTimestamp,
         uint256 forkGenesisTimestamp
     ) internal {
-        require(_isKillPeriodExpired(disputeWindow, getKillTime()), ErrorDisputeKillPeriodNotExpired());
+        require(_isKillPeriodExpired(disputeWindow, getEvidenceTime()), ErrorDisputeKillPeriodNotExpired());
         require(disputeWindow.reducedResult.forkId == bytes32(0), ErrorDisputeAlreadyReduced());
         disputeWindow.reducedResult.forkId = reducedForkId;
         disputeWindow.reducedResult.forkGenesisTimestamp = forkGenesisTimestamp;

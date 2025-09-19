@@ -29,6 +29,7 @@ error ErrorDisputerNotMsgSender();
 error ErrorTimeoutNotLinkedToPreviousBlock();
 error ErrorLinkingPreviousBlock();
 error ErrorJoinChannelFailed();
+error ErrorDisputeEvidencePeriodExpired();
 error ErrorDisputeChallengePeriodExpired();
 error ErrorDisputeAlreadyPosted();
 error ErrorCantParticipateInDispute();

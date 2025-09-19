@@ -75,27 +75,25 @@ contract DisputeVerificationFacet is StateChannelCommon {
         }
     }
 
-    function reduce(Dispute[] memory disputes, uint256 disputeWindowCreationTimestamp)
-        public
-        view
-        returns (ReduceOutput memory reducedOutput)
-    {
+    function reduce(Dispute[] memory disputes) public view returns (ReduceOutput memory reducedOutput) {
         uint256 maxSlashCount;
         uint256 slashCount;
         uint256 selfRemovalCount;
         address[] memory slashParticipants;
         address[] memory selfRemovalParticipants = new address[](disputes.length);
-        reducedOutput.forkGenesisTimestamp = disputeWindowCreationTimestamp + getEvidenceTime(); //expiration of evidence time
-        uint256 disputeWindowExpirationTimestamp = disputeWindowCreationTimestamp + getKillTime();
         require(disputes.length > 0, ErrorNoDisputesProvided());
-
+        DisputeData storage disputeData = disputeData[disputes[0].input.channelId];
+        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.genesisSnapshotDataHash];
+        uint256 disputeWindowCreationTimestamp = disputeWindow.evidence.creationTimestamp;
+        uint256 disputeWindowExpirationTimestamp =
+            disputeWindow.evidence.lastEvidenceSubmissionTimestamp + getEvidenceTime();
+        reducedOutput.forkGenesisTimestamp = disputeWindowCreationTimestamp + getEvidenceTime(); //expiration of evidence time
+        SnapshotData storage snapshotData = stateSnapshots[disputes[0].input.channelId].snapshotData;
         for (uint256 i = 0; i < disputes.length; i++) {
             Dispute memory dispute = disputes[i];
 
             // ***** setup / first run *****
             if (maxSlashCount == 0) {
-                SnapshotData storage snapshotData = stateSnapshots[dispute.input.channelId].snapshotData;
-                DisputeData storage disputeData = disputeData[dispute.input.channelId];
                 maxSlashCount = snapshotData.participants.length + disputeData.pendingParticipants.length;
                 slashParticipants = new address[](maxSlashCount);
 
@@ -105,7 +103,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
                         slashParticipants[slashCount++] = disputeData.onChainSlashes[j].participant;
                         //if on-chain slash happened after evidnece period expired (during the kill period), take that timestamp as genesis
                         if (disputeData.onChainSlashes[j].timestamp > reducedOutput.forkGenesisTimestamp) {
-                            reducedOutput.forkGenesisTimestamp = disputeData.onChainSlashes[j].timestamp;
+                            reducedOutput.forkGenesisTimestamp = disputeWindowExpirationTimestamp;
                         }
                     }
                 }
@@ -178,7 +176,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
      */
     function challengeDisputeReduction(
         Dispute[] memory disputes,
-        uint256 disputeWindowCreationTimestamp,
         StateSnapshot memory stateSnapshot,
         bytes memory encodedStateMachineState,
         JoinChannelBlock[] memory joinChannelBlocks
@@ -189,13 +186,12 @@ contract DisputeVerificationFacet is StateChannelCommon {
         require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.genesisSnapshotDataHash];
-
         //rquire all disputes are part of commitment
         require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
         //require reduce challenge period is not expired - this also assures it's commited
         require(!_isReduceChallengePeriodExpired(disputeWindow), ErrorDisputeChallengePeriodExpired());
 
-        ReduceOutput memory reducedOutput = reduce(disputes, disputeWindowCreationTimestamp);
+        ReduceOutput memory reducedOutput = reduce(disputes);
 
         SnapshotData memory snapshotData = reduceOutputToSnapshotData(
             forkId, reducedOutput, stateSnapshot, encodedStateMachineState, joinChannelBlocks
@@ -229,7 +225,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
      */
     function reduceAndFinalize(
         Dispute[] memory disputes,
-        uint256 disputeWindowCreationTimestamp,
         StateSnapshot memory stateSnapshot,
         bytes memory encodedStateMachineState,
         JoinChannelBlock[] memory joinChannelBlocks
@@ -241,12 +236,11 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[disputes[0].input.genesisSnapshotDataHash];
-
         // require that provided disputes correspond to committed set
         require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
 
         // compute reduced output and derive snapshot data
-        ReduceOutput memory reducedOutput = reduce(disputes, disputeWindowCreationTimestamp);
+        ReduceOutput memory reducedOutput = reduce(disputes);
         SnapshotData memory snapshotData = reduceOutputToSnapshotData(
             forkId, reducedOutput, stateSnapshot, encodedStateMachineState, joinChannelBlocks
         );
@@ -615,8 +609,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         // require that the dispute window exists and is not expired
         require(
-            disputeWindow.evidence.creationTimestamp != 0
-                && block.timestamp < disputeWindow.evidence.creationTimestamp + getKillTime(),
+            disputeWindow.evidence.creationTimestamp != 0 && _isKillPeriodExpired(disputeWindow, getEvidenceTime()),
             ErrorDisputeExpired()
         );
 
