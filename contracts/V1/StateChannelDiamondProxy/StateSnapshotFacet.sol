@@ -26,10 +26,9 @@ contract StateSnapshotFacet is StateChannelCommon {
                 && _isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime())
         ) {
             if (disputeWindow.reducedResult.forkId == targetForkId) {
-                require(
-                    newStateSnapshot.timestamp == disputeWindow.reducedResult.forkGenesisTimestamp,
-                    ErrorInvalidStateSnapshot()
-                );
+                (bool hasGenesis, uint256 genesisTimestap) =
+                    getGenesisTimestamp(channelId, newStateSnapshot.snapshotData.originForkId, targetForkId);
+                require(hasGenesis && newStateSnapshot.timestamp == genesisTimestap, ErrorInvalidStateSnapshot());
                 _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, exitChannelBlocks);
                 updated = true;
                 break;

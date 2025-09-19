@@ -84,10 +84,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
         require(disputes.length > 0, ErrorNoDisputesProvided());
         DisputeData storage disputeData = disputeData[disputes[0].input.channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.genesisSnapshotDataHash];
-        uint256 disputeWindowCreationTimestamp = disputeWindow.evidence.creationTimestamp;
         uint256 disputeWindowExpirationTimestamp =
             disputeWindow.evidence.lastEvidenceSubmissionTimestamp + getEvidenceTime();
-        reducedOutput.forkGenesisTimestamp = disputeWindowCreationTimestamp + getEvidenceTime(); //expiration of evidence time
         SnapshotData storage snapshotData = stateSnapshots[disputes[0].input.channelId].snapshotData;
         for (uint256 i = 0; i < disputes.length; i++) {
             Dispute memory dispute = disputes[i];
@@ -101,10 +99,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
                 for (uint256 j = 0; j < disputeData.onChainSlashes.length; j++) {
                     if (disputeData.onChainSlashes[j].timestamp <= disputeWindowExpirationTimestamp) {
                         slashParticipants[slashCount++] = disputeData.onChainSlashes[j].participant;
-                        //if on-chain slash happened after evidnece period expired (during the kill period), take that timestamp as genesis
-                        if (disputeData.onChainSlashes[j].timestamp > reducedOutput.forkGenesisTimestamp) {
-                            reducedOutput.forkGenesisTimestamp = disputeWindowExpirationTimestamp;
-                        }
                     }
                 }
                 // ***** reducedOutput.latestJoinChannelBlockHash *****
@@ -176,7 +170,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
      */
     function challengeDisputeReduction(
         Dispute[] memory disputes,
-        StateSnapshot memory stateSnapshot,
+        StateSnapshot memory latestStateSnapshot,
         bytes memory encodedStateMachineState,
         JoinChannelBlock[] memory joinChannelBlocks
     ) public {
@@ -196,24 +190,14 @@ contract DisputeVerificationFacet is StateChannelCommon {
         ReduceOutput memory reducedOutput = reduce(disputes);
 
         SnapshotData memory snapshotData = reduceOutputToSnapshotData(
-            forkId, reducedOutput, stateSnapshot, encodedStateMachineState, joinChannelBlocks
+            forkId, reducedOutput, latestStateSnapshot, encodedStateMachineState, joinChannelBlocks
         );
 
         bytes32 winningForkId = keccak256(abi.encode(snapshotData));
-
-        if (
-            winningForkId != disputeWindow.reducedResult.forkId
-                || reducedOutput.forkGenesisTimestamp != disputeWindow.reducedResult.forkGenesisTimestamp
-        ) {
+        if (winningForkId != disputeWindow.reducedResult.forkId) {
             addOnChainSlashedParticipant(channelId, disputeWindow.reducedResult.reducer);
             disputeWindow.reducedResult.forkId = bytes32(0); // unset
-            _commitToDisputeReducedResult(
-                channelId,
-                disputeWindow,
-                winningForkId,
-                block.timestamp - getEvidenceTime(),
-                reducedOutput.forkGenesisTimestamp
-            );
+            _commitToDisputeReducedResult(channelId, disputeWindow, winningForkId, block.timestamp - getEvidenceTime());
         } else {
             addOnChainSlashedParticipant(channelId, msg.sender);
         }
@@ -251,13 +235,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         bytes32 winningForkId = keccak256(abi.encode(snapshotData));
 
         // commit reduced result (enforces kill period expiration inside)
-        _commitToDisputeReducedResult(
-            channelId,
-            disputeWindow,
-            winningForkId,
-            block.timestamp - getEvidenceTime(),
-            reducedOutput.forkGenesisTimestamp
-        );
+        _commitToDisputeReducedResult(channelId, disputeWindow, winningForkId, block.timestamp - getEvidenceTime());
     }
 
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public {

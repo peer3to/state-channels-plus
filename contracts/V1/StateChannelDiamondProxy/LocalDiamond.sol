@@ -105,8 +105,6 @@ contract LocalDiamond is StateChannelManagerProxy {
         if (isFinal) {
             disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkId = dispute.outputSnapshotDataHash;
             disputeData[channelId].disputeWindowMap[forkId].reducedResult.timestamp = disputeCreationTimestamp;
-            disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkGenesisTimestamp =
-                disputeCreationTimestamp;
             disputeData[channelId].disputeWindowMap[forkId].reducedResult.reducer = dispute.input.disputer;
 
             // Clear dispute commitments (matches on-chain behavior)
@@ -139,12 +137,10 @@ contract LocalDiamond is StateChannelManagerProxy {
         bytes32 forkId,
         bytes32 reducedForkId,
         uint256 reductionTimestamp,
-        uint256 forkGenesisTimestamp,
         address reducer
     ) external {
         // Update the reduced result in the dispute window
         disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkId = reducedForkId;
-        disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkGenesisTimestamp = forkGenesisTimestamp;
         disputeData[channelId].disputeWindowMap[forkId].reducedResult.timestamp = reductionTimestamp;
         disputeData[channelId].disputeWindowMap[forkId].reducedResult.reducer = reducer;
     }

@@ -224,20 +224,14 @@ class StateChannelEventListener {
                     channelId
                 ),
             handler: (logObj: any) => {
-                const {
-                    forkId,
-                    reducedForkId,
-                    reductionTimestamp,
-                    forkGenesisTimestamp,
-                    reducer
-                } = logObj.args;
+                const { forkId, reducedForkId, reductionTimestamp, reducer } =
+                    logObj.args;
                 const channelId = logObj.args.channelId;
                 this.localDiamondContract.onDisputeReducedResultCommitted(
                     channelId,
                     forkId,
                     reducedForkId,
                     reductionTimestamp,
-                    forkGenesisTimestamp,
                     reducer
                 );
             }

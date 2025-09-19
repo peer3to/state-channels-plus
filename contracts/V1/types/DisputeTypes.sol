@@ -91,7 +91,6 @@ struct DisputeWindowEvidence {
 struct DisputeWindowReducedResult {
     /// @dev reduced forkId
     bytes32 forkId;
-    uint256 forkGenesisTimestamp;
     /// @dev reduction timestamp
     uint256 timestamp;
     address reducer;
@@ -103,7 +102,6 @@ struct ReduceOutput {
     bytes32 latestJoinChannelBlockHash;
     Timeout timeout;
     address[] selfRemovals;
-    uint256 forkGenesisTimestamp;
 }
 
 struct OnChainSlash {

@@ -24,18 +24,11 @@ contract DisputeManagerFacet is StateChannelCommon {
         );
     }
 
-    function commitToReducedResult(
-        bytes32 channelId,
-        bytes32 disputedForkId,
-        bytes32 reducedForkId,
-        uint256 reducedForkGenesisTimestamps
-    ) public {
+    function commitToReducedResult(bytes32 channelId, bytes32 disputedForkId, bytes32 reducedForkId) public {
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputedForkId];
         require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
-        _commitToDisputeReducedResult(
-            channelId, disputeWindow, reducedForkId, block.timestamp, reducedForkGenesisTimestamps
-        );
+        _commitToDisputeReducedResult(channelId, disputeWindow, reducedForkId, block.timestamp);
     }
 
     // ********************** Internal/private functions
@@ -80,8 +73,7 @@ contract DisputeManagerFacet is StateChannelCommon {
                 dispute.input.channelId,
                 disputeWindow,
                 dispute.outputSnapshotDataHash,
-                block.timestamp - getEvidenceTime(),
-                block.timestamp
+                block.timestamp - getEvidenceTime()
             );
         }
         {
