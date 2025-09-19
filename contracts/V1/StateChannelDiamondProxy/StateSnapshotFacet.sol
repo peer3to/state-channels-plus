@@ -21,7 +21,10 @@ contract StateSnapshotFacet is StateChannelCommon {
         DisputeWindow storage disputeWindow = disputeWindowMap[currentStateSnapshot.forkId];
         bool updated = false;
 
-        while (disputeWindow.reducedResult.forkId != bytes32(0) && _isReduceChallengePeriodExpired(disputeWindow)) {
+        while (
+            disputeWindow.reducedResult.forkId != bytes32(0)
+                && _isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime())
+        ) {
             if (disputeWindow.reducedResult.forkId == targetForkId) {
                 require(
                     newStateSnapshot.timestamp == disputeWindow.reducedResult.forkGenesisTimestamp,

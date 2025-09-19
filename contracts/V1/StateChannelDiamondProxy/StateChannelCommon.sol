@@ -133,10 +133,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return (p2pTime, agreementTime, chainFallbackTime, evidenceTime);
     }
 
-    function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow) internal view returns (bool) {
-        return block.timestamp > disputeWindow.reducedResult.timestamp + evidenceTime;
-    }
-
     function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
         public
         view
@@ -251,7 +247,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         uint256 reductionTimestamp,
         uint256 forkGenesisTimestamp
     ) internal {
-        require(_isKillPeriodExpired(disputeWindow, getEvidenceTime()), ErrorDisputeKillPeriodNotExpired());
+        require(!_isKillPeriodExpired(disputeWindow, getEvidenceTime()), ErrorDisputeKillPeriodNotExpired());
         require(disputeWindow.reducedResult.forkId == bytes32(0), ErrorDisputeAlreadyReduced());
         disputeWindow.reducedResult.forkId = reducedForkId;
         disputeWindow.reducedResult.forkGenesisTimestamp = forkGenesisTimestamp;

@@ -61,6 +61,13 @@ function _isKillPeriodExpired(DisputeWindow storage disputeWindow, uint256 evide
     return block.timestamp >= disputeWindow.evidence.lastEvidenceSubmissionTimestamp + evidenceTime;
 }
 
+function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime)
+    view
+    returns (bool)
+{
+    return block.timestamp >= disputeWindow.reducedResult.timestamp + evidenceTime;
+}
+
 function areDisputesCommitted(DisputeWindow storage disputeWindow, Dispute[] memory disputes) view returns (bool) {
     if (disputes.length != disputeWindow.evidence.disputeCommitments.length) {
         return false;

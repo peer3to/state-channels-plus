@@ -80,7 +80,7 @@ contract DisputeManagerFacet is StateChannelCommon {
                 dispute.input.channelId,
                 disputeWindow,
                 dispute.outputSnapshotDataHash,
-                block.timestamp - getEvidenceTime() - 1,
+                block.timestamp - getEvidenceTime(),
                 block.timestamp
             );
         }

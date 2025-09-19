@@ -189,7 +189,9 @@ contract DisputeVerificationFacet is StateChannelCommon {
         //rquire all disputes are part of commitment
         require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
         //require reduce challenge period is not expired - this also assures it's commited
-        require(!_isReduceChallengePeriodExpired(disputeWindow), ErrorDisputeChallengePeriodExpired());
+        require(
+            !_isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime()), ErrorDisputeChallengePeriodExpired()
+        );
 
         ReduceOutput memory reducedOutput = reduce(disputes);
 
@@ -209,7 +211,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
                 channelId,
                 disputeWindow,
                 winningForkId,
-                block.timestamp - getEvidenceTime() - 1,
+                block.timestamp - getEvidenceTime(),
                 reducedOutput.forkGenesisTimestamp
             );
         } else {
@@ -253,7 +255,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             channelId,
             disputeWindow,
             winningForkId,
-            block.timestamp - getEvidenceTime() - 1,
+            block.timestamp - getEvidenceTime(),
             reducedOutput.forkGenesisTimestamp
         );
     }
@@ -609,10 +611,9 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         // require that the dispute window exists and is not expired
         require(
-            disputeWindow.evidence.creationTimestamp != 0 && _isKillPeriodExpired(disputeWindow, getEvidenceTime()),
+            disputeWindow.evidence.creationTimestamp != 0 && !_isKillPeriodExpired(disputeWindow, getEvidenceTime()),
             ErrorDisputeExpired()
         );
-
         bytes32 commitment = keccak256(abi.encode(dispute));
         bool isFound = false;
         uint256 foundIndex;

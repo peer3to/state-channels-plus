@@ -425,7 +425,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
-        return _isReduceChallengePeriodExpired(disputeWindow);
+        return _isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime());
     }
 
     // ********** private/internal functions **********
