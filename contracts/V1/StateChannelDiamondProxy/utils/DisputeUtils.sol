@@ -21,20 +21,27 @@ function _areDisputeAndBlockSameChannel(Dispute memory dispute, Block memory _bl
 
 function _getLatestBlock(StateProof memory stateProof) pure returns (bool hasBlock, Block memory) {
     Block memory _block;
+    (bool _hasBlock, SignedBlock memory latestSignedBlock) = _getLatestSignedBlock(stateProof);
+    if (_hasBlock) _block = abi.decode(latestSignedBlock.encodedBlock, (Block));
+    return (_hasBlock, _block);
+}
+
+function _getLatestSignedBlock(StateProof memory stateProof) pure returns (bool hasBlock, SignedBlock memory) {
+    SignedBlock memory signedBlock;
     MilestoneProof[] memory milestones = stateProof.milestones;
     if (milestones.length == 0 && stateProof.signedBlocks.length == 0) {
-        return (false, _block);
+        return (false, signedBlock);
     }
     if (stateProof.signedBlocks.length > 0) {
-        _block = abi.decode(stateProof.signedBlocks[stateProof.signedBlocks.length - 1].encodedBlock, (Block));
+        signedBlock = stateProof.signedBlocks[stateProof.signedBlocks.length - 1];
     } else {
         if (milestones[milestones.length - 1].blockConfirmations.length == 0) {
-            return (false, _block); // an honest state proof should always have at least one block
+            return (false, signedBlock); // an honest milestone should always have at least one block
         }
         BlockConfirmation[] memory blockConfirmations = milestones[milestones.length - 1].blockConfirmations;
-        _block = abi.decode(blockConfirmations[blockConfirmations.length - 1].signedBlock.encodedBlock, (Block));
+        signedBlock = blockConfirmations[blockConfirmations.length - 1].signedBlock;
     }
-    return (true, _block);
+    return (true, signedBlock);
 }
 
 function _getMilestoneBlocks(StateProof memory stateProof) pure returns (Block[] memory) {

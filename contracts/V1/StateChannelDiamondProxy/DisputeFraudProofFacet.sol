@@ -329,8 +329,57 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         internal
         returns (address)
     {
-        //TODO
-        return dispute.input.disputer;
+        TimeoutTooEarly memory proof = abi.decode(encodedFraudProof, (TimeoutTooEarly));
+        // Requires correct auditing data
+        require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
+
+        // check is timeout set
+        if (dispute.input.timeout.participant == address(0)) return address(0); // the calling context may decide to slash the caller
+
+        uint256 timeoutTimestamp = StateChannelManagerProxy(address(this)).getDisputeWindowCreationTimestamp(
+            dispute.input.channelId, dispute.input.genesisSnapshotDataHash
+        );
+        uint256 previousTimestamp;
+        (bool hasBlock, SignedBlock memory latestSignedBlock) = _getLatestSignedBlock(dispute.input.stateProof);
+        bytes32 channelId = dispute.input.channelId;
+        bytes32 forkId = dispute.input.genesisSnapshotDataHash;
+        bytes32 originForkId = proof.auditingData.genesisStateSnapshotData.originForkId;
+        if (!hasBlock) {
+            // genesis
+            (bool hasGenesis, uint256 genesisTimestamp) = getGenesisTimestamp(channelId, originForkId, forkId);
+            require(hasGenesis, ErrorGenesisTimestampNotAvailable());
+            previousTimestamp = genesisTimestamp;
+        } else {
+            // at least 1 block exists
+            Block memory latestBlock = abi.decode(latestSignedBlock.encodedBlock, (Block));
+            previousTimestamp = latestBlock.transaction.header.timestamp;
+
+            // ****** check has forfeit right to extra time
+            bool hasForfeightRightToExtraTime = false;
+            if (dispute.input.timeout.participantSignatureOnPreviousBlock.length > 0) {
+                address signerAddress = StateChannelUtilLibrary.retriveSignerAddress(
+                    latestSignedBlock.encodedBlock, dispute.input.timeout.participantSignatureOnPreviousBlock
+                );
+                if (signerAddress == dispute.input.timeout.participant) hasForfeightRightToExtraTime = true;
+            }
+            if (!hasForfeightRightToExtraTime) {
+                uint256 blockHeight = latestBlock.transaction.header.transactionCnt;
+                address author = latestBlock.transaction.header.participant;
+                (bool found, bytes32 commitment) = getBlockCallDataCommitment(channelId, forkId, blockHeight, author);
+                if (found) {
+                    // check is the caller aware of race condition
+                    require(proof.previousBlockOnChainTimestamp != 0, ErrorUnexpectedBlockCalldataPosted());
+                    bytes32 _commitment = keccak256(abi.encode(latestSignedBlock, proof.previousBlockOnChainTimestamp));
+                    if (commitment != _commitment) return address(0); // the calling context may decide to slash the caller
+
+                    else previousTimestamp = proof.previousBlockOnChainTimestamp;
+                }
+            }
+        }
+        if (timeoutTimestamp <= previousTimestamp + getP2pTime() + getAgreementTime() + getChainFallbackTime()) {
+            return dispute.input.disputer;
+        }
+        return address(0); // the calling context may decide to slash the caller
     }
 
     function _handleTimeoutCalldataPosted(bytes memory encodedFraudProof, Dispute memory dispute)

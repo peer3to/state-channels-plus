@@ -60,10 +60,14 @@ error ErrorInvalidLatestState();
 error ErrorDisputeTimeoutCalldataPosted();
 error ErrorDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch();
 error ErrorDisputeTimeoutNotMinTimestamp();
+error ErrorUnexpectedBlockCalldataPosted();
 
 //FraudProofs
 error ErrorInvalidFraudProof();
 error ErrorInvalidFraudProofType();
+
+//DisputeFraudProofs
+error ErrorGenesisTimestampNotAvailable();
 
 //Double sign
 error ErrorDoubleSignBlocksNotSame();
