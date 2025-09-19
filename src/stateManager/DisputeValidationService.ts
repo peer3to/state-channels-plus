@@ -183,7 +183,7 @@ export default class DisputeValidationService {
         const disputeCreationTimestamp =
             await this.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
                 dispute.input.channelId,
-                disputeAuditingData.genesisStateSnapshotData.originForkId
+                dispute.input.genesisSnapshotDataHash
             );
         if (Number(disputeCreationTimestamp) === 0)
             throw new Error(

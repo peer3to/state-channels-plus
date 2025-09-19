@@ -73,7 +73,8 @@ struct TimeoutParticipantNotNext {
 }
 
 struct TimeoutTooEarly {
-    Block postedBlock;
+    DisputeAuditingData auditingData; // needed for genesis if
+    SignedBlock previousBlock;
 }
 
 struct TimeoutCalldataPosted {

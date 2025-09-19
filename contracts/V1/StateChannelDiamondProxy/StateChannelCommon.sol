@@ -72,6 +72,16 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         );
     }
 
+    function getGenesisTimestamp(bytes32 channelId, bytes32 originForkId, bytes32 forkId)
+        public
+        view
+        returns (uint256)
+    {
+        // DisputeData storage _disputeData = disputeData[channelId]
+        // DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[originForkId];
+        // return disputeWindow.evidence.creationTimestamp;
+    }
+
     function getSnapshotParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
         return stateSnapshots[channelId].snapshotData.participants;
     }

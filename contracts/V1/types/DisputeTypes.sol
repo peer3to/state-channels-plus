@@ -83,6 +83,7 @@ struct DisputeWindow {
 
 struct DisputeWindowEvidence {
     uint256 creationTimestamp;
+    uint256 lastEvidenceSubmissionTimestamp;
     bytes32[] disputeCommitments;
     mapping(address => bool) hasPosted; // inefficient, occupies a whole storage slot for a single bit - idealy we do a bitmask later as a f(participants) -> makes it also easy to delete the entire bitmask later. For now this is ok.
 }

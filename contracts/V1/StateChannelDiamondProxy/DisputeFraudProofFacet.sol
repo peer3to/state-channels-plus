@@ -236,7 +236,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
 
         uint256 timestamp = StateChannelManagerProxy(address(this)).getDisputeWindowCreationTimestamp(
-            dispute.input.channelId, proof.auditingData.genesisStateSnapshotData.originForkId
+            dispute.input.channelId, dispute.input.genesisSnapshotDataHash
         );
 
         address[] memory onChainSlashes = getOnChainSlashedParticipantsUpToTimestamp(dispute.input.channelId, timestamp);
@@ -312,13 +312,16 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         internal
         returns (address)
     {
-        // //Can be part of auditing instead of doing it here
-        // bool hasBlock;
-        // Block memory latestBlock;
-        // (hasBlock, latestBlock) = _getLatestBlock(dispute.input.stateProof);
-        // if (!hasBlock || _getBlockAuthor(latestBlock) == dispute.input.timeout.participant) revert();
+        TimeoutParticipantNotNext memory proof = abi.decode(encodedFraudProof, (TimeoutParticipantNotNext));
+        // Requires correct auditing data
+        require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
 
-        // TODO - the check is -> proove latest state that the dispute commits to -> prove getNextToWrite(latestState) != dispute.input.timeout.participant
+        // check is timeout set
+        if (dispute.input.timeout.participant == address(0)) return address(0); // the calling context may decide to slash the caller
+
+        address nextAuthor = getNextToWrite(dispute.input.channelId, proof.auditingData.latestStateStateMachineState);
+        // check is next author timedout
+        if (dispute.input.timeout.participant != nextAuthor) return address(0); // the calling context may decide to slash the caller
         return dispute.input.disputer;
     }
 
