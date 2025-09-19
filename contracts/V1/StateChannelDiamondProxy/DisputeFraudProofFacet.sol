@@ -279,8 +279,8 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // Check timeout == thresholdBlock
         if (dispute.input.timeout.blockHeight != _getBlockHeight(thresholdBlock)) return address(0); // the calling context may decide to slash the caller
 
-        //check correct snapshot
-        if (!_doesBlockCommitToSnapshot(thresholdBlock, proof.auditingData.latestStateSnapshot)) return address(0); // the calling context may decide to slash the caller
+        // Check is block author the participant being timedout
+        if (dispute.input.timeout.participant != thresholdBlock.transaction.header.participant) return address(0); // the calling context may decide to slash the caller
 
         //check threshold
         address[] memory thresholdParticipants = proof.auditingData.latestStateSnapshot.snapshotData.participants;
@@ -296,7 +296,15 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         internal
         returns (address)
     {
+        // check is timeout set
+        if (dispute.input.timeout.participant == address(0)) return address(0); // the calling context may decide to slash the caller
+
         (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
+        uint256 expectedTimeoutHeight = hasBlock ? latestBlock.transaction.header.transactionCnt + 1 : 0;
+
+        // check timeout height
+        if (dispute.input.timeout.blockHeight != expectedTimeoutHeight) return address(0); // the calling context may decide to slash the caller
+
         return dispute.input.disputer;
     }
 
