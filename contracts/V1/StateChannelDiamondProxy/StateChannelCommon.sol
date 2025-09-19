@@ -12,6 +12,30 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     function getOnChainSlashes(bytes32 channelId) public view virtual returns (OnChainSlash[] memory) {
         return disputeData[channelId].onChainSlashes;
     }
+    // Get participants who have been slashed up to (including) timestamp
+
+    function getOnChainSlashedParticipantsUpToTimestamp(bytes32 channelId, uint256 timestamp)
+        public
+        view
+        virtual
+        returns (address[] memory)
+    {
+        address[] memory slashedParticipants = new address[](disputeData[channelId].onChainSlashes.length);
+        uint256 actualCount = 0;
+        for (
+            uint256 i = 0;
+            i < disputeData[channelId].onChainSlashes.length
+                && disputeData[channelId].onChainSlashes[i].timestamp <= timestamp;
+            i++
+        ) {
+            slashedParticipants[actualCount++] = disputeData[channelId].onChainSlashes[i].participant;
+        }
+        address[] memory finalSlashedParticipants = new address[](actualCount);
+        for (uint256 i = 0; i < actualCount; i++) {
+            finalSlashedParticipants[i] = slashedParticipants[i];
+        }
+        return finalSlashedParticipants;
+    }
 
     function getOnChainSlashedParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
         address[] memory slashedParticipants = new address[](disputeData[channelId].onChainSlashes.length);
@@ -231,5 +255,19 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         emit DisputeReducedResultCommitted(
             channelId, disputeWindow.forkId, reducedForkId, reductionTimestamp, forkGenesisTimestamp, msg.sender
         );
+    }
+
+    function _delegatecall(address target, bytes memory data) internal returns (bytes memory) {
+        (bool success, bytes memory result) = target.delegatecall(data);
+        if (!success) {
+            if (result.length == 0) {
+                revert("StateChannelManagerProxy - Delegatecall failed");
+            }
+            assembly ("memory-safe") {
+                let returndata_size := mload(result)
+                revert(add(32, result), returndata_size)
+            }
+        }
+        return result;
     }
 }

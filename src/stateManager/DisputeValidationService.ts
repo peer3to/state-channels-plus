@@ -180,9 +180,19 @@ export default class DisputeValidationService {
         }
 
         // (STATEFUL - view, no compiler trick) check on-chain slashes
+        const disputeCreationTimestamp =
+            await this.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
+                dispute.input.channelId,
+                disputeAuditingData.genesisStateSnapshotData.originForkId
+            );
+        if (Number(disputeCreationTimestamp) === 0)
+            throw new Error(
+                "DissputeCreationTimestamp not set - local state not synced"
+            );
         let onChainSlashes = new Set<Address>(
-            await this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
-                dispute.input.channelId
+            await this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipantsUpToTimestamp(
+                dispute.input.channelId,
+                disputeCreationTimestamp
             )
         );
         const disputeOnChainSlashes = new Set<Address>(
@@ -191,8 +201,9 @@ export default class DisputeValidationService {
         if (!isSubset(onChainSlashes, disputeOnChainSlashes)) {
             // double check with RPC node, maybe local state not synced
             onChainSlashes = new Set<Address>(
-                await this.stateChannelManagerContract.getOnChainSlashedParticipants(
-                    dispute.input.channelId
+                await this.stateChannelManagerContract.getOnChainSlashedParticipantsUpToTimestamp(
+                    dispute.input.channelId,
+                    disputeCreationTimestamp
                 )
             );
             if (!isSubset(onChainSlashes, disputeOnChainSlashes)) {

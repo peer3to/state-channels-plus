@@ -50,6 +50,7 @@ enum DisputeFraudProofType {
     DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks,
     DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed,
     DisputeInvalidBalanceInvariant,
+    DisputeOnChainSlashesNotSubset,
     TimeoutThreshold,
     TimeoutCalldataPosted,
     TimeoutNotLinkedToLatestState,

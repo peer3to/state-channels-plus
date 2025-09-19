@@ -53,7 +53,7 @@ struct DisputeInvalidBalanceInvariant {
 }
 
 struct DisputeOnChainSlashesNotSubset {
-    bool __; // this is not used, the implicit dispute field is enough to deduct
+    DisputeAuditingData auditingData;
 }
 
 // ========================== Timeout related fraud proofs ==========================

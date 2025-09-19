@@ -484,18 +484,4 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         }
         return (stateMachineImplementation.getState(), exitChannels);
     }
-
-    function _delegatecall(address target, bytes memory data) internal returns (bytes memory) {
-        (bool success, bytes memory result) = target.delegatecall(data);
-        if (!success) {
-            if (result.length == 0) {
-                revert("StateChannelManagerProxy - Delegatecall failed");
-            }
-            assembly ("memory-safe") {
-                let returndata_size := mload(result)
-                revert(add(32, result), returndata_size)
-            }
-        }
-        return result;
-    }
 }
