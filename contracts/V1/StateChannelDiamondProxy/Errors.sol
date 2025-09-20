@@ -29,6 +29,7 @@ error ErrorDisputerNotMsgSender();
 error ErrorTimeoutNotLinkedToPreviousBlock();
 error ErrorLinkingPreviousBlock();
 error ErrorJoinChannelFailed();
+error ErrorDisputeEvidencePeriodExpired();
 error ErrorDisputeChallengePeriodExpired();
 error ErrorDisputeAlreadyPosted();
 error ErrorCantParticipateInDispute();
@@ -59,9 +60,14 @@ error ErrorInvalidLatestState();
 error ErrorDisputeTimeoutCalldataPosted();
 error ErrorDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch();
 error ErrorDisputeTimeoutNotMinTimestamp();
+error ErrorUnexpectedBlockCalldataPosted();
 
 //FraudProofs
 error ErrorInvalidFraudProof();
+error ErrorInvalidFraudProofType();
+
+//DisputeFraudProofs
+error ErrorGenesisTimestampNotAvailable();
 
 //Double sign
 error ErrorDoubleSignBlocksNotSame();

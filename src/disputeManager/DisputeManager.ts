@@ -16,7 +16,7 @@ import {
     SignatureUtils
 } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
-import { Address, ChannelId, ForkId } from "../types/types";
+import { Address, Bytes, ChannelId, ForkId, Signature } from "../types/types";
 import { StateSnapshot } from "../models";
 import Storage from "@/storage";
 import ADiamondStateMachine from "../ADiamondStateMachine";
@@ -36,6 +36,7 @@ type TimeoutOptions = {
     // on-chain race condition checks
     previousBlockProducer?: Address;
     previousBlockProducerPostedCalldata?: boolean;
+    participantSignatureOnPreviousBlock?: Signature;
 };
 
 class DisputeManager {
@@ -92,8 +93,9 @@ class DisputeManager {
                 height: latestBlockHeight
             }),
             this.diamondStateMachine.getState(), //TODO - this should be from storage
-            this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
-                this.channelId
+            this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipantsUpToTimestamp(
+                this.channelId,
+                Clock.getTimeInSeconds() // this is safe as long as our local clock isn't infront of the DLT clock
             ),
             this.diamondStateMachine.getParticipants()
         ]);
@@ -140,7 +142,10 @@ class DisputeManager {
                 previousBlockProducer:
                     timeoutOptions.previousBlockProducer || ethers.ZeroAddress,
                 previousBlockProducerPostedCalldata:
-                    timeoutOptions.previousBlockProducerPostedCalldata || false
+                    timeoutOptions.previousBlockProducerPostedCalldata || false,
+                participantSignatureOnPreviousBlock:
+                    (timeoutOptions.participantSignatureOnPreviousBlock as Bytes) ||
+                    ""
             };
         } else {
             timeoutStruct = this.getEmptyTimeoutStruct();
@@ -291,7 +296,8 @@ class DisputeManager {
             minTimeStamp: 0,
             isForced: false,
             previousBlockProducer: ethers.ZeroAddress,
-            previousBlockProducerPostedCalldata: false
+            previousBlockProducerPostedCalldata: false,
+            participantSignatureOnPreviousBlock: ""
         };
     }
 

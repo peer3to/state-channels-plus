@@ -85,7 +85,7 @@ class P2pSigner implements Signer {
     async sendTransaction(
         tx: ethers.TransactionRequest
     ): Promise<TransactionResponse> {
-        let _tx: TransactionStruct = {
+        const _tx: TransactionStruct = {
             header: {
                 channelId: this.p2pManager.stateManager.getChannelId(),
                 participant: this.p2pManager.stateManager.getSignerAddress(),
@@ -100,7 +100,7 @@ class P2pSigner implements Signer {
             }
         };
 
-        let signedBlock =
+        const signedBlock =
             await this.p2pManager.stateManager.playTransaction(_tx);
         this.p2pManager.rpcProxy.onSignedBlock(signedBlock).broadcast();
         return "There is no TransactionResponse p2p - everything executed localy" as unknown as TransactionResponse; //TODO
@@ -122,8 +122,8 @@ class P2pSigner implements Signer {
         this.p2pManager.stateManager.setChannelId(channelId);
     }
     public async confirmBlock(signedBlock: SignedBlockStruct) {
-        let block = Block.decode(signedBlock.encodedBlock);
-        let signature = await block.sign(this.signer);
+        const block = Block.decode(signedBlock.encodedBlock);
+        const signature = await block.sign(this.signer);
         this.p2pManager.stateManager.agreementManager.confirmBlock(
             block,
             signature

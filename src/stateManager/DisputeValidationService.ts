@@ -74,6 +74,12 @@ export default class DisputeValidationService {
                     );
                 if (isValidStateProof) {
                     // *********** TODO ******************
+                    // *********** This is anoying and needs some thought ********************
+                    // we have to run the block confirmation pipeline on unfinalized blocks and deduct are we 'behind' an honest history and in that case accept it
+                    // or reuse the failue in fraudProofs to kill the malicious dispute + this time all falilures are objective since it's commited on-chain
+                    // if we deduct we're at an honest state we need to sync and try and build auditingData again
+                    // if we can't build it AGAIN - error since something is wrong
+                    // else build it and `cotinueValidationAuditingDataConstructed`
                     // *********** This is annoying and needs some thought ********************
                     //
                     // SCENARIO: State proof is VALID but auditing data is PARTIAL
@@ -203,7 +209,7 @@ export default class DisputeValidationService {
                 true
             ))
         ) {
-            //TODO - create Dispute Fraud Proof IncorrectAuditingData
+            //TODO - create Dispute Fraud Proof DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed
         }
 
         // isCorrectAuditingData - majority cheked already with stateProof - just checking exitChannelBlocks
@@ -217,9 +223,19 @@ export default class DisputeValidationService {
         }
 
         // (STATEFUL - view, no compiler trick) check on-chain slashes
+        const disputeCreationTimestamp =
+            await this.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
+                dispute.input.channelId,
+                dispute.input.genesisSnapshotDataHash
+            );
+        if (Number(disputeCreationTimestamp) === 0)
+            throw new Error(
+                "DissputeCreationTimestamp not set - local state not synced"
+            );
         let onChainSlashes = new Set<Address>(
-            await this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
-                dispute.input.channelId
+            await this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipantsUpToTimestamp(
+                dispute.input.channelId,
+                disputeCreationTimestamp
             )
         );
         const disputeOnChainSlashes = new Set<Address>(
@@ -228,12 +244,13 @@ export default class DisputeValidationService {
         if (!isSubset(onChainSlashes, disputeOnChainSlashes)) {
             // double check with RPC node, maybe local state not synced
             onChainSlashes = new Set<Address>(
-                await this.stateChannelManagerContract.getOnChainSlashedParticipants(
-                    dispute.input.channelId
+                await this.stateChannelManagerContract.getOnChainSlashedParticipantsUpToTimestamp(
+                    dispute.input.channelId,
+                    disputeCreationTimestamp
                 )
             );
             if (!isSubset(onChainSlashes, disputeOnChainSlashes)) {
-                // TODO - Dispute Fraud Proof - dispute.onChainSlashes is not a subset onChainSlashes
+                // TODO - Dispute Fraud Proof - DisputeOnChainSlashesNotSubset - dispute.onChainSlashes is not a subset onChainSlashes
             }
         }
 
@@ -246,7 +263,7 @@ export default class DisputeValidationService {
         ) {
             // TODO - double check with RPC node, maybe local state not synced - I didn't expose this in the normal diamond
             // we first need to test the staticcall does it work
-            // TODO - Dispute Fraud Proof InvalidBalanceInvariant
+            // TODO - Dispute Fraud Proof DisputeInvalidBalanceInvariant
         }
 
         // isLatestState

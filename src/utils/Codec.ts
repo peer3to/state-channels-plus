@@ -165,7 +165,7 @@ export class Codec {
         try {
             obj = result.toObject();
             let cnt = 0;
-            for (let key in obj) {
+            for (const key in obj) {
                 if (key == "_") obj = result.toArray();
                 cnt++;
             }
@@ -173,7 +173,7 @@ export class Codec {
         } catch (e) {
             obj = result.toArray();
         }
-        for (let key in obj) {
+        for (const key in obj) {
             if (
                 obj[key] instanceof ethers.Result &&
                 Object.getPrototypeOf(obj[key]) === ethers.Result.prototype

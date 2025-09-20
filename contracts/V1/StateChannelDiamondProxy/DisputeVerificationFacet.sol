@@ -50,6 +50,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         // ***************** Generate output snapshot ***************
         outputSnapshotData = SnapshotData({
+            originForkId: latestStateSnapshot.forkId,
             stateMachineStateHash: keccak256(disputeOutputState.encodedModifiedState),
             participants: getStatemachineParticipants(disputeOutputState.encodedModifiedState),
             latestJoinChannelBlockHash: latestJoinChannelBlockHash, // Joins are not applied in disputes, but in reduce -> same hash as in the genesis snapshot
@@ -74,27 +75,23 @@ contract DisputeVerificationFacet is StateChannelCommon {
         }
     }
 
-    function reduce(Dispute[] memory disputes, uint256 disputeWindowCreationTimestamp)
-        public
-        view
-        returns (ReduceOutput memory reducedOutput)
-    {
+    function reduce(Dispute[] memory disputes) public view returns (ReduceOutput memory reducedOutput) {
         uint256 maxSlashCount;
         uint256 slashCount;
         uint256 selfRemovalCount;
         address[] memory slashParticipants;
         address[] memory selfRemovalParticipants = new address[](disputes.length);
-        reducedOutput.forkGenesisTimestamp = disputeWindowCreationTimestamp + getEvidenceTime(); //expiration of evidence time
-        uint256 disputeWindowExpirationTimestamp = disputeWindowCreationTimestamp + getKillTime();
         require(disputes.length > 0, ErrorNoDisputesProvided());
-
+        DisputeData storage disputeData = disputeData[disputes[0].input.channelId];
+        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.genesisSnapshotDataHash];
+        uint256 disputeWindowExpirationTimestamp =
+            disputeWindow.evidence.lastEvidenceSubmissionTimestamp + getEvidenceTime();
+        SnapshotData storage snapshotData = stateSnapshots[disputes[0].input.channelId].snapshotData;
         for (uint256 i = 0; i < disputes.length; i++) {
             Dispute memory dispute = disputes[i];
 
             // ***** setup / first run *****
             if (maxSlashCount == 0) {
-                SnapshotData storage snapshotData = stateSnapshots[dispute.input.channelId].snapshotData;
-                DisputeData storage disputeData = disputeData[dispute.input.channelId];
                 maxSlashCount = snapshotData.participants.length + disputeData.pendingParticipants.length;
                 slashParticipants = new address[](maxSlashCount);
 
@@ -102,10 +99,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
                 for (uint256 j = 0; j < disputeData.onChainSlashes.length; j++) {
                     if (disputeData.onChainSlashes[j].timestamp <= disputeWindowExpirationTimestamp) {
                         slashParticipants[slashCount++] = disputeData.onChainSlashes[j].participant;
-                        //if on-chain slash happened after evidnece period expired (during the kill period), take that timestamp as genesis
-                        if (disputeData.onChainSlashes[j].timestamp > reducedOutput.forkGenesisTimestamp) {
-                            reducedOutput.forkGenesisTimestamp = disputeData.onChainSlashes[j].timestamp;
-                        }
                     }
                 }
                 // ***** reducedOutput.latestJoinChannelBlockHash *****
@@ -177,8 +170,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
      */
     function challengeDisputeReduction(
         Dispute[] memory disputes,
-        uint256 disputeWindowCreationTimestamp,
-        StateSnapshot memory stateSnapshot,
+        StateSnapshot memory latestStateSnapshot,
         bytes memory encodedStateMachineState,
         JoinChannelBlock[] memory joinChannelBlocks
     ) public {
@@ -188,33 +180,24 @@ contract DisputeVerificationFacet is StateChannelCommon {
         require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.genesisSnapshotDataHash];
-
         //rquire all disputes are part of commitment
         require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
         //require reduce challenge period is not expired - this also assures it's commited
-        require(!_isReduceChallengePeriodExpired(disputeWindow), ErrorDisputeChallengePeriodExpired());
+        require(
+            !_isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime()), ErrorDisputeChallengePeriodExpired()
+        );
 
-        ReduceOutput memory reducedOutput = reduce(disputes, disputeWindowCreationTimestamp);
+        ReduceOutput memory reducedOutput = reduce(disputes);
 
         SnapshotData memory snapshotData = reduceOutputToSnapshotData(
-            forkId, reducedOutput, stateSnapshot, encodedStateMachineState, joinChannelBlocks
+            forkId, reducedOutput, latestStateSnapshot, encodedStateMachineState, joinChannelBlocks
         );
 
         bytes32 winningForkId = keccak256(abi.encode(snapshotData));
-
-        if (
-            winningForkId != disputeWindow.reducedResult.forkId
-                || reducedOutput.forkGenesisTimestamp != disputeWindow.reducedResult.forkGenesisTimestamp
-        ) {
+        if (winningForkId != disputeWindow.reducedResult.forkId) {
             addOnChainSlashedParticipant(channelId, disputeWindow.reducedResult.reducer);
             disputeWindow.reducedResult.forkId = bytes32(0); // unset
-            _commitToDisputeReducedResult(
-                channelId,
-                disputeWindow,
-                winningForkId,
-                block.timestamp - getEvidenceTime() - 1,
-                reducedOutput.forkGenesisTimestamp
-            );
+            _commitToDisputeReducedResult(channelId, disputeWindow, winningForkId, block.timestamp - getEvidenceTime());
         } else {
             addOnChainSlashedParticipant(channelId, msg.sender);
         }
@@ -228,7 +211,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
      */
     function reduceAndFinalize(
         Dispute[] memory disputes,
-        uint256 disputeWindowCreationTimestamp,
         StateSnapshot memory stateSnapshot,
         bytes memory encodedStateMachineState,
         JoinChannelBlock[] memory joinChannelBlocks
@@ -240,12 +222,11 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[disputes[0].input.genesisSnapshotDataHash];
-
         // require that provided disputes correspond to committed set
         require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
 
         // compute reduced output and derive snapshot data
-        ReduceOutput memory reducedOutput = reduce(disputes, disputeWindowCreationTimestamp);
+        ReduceOutput memory reducedOutput = reduce(disputes);
         SnapshotData memory snapshotData = reduceOutputToSnapshotData(
             forkId, reducedOutput, stateSnapshot, encodedStateMachineState, joinChannelBlocks
         );
@@ -254,13 +235,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         bytes32 winningForkId = keccak256(abi.encode(snapshotData));
 
         // commit reduced result (enforces kill period expiration inside)
-        _commitToDisputeReducedResult(
-            channelId,
-            disputeWindow,
-            winningForkId,
-            block.timestamp - getEvidenceTime() - 1,
-            reducedOutput.forkGenesisTimestamp
-        );
+        _commitToDisputeReducedResult(channelId, disputeWindow, winningForkId, block.timestamp - getEvidenceTime());
     }
 
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public {
@@ -320,6 +295,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         );
 
         return SnapshotData({
+            originForkId: forkId,
             stateMachineStateHash: keccak256(outputState.encodedModifiedState),
             participants: getStatemachineParticipants(outputState.encodedModifiedState),
             latestJoinChannelBlockHash: reducedOutput.latestJoinChannelBlockHash, // This has been verified in _verifyJoinChannelBlocks
@@ -613,11 +589,9 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         // require that the dispute window exists and is not expired
         require(
-            disputeWindow.evidence.creationTimestamp != 0
-                && block.timestamp < disputeWindow.evidence.creationTimestamp + getKillTime(),
+            disputeWindow.evidence.creationTimestamp != 0 && !_isKillPeriodExpired(disputeWindow, getEvidenceTime()),
             ErrorDisputeExpired()
         );
-
         bytes32 commitment = keccak256(abi.encode(dispute));
         bool isFound = false;
         uint256 foundIndex;

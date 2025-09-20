@@ -296,9 +296,7 @@ class JoinChannelService extends ARpcService {
             milestoneSnapshots = snapshots;
 
             await this.mainRpcService.p2pManager.stateManager.postStateSnapshot(
-                milestoneProofs,
-                milestoneSnapshots,
-                exitChannelBlocks
+                this.mainRpcService.p2pManager.stateManager.forkId
             );
         }
 

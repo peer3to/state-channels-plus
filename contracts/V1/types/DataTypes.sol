@@ -109,6 +109,8 @@ struct StateSnapshot {
 }
 
 struct SnapshotData {
+    /// @dev The forkId of the previous(originating) fork
+    bytes32 originForkId;
     /// @dev the state root of the channel state
     bytes32 stateMachineStateHash;
     /// @dev the participants of the channel

@@ -13,22 +13,22 @@ import { Bytes } from "@/types/types";
 
 describe("EvmStateMachine", function () {
     it("EvmStateMachine - P2P simulation - success", async function () {
-        let signerOne = (await hre.getSigners())[0];
-        let signerTwo = (await hre.getSigners())[1];
+        const signerOne = (await hre.getSigners())[0];
+        const signerTwo = (await hre.getSigners())[1];
 
-        let math = await deployMathChannelProxyFixture(hre);
+        const math = await deployMathChannelProxyFixture(hre);
 
-        let mathSM = await hre.getContractFactory("MathStateMachine");
-        let mathsm = math.mathInstance;
+        const mathSM = await hre.getContractFactory("MathStateMachine");
+        const mathsm = math.mathInstance;
 
-        let mathscm = math.mathChannelManager;
+        const mathscm = math.mathChannelManager;
 
         //P2P setup;
-        let deployTx = await mathSM.getDeployTransaction(500000); // this deployes the contract locally
+        const deployTx = await mathSM.getDeployTransaction(500000); // this deployes the contract locally
         let mathContractFirstPlayer: MathStateMachine;
         let mathContractSecondPlayer: MathStateMachine;
 
-        let p2pOne = await EvmStateMachine.p2pSetup(
+        const p2pOne = await EvmStateMachine.p2pSetup(
             signerOne,
             deployTx,
             mathscm,
@@ -38,7 +38,7 @@ describe("EvmStateMachine", function () {
             } as unknown as P2pEventHooks
         );
 
-        let p2pTwo = await EvmStateMachine.p2pSetup(
+        const p2pTwo = await EvmStateMachine.p2pSetup(
             signerTwo,
             deployTx,
             mathscm,
@@ -93,18 +93,18 @@ describe("EvmStateMachine", function () {
         );
 
         //P2P disovery/matchamking (this is not done here - just the end result)
-        let joinChannelCommitment1 = createJoinChannelTestObject(
+        const joinChannelCommitment1 = createJoinChannelTestObject(
             signerOne.address
         );
-        let joinChannelCommitment2 = createJoinChannelTestObject(
+        const joinChannelCommitment2 = createJoinChannelTestObject(
             signerTwo.address
         );
 
-        let jc1Signed = await SignatureUtils.signJoinChannel(
+        const jc1Signed = await SignatureUtils.signJoinChannel(
             joinChannelCommitment1,
             signerOne
         );
-        let jc2Signed = await SignatureUtils.signJoinChannel(
+        const jc2Signed = await SignatureUtils.signJoinChannel(
             joinChannelCommitment2,
             signerTwo
         );

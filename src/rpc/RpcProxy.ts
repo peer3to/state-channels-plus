@@ -28,7 +28,7 @@ class RpcProxy {
                     }
                     if (typeof prop === "symbol") return;
                     return (...args: any) => {
-                        let rpc: Rpc = {
+                        const rpc: Rpc = {
                             method: prop.toString(),
                             params: args
                         };

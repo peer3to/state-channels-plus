@@ -1,7 +1,3 @@
-import {
-    SignedBlockStruct,
-    BlockConfirmationStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
 import { Hash, ForkId, BlockHeight, Signature, Timestamp } from "@/types/types";
 import { Block, BlockCoordinates } from "@/models";
 
