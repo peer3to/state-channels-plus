@@ -60,7 +60,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             return; //already slashed
         }
         disputeData[channelId].onChainSlashes.push(OnChainSlash(slashedParticipant, block.timestamp));
-        emit OnChainSlashAdded(channelId, slashedParticipant, block.timestamp);
+        emit ChainSlashed(channelId, slashedParticipant, block.timestamp);
     }
 
     function getOnChainThresholdSet(bytes32 channelId) public view virtual returns (address[] memory) {

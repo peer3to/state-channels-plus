@@ -72,16 +72,16 @@ contract LocalDiamond is StateChannelManagerProxy {
     // Called by BlockCalldataPosted event
     function onBlockCalldataPosted(
         bytes32 channelId,
-        bytes32 commitmentHash,
         address sender,
         SignedBlock calldata signedBlock,
         uint256 timestamp
     ) external {
         Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
+        bytes32 commitment = keccak256(abi.encode(signedBlock, timestamp));
         blockCalldataCommitments[channelId][sender][_block.transaction.header.forkId][_block
             .transaction
             .header
-            .transactionCnt] = commitmentHash;
+            .transactionCnt] = commitment;
     }
 
     // Called by DisputeCommitted event
@@ -108,7 +108,10 @@ contract LocalDiamond is StateChannelManagerProxy {
             disputeData[channelId].disputeWindowMap[forkId].reducedResult.reducer = dispute.input.disputer;
 
             // Clear dispute commitments (matches on-chain behavior)
-            delete disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments;
+            delete disputeData[channelId]
+                .disputeWindowMap[forkId]
+                .evidence
+                .disputeCommitments;
         }
     }
 

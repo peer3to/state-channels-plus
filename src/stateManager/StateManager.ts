@@ -194,18 +194,7 @@ class StateManager {
             totalDeposits
         );
     }
-    //Triggered by the On-chain Event Listener when block calldata is posted on-chain
-    public async collectOnChainBlock(
-        signedBlock: SignedBlockStruct,
-        timestamp: Timestamp
-    ) {
-        const blockConfirmation: BlockConfirmationStruct = {
-            signedBlock,
-            signatures: []
-        };
 
-        return this.onBlockConfirmation(blockConfirmation, timestamp);
-    }
     private async tryExecuteFromQueue() {
         const nextBlockHeight = this.storage.blocks.getNextBlockHeight(
             this.forkId

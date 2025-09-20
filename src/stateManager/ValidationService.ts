@@ -394,7 +394,7 @@ export default class ValidationService {
             const filter =
                 this.stateChannelManagerContract.filters.BlockCalldataPosted(
                     block.channelId,
-                    blockCommitment
+                    blockCommitment as Address
                 );
 
             // Calculate how many blocks back should we look for the log on-chain

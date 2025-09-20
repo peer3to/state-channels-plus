@@ -19,8 +19,40 @@ contract DisputeManagerFacet is StateChannelCommon {
         bytes32 disputeAuditingDataHash = keccak256(abi.encode(disputeAuditingData));
         require(dispute.input.disputeAuditingDataHash == disputeAuditingDataHash, ErrorAuditingDataHashMismatch());
         _uploadDispute(disputeConfirmation, true);
-        emit DisputeAuditingDataPosted(
-            dispute.input.channelId, keccak256(disputeConfirmation.signedDispute.encodedDispute), disputeAuditingData
+        bytes32 forkId = _getDisputeFork(dispute);
+        DisputeData storage disputeData = disputeData[dispute.input.channelId];
+        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[forkId];
+        emit DisputeCommittedWithAuditingData(
+            dispute.input.channelId,
+            dispute,
+            block.timestamp,
+            true,
+            disputeWindow.evidence.creationTimestamp,
+            disputeAuditingData
+        );
+    }
+
+    function uploadDisputeAndAudit(
+        DisputeConfirmation memory disputeConfirmation,
+        DisputeAuditingData memory disputeAuditingData
+    ) public {
+        //first audit -> update on-chain slashes -> reduced threshold
+        Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
+        address[] memory slashes = StateChannelManagerProxy(address(this)).auditDispute(dispute, disputeAuditingData);
+        for (uint256 i = 0; i < slashes.length; i++) {
+            addOnChainSlashedParticipant(dispute.input.channelId, slashes[i]);
+        }
+        _uploadDispute(disputeConfirmation, true);
+        bytes32 forkId = _getDisputeFork(dispute);
+        DisputeData storage disputeData = disputeData[dispute.input.channelId];
+        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[forkId];
+        emit DisputeCommittedWithAuditingData(
+            dispute.input.channelId,
+            dispute,
+            block.timestamp,
+            true,
+            disputeWindow.evidence.creationTimestamp,
+            disputeAuditingData
         );
     }
 
@@ -81,6 +113,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             disputeWindow.evidence.disputeCommitments.push(c);
         }
         disputeWindow.evidence.hasPosted[dispute.input.disputer] = true; //disputer has posted the dispute
+
         emit DisputeCommitted(
             dispute.input.channelId,
             dispute,
