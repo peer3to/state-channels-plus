@@ -3,13 +3,10 @@ import { ChannelId, Timestamp, Bytes } from "@/types/types";
 import { StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
-import {
-    MilestoneProofStruct,
-    StateProofStruct
-} from "@typechain-types/contracts/V1/types/ProofTypes";
+import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Codec, Type } from "@/utils";
-import { isEqual } from "lodash";
+import { ethers } from "ethers";
 
 export interface SnapshotPayload {
     latestForkGenesisSnapshot: StateSnapshot;
@@ -386,58 +383,55 @@ class SpectateService extends ARpcService {
             ) {
                 console.log(`Verifying state proof from proven fork`);
 
-                // Get the latest state proof from the proven fork to compare with participant's state proof
-                const latestBlockHeight =
-                    stateManager.storage.blocks.getNextBlockHeight(
-                        currentForkId
-                    ) - 1;
-                const computedStateProof =
-                    await stateManager.agreementManager.getStateProof(
-                        currentForkId,
-                        latestBlockHeight
+                // Use verifyMilestonesProxyView
+                const isValid =
+                    await stateManager.stateChannelManagerContract.verifyMilestonesProxyView(
+                        snapshotPayload.stateProof.milestones,
+                        snapshotPayload.milestoneSnapshots || [],
+                        participantProvidedSnapshot.toStruct()
                     );
 
-                // Compare the state proof objects
-                if (!isEqual(computedStateProof, snapshotPayload.stateProof)) {
+                if (!isValid) {
                     return {
                         isValid: false,
-                        error: "State proof does not match computed state proof"
+                        error: "State proof milestones verification failed"
                     };
                 }
 
-                console.log(
-                    `Verified state proof matches computed state proof`
-                );
+                console.log(`Verified state proof milestones`);
 
-                // Verify the encoded state by generating a state proof from it and comparing
+                // Verify the encoded state
                 if (snapshotPayload.encodedState) {
-                    // Set the state machine to the provided encoded state
-                    await stateManager.diamondStateMachine.setState(
+                    const encodedStateHash = ethers.keccak256(
                         snapshotPayload.encodedState
                     );
 
-                    // Generate state proof from this encoded state
-                    const generatedStateProof =
-                        await stateManager.agreementManager.getStateProof(
-                            currentForkId,
-                            latestBlockHeight
-                        );
+                    // Get the latest verified snapshot from the state proof
+                    const latestVerifiedSnapshot =
+                        snapshotPayload.milestoneSnapshots?.[
+                            snapshotPayload.stateProof.milestones.length - 1
+                        ];
 
-                    // Compare with the provided state proof
+                    if (!latestVerifiedSnapshot) {
+                        return {
+                            isValid: false,
+                            error: "Missing milestone snapshots for state proof verification"
+                        };
+                    }
+
                     if (
-                        !isEqual(
-                            generatedStateProof,
-                            snapshotPayload.stateProof
-                        )
+                        encodedStateHash !==
+                        latestVerifiedSnapshot.snapshotData
+                            .stateMachineStateHash
                     ) {
                         return {
                             isValid: false,
-                            error: "Generated state proof from encoded state does not match provided state proof"
+                            error: "Encoded state hash does not match latest verified snapshot state machine state hash"
                         };
                     }
 
                     console.log(
-                        `Verified encoded state by generating matching state proof`
+                        `Verified encoded state hash matches latest verified snapshot`
                     );
                 }
             }

@@ -363,6 +363,19 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return abi.decode(result, (bool, bytes));
     }
 
+    function verifyMilestonesProxyView(
+        MilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        StateSnapshot memory genesisSnapshot
+    ) external view returns (bool) {
+        // This should trick the compiler, but still use delegatecall under the hood. This doesn't magically allow us to mutate the state in view functions that use delegate call.
+        // Ethers and other tools won't issue a transaction, but a call that runs on a single node so even if it did modify the state it wouldn't be reflected on-chain/persisted.
+        (bool isValid,) = DisputeVerificationFacet(address(this)).verifyMilestones(
+            milestoneProofs, milestoneSnapshots, genesisSnapshot
+        );
+        return isValid;
+    }
+
     function multicall(bytes[] calldata calls) external override returns (bytes[] memory results) {
         results = new bytes[](calls.length);
         for (uint256 i = 0; i < calls.length; i++) {
