@@ -1,12 +1,12 @@
 import { ethers } from "ethers";
 import {
     StateSnapshotStruct,
-    StateSnapshotStructOutput
+    StateSnapshotStructOutput,
+    SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Codec, Type } from "../utils/Codec";
 
 import { BlockHeight, Bytes, ForkId, Hash, Timestamp } from "@/types/types";
-import { SnapshotDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 export default class StateSnapshot {
     private constructor(private readonly snapshot: StateSnapshotStruct) {}
@@ -38,6 +38,10 @@ export default class StateSnapshot {
 
     get latestJoinBlockHash(): Hash {
         return this.snapshot.snapshotData.latestJoinChannelBlockHash as Hash;
+    }
+
+    get latestExitBlockHash(): Hash {
+        return this.snapshot.snapshotData.latestExitChannelBlockHash as Hash;
     }
 
     get forkId(): ForkId {

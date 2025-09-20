@@ -11,6 +11,7 @@ import { DebugProxy, LocalDiscoveryServer } from "@/utils";
 import { RpcHandleMethods } from "@/rpc/RpcProxy";
 import { Buffer } from "buffer";
 import { DEBUG_P2P_MANAGER, DEBUG_LOCAL_TRANSPORT } from "@/utils/config";
+import { Address } from "./types/types";
 
 class P2PManager implements IOnMessage {
     stateManager: StateManager;
@@ -87,6 +88,20 @@ class P2PManager implements IOnMessage {
         let profile = this.profileManager.getProfileByTransport(transport);
         profile && this.profileManager.removeTransport(transport);
     }
+
+    public disconnectAndBlacklistPeer(transport: ATransport) {
+        this.profileManager.getProfileByTransport(transport)?.blacklist();
+
+        this.removeConnection(transport);
+    }
+
+    public isBlacklisted(evmAddress: Address): boolean {
+        return (
+            this.profileManager.getProfileByEvmAddress(evmAddress)
+                ?.isBlackListed || false
+        );
+    }
+
     public disconnectAll() {
         for (let transport of this.openConnections) {
             this.removeConnection(transport);

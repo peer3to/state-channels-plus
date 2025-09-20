@@ -7,7 +7,7 @@ export function serializeRpc(rpc: Rpc): string {
 }
 export function deserializeRpc(serializedRpc: string): Rpc | undefined {
     try {
-        let rpc = JSON.parse(serializedRpc);
+        const rpc = JSON.parse(serializedRpc);
         if (!rpc || typeof rpc.method !== "string" || !rpc.params) {
             return undefined;
         }

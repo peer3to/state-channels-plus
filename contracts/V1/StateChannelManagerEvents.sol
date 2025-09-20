@@ -4,7 +4,13 @@ import "./types/DisputeTypes.sol";
 import "./types/DataTypes.sol";
 
 interface StateChannelManagerEvents {
-    event BlockCalldataPosted(bytes32 indexed channelId, address sender, SignedBlock signedBlock, uint256 timestamp);
+    event BlockCalldataPosted(
+        bytes32 indexed channelId,
+        bytes32 indexed commitmentHash,
+        address sender,
+        SignedBlock signedBlock,
+        uint256 timestamp
+    );
     event SetState(bytes32 indexed channelId, bytes encodedState, bytes32 forkId, uint256 timestamp);
     event DisputeCommitted(
         bytes32 indexed channelId,
@@ -28,11 +34,6 @@ interface StateChannelManagerEvents {
     event ChannelStorageCleared(bytes32 indexed channelId, bytes32 latestJoinChannelBlockHash);
     event DisputeKilled(bytes32 indexed channelId, bytes32 forkId, address disputer);
     event DisputeReducedResultCommitted(
-        bytes32 indexed channelId,
-        bytes32 forkId,
-        bytes32 reducedForkId,
-        uint256 reductionTimestamp,
-        uint256 forkGenesisTimestamp,
-        address reducer
+        bytes32 indexed channelId, bytes32 forkId, bytes32 reducedForkId, uint256 reductionTimestamp, address reducer
     );
 }

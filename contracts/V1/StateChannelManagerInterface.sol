@@ -32,9 +32,7 @@ abstract contract StateChannelManagerInterface {
 
     function getEvidenceTime() public view virtual returns (uint256);
 
-    function getKillTime() public view virtual returns (uint256);
-
-    function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256, uint256);
+    function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256);
 
     function executeStateTransition(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
         public
@@ -61,11 +59,6 @@ abstract contract StateChannelManagerInterface {
         virtual
         returns (address[] memory slashParticipants);
 
-    function uploadDisputeAndAudit(
-        DisputeConfirmation memory disputeConfirmation,
-        DisputeAuditingData memory disputeAuditingData
-    ) public virtual;
-
     function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public virtual;
 
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public virtual;
@@ -88,4 +81,13 @@ abstract contract StateChannelManagerInterface {
     function isForkDisputed(bytes32 channelId, bytes32 forkId) public view virtual returns (bool);
 
     function multicall(bytes[] calldata calls) external virtual returns (bytes[] memory results);
+
+    function reduce(Dispute[] memory disputes) public virtual returns (ReduceOutput memory);
+
+    function reduceAndFinalize(
+        Dispute[] memory disputes,
+        StateSnapshot memory stateSnapshot,
+        bytes memory encodedStateMachineState,
+        JoinChannelBlock[] memory joinChannelBlocks
+    ) public virtual;
 }

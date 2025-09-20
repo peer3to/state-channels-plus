@@ -1,4 +1,5 @@
 import {
+    BlockConfirmationStruct,
     SignedBlockStruct,
     SignedJoinChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -115,13 +116,9 @@ class MainRpcService {
     }
 
     public async onBlockConfirmation(
-        originalSignedBlock: SignedBlockStruct,
-        confirmationSignature: Signature
+        blockConfirmation: BlockConfirmationStruct
     ) {
-        this.stateTransitionService.onBlockConfirmation(
-            originalSignedBlock,
-            confirmationSignature
-        );
+        this.stateTransitionService.onBlockConfirmation(blockConfirmation);
     }
 
     public async onDisputeConfirmation(signedDispute: SignedDisputeStruct) {

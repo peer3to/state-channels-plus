@@ -1,5 +1,3 @@
-import { DisputeEthersType } from "./disputes";
-
 export const BalanceEthersType = `tuple(
   uint256 amount,
   bytes data
@@ -22,6 +20,11 @@ tuple(
 export const SignedBlockEthersType = `tuple(
 bytes encodedBlock,
 bytes signature
+)`;
+
+export const BlockCommitmentEthersType = `tuple(
+${SignedBlockEthersType} signedBlock,
+uint timestamp
 )`;
 
 export const SnapshotDataEthersType = `tuple(
@@ -87,8 +90,7 @@ bool previousBlockProducerPostedCalldata
 export const DisputeAuditingDataEthersType = `tuple(
 ${StateSnapshotEthersType} genesisStateSnapshot,
 ${StateSnapshotEthersType} latestStateSnapshot,
-${StateSnapshotEthersType} outputStateSnapshot,
 ${StateSnapshotEthersType}[] milestoneSnapshots,
 bytes latestStateStateMachineState,
-${JoinChannelBlockEthersType}[] joinChannelBlocks
+${ExitChannelBlockEthersType}[] exitChannelBlocks
 )`;

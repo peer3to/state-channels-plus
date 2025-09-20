@@ -4,6 +4,7 @@ class Clock {
     private static instance: Clock;
     private clockAjustmentSeconds: number;
     private provider: ethers.Provider;
+    private averageBlockTime: number | undefined; // in seconds
 
     private constructor(runner: ethers.Provider) {
         this.provider = runner;
@@ -19,6 +20,13 @@ class Clock {
             Math.floor(new Date().getTime() / 1000) +
             Clock.getInstance().clockAjustmentSeconds
         );
+    }
+    public static getAverageOnChainBlockTime(): number {
+        const averageBlockTime = Clock.getInstance().averageBlockTime;
+        if (averageBlockTime === undefined) {
+            throw new Error("CLock - Average block time not set");
+        }
+        return averageBlockTime;
     }
     private static getInstance(): Clock {
         if (!Clock.instance) throw new Error("Clock not initialized!");
@@ -40,13 +48,13 @@ class Clock {
         if (!pastBlock) throw new Error("Could not get past block");
         let pastTimestamp = pastBlock.timestamp;
 
-        let averageBlockTime = (latestTimestamp - pastTimestamp) / blockCnt;
-        if (!averageBlockTime) {
+        this.averageBlockTime = (latestTimestamp - pastTimestamp) / blockCnt;
+        if (!this.averageBlockTime) {
             this.clockAjustmentSeconds += difference;
             return;
         }
         //TODO - think - shouit it be 2* or 1* or something else?
-        if (difference > 2 * averageBlockTime) {
+        if (difference > 2 * this.averageBlockTime) {
             this.clockAjustmentSeconds += difference;
             await this.syncClock(); // Recursively call syncClock until condition is satisfied
         }

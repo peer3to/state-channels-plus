@@ -19,11 +19,14 @@ class LocalTransport extends ATransport {
     }
     onMessage(data: any): void {
         this.p2pManager.localRpcService.senderTransport = this;
-        let serializedRPC = data.toString();
+        const serializedRPC = data.toString();
         this.p2pManager.onRpc(serializedRPC);
     }
     _close(): void {
-        throw new Error("Method not implemented."); //TODO!S
+        if (this.ws && this.ws.readyState === this.ws.OPEN) {
+            this.ws.close();
+        }
+        this.p2pManager.removeConnection(this);
     }
 }
 export default LocalTransport;

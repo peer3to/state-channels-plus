@@ -8,15 +8,18 @@ import {
     BlockConfirmationStruct,
     ExitChannelStruct,
     JoinChannelBlockStruct,
-    SnapshotDataStruct
+    SnapshotDataStruct,
+    SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     BlockDoubleSignProofStruct,
     BlockInvalidStateTransitionProofStruct,
-    InvalidTimestampProofStruct
+    InvalidTimestampProofStruct,
+    WrongGenesisProofStruct
 } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 import {
     BlockEthersType,
+    BlockCommitmentEthersType,
     DisputeEthersType,
     JoinChannelEthersType,
     TransactionEthersType,
@@ -29,20 +32,25 @@ import {
     BlockDoubleSignProofEthersType,
     BlockInvalidStateTransitionProofEthersType,
     InvalidTimestampProofEthersType,
-    FraudProofType
+    WrongGenesisProofEthersType,
+    FraudProofType,
+    DisputeAuditingDataEthersType
 } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { Bytes } from "@/types/types";
+import { Bytes, Timestamp } from "@/types/types";
 import { ExecResult } from "@ethereumjs/evm";
+import { DisputeAuditingDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 export type FraudStruct =
     | BlockDoubleSignProofStruct
     | BlockInvalidStateTransitionProofStruct
-    | InvalidTimestampProofStruct;
+    | InvalidTimestampProofStruct
+    | WrongGenesisProofStruct;
 
 type StructType =
     | FraudStruct
     | BlockStruct
+    | { signedBlock: SignedBlockStruct; timestamp: Timestamp }
     | BlockConfirmationStruct
     | JoinChannelStruct
     | TransactionStruct
@@ -51,11 +59,13 @@ type StructType =
     | SnapshotDataStruct
     | JoinChannelBlockStruct
     | ExitChannelBlockStruct
-    | ExitChannelStruct;
+    | ExitChannelStruct
+    | DisputeAuditingDataStruct;
 
 // Enum for better autocomplete and type safety
 export enum Type {
     Block,
+    BlockCommitment,
     JoinChannel,
     BlockConfirmation,
     Transaction,
@@ -64,7 +74,8 @@ export enum Type {
     SnapshotData,
     JoinChannelBlock,
     ExitChannelBlock,
-    ExitChannel
+    ExitChannel,
+    DisputeAuditingData
 }
 
 export class Codec {
@@ -73,6 +84,7 @@ export class Codec {
         string
     >([
         [Type.Block, BlockEthersType],
+        [Type.BlockCommitment, BlockCommitmentEthersType],
         [Type.JoinChannel, JoinChannelEthersType],
         [Type.BlockConfirmation, BlockConfirmationEthersType],
         [Type.Transaction, TransactionEthersType],
@@ -82,12 +94,14 @@ export class Codec {
         [Type.JoinChannelBlock, JoinChannelBlockEthersType],
         [Type.ExitChannelBlock, ExitChannelBlockEthersType],
         [Type.ExitChannel, ExitChannelEthersType],
+        [Type.DisputeAuditingData, DisputeAuditingDataEthersType],
         [FraudProofType.BlockDoubleSign, BlockDoubleSignProofEthersType],
         [
             FraudProofType.BlockInvalidStateTransition,
             BlockInvalidStateTransitionProofEthersType
         ],
-        [FraudProofType.InvalidTimestamp, InvalidTimestampProofEthersType]
+        [FraudProofType.InvalidTimestamp, InvalidTimestampProofEthersType],
+        [FraudProofType.WrongGenesis, WrongGenesisProofEthersType]
     ]);
 
     public static encode(
@@ -151,7 +165,7 @@ export class Codec {
         try {
             obj = result.toObject();
             let cnt = 0;
-            for (let key in obj) {
+            for (const key in obj) {
                 if (key == "_") obj = result.toArray();
                 cnt++;
             }
@@ -159,7 +173,7 @@ export class Codec {
         } catch (e) {
             obj = result.toArray();
         }
-        for (let key in obj) {
+        for (const key in obj) {
             if (
                 obj[key] instanceof ethers.Result &&
                 Object.getPrototypeOf(obj[key]) === ethers.Result.prototype

@@ -2,7 +2,7 @@ import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
-import { ChannelId, Timestamp } from "@/types/types";
+import { ChannelId, Timestamp, Address, Hash } from "@/types/types";
 
 //TODO - made a PR to ethers.js to fix Deferred Topic Filter
 
@@ -36,6 +36,25 @@ class StateChannelEventListener {
         this.filters[key] = filterFactory();
         await this.stateChannelManagerContract.on(this.filters[key], handler);
     }
+
+    public handleBlockCalldataPosted(
+        channelId: ChannelId,
+        commitmentHash: Hash,
+        sender: Address,
+        signedBlock: SignedBlockStruct,
+        timestamp: Timestamp
+    ): void {
+        this.localDiamondContract.onBlockCalldataPosted(
+            channelId,
+            commitmentHash,
+            sender,
+            signedBlock,
+            timestamp
+        );
+        this.p2pEventHooks.onPostedCalldata?.();
+        this.stateManager.collectOnChainBlock(signedBlock, timestamp);
+    }
+
     //Mark resources for garbage collection
     public dispose() {
         Object.values(this.filters).forEach((filter) => {
@@ -65,17 +84,20 @@ class StateChannelEventListener {
                     channelId
                 ),
             handler: (logObj: any) => {
-                const { channelId, sender, signedBlock, timestamp } =
-                    logObj.args;
-                this.localDiamondContract.onBlockCalldataPosted(
+                const {
                     channelId,
+                    commitmentHash,
+                    sender,
+                    signedBlock,
+                    timestamp
+                } = logObj.args;
+                this.handleBlockCalldataPosted(
+                    channelId,
+                    commitmentHash,
                     sender,
                     signedBlock,
                     timestamp
                 );
-                this.p2pEventHooks.onPostedCalldata?.();
-
-                this.stateManager.collectOnChainBlock(signedBlock, timestamp);
             }
         },
         DisputeCommitted: {
@@ -202,20 +224,14 @@ class StateChannelEventListener {
                     channelId
                 ),
             handler: (logObj: any) => {
-                const {
-                    forkId,
-                    reducedForkId,
-                    reductionTimestamp,
-                    forkGenesisTimestamp,
-                    reducer
-                } = logObj.args;
+                const { forkId, reducedForkId, reductionTimestamp, reducer } =
+                    logObj.args;
                 const channelId = logObj.args.channelId;
                 this.localDiamondContract.onDisputeReducedResultCommitted(
                     channelId,
                     forkId,
                     reducedForkId,
                     reductionTimestamp,
-                    forkGenesisTimestamp,
                     reducer
                 );
             }

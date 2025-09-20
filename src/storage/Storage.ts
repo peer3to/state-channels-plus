@@ -51,12 +51,12 @@ export class Storage {
             return this.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
         }
 
-        const blockEntry = this.blocks.getBlockEntry(forkId, height);
-        if (!blockEntry) {
+        const block = this.blocks.getBlock(forkId, height);
+        if (!block) {
             return undefined;
         }
 
-        const stateSnapshotHash = blockEntry.block.stateSnapshotHash;
+        const stateSnapshotHash = block.stateSnapshotHash;
 
         return this.stateSnapshots.getStateSnapshotByHash(stateSnapshotHash);
     }
@@ -75,7 +75,7 @@ export class Storage {
         );
     }
 
-    private getPreviousStateSnapshot(
+    getPreviousStateSnapshot(
         coordinates: BlockCoordinates
     ): StateSnapshot | undefined {
         return this.getStateSnapshot({
@@ -96,12 +96,9 @@ export class Storage {
         const { forkId, height } = coordinates;
 
         if (height > 0) {
-            const prevBlockEntry = this.blocks.getBlockEntry(
-                forkId,
-                height - 1
-            )!;
+            const prevBlock = this.blocks.getBlock(forkId, height - 1)!;
 
-            return { block: prevBlockEntry.block };
+            return { block: prevBlock };
         }
 
         const genesisSnapshot =
