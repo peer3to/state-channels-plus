@@ -12,6 +12,30 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     function getOnChainSlashes(bytes32 channelId) public view virtual returns (OnChainSlash[] memory) {
         return disputeData[channelId].onChainSlashes;
     }
+    // Get participants who have been slashed up to (including) timestamp
+
+    function getOnChainSlashedParticipantsUpToTimestamp(bytes32 channelId, uint256 timestamp)
+        public
+        view
+        virtual
+        returns (address[] memory)
+    {
+        address[] memory slashedParticipants = new address[](disputeData[channelId].onChainSlashes.length);
+        uint256 actualCount = 0;
+        for (
+            uint256 i = 0;
+            i < disputeData[channelId].onChainSlashes.length
+                && disputeData[channelId].onChainSlashes[i].timestamp <= timestamp;
+            i++
+        ) {
+            slashedParticipants[actualCount++] = disputeData[channelId].onChainSlashes[i].participant;
+        }
+        address[] memory finalSlashedParticipants = new address[](actualCount);
+        for (uint256 i = 0; i < actualCount; i++) {
+            finalSlashedParticipants[i] = slashedParticipants[i];
+        }
+        return finalSlashedParticipants;
+    }
 
     function getOnChainSlashedParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
         address[] memory slashedParticipants = new address[](disputeData[channelId].onChainSlashes.length);
@@ -46,6 +70,33 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             ),
             getOnChainSlashedParticipants(channelId)
         );
+    }
+
+    function getGenesisTimestamp(bytes32 channelId, bytes32 originForkId, bytes32 forkId)
+        public
+        view
+        returns (bool isAvailable, uint256 timestamp)
+    {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[originForkId];
+        if (!_isKillPeriodExpired(disputeWindow, getEvidenceTime())) {
+            return (false, 0);
+        }
+        timestamp = disputeWindow.evidence.lastEvidenceSubmissionTimestamp + getEvidenceTime();
+        if (timestamp == 0) {
+            // Dispute window doesn't exist
+            StateSnapshot memory currentOnChainSnapshot = stateSnapshots[channelId];
+            // check if current on-chain snapshot.fork == forkId
+            if (currentOnChainSnapshot.forkId == forkId && isGenesisSnapshot(currentOnChainSnapshot)) {
+                return (true, currentOnChainSnapshot.timestamp);
+            }
+            return (false, 0);
+        }
+        return (true, timestamp);
+    }
+
+    function isGenesisSnapshot(StateSnapshot memory snapshot) public pure returns (bool) {
+        return snapshot.forkId == keccak256(abi.encode(snapshot.snapshotData));
     }
 
     function getSnapshotParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
@@ -91,20 +142,12 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return evidenceTime;
     }
 
-    function getKillTime() public view virtual returns (uint256) {
-        return killTime;
-    }
-
     function getGasLimit() public view virtual returns (uint256) {
         return gasLimit;
     }
 
-    function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256, uint256) {
-        return (p2pTime, agreementTime, chainFallbackTime, evidenceTime, killTime);
-    }
-
-    function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow) internal view returns (bool) {
-        return block.timestamp > disputeWindow.reducedResult.timestamp + evidenceTime;
+    function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256) {
+        return (p2pTime, agreementTime, chainFallbackTime, evidenceTime);
     }
 
     function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
@@ -169,7 +212,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     //stateless
 
     function isDisputeCommitted(Dispute memory dispute) internal view returns (bool) {
-        bytes32 channelId = dispute.channelId;
+        bytes32 channelId = dispute.input.channelId;
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[_getDisputeFork(dispute)];
         bytes32 commitment = keccak256(abi.encode(dispute));
@@ -218,18 +261,30 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         bytes32 channelId,
         DisputeWindow storage disputeWindow,
         bytes32 reducedForkId,
-        uint256 reductionTimestamp,
-        uint256 forkGenesisTimestamp
+        uint256 reductionTimestamp
     ) internal {
-        require(_isKillPeriodExpired(disputeWindow, getKillTime()), ErrorDisputeKillPeriodNotExpired());
+        require(!_isKillPeriodExpired(disputeWindow, getEvidenceTime()), ErrorDisputeKillPeriodNotExpired());
         require(disputeWindow.reducedResult.forkId == bytes32(0), ErrorDisputeAlreadyReduced());
         disputeWindow.reducedResult.forkId = reducedForkId;
-        disputeWindow.reducedResult.forkGenesisTimestamp = forkGenesisTimestamp;
         disputeWindow.reducedResult.timestamp = reductionTimestamp;
         disputeWindow.reducedResult.reducer = msg.sender; //calling function should check that msg.sender is part of channel 'can participate'
 
         emit DisputeReducedResultCommitted(
-            channelId, disputeWindow.forkId, reducedForkId, reductionTimestamp, forkGenesisTimestamp, msg.sender
+            channelId, disputeWindow.forkId, reducedForkId, reductionTimestamp, msg.sender
         );
+    }
+
+    function _delegatecall(address target, bytes memory data) internal returns (bytes memory) {
+        (bool success, bytes memory result) = target.delegatecall(data);
+        if (!success) {
+            if (result.length == 0) {
+                revert("StateChannelManagerProxy - Delegatecall failed");
+            }
+            assembly ("memory-safe") {
+                let returndata_size := mload(result)
+                revert(add(32, result), returndata_size)
+            }
+        }
+        return result;
     }
 }

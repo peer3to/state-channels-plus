@@ -11,11 +11,18 @@ contract StateChannelManagerStorage {
     uint256 public chainFallbackTime;
     // Time within more dispute can be submitted during the challenge period
     uint256 public evidenceTime;
-    /// @dev Time within the dispute can be killed during the challenge period (killTime > evidenceTime)
-    uint256 public killTime;
     uint256 public gasLimit;
 
     AStateMachine stateMachineImplementation;
+
+    // Facets
+    address disputeManagerFacetAddress;
+    address disputeVerificationFacetAddress;
+    address fraudProofFacetAddress;
+    address disputeFraudProofFacetAddress;
+    address stateSnapshotFacetAddress;
+    address joinChannelFacetAddress;
+    address consumerFacetAddress;
 
     // =================== State on chain storage ==================
     /// @dev Channel balance tracker

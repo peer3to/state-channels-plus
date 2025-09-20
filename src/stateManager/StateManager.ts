@@ -30,7 +30,7 @@ import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
 import AgreementManager from "../agreementManager/AgreementManager";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
-import DisputeManager from "@/disputeManager/DisputeManager";
+import DisputeManager from "@/disputeManager";
 import P2PManager from "@/P2PManager";
 import StateChannelEventListener from "@/StateChannelEventListener";
 import ValidationService from "./ValidationService";
@@ -69,8 +69,9 @@ import {
 } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
+import DisputeValidationService from "./DisputeValidationService";
 
-let DEBUG_STATE_MANAGER = false;
+const DEBUG_STATE_MANAGER = false;
 
 const NULL = "0x00";
 
@@ -81,7 +82,7 @@ class StateManager {
     signerAddress: Address;
     agreementManager: AgreementManager;
     stateChannelEventListener: StateChannelEventListener;
-    disputeHandler: DisputeManager;
+    disputeManager: DisputeManager;
     stateChannelManagerContract: StateChannelManagerProxy;
     p2pManager: P2PManager;
     timeConfig: TimeConfig;
@@ -90,10 +91,9 @@ class StateManager {
     self = DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
     isDisposed: boolean = false;
     validationService: ValidationService;
+    disputeValidationService: DisputeValidationService;
     storage: Storage;
     fraudProofService: FraudProofService;
-    localDiamondContract: LocalDiamond;
-
     private latestForkId: ForkId = NULL;
 
     constructor(
@@ -103,8 +103,7 @@ class StateManager {
         diamondStateMachine: ADiamondStateMachine,
         timeConfig: TimeConfig,
         p2pEventHooks: P2pEventHooks,
-        storage: Storage,
-        localDiamondContract: LocalDiamond
+        storage: Storage
     ) {
         this.signer = signer;
         this.signerAddress = signerAddress;
@@ -115,16 +114,15 @@ class StateManager {
             stateChannelManagerContract
         );
         this.storage = storage;
-        this.localDiamondContract = localDiamondContract;
 
         this.stateChannelEventListener = new StateChannelEventListener(
             this.self,
             this.stateChannelManagerContract,
             this.p2pEventHooks,
-            this.localDiamondContract
+            this.diamondStateMachine.localDiamondContract
         );
         this.agreementManager = new AgreementManager(this.storage);
-        this.disputeHandler = new DisputeManager(
+        this.disputeManager = new DisputeManager(
             this.channelId,
             signer,
             signerAddress,
@@ -142,8 +140,17 @@ class StateManager {
             this.stateChannelManagerContract,
             this.timeConfig,
             this.channelId,
+            () => this.forkId
+        );
+        this.disputeValidationService = new DisputeValidationService(
+            this.storage,
+            this.diamondStateMachine,
+            this.stateChannelManagerContract,
+            this.timeConfig,
+            this.channelId,
             () => this.forkId,
-            this.localDiamondContract
+            this.disputeManager,
+            this.agreementManager
         );
     }
     //Mark resources for garbage collection
@@ -154,11 +161,9 @@ class StateManager {
     }
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
         this.p2pEventHooks = p2pEventHooks;
-        this.disputeHandler.setP2pEventHooks(p2pEventHooks);
     }
     public setChannelId(channelId: ChannelId) {
         this.channelId = channelId;
-        this.disputeHandler.setChannelId(channelId);
         this.stateChannelEventListener.setChannelId(channelId);
     }
     public getChannelId(): ChannelId {
@@ -502,120 +507,124 @@ class StateManager {
         }
     }
 
-    public async postStateSnapshot(
-        milestoneProofs: MilestoneProofStruct[],
-        milestoneSnapshots: StateSnapshot[],
-        exitChannelBlocks: ExitChannelBlockStruct[] = []
-    ) {
-        // Get on-chain state
-        const onChainforkId = await this.stateChannelManagerContract.getforkId(
-            this.channelId
-        );
-        const onChainDisputeLength =
-            await this.stateChannelManagerContract.getDisputeLength(
+    public async postStateSnapshot(forkId: ForkId): Promise<void> {
+        // Get the current on-chain snapshot to check if we're on the same fork
+        const currentOnChainSnapshot = StateSnapshot.from(
+            await this.stateChannelManagerContract.getStateSnapshot(
                 this.channelId
-            );
-
-        if (onChainDisputeLength == onChainforkId) {
-            // Call contract without dispute
-            return this.stateChannelManagerContract.updateStateSnapshotWithoutDispute(
-                this.channelId,
-                milestoneProofs,
-                milestoneSnapshots,
-                exitChannelBlocks
-            );
-        }
-
-        // Need to include a dispute
-        const disputeData = this.agreementManager.forks.getLatestDispute();
-        if (!disputeData) {
-            throw new Error(
-                "No dispute data available but dispute length > fork count"
-            );
-        }
-
-        // Get output state snapshot data
-        const encodedDispute = Codec.encode(disputeData.dispute, Type.Dispute);
-        const commitment = ethers.keccak256(
-            ethers.AbiCoder.defaultAbiCoder().encode(
-                ["bytes", "uint256"],
-                [encodedDispute, disputeData.timestamp]
             )
         );
 
-        const outputStateSnapshot =
-            this.outputStateSnapshotData.get(commitment);
-        if (!outputStateSnapshot) {
-            throw new Error("No output state snapshot data available");
+        // If we're on the same fork, call updateStateSnapshotSameFork directly
+        if (currentOnChainSnapshot.forkId === forkId) {
+            const sameForkData =
+                await this.prepareUpdateSnapshotSameFork(forkId);
+            if (sameForkData) {
+                try {
+                    const txResponse =
+                        await this.stateChannelManagerContract.updateStateSnapshotSameFork(
+                            this.channelId,
+                            sameForkData.milestoneProofs,
+                            sameForkData.milestoneSnapshots.map((snapshot) =>
+                                snapshot.toStruct()
+                            ),
+                            sameForkData.exitChannelBlocks
+                        );
+                    await txResponse.wait();
+                    console.log("Successfully posted state snapshot");
+                } catch (error) {
+                    if (isCustomEvmError(error)) {
+                        console.error(
+                            "Error posting state snapshot:",
+                            error.errorDescription
+                        );
+                    } else {
+                        console.error("Error posting state snapshot:", error);
+                    }
+                    throw error;
+                }
+            } else {
+                console.log("No state snapshot updates needed");
+            }
+            return;
         }
 
-        const disputeProof: DisputeProofStruct = {
-            dispute: disputeData.dispute,
-            outputStateSnapshot: outputStateSnapshot,
-            timestamp: disputeData.timestamp,
-            signatures: []
-        };
+        // Different fork - use multicall for both fork update and same-fork update
+        const forkData = await this.prepareUpdateStateSnapshotFork();
+        const sameForkData = await this.prepareUpdateSnapshotSameFork(forkId);
 
-        // Check if dispute is within agreement time
-        const currentTime = Clock.getTimeInSeconds();
-        const timeSinceDispute = currentTime - disputeData.timestamp;
-
-        if (timeSinceDispute > this.timeConfig.challengeTime) {
-            // dispute is already finalized, no need for threshold finaliztion
-            return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
-                this.channelId,
-                milestoneProofs,
-                milestoneSnapshots,
-                disputeProof,
-                exitChannelBlocks
-            );
+        // Encode data for multicall
+        const callData: string[] = [];
+        if (forkData) {
+            // Check if the fork update will result in the same fork as the target
+            if (forkData.genesisSnapshot.forkId === forkId) {
+                const forkCalldata =
+                    this.stateChannelManagerContract.interface.encodeFunctionData(
+                        "updateStateSnapshotFork",
+                        [
+                            this.channelId,
+                            forkData.genesisSnapshot.toStruct(),
+                            forkData.exitBlocks
+                        ]
+                    );
+                callData.push(forkCalldata);
+            } else {
+                // Fork update results in a different fork
+                throw new Error(
+                    `Fork mismatch: update will result in fork ${forkData.genesisSnapshot.forkId}, but target fork is ${forkId}.`
+                );
+            }
+        }
+        if (sameForkData) {
+            const sameForkCalldata =
+                this.stateChannelManagerContract.interface.encodeFunctionData(
+                    "updateStateSnapshotSameFork",
+                    [
+                        this.channelId,
+                        sameForkData.milestoneProofs,
+                        sameForkData.milestoneSnapshots.map((snapshot) =>
+                            snapshot.toStruct()
+                        ),
+                        sameForkData.exitChannelBlocks
+                    ]
+                );
+            callData.push(sameForkCalldata);
         }
 
-        // Check if we have threshold signatures on the dispute
-        const fork = this.agreementManager.forks.latestFork();
-        if (!fork) {
-            throw new Error("No latest fork found");
+        // Execute the final snapshot updates in a single multicall transaction
+        if (callData.length > 0) {
+            try {
+                const txResponse =
+                    await this.stateChannelManagerContract.multicall(callData);
+                await txResponse.wait();
+                console.log("Successfully posted state snapshot");
+            } catch (error) {
+                if (isCustomEvmError(error)) {
+                    console.error(
+                        "Error posting state snapshot:",
+                        error.errorDescription
+                    );
+                } else {
+                    console.error("Error posting state snapshot:", error);
+                }
+                throw error;
+            }
+        } else {
+            console.log("No state snapshot updates needed");
         }
-
-        // Get all participants who have signed the dispute
-        const disputeSignatures = this.agreementManager.getDisputeSignatures(
-            disputeData.dispute
-        );
-
-        const allowedParticipantsSet = await getActiveParticipants(
-            this.stateChannelManagerContract,
-            this.getChannelId()
-        );
-
-        const hasThreshold = SignatureUtils.hasSignatureThreshold(
-            allowedParticipantsSet,
-            Codec.encode(disputeData.dispute, Type.Dispute),
-            disputeSignatures
-        );
-
-        if (hasThreshold) {
-            // Create dispute proof from the latest dispute
-            // Call contract with dispute and signatures
-            disputeProof.signatures = disputeSignatures;
-            return this.stateChannelManagerContract.updateStateSnapshotWithDispute(
-                this.channelId,
-                milestoneProofs,
-                milestoneSnapshots,
-                disputeProof,
-                exitChannelBlocks
-            );
-        }
-
-        // Dispute is not finalized
-        console.log(
-            "Dispute is not finalized, state snapshot was not submitted"
-        );
     }
 
     /**
-     * Updates the state snapshot when the fork is the same
+     * Prepares data for updating the state snapshot when the fork is the same
      */
-    public async updateSnapshotSameFork(forkId: ForkId): Promise<void> {
+    public async prepareUpdateSnapshotSameFork(forkId: ForkId): Promise<
+        | {
+              milestoneProofs: MilestoneProofStruct[];
+              milestoneSnapshots: StateSnapshot[];
+              exitChannelBlocks: ExitChannelBlockStruct[];
+          }
+        | undefined
+    > {
         try {
             // Get the current on-chain snapshot first
             const currentOnChainSnapshot = StateSnapshot.from(
@@ -648,6 +657,10 @@ class StateManager {
                     this.agreementManager.getSnapshotFromMilestone(
                         milestoneProof
                     );
+                if (!snapshot)
+                    throw new Error(
+                        "Milestone built but corresponding snapshot not found"
+                    );
 
                 // Only include milestones that are newer than the current on-chain block height
                 if (snapshot.blockHeight > currentOnChainSnapshot.blockHeight) {
@@ -661,7 +674,7 @@ class StateManager {
                 console.log(
                     "No relevant milestones found - state is already up to date"
                 );
-                return;
+                return undefined;
             }
 
             const latestSnapshot =
@@ -673,7 +686,7 @@ class StateManager {
                 currentOnChainSnapshot.blockHeight
             ) {
                 console.log("State is already up to date");
-                return;
+                return undefined;
             }
 
             // Verify that both snapshots belong to the same fork
@@ -719,29 +732,30 @@ class StateManager {
 
             exitChannelBlocks.push(...exitBlockChain);
 
-            const txResponse =
-                await this.stateChannelManagerContract.updateStateSnapshotSameFork(
-                    this.channelId,
-                    milestoneProofs,
-                    milestoneSnapshots.map((snapshot) => snapshot.toStruct()),
-                    exitChannelBlocks
-                );
-
-            await txResponse.wait();
-
-            console.log(
-                `Successfully updated state snapshot for fork ${forkId}`
-            );
+            return {
+                milestoneProofs,
+                milestoneSnapshots,
+                exitChannelBlocks
+            };
         } catch (error) {
-            console.error("Error updating snapshot for the same fork:", error);
+            console.error(
+                "Error preparing update snapshot for the same fork:",
+                error
+            );
             throw error;
         }
     }
 
     /**
-     * Updates the state snapshot when the fork is different
+     * Prepares data for updateStateSnapshotFork
      */
-    public async updateSnapshotFork(): Promise<void> {
+    public async prepareUpdateStateSnapshotFork(): Promise<
+        | {
+              genesisSnapshot: StateSnapshot;
+              exitBlocks: ExitChannelBlockStruct[];
+          }
+        | undefined
+    > {
         try {
             // Get the current on-chain snapshot first
             const currentOnChainSnapshot = StateSnapshot.from(
@@ -758,6 +772,10 @@ class StateManager {
                     this.channelId,
                     currentForkId
                 );
+
+            if (!isDisputed) {
+                return undefined; // No fork update needed
+            }
 
             // Get the genesis snapshot
             const genesisSnapshot =
@@ -818,18 +836,10 @@ class StateManager {
                     disputes.push(dispute);
                 }
 
-                // Get the dispute window creation timestamp from the on-chain contract
-                const creationTimestamp =
-                    await this.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
-                        this.channelId,
-                        currentForkId
-                    );
-
                 // Use proxy view to compute reduced output cheaply (no tx)
                 const reducedOutput =
                     await this.stateChannelManagerContract.reduceProxyView(
-                        disputes,
-                        creationTimestamp
+                        disputes
                     );
 
                 // Derive latest snapshot and encoded state from reduced output's latest block
@@ -859,7 +869,7 @@ class StateManager {
                 // Build join channel blocks
                 let currentJoinChannelBlockHash: Hash =
                     reducedOutput.latestJoinChannelBlockHash;
-                let joinChannelBlocks: JoinChannelBlockStruct[] = [];
+                const joinChannelBlocks: JoinChannelBlockStruct[] = [];
                 let currentJoinChannelBlock =
                     this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
                         currentJoinChannelBlockHash
@@ -884,7 +894,6 @@ class StateManager {
                     const txResponse =
                         await this.stateChannelManagerContract.reduceAndFinalize(
                             disputes,
-                            creationTimestamp,
                             latestSnapshot.toStruct(),
                             encodedStateForReduce,
                             joinChannelBlocks
@@ -919,9 +928,9 @@ class StateManager {
             // Build exit blocks
             let latestExitBlockHash =
                 genesisSnapshot.snapshotData.latestExitChannelBlockHash;
-            let currentOnChainExitBlockHash =
+            const currentOnChainExitBlockHash =
                 currentOnChainSnapshot.snapshotData.latestExitChannelBlockHash;
-            let exitBlocks: ExitChannelBlockStruct[] = [];
+            const exitBlocks: ExitChannelBlockStruct[] = [];
             let currentExitBlock =
                 this.storage.exitChannelBlocks.getExitChannelBlockEntry(
                     latestExitBlockHash
@@ -939,19 +948,12 @@ class StateManager {
                     );
             }
 
-            // Update snapshot
-            const txResponse =
-                await this.stateChannelManagerContract.updateStateSnapshotFork(
-                    this.channelId,
-                    genesisSnapshot.toStruct(),
-                    exitBlocks
-                );
-            await txResponse.wait();
-            console.log(
-                `Updated to genesis snapshot for fork ${currentForkId}`
-            );
+            return {
+                genesisSnapshot,
+                exitBlocks
+            };
         } catch (error) {
-            console.error("Error updating snapshot for fork:", error);
+            console.error("Error preparing update state snapshot fork:", error);
             throw error;
         }
     }
@@ -1111,12 +1113,12 @@ class StateManager {
 
         if (remainingDelay <= 0) {
             // Time has fully elapsed - create dispute immediately
-            this.disputeHandler.createDispute(
-                forkId,
-                participantAddress,
-                blockHeight,
-                []
-            );
+            this.disputeManager.createDispute(forkId, false, {
+                blockHeightToTimeout: blockHeight + 1,
+                isForced: false,
+                previousBlockProducer: participantAddress,
+                previousBlockProducerPostedCalldata: false
+            });
             console.log(
                 `Timeout dispute created for participant: ${participantAddress}`
             );
@@ -1173,15 +1175,15 @@ class StateManager {
         totalWithdrawals: BalanceStruct;
     }> {
         const previousStateSnapshot =
-            this.storage.getPreviousStateSnapshot(coordinates)!;
-        const genesisStateSnapshot =
-            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                coordinates.forkId
-            )!;
+            this.storage.getPreviousStateSnapshot(coordinates);
+        if (!previousStateSnapshot)
+            throw new Error(
+                "createStateSnapshot for block - previousStateSnapshot undefined"
+            );
 
         const latestJoinChannelBlockHash =
-            genesisStateSnapshot.snapshotData.latestJoinChannelBlockHash;
-        const totalDeposits = genesisStateSnapshot.snapshotData.totalDeposits;
+            previousStateSnapshot.snapshotData.latestJoinChannelBlockHash;
+        const totalDeposits = previousStateSnapshot.snapshotData.totalDeposits;
 
         let { latestExitChannelBlockHash, totalWithdrawals, participants } =
             previousStateSnapshot.snapshotData;
@@ -1210,6 +1212,7 @@ class StateManager {
             blockHeight: BigInt(coordinates.height),
             timestamp: timestamp,
             snapshotData: {
+                originForkId: previousStateSnapshot.snapshotData.originForkId,
                 stateMachineStateHash: stateMachineStateHash,
                 participants,
                 latestJoinChannelBlockHash,
@@ -1287,7 +1290,7 @@ class StateManager {
         // step 4 - persist state machine state
         this.storage.stateMachineStates.storeStateMachineState(
             encodedStateMachineState,
-            { hash: stateSnapshot.snapshotData.stateMachineStateHash }
+            { hash: stateSnapshot.stateMachineStateHash }
         );
 
         // step 5 - persist the exit channel blocks if any
@@ -1398,50 +1401,7 @@ class StateManager {
         dispute: DisputeStruct,
         timestamp: Timestamp
     ) {
-        // Validate dispute
-        const valid = await this.validationService.validateDispute(
-            dispute,
-            timestamp
-        );
-
-        if (!valid) {
-            return;
-        }
-        // Add dispute to ForkService
-
-        this.agreementManager.addDispute(dispute, timestamp);
-
-        if (dispute.disputer !== this.signerAddress) {
-            // this signs the dispute, adds the signature to the AgreementManager and broadcasts
-            //  the dispute with the additional signature
-            // the disputer should not broadcast the dispute, since all peers will receive the dsiputer's signature
-            // on the dispute event
-            this.p2pManager.p2pSigner.confirmDispute(dispute);
-        }
-    }
-
-    public async onDisputeConfirmation(
-        signedDispute: SignedDisputeStruct
-    ): Promise<ExecutionFlags> {
-        const dispute = Codec.decode(
-            signedDispute.encodedDispute,
-            Type.Dispute
-        );
-
-        const { success, flag } =
-            await this.validationService.validateDisputeConfirmation(
-                dispute,
-                signedDispute.signature
-            );
-
-        if (success) {
-            this.agreementManager.confirmDispute(
-                dispute,
-                signedDispute.signature
-            );
-        }
-
-        return flag;
+        throw new Error("TODO - Not implemented");
     }
 }
 

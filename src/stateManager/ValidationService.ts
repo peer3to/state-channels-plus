@@ -24,8 +24,7 @@ export default class ValidationService {
         private readonly stateChannelManagerContract: StateChannelManagerProxy,
         private readonly timeConfig: TimeConfig,
         private readonly channelId: ChannelId,
-        private readonly getForkId: () => ForkId,
-        private readonly localDiamondContract: LocalDiamond
+        private readonly getForkId: () => ForkId
     ) {
         this.fraudProofService = new FraudProofService(this.storage);
     }
@@ -264,7 +263,10 @@ export default class ValidationService {
     ): Promise<boolean> {
         return (
             this.storage.disputes.didIDispute(forkId) ||
-            (await this.localDiamondContract.isForkDisputed(channelId, forkId))
+            (await this.diamondStateMachine.localDiamondContract.isForkDisputed(
+                channelId,
+                forkId
+            ))
         );
     }
 

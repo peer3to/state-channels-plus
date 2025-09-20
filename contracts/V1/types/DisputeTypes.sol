@@ -20,6 +20,14 @@ contract DisputeTypes {
 }
 
 struct Dispute {
+    // @notice Dispute input data
+    DisputeInput input;
+    /// @notice Hash of output state (latest on-chain state)
+    /// @dev created after from dispute resolution
+    bytes32 outputSnapshotDataHash;
+}
+
+struct DisputeInput {
     /// @notice Channel ID
     bytes32 channelId;
     /// @notice Hash of genesis state (previous dispute output or latest on-chain state)
@@ -31,9 +39,6 @@ struct Dispute {
     StateProof stateProof;
     /// @notice participants that were slashed on chain
     address[] onChainSlashes;
-    /// @notice Hash of output state (latest on-chain state)
-    /// @dev created after from dispute resolution
-    bytes32 outputSnapshotDataHash;
     /// @notice hash(DisputeAuditingData)
     bytes32 disputeAuditingDataHash;
     /// @notice Address of the disputer, this can be anyone who have a stake in the dispute on chain
@@ -67,6 +72,7 @@ struct Timeout {
     // ================== optional ==================
     address previousBlockProducer;
     bool previousBlockProducerPostedCalldata;
+    bytes participantSignatureOnPreviousBlock;
 }
 
 struct DisputeWindow {
@@ -77,6 +83,7 @@ struct DisputeWindow {
 
 struct DisputeWindowEvidence {
     uint256 creationTimestamp;
+    uint256 lastEvidenceSubmissionTimestamp;
     bytes32[] disputeCommitments;
     mapping(address => bool) hasPosted; // inefficient, occupies a whole storage slot for a single bit - idealy we do a bitmask later as a f(participants) -> makes it also easy to delete the entire bitmask later. For now this is ok.
 }
@@ -84,7 +91,6 @@ struct DisputeWindowEvidence {
 struct DisputeWindowReducedResult {
     /// @dev reduced forkId
     bytes32 forkId;
-    uint256 forkGenesisTimestamp;
     /// @dev reduction timestamp
     uint256 timestamp;
     address reducer;
@@ -96,7 +102,6 @@ struct ReduceOutput {
     bytes32 latestJoinChannelBlockHash;
     Timeout timeout;
     address[] selfRemovals;
-    uint256 forkGenesisTimestamp;
 }
 
 struct OnChainSlash {
@@ -107,7 +112,7 @@ struct OnChainSlash {
 /// @dev data for dispute auditing
 
 struct DisputeAuditingData {
-    StateSnapshot genesisStateSnapshot;
+    SnapshotData genesisStateSnapshotData;
     StateSnapshot latestStateSnapshot;
     StateSnapshot[] milestoneSnapshots; //for K milestones there will be K-1 snapshots, since the first milestone is the genesisSnapshot
     bytes latestStateStateMachineState;

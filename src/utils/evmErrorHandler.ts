@@ -30,7 +30,7 @@ export function isCustomEvmError(error: any): error is CustomEvmError {
     return !!error && error.isCustomError === true;
 }
 
-export function decodeErrorProxy<T extends Object>(contract: T) {
+export function decodeErrorProxy<T extends object>(contract: T) {
     return new Proxy(contract, {
         get(target, prop, receiver) {
             const originalProperty = Reflect.get(target, prop, receiver);

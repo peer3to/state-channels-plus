@@ -6,6 +6,8 @@ import {
     LocalDiamond
 } from "@typechain-types";
 import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { DisputeInputStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+
 import StateManager from "@/stateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
@@ -18,7 +20,7 @@ import { DebugProxy, decodeErrorProxy, Codec } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
-import { Address, Bytes, ChannelId, Hash } from "@/types/types";
+import { Address, Bytes, Hash } from "@/types/types";
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import Storage from "@/storage";
@@ -30,10 +32,10 @@ import {
 import LocalDiamondSigner from "./LocalDiamondSigner";
 import { LocalDiamondArtifact } from "@/utils/GeneratedArtifacts";
 import {
-    FraudProofStruct,
+    DisputeAuditingDataStruct,
+    DisputeStruct,
     SnapshotDataStruct,
-    StateSnapshotStruct,
-    TimeoutStruct
+    StateSnapshotStruct
 } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 const DEBUG_CHANNEL_CONTRACT = true;
@@ -283,12 +285,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     }
 
     async computeDisputeOutputSnapshotData(
-        channelId: ChannelId,
-        fraudProofs: FraudProofStruct[],
-        selfRemoval: boolean,
-        onChainSlashes: Address[],
-        disputer: Address,
-        timeout: TimeoutStruct,
+        disputeInput: DisputeInputStruct,
         latestStateSnapshot: StateSnapshotStruct,
         latestStateMachineState: Bytes,
         latestJoinChannelBlockHash: Hash
@@ -296,12 +293,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const callData = this.localDiamondContract.interface.encodeFunctionData(
             "computeDisputeOutputSnapshotData",
             [
-                channelId,
-                fraudProofs,
-                selfRemoval,
-                onChainSlashes,
-                disputer,
-                timeout,
+                disputeInput,
                 latestStateSnapshot,
                 latestStateMachineState,
                 latestJoinChannelBlockHash
@@ -321,6 +313,25 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
     }
 
+    async isDisputeOutputCorrect(
+        dispute: DisputeStruct,
+        disputeAuditingData: DisputeAuditingDataStruct
+    ): Promise<boolean> {
+        const callData = this.localDiamondContract.interface.encodeFunctionData(
+            "isDisputeOutputCorrect",
+            [dispute, disputeAuditingData]
+        );
+
+        try {
+            return Codec.decodeEvmResult<boolean>(
+                await this.diamontContractExecuter.executeCall(callData),
+                "bool"
+            );
+        } catch (error) {
+            throw this.createContextError("isDisputeOutputCorrect", error);
+        }
+    }
+
     /**
      * Creates a standalone EVM state machine
      * @param deployStateMachineTx The transaction to deploy the state machine
@@ -334,7 +345,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     ): Promise<{
         evmDiamondStateMachine: EvmDiamondStateMachine;
         deploymentResult: DeploymentResult;
-        localDiamondContract: LocalDiamond;
     }> {
         const evm = await EVM.create();
 
@@ -371,8 +381,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                 diamondExecuter,
                 localDiamondContract
             ),
-            deploymentResult: diamondResult,
-            localDiamondContract: localDiamondContract
+            deploymentResult: diamondResult
         };
     }
 
@@ -411,7 +420,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
 
         // Create the EvmStateMachine instance (which extends AStateMachine)
-        const { evmDiamondStateMachine, localDiamondContract } =
+        const { evmDiamondStateMachine } =
             await EvmDiamondStateMachine.createStandalone(
                 deployStateMachineTx,
                 stateMachineContractInstance.interface,
@@ -439,8 +448,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             evmDiamondStateMachine,
             timeConfig,
             p2pEventHooks || {},
-            storage,
-            localDiamondContract
+            storage
         );
 
         // Set state manager on P2P communication manager

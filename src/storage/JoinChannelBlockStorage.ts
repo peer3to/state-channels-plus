@@ -66,17 +66,15 @@ export class JoinChannelBlockStorage {
     ): JoinChannelBlockEntry | undefined {
         return this.blockMap.get(blockHash);
     }
-
+    // [fromBlockHash, toBlockHash) - iterate backwards the blockchain
     *getIterator(
         fromBlockHash: Hash,
         toBlockHash?: Hash
     ): Generator<JoinChannelBlockEntry, void, unknown> {
         if (fromBlockHash == ethers.ZeroHash) return;
         let currentHash = fromBlockHash;
-        while (
-            currentHash != ethers.ZeroHash &&
-            (!toBlockHash || currentHash != toBlockHash)
-        ) {
+        while (currentHash != ethers.ZeroHash) {
+            if (toBlockHash && currentHash === toBlockHash) break;
             const entry = this.blockMap.get(currentHash);
             if (!entry) return;
             yield entry;
