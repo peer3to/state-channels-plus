@@ -1,29 +1,30 @@
 import { ethers } from "ethers";
 import AgreementManager from "../agreementManager";
 import { StateChannelManagerProxy } from "@typechain-types";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    DisputeConfirmationStruct,
+    DisputeStruct,
+    DisputeAuditingDataStruct,
+    DisputeInputStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import {
     DebugProxy,
     hash,
     intersection,
-    difference,
     Codec,
     Type,
     SignatureUtils
 } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
-import { Address, ChannelId, ForkId } from "../types/types";
+import { Address, Bytes, ChannelId, ForkId, Signature } from "../types/types";
 import { StateSnapshot } from "../models";
 import Storage from "@/storage";
 import ADiamondStateMachine from "../ADiamondStateMachine";
 import {
-    DisputeAuditingDataStruct,
-    FraudProofStruct,
     StateProofStruct,
     TimeoutStruct
 } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 import Clock from "../Clock";
-import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 import { BytesLike } from "ethers";
 
 let DEBUG_DISPUTE_HANDLER = true;
@@ -35,6 +36,7 @@ type TimeoutOptions = {
     // on-chain race condition checks
     previousBlockProducer?: Address;
     previousBlockProducerPostedCalldata?: boolean;
+    participantSignatureOnPreviousBlock?: Signature;
 };
 
 class DisputeManager {
@@ -76,19 +78,31 @@ class DisputeManager {
     ): Promise<void> {
         const latestBlockHeight =
             this.storage.blocks.getNextBlockHeight(forkId) - 1;
-        // StateProof
-        const stateProof = await this.agreementManager.getStateProof(
-            forkId,
-            latestBlockHeight
-        );
-        // LatestStateSnapshot
-        const latestStateSnapshot = this.storage.getStateSnapshot({
-            forkId: forkId,
-            height: latestBlockHeight
-        });
-        // LatestStateMachineState
-        const latestStateMachineState =
-            await this.diamondStateMachine.getState();
+
+        // StateProof, LatestStateSnapshot, LatestStateMachineState
+        const [
+            stateProof,
+            latestStateSnapshot,
+            latestStateMachineState,
+            _onChainSlashes,
+            _participants
+        ] = await Promise.all([
+            this.agreementManager.getStateProof(forkId, latestBlockHeight),
+            this.storage.getStateSnapshot({
+                forkId,
+                height: latestBlockHeight
+            }),
+            this.diamondStateMachine.getState(), //TODO - this should be from storage
+            this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipantsUpToTimestamp(
+                this.channelId,
+                Clock.getTimeInSeconds() // this is safe as long as our local clock isn't infront of the DLT clock
+            ),
+            this.diamondStateMachine.getParticipants()
+        ]);
+        // onChainSlasshes
+        // this can be a subset of on-chain slashes, so we don't need to run any race condition checks
+        let onChainSlashes = new Set<Address>(_onChainSlashes);
+        const participants = new Set<Address>(_participants);
 
         //sanity check
         if (!latestStateSnapshot || !latestStateMachineState) {
@@ -103,32 +117,9 @@ class DisputeManager {
                 "createDispute - latestStateSnapshot.stateMachineStateHash !== hash(latestStateMachineState)"
             );
         }
-        // onChainSlasshes
-        // this can be a subset of on-chain slashes, so we don't need to run any race condition checks
-        let onChainSlashes = new Set<Address>(
-            await this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
-                this.channelId
-            )
-        );
-        let participants = new Set<Address>(
-            await this.diamondStateMachine.getParticipants()
-        );
 
         // to make sure we're trying to slash only participants - even though onChainSlashes should always be a subset of participants
         onChainSlashes = intersection(onChainSlashes, participants);
-
-        // fraudProofs
-        let fraudProofs: FraudProofStruct[] = [];
-        let remainingParticipants = difference(participants, onChainSlashes);
-        for (const participant of remainingParticipants) {
-            const proofs =
-                await this.storage.fraudProofs.getFraudProofsForParticipant(
-                    participant
-                );
-            if (proofs.length > 0) {
-                fraudProofs.push(proofs[0]); // only one is enough
-            }
-        }
 
         // timeout
         let timeoutStruct: TimeoutStruct;
@@ -151,52 +142,57 @@ class DisputeManager {
                 previousBlockProducer:
                     timeoutOptions.previousBlockProducer || ethers.ZeroAddress,
                 previousBlockProducerPostedCalldata:
-                    timeoutOptions.previousBlockProducerPostedCalldata || false
+                    timeoutOptions.previousBlockProducerPostedCalldata || false,
+                participantSignatureOnPreviousBlock:
+                    (timeoutOptions.participantSignatureOnPreviousBlock as Bytes) ||
+                    ""
             };
         } else {
             timeoutStruct = this.getEmptyTimeoutStruct();
         }
 
         // AuditingData
-        const disputeAuditingData: DisputeAuditingDataStruct =
-            this.getAuditingData(forkId, stateProof);
+        const { isPartial, auditingData } = this.getAuditingData(
+            forkId,
+            stateProof
+        );
+        if (isPartial)
+            throw new Error("createDispute - isPartial auditingData");
+
         const disputeAuditingDataHash = hash(
-            Codec.encode(disputeAuditingData, Type.DisputeAuditingData)
+            Codec.encode(auditingData, Type.DisputeAuditingData)
         );
 
         // disputer
         const disputer = this.signerAddress;
 
+        const disputeInput: DisputeInputStruct = {
+            channelId: this.channelId,
+            genesisSnapshotDataHash: forkId,
+            latestStateSnapshotHash: latestStateSnapshot.hash,
+            stateProof: stateProof,
+            onChainSlashes: Array.from(onChainSlashes),
+            disputeAuditingDataHash: disputeAuditingDataHash,
+            disputer: disputer,
+            timeout: timeoutStruct,
+            selfRemoval: selfRemoval
+        };
+
         // generateDisputeOutputState
         const outputSnapshotData =
             await this.diamondStateMachine.computeDisputeOutputSnapshotData(
-                this.channelId,
-                fraudProofs,
-                selfRemoval,
-                Array.from(onChainSlashes),
-                disputer,
-                timeoutStruct,
+                disputeInput,
                 latestStateSnapshot.toStruct(),
                 latestStateMachineState,
-                disputeAuditingData.genesisStateSnapshot.snapshotData
-                    .latestJoinChannelBlockHash // latestJoinChannelBlockHash
+                auditingData.genesisStateSnapshotData.latestJoinChannelBlockHash // latestJoinChannelBlockHash
             );
         const outputSnapshotDataHash = hash(
             Codec.encode(outputSnapshotData, Type.SnapshotData)
         );
 
         const dispute: DisputeStruct = {
-            channelId: this.channelId,
-            genesisSnapshotDataHash: forkId,
-            latestStateSnapshotHash: latestStateSnapshot.hash,
-            stateProof: stateProof,
-            fraudProofs: fraudProofs,
-            onChainSlashes: Array.from(onChainSlashes),
-            outputSnapshotDataHash: outputSnapshotDataHash,
-            disputeAuditingDataHash: disputeAuditingDataHash,
-            disputer: disputer,
-            timeout: timeoutStruct,
-            selfRemoval: selfRemoval
+            input: disputeInput,
+            outputSnapshotDataHash: outputSnapshotDataHash
         };
 
         // ****** TODO - run auditing as a sanity check *******
@@ -209,7 +205,7 @@ class DisputeManager {
             dispute,
             this.signer
         );
-        const disputeConfirmationn: DisputeConfirmationStruct = {
+        const disputeConfirmation: DisputeConfirmationStruct = {
             signedDispute: {
                 encodedDispute: signedDispute.encoded,
                 signature: signedDispute.signature as BytesLike
@@ -217,22 +213,14 @@ class DisputeManager {
             signatures: []
         };
 
-        this.stateChannelManagerContract.uploadDispute(disputeConfirmationn);
+        this.stateChannelManagerContract.uploadDispute(disputeConfirmation);
     }
 
-    public getDisputeAuditingData(
-        dispute: DisputeStruct
-    ): DisputeAuditingDataStruct {
-        return this.getAuditingData(
-            dispute.genesisSnapshotDataHash,
-            dispute.stateProof
-        );
-    }
-
-    private getAuditingData(
+    public getAuditingData(
         forkId: ForkId,
         stateProof: StateProofStruct
-    ): DisputeAuditingDataStruct {
+    ): { isPartial: boolean; auditingData: DisputeAuditingDataStruct } {
+        let isPartial = false;
         // genesisStateSnapshot
         const genesisStateSnapshot =
             this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
@@ -240,6 +228,17 @@ class DisputeManager {
             throw new Error(
                 "getDisputeAuditingData - genesisStateSnapshot not found"
             );
+
+        // milestoneSnapshots
+        const milestoneSnapshots: StateSnapshot[] = [];
+        for (const milestone of stateProof.milestones) {
+            const snapshot =
+                this.agreementManager.getSnapshotFromMilestone(milestone);
+            if (!snapshot) {
+                isPartial = true;
+                milestoneSnapshots.push(genesisStateSnapshot); // this is just to push something to satisfy the soldity length requirement in `verifyMilestone`
+            } else milestoneSnapshots.push(snapshot);
+        }
 
         // latestStateSnapshot
         const latestBlock =
@@ -251,11 +250,10 @@ class DisputeManager {
             const snapshot = this.storage.stateSnapshots.getStateSnapshotByHash(
                 latestBlock.hash
             );
-            if (!snapshot)
-                throw new Error(
-                    "getDisputeAuditingData - latestStateSnapshot not found"
-                );
-            latestStateSnapshot = snapshot;
+            if (!snapshot) {
+                isPartial = true;
+                latestStateSnapshot = genesisStateSnapshot; // just to use the field, verifyStateProof check will fail up to this point
+            } else latestStateSnapshot = snapshot;
         }
 
         // latestStateStateMachineState
@@ -268,14 +266,6 @@ class DisputeManager {
                 "getDisputeAuditingData - latestStateStateMachineState not found"
             );
 
-        // milestoneSnapshots
-        const milestoneSnapshots: StateSnapshot[] = [];
-        for (const milestone of stateProof.milestones) {
-            const snapshot =
-                this.agreementManager.getSnapshotFromMilestone(milestone);
-            milestoneSnapshots.push(snapshot);
-        }
-
         // exitChannelBlocks
         const fromBlockHash = latestStateSnapshot.latestExitBlockHash;
         const toBlockHash = genesisStateSnapshot.latestExitBlockHash;
@@ -286,13 +276,16 @@ class DisputeManager {
             );
 
         return {
-            genesisStateSnapshot: genesisStateSnapshot.toStruct(),
-            latestStateSnapshot: latestStateSnapshot.toStruct(),
-            latestStateStateMachineState: latestStateStateMachineState,
-            milestoneSnapshots: milestoneSnapshots.map((snapshot) =>
-                snapshot.toStruct()
-            ),
-            exitChannelBlocks: exitChannelBlocks
+            isPartial,
+            auditingData: {
+                genesisStateSnapshotData: genesisStateSnapshot.snapshotData,
+                latestStateSnapshot: latestStateSnapshot.toStruct(),
+                latestStateStateMachineState: latestStateStateMachineState,
+                milestoneSnapshots: milestoneSnapshots.map((snapshot) =>
+                    snapshot.toStruct()
+                ),
+                exitChannelBlocks: exitChannelBlocks
+            }
         };
     }
 
@@ -303,8 +296,17 @@ class DisputeManager {
             minTimeStamp: 0,
             isForced: false,
             previousBlockProducer: ethers.ZeroAddress,
-            previousBlockProducerPostedCalldata: false
+            previousBlockProducerPostedCalldata: false,
+            participantSignatureOnPreviousBlock: ""
         };
+    }
+
+    public setChannelId(channelId: ChannelId) {
+        this.channelId = channelId;
+    }
+
+    public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
+        this.p2pEventHooks = p2pEventHooks;
     }
 }
 

@@ -9,7 +9,6 @@ import { Address, BlockHeight, ForkId, Signature } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import { Codec, Type } from "@/utils";
 import { ethers } from "ethers";
-import * as SetUtils from "@/utils/set";
 
 /**
  * AgreementManager acts as a higher logic layer over storage
@@ -98,6 +97,10 @@ class AgreementManager {
             if (milestone) {
                 milestones.push(milestone);
                 const newSnapshot = this.getSnapshotFromMilestone(milestone);
+                if (!newSnapshot)
+                    throw new Error(
+                        "Milestone built but corresponding snapshot not found"
+                    );
                 currentSnapshot = newSnapshot;
             } else {
                 // Break early because we can't prove finality beyond this point
@@ -120,6 +123,10 @@ class AgreementManager {
         if (milestone) {
             milestones.push(milestone);
             const newSnapshot = this.getSnapshotFromMilestone(milestone);
+            if (!newSnapshot)
+                throw new Error(
+                    "Milestone built but corresponding snapshot not found"
+                );
             currentSnapshot = newSnapshot;
 
             return {
@@ -164,7 +171,7 @@ class AgreementManager {
      */
     public getSnapshotFromMilestone(
         milestone: MilestoneProofStruct
-    ): StateSnapshot {
+    ): StateSnapshot | undefined {
         if (milestone.blockConfirmations.length === 0) {
             throw new Error("Cannot get snapshot from empty milestone");
         }
@@ -175,12 +182,6 @@ class AgreementManager {
         const snapshot = this.storage.stateSnapshots.getStateSnapshotByHash(
             block.stateSnapshotHash
         );
-
-        if (!snapshot) {
-            throw new Error(
-                "Milestone built but corresponding snapshot not found"
-            );
-        }
 
         return snapshot;
     }
@@ -336,7 +337,7 @@ class AgreementManager {
         if (!disputeConfirmation) return false;
 
         // Check if participant is the disputer
-        if (dispute.disputer === participant) return true;
+        if (dispute.input.disputer === participant) return true;
 
         // Check confirmation signatures
         for (const sig of disputeConfirmation.signatures) {

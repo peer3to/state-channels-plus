@@ -7,39 +7,38 @@ import "./Errors.sol";
 import "../types/FraudProofTypes.sol";
 
 contract FraudProofFacet is StateChannelCommon {
-    mapping(
-        FraudProofType
-            => function(bytes memory encodedFraudProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address)
-    ) private proofHandlers;
-
-    constructor() {
-        //If we endup having too many fraud proofs, we'll refactor them into a seperate 'facet' (ERC-2535)
-        proofHandlers[FraudProofType.BlockDoubleSign] = _handleBlockDoubleSign;
-        proofHandlers[FraudProofType.BlockEmptyBlock] = _handleBlockEmptyBlock;
-        proofHandlers[FraudProofType.BlockInvalidStateTransition] = _handleBlockInvalidStateTransition;
-        // proofHandlers[FraudProofType.TimeoutThreshold] = _handleTimeoutThreshold;
-        // proofHandlers[FraudProofType.TimeoutPriorInvalid] = _handleTimeoutPriorInvalid;
-        // proofHandlers[FraudProofType.DisputeInvalidPreviousRecursive] = _handleDisputeInvalidPreviousRecursive;
-    }
-
     //This is a bit inefficient, since public/external functions always do a deep copy unlike internal/private that pas by reference, but this shares the context
-    function verifyFraudProofs(
+    function applyFraudProofs(
         FraudProof[] memory fraudProofs,
         FraudProofVerificationContext memory fraudProofVerificationContext
-    ) public returns (address[] memory slashParticipants) {
+    ) public {
         FraudProof[] memory proofs = fraudProofs;
-        slashParticipants = new address[](proofs.length);
-        uint256 slashCount = 0;
         for (uint256 i = 0; i < proofs.length; i++) {
-            address slashedParticipant =
-                proofHandlers[proofs[i].proofType](proofs[i].encodedProof, fraudProofVerificationContext);
-            if (slashedParticipant == address(0) || slashedParticipant != proofs[i].participant) {
-                revert ErrorInvalidFraudProof();
+            if (!isParticipantSlashedOnChain(fraudProofVerificationContext.channelId, proofs[i].participant)) {
+                address slashedParticipant =
+                    _getHandle(proofs[i].proofType)(proofs[i].encodedProof, fraudProofVerificationContext);
+                if (slashedParticipant == address(0) || slashedParticipant != proofs[i].participant) {
+                    // slash the disputer
+                    slashedParticipant = msg.sender;
+                }
+                // if in (participants || pendingParticipants) && !slashedOnChain
+                if (_canParticipateInDisputes(fraudProofVerificationContext.channelId, slashedParticipant)) {
+                    addOnChainSlashedParticipant(fraudProofVerificationContext.channelId, slashedParticipant);
+                }
             }
-            slashParticipants[slashCount] = slashedParticipant;
-            slashCount++;
         }
-        return slashParticipants;
+    }
+
+    function _getHandle(FraudProofType proofType)
+        internal
+        returns (
+            function(bytes memory encodedFraudProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address)
+        )
+    {
+        if (proofType == FraudProofType.BlockDoubleSign) return _handleBlockDoubleSign;
+        if (proofType == FraudProofType.BlockEmptyBlock) return _handleBlockEmptyBlock;
+        if (proofType == FraudProofType.BlockInvalidStateTransition) return _handleBlockInvalidStateTransition;
+        revert ErrorInvalidFraudProofType();
     }
 
     // ******************************* FRAUD PROOF IMPLEMENTATION *******************************
@@ -129,6 +128,7 @@ contract FraudProofFacet is StateChannelCommon {
             revert ErrorNotSameChannelId();
         }
 
+        if (previousStateSnapshot.forkId != fraudBlock.transaction.header.forkId) return signer;
         if (fraudBlock.transaction.header.transactionCnt == 0) {
             require(fraudBlock.previousBlockHash == keccak256(abi.encode(previousStateSnapshot)));
             require(
@@ -154,6 +154,7 @@ contract FraudProofFacet is StateChannelCommon {
             return signer;
         }
         SnapshotData memory newSnapshotData = SnapshotData({
+            originForkId: previousStateSnapshot.forkId,
             stateMachineStateHash: keccak256(encodedModifiedState),
             participants: getStatemachineParticipants(encodedModifiedState),
             latestJoinChannelBlockHash: previousStateSnapshot.snapshotData.latestJoinChannelBlockHash,

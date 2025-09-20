@@ -1,9 +1,11 @@
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Address, Bytes, ChannelId, ForkId, Hash } from "./types/types";
+import { Address, Bytes, ChannelId, Hash } from "./types/types";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { LocalDiamond } from "@typechain-types/index";
 import {
-    FraudProofStruct,
+    DisputeAuditingDataStruct,
+    DisputeInputStruct,
+    DisputeStruct,
     SnapshotDataStruct,
     StateSnapshotStruct,
     TimeoutStruct
@@ -41,16 +43,15 @@ abstract class ADiamondStateMachine {
 
     public abstract getZeroBalance(): Promise<BalanceStruct>;
     public abstract computeDisputeOutputSnapshotData(
-        channelId: ChannelId,
-        fraudProofs: FraudProofStruct[],
-        selfRemoval: boolean,
-        onChainSlashes: Address[],
-        disputer: Address,
-        timeout: TimeoutStruct,
+        disputeInput: DisputeInputStruct,
         latestStateSnapshot: StateSnapshotStruct,
         latestStateMachineState: Bytes,
         latestJoinChannelBlockHash: Hash
     ): Promise<SnapshotDataStruct>;
+    public abstract isDisputeOutputCorrect(
+        dispute: DisputeStruct,
+        disputeAuditingData: DisputeAuditingDataStruct
+    ): Promise<boolean>;
 }
 
 export default ADiamondStateMachine;

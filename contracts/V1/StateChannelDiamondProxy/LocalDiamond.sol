@@ -36,7 +36,6 @@ contract LocalDiamond is StateChannelManagerProxy {
         agreementTime = 5;
         chainFallbackTime = 5;
         evidenceTime = 5;
-        killTime = 10;
     }
 
     // ========== Direct event handlers for existing events ==========
@@ -94,10 +93,10 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 windowCreationTimestamp
     ) external {
         // Update dispute data based on the dispute commitment
-        bytes32 forkId = keccak256(abi.encode(dispute.genesisSnapshotDataHash));
+        bytes32 forkId = keccak256(abi.encode(dispute.input.genesisSnapshotDataHash));
         disputeData[channelId].disputeWindowMap[forkId].forkId = forkId;
         disputeData[channelId].disputeWindowMap[forkId].evidence.creationTimestamp = windowCreationTimestamp;
-        disputeData[channelId].disputeWindowMap[forkId].evidence.hasPosted[dispute.disputer] = true;
+        disputeData[channelId].disputeWindowMap[forkId].evidence.hasPosted[dispute.input.disputer] = true;
 
         bytes32 commitment = keccak256(abi.encode(dispute));
         disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments.push(commitment);
@@ -106,9 +105,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         if (isFinal) {
             disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkId = dispute.outputSnapshotDataHash;
             disputeData[channelId].disputeWindowMap[forkId].reducedResult.timestamp = disputeCreationTimestamp;
-            disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkGenesisTimestamp =
-                disputeCreationTimestamp;
-            disputeData[channelId].disputeWindowMap[forkId].reducedResult.reducer = dispute.disputer;
+            disputeData[channelId].disputeWindowMap[forkId].reducedResult.reducer = dispute.input.disputer;
 
             // Clear dispute commitments (matches on-chain behavior)
             delete disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments;
@@ -140,12 +137,10 @@ contract LocalDiamond is StateChannelManagerProxy {
         bytes32 forkId,
         bytes32 reducedForkId,
         uint256 reductionTimestamp,
-        uint256 forkGenesisTimestamp,
         address reducer
     ) external {
         // Update the reduced result in the dispute window
         disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkId = reducedForkId;
-        disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkGenesisTimestamp = forkGenesisTimestamp;
         disputeData[channelId].disputeWindowMap[forkId].reducedResult.timestamp = reductionTimestamp;
         disputeData[channelId].disputeWindowMap[forkId].reducedResult.reducer = reducer;
     }
@@ -185,12 +180,7 @@ contract LocalDiamond is StateChannelManagerProxy {
     }
 
     function computeDisputeOutputSnapshotData(
-        bytes32 channelId,
-        FraudProof[] memory fraudProofs,
-        bool selfRemoval,
-        address[] memory onChainSlashes,
-        address disputer,
-        Timeout memory timeout,
+        DisputeInput memory disputeInput,
         StateSnapshot memory latestStateSnapshot,
         bytes memory latestStateMachineState,
         bytes32 latestJoinChannelBlockHash
@@ -198,26 +188,103 @@ contract LocalDiamond is StateChannelManagerProxy {
         // Encode the function selector and arguments
         bytes memory data = abi.encodeCall(
             DisputeVerificationFacet.computeDisputeOutputSnapshotData,
-            (
-                channelId,
-                fraudProofs,
-                selfRemoval,
-                onChainSlashes,
-                disputer,
-                timeout,
-                latestStateSnapshot,
-                latestStateMachineState,
-                latestJoinChannelBlockHash
-            )
+            (disputeInput, latestStateSnapshot, latestStateMachineState, latestJoinChannelBlockHash)
         );
         // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) =
-            address(disputeVerificationFacet).delegatecall{gas: getGasLimit()}(data);
+        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: getGasLimit()}(data);
         if (!success) {
             assembly {
                 revert(add(returnData, 0x20), mload(returnData))
             }
         }
         (outputSnapshotData,) = abi.decode(returnData, (SnapshotData, address[]));
+    }
+
+    function checkDisputeAuditingDataCommitment(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+        public
+        view
+        returns (bool)
+    {
+        // The underlying function is pure, so no need for a delegatecall
+        return DisputeVerificationFacet(disputeVerificationFacetAddress).checkDisputeAuditingDataCommitment(
+            dispute, disputeAuditingData
+        );
+    }
+
+    function isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+        public
+        view
+        returns (bool)
+    {
+        // The underlying function is pure, so no need for a delegatecall
+        return DisputeVerificationFacet(disputeVerificationFacetAddress).isCorrectAuditingData(
+            dispute, disputeAuditingData
+        );
+    }
+
+    function isDisputeOutputCorrect(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+        public
+        returns (bool)
+    {
+        // Encode the function selector and arguments
+        bytes memory data =
+            abi.encodeCall(DisputeVerificationFacet.isDisputeOutputCorrect, (dispute, disputeAuditingData));
+        // Perform the low-level call with a gas limit
+        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: getGasLimit()}(data);
+        if (!success) {
+            assembly {
+                revert(add(returnData, 0x20), mload(returnData))
+            }
+        }
+        return abi.decode(returnData, (bool));
+    }
+
+    function verifyBalanceInvariantCheckView(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+        public
+        view
+        returns (bool)
+    {
+        bytes32 channelId = dispute.input.channelId;
+        SnapshotData memory latestSnapshotData = disputeAuditingData.latestStateSnapshot.snapshotData;
+        Balance memory totalDeposits = latestSnapshotData.totalDeposits;
+        Balance memory totalWithdrawals = latestSnapshotData.totalWithdrawals;
+        bytes32 latestJoinChannelBlockHash = latestSnapshotData.latestJoinChannelBlockHash;
+        // Trick the compiler and ethers for the localEvm - delegatecall in view functions
+        return DisputeVerificationFacet(address(this)).verifyBalanceInvariantCheck(
+            channelId, totalDeposits, totalWithdrawals, latestJoinChannelBlockHash
+        );
+    }
+
+    // Data provided from the latestStateSnapshot
+    function verifyBalanceInvariantCheck(
+        bytes32 channelId,
+        Balance memory totalDeposits,
+        Balance memory totalWithdrawals,
+        bytes32 latestJoinChannelBlockHash
+    ) public returns (bool) {
+        // Encode the function selector and arguments
+        bytes memory data = abi.encodeCall(
+            DisputeVerificationFacet.verifyBalanceInvariantCheck,
+            (channelId, totalDeposits, totalWithdrawals, latestJoinChannelBlockHash)
+        );
+        // Perform the low-level call with a gas limit
+        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall(data);
+        if (!success) {
+            assembly {
+                revert(add(returnData, 0x20), mload(returnData))
+            }
+        }
+        return abi.decode(returnData, (bool));
+    }
+
+    function verifyStateProof(
+        Dispute memory dispute,
+        DisputeAuditingData memory disputeAuditingData,
+        bool auditingDataIntegrityVerified
+    ) public view returns (bool) {
+        // The underlying function is pure, so no need for a delegatecall
+        return DisputeVerificationFacet(disputeVerificationFacetAddress).verifyStateProof(
+            dispute, disputeAuditingData, auditingDataIntegrityVerified
+        );
     }
 }
