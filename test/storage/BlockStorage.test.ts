@@ -632,7 +632,7 @@ describe("ForkIdToMaxHeightMap", () => {
     describe("REMOVING - Max Height Updates", () => {
         it("should update max height when removing the highest block", () => {
             // Add blocks at heights 0, 5, 10
-            for (let height of [0, 5, 10]) {
+            for (const height of [0, 5, 10]) {
                 const blockConfirmation = createBlockWithCoordinates(
                     forkId,
                     height
@@ -661,7 +661,7 @@ describe("ForkIdToMaxHeightMap", () => {
 
         it("should not update max height when removing non-highest block", () => {
             // Add blocks at heights 0, 5, 10
-            for (let height of [0, 5, 10]) {
+            for (const height of [0, 5, 10]) {
                 const blockConfirmation = createBlockWithCoordinates(
                     forkId,
                     height
@@ -709,7 +709,7 @@ describe("ForkIdToMaxHeightMap", () => {
 
         it("should return blocks in correct order", () => {
             // Add blocks in random order
-            for (let height of [10, 0, 5]) {
+            for (const height of [10, 0, 5]) {
                 const blockConfirmation = createBlockWithCoordinates(
                     forkId,
                     height

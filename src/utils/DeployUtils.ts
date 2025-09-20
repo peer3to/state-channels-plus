@@ -26,9 +26,9 @@ export class DeployUtils {
         contractName: string,
         args: any[] = []
     ): Promise<ReturnTypeOfT<T>> {
-        let contractsJSON = this.contractsJSON;
+        const contractsJSON = this.contractsJSON;
 
-        let instance = await contractFactory.deploy(...args, {
+        const instance = await contractFactory.deploy(...args, {
             gasLimit: 20000000
         });
         contractsJSON[contractName] = {};

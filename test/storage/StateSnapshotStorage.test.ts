@@ -16,7 +16,7 @@ describe("StateSnapshotStorage", () => {
         stateSnapshot = stateSnapshotFactory();
 
         // Create genesis state snapshot (forkId === snapshotDataHash)
-        let genesisSnapshot = stateSnapshotFactory();
+        const genesisSnapshot = stateSnapshotFactory();
         const genesisSnapshotStruct = genesisSnapshot.toStruct();
         genesisSnapshotStruct.forkId = genesisSnapshot.snapshotDataHash;
         genesisStateSnapshot = StateSnapshot.from(genesisSnapshotStruct);

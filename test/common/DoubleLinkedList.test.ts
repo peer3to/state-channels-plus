@@ -18,10 +18,10 @@ describe("DoubleLinkedList contract", function () {
         return list;
     }
     async function insertInitial(list: DoubleLinkedList) {
-        let hexNumber = ethers.toBeHex(1);
-        let bytes32Number = ethers.zeroPadValue(hexNumber, 32);
-        let bytes32String1 = ethers.encodeBytes32String("1");
-        let bytes32String2 = ethers.encodeBytes32String("2");
+        const hexNumber = ethers.toBeHex(1);
+        const bytes32Number = ethers.zeroPadValue(hexNumber, 32);
+        const bytes32String1 = ethers.encodeBytes32String("1");
+        const bytes32String2 = ethers.encodeBytes32String("2");
 
         await list.addFront({ tableId: bytes32Number });
         await list.addFront({ tableId: bytes32String1 });
@@ -42,9 +42,9 @@ describe("DoubleLinkedList contract", function () {
             expect(await list.length()).to.equal(3);
 
             // expect((await list.getNode(bytes32Number))).to.equal(ethers.utils.formatBytes32String("3"));
-            let a1 = await list.getNode(bytes32Number);
-            let a2 = await list.getNode(bytes32String1);
-            let a3 = await list.getNode(bytes32String2);
+            const a1 = await list.getNode(bytes32Number);
+            const a2 = await list.getNode(bytes32String1);
+            const a3 = await list.getNode(bytes32String2);
 
             expect(a1.uniquePtr).to.equal(bytes32Number);
             expect(a2.uniquePtr).to.equal(bytes32String1);
@@ -84,7 +84,7 @@ describe("DoubleLinkedList contract", function () {
             // Add elements to see if list isn't broken
 
             //first add
-            let bytes32String3 = ethers.encodeBytes32String("3");
+            const bytes32String3 = ethers.encodeBytes32String("3");
             await list.addFront({ tableId: bytes32String3 });
             expect(++initialLength).to.equal(await list.length());
             expect((await list.getAtIndex(0)).uniquePtr).to.equal(
@@ -92,7 +92,7 @@ describe("DoubleLinkedList contract", function () {
             );
 
             //second add
-            let bytes32String4 = ethers.encodeBytes32String("4");
+            const bytes32String4 = ethers.encodeBytes32String("4");
             await list.addFront({ tableId: bytes32String4 });
             expect(++initialLength).to.equal(await list.length());
             expect((await list.getAtIndex(0)).uniquePtr).to.equal(
@@ -121,7 +121,7 @@ describe("DoubleLinkedList contract", function () {
             // Add elements to see if list isn't broken
 
             //first add
-            let bytes32String3 = ethers.encodeBytes32String("3");
+            const bytes32String3 = ethers.encodeBytes32String("3");
             await list.addFront({ tableId: bytes32String3 });
             expect(++initialLength).to.equal(await list.length());
             expect((await list.getAtIndex(0)).uniquePtr).to.equal(
@@ -153,7 +153,7 @@ describe("DoubleLinkedList contract", function () {
             // Add elements to see if list isn't broken
 
             //first add
-            let bytes32String3 = ethers.encodeBytes32String("3");
+            const bytes32String3 = ethers.encodeBytes32String("3");
             await list.addFront({ tableId: bytes32String3 });
             expect(++initialLength).to.equal(await list.length());
             expect((await list.getAtIndex(0)).uniquePtr).to.equal(

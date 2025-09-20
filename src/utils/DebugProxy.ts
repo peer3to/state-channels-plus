@@ -1,8 +1,8 @@
 export class DebugProxy {
-    public static createProxy<T extends Object>(original: T) {
+    public static createProxy<T extends object>(original: T) {
         return new Proxy(original, {
             get(target, prop, receiver) {
-                let original = Reflect.get(target, prop, receiver);
+                const original = Reflect.get(target, prop, receiver);
                 if (typeof original === "function") {
                     return function (...args: any[]) {
                         console.log(
@@ -32,8 +32,8 @@ class A {
     }
 }
 const main = () => {
-    let original = new A();
-    let proxy = DebugProxy.createProxy(original);
+    const original = new A();
+    const proxy = DebugProxy.createProxy(original);
     proxy.someFunction("a", 1);
     console.log(proxy.a);
 };

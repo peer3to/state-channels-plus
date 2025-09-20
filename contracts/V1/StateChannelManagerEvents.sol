@@ -34,11 +34,6 @@ interface StateChannelManagerEvents {
     event ChannelStorageCleared(bytes32 indexed channelId, bytes32 latestJoinChannelBlockHash);
     event DisputeKilled(bytes32 indexed channelId, bytes32 forkId, address disputer);
     event DisputeReducedResultCommitted(
-        bytes32 indexed channelId,
-        bytes32 forkId,
-        bytes32 reducedForkId,
-        uint256 reductionTimestamp,
-        uint256 forkGenesisTimestamp,
-        address reducer
+        bytes32 indexed channelId, bytes32 forkId, bytes32 reducedForkId, uint256 reductionTimestamp, address reducer
     );
 }

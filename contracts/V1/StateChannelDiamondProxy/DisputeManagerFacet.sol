@@ -24,34 +24,11 @@ contract DisputeManagerFacet is StateChannelCommon {
         );
     }
 
-    function uploadDisputeAndAudit(
-        DisputeConfirmation memory disputeConfirmation,
-        DisputeAuditingData memory disputeAuditingData
-    ) public {
-        //first audit -> update on-chain slashes -> reduced threshold
-        Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
-        address[] memory slashes = StateChannelManagerProxy(address(this)).auditDispute(dispute, disputeAuditingData);
-        for (uint256 i = 0; i < slashes.length; i++) {
-            addOnChainSlashedParticipant(dispute.input.channelId, slashes[i]);
-        }
-        _uploadDispute(disputeConfirmation, true);
-        emit DisputeAuditingDataPosted(
-            dispute.input.channelId, keccak256(disputeConfirmation.signedDispute.encodedDispute), disputeAuditingData
-        );
-    }
-
-    function commitToReducedResult(
-        bytes32 channelId,
-        bytes32 disputedForkId,
-        bytes32 reducedForkId,
-        uint256 reducedForkGenesisTimestamps
-    ) public {
+    function commitToReducedResult(bytes32 channelId, bytes32 disputedForkId, bytes32 reducedForkId) public {
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputedForkId];
         require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
-        _commitToDisputeReducedResult(
-            channelId, disputeWindow, reducedForkId, block.timestamp, reducedForkGenesisTimestamps
-        );
+        _commitToDisputeReducedResult(channelId, disputeWindow, reducedForkId, block.timestamp);
     }
 
     // ********************** Internal/private functions
@@ -77,18 +54,18 @@ contract DisputeManagerFacet is StateChannelCommon {
         if (disputeWindow.evidence.creationTimestamp == 0) {
             //create the dispute window
             disputeWindow.forkId = forkId;
-            disputeWindow.evidence.creationTimestamp = block.timestamp; //challenge period started
+            disputeWindow.evidence.creationTimestamp = block.timestamp; // evidence period started
+            disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp; // kill period recalculated from here
         } else {
-            require(
-                block.timestamp <= disputeWindow.evidence.creationTimestamp + getEvidenceTime(),
-                ErrorDisputeChallengePeriodExpired()
-            );
+            require(!_isEvidencePeriodExpired(disputeWindow, getEvidenceTime()), ErrorDisputeEvidencePeriodExpired());
             require(!disputeWindow.evidence.hasPosted[dispute.input.disputer], ErrorDisputeAlreadyPosted());
+            disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp; // kill period recalculated from here
         }
 
         if (isThresholdFinal) {
-            //finalize the dispute windown by making the kill period expired
-            disputeWindow.evidence.creationTimestamp = block.timestamp - getKillTime() - 1;
+            //finalize the dispute windown by making the evidence and kill period expire -> which sets the genesisTimestamp to the current block.timestamp
+            disputeWindow.evidence.creationTimestamp = block.timestamp - getEvidenceTime();
+            disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp - getEvidenceTime(); // this implicitly sets the genesisTimestamp
             //delete all previous commitments - free up storage (gas refund)
             delete disputeWindow.evidence.disputeCommitments;
             //The reduced result is this dispute output. Finalize it by making it expired.
@@ -96,8 +73,7 @@ contract DisputeManagerFacet is StateChannelCommon {
                 dispute.input.channelId,
                 disputeWindow,
                 dispute.outputSnapshotDataHash,
-                block.timestamp - getEvidenceTime() - 1,
-                block.timestamp
+                block.timestamp - getEvidenceTime()
             );
         }
         {
