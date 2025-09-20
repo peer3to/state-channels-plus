@@ -43,7 +43,7 @@ export default class DisputeValidationService {
         );
         // Is Data Available (DA)
         if (onChainDisputeAuditingData) {
-            let isValid =
+            const isValid =
                 await this.diamondStateMachine.localDiamondContract.checkDisputeAuditingDataCommitment(
                     dispute,
                     onChainDisputeAuditingData

@@ -27,7 +27,7 @@ import {
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
 
-let DEBUG_DISPUTE_HANDLER = true;
+const DEBUG_DISPUTE_HANDLER = true;
 
 type TimeoutOptions = {
     // This is enough and the rest is deducted from storage/state
@@ -130,7 +130,7 @@ class DisputeManager {
                     "createDispute - timeoutOptions.blockHeightToTimeout invalid"
                 );
             }
-            let participantToTimeout =
+            const participantToTimeout =
                 await this.diamondStateMachine.peekNextToWrite(
                     latestStateMachineState
                 );

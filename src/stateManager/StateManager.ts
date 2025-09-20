@@ -18,13 +18,10 @@ import {
 import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 // TypeChain types - Dispute types
-import {
-    DisputeStruct,
-    SignedDisputeStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 // TypeChain types - Contract interfaces
-import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerProxy } from "@typechain-types";
 
 // Core components
 import AgreementManager from "../agreementManager/AgreementManager";
