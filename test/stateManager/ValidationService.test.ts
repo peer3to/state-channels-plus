@@ -193,8 +193,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
             mockStateChannelManagerContract,
             mockTimeConfig,
             mockChannelId,
-            mockGetForkId,
-            mockLocalDiamond as any
+            mockGetForkId
         );
     });
 

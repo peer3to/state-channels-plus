@@ -90,8 +90,7 @@ bool previousBlockProducerPostedCalldata
 export const DisputeAuditingDataEthersType = `tuple(
 ${StateSnapshotEthersType} genesisStateSnapshot,
 ${StateSnapshotEthersType} latestStateSnapshot,
-${StateSnapshotEthersType} outputStateSnapshot,
 ${StateSnapshotEthersType}[] milestoneSnapshots,
 bytes latestStateStateMachineState,
-${JoinChannelBlockEthersType}[] joinChannelBlocks
+${ExitChannelBlockEthersType}[] exitChannelBlocks
 )`;

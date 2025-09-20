@@ -3,7 +3,7 @@ import {
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
-import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerProxy } from "@typechain-types";
 import { ZeroHash } from "ethers";
 
 import ADiamondStateMachine from "@/ADiamondStateMachine";
@@ -24,8 +24,7 @@ export default class ValidationService {
         private readonly stateChannelManagerContract: StateChannelManagerProxy,
         private readonly timeConfig: TimeConfig,
         private readonly channelId: ChannelId,
-        private readonly getForkId: () => ForkId,
-        private readonly localDiamondContract: LocalDiamond
+        private readonly getForkId: () => ForkId
     ) {
         this.fraudProofService = new FraudProofService(this.storage);
     }
@@ -257,7 +256,10 @@ export default class ValidationService {
     ): Promise<boolean> {
         return (
             this.storage.disputes.didIDispute(forkId) ||
-            (await this.localDiamondContract.isForkDisputed(channelId, forkId))
+            (await this.diamondStateMachine.localDiamondContract.isForkDisputed(
+                channelId,
+                forkId
+            ))
         );
     }
 

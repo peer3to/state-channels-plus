@@ -237,6 +237,7 @@ export class BlockStorage {
     ): Generator<Block, void, unknown> {
         const maxHeight = this.forkIdToMaxHeightMap.get(forkId);
         if (maxHeight === undefined) return;
+        if (startHeight !== undefined && startHeight < 0) return;
 
         if (sortOrder === SortOrder.ASC) {
             // Start from startHeight or 0, go up to maxHeight

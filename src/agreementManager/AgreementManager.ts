@@ -93,7 +93,11 @@ class AgreementManager {
 
             if (milestone) {
                 milestones.push(milestone);
-                const newSnapshot = this.getSnapshot(milestone);
+                const newSnapshot = this.getSnapshotFromMilestone(milestone);
+                if (!newSnapshot)
+                    throw new Error(
+                        "Milestone built but corresponding snapshot not found"
+                    );
                 currentSnapshot = newSnapshot;
             } else {
                 // Break early because we can't prove finality beyond this point
@@ -115,7 +119,11 @@ class AgreementManager {
 
         if (milestone) {
             milestones.push(milestone);
-            const newSnapshot = this.getSnapshot(milestone);
+            const newSnapshot = this.getSnapshotFromMilestone(milestone);
+            if (!newSnapshot)
+                throw new Error(
+                    "Milestone built but corresponding snapshot not found"
+                );
             currentSnapshot = newSnapshot;
 
             return {
@@ -156,7 +164,9 @@ class AgreementManager {
     /**
      * Get snapshot from the first block confirmation in a milestone
      */
-    public getSnapshot(milestone: MilestoneProofStruct): StateSnapshot {
+    public getSnapshotFromMilestone(
+        milestone: MilestoneProofStruct
+    ): StateSnapshot | undefined {
         if (milestone.blockConfirmations.length === 0) {
             throw new Error("Cannot get snapshot from empty milestone");
         }
@@ -168,13 +178,39 @@ class AgreementManager {
             block.stateSnapshotHash
         );
 
-        if (!snapshot) {
-            throw new Error(
-                "Milestone built but corresponding snapshot not found"
-            );
-        }
-
         return snapshot;
+    }
+
+    public getLastBlockFromMilestone(
+        milestone: MilestoneProofStruct
+    ): Block | undefined {
+        if (milestone.blockConfirmations.length === 0) return undefined;
+
+        const lastBlockConfirmation =
+            milestone.blockConfirmations[
+                milestone.blockConfirmations.length - 1
+            ];
+        return Block.fromBlockConfirmation(lastBlockConfirmation);
+    }
+
+    public getLatestBlockFromStateProof(
+        stateProof: StateProofStruct
+    ): Block | undefined {
+        // orignaly wanted to reuse solidity implementation for this, but the solidity implementation returns a BlockStruct which is a subset of information compared to BlockConfirmation/SignedBlock.
+        // reimplemented it here since the logic is simple, but in general - reuse the solidity stuff!
+        if (
+            stateProof.milestones.length === 0 &&
+            stateProof.signedBlocks.length === 0
+        )
+            return undefined;
+
+        if (stateProof.signedBlocks.length > 0)
+            return Block.fromSignedBlock(stateProof.signedBlocks[0]);
+
+        // else - milestones.length > 0
+        return this.getLastBlockFromMilestone(
+            stateProof.milestones[stateProof.milestones.length - 1]
+        );
     }
 
     /**
@@ -289,7 +325,7 @@ class AgreementManager {
         if (!disputeConfirmation) return false;
 
         // Check if participant is the disputer
-        if (dispute.disputer === participant) return true;
+        if (dispute.input.disputer === participant) return true;
 
         // Check confirmation signatures
         for (const sig of disputeConfirmation.signatures) {

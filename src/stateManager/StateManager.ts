@@ -18,19 +18,16 @@ import {
 import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 // TypeChain types - Dispute types
-import {
-    DisputeStruct,
-    SignedDisputeStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 // TypeChain types - Contract interfaces
-import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerProxy } from "@typechain-types";
 
 // Core components
 import AgreementManager from "../agreementManager/AgreementManager";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
-import DisputeHandler from "@/DisputeHandler";
+import DisputeManager from "@/disputeManager";
 import P2PManager from "@/P2PManager";
 import StateChannelEventListener from "@/StateChannelEventListener";
 import ValidationService from "./ValidationService";
@@ -67,6 +64,7 @@ import {
 } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
+import DisputeValidationService from "./DisputeValidationService";
 
 const DEBUG_STATE_MANAGER = false;
 
@@ -79,7 +77,7 @@ class StateManager {
     signerAddress: Address;
     agreementManager: AgreementManager;
     stateChannelEventListener: StateChannelEventListener;
-    disputeHandler: DisputeHandler;
+    disputeManager: DisputeManager;
     stateChannelManagerContract: StateChannelManagerProxy;
     p2pManager: P2PManager;
     timeConfig: TimeConfig;
@@ -88,10 +86,9 @@ class StateManager {
     self = DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
     isDisposed: boolean = false;
     validationService: ValidationService;
+    disputeValidationService: DisputeValidationService;
     storage: Storage;
     fraudProofService: FraudProofService;
-    localDiamondContract: LocalDiamond;
-
     private latestForkId: ForkId = NULL;
 
     constructor(
@@ -101,8 +98,7 @@ class StateManager {
         diamondStateMachine: ADiamondStateMachine,
         timeConfig: TimeConfig,
         p2pEventHooks: P2pEventHooks,
-        storage: Storage,
-        localDiamondContract: LocalDiamond
+        storage: Storage
     ) {
         this.signer = signer;
         this.signerAddress = signerAddress;
@@ -113,22 +109,23 @@ class StateManager {
             stateChannelManagerContract
         );
         this.storage = storage;
-        this.localDiamondContract = localDiamondContract;
 
         this.stateChannelEventListener = new StateChannelEventListener(
             this.self,
             this.stateChannelManagerContract,
             this.p2pEventHooks,
-            this.localDiamondContract
+            this.diamondStateMachine.localDiamondContract
         );
         this.agreementManager = new AgreementManager(this.storage);
-        this.disputeHandler = new DisputeHandler(
+        this.disputeManager = new DisputeManager(
             this.channelId,
             signer,
             signerAddress,
             this.agreementManager,
             this.stateChannelManagerContract,
-            this.p2pEventHooks
+            this.p2pEventHooks,
+            this.storage,
+            this.diamondStateMachine
         );
         this.p2pManager = new P2PManager(this.self, signer);
         this.fraudProofService = new FraudProofService(this.storage);
@@ -138,8 +135,17 @@ class StateManager {
             this.stateChannelManagerContract,
             this.timeConfig,
             this.channelId,
+            () => this.forkId
+        );
+        this.disputeValidationService = new DisputeValidationService(
+            this.storage,
+            this.diamondStateMachine,
+            this.stateChannelManagerContract,
+            this.timeConfig,
+            this.channelId,
             () => this.forkId,
-            this.localDiamondContract
+            this.disputeManager,
+            this.agreementManager
         );
     }
     //Mark resources for garbage collection
@@ -150,11 +156,9 @@ class StateManager {
     }
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
         this.p2pEventHooks = p2pEventHooks;
-        this.disputeHandler.setP2pEventHooks(p2pEventHooks);
     }
     public setChannelId(channelId: ChannelId) {
         this.channelId = channelId;
-        this.disputeHandler.setChannelId(channelId);
         this.stateChannelEventListener.setChannelId(channelId);
     }
     public getChannelId(): ChannelId {
@@ -318,20 +322,12 @@ class StateManager {
             const {
                 success,
                 encodedState,
-                previousStateHash,
                 successCallback,
                 exitChannels,
                 leftParticipants
             } = await this.applyTransaction(block.transaction);
 
             if (!success) {
-                this.fraudProofService.createInvalidStateTransitionProof(block);
-                await this.dispute(blockConfirmation);
-                // disconnect
-                return false;
-            }
-
-            if (hash(encodedState) === previousStateHash) {
                 this.fraudProofService.createInvalidStateTransitionProof(block);
                 await this.dispute(blockConfirmation);
                 // disconnect
@@ -353,10 +349,18 @@ class StateManager {
                 return false;
             }
 
+            if (hash(encodedState) === stateSnapshot.stateMachineStateHash) {
+                this.fraudProofService.createInvalidStateTransitionProof(block);
+                await this.dispute(blockConfirmation);
+                // disconnect
+                return false;
+            }
+
             // All validations passed - proceed with success action
             this.success(
                 block,
                 stateSnapshot,
+                encodedState,
                 successCallback,
                 totalWithdrawals,
                 leftParticipants,
@@ -376,14 +380,10 @@ class StateManager {
     public async applyTransaction(transaction: TransactionStruct): Promise<{
         success: boolean;
         encodedState: Bytes;
-        previousStateHash: Hash;
         successCallback: () => void;
         exitChannels: ExitChannelStruct[];
         leftParticipants: Set<Address>;
     }> {
-        const previousStateHash = await this.diamondStateMachine
-            .getState()
-            .then(hash);
         const previousParticipants =
             await this.diamondStateMachine.getParticipants();
         const { success, successCallback, exitChannels } =
@@ -400,7 +400,6 @@ class StateManager {
         return {
             success,
             encodedState,
-            previousStateHash,
             successCallback,
             exitChannels,
             leftParticipants
@@ -428,7 +427,6 @@ class StateManager {
             const {
                 success,
                 encodedState,
-                previousStateHash: _previousStateHash,
                 successCallback,
                 exitChannels,
                 leftParticipants
@@ -467,6 +465,7 @@ class StateManager {
             await this.success(
                 block,
                 stateSnapshot,
+                encodedState,
                 successCallback,
                 totalWithdrawals,
                 leftParticipants,
@@ -650,7 +649,13 @@ class StateManager {
 
                 // Get the state snapshot
                 const snapshot =
-                    this.agreementManager.getSnapshot(milestoneProof);
+                    this.agreementManager.getSnapshotFromMilestone(
+                        milestoneProof
+                    );
+                if (!snapshot)
+                    throw new Error(
+                        "Milestone built but corresponding snapshot not found"
+                    );
 
                 // Only include milestones that are newer than the current on-chain block height
                 if (snapshot.blockHeight > currentOnChainSnapshot.blockHeight) {
@@ -826,18 +831,10 @@ class StateManager {
                     disputes.push(dispute);
                 }
 
-                // Get the dispute window creation timestamp from the on-chain contract
-                const creationTimestamp =
-                    await this.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
-                        this.channelId,
-                        currentForkId
-                    );
-
                 // Use proxy view to compute reduced output cheaply (no tx)
                 const reducedOutput =
                     await this.stateChannelManagerContract.reduceProxyView(
-                        disputes,
-                        creationTimestamp
+                        disputes
                     );
 
                 // Derive latest snapshot and encoded state from reduced output's latest block
@@ -892,7 +889,6 @@ class StateManager {
                     const txResponse =
                         await this.stateChannelManagerContract.reduceAndFinalize(
                             disputes,
-                            creationTimestamp,
                             latestSnapshot.toStruct(),
                             encodedStateForReduce,
                             joinChannelBlocks
@@ -1107,12 +1103,12 @@ class StateManager {
 
         if (remainingDelay <= 0) {
             // Time has fully elapsed - create dispute immediately
-            this.disputeHandler.createDispute(
-                forkId,
-                participantAddress,
-                blockHeight,
-                []
-            );
+            this.disputeManager.createDispute(forkId, false, {
+                blockHeightToTimeout: blockHeight + 1,
+                isForced: false,
+                previousBlockProducer: participantAddress,
+                previousBlockProducerPostedCalldata: false
+            });
             console.log(
                 `Timeout dispute created for participant: ${participantAddress}`
             );
@@ -1169,15 +1165,15 @@ class StateManager {
         totalWithdrawals: BalanceStruct;
     }> {
         const previousStateSnapshot =
-            this.storage.getPreviousStateSnapshot(coordinates)!;
-        const genesisStateSnapshot =
-            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                coordinates.forkId
-            )!;
+            this.storage.getPreviousStateSnapshot(coordinates);
+        if (!previousStateSnapshot)
+            throw new Error(
+                "createStateSnapshot for block - previousStateSnapshot undefined"
+            );
 
         const latestJoinChannelBlockHash =
-            genesisStateSnapshot.snapshotData.latestJoinChannelBlockHash;
-        const totalDeposits = genesisStateSnapshot.snapshotData.totalDeposits;
+            previousStateSnapshot.snapshotData.latestJoinChannelBlockHash;
+        const totalDeposits = previousStateSnapshot.snapshotData.totalDeposits;
 
         let { latestExitChannelBlockHash, totalWithdrawals, participants } =
             previousStateSnapshot.snapshotData;
@@ -1206,6 +1202,7 @@ class StateManager {
             blockHeight: BigInt(coordinates.height),
             timestamp: timestamp,
             snapshotData: {
+                originForkId: previousStateSnapshot.snapshotData.originForkId,
                 stateMachineStateHash: stateMachineStateHash,
                 participants,
                 latestJoinChannelBlockHash,
@@ -1257,6 +1254,7 @@ class StateManager {
     private async success(
         block: Block,
         stateSnapshot: StateSnapshot,
+        encodedStateMachineState: Bytes,
         successCallback: () => void,
         totalWithdrawals: BalanceStruct,
         leftParticipants: Set<Address>,
@@ -1279,7 +1277,13 @@ class StateManager {
         // step 3 - persist the state snapshot
         this.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
 
-        // step 4 - persist the exit channel blocks if any
+        // step 4 - persist state machine state
+        this.storage.stateMachineStates.storeStateMachineState(
+            encodedStateMachineState,
+            { hash: stateSnapshot.stateMachineStateHash }
+        );
+
+        // step 5 - persist the exit channel blocks if any
         if (exitChannelBlock) {
             this.storage.exitChannelBlocks.storeExitChannelBlock(
                 exitChannelBlock,
@@ -1287,12 +1291,12 @@ class StateManager {
             );
         }
 
-        // step 5 - persist exit points
+        // step 6 - persist exit points
         if (leftParticipants.size > 0) {
             this.storage.exitPoints.storeExitPoint(block.forkId, block.height);
         }
 
-        // step 6 - startMaybeExitOnChain
+        // step 7 - startMaybeExitOnChain
         await this.startMaybeExitOnChain(
             block,
             stateSnapshot,
@@ -1300,13 +1304,13 @@ class StateManager {
             exitChannelBlock
         );
 
-        // step 7 - success callback
+        // step 8 - success callback
         successCallback();
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();
-        // step 8 - Notify any event hooks
+        // step 9 - Notify any event hooks
         this.p2pEventHooks.onTurn?.(nextToWrite);
 
-        // step 9 - maybe post block on chain
+        // step 10 - maybe post block on chain
         if (block.author === this.signerAddress) {
             scheduleTask(
                 () => this.maybePostBlockOnChain(block),
@@ -1315,7 +1319,7 @@ class StateManager {
             );
         }
 
-        // step 10 - schedule a timeout check for the next participant
+        // step 11 - schedule a timeout check for the next participant
         scheduleTask(
             () =>
                 this.tryTimeoutParticipant(
@@ -1326,7 +1330,7 @@ class StateManager {
             this.getTimeoutWaitTimeSeconds() * 1000,
             "participantTimeout"
         );
-        // step 11 - try execute from queue
+        // step 12 - try execute from queue
         scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
     }
 
@@ -1387,50 +1391,7 @@ class StateManager {
         dispute: DisputeStruct,
         timestamp: Timestamp
     ) {
-        // Validate dispute
-        const valid = await this.validationService.validateDispute(
-            dispute,
-            timestamp
-        );
-
-        if (!valid) {
-            return;
-        }
-        // Add dispute to ForkService
-
-        this.agreementManager.addDispute(dispute, timestamp);
-
-        if (dispute.disputer !== this.signerAddress) {
-            // this signs the dispute, adds the signature to the AgreementManager and broadcasts
-            //  the dispute with the additional signature
-            // the disputer should not broadcast the dispute, since all peers will receive the dsiputer's signature
-            // on the dispute event
-            this.p2pManager.p2pSigner.confirmDispute(dispute);
-        }
-    }
-
-    public async onDisputeConfirmation(
-        signedDispute: SignedDisputeStruct
-    ): Promise<ExecutionFlags> {
-        const dispute = Codec.decode(
-            signedDispute.encodedDispute,
-            Type.Dispute
-        );
-
-        const { success, flag } =
-            await this.validationService.validateDisputeConfirmation(
-                dispute,
-                signedDispute.signature
-            );
-
-        if (success) {
-            this.agreementManager.confirmDispute(
-                dispute,
-                signedDispute.signature
-            );
-        }
-
-        return flag;
+        throw new Error("TODO - Not implemented");
     }
 }
 

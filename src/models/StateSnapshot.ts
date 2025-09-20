@@ -40,6 +40,10 @@ export default class StateSnapshot {
         return this.snapshot.snapshotData.latestJoinChannelBlockHash as Hash;
     }
 
+    get latestExitBlockHash(): Hash {
+        return this.snapshot.snapshotData.latestExitChannelBlockHash as Hash;
+    }
+
     get forkId(): ForkId {
         return this.snapshot.forkId as ForkId;
     }

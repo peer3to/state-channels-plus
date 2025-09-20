@@ -4,11 +4,11 @@ import "../../types/DisputeTypes.sol";
 import "./BlockUtils.sol";
 
 function _getDisputeChannel(Dispute memory dispute) pure returns (bytes32) {
-    return dispute.channelId;
+    return dispute.input.channelId;
 }
 
 function _getDisputeFork(Dispute memory dispute) pure returns (bytes32) {
-    return dispute.genesisSnapshotDataHash;
+    return dispute.input.genesisSnapshotDataHash;
 }
 
 function _areDisputeAndBlockSameFork(Dispute memory dispute, Block memory _block) pure returns (bool) {
@@ -19,24 +19,60 @@ function _areDisputeAndBlockSameChannel(Dispute memory dispute, Block memory _bl
     return _getBlockChannel(_block) == _getDisputeChannel(dispute);
 }
 
-function _getLatestBlock(StateProof memory stateProof) pure returns (Block memory) {
-    return stateProof.signedBlocks.length > 0
-        ? abi.decode(stateProof.signedBlocks[stateProof.signedBlocks.length - 1].encodedBlock, (Block))
-        : abi.decode(
-            stateProof.milestones[stateProof.milestones.length - 1].blockConfirmations[stateProof.milestones[stateProof
-                .milestones
-                .length - 1].blockConfirmations.length - 1].signedBlock.encodedBlock,
-            (Block)
-        );
+function _getLatestBlock(StateProof memory stateProof) pure returns (bool hasBlock, Block memory) {
+    Block memory _block;
+    (bool _hasBlock, SignedBlock memory latestSignedBlock) = _getLatestSignedBlock(stateProof);
+    if (_hasBlock) _block = abi.decode(latestSignedBlock.encodedBlock, (Block));
+    return (_hasBlock, _block);
+}
+
+function _getLatestSignedBlock(StateProof memory stateProof) pure returns (bool hasBlock, SignedBlock memory) {
+    SignedBlock memory signedBlock;
+    MilestoneProof[] memory milestones = stateProof.milestones;
+    if (milestones.length == 0 && stateProof.signedBlocks.length == 0) {
+        return (false, signedBlock);
+    }
+    if (stateProof.signedBlocks.length > 0) {
+        signedBlock = stateProof.signedBlocks[stateProof.signedBlocks.length - 1];
+    } else {
+        if (milestones[milestones.length - 1].blockConfirmations.length == 0) {
+            return (false, signedBlock); // an honest milestone should always have at least one block
+        }
+        BlockConfirmation[] memory blockConfirmations = milestones[milestones.length - 1].blockConfirmations;
+        signedBlock = blockConfirmations[blockConfirmations.length - 1].signedBlock;
+    }
+    return (true, signedBlock);
+}
+
+function _getMilestoneBlocks(StateProof memory stateProof) pure returns (Block[] memory) {
+    if (stateProof.milestones.length == 0) {
+        return new Block[](0);
+    }
+    Block[] memory milestoneBlocks = new Block[](stateProof.milestones.length);
+    for (uint256 i = 0; i < stateProof.milestones.length; i++) {
+        if (stateProof.milestones[i].blockConfirmations.length == 0) {
+            return new Block[](0); // an honest milestone should always have at least one block
+        }
+        milestoneBlocks[i] =
+            abi.decode(stateProof.milestones[i].blockConfirmations[0].signedBlock.encodedBlock, (Block));
+    }
+    return milestoneBlocks;
 }
 
 //not used anywhere right now
 function _isEvidencePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime) view returns (bool) {
-    return block.timestamp > disputeWindow.evidence.creationTimestamp + evidenceTime;
+    return block.timestamp >= disputeWindow.evidence.creationTimestamp + evidenceTime;
 }
 
-function _isKillPeriodExpired(DisputeWindow storage disputeWindow, uint256 killTime) view returns (bool) {
-    return block.timestamp > disputeWindow.evidence.creationTimestamp + killTime;
+function _isKillPeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime) view returns (bool) {
+    return block.timestamp >= disputeWindow.evidence.lastEvidenceSubmissionTimestamp + evidenceTime;
+}
+
+function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime)
+    view
+    returns (bool)
+{
+    return block.timestamp >= disputeWindow.reducedResult.timestamp + evidenceTime;
 }
 
 function areDisputesCommitted(DisputeWindow storage disputeWindow, Dispute[] memory disputes) view returns (bool) {

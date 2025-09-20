@@ -33,11 +33,13 @@ import {
     BlockInvalidStateTransitionProofEthersType,
     InvalidTimestampProofEthersType,
     WrongGenesisProofEthersType,
-    FraudProofType
+    FraudProofType,
+    DisputeAuditingDataEthersType
 } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Bytes, Timestamp } from "@/types/types";
 import { ExecResult } from "@ethereumjs/evm";
+import { DisputeAuditingDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 export type FraudStruct =
     | BlockDoubleSignProofStruct
@@ -57,7 +59,8 @@ type StructType =
     | SnapshotDataStruct
     | JoinChannelBlockStruct
     | ExitChannelBlockStruct
-    | ExitChannelStruct;
+    | ExitChannelStruct
+    | DisputeAuditingDataStruct;
 
 // Enum for better autocomplete and type safety
 export enum Type {
@@ -71,7 +74,8 @@ export enum Type {
     SnapshotData,
     JoinChannelBlock,
     ExitChannelBlock,
-    ExitChannel
+    ExitChannel,
+    DisputeAuditingData
 }
 
 export class Codec {
@@ -90,6 +94,7 @@ export class Codec {
         [Type.JoinChannelBlock, JoinChannelBlockEthersType],
         [Type.ExitChannelBlock, ExitChannelBlockEthersType],
         [Type.ExitChannel, ExitChannelEthersType],
+        [Type.DisputeAuditingData, DisputeAuditingDataEthersType],
         [FraudProofType.BlockDoubleSign, BlockDoubleSignProofEthersType],
         [
             FraudProofType.BlockInvalidStateTransition,
