@@ -1,25 +1,18 @@
-import {
-    BlockConfirmationStruct,
-    SignedBlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
-
-import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
-import { ethers, ZeroHash } from "ethers";
+import { StateChannelManagerProxy } from "@typechain-types";
+import { ethers } from "ethers";
 
 import ADiamondStateMachine from "@/ADiamondStateMachine";
-import Clock from "@/Clock";
 import Storage from "@/storage";
-import { Block, BlockCoordinates, StateSnapshot } from "@/models";
-import { Codec, difference, isSubset, Type } from "@/utils";
-import { BlockValidationResult, TimeConfig } from "@/types";
-import { Address, ChannelId, ForkId, Hash, Timestamp } from "@/types/types";
+import { Codec, isSubset, Type } from "@/utils";
+import { TimeConfig } from "@/types";
+import { Address, ChannelId, ForkId } from "@/types/types";
 
 import DisputeFraudProofService from "./utils/DisputeFraudProofService";
-import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 import {
     DisputeAuditingDataStruct,
-    DisputeStruct
-} from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+    DisputeStruct,
+    DisputeConfirmationStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import DisputeManager from "@/disputeManager";
 import AgreementManager from "@/agreementManager";
 
@@ -87,6 +80,56 @@ export default class DisputeValidationService {
                     // if we deduct we're at an honest state we need to sync and try and build auditingData again
                     // if we can't build it AGAIN - error since something is wrong
                     // else build it and `cotinueValidationAuditingDataConstructed`
+                    // *********** This is annoying and needs some thought ********************
+                    //
+                    // SCENARIO: State proof is VALID but auditing data is PARTIAL
+                    // This creates a question that requires investigation
+                    //
+                    // MENTAL FLOW DIAGRAM:
+                    // ┌─────────────────────────────────────────────────────────────┐
+                    // │                    THE QUESTION                              │
+                    // │  State Proof = VALID ✅  BUT  Auditing Data = PARTIAL ❌  │
+                    // └─────────────────────────────────────────────────────────────┘
+                    //                                │
+                    //                                ▼
+                    // ┌─────────────────────────────────────────────────────────────┐
+                    // │              TWO POSSIBLE EXPLANATIONS                     │
+                    // └─────────────────────────────────────────────────────────────┘
+                    //                                │
+                    //                    ┌───────────┴───────────┐
+                    //                    │                       │
+                    //                    ▼                       ▼
+                    //    ┌─────────────────────────┐    ┌─────────────────────────┐
+                    //    │   WE'RE "BEHIND"        │    │   MALICIOUS DISPUTE     │
+                    //    │   (Honest but lagging)  │    │   (Someone is cheating) │
+                    //    └─────────────────────────┘    └─────────────────────────┘
+                    //                    │                       │
+                    //                    ▼                       ▼
+                    //    ┌─────────────────────────┐    ┌─────────────────────────┐
+                    //    │  "ACCEPT IT"            │    │  "REUSE FAILURE"        │
+                    //    │  (We need to catch up)  │    │  (Use existing fraud    │
+                    //    │                         │    │   proofs to kill THIS   │
+                    //    │  • Sync blockchain      │    │   dispute)              │
+                    //    │  • Rebuild auditing data│    │                         │
+                    //    │  • Continue validation  │    │  • InvalidStateTransition│
+                    //    │                         │    │  • DoubleSign           │
+                    //    │                         │    │  • InvalidTimestamp     │
+                    //    │                         │    │  • WrongGenesis         │
+                    //    └─────────────────────────┘    └─────────────────────────┘
+                    //
+                    // IMPLEMENTATION STRATEGY:
+                    // 1. Run block confirmation pipeline on unfinalized blocks
+                    // 2. Determine if we're "behind" an honest history:
+                    //    - If YES (honest but lagging):
+                    //      • Accept the situation
+                    //      • Sync blockchain state
+                    //      • Try to rebuild auditing data
+                    //      • If rebuild fails AGAIN → error (something is wrong)
+                    //      • If rebuild succeeds → continue with `cotinueValidationAuditingDataConstructed`
+                    //    - If NO (malicious dispute):
+                    //      • Reuse existing fraud proof failures from block confirmation pipeline
+                    //      • Kill the malicious dispute using objective on-chain validations
+                    //      • Fraud proofs available: InvalidStateTransition, DoubleSign, InvalidTimestamp, WrongGenesis
                 } else {
                     // this is the easy case where we just need to create an invalidStateProof Dispute Fraud Proof
                     // still a TODO - but EASY
