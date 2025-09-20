@@ -63,9 +63,6 @@ export class EventHandler {
         this.stateManager.onBlockConfirmation(blockConfirmation, timestamp);
     }
 
-    /**
-     * Handle DisputeCommitted event
-     */
     onDisputeCommitted(
         channelId: ChannelId,
         dispute: DisputeStruct,
@@ -108,9 +105,6 @@ export class EventHandler {
         );
     }
 
-    /**
-     * Handle WithdrawalsUpdated event
-     */
     onWithdrawalsUpdated(channelId: ChannelId, totalWithdrawals: any): void {
         this.localDiamondContract.onWithdrawalsUpdated(
             channelId,
@@ -118,9 +112,6 @@ export class EventHandler {
         );
     }
 
-    /**
-     * Handle ChannelStorageCleared event
-     */
     onChannelStorageCleared(
         channelId: ChannelId,
         latestJoinChannelBlockHash: Hash
@@ -131,9 +122,6 @@ export class EventHandler {
         );
     }
 
-    /**
-     * Handle DisputeKilled event
-     */
     onDisputeKilled(
         channelId: ChannelId,
         forkId: ForkId,
@@ -142,9 +130,6 @@ export class EventHandler {
         this.localDiamondContract.onDisputeKilled(channelId, forkId, disputer);
     }
 
-    /**
-     * Handle JoinChannelProcessed event
-     */
     onJoinChannelProcessed(
         channelId: ChannelId,
         joinChannelBlock: any,
@@ -189,8 +174,6 @@ export class EventHandler {
         previousOnChainForkId: ForkId,
         incomingSnapshotForkId: ForkId
     ): boolean {
-        // Get the newest state snapshot from storage
-        // We need to find the latest block for the current fork and get its state snapshot
         const latestBlock = this.storage.blocks.getLatestBlock(
             this.stateManager.latestForkId
         );
@@ -206,27 +189,21 @@ export class EventHandler {
             return false;
         }
 
-        // Traverse backwards through the fork chain using originForkId
         while (currentSnapshot) {
             if (currentSnapshot.forkId === incomingSnapshotForkId) {
                 return true; // the incoming snapshot belongs to a past fork
             }
 
-            // Check if we've reached the previous on-chain snapshot
             if (currentSnapshot.forkId === previousOnChainForkId) {
                 return false;
             }
 
-            // Move to the previous snapshot using originForkId
-            // The originForkId points to the previous fork in the chain
             const originForkId = currentSnapshot.snapshotData.originForkId;
 
-            // If originForkId is zero, we've reached the genesis
             if (originForkId === "0x00") {
                 return false;
             }
 
-            // Get the genesis snapshot of the origin fork
             currentSnapshot =
                 this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
                     originForkId
