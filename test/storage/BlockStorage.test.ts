@@ -69,11 +69,11 @@ describe("BlockStorage", () => {
             // Should return same hash
             expect(hash1).to.equal(hash2);
 
-            const stored = storage.getBlockEntry(hash1!);
+            const stored = storage.getBlock(hash1!);
 
             // Should have 3 unique signatures (shared signature not duplicated)
-            expect(stored?.block.confirmationSignatures.size).to.equal(3);
-            expect(stored?.block.confirmationSignatures).to.deep.equal(
+            expect(stored?.confirmationSignatures.size).to.equal(3);
+            expect(stored?.confirmationSignatures).to.deep.equal(
                 new Set([sharedSignature, uniqueSignature1, uniqueSignature2])
             );
         });
@@ -82,8 +82,8 @@ describe("BlockStorage", () => {
             const block = Block.fromBlockConfirmation(mockBlockConfirmation);
             const hash = storage.storeBlock(block);
 
-            const stored = storage.getBlockEntry(hash!);
-            expect(stored?.block).to.equal(block);
+            const stored = storage.getBlock(hash!);
+            expect(stored).to.equal(block);
         });
 
         it("should insert block confirmation with provided keys", () => {
@@ -92,13 +92,10 @@ describe("BlockStorage", () => {
                 coordinates: { forkId: mockForkId, height: mockHeight }
             });
 
-            const stored = storage.getBlockEntry(hash!);
-            const storedByCoords = storage.getBlockEntry(
-                mockForkId,
-                mockHeight
-            );
-            expect(stored?.block).to.equal(block);
-            expect(storedByCoords?.block).to.equal(block);
+            const stored = storage.getBlock(hash!);
+            const storedByCoords = storage.getBlock(mockForkId, mockHeight);
+            expect(stored).to.equal(block);
+            expect(storedByCoords).to.equal(block);
         });
     });
 
@@ -111,26 +108,25 @@ describe("BlockStorage", () => {
         });
 
         it("should get block by hash", () => {
-            const result = storage.getBlockEntry(mockBlockHash);
-            expect(result?.block.equals(mockBlock)).to.be.true;
+            const result = storage.getBlock(mockBlockHash);
+            expect(result?.equals(mockBlock)).to.be.true;
         });
 
         it("should get block by coordinates", () => {
-            const result = storage.getBlockEntry(mockForkId, mockHeight);
-            expect(result?.block.equals(mockBlock)).to.be.true;
+            const result = storage.getBlock(mockForkId, mockHeight);
+            expect(result?.equals(mockBlock)).to.be.true;
         });
 
         it("should return undefined for non-existent blocks", () => {
-            expect(
-                storage.getBlockEntry(ethers.hexlify(ethers.randomBytes(32)))
-            ).to.be.undefined;
-            expect(storage.getBlockEntry("nonexistent", 999)).to.be.undefined;
+            expect(storage.getBlock(ethers.hexlify(ethers.randomBytes(32)))).to
+                .be.undefined;
+            expect(storage.getBlock("nonexistent", 999)).to.be.undefined;
         });
 
         it("should maintain consistency between lookups", () => {
-            const byHash = storage.getBlockEntry(mockBlockHash);
-            const byCoords = storage.getBlockEntry(mockForkId, mockHeight);
-            expect(byHash?.block).to.equal(byCoords?.block); // Same object reference
+            const byHash = storage.getBlock(mockBlockHash);
+            const byCoords = storage.getBlock(mockForkId, mockHeight);
+            expect(byHash).to.equal(byCoords); // Same object reference
         });
     });
 
@@ -176,8 +172,8 @@ describe("BlockStorage", () => {
             storage.insertSignature(newSig, mockBlockHash);
 
             // Verify via coordinates
-            const block = storage.getBlockEntry(mockForkId, mockHeight);
-            expect(block?.block.allSignatures.has(newSig)).to.be.true;
+            const block = storage.getBlock(mockForkId, mockHeight);
+            expect(block?.allSignatures.has(newSig)).to.be.true;
         });
 
         it("should prevent duplicate signatures", () => {
@@ -232,8 +228,7 @@ describe("BlockStorage", () => {
             const prevNumSignatures = mockBlockConfirmation.signatures.length;
             const expectedNumSignatures = prevNumSignatures + 3;
             expect(
-                storage.getBlockEntry(mockBlockHash)?.block
-                    .confirmationSignatures.size
+                storage.getBlock(mockBlockHash)?.confirmationSignatures.size
             ).to.equal(prevNumSignatures);
 
             // Insert three different signatures
@@ -242,63 +237,8 @@ describe("BlockStorage", () => {
             storage.insertSignature(sig(), mockBlockHash);
 
             expect(
-                storage.getBlockEntry(mockBlockHash)?.block
-                    .confirmationSignatures.size
+                storage.getBlock(mockBlockHash)?.confirmationSignatures.size
             ).to.equal(expectedNumSignatures);
-        });
-    });
-
-    describe("UPDATE - setOnChainTimestamp()", () => {
-        beforeEach(() => {
-            storage.storeBlock(mockBlock, {
-                coordinates: { forkId: mockForkId, height: mockHeight }
-            });
-        });
-
-        it("should set on-chain timestamp by hash", () => {
-            const timestamp = 1234567890;
-            const result = storage.setOnChainTimestamp(
-                mockBlockHash,
-                timestamp
-            );
-
-            expect(result).to.be.true;
-            expect(
-                storage.getBlockEntry(mockBlockHash)?.onChainTimestamp
-            ).to.equal(timestamp);
-        });
-
-        it("should set on-chain timestamp by coordinates", () => {
-            const timestamp = 1234567890;
-            const result = storage.setOnChainTimestamp(
-                mockForkId,
-                mockHeight,
-                timestamp
-            );
-
-            expect(result).to.be.true;
-            expect(
-                storage.getBlockEntry(mockForkId, mockHeight)?.onChainTimestamp
-            ).to.equal(timestamp);
-        });
-
-        it("should return false for non-existent blocks", () => {
-            const timestamp = 1234567890;
-            expect(storage.setOnChainTimestamp("nonexistent", timestamp)).to.be
-                .false;
-            expect(storage.setOnChainTimestamp("nonexistent", 999, timestamp))
-                .to.be.false;
-        });
-
-        it("should maintain consistency between lookups", () => {
-            const timestamp = 1234567890;
-
-            // Set via hash
-            storage.setOnChainTimestamp(mockBlockHash, timestamp);
-
-            // Verify via coordinates
-            const block = storage.getBlockEntry(mockForkId, mockHeight);
-            expect(block?.onChainTimestamp).to.equal(timestamp);
         });
     });
 
@@ -309,16 +249,14 @@ describe("BlockStorage", () => {
 
         it("should delete by hash", () => {
             expect(storage.deleteBlock(mockBlockHash)).to.be.true;
-            expect(storage.getBlockEntry(mockBlockHash)).to.be.undefined;
-            expect(storage.getBlockEntry(mockForkId, mockHeight)).to.be
-                .undefined;
+            expect(storage.getBlock(mockBlockHash)).to.be.undefined;
+            expect(storage.getBlock(mockForkId, mockHeight)).to.be.undefined;
         });
 
         it("should delete by coordinates", () => {
             expect(storage.deleteBlock(mockForkId, mockHeight)).to.be.true;
-            expect(storage.getBlockEntry(mockBlockHash)).to.be.undefined;
-            expect(storage.getBlockEntry(mockForkId, mockHeight)).to.be
-                .undefined;
+            expect(storage.getBlock(mockBlockHash)).to.be.undefined;
+            expect(storage.getBlock(mockForkId, mockHeight)).to.be.undefined;
         });
 
         it("should return false when deleting non-existent blocks", () => {
@@ -368,11 +306,10 @@ describe("BlockStorage", () => {
             );
 
             // But the stored blockConfirmation should have merged signatures
-            const storedBlock =
-                storageWithProxy.blocks.getBlockEntry(mockBlockHash);
-            expect(
-                storedBlock?.block.confirmationSignatures.size
-            ).to.be.greaterThan(originalSignatureCount);
+            const storedBlock = storageWithProxy.blocks.getBlock(mockBlockHash);
+            expect(storedBlock?.confirmationSignatures.size).to.be.greaterThan(
+                originalSignatureCount
+            );
         });
 
         it("altering object outside storage doesn't affect object inside storage", () => {
@@ -389,19 +326,19 @@ describe("BlockStorage", () => {
 
             // Read the blockConfirmation from storage
             const retrievedBlock1 =
-                storageWithProxy.blocks.getBlockEntry(mockBlockHash);
+                storageWithProxy.blocks.getBlock(mockBlockHash);
             const originalStoredSignatureCount =
-                retrievedBlock1?.block.confirmationSignatures.size || 0;
+                retrievedBlock1?.confirmationSignatures.size || 0;
 
             // Modify the retrieved object
-            retrievedBlock1?.block.expandSignatures([sig(), sig()]);
+            retrievedBlock1?.expandSignatures([sig(), sig()]);
 
             // Read again from storage
             const retrievedBlock2 =
-                storageWithProxy.blocks.getBlockEntry(mockBlockHash);
+                storageWithProxy.blocks.getBlock(mockBlockHash);
 
             // The storage should not have been affected by our modifications
-            expect(retrievedBlock2?.block.confirmationSignatures.size).to.equal(
+            expect(retrievedBlock2?.confirmationSignatures.size).to.equal(
                 originalStoredSignatureCount
             );
             expect(retrievedBlock1).to.not.equal(retrievedBlock2);
@@ -452,8 +389,8 @@ describe("BlockStorage", () => {
                 );
 
                 // Should still have original block at those coordinates
-                const stored = storage.getBlockEntry(mockForkId, mockHeight);
-                expect(stored?.block.equals(mockBlock)).to.be.true;
+                const stored = storage.getBlock(mockForkId, mockHeight);
+                expect(stored?.equals(mockBlock)).to.be.true;
             });
         });
 
@@ -488,28 +425,21 @@ describe("BlockStorage", () => {
                 );
 
                 // Get the block by coordinates
-                const blockByCoords = storage.getBlockEntry(
-                    mockForkId,
-                    mockHeight
-                );
-                expect(blockByCoords?.block.equals(mockBlock)).to.be.true;
+                const blockByCoords = storage.getBlock(mockForkId, mockHeight);
+                expect(blockByCoords?.equals(mockBlock)).to.be.true;
 
                 // Change the block by coordinates (add signature)
                 const newSignature = sig();
                 storage.insertSignature(newSignature, mockForkId, mockHeight);
 
                 // Get that block by hash
-                const blockByHash = storage.getBlockEntry(hash!);
+                const blockByHash = storage.getBlock(hash!);
 
                 // Assert that the changes are also applied on the by-hash block
-                expect(
-                    blockByHash?.block.confirmationSignatures.has(newSignature)
-                ).to.be.true;
-                expect(
-                    blockByCoords?.block.confirmationSignatures.has(
-                        newSignature
-                    )
-                ).to.be.true;
+                expect(blockByHash?.confirmationSignatures.has(newSignature)).to
+                    .be.true;
+                expect(blockByCoords?.confirmationSignatures.has(newSignature))
+                    .to.be.true;
 
                 // Verify they are the same object reference
                 expect(blockByHash).to.equal(blockByCoords);
@@ -560,7 +490,7 @@ describe("ForkIdToMaxHeightMap", () => {
                 .getIterator(forkId, SortOrder.DESC)
                 .next().value!;
             let heighestBlockData = Block.fromSignedBlock(
-                heighestBlock.block.signedBlock
+                heighestBlock.signedBlock
             );
             expect(heighestBlockData.coordinates.height).to.equal(5);
 
@@ -572,7 +502,7 @@ describe("ForkIdToMaxHeightMap", () => {
                 .getIterator(forkId, SortOrder.DESC)
                 .next().value!;
             heighestBlockData = Block.fromSignedBlock(
-                heighestBlock.block.signedBlock
+                heighestBlock.signedBlock
             );
             expect(heighestBlockData.coordinates.height).to.equal(10);
         });
@@ -598,14 +528,12 @@ describe("ForkIdToMaxHeightMap", () => {
 
             // The first block should be at height 10
             // this means that the max height stored is 10 => not reduced by the new block at height 5
-            const firstBlockData = Block.fromSignedBlock(
-                blocks[0].block.signedBlock
-            );
+            const firstBlockData = Block.fromSignedBlock(blocks[0].signedBlock);
             expect(firstBlockData.coordinates.height).to.equal(10);
 
             // The second block should be at height 5
             const secondBlockData = Block.fromSignedBlock(
-                blocks[1].block.signedBlock
+                blocks[1].signedBlock
             );
             expect(secondBlockData.coordinates.height).to.equal(5);
         });
@@ -650,12 +578,10 @@ describe("ForkIdToMaxHeightMap", () => {
                 storage.getIterator(forkId, SortOrder.DESC)
             );
             expect(
-                Block.fromSignedBlock(blocks[0].block.signedBlock).coordinates
-                    .height
+                Block.fromSignedBlock(blocks[0].signedBlock).coordinates.height
             ).to.equal(5);
             expect(
-                Block.fromSignedBlock(blocks[1].block.signedBlock).coordinates
-                    .height
+                Block.fromSignedBlock(blocks[1].signedBlock).coordinates.height
             ).to.equal(0);
         });
 
@@ -679,12 +605,10 @@ describe("ForkIdToMaxHeightMap", () => {
                 storage.getIterator(forkId, SortOrder.DESC)
             );
             expect(
-                Block.fromSignedBlock(blocks[0].block.signedBlock).coordinates
-                    .height
+                Block.fromSignedBlock(blocks[0].signedBlock).coordinates.height
             ).to.equal(10);
             expect(
-                Block.fromSignedBlock(blocks[1].block.signedBlock).coordinates
-                    .height
+                Block.fromSignedBlock(blocks[1].signedBlock).coordinates.height
             ).to.equal(0);
         });
 
@@ -724,16 +648,16 @@ describe("ForkIdToMaxHeightMap", () => {
                 storage.getIterator(forkId, SortOrder.ASC)
             );
             expect(
-                Block.fromSignedBlock(blocksAsc[0].block.signedBlock)
-                    .coordinates.height
+                Block.fromSignedBlock(blocksAsc[0].signedBlock).coordinates
+                    .height
             ).to.equal(0);
             expect(
-                Block.fromSignedBlock(blocksAsc[1].block.signedBlock)
-                    .coordinates.height
+                Block.fromSignedBlock(blocksAsc[1].signedBlock).coordinates
+                    .height
             ).to.equal(5);
             expect(
-                Block.fromSignedBlock(blocksAsc[2].block.signedBlock)
-                    .coordinates.height
+                Block.fromSignedBlock(blocksAsc[2].signedBlock).coordinates
+                    .height
             ).to.equal(10);
 
             // Test descending order
@@ -741,16 +665,16 @@ describe("ForkIdToMaxHeightMap", () => {
                 storage.getIterator(forkId, SortOrder.DESC)
             );
             expect(
-                Block.fromSignedBlock(blocksDesc[0].block.signedBlock)
-                    .coordinates.height
+                Block.fromSignedBlock(blocksDesc[0].signedBlock).coordinates
+                    .height
             ).to.equal(10);
             expect(
-                Block.fromSignedBlock(blocksDesc[1].block.signedBlock)
-                    .coordinates.height
+                Block.fromSignedBlock(blocksDesc[1].signedBlock).coordinates
+                    .height
             ).to.equal(5);
             expect(
-                Block.fromSignedBlock(blocksDesc[2].block.signedBlock)
-                    .coordinates.height
+                Block.fromSignedBlock(blocksDesc[2].signedBlock).coordinates
+                    .height
             ).to.equal(0);
         });
     });

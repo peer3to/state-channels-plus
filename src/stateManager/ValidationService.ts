@@ -122,14 +122,11 @@ export default class ValidationService {
             return genesisSnapshot?.hash === block.previousBlockHash;
         }
 
-        const prevBlockEntry = this.storage.blocks.getBlockEntry(
-            forkId,
-            height - 1
-        );
-        if (!prevBlockEntry) {
+        const prevBlock = this.storage.blocks.getBlock(forkId, height - 1);
+        if (!prevBlock) {
             return false;
         }
-        return prevBlockEntry.block.hash === block.previousBlockHash;
+        return prevBlock.hash === block.previousBlockHash;
     }
 
     authenticateBlock(
@@ -176,12 +173,9 @@ export default class ValidationService {
         }
 
         // 2. Check if block is in block storage
-        const existingBlockEntry = this.storage.blocks.getBlockEntry(
-            block.hash
-        );
-        if (existingBlockEntry !== undefined) {
-            const existingSignatures =
-                existingBlockEntry.block.confirmationSignatures;
+        const existingBlock = this.storage.blocks.getBlock(block.hash);
+        if (existingBlock !== undefined) {
+            const existingSignatures = existingBlock.confirmationSignatures;
             const incomingSignatures = block.confirmationSignatures;
             const newSignatures = difference(
                 incomingSignatures,
@@ -219,11 +213,10 @@ export default class ValidationService {
 
     private checkConflictingBlock(block: Block): BlockValidationResult {
         // conflicting block ?
-        const blockEntry = this.storage.blocks.getBlockEntry(
+        const maybePreExistingBlock = this.storage.blocks.getBlock(
             block.forkId,
             block.height
         );
-        const maybePreExistingBlock = blockEntry?.block;
 
         if (!maybePreExistingBlock) {
             return BlockValidationResult.SUCCESS;
@@ -331,8 +324,7 @@ export default class ValidationService {
             // True - Update the previous block with the on-chain timestamp
             previousBlock.onChainTimestamp = previousBlockOnChainTimestamp;
             this.storage.blocks.setOnChainTimestamp(
-                previousBlock.forkId,
-                previousBlock.height,
+                previousBlock.hash,
                 previousBlockOnChainTimestamp
             );
 
@@ -475,8 +467,7 @@ export default class ValidationService {
             if (!onChainTimestamp) return false;
             block.onChainTimestamp = onChainTimestamp;
             this.storage.blocks.setOnChainTimestamp(
-                block.forkId,
-                block.height,
+                block.hash,
                 onChainTimestamp
             );
         }
