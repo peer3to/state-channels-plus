@@ -32,6 +32,7 @@ import P2PManager from "@/P2PManager";
 import StateChannelEventListener from "@/StateChannelEventListener";
 import ValidationService from "./ValidationService";
 import Storage from "@/storage";
+import { EventHandler } from "@/eventHandlers/EventHandler";
 
 // Event handlers and processors
 import P2pEventHooks from "@/P2pEventHooks";
@@ -91,7 +92,7 @@ class StateManager {
     disputeValidationService: DisputeValidationService;
     storage: Storage;
     fraudProofService: FraudProofService;
-    private latestForkId: ForkId = NULL;
+    latestForkId: ForkId = NULL;
     defaultValidationStrategy: AValidationStrategy;
 
     constructor(
@@ -114,9 +115,13 @@ class StateManager {
         this.storage = storage;
 
         this.stateChannelEventListener = new StateChannelEventListener(
-            this.self,
             this.stateChannelManagerContract,
-            this.p2pEventHooks,
+            new EventHandler(
+                this.storage,
+                this.self,
+                this.p2pEventHooks,
+                this.diamondStateMachine.localDiamondContract
+            ),
             this.diamondStateMachine.localDiamondContract
         );
         this.agreementManager = new AgreementManager(this.storage);
@@ -1048,9 +1053,8 @@ class StateManager {
             // calling the same handler the event lister would have called
             // this will call collectOnChainBlock on trigger  the block validation pipeline
             // if the  the block is invalid, the signer will get slashed
-            this.stateChannelEventListener.handleBlockCalldataPosted(
+            this.stateChannelEventListener.eventHandler.onBlockCalldataPosted(
                 this.channelId,
-                blockCalldataCommitment,
                 participantAddress,
                 onChainResult.signedBlock,
                 onChainResult.timestamp

@@ -1,49 +1,39 @@
-import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
+import { LocalDiamond } from "@typechain-types";
 import {
     BlockConfirmationStruct,
     SignedBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    DisputeAuditingDataStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
 import { ChannelId, Timestamp, Address, Hash, ForkId } from "@/types/types";
 import Storage from "@/storage";
 
-/**
- * EventHandler - Centralized event handling with validation
- *
- * This class handles all blockchain events and performs necessary validation
- * before delegating to appropriate components. It acts as a gate on external input.
- */
 export class EventHandler {
     constructor(
         private storage: Storage,
         private stateManager: StateManager,
-        private stateChannelManagerContract: StateChannelManagerProxy,
         private p2pEventHooks: P2pEventHooks,
         private localDiamondContract: LocalDiamond
     ) {}
 
-    /**
-     * Handle StateSnapshotUpdated event with sanity check
-     * This implements the note: "Check that the snapshot is in your past - iterate from the
-     * previous on-chain snapshot until you reach your perception of the 'newest' and make sure
-     * that the updated snapshot.forkId is in the past"
-     */
-    async handleStateSnapshotUpdated(
+    async onStateSnapshotUpdated(
         channelId: ChannelId,
         stateSnapshot: StateSnapshotStruct,
         timestamp: Timestamp
-    ): Promise<boolean> {
-        // Perform sanity check before updating
+    ): Promise<void> {
         if (!(await this.isSnapshotInPast(channelId, stateSnapshot))) {
-            // If sanity check fails, don't update the snapshot
-            // This prevents accepting invalid or future snapshots
-            console.warn(
-                `StateSnapshotUpdated: Rejected snapshot for channel ${channelId} - not in past`
+            // TODO: tryRecover
+
+            throw new Error(
+                "StateSnapshotUpdated: Rejected snapshot for channel " +
+                    channelId +
+                    " - not in past"
             );
-            return false;
         }
 
         this.localDiamondContract.onStateSnapshotUpdated(
@@ -51,22 +41,16 @@ export class EventHandler {
             stateSnapshot,
             timestamp
         );
-        return true;
     }
 
-    /**
-     * Handle BlockCalldataPosted event
-     */
-    handleBlockCalldataPosted(
+    onBlockCalldataPosted(
         channelId: ChannelId,
-        commitmentHash: Hash,
         sender: Address,
         signedBlock: SignedBlockStruct,
         timestamp: Timestamp
     ): void {
         this.localDiamondContract.onBlockCalldataPosted(
             channelId,
-            commitmentHash,
             sender,
             signedBlock,
             timestamp
@@ -82,28 +66,18 @@ export class EventHandler {
     /**
      * Handle DisputeCommitted event
      */
-    handleDisputeCommitted(
+    onDisputeCommitted(
         channelId: ChannelId,
         dispute: DisputeStruct,
         disputeCreationTimestamp: Timestamp,
         isFinal: boolean,
-        windowCreationTimestamp: Timestamp
+        windowCreationTimestamp: Timestamp,
+        disputeAuditingData?: DisputeAuditingDataStruct
     ): void {
-        this.localDiamondContract.onDisputeCommitted(
-            channelId,
-            dispute,
-            disputeCreationTimestamp,
-            isFinal,
-            windowCreationTimestamp
-        );
-        const timestamp = Number(windowCreationTimestamp);
-        this.stateManager.onDisputeCommitted(dispute, timestamp);
+        throw new Error("TODO - Not implemented");
     }
 
-    /**
-     * Handle ChainSlashed event
-     */
-    handleChainSlashed(
+    onChainSlashed(
         channelId: ChannelId,
         participant: Address,
         timestamp: Timestamp
@@ -115,10 +89,7 @@ export class EventHandler {
         );
     }
 
-    /**
-     * Handle DisputeReducedResultCommitted event
-     */
-    handleDisputeReducedResultCommitted(
+    onDisputeReducedResultCommitted(
         channelId: ChannelId,
         forkId: ForkId,
         reducedForkId: ForkId,
@@ -126,6 +97,7 @@ export class EventHandler {
         forkGenesisTimestamp: Timestamp,
         reducer: Address
     ): void {
+        throw new Error("TODO - Not implemented");
         this.localDiamondContract.onDisputeReducedResultCommitted(
             channelId,
             forkId,
@@ -139,10 +111,7 @@ export class EventHandler {
     /**
      * Handle WithdrawalsUpdated event
      */
-    handleWithdrawalsUpdated(
-        channelId: ChannelId,
-        totalWithdrawals: any
-    ): void {
+    onWithdrawalsUpdated(channelId: ChannelId, totalWithdrawals: any): void {
         this.localDiamondContract.onWithdrawalsUpdated(
             channelId,
             totalWithdrawals
@@ -152,7 +121,7 @@ export class EventHandler {
     /**
      * Handle ChannelStorageCleared event
      */
-    handleChannelStorageCleared(
+    onChannelStorageCleared(
         channelId: ChannelId,
         latestJoinChannelBlockHash: Hash
     ): void {
@@ -165,7 +134,7 @@ export class EventHandler {
     /**
      * Handle DisputeKilled event
      */
-    handleDisputeKilled(
+    onDisputeKilled(
         channelId: ChannelId,
         forkId: ForkId,
         disputer: Address
@@ -176,7 +145,7 @@ export class EventHandler {
     /**
      * Handle JoinChannelProcessed event
      */
-    handleJoinChannelProcessed(
+    onJoinChannelProcessed(
         channelId: ChannelId,
         joinChannelBlock: any,
         timestamp: Timestamp,
@@ -195,110 +164,74 @@ export class EventHandler {
         );
     }
 
-    // ====================================
-    // PRIVATE VALIDATION METHODS
-    // ====================================
-
-    /**
-     * Sanity check: Verify that the incoming snapshot is in the past
-     * This implements the note: "Check that the snapshot is in your past - iterate from the
-     * previous on-chain snapshot until you reach your perception of the 'newest' and make sure
-     * that the updated snapshot.forkId is in the past"
-     */
     private async isSnapshotInPast(
         channelId: ChannelId,
         incomingSnapshot: StateSnapshotStruct
     ): Promise<boolean> {
-        // Get the current on-chain snapshot (single source of truth)
-        const currentOnChainSnapshot =
+        const previousOnChainSnapshot =
             await this.localDiamondContract.getStateSnapshot(channelId);
 
-        // If no current snapshot exists, accept the incoming one
-        if (
-            currentOnChainSnapshot.forkId ===
-            "0x0000000000000000000000000000000000000000000000000000000000000000"
-        ) {
-            return true;
-        }
-
-        // Check if the incoming snapshot is from the same fork but older
-        if (currentOnChainSnapshot.forkId === incomingSnapshot.forkId) {
-            // Same fork: check if incoming snapshot is older (lower block height)
+        if (previousOnChainSnapshot.forkId === incomingSnapshot.forkId) {
             return (
                 Number(incomingSnapshot.blockHeight) <
-                Number(currentOnChainSnapshot.blockHeight)
+                Number(previousOnChainSnapshot.blockHeight)
             );
         }
 
-        // Different fork: need to check if incoming forkId is in the past
-        // by traversing dispute windows from current on-chain snapshot
-        return this.isForkIdInPast(
-            channelId,
-            currentOnChainSnapshot.forkId,
+        // Different fork
+        return this.isIncomingSnapshotInForkChain(
+            previousOnChainSnapshot.forkId,
             incomingSnapshot.forkId
         );
     }
 
-    /**
-     * Check if a forkId is in the past by traversing dispute windows
-     * This implements the fork choice algorithm to determine if a fork is historical
-     */
-    private async isForkIdInPast(
-        channelId: ChannelId,
-        currentForkId: ForkId,
-        targetForkId: ForkId
-    ): Promise<boolean> {
-        // If target fork is the same as current, it's not in the past
-        if (currentForkId === targetForkId) {
+    private isIncomingSnapshotInForkChain(
+        previousOnChainForkId: ForkId,
+        incomingSnapshotForkId: ForkId
+    ): boolean {
+        // Get the newest state snapshot from storage
+        // We need to find the latest block for the current fork and get its state snapshot
+        const latestBlock = this.storage.blocks.getLatestBlock(
+            this.stateManager.latestForkId
+        );
+        if (!latestBlock) {
+            // No blocks in storage for this fork, can't determine if incoming is in past
             return false;
         }
 
-        // Traverse dispute windows to see if targetForkId appears in the chain
-        let forkId = currentForkId;
-        const maxIterations = 100; // Reasonable limit to prevent infinite loops
-        let iterations = 0;
-
-        while (iterations < maxIterations) {
-            // Check if there's a dispute window for this fork
-            const isDisputed =
-                await this.stateChannelManagerContract.isForkDisputed(
-                    channelId,
-                    forkId
-                );
-
-            if (!isDisputed) {
-                // No dispute window, we've reached the end of the chain
-                break;
-            }
-
-            // Get the reduced result for this fork
-            const reducedResult =
-                await this.stateChannelManagerContract.getReducedResult(
-                    channelId,
-                    forkId
-                );
-
-            if (
-                reducedResult[0] &&
-                reducedResult[0] !==
-                    "0x0000000000000000000000000000000000000000000000000000000000000000"
-            ) {
-                // Check if this is our target fork
-                if (reducedResult[0] === targetForkId) {
-                    return true; // Found target fork in the past
-                }
-
-                // Move to the next fork in the chain
-                forkId = reducedResult[0];
-            } else {
-                // No valid reduced result, can't traverse further
-                break;
-            }
-
-            iterations++;
+        let currentSnapshot = this.storage.getStateSnapshot(
+            latestBlock.coordinates
+        );
+        if (!currentSnapshot) {
+            return false;
         }
 
-        // Target fork not found in the historical chain
+        // Traverse backwards through the fork chain using originForkId
+        while (currentSnapshot) {
+            if (currentSnapshot.forkId === incomingSnapshotForkId) {
+                return true; // the incoming snapshot belongs to a past fork
+            }
+
+            // Check if we've reached the previous on-chain snapshot
+            if (currentSnapshot.forkId === previousOnChainForkId) {
+                return false;
+            }
+
+            // Move to the previous snapshot using originForkId
+            // The originForkId points to the previous fork in the chain
+            const originForkId = currentSnapshot.snapshotData.originForkId;
+
+            // If originForkId is zero, we've reached the genesis
+            if (originForkId === "0x00") {
+                return false;
+            }
+
+            // Get the genesis snapshot of the origin fork
+            currentSnapshot =
+                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                    originForkId
+                );
+        }
         return false;
     }
 }
