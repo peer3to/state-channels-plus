@@ -96,7 +96,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function isGenesisSnapshot(StateSnapshot memory snapshot) public pure returns (bool) {
-        return snapshot.forkId == keccak256(abi.encode(snapshot.snapshotData));
+        return snapshot.forkId == keccak256(abi.encode(snapshot.snapshotData)) && snapshot.blockHeight == 0;
     }
 
     function getSnapshotParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
