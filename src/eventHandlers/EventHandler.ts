@@ -89,9 +89,21 @@ export class EventHandler {
         if (!isRelevant) {
             return;
         }
-        /*if it's not part of the fork choice rule 
-        (see Dispute Mental Model - fork choice rule) - ignore it - it's spam
-        */
+        if (isFinal) {
+            // set fork, no audit, no challenge, finalize dispute window and build immediately on the fork
+            const { isPartial, auditingData } =
+                this.stateManager.disputeManager.getAuditingData(
+                    dispute.input.disputeAuditingDataHash,
+                    dispute.input.stateProof
+                );
+            if (!isPartial) {
+                await this.stateManager.setState(
+                    auditingData.latestStateStateMachineState,
+                    dispute.outputSnapshotDataHash,
+                    disputeCreationTimestamp
+                );
+            }
+        }
     }
 
     async onChainSlashed(
