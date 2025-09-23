@@ -63,15 +63,35 @@ export class EventHandler {
         this.stateManager.onBlockConfirmation(blockConfirmation, timestamp);
     }
 
-    onDisputeCommitted(
+    async onDisputeCommitted(
         channelId: ChannelId,
         dispute: DisputeStruct,
         disputeCreationTimestamp: Timestamp,
         isFinal: boolean,
         windowCreationTimestamp: Timestamp,
         disputeAuditingData?: DisputeAuditingDataStruct
-    ): void {
-        throw new Error("TODO - Not implemented");
+    ): Promise<void> {
+        // sync LocalDiamond state
+        this.diamondStateMachine.localDiamondContract.onDisputeCommitted(
+            channelId,
+            dispute,
+            disputeCreationTimestamp,
+            isFinal,
+            windowCreationTimestamp
+        );
+
+        // isDisputeWindowRelevant?
+        const isRelevant =
+            await this.diamondStateMachine.localDiamondContract.isDisputeWindowRelevant(
+                channelId,
+                dispute
+            );
+        if (!isRelevant) {
+            return;
+        }
+        /*if it's not part of the fork choice rule 
+        (see Dispute Mental Model - fork choice rule) - ignore it - it's spam
+        */
     }
 
     async onChainSlashed(
