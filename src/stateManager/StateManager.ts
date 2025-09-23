@@ -40,7 +40,7 @@ import Storage from "@/storage";
 import P2pEventHooks from "@/P2pEventHooks";
 
 // Models
-import { Block, StateSnapshot } from "@/models";
+import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 
 // Utils
 import {
@@ -53,7 +53,8 @@ import {
     isCustomEvmError,
     getActiveParticipants,
     SignatureUtils,
-    decodeErrorProxy
+    decodeErrorProxy,
+    difference
 } from "@/utils";
 // Types
 import { BlockValidationResult, TimeConfig } from "@/types";
@@ -76,6 +77,7 @@ const NULL = "0x00";
 class StateManager {
     diamondStateMachine: ADiamondStateMachine;
     p2pEventHooks: P2pEventHooks;
+    signer: ethers.Signer;
     signerAddress: Address;
     agreementManager: AgreementManager;
     stateChannelEventListener: StateChannelEventListener;
@@ -93,14 +95,6 @@ class StateManager {
     localDiamondContract: LocalDiamond;
 
     private latestForkId: ForkId = NULL;
-    private dispatcher = new Map([
-        [BlockValidationResult.NOT_READY, this.notReady],
-        [BlockValidationResult.DISCONNECT, this.disconnect],
-        [BlockValidationResult.DISPUTE, this.dispute],
-        [BlockValidationResult.BROADCAST, this.broadcast],
-        [BlockValidationResult.NOT_ENOUGH_TIME, this.notEnoughTime],
-        [BlockValidationResult.DUPLICATE, this.duplicate]
-    ]);
 
     constructor(
         signer: ethers.Signer,
@@ -112,6 +106,7 @@ class StateManager {
         storage: Storage,
         localDiamondContract: LocalDiamond
     ) {
+        this.signer = signer;
         this.signerAddress = signerAddress;
         this.diamondStateMachine = diamondStateMachine;
         this.p2pEventHooks = p2pEventHooks;
@@ -222,6 +217,7 @@ class StateManager {
     }
     /**
      * Triggered by the On-chain Event Listener when a new state is set on-chain
+     * called after a dispute to set the genesis of a new fork
      * @param encodedState - Encoded state of the state machine
      * @param _forkId - new fork count
      * @param _timestamp - on-chain timestamp
@@ -234,9 +230,26 @@ class StateManager {
         console.log("StateManager - SetState", _forkId, _timestamp);
         await this.diamondStateMachine.setState(encodedState);
 
-        //Try timeout next participant
-        this.p2pEventHooks.onSetState?.();
-        return this.onSuccessCommon();
+        // Update the forkId to the new fork
+        this.forkId = _forkId;
+
+        const nextToWrite = await this.diamondStateMachine.getNextToWrite();
+
+        this.p2pEventHooks.onTurn?.(nextToWrite);
+        const nextTransactionCnt =
+            this.storage.blocks.getNextBlockHeight(_forkId);
+        scheduleTask(
+            () =>
+                this.tryTimeoutParticipant(
+                    _forkId,
+                    nextTransactionCnt,
+                    nextToWrite
+                ),
+            this.getTimeoutWaitTimeSeconds() * 1000,
+            "participantTimeout"
+        );
+
+        scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
     }
 
     // Passes the signedBlock through a verification pipeline and returns shouldDisconnect flag
@@ -259,26 +272,58 @@ class StateManager {
         try {
             await this.mutex.lock();
 
+            const block = this.validationService.authenticateBlock(
+                blockConfirmation,
+                this.channelId,
+                onChainTimestamp
+            );
+
+            if (!block) {
+                // disconnect
+                return false;
+            }
+
             const validationResult =
-                await this.validationService.validateBlockConfirmation(
-                    blockConfirmation,
-                    onChainTimestamp
-                );
+                await this.validationService.validateBlockConfirmation(block);
 
             if (validationResult !== BlockValidationResult.SUCCESS) {
                 // handle all non-success actions
-                await this.dispatcher.get(validationResult)!(blockConfirmation);
+                switch (validationResult) {
+                    case BlockValidationResult.NOT_READY:
+                        // do nothing, do not disconnect
+                        return true;
+                    case BlockValidationResult.DUPLICATE:
+                        // do nothing, do not disconnect
+                        return true;
+                    case BlockValidationResult.NOT_ENOUGH_TIME:
+                        // do nothing, do not disconnect
+                        return true;
+                    case BlockValidationResult.DISCONNECT:
+                        // disconnect
+                        return false;
+
+                    case BlockValidationResult.BROADCAST:
+                        this.p2pManager.rpcProxy
+                            .onBlockConfirmation(block.blockConfirmationStruct)
+                            .broadcast();
+                        return true;
+                    case BlockValidationResult.DISPUTE:
+                        await this.dispute(blockConfirmation);
+                        return false;
+                    default:
+                        return true;
+                }
             }
 
-            // SUCCESS action: perform state transition validation
-            const block = Block.fromSignedBlock(blockConfirmation.signedBlock);
+            // SUCCESS, continue with state transition validation
 
             const {
                 success,
                 encodedState,
                 previousStateHash,
                 successCallback,
-                exitChannels
+                exitChannels,
+                leftParticipants
             } = await this.applyTransaction(block.transaction);
 
             if (!success) {
@@ -299,7 +344,8 @@ class StateManager {
             const { stateSnapshot, exitChannelBlock, totalWithdrawals } =
                 await this.createStateSnapshot(
                     hash(encodedState),
-                    block,
+                    block.coordinates,
+                    block.timestamp,
                     exitChannels
                 );
 
@@ -315,6 +361,7 @@ class StateManager {
                 stateSnapshot,
                 successCallback,
                 totalWithdrawals,
+                leftParticipants,
                 exitChannelBlock
             );
 
@@ -334,20 +381,31 @@ class StateManager {
         previousStateHash: Hash;
         successCallback: () => void;
         exitChannels: ExitChannelStruct[];
+        leftParticipants: Set<Address>;
     }> {
         const previousStateHash = await this.diamondStateMachine
             .getState()
             .then(hash);
+        const previousParticipants =
+            await this.diamondStateMachine.getParticipants();
         const { success, successCallback, exitChannels } =
             await this.diamondStateMachine.stateTransition(transaction);
         const encodedState = await this.diamondStateMachine.getState();
+        const currentParticipants =
+            await this.diamondStateMachine.getParticipants();
+
+        const leftParticipants = difference(
+            new Set(previousParticipants),
+            new Set(currentParticipants)
+        );
 
         return {
             success,
             encodedState,
             previousStateHash,
             successCallback,
-            exitChannels
+            exitChannels,
+            leftParticipants
         };
     }
 
@@ -373,7 +431,9 @@ class StateManager {
                 success,
                 encodedState,
                 previousStateHash: _previousStateHash,
-                successCallback
+                successCallback,
+                exitChannels,
+                leftParticipants
             } = await this.applyTransaction(tx);
 
             if (!success) {
@@ -382,10 +442,19 @@ class StateManager {
                 );
             }
 
-            const posteriorStateHash = await this.diamondStateMachine
-                .getState()
-                .then(hash);
-            const blockStruct = await this.createBlock(tx, posteriorStateHash);
+            const { stateSnapshot, exitChannelBlock, totalWithdrawals } =
+                await this.createStateSnapshot(
+                    hash(encodedState),
+                    {
+                        forkId: this.forkId,
+                        height: Number(tx.header.transactionCnt)
+                    },
+                    Number(tx.header.timestamp),
+                    exitChannels
+                );
+
+            const blockStruct = await this.createBlock(tx, stateSnapshot.hash);
+
             const encodedBlock = Codec.encode(blockStruct, Type.Block);
             const blockHash = hash(encodedBlock);
             const signedBlock: SignedBlockStruct = {
@@ -397,15 +466,13 @@ class StateManager {
 
             const block = Block.fromSignedBlock(signedBlock);
 
-            this.storage.blocks.storeBlock(block);
-
-            successCallback();
-            await this.onSuccessCommon();
-
-            scheduleTask(
-                () => this.maybePostBlockOnChain(block, signedBlock),
-                this.timeConfig.agreementTime * 1000,
-                "maybePostBlockOnChain"
+            await this.success(
+                block,
+                stateSnapshot,
+                successCallback,
+                totalWithdrawals,
+                leftParticipants,
+                exitChannelBlock
             );
 
             return signedBlock;
@@ -414,10 +481,7 @@ class StateManager {
         }
     }
 
-    private async maybePostBlockOnChain(
-        block: Block,
-        signedBlock: SignedBlockStruct
-    ): Promise<void> {
+    private async maybePostBlockOnChain(block: Block): Promise<void> {
         // If not everyone has signed, do the on-chain post
         const participants = this.storage.getParticipants(block.coordinates);
 
@@ -426,7 +490,7 @@ class StateManager {
             this.p2pEventHooks.onPostingCalldata?.();
 
             this.stateChannelManagerContract
-                .postBlockCalldata(signedBlock, Clock.getTimeInSeconds())
+                .postBlockCalldata(block.signedBlock, Clock.getTimeInSeconds())
                 .then((txResponse) => txResponse.wait())
                 .catch((error) => {
                     if (isCustomEvmError(error)) {
@@ -1076,32 +1140,6 @@ class StateManager {
         }
     }
 
-    private async onSuccessCommon() {
-        // Immediately schedule a confirm/execute from queue on next tick
-        scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
-
-        // Identify the fork/tx counts for the next participant
-        const forkId = this.forkId;
-        const nextTransactionCnt =
-            this.storage.blocks.getNextBlockHeight(forkId);
-        const nextToWrite = await this.diamondStateMachine.getNextToWrite();
-
-        // Notify any event hooks
-        this.p2pEventHooks.onTurn?.(nextToWrite);
-
-        // Schedule a timeout check for the next participant
-        scheduleTask(
-            () =>
-                this.tryTimeoutParticipant(
-                    forkId,
-                    nextTransactionCnt,
-                    nextToWrite
-                ),
-            this.getTimeoutWaitTimeSeconds() * 1000,
-            "participantTimeout"
-        );
-    }
-
     private getTimeoutWaitTimeSeconds() {
         return (
             this.timeConfig.p2pTime +
@@ -1127,19 +1165,19 @@ class StateManager {
 
     private async createStateSnapshot(
         stateMachineStateHash: Hash,
-        block: Block,
+        coordinates: BlockCoordinates,
+        timestamp: Timestamp,
         exitChannels?: ExitChannelStruct[]
     ): Promise<{
         stateSnapshot: StateSnapshot;
         exitChannelBlock?: ExitChannelBlockStruct;
         totalWithdrawals: BalanceStruct;
     }> {
-        const previousStateSnapshot = this.storage.getPreviousStateSnapshot(
-            block.coordinates
-        )!;
+        const previousStateSnapshot =
+            this.storage.getPreviousStateSnapshot(coordinates)!;
         const genesisStateSnapshot =
             this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                block.forkId
+                coordinates.forkId
             )!;
 
         const latestJoinChannelBlockHash =
@@ -1169,9 +1207,9 @@ class StateManager {
         }
 
         const stateSnapshot: StateSnapshotStruct = {
-            forkId: block.coordinates.forkId,
-            blockHeight: BigInt(block.coordinates.height),
-            timestamp: block.timestamp,
+            forkId: coordinates.forkId,
+            blockHeight: BigInt(coordinates.height),
+            timestamp: timestamp,
             snapshotData: {
                 stateMachineStateHash: stateMachineStateHash,
                 participants,
@@ -1191,7 +1229,7 @@ class StateManager {
 
     private async createBlock(
         tx: TransactionStruct,
-        posteriorStateHash: Hash
+        stateSnapshotHash: Hash
     ): Promise<BlockStruct> {
         const forkId = this.forkId;
         const blockHeight = Number(tx.header.transactionCnt);
@@ -1211,14 +1249,6 @@ class StateManager {
             previousHash = previousBlockOrSnapshot.stateSnapshot!.hash;
         }
 
-        const stateSnapshot = await this.createStateSnapshot(
-            posteriorStateHash,
-            forkId,
-            blockHeight
-        );
-
-        const stateSnapshotHash = stateSnapshot.hash;
-
         const blockStruct: BlockStruct = {
             transaction: tx,
             stateSnapshotHash: stateSnapshotHash,
@@ -1229,22 +1259,32 @@ class StateManager {
     }
 
     // ─────────────────────── ACTION HANDLERS ───────────────────────
-
     private async success(
         block: Block,
         stateSnapshot: StateSnapshot,
         successCallback: () => void,
         totalWithdrawals: BalanceStruct,
+        leftParticipants: Set<Address>,
         exitChannelBlock?: ExitChannelBlockStruct
     ): Promise<void> {
-        // this function is still incomplete and should be considered as TODO
-        // will be done in follow up PRs (after https://github.com/peer3to/state-channels-plus/pull/130)
+        // step 1 - Confirm and Gossip
+        if (await this.shouldSignBlock(block)) {
+            // Sign the block and add our signature to confirmation signatures
+            const signature = await block.sign(this.signer);
+            block.expandSignatures([signature]);
+        }
+        // always broadcast
+        this.p2pManager.rpcProxy
+            .onBlockConfirmation(block.blockConfirmationStruct)
+            .broadcast();
 
-        // Store the block confirmation
+        // step 2 - persist the block
         this.storage.blocks.storeBlock(block);
+
+        // step 3 - persist the state snapshot
         this.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
 
-        // Store exit channel blocks if present
+        // step 4 - persist the exit channel blocks if any
         if (exitChannelBlock) {
             this.storage.exitChannelBlocks.storeExitChannelBlock(
                 exitChannelBlock,
@@ -1252,22 +1292,90 @@ class StateManager {
             );
         }
 
+        // step 5 - persist exit points
+        if (leftParticipants.size > 0) {
+            this.storage.exitPoints.storeExitPoint(block.forkId, block.height);
+        }
+
+        // step 6 - startMaybeExitOnChain
+        await this.startMaybeExitOnChain(
+            block,
+            stateSnapshot,
+            leftParticipants,
+            exitChannelBlock
+        );
+
+        // step 7 - success callback
         successCallback();
-        await this.onSuccessCommon();
+        const nextToWrite = await this.diamondStateMachine.getNextToWrite();
+        // step 8 - Notify any event hooks
+        this.p2pEventHooks.onTurn?.(nextToWrite);
+
+        // step 9 - maybe post block on chain
+        if (block.author === this.signerAddress) {
+            scheduleTask(
+                () => this.maybePostBlockOnChain(block),
+                this.timeConfig.agreementTime * 1000,
+                "maybePostBlockOnChain"
+            );
+        }
+
+        // step 10 - schedule a timeout check for the next participant
+        scheduleTask(
+            () =>
+                this.tryTimeoutParticipant(
+                    block.forkId,
+                    block.height,
+                    nextToWrite
+                ),
+            this.getTimeoutWaitTimeSeconds() * 1000,
+            "participantTimeout"
+        );
+        // step 11 - try execute from queue
+        scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
     }
 
-    private async notReady(
-        _blockConfirmation: BlockConfirmationStruct
-    ): Promise<void> {
-        // TODO
-        throw new Error("Not implemented");
+    private async shouldSignBlock(block: Block): Promise<boolean> {
+        if (this.p2pManager.isBlacklisted(block.author)) return false;
+
+        // Check if the block is posted on-chain and I am the next to write
+        if (block.onChainTimestamp !== undefined) {
+            const nextToWrite = await this.diamondStateMachine.getNextToWrite();
+            if (nextToWrite === this.signerAddress) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
-    private async disconnect(
-        _blockConfirmation: BlockConfirmationStruct
+    private async startMaybeExitOnChain(
+        block: Block,
+        _stateSnapshot: StateSnapshot,
+        leftParticipants: Set<Address>,
+        _exitChannelBlock?: ExitChannelBlockStruct
     ): Promise<void> {
-        // TODO
-        throw new Error("Not implemented");
+        if (!leftParticipants.has(this.signerAddress)) {
+            // I didn't exit, nothing to do
+            return;
+        }
+
+        scheduleTask(
+            () => {
+                if (this.agreementManager.didEveryoneSignBlock(block)) {
+                    // Update the snapshot with the BlockConfirmation proving the latest state to exit on-chain
+                    // Todo
+                    // https://trello.com/c/Nv7AGVyR
+                } else {
+                    // Failure: create a dispute with the BlockConfirmation set as the latest state
+                    // and selfRemoval flag set to true
+                    // Todo
+                    // https://trello.com/c/qwpYPLj8
+                }
+            },
+            this.timeConfig.agreementTime * 1000,
+            "MaybeExitOnChain"
+        );
     }
 
     private async dispute(
@@ -1275,51 +1383,8 @@ class StateManager {
     ): Promise<void> {
         // The fraud proof has already been stored by ValidationService
         // rest is left as TODO for now
+        // https://trello.com/c/qwpYPLj8
         throw new Error("Not implemented");
-    }
-
-    private async broadcast(
-        _blockConfirmation: BlockConfirmationStruct
-    ): Promise<void> {
-        // The block has already been stored by ValidationService with merged signatures
-        // We would trigger P2P broadcast here: this.p2pManager.broadcastBlockConfirmation(blockConfirmation);
-        // For now, this is left as TODO
-        throw new Error("Not implemented");
-    }
-
-    private async notEnoughTime(
-        _blockConfirmation: BlockConfirmationStruct
-    ): Promise<void> {
-        // No-op - abstain from applying/signing
-        throw new Error("Not implemented");
-    }
-
-    private async duplicate(
-        _blockConfirmation: BlockConfirmationStruct
-    ): Promise<void> {
-        // TODO
-        throw new Error("Not implemented");
-    }
-
-    private shouldDisconnect(validationResult: BlockValidationResult): boolean {
-        switch (validationResult) {
-            case BlockValidationResult.SUCCESS:
-                return false;
-            case BlockValidationResult.NOT_READY:
-                return false;
-            case BlockValidationResult.DISCONNECT:
-                return true;
-            case BlockValidationResult.DISPUTE:
-                return true;
-            case BlockValidationResult.BROADCAST:
-                return false;
-            case BlockValidationResult.NOT_ENOUGH_TIME:
-                return false;
-            case BlockValidationResult.DUPLICATE:
-                return false;
-            default:
-                return false;
-        }
     }
 
     // ----- Event handlers -----

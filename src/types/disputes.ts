@@ -1,6 +1,5 @@
 import {
     BlockConfirmationEthersType,
-    ExitChannelBlockEthersType,
     SignedBlockEthersType,
     TimeoutEthersType,
     StateSnapshotEthersType
@@ -10,6 +9,7 @@ export enum FraudProofType {
     // Block related fraud proofs
     BlockDoubleSign = 100,
     BlockInvalidStateTransition,
+    WrongGenesis,
     // Timeout related fraud proofs
     InvalidTimestamp
 }
@@ -78,6 +78,11 @@ export const InvalidTimestampProofEthersType = `tuple(
             ${SignedBlockEthersType} previousBlock,
             ${StateSnapshotEthersType} previousStateSnapshot
             )`;
+
+export const WrongGenesisProofEthersType = `tuple(
+    ${SignedBlockEthersType} invalidBlock,
+    ${StateSnapshotEthersType} genesisSnapshot
+    )`;
 
 export const IncorrectDataProofEthersType = `tuple(
     ${SignedBlockEthersType} block1,

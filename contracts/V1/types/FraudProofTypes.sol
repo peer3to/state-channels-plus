@@ -7,7 +7,8 @@ contract FraudProofTypes {
         BlockEmptyProof memory a,
         BlockInvalidStateTransitionProof memory b,
         BlockDoubleSignProof memory c,
-        InvalidTimestampProof memory d
+        InvalidTimestampProof memory d,
+        WrongGenesisProof memory e
     ) {}
 }
 // ========================== Block related fraud proofs ==========================
@@ -33,4 +34,9 @@ struct InvalidTimestampProof {
     SignedBlock invalidBlock;
     SignedBlock previousBlock;
     StateSnapshot previousStateSnapshot;
+}
+
+struct WrongGenesisProof {
+    SignedBlock invalidBlock;
+    StateSnapshot genesisSnapshot;
 }

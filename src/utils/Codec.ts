@@ -14,7 +14,8 @@ import {
 import {
     BlockDoubleSignProofStruct,
     BlockInvalidStateTransitionProofStruct,
-    InvalidTimestampProofStruct
+    InvalidTimestampProofStruct,
+    WrongGenesisProofStruct
 } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 import {
     BlockEthersType,
@@ -31,6 +32,7 @@ import {
     BlockDoubleSignProofEthersType,
     BlockInvalidStateTransitionProofEthersType,
     InvalidTimestampProofEthersType,
+    WrongGenesisProofEthersType,
     FraudProofType
 } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -40,7 +42,8 @@ import { ExecResult } from "@ethereumjs/evm";
 export type FraudStruct =
     | BlockDoubleSignProofStruct
     | BlockInvalidStateTransitionProofStruct
-    | InvalidTimestampProofStruct;
+    | InvalidTimestampProofStruct
+    | WrongGenesisProofStruct;
 
 type StructType =
     | FraudStruct
@@ -92,7 +95,8 @@ export class Codec {
             FraudProofType.BlockInvalidStateTransition,
             BlockInvalidStateTransitionProofEthersType
         ],
-        [FraudProofType.InvalidTimestamp, InvalidTimestampProofEthersType]
+        [FraudProofType.InvalidTimestamp, InvalidTimestampProofEthersType],
+        [FraudProofType.WrongGenesis, WrongGenesisProofEthersType]
     ]);
 
     public static encode(
