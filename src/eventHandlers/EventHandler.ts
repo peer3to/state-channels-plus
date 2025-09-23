@@ -12,6 +12,9 @@ import P2pEventHooks from "@/P2pEventHooks";
 import { ChannelId, Timestamp, Address, Hash, ForkId } from "@/types/types";
 import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
+import { isEqual } from "lodash";
+import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
+import { scheduleTask } from "@/utils";
 
 export class EventHandler {
     constructor(
@@ -89,48 +92,112 @@ export class EventHandler {
         if (!isRelevant) {
             return;
         }
-        let auditingData: DisputeAuditingDataStruct;
-        if (disputeAuditingData) {
-            auditingData = disputeAuditingData;
-        } else {
-            const { isPartial, auditingData: constructedAuditingData } =
-                this.stateManager.disputeManager.getAuditingData(
-                    dispute.input.disputeAuditingDataHash,
-                    dispute.input.stateProof
-                );
-            if (isPartial) {
-                throw new Error("DisputeCommitted: Auditing data is partial");
-            }
-            auditingData = constructedAuditingData;
-        }
+        const auditingData = await this.getOrConstructAuditingData(
+            dispute,
+            disputeAuditingData
+        );
         if (isFinal) {
-            await this.stateManager.setState(
+            return this.stateManager.setState(
                 auditingData.latestStateStateMachineState,
                 dispute.outputSnapshotDataHash,
                 disputeCreationTimestamp
             );
-            return;
         }
 
         // not final - validate dispute and challenge if invalid
-        const isValid = await this.stateManager.disputeManager.isDisputeValid(
-            dispute,
-            auditingData
-        );
+        const isValid =
+            await this.stateManager.disputeValidationService.validateDispute(
+                dispute,
+                auditingData
+            );
 
         if (!isValid) {
-            // Dispute is invalid - challenge it on the StateChannelManager
+            // challenge
             await this.stateManager.stateChannelManagerContract.challengeDispute(
                 dispute,
                 auditingData
             );
-            // diconnect participant
+            // disconnect participant
             this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
                 dispute.input.disputer
             );
             return;
         }
-        // Dispute is valid
+        // dispute is valid
+
+        const { haveMoreEvidence, counterDisputeConfirmation } =
+            await this.checkForAdditionalEvidence(dispute);
+
+        if (haveMoreEvidence) {
+            this.stateManager.stateChannelManagerContract.uploadDispute(
+                counterDisputeConfirmation
+            );
+        }
+        // wait killPeriod to expire
+        scheduleTask(
+            () => this.onKillPeriodExpired(dispute),
+            this.stateManager.timeConfig.evidenceTime * 1000
+        );
+    }
+    private async onKillPeriodExpired(dispute: DisputeStruct): Promise<void> {
+        // Reduce, set fork,
+        // optionally finalize or commit to finalized result for dispute window,
+        //  start building on fork immediately
+        //  TODO
+    }
+
+    private async getOrConstructAuditingData(
+        dispute: DisputeStruct,
+        disputeAuditingData?: DisputeAuditingDataStruct
+    ): Promise<DisputeAuditingDataStruct> {
+        if (disputeAuditingData) {
+            return disputeAuditingData;
+        }
+
+        const { isPartial, auditingData } =
+            this.stateManager.disputeManager.getAuditingData(
+                dispute.input.disputeAuditingDataHash,
+                dispute.input.stateProof
+            );
+
+        if (isPartial) {
+            throw new Error("DisputeCommitted: Auditing data is partial");
+        }
+
+        return auditingData;
+    }
+
+    private async checkForAdditionalEvidence(dispute: DisputeStruct): Promise<{
+        haveMoreEvidence: boolean;
+        counterDisputeConfirmation: DisputeConfirmationStruct;
+    }> {
+        // Create our own dispute
+        const {
+            dispute: ourDispute,
+            disputeConfirmation: ourDisputeConfirmation
+        } = await this.stateManager.disputeManager.createDispute(
+            this.stateManager.latestForkId,
+            false
+        );
+
+        // Compare reduced disputes to see if we have more evidence
+        const ourReducedDispute =
+            await this.diamondStateMachine.localDiamondContract.reduceProxyView(
+                [dispute]
+            );
+
+        const combinedReducedDispute =
+            await this.diamondStateMachine.localDiamondContract.reduceProxyView(
+                [ourDispute, dispute]
+            );
+
+        return {
+            haveMoreEvidence: !isEqual(
+                ourReducedDispute,
+                ourDisputeConfirmation
+            ),
+            counterDisputeConfirmation: ourDisputeConfirmation
+        };
     }
 
     async onChainSlashed(

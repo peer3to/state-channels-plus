@@ -139,7 +139,7 @@ describe("StateManager", () => {
                 p2pTime: 15,
                 agreementTime: 5,
                 chainFallbackTime: 30,
-                challengeTime: 30
+                evidenceTime: 30
             },
             mockP2pEventHooks as any,
             mockStorage as any

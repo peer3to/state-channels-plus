@@ -75,7 +75,10 @@ class DisputeManager {
         forkId: ForkId,
         selfRemoval: boolean = false,
         timeoutOptions?: TimeoutOptions
-    ): Promise<void> {
+    ): Promise<{
+        dispute: DisputeStruct;
+        disputeConfirmation: DisputeConfirmationStruct;
+    }> {
         const latestBlockHeight =
             this.storage.blocks.getNextBlockHeight(forkId) - 1;
 
@@ -214,6 +217,8 @@ class DisputeManager {
         };
 
         this.stateChannelManagerContract.uploadDispute(disputeConfirmation);
+
+        return { dispute, disputeConfirmation };
     }
 
     public getAuditingData(
@@ -307,23 +312,6 @@ class DisputeManager {
 
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
         this.p2pEventHooks = p2pEventHooks;
-    }
-
-    public async isDisputeValid(
-        dispute: DisputeStruct,
-        auditingData: DisputeAuditingDataStruct
-    ): Promise<boolean> {
-        try {
-            return await this.diamondStateMachine.localDiamondContract.isDisputeValid(
-                dispute,
-                auditingData
-            );
-        } catch (error) {
-            console.warn(
-                `Dispute validation failed: ${error instanceof Error ? error.message : String(error)}`
-            );
-            return false;
-        }
     }
 }
 

@@ -174,7 +174,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
             p2pTime: 1000,
             agreementTime: 2000,
             chainFallbackTime: 3000,
-            challengeTime: 4000
+            evidenceTime: 4000
         };
 
         mockChannelId = "0xchannel";
