@@ -1,4 +1,3 @@
-import { LocalDiamond } from "@typechain-types";
 import {
     BlockConfirmationStruct,
     SignedBlockStruct,
@@ -12,13 +11,14 @@ import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
 import { ChannelId, Timestamp, Address, Hash, ForkId } from "@/types/types";
 import Storage from "@/storage";
+import ADiamondStateMachine from "@/ADiamondStateMachine";
 
 export class EventHandler {
     constructor(
         private storage: Storage,
         private stateManager: StateManager,
         private p2pEventHooks: P2pEventHooks,
-        private localDiamondContract: LocalDiamond
+        private diamondStateMachine: ADiamondStateMachine
     ) {}
 
     async onStateSnapshotUpdated(
@@ -36,7 +36,7 @@ export class EventHandler {
             );
         }
 
-        this.localDiamondContract.onStateSnapshotUpdated(
+        this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
             channelId,
             stateSnapshot,
             timestamp
@@ -49,7 +49,7 @@ export class EventHandler {
         signedBlock: SignedBlockStruct,
         timestamp: Timestamp
     ): void {
-        this.localDiamondContract.onBlockCalldataPosted(
+        this.diamondStateMachine.localDiamondContract.onBlockCalldataPosted(
             channelId,
             sender,
             signedBlock,
@@ -74,16 +74,29 @@ export class EventHandler {
         throw new Error("TODO - Not implemented");
     }
 
-    onChainSlashed(
+    async onChainSlashed(
         channelId: ChannelId,
         participant: Address,
         timestamp: Timestamp
-    ): void {
-        this.localDiamondContract.onOnChainSlashAdded(
+    ): Promise<void> {
+        this.diamondStateMachine.localDiamondContract.onOnChainSlashAdded(
             channelId,
             participant,
             timestamp
         );
+        const latestFork = this.stateManager.latestForkId;
+        const isDisputed =
+            await this.diamondStateMachine.localDiamondContract.isForkDisputed(
+                channelId,
+                latestFork
+            );
+        const participants = await this.diamondStateMachine.getParticipants();
+        if (!isDisputed && participants.includes(participant.toString())) {
+            await this.stateManager.disputeManager.createDispute(
+                latestFork,
+                false
+            );
+        }
     }
 
     onDisputeReducedResultCommitted(
@@ -95,7 +108,7 @@ export class EventHandler {
         reducer: Address
     ): void {
         throw new Error("TODO - Not implemented");
-        this.localDiamondContract.onDisputeReducedResultCommitted(
+        this.diamondStateMachine.localDiamondContract.onDisputeReducedResultCommitted(
             channelId,
             forkId,
             reducedForkId,
@@ -106,7 +119,7 @@ export class EventHandler {
     }
 
     onWithdrawalsUpdated(channelId: ChannelId, totalWithdrawals: any): void {
-        this.localDiamondContract.onWithdrawalsUpdated(
+        this.diamondStateMachine.localDiamondContract.onWithdrawalsUpdated(
             channelId,
             totalWithdrawals
         );
@@ -116,7 +129,7 @@ export class EventHandler {
         channelId: ChannelId,
         latestJoinChannelBlockHash: Hash
     ): void {
-        this.localDiamondContract.onChannelStorageCleared(
+        this.diamondStateMachine.localDiamondContract.onChannelStorageCleared(
             channelId,
             latestJoinChannelBlockHash
         );
@@ -127,7 +140,11 @@ export class EventHandler {
         forkId: ForkId,
         disputer: Address
     ): void {
-        this.localDiamondContract.onDisputeKilled(channelId, forkId, disputer);
+        this.diamondStateMachine.localDiamondContract.onDisputeKilled(
+            channelId,
+            forkId,
+            disputer
+        );
     }
 
     onJoinChannelProcessed(
@@ -136,7 +153,7 @@ export class EventHandler {
         timestamp: Timestamp,
         totalDeposits: any
     ): void {
-        this.localDiamondContract.onJoinChannelProcessed(
+        this.diamondStateMachine.localDiamondContract.onJoinChannelProcessed(
             channelId,
             joinChannelBlock,
             timestamp,
@@ -154,7 +171,9 @@ export class EventHandler {
         incomingSnapshot: StateSnapshotStruct
     ): Promise<boolean> {
         const previousOnChainSnapshot =
-            await this.localDiamondContract.getStateSnapshot(channelId);
+            await this.diamondStateMachine.localDiamondContract.getStateSnapshot(
+                channelId
+            );
 
         if (previousOnChainSnapshot.forkId === incomingSnapshot.forkId) {
             return (

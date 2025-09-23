@@ -120,7 +120,7 @@ class StateManager {
                 this.storage,
                 this.self,
                 this.p2pEventHooks,
-                this.diamondStateMachine.localDiamondContract
+                this.diamondStateMachine
             ),
             this.diamondStateMachine.localDiamondContract
         );
