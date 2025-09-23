@@ -87,7 +87,7 @@ export class EventHandler {
         const isRelevant =
             await this.diamondStateMachine.localDiamondContract.isDisputeWindowRelevant(
                 channelId,
-                dispute
+                dispute.outputSnapshotDataHash // forkId
             );
         if (!isRelevant) {
             return;
@@ -264,16 +264,42 @@ export class EventHandler {
         );
     }
 
-    onDisputeKilled(
+    async onDisputeKilled(
         channelId: ChannelId,
         forkId: ForkId,
         disputer: Address
-    ): void {
+    ): Promise<void> {
         this.diamondStateMachine.localDiamondContract.onDisputeKilled(
             channelId,
             forkId,
             disputer
         );
+        // disconnect disputer
+        this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+            disputer
+        );
+
+        // is window deleted?
+        const isWindowDeleted =
+            await this.diamondStateMachine.localDiamondContract.isDisputeWindowDeleted(
+                channelId,
+                forkId
+            );
+        if (!isWindowDeleted) return;
+
+        //isDisputeWindowRelevant?
+        const isRelevant =
+            await this.diamondStateMachine.localDiamondContract.isDisputeWindowRelevant(
+                channelId,
+                forkId
+            );
+        if (!isRelevant) return;
+        // cancel setTimeout/wait for reduce forkId
+        // TODO
+        // What does that mean?
+
+        // create new dispute
+        await this.stateManager.disputeManager.createDispute(forkId, false);
     }
 
     onJoinChannelProcessed(
