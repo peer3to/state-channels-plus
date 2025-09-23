@@ -20,8 +20,9 @@ contract DisputeManagerFacet is StateChannelCommon {
         require(dispute.input.disputeAuditingDataHash == disputeAuditingDataHash, ErrorAuditingDataHashMismatch());
         _uploadDispute(disputeConfirmation, true);
         bytes32 forkId = _getDisputeFork(dispute);
-        DisputeData storage disputeData = disputeData[dispute.input.channelId];
-        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[forkId];
+
+        DisputeWindow storage disputeWindow = disputeData[dispute.input.channelId].disputeWindowMap[forkId];
+
         emit DisputeCommittedWithAuditingData(
             dispute.input.channelId,
             dispute,
