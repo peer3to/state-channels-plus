@@ -96,14 +96,32 @@ export class EventHandler {
                     dispute.input.disputeAuditingDataHash,
                     dispute.input.stateProof
                 );
-            if (!isPartial) {
-                await this.stateManager.setState(
-                    auditingData.latestStateStateMachineState,
-                    dispute.outputSnapshotDataHash,
-                    disputeCreationTimestamp
-                );
+            if (isPartial) {
+                throw new Error("DisputeCommitted: Auditing data is partial");
             }
+            await this.stateManager.setState(
+                auditingData.latestStateStateMachineState,
+                dispute.outputSnapshotDataHash,
+                disputeCreationTimestamp
+            );
+            return;
         }
+        // not final
+        let auditingData: DisputeAuditingDataStruct;
+        if (disputeAuditingData) {
+            auditingData = disputeAuditingData;
+        } else {
+            const { isPartial, auditingData: constructedAuditingData } =
+                this.stateManager.disputeManager.getAuditingData(
+                    dispute.input.disputeAuditingDataHash,
+                    dispute.input.stateProof
+                );
+            if (isPartial) {
+                throw new Error("DisputeCommitted: Auditing data is partial");
+            }
+            auditingData = constructedAuditingData;
+        }
+        // audit / check all dispute fraud proofs
     }
 
     async onChainSlashed(
