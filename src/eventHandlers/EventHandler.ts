@@ -89,24 +89,6 @@ export class EventHandler {
         if (!isRelevant) {
             return;
         }
-        if (isFinal) {
-            // set fork, no audit, no challenge, finalize dispute window and build immediately on the fork
-            const { isPartial, auditingData } =
-                this.stateManager.disputeManager.getAuditingData(
-                    dispute.input.disputeAuditingDataHash,
-                    dispute.input.stateProof
-                );
-            if (isPartial) {
-                throw new Error("DisputeCommitted: Auditing data is partial");
-            }
-            await this.stateManager.setState(
-                auditingData.latestStateStateMachineState,
-                dispute.outputSnapshotDataHash,
-                disputeCreationTimestamp
-            );
-            return;
-        }
-        // not final
         let auditingData: DisputeAuditingDataStruct;
         if (disputeAuditingData) {
             auditingData = disputeAuditingData;
@@ -121,7 +103,34 @@ export class EventHandler {
             }
             auditingData = constructedAuditingData;
         }
-        // audit / check all dispute fraud proofs
+        if (isFinal) {
+            await this.stateManager.setState(
+                auditingData.latestStateStateMachineState,
+                dispute.outputSnapshotDataHash,
+                disputeCreationTimestamp
+            );
+            return;
+        }
+
+        // not final - validate dispute and challenge if invalid
+        const isValid = await this.stateManager.disputeManager.isDisputeValid(
+            dispute,
+            auditingData
+        );
+
+        if (!isValid) {
+            // Dispute is invalid - challenge it on the StateChannelManager
+            await this.stateManager.stateChannelManagerContract.challengeDispute(
+                dispute,
+                auditingData
+            );
+            // diconnect participant
+            this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                dispute.input.disputer
+            );
+            return;
+        }
+        // Dispute is valid
     }
 
     async onChainSlashed(
@@ -133,6 +142,9 @@ export class EventHandler {
             channelId,
             participant,
             timestamp
+        );
+        this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+            participant
         );
         const latestFork = this.stateManager.latestForkId;
         const isDisputed =

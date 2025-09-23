@@ -320,4 +320,26 @@ contract LocalDiamond is StateChannelManagerProxy {
 
         return false;
     }
+
+    function isDisputeValid(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+        public
+        view
+        returns (bool isValid)
+    {
+        DisputeVerificationFacet facet = DisputeVerificationFacet(disputeVerificationFacetAddress);
+
+        if (!facet.isCorrectAuditingData(dispute, disputeAuditingData)) {
+            return false;
+        }
+
+        if (!facet.verifyStateProof(dispute, disputeAuditingData, true)) {
+            return false;
+        }
+
+        if (!verifyBalanceInvariantCheckView(dispute, disputeAuditingData)) {
+            return false;
+        }
+
+        return true;
+    }
 }

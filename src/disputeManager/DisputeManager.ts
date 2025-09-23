@@ -23,7 +23,7 @@ import ADiamondStateMachine from "../ADiamondStateMachine";
 import {
     StateProofStruct,
     TimeoutStruct
-} from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
 
@@ -307,6 +307,23 @@ class DisputeManager {
 
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
         this.p2pEventHooks = p2pEventHooks;
+    }
+
+    public async isDisputeValid(
+        dispute: DisputeStruct,
+        auditingData: DisputeAuditingDataStruct
+    ): Promise<boolean> {
+        try {
+            return await this.diamondStateMachine.localDiamondContract.isDisputeValid(
+                dispute,
+                auditingData
+            );
+        } catch (error) {
+            console.warn(
+                `Dispute validation failed: ${error instanceof Error ? error.message : String(error)}`
+            );
+            return false;
+        }
     }
 }
 
