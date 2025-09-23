@@ -7,10 +7,15 @@ import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Codec, Type } from "@/utils";
 import { ethers } from "ethers";
+import { JoinChannelBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export interface SnapshotPayload {
     latestForkGenesisSnapshot: StateSnapshot;
-    disputeWindows?: DisputeStruct[][];
+    forkData?: {
+        disputeWindow: DisputeStruct[];
+        encodedState: Bytes;
+        joinChannelBlocks: JoinChannelBlockStruct[];
+    }[];
     stateProof?: StateProofStruct;
     milestoneSnapshots?: StateSnapshot[];
     encodedState?: Bytes;
@@ -190,8 +195,12 @@ class SpectateService extends ARpcService {
             )
         );
 
-        // Traverse from on-chain snapshot to latest fork, collecting disputes per dispute window
-        const disputeWindows: DisputeStruct[][] = [];
+        // Traverse from on-chain snapshot to latest fork, collecting fork data
+        const forkData: {
+            disputeWindow: DisputeStruct[];
+            encodedState: Bytes;
+            joinChannelBlocks: JoinChannelBlockStruct[];
+        }[] = [];
         let currentForkId = currentOnChainSnapshot.forkId;
         let isDisputed =
             await stateManager.stateChannelManagerContract.isForkDisputed(
@@ -227,8 +236,6 @@ class SpectateService extends ARpcService {
                     currentWindowDisputes.push(dispute);
                 }
 
-                disputeWindows.push(currentWindowDisputes);
-
                 // After collecting disputes for this window, reduce to get the next fork
                 const creationTimestamp =
                     await stateManager.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
@@ -241,8 +248,69 @@ class SpectateService extends ARpcService {
                         creationTimestamp
                     );
 
-                // Move to the next fork based on reduce result
-                currentForkId = reducedOutput.latestBlock.stateSnapshotHash;
+                // Get the current fork's state snapshot and encoded state
+                const currentForkSnapshot =
+                    currentForkId === currentOnChainSnapshot.forkId
+                        ? currentOnChainSnapshot
+                        : latestForkGenesisSnapshot;
+
+                // Get the encoded state for this fork
+                const currentForkEncodedState =
+                    stateManager.storage.stateMachineStates.getStateMachineState(
+                        currentForkSnapshot.snapshotData.stateMachineStateHash
+                    );
+                if (!currentForkEncodedState) {
+                    throw new Error(
+                        `No encoded state found for fork ${currentForkId}`
+                    );
+                }
+
+                // Get join channel blocks for this fork
+                const currentForkJoinChannelBlocks: JoinChannelBlockStruct[] =
+                    [];
+                const latestJoinChannelBlockHash =
+                    currentForkSnapshot.snapshotData.latestJoinChannelBlockHash;
+
+                if (latestJoinChannelBlockHash) {
+                    // Traverse the join channel block chain to collect all blocks for this fork
+                    let currentJoinBlockHash = latestJoinChannelBlockHash;
+                    while (currentJoinBlockHash) {
+                        const joinChannelBlockEntry =
+                            stateManager.storage.joinChannelBlocks.getJoinChannelBlockEntry(
+                                currentJoinBlockHash
+                            );
+                        if (joinChannelBlockEntry) {
+                            currentForkJoinChannelBlocks.unshift(
+                                joinChannelBlockEntry.block
+                            );
+                            currentJoinBlockHash =
+                                joinChannelBlockEntry.block.previousBlockHash;
+                        } else {
+                            break; // Block not found in storage
+                        }
+                    }
+                }
+
+                // Add this fork's data
+                forkData.push({
+                    disputeWindow: currentWindowDisputes,
+                    encodedState: currentForkEncodedState,
+                    joinChannelBlocks: currentForkJoinChannelBlocks
+                });
+
+                // Move to the next fork using local EVM computeDisputeOutputSnapshotData
+                // Use the first dispute's input for computing output snapshot data
+                const disputeInput = currentWindowDisputes[0]?.input;
+                const snapshotData =
+                    await stateManager.diamondStateMachine.computeDisputeOutputSnapshotData(
+                        disputeInput,
+                        currentForkSnapshot.toStruct(),
+                        currentForkEncodedState,
+                        reducedOutput.latestJoinChannelBlockHash
+                    );
+                currentForkId = ethers.keccak256(
+                    Codec.encode(snapshotData, Type.SnapshotData)
+                );
                 isDisputed =
                     await stateManager.stateChannelManagerContract.isForkDisputed(
                         channelId,
@@ -254,12 +322,12 @@ class SpectateService extends ARpcService {
             }
         }
 
-        console.log(`Collected ${disputeWindows.length} dispute windows`);
+        console.log(`Collected ${forkData.length} fork data entries`);
 
         // Return payload with all available data
         return {
             latestForkGenesisSnapshot,
-            ...(disputeWindows.length > 0 && { disputeWindows }),
+            ...(forkData.length > 0 && { forkData }),
             ...(latestStateProof && { stateProof: latestStateProof }),
             ...(milestoneSnapshots.length > 0 && { milestoneSnapshots }),
             ...(encodedState && { encodedState })
@@ -321,12 +389,10 @@ class SpectateService extends ARpcService {
 
                 // No existing reduced result, use the disputes provided by participant
                 if (
-                    snapshotPayload.disputeWindows &&
-                    snapshotPayload.disputeWindows.length > 0
+                    snapshotPayload.forkData &&
+                    snapshotPayload.forkData.length > 0
                 ) {
-                    // Pop the next dispute window
-                    const currentWindowDisputes =
-                        snapshotPayload.disputeWindows.shift()!;
+                    const currentForkData = snapshotPayload.forkData.shift()!;
 
                     const creationTimestamp =
                         await stateManager.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
@@ -337,17 +403,34 @@ class SpectateService extends ARpcService {
                     // Reduce only this window
                     const reducedOutput =
                         await stateManager.stateChannelManagerContract.reduceProxyView(
-                            currentWindowDisputes,
+                            currentForkData.disputeWindow,
                             creationTimestamp
                         );
                     console.log(
                         `Computed reduced output: forkGenesisTimestamp=${reducedOutput.forkGenesisTimestamp}`
                     );
 
-                    // Move to next fork
-                    const nextForkId =
-                        reducedOutput.latestBlock.stateSnapshotHash;
-                    currentForkId = nextForkId;
+                    // Move to next fork: derive winningForkId by calling the contract
+                    // Get the current fork's state snapshot
+                    const currentForkSnapshot =
+                        currentForkId === onChainSnapshot.forkId
+                            ? onChainSnapshot
+                            : snapshotPayload.latestForkGenesisSnapshot;
+
+                    // Compute SnapshotData locally using the EVM diamond instead of proxy view
+                    const disputeInput =
+                        currentForkData.disputeWindow[0]?.input;
+                    const snapshotData =
+                        await stateManager.diamondStateMachine.computeDisputeOutputSnapshotData(
+                            disputeInput,
+                            currentForkSnapshot.toStruct(),
+                            currentForkData.encodedState,
+                            reducedOutput.latestJoinChannelBlockHash
+                        );
+
+                    currentForkId = ethers.keccak256(
+                        Codec.encode(snapshotData, Type.SnapshotData)
+                    );
                     isDisputed =
                         await stateManager.stateChannelManagerContract.isForkDisputed(
                             channelId,
@@ -385,7 +468,7 @@ class SpectateService extends ARpcService {
 
                 // Use verifyMilestonesProxyView
                 const isValid =
-                    await stateManager.stateChannelManagerContract.verifyMilestonesProxyView(
+                    await stateManager.stateChannelManagerContract.verifyMilestones(
                         snapshotPayload.stateProof.milestones,
                         snapshotPayload.milestoneSnapshots || [],
                         participantProvidedSnapshot.toStruct()
