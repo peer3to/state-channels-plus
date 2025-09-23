@@ -43,18 +43,17 @@ struct DisputeFraudProof {
 }
 
 enum DisputeFraudProofType {
-    // Timeout related fraud proofs
-    TimeoutThreshold,
-    TimeoutCalldataPosted, //usefull when force timeout is used maliciously
-    TimeoutParticipantNotNext, // this can also be done in auditing instead
-    TimeoutTooEarly,
-    // Dispute fraud proofs
     DisputeNotLatestState,
-    DisputeInvalid,
-    DisputeInvalidRecursive,
-    DisputeOutOfGas,
     DisputeInvalidOutputState,
-    DisputeInvalidStateProof,
-    DisputeInvalidPreviousRecursive,
-    DisputeInvalidExitChannelBlocks
+    DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifed,
+    DisputeInvalidStateProofWithAuditingDataIntegrityVerifed,
+    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks,
+    DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed,
+    DisputeInvalidBalanceInvariant,
+    DisputeOnChainSlashesNotSubset,
+    TimeoutThreshold,
+    TimeoutCalldataPosted,
+    TimeoutNotLinkedToLatestState,
+    TimeoutParticipantNotNext,
+    TimeoutTooEarly
 }

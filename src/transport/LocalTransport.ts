@@ -19,7 +19,7 @@ class LocalTransport extends ATransport {
     }
     onMessage(data: any): void {
         this.p2pManager.localRpcService.senderTransport = this;
-        let serializedRPC = data.toString();
+        const serializedRPC = data.toString();
         this.p2pManager.onRpc(serializedRPC);
     }
     _close(): void {

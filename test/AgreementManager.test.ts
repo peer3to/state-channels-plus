@@ -956,7 +956,7 @@ describe("AgreementManager", () => {
                 blockConfirmations: [block.blockConfirmationStruct]
             };
 
-            const result = agreementManager.getSnapshot(milestone);
+            const result = agreementManager.getSnapshotFromMilestone(milestone);
 
             expect(result).to.not.be.undefined;
             expect(result!.hash).to.equal(snapshot.hash);
@@ -968,7 +968,7 @@ describe("AgreementManager", () => {
             };
 
             expect(() => {
-                agreementManager.getSnapshot(emptyMilestone);
+                agreementManager.getSnapshotFromMilestone(emptyMilestone);
             }).to.throw("Cannot get snapshot from empty milestone");
         });
 
@@ -992,7 +992,7 @@ describe("AgreementManager", () => {
             };
 
             expect(() => {
-                agreementManager.getSnapshot(milestone);
+                agreementManager.getSnapshotFromMilestone(milestone);
             }).to.throw("Milestone built but corresponding snapshot not found");
         });
     });

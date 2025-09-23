@@ -36,6 +36,5 @@ contract MathStateChannelManagerProxy is StateChannelManagerProxy {
         agreementTime = 5;
         chainFallbackTime = 5;
         evidenceTime = 5;
-        killTime = 10;
     }
 }
