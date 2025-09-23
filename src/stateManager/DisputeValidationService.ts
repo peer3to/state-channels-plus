@@ -23,8 +23,6 @@ export default class DisputeValidationService {
         private readonly diamondStateMachine: ADiamondStateMachine,
         private readonly stateChannelManagerContract: StateChannelManagerProxy,
         private readonly timeConfig: TimeConfig,
-        private readonly channelId: ChannelId,
-        private readonly getForkId: () => ForkId,
         private readonly disputeManager: DisputeManager,
         private readonly agreementManager: AgreementManager
     ) {

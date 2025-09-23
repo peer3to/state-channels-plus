@@ -191,9 +191,7 @@ describe("ValidationService.validateBlockConfirmation", () => {
             mockStorage,
             mockStateMachine,
             mockStateChannelManagerContract,
-            mockTimeConfig,
-            mockChannelId,
-            mockGetForkId
+            mockTimeConfig
         );
     });
 
