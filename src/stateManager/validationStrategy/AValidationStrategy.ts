@@ -16,6 +16,8 @@ export default abstract class AValidationStrategy {
         block: BlockConfirmationStruct
     ): Promise<BlockValidationResult>;
 
+    public abstract wrongChannel(block: Block): Promise<BlockValidationResult>;
+
     public abstract channelNotOpened(
         block: Block
     ): Promise<BlockValidationResult>;

@@ -56,6 +56,9 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     ): Promise<BlockValidationResult> {
         return BlockValidationResult.DISCONNECT;
     }
+    public async wrongChannel(block: Block): Promise<BlockValidationResult> {
+        return BlockValidationResult.DISCONNECT;
+    }
     public async channelNotOpened(
         block: Block
     ): Promise<BlockValidationResult> {

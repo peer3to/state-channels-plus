@@ -30,9 +30,8 @@ struct FraudProof {
 enum FraudProofType {
     // Block releated fraud proofs
     BlockDoubleSign,
-    BlockEmptyBlock,
     BlockInvalidStateTransition,
-    BlockOutOfGas
+    WrongGenesis
 }
 
 struct DisputeFraudProof {

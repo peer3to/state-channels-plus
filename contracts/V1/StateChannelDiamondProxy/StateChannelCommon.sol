@@ -168,6 +168,23 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return stateSnapshots[channelId].snapshotData.participants.length > 0;
     }
 
+    function decodeBlock(bytes memory encodedBlock) public pure returns (Block memory) {
+        return abi.decode(encodedBlock, (Block));
+    }
+
+    function isBlockAuthentic(SignedBlock memory _block) public view returns (bool) {
+        // try decode block
+        bytes memory data = abi.encodeCall(this.decodeBlock, (_block.encodedBlock));
+        (bool success, bytes memory encodedBlock) = address(this).staticcall(data);
+        if (!success) return false;
+        Block memory decodedBlock = abi.decode(encodedBlock, (Block));
+        address signer = StateChannelUtilLibrary.retriveSignerAddress(encodedBlock, _block.signature);
+        if (signer != decodedBlock.transaction.header.participant) {
+            return false;
+        }
+        return true;
+    }
+
     function _applyJoins(
         bytes memory encodedStateMachineState,
         JoinChannelBlock[] memory joinChannelBlocks,

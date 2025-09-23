@@ -16,6 +16,7 @@ import { Address, ChannelId, ForkId, Hash, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
+import StateManager from "./StateManager";
 
 export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
@@ -23,7 +24,8 @@ export default class ValidationService {
         private readonly storage: Storage,
         private readonly diamondStateMachine: ADiamondStateMachine,
         private readonly stateChannelManagerContract: StateChannelManagerProxy,
-        private readonly timeConfig: TimeConfig
+        private readonly timeConfig: TimeConfig,
+        private readonly stateManager: StateManager
     ) {
         this.fraudProofService = new FraudProofService(this.storage);
     }
@@ -35,8 +37,15 @@ export default class ValidationService {
         const forkId = block.forkId;
         const channelId = block.channelId;
 
+        // Check is correct channel
+        if (
+            !this.stateManager.channelId ||
+            block.channelId != this.stateManager.channelId
+        )
+            return await strategy.wrongChannel(block);
+
         // Check if channel is open
-        if (!this.isChannelOpen(forkId)) {
+        if (!this.isChannelOpen(this.stateManager.forkId)) {
             return await strategy.channelNotOpened(block);
         }
 
@@ -125,27 +134,6 @@ export default class ValidationService {
             return false;
         }
         return prevBlock.hash === block.previousBlockHash;
-    }
-
-    authenticateBlock(
-        blockConfirmation: BlockConfirmationStruct,
-        channelId: ChannelId,
-        onChainTimestamp?: Timestamp
-    ): Block | undefined {
-        let block: Block;
-
-        try {
-            block = Block.fromBlockConfirmation(
-                blockConfirmation,
-                onChainTimestamp
-            );
-            if (block.channelId !== channelId) return;
-            if (block.signerAddress !== block.author) return;
-        } catch (error) {
-            return;
-        }
-
-        return block;
     }
 
     private async checkDuplicateBlock(

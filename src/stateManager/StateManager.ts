@@ -136,7 +136,8 @@ class StateManager {
             this.storage,
             this.diamondStateMachine,
             this.stateChannelManagerContract,
-            this.timeConfig
+            this.timeConfig,
+            this
         );
         this.disputeValidationService = new DisputeValidationService(
             this.storage,
@@ -281,13 +282,12 @@ class StateManager {
             await this.mutex.lock();
             let validationResult: BlockValidationResult =
                 BlockValidationResult.SUCCESS;
+            const isAuthentic =
+                await this.diamondStateMachine.localDiamondContract.isBlockAuthentic(
+                    blockConfirmation.signedBlock
+                );
 
-            const block = this.validationService.authenticateBlock(
-                blockConfirmation,
-                this.channelId,
-                onChainTimestamp
-            );
-            if (!block) {
+            if (!isAuthentic) {
                 validationResult =
                     await strategy.authenticateBlockFailed(blockConfirmation);
                 return await strategy.interpretFinalValidationResult(
@@ -295,12 +295,16 @@ class StateManager {
                 );
             }
 
-            if (validationResult == BlockValidationResult.SUCCESS)
-                validationResult =
-                    await this.validationService.validateBlockConfirmation(
-                        block,
-                        strategy
-                    );
+            const block = Block.fromBlockConfirmation(
+                blockConfirmation,
+                onChainTimestamp
+            );
+
+            validationResult =
+                await this.validationService.validateBlockConfirmation(
+                    block,
+                    strategy
+                );
 
             if (validationResult !== BlockValidationResult.SUCCESS) {
                 // handle all non-success actions
