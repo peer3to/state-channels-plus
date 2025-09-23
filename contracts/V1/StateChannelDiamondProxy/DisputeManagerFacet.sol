@@ -32,30 +32,6 @@ contract DisputeManagerFacet is StateChannelCommon {
         );
     }
 
-    function uploadDisputeAndAudit(
-        DisputeConfirmation memory disputeConfirmation,
-        DisputeAuditingData memory disputeAuditingData
-    ) public {
-        //first audit -> update on-chain slashes -> reduced threshold
-        Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
-        address[] memory slashes = StateChannelManagerProxy(address(this)).auditDispute(dispute, disputeAuditingData);
-        for (uint256 i = 0; i < slashes.length; i++) {
-            addOnChainSlashedParticipant(dispute.input.channelId, slashes[i]);
-        }
-        _uploadDispute(disputeConfirmation, true);
-        bytes32 forkId = _getDisputeFork(dispute);
-        DisputeData storage disputeData = disputeData[dispute.input.channelId];
-        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[forkId];
-        emit DisputeCommittedWithAuditingData(
-            dispute.input.channelId,
-            dispute,
-            block.timestamp,
-            true,
-            disputeWindow.evidence.creationTimestamp,
-            disputeAuditingData
-        );
-    }
-
     function commitToReducedResult(bytes32 channelId, bytes32 disputedForkId, bytes32 reducedForkId) public {
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputedForkId];
