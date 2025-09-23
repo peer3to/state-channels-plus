@@ -323,10 +323,10 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     function verifyMilestones(
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
-        StateSnapshot memory genesisSnapshot
+        SnapshotData memory genesisSnapshotData
     ) public view returns (bool isValid, bytes memory lastBlockEncoded) {
         return DisputeVerificationFacet(address(this)).verifyMilestones(
-            milestoneProofs, milestoneSnapshots, genesisSnapshot
+            milestoneProofs, milestoneSnapshots, genesisSnapshotData
         );
     }
 

@@ -5,8 +5,14 @@ import {
     AStateMachine as AStateMachineContract,
     LocalDiamond
 } from "@typechain-types";
-import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { DisputeInputStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    JoinChannelBlockStruct,
+    TransactionStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    DisputeInputStruct,
+    ReduceOutputStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 import StateManager from "@/stateManager";
 import Clock from "@/Clock";
@@ -308,6 +314,35 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         } catch (error) {
             throw this.createContextError(
                 "computeDisputeOutputSnapshotData",
+                error
+            );
+        }
+    }
+
+    async computeReducedOutputSnapshotData(
+        reducedOutput: ReduceOutputStruct,
+        latestStateSnapshot: StateSnapshotStruct,
+        latestStateMachineState: Bytes,
+        joinChannelBlocks: JoinChannelBlockStruct[]
+    ): Promise<SnapshotDataStruct> {
+        const callData = this.localDiamondContract.interface.encodeFunctionData(
+            "computeReducedOutputSnapshotData",
+            [
+                reducedOutput,
+                latestStateSnapshot,
+                latestStateMachineState,
+                joinChannelBlocks
+            ]
+        );
+
+        try {
+            return Codec.decodeEvmResult<SnapshotDataStruct>(
+                await this.diamontContractExecuter.executeCall(callData),
+                SnapshotDataEthersType
+            );
+        } catch (error) {
+            throw this.createContextError(
+                "computeReducedOutputSnapshotData",
                 error
             );
         }

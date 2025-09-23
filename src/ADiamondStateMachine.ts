@@ -1,7 +1,9 @@
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Address, Bytes, ChannelId, Hash } from "./types/types";
+import { ReduceOutputStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { LocalDiamond } from "@typechain-types/index";
+import { JoinChannelBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeAuditingDataStruct,
     DisputeInputStruct,
@@ -47,6 +49,12 @@ abstract class ADiamondStateMachine {
         latestStateSnapshot: StateSnapshotStruct,
         latestStateMachineState: Bytes,
         latestJoinChannelBlockHash: Hash
+    ): Promise<SnapshotDataStruct>;
+    public abstract computeReducedOutputSnapshotData(
+        reducedOutput: ReduceOutputStruct,
+        latestStateSnapshot: StateSnapshotStruct,
+        latestStateMachineState: Bytes,
+        joinChannelBlocks: JoinChannelBlockStruct[]
     ): Promise<SnapshotDataStruct>;
     public abstract isDisputeOutputCorrect(
         dispute: DisputeStruct,

@@ -200,6 +200,25 @@ contract LocalDiamond is StateChannelManagerProxy {
         (outputSnapshotData,) = abi.decode(returnData, (SnapshotData, address[]));
     }
 
+    function computeReducedOutputSnapshotData(
+        ReduceOutput memory reducedOutput,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory latestStateMachineState,
+        JoinChannelBlock[] memory joinChannelBlocks
+    ) public view returns (SnapshotData memory outputSnapshotData) {
+        bytes memory data = abi.encodeCall(
+            DisputeVerificationFacet.computeReducedOutputSnapshotData,
+            (reducedOutput, latestStateSnapshot, latestStateMachineState, joinChannelBlocks)
+        );
+        (bool success, bytes memory returnData) = address(this).staticcall(data);
+        if (!success) {
+            assembly {
+                revert(add(returnData, 0x20), mload(returnData))
+            }
+        }
+        outputSnapshotData = abi.decode(returnData, (SnapshotData));
+    }
+
     function checkDisputeAuditingDataCommitment(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         public
         view
