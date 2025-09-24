@@ -110,7 +110,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     public async wrongGenesisDetected(
         block: Block
     ): Promise<BlockValidationResult> {
-        //TODO
+        this.fraudProofService.createWrongGenesisProof(block);
         throw new Error("Not implemented");
         // TODO this.disputeManager.createDispute()
         return BlockValidationResult.DISPUTE;
