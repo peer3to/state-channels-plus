@@ -1,7 +1,4 @@
-import {
-    BlockConfirmationStruct,
-    SignedBlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 import { StateChannelManagerProxy } from "@typechain-types";
 import { ZeroHash } from "ethers";

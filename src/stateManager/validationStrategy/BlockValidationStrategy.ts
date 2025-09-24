@@ -1,15 +1,8 @@
-import { Block, StateSnapshot } from "@/models";
+import { Block } from "@/models";
 import { BlockValidationResult } from "@/types";
-import { Bytes, Address } from "@/types/types";
-import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
-import {
-    BlockConfirmationStruct,
-    ExitChannelBlockStruct
-} from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 import AValidationStrategy from "./AValidationStrategy";
 import FraudProofService from "../utils/FraudProofService";
-import ADiamondStateMachine from "@/ADiamondStateMachine";
-import { StateChannelManagerProxy } from "@typechain-types/index";
 import Storage from "@/storage";
 import P2PManager from "@/P2PManager";
 import DisputeManager from "@/disputeManager";

@@ -1,11 +1,6 @@
-import { Block, StateSnapshot } from "@/models";
+import { Block } from "@/models";
 import { BlockValidationResult } from "@/types";
-import { Address, Bytes } from "@/types/types";
-import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
-import {
-    BlockConfirmationStruct,
-    ExitChannelBlockStruct
-} from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 export default abstract class AValidationStrategy {
     public abstract interpretFinalValidationResult(

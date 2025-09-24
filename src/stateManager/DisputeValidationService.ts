@@ -5,7 +5,7 @@ import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Storage from "@/storage";
 import { Codec, isSubset, Type } from "@/utils";
 import { TimeConfig } from "@/types";
-import { Address, ChannelId, ForkId } from "@/types/types";
+import { Address } from "@/types/types";
 
 import DisputeFraudProofService from "./utils/DisputeFraudProofService";
 import {
