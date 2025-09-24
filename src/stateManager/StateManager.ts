@@ -65,6 +65,8 @@ import {
 
 import FraudProofService from "./utils/FraudProofService";
 import DisputeValidationService from "./DisputeValidationService";
+import AValidationStrategy from "./validationStrategy/AValidationStrategy";
+import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
 
 const DEBUG_STATE_MANAGER = false;
 
@@ -90,6 +92,7 @@ class StateManager {
     storage: Storage;
     fraudProofService: FraudProofService;
     private latestForkId: ForkId = NULL;
+    defaultValidationStrategy: AValidationStrategy;
 
     constructor(
         signer: ethers.Signer,
@@ -134,18 +137,20 @@ class StateManager {
             this.diamondStateMachine,
             this.stateChannelManagerContract,
             this.timeConfig,
-            this.channelId,
-            () => this.forkId
+            this
         );
         this.disputeValidationService = new DisputeValidationService(
             this.storage,
             this.diamondStateMachine,
             this.stateChannelManagerContract,
             this.timeConfig,
-            this.channelId,
-            () => this.forkId,
             this.disputeManager,
             this.agreementManager
+        );
+        this.defaultValidationStrategy = new BlockValidationStrategy(
+            this.storage,
+            this.p2pManager,
+            this.disputeManager
         );
     }
     //Mark resources for garbage collection
@@ -267,54 +272,45 @@ class StateManager {
     // returns false -> the calling context should disconnect from the peer
     public async onBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct,
-        onChainTimestamp?: Timestamp
+        onChainTimestamp?: Timestamp,
+        validationStrategy?: AValidationStrategy
     ): Promise<boolean> {
         // the try/catch is to ensure that the mutex is unlocked in case of an error
         // no error is actually expected to happen, and the catch block just re-throws the error
+        const strategy = validationStrategy || this.defaultValidationStrategy;
         try {
             await this.mutex.lock();
+            let validationResult: BlockValidationResult =
+                BlockValidationResult.SUCCESS;
+            const isAuthentic =
+                await this.diamondStateMachine.localDiamondContract.isBlockAuthentic(
+                    blockConfirmation.signedBlock
+                );
 
-            const block = this.validationService.authenticateBlock(
+            if (!isAuthentic) {
+                validationResult =
+                    await strategy.authenticateBlockFailed(blockConfirmation);
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
+            }
+
+            const block = Block.fromBlockConfirmation(
                 blockConfirmation,
-                this.channelId,
                 onChainTimestamp
             );
 
-            if (!block) {
-                // disconnect
-                return false;
-            }
-
-            const validationResult =
-                await this.validationService.validateBlockConfirmation(block);
+            validationResult =
+                await this.validationService.validateBlockConfirmation(
+                    block,
+                    strategy
+                );
 
             if (validationResult !== BlockValidationResult.SUCCESS) {
                 // handle all non-success actions
-                switch (validationResult) {
-                    case BlockValidationResult.NOT_READY:
-                        // do nothing, do not disconnect
-                        return true;
-                    case BlockValidationResult.DUPLICATE:
-                        // do nothing, do not disconnect
-                        return true;
-                    case BlockValidationResult.NOT_ENOUGH_TIME:
-                        // do nothing, do not disconnect
-                        return true;
-                    case BlockValidationResult.DISCONNECT:
-                        // disconnect
-                        return false;
-
-                    case BlockValidationResult.BROADCAST:
-                        this.p2pManager.rpcProxy
-                            .onBlockConfirmation(block.blockConfirmationStruct)
-                            .broadcast();
-                        return true;
-                    case BlockValidationResult.DISPUTE:
-                        await this.dispute(blockConfirmation);
-                        return false;
-                    default:
-                        return true;
-                }
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
             }
 
             // SUCCESS, continue with state transition validation
@@ -328,10 +324,11 @@ class StateManager {
             } = await this.applyTransaction(block.transaction);
 
             if (!success) {
-                this.fraudProofService.createInvalidStateTransitionProof(block);
-                await this.dispute(blockConfirmation);
-                // disconnect
-                return false;
+                validationResult =
+                    await strategy.invalidStateTransitionDetected(block);
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
             }
 
             // Validate state snapshot hash
@@ -344,18 +341,22 @@ class StateManager {
                 );
 
             if (stateSnapshot.hash !== block.stateSnapshotHash) {
-                this.fraudProofService.createInvalidStateTransitionProof(block);
-                await this.dispute(blockConfirmation);
-                return false;
+                validationResult =
+                    await strategy.invalidStateTransitionDetected(block);
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
             }
 
             if (hash(encodedState) === stateSnapshot.stateMachineStateHash) {
-                this.fraudProofService.createInvalidStateTransitionProof(block);
-                await this.dispute(blockConfirmation);
-                // disconnect
-                return false;
+                validationResult =
+                    await strategy.invalidStateTransitionDetected(block);
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
             }
 
+            // TODO - apply strategy here too
             // All validations passed - proceed with success action
             this.success(
                 block,

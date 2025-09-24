@@ -1,7 +1,4 @@
-import {
-    BlockConfirmationStruct,
-    SignedBlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 import { StateChannelManagerProxy } from "@typechain-types";
 import { ZeroHash } from "ethers";
@@ -15,6 +12,8 @@ import { BlockValidationResult, TimeConfig } from "@/types";
 import { Address, ChannelId, ForkId, Hash, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
+import AValidationStrategy from "./validationStrategy/AValidationStrategy";
+import StateManager from "./StateManager";
 
 export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
@@ -23,23 +22,28 @@ export default class ValidationService {
         private readonly diamondStateMachine: ADiamondStateMachine,
         private readonly stateChannelManagerContract: StateChannelManagerProxy,
         private readonly timeConfig: TimeConfig,
-        private readonly channelId: ChannelId,
-        private readonly getForkId: () => ForkId
+        private readonly stateManager: StateManager
     ) {
         this.fraudProofService = new FraudProofService(this.storage);
     }
 
     async validateBlockConfirmation(
-        block: Block
+        block: Block,
+        strategy: AValidationStrategy
     ): Promise<BlockValidationResult> {
-        const forkId = this.getForkId();
-        const channelId = this.channelId;
+        const forkId = block.forkId;
+        const channelId = block.channelId;
+
+        // Check is correct channel
+        if (
+            !this.stateManager.channelId ||
+            block.channelId != this.stateManager.channelId
+        )
+            return await strategy.wrongChannel(block);
 
         // Check if channel is open
-        if (!this.isChannelOpen(forkId)) {
-            // not ready
-            this.storage.queues.queueBlock(block);
-            return BlockValidationResult.DISCONNECT;
+        if (!this.isChannelOpen(this.stateManager.forkId)) {
+            return await strategy.channelNotOpened(block);
         }
 
         //  Get participants
@@ -49,7 +53,11 @@ export default class ValidationService {
         );
 
         // Check duplicate blocks
-        const duplicateResult = this.checkDuplicateBlock(block, participants);
+        const duplicateResult = await this.checkDuplicateBlock(
+            block,
+            participants,
+            strategy
+        );
 
         if (duplicateResult !== BlockValidationResult.SUCCESS) {
             return duplicateResult;
@@ -57,48 +65,44 @@ export default class ValidationService {
 
         // Author is a participant
         if (!participants.has(block.author)) {
-            return BlockValidationResult.DISCONNECT;
+            return await strategy.blockAuthorIsNotParticipant(block);
         }
 
         // Check conflicting block
-        const conflictResult = this.checkConflictingBlock(block);
+        const conflictResult = await this.checkConflictingBlock(
+            block,
+            strategy
+        );
         if (conflictResult !== BlockValidationResult.SUCCESS) {
             return conflictResult;
         }
 
         if (await this.isDisputedFork(block.forkId, channelId)) {
-            // not ready
-            this.storage.queues.queueBlock(block);
-            return BlockValidationResult.NOT_READY;
+            return await strategy.blockForkIsDisputed(block);
         }
 
         // isNext
         if (block.height > this.storage.blocks.getNextBlockHeight(forkId)) {
-            // not ready
-            this.storage.queues.queueBlock(block);
-            return BlockValidationResult.NOT_READY;
+            return await strategy.blockIsNotNextAndIsInTheFuture(block);
         }
 
         // Is linked
         if (!this.isLinked(block)) {
             // if first block -> wrong genesis fraud proof
             if (block.height === 0) {
-                this.fraudProofService.createWrongGenesisProof(block);
-                return BlockValidationResult.DISPUTE;
+                return await strategy.wrongGenesisDetected(block);
             }
-            return BlockValidationResult.DISCONNECT;
+            return await strategy.blockIsNotLinkedAndIsNotFirstBlock(block);
         }
 
         // isNextLeader
         const nextLeader = await this.diamondStateMachine.getNextToWrite();
         if (nextLeader !== block.author) {
-            // create invalid state transition proof
-            this.fraudProofService.createInvalidStateTransitionProof(block);
-            return BlockValidationResult.DISPUTE;
+            return await strategy.invalidStateTransitionDetected(block);
         }
 
         // Time logic
-        const timeResult = await this.validateTimeLogic(block);
+        const timeResult = await this.validateTimeLogic(block, strategy);
 
         return timeResult;
     }
@@ -129,31 +133,11 @@ export default class ValidationService {
         return prevBlock.hash === block.previousBlockHash;
     }
 
-    authenticateBlock(
-        blockConfirmation: BlockConfirmationStruct,
-        channelId: ChannelId,
-        onChainTimestamp?: Timestamp
-    ): Block | undefined {
-        let block: Block;
-
-        try {
-            block = Block.fromBlockConfirmation(
-                blockConfirmation,
-                onChainTimestamp
-            );
-            if (block.channelId !== channelId) return;
-            if (block.signerAddress !== block.author) return;
-        } catch (error) {
-            return;
-        }
-
-        return block;
-    }
-
-    private checkDuplicateBlock(
+    private async checkDuplicateBlock(
         block: Block,
-        participants: Set<Address>
-    ): BlockValidationResult {
+        participants: Set<Address>,
+        strategy: AValidationStrategy
+    ): Promise<BlockValidationResult> {
         // 1. Check if block is in queue
         if (
             this.storage.queues.isBlockQueued(block, {
@@ -164,7 +148,7 @@ export default class ValidationService {
             const areAllParticipants = isSubset(signerAddresses, participants);
 
             if (!areAllParticipants) {
-                return BlockValidationResult.DISCONNECT;
+                return await strategy.notAllSingersAreParticipants(block);
             }
 
             // Store in queue (handles signature merging automatically)
@@ -184,7 +168,7 @@ export default class ValidationService {
 
             // no new signatures
             if (newSignatures.size === 0) {
-                return BlockValidationResult.DUPLICATE;
+                return await strategy.noNewSignaturesOnExistingBlock(block);
             }
 
             // Validate new signatures are from participants
@@ -200,18 +184,19 @@ export default class ValidationService {
             );
 
             if (!areNewSignersParticipants) {
-                return BlockValidationResult.DISCONNECT;
+                return await strategy.notAllSingersAreParticipants(block);
             }
 
-            // Store new signatures and indicate broadcast
-            this.storage.blocks.storeBlock(block);
-            return BlockValidationResult.BROADCAST;
+            return await strategy.goodNewSignaturesOnExistingBlock(block);
         }
 
         return BlockValidationResult.SUCCESS;
     }
 
-    private checkConflictingBlock(block: Block): BlockValidationResult {
+    private async checkConflictingBlock(
+        block: Block,
+        strategy: AValidationStrategy
+    ): Promise<BlockValidationResult> {
         // conflicting block ?
         const maybePreExistingBlock = this.storage.blocks.getBlock(
             block.forkId,
@@ -226,28 +211,20 @@ export default class ValidationService {
         const conflictingBlock = maybePreExistingBlock;
 
         if (conflictingBlock.author === block.author) {
-            // DOUBLE SIGN
-            this.fraudProofService.createDoubleSignProof(
-                conflictingBlock,
-                block
-            );
-            return BlockValidationResult.DISPUTE;
+            return await strategy.doubleSignDetected(conflictingBlock, block);
         }
 
         // If not linked we can't slash since the peer could have been building on the wrong 'reality' since someone performed a double sign
         if (this.isLinked(block)) {
-            this.fraudProofService.createInvalidStateTransitionProof(block);
-            return BlockValidationResult.DISPUTE;
+            return await strategy.invalidStateTransitionDetected(block);
         }
 
         // if first block -> wrong genesis
         if (conflictingBlock.height === 0) {
-            //TODO
-            throw new Error("Not implemented");
-            return BlockValidationResult.DISPUTE;
+            return await strategy.wrongGenesisDetected(block);
         }
 
-        return BlockValidationResult.DISCONNECT;
+        return await strategy.conflictingButNotLinkedBlockDetected(block);
     }
 
     private async isDisputedFork(
@@ -269,7 +246,8 @@ export default class ValidationService {
      * fetching a better on-chain timestamp if needed.
      */
     private async validateTimeLogic(
-        block: Block
+        block: Block,
+        strategy: AValidationStrategy
     ): Promise<BlockValidationResult> {
         // Calculate previousTimestamp
         let previousTimestamp: Timestamp;
@@ -303,8 +281,7 @@ export default class ValidationService {
                 previousBlock.onChainTimestamp !== undefined
             ) {
                 // Already has best timestamp - persist InvalidTimestamp fraud proof
-                this.fraudProofService.createInvalidTimestampProof(block);
-                return BlockValidationResult.DISPUTE;
+                return await strategy.objectiveInvalidTimestampDetected(block);
             }
 
             // Try on-chain query to update previous block on-chain timestamp
@@ -317,8 +294,7 @@ export default class ValidationService {
                 previousBlockOnChainTimestamp <= previousTimestamp
             ) {
                 // False - persist InvalidTimestamp fraud proof
-                this.fraudProofService.createInvalidTimestampProof(block);
-                return BlockValidationResult.DISPUTE;
+                return await strategy.objectiveInvalidTimestampDetected(block);
             }
 
             // True - Update the previous block with the on-chain timestamp
@@ -329,14 +305,13 @@ export default class ValidationService {
             );
 
             // previousBlockOnChainTimestamp set - rerun validation - this time we have all the data to deduct the result
-            return this.validateTimeLogic(block);
+            return this.validateTimeLogic(block, strategy);
         }
 
         // OBJECTIVE: Check if block was posted too late on-chain
         if (await this.isPostedOnChainTooLate(previousTimestamp, block)) {
             // Block posted too late - create InvalidTimestamp fraud proof
-            this.fraudProofService.createInvalidTimestampProof(block);
-            return BlockValidationResult.DISPUTE;
+            return await strategy.objectiveInvalidTimestampDetected(block);
         }
 
         if (block.onChainTimestamp !== undefined)
@@ -348,7 +323,7 @@ export default class ValidationService {
             this.timeConfig.agreementTime;
 
         if (!receivedWithinAgreementTime) {
-            return BlockValidationResult.NOT_ENOUGH_TIME;
+            return await strategy.subjectiveInvalidTimestampDetected(block);
         }
 
         return BlockValidationResult.SUCCESS;

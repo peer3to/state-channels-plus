@@ -5,7 +5,7 @@ import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Storage from "@/storage";
 import { Codec, isSubset, Type } from "@/utils";
 import { TimeConfig } from "@/types";
-import { Address, ChannelId, ForkId } from "@/types/types";
+import { Address } from "@/types/types";
 
 import DisputeFraudProofService from "./utils/DisputeFraudProofService";
 import {
@@ -23,8 +23,6 @@ export default class DisputeValidationService {
         private readonly diamondStateMachine: ADiamondStateMachine,
         private readonly stateChannelManagerContract: StateChannelManagerProxy,
         private readonly timeConfig: TimeConfig,
-        private readonly channelId: ChannelId,
-        private readonly getForkId: () => ForkId,
         private readonly disputeManager: DisputeManager,
         private readonly agreementManager: AgreementManager
     ) {
