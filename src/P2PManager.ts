@@ -49,7 +49,7 @@ class P2PManager implements IOnMessage {
             transport.send(serializedRPC);
         }
     }
-    public onRpc(serializedRpc: string) {
+    public onRpc(serializedRpc: string, senderTransport?: ATransport) {
         try {
             let rpc = deserializeRpc(serializedRpc);
             if (!rpc) {
@@ -60,8 +60,23 @@ class P2PManager implements IOnMessage {
                 //TODO!Disconnect
                 return;
             }
-            //TODO! set context - calling socket/profile (ATransport)!
-            this.localRpcService[rpc.method](...rpc.params);
+
+            // Execute RPC with transport context - transport is required
+            if (senderTransport) {
+                this.localRpcService.executeWithTransport(
+                    senderTransport,
+                    () => {
+                        (this.localRpcService as any)[rpc.method](
+                            ...rpc.params
+                        );
+                    }
+                );
+            } else {
+                // Error: RPC execution requires a sender transport
+                throw new Error(
+                    `RPC execution failed: no sender transport provided for method '${rpc.method}'`
+                );
+            }
         } catch (e) {
             //TODO - disconnect from peer
             console.error(e);

@@ -18,9 +18,8 @@ class LocalTransport extends ATransport {
         this.ws.send(serializedRPC);
     }
     onMessage(data: any): void {
-        this.p2pManager.localRpcService.senderTransport = this;
         const serializedRPC = data.toString();
-        this.p2pManager.onRpc(serializedRPC);
+        this.p2pManager.onRpc(serializedRPC, this);
     }
     _close(): void {
         if (this.ws && this.ws.readyState === this.ws.OPEN) {

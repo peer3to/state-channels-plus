@@ -16,7 +16,7 @@ class StateTransitionService extends ARpcService {
             );
         if (!keepConnection) {
             // Disconnect from peer and blacklist them
-            const senderTransport = this.mainRpcService.senderTransport;
+            const senderTransport = this.getCurrentSenderTransport();
             if (senderTransport) {
                 this.mainRpcService.p2pManager.disconnectAndBlacklistPeer(
                     senderTransport

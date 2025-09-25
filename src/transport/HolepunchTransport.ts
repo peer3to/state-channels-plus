@@ -34,10 +34,9 @@ class HolepunchTransport extends ATransport {
         this.holepunchSocket.write(serializedRPC);
     }
     onMessage(data: any): void {
-        this.p2pManager.localRpcService.senderTransport = this;
         const serializedRPC = data.toString();
         console.log("RECEIVED RPC", serializedRPC);
-        this.p2pManager.onRpc(serializedRPC);
+        this.p2pManager.onRpc(serializedRPC, this);
     }
     _close(): void {
         console.log("closing holepunch socket");

@@ -58,13 +58,16 @@ class InitHandshakeService extends ARpcService {
                 challengeHashBytes
             );
         console.log(`onInitHandshakeRequest - done`);
-        this.mainRpcService.rpcProxy
-            .onInitHandshakeResponse(
-                signature,
-                localTime,
-                this.mainRpcService.p2pManager.preferredTransport
-            )
-            .sendOne(this.mainRpcService.senderTransport!);
+        let senderTransport = this.getCurrentSenderTransport();
+        if (senderTransport) {
+            this.mainRpcService.rpcProxy
+                .onInitHandshakeResponse(
+                    signature,
+                    localTime,
+                    this.mainRpcService.p2pManager.preferredTransport
+                )
+                .sendOne(senderTransport);
+        }
     }
 
     public async onInitHandshakeResponse(
@@ -73,7 +76,7 @@ class InitHandshakeService extends ARpcService {
         preferredTransport: TransportType
     ) {
         console.log(`onInitHandshakeRESPONSE - start`);
-        let senderTransport = this.mainRpcService.senderTransport;
+        let senderTransport = this.getCurrentSenderTransport();
         if (!senderTransport) throw new Error("senderTransport is undefined");
         let challenge = this.getChallenge(senderTransport);
         if (!challenge) {

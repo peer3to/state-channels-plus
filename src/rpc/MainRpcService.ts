@@ -31,8 +31,8 @@ class MainRpcService {
     p2pManager: P2PManager;
     rpcProxy = RpcProxy.createProxy(this);
 
-    //execution context
-    senderTransport: ATransport | undefined; //TODO! set this
+    //execution context - using context approach instead of shared variable
+    private currentTransport: ATransport | undefined;
     self = DEBUG_RPC ? DebugProxy.createProxy(this) : this;
 
     //RPC Services
@@ -46,6 +46,26 @@ class MainRpcService {
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
         return this.self;
+    }
+
+    /**
+     * Execute an RPC method with transport context
+     */
+    public executeWithTransport<T>(transport: ATransport, fn: () => T): T {
+        const previousTransport = this.currentTransport;
+        this.currentTransport = transport;
+        try {
+            return fn();
+        } finally {
+            this.currentTransport = previousTransport;
+        }
+    }
+
+    /**
+     * Get the current sender transport from context
+     */
+    public getCurrentSenderTransport(): ATransport | undefined {
+        return this.currentTransport;
     }
 
     // ********************* InitHandskaheService *********************
