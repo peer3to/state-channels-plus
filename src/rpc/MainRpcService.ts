@@ -19,7 +19,7 @@ import {
     WebRTCSetupService,
     SpectateService
 } from "./services";
-import { SnapshotPayload } from "./services/SpectateService";
+import { SyncPayload } from "./services/SpectateService";
 import { DEBUG_RPC } from "@/utils/config";
 import { Address, ChannelId, Hash, Signature, Timestamp } from "@/types/types";
 
@@ -135,7 +135,7 @@ class MainRpcService {
 
     public async onSpectateResponse(
         channelId: ChannelId,
-        snapshotPayload: SnapshotPayload,
+        snapshotPayload: SyncPayload,
         responseTime: Timestamp
     ) {
         this.spectateService.onSpectateResponse(

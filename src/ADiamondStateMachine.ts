@@ -50,7 +50,8 @@ abstract class ADiamondStateMachine {
         latestStateMachineState: Bytes,
         latestJoinChannelBlockHash: Hash
     ): Promise<SnapshotDataStruct>;
-    public abstract computeReducedOutputSnapshotData(
+    public abstract reduceOutputToSnapshotData(
+        forkId: Hash,
         reducedOutput: ReduceOutputStruct,
         latestStateSnapshot: StateSnapshotStruct,
         latestStateMachineState: Bytes,

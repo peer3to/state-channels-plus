@@ -75,7 +75,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         if (disputeData[channelId].disputeWindowMap[newSnapshot.forkId].evidence.creationTimestamp == 0) {
             _clearStorage(channelId, newSnapshot.snapshotData.latestJoinChannelBlockHash);
         }
-        emit StateSnapshotUpdated(channelId, newSnapshot, block.timestamp);
+        emit StateSnapshotUpdated(channelId, newSnapshot);
     }
 
     function _verifyMilestones(

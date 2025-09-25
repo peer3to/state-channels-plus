@@ -81,7 +81,7 @@ class P2PManager implements IOnMessage {
         this.openConnections.push(transport);
         this.localRpcService.initHandshakeService.initHandshake(transport);
     }
-    public removeConnection(transport: ATransport) {
+    public disconnectConnection(transport: ATransport) {
         this.openConnections = this.openConnections.filter(
             (t) => t !== transport
         );
@@ -92,7 +92,7 @@ class P2PManager implements IOnMessage {
     public disconnectAndBlacklistPeer(transport: ATransport) {
         this.profileManager.getProfileByTransport(transport)?.blacklist();
 
-        this.removeConnection(transport);
+        this.disconnectConnection(transport);
     }
 
     public isBlacklisted(evmAddress: Address): boolean {
@@ -104,7 +104,7 @@ class P2PManager implements IOnMessage {
 
     public disconnectAll() {
         for (let transport of this.openConnections) {
-            this.removeConnection(transport);
+            this.disconnectConnection(transport);
         }
     }
 }

@@ -319,15 +319,17 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
     }
 
-    async computeReducedOutputSnapshotData(
+    async reduceOutputToSnapshotData(
+        forkId: Hash,
         reducedOutput: ReduceOutputStruct,
         latestStateSnapshot: StateSnapshotStruct,
         latestStateMachineState: Bytes,
         joinChannelBlocks: JoinChannelBlockStruct[]
     ): Promise<SnapshotDataStruct> {
         const callData = this.localDiamondContract.interface.encodeFunctionData(
-            "computeReducedOutputSnapshotData",
+            "reduceOutputToSnapshotData",
             [
+                forkId,
                 reducedOutput,
                 latestStateSnapshot,
                 latestStateMachineState,
@@ -341,10 +343,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                 SnapshotDataEthersType
             );
         } catch (error) {
-            throw this.createContextError(
-                "computeReducedOutputSnapshotData",
-                error
-            );
+            throw this.createContextError("reduceOutputToSnapshotData", error);
         }
     }
 

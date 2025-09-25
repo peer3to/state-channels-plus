@@ -43,7 +43,7 @@ class HolepunchTransport extends ATransport {
         console.log("closing holepunch socket");
         this.holepunchPeerInfo.ban(true);
         this.holepunchSocket.end();
-        this.p2pManager.removeConnection(this);
+        this.p2pManager.disconnectConnection(this);
         //TODO! unban if transports are empty
 
         // setTimeout(() => {

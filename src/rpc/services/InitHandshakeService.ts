@@ -29,6 +29,11 @@ class InitHandshakeService extends ARpcService {
         this.mainRpcService.rpcProxy
             .onInitHandshakeRequest(randomChallengeHash, time)
             .sendOne(transport);
+        // expect a response or disconnect
+        setTimeout(() => {
+            if (!this.didRespond(transport))
+                this.mainRpcService.p2pManager.disconnectConnection(transport);
+        }, this.mainRpcService.p2pManager.stateManager.timeConfig.agreementTime);
     }
 
     public async onInitHandshakeRequest(challengeHash: Hash, time: Timestamp) {
@@ -76,9 +81,12 @@ class InitHandshakeService extends ARpcService {
         let senderTransport = this.mainRpcService.senderTransport;
         if (!senderTransport) throw new Error("senderTransport is undefined");
         let challenge = this.getChallenge(senderTransport);
+        this.mapTransportToChallenge.delete(senderTransport);
         if (!challenge) {
             // TODO! Disconnect
-            this.mainRpcService.p2pManager.removeConnection(senderTransport);
+            this.mainRpcService.p2pManager.disconnectConnection(
+                senderTransport
+            );
             return;
         }
         let localTime = Clock.getTimeInSeconds();
@@ -88,7 +96,9 @@ class InitHandshakeService extends ARpcService {
             this.mainRpcService.p2pManager.stateManager.timeConfig.agreementTime
         ) {
             // TODO! Disconnect
-            this.mainRpcService.p2pManager.removeConnection(senderTransport);
+            this.mainRpcService.p2pManager.disconnectConnection(
+                senderTransport
+            );
             return;
         }
         if (
@@ -96,7 +106,9 @@ class InitHandshakeService extends ARpcService {
             this.mainRpcService.p2pManager.stateManager.timeConfig.agreementTime
         ) {
             // TODO! Disconnect
-            this.mainRpcService.p2pManager.removeConnection(senderTransport);
+            this.mainRpcService.p2pManager.disconnectConnection(
+                senderTransport
+            );
             return;
         }
         //verify signature
@@ -108,7 +120,9 @@ class InitHandshakeService extends ARpcService {
             console.log(
                 `Rejecting handshake from blacklisted peer: ${signerAddress}`
             );
-            this.mainRpcService.p2pManager.removeConnection(senderTransport);
+            this.mainRpcService.p2pManager.disconnectConnection(
+                senderTransport
+            );
             return;
         }
 
@@ -169,10 +183,15 @@ class InitHandshakeService extends ARpcService {
     ) {
         this.mapTransportToChallenge.set(transport, challenge);
     }
+
     private getChallenge(
         transport: ATransport
     ): ConnectionChallenge | undefined {
         return this.mapTransportToChallenge.get(transport);
+    }
+
+    private didRespond(transport: ATransport): boolean {
+        return !this.getChallenge(transport);
     }
 }
 

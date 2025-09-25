@@ -60,61 +60,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
         });
     }
 
-    /**
-     * @notice Compute SnapshotData directly from an aggregated ReduceOutput
-     * @dev Mirrors the finalize step after reduce, including join-channel linkage verification
-     */
-    function computeReducedOutputSnapshotData(
-        ReduceOutput memory reducedOutput,
-        StateSnapshot memory latestStateSnapshot,
-        bytes memory latestStateMachineState,
-        JoinChannelBlock[] memory joinChannelBlocks
-    ) public returns (SnapshotData memory outputSnapshotData) {
-        // verify snapshot linked to reducedOutput.latestBlock
-        Block memory latestBlock = reducedOutput.latestBlock;
-        require(
-            latestBlock.stateSnapshotHash == keccak256(abi.encode(latestStateSnapshot)), ErrorInvalidStateSnapshot()
-        );
-        // verify encoded state linked to snapshot
-        require(
-            latestStateSnapshot.snapshotData.stateMachineStateHash == keccak256(latestStateMachineState),
-            ErrorInvalidLatestState()
-        );
-
-        // verify JoinChannelBlocks linkage up to reducedOutput.latestJoinChannelBlockHash
-        require(
-            _verifyJoinChannelBlocks(
-                latestStateSnapshot.snapshotData.latestJoinChannelBlockHash,
-                reducedOutput.latestJoinChannelBlockHash,
-                joinChannelBlocks
-            ),
-            ErrorDisputeJoinChannelBlocksInvalid()
-        );
-
-        // Build removals from reduced output (selfRemovals plus timeout participant if applicable)
-        address[] memory removals = reducedOutput.selfRemovals;
-        if (reducedOutput.timeout.participant != address(0) && reducedOutput.slashedParticipants.length == 0) {
-            removals =
-                StateChannelUtilLibrary.insertIntoAddressArrayNoDuplicates(removals, reducedOutput.timeout.participant);
-        }
-
-        // Apply slashes/removals to state machine locally; joins provided for linkage and state accounting
-        DisputeOutputState memory outputState = generateDisputeOutputState(
-            latestStateMachineState, reducedOutput.slashedParticipants, removals, joinChannelBlocks, latestStateSnapshot
-        );
-
-        // Compose SnapshotData
-        outputSnapshotData = SnapshotData({
-            originForkId: latestStateSnapshot.forkId,
-            stateMachineStateHash: keccak256(outputState.encodedModifiedState),
-            participants: getStatemachineParticipants(outputState.encodedModifiedState),
-            latestJoinChannelBlockHash: reducedOutput.latestJoinChannelBlockHash,
-            latestExitChannelBlockHash: keccak256(abi.encode(outputState.exitBlock)),
-            totalDeposits: outputState.totalDeposits,
-            totalWithdrawals: outputState.totalWithdrawals
-        });
-    }
-
     function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public {
         uint256 gasLimit = getGasLimit();
         bytes memory data = abi.encodeCall(DisputeVerificationFacet.auditDispute, (dispute, disputeAuditingData));

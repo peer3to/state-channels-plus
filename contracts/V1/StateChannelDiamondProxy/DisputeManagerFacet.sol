@@ -58,7 +58,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp; // kill period recalculated from here
         } else {
             require(!_isEvidencePeriodExpired(disputeWindow, getEvidenceTime()), ErrorDisputeEvidencePeriodExpired());
-            require(!disputeWindow.evidence.hasPosted[dispute.input.disputer], ErrorDisputeAlreadyPosted());
+            require(!_hadParticipantPostedEvidence(disputeWindow, dispute.input.disputer), ErrorDisputeAlreadyPosted());
             disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp; // kill period recalculated from here
         }
 
@@ -80,7 +80,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             bytes32 c = keccak256(abi.encode(dispute));
             disputeWindow.evidence.disputeCommitments.push(c);
         }
-        disputeWindow.evidence.hasPosted[dispute.input.disputer] = true; //disputer has posted the dispute
+        disputeWindow.evidence.hasPosted.push(dispute.input.disputer); //disputer has posted the dispute
         emit DisputeCommitted(
             dispute.input.channelId,
             dispute,

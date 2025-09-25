@@ -3,6 +3,7 @@ import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
 import { ChannelId, Timestamp, Address, Hash } from "@/types/types";
+import { StateSnapshotStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 //TODO - made a PR to ethers.js to fix Deferred Topic Filter
 
@@ -53,6 +54,16 @@ class StateChannelEventListener {
         );
         this.p2pEventHooks.onPostedCalldata?.();
         this.stateManager.collectOnChainBlock(signedBlock, timestamp);
+    }
+
+    public handleStateSnapshotUpdated(
+        channelId: ChannelId,
+        stateSnapshot: StateSnapshotStruct
+    ): void {
+        this.localDiamondContract.onStateSnapshotUpdated(
+            channelId,
+            stateSnapshot
+        );
     }
 
     //Mark resources for garbage collection
@@ -156,12 +167,8 @@ class StateChannelEventListener {
                     channelId
                 ),
             handler: (logObj: any) => {
-                const { channelId, stateSnapshot, timestamp } = logObj.args;
-                this.localDiamondContract.onStateSnapshotUpdated(
-                    channelId,
-                    stateSnapshot,
-                    timestamp
-                );
+                const { channelId, stateSnapshot } = logObj.args;
+                this.handleStateSnapshotUpdated(channelId, stateSnapshot);
             }
         },
         OnChainSlashAdded: {

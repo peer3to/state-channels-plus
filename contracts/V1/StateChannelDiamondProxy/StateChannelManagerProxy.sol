@@ -325,7 +325,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         StateSnapshot[] memory milestoneSnapshots,
         SnapshotData memory genesisSnapshotData
     ) public view returns (bool isValid, bytes memory lastBlockEncoded) {
-        return DisputeVerificationFacet(address(this)).verifyMilestones(
+        return DisputeVerificationFacet(disputeVerificationFacetAddress).verifyMilestones(
             milestoneProofs, milestoneSnapshots, genesisSnapshotData
         );
     }
@@ -444,5 +444,24 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
             require(success, ErrorDisputeStateMachineRemovingFailed());
         }
         return (stateMachineImplementation.getState(), exitChannels);
+    }
+
+    function isKillPeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        return _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+    }
+
+    function getDisputeWindows(bytes32 channelId, bytes32[] memory forkIds)
+        public
+        view
+        returns (DisputeWindow[] memory)
+    {
+        DisputeWindow[] memory disputeWindows = new DisputeWindow[](forkIds.length);
+        DisputeData storage disputeData = disputeData[channelId];
+        for (uint256 i = 0; i < forkIds.length; i++) {
+            disputeWindows[i] = disputeData.disputeWindowMap[forkIds[i]];
+        }
+        return disputeWindows;
     }
 }

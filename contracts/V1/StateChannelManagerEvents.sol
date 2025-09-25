@@ -23,7 +23,7 @@ interface StateChannelManagerEvents {
         bytes32 indexed channelId, bytes32 disputeHash, DisputeAuditingData disputeAuditingData
     );
 
-    event StateSnapshotUpdated(bytes32 indexed channelId, StateSnapshot stateSnapshot, uint256 timestamp);
+    event StateSnapshotUpdated(bytes32 indexed channelId, StateSnapshot stateSnapshot);
 
     event JoinChannelProcessed(
         bytes32 indexed channelId, JoinChannelBlock joinChannelBlock, uint256 timestamp, Balance totalDeposits
