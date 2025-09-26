@@ -291,32 +291,4 @@ contract LocalDiamond is StateChannelManagerProxy {
             dispute, disputeAuditingData, auditingDataIntegrityVerified
         );
     }
-
-    function isDisputeWindowRelevant(bytes32 channelId, bytes32 disputedForkId) external view returns (bool) {
-        StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
-        DisputeData storage disputeData = disputeData[channelId];
-
-        bytes32 currentForkId = currentStateSnapshot.forkId;
-
-        if (currentForkId == disputedForkId) {
-            return true;
-        }
-
-        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[currentForkId];
-
-        while (
-            disputeWindow.reducedResult.forkId != bytes32(0)
-                && _isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime())
-        ) {
-            currentForkId = disputeWindow.reducedResult.forkId;
-
-            if (currentForkId == disputedForkId) {
-                return true;
-            }
-
-            disputeWindow = disputeData.disputeWindowMap[currentForkId];
-        }
-
-        return false;
-    }
 }

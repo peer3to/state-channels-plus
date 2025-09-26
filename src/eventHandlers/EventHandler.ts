@@ -14,7 +14,6 @@ import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { isEqual } from "lodash";
 import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
-import { scheduleTask } from "@/utils";
 
 export class EventHandler {
     constructor(
@@ -30,8 +29,6 @@ export class EventHandler {
         timestamp: Timestamp
     ): Promise<void> {
         if (!(await this.isSnapshotInPast(channelId, stateSnapshot))) {
-            // TODO: tryRecover
-
             throw new Error(
                 "StateSnapshotUpdated: Rejected snapshot for channel " +
                     channelId +
@@ -85,10 +82,7 @@ export class EventHandler {
 
         // isDisputeWindowRelevant?
         const isRelevant =
-            await this.diamondStateMachine.localDiamondContract.isDisputeWindowRelevant(
-                channelId,
-                dispute.outputSnapshotDataHash // forkId
-            );
+            this.stateManager.forkId === dispute.outputSnapshotDataHash;
         if (!isRelevant) {
             return;
         }
@@ -133,17 +127,6 @@ export class EventHandler {
                 counterDisputeConfirmation
             );
         }
-        // wait killPeriod to expire
-        scheduleTask(
-            () => this.onKillPeriodExpired(dispute),
-            this.stateManager.timeConfig.evidenceTime * 1000
-        );
-    }
-    private async onKillPeriodExpired(dispute: DisputeStruct): Promise<void> {
-        // Reduce, set fork,
-        // optionally finalize or commit to finalized result for dispute window,
-        //  start building on fork immediately
-        //  TODO
     }
 
     private async getOrConstructAuditingData(
@@ -288,15 +271,8 @@ export class EventHandler {
         if (!isWindowDeleted) return;
 
         //isDisputeWindowRelevant?
-        const isRelevant =
-            await this.diamondStateMachine.localDiamondContract.isDisputeWindowRelevant(
-                channelId,
-                forkId
-            );
+        const isRelevant = this.stateManager.forkId === forkId;
         if (!isRelevant) return;
-        // cancel setTimeout/wait for reduce forkId
-        // TODO
-        // What does that mean?
 
         // create new dispute
         await this.stateManager.disputeManager.createDispute(forkId, false);
