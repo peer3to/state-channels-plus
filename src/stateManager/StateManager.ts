@@ -61,6 +61,7 @@ import {
     ChannelId,
     ForkId,
     Hash,
+    ReductionTimeoutHandle,
     Timestamp
 } from "@/types/types";
 
@@ -72,7 +73,6 @@ import BlockValidationStrategy from "./validationStrategy/BlockValidationStrateg
 const DEBUG_STATE_MANAGER = false;
 
 const NULL = "0x00";
-
 class StateManager {
     diamondStateMachine: ADiamondStateMachine;
     p2pEventHooks: P2pEventHooks;
@@ -94,6 +94,7 @@ class StateManager {
     fraudProofService: FraudProofService;
     latestForkId: ForkId = NULL;
     defaultValidationStrategy: AValidationStrategy;
+    reductionTriggerMap: Map<ForkId, ReductionTimeoutHandle> = new Map();
 
     constructor(
         signer: ethers.Signer,
@@ -142,7 +143,7 @@ class StateManager {
             this.diamondStateMachine,
             this.stateChannelManagerContract,
             this.timeConfig,
-            this
+            this.self
         );
         this.disputeValidationService = new DisputeValidationService(
             this.storage,
@@ -173,6 +174,26 @@ class StateManager {
     }
     public getChannelId(): ChannelId {
         return this.channelId;
+    }
+    public setReductionTimeout(forkId: ForkId, triggerTimestamp: number) {
+        const reductionHandle = this.reductionTriggerMap.get(forkId);
+        if (
+            this.forkId == forkId &&
+            (!reductionHandle ||
+                reductionHandle.triggerTimestamp < triggerTimestamp)
+        ) {
+            if (reductionHandle) clearTimeout(reductionHandle.handle);
+            const delayInMilliseconds =
+                (triggerTimestamp - Clock.getTimeInSeconds()) * 1000;
+            const newHandle = setTimeout(() => {
+                //TODO - implement after PR
+                // check locally can we reduce
+                // double check on-chain can we reduce
+                // reduce on-chain
+                // if success setState
+                // if failure interpret error
+            }, delayInMilliseconds);
+        }
     }
     public getSignerAddress(): Address {
         return this.signerAddress;
@@ -1055,6 +1076,7 @@ class StateManager {
             // if the  the block is invalid, the signer will get slashed
             this.stateChannelEventListener.eventHandler.onBlockCalldataPosted(
                 this.channelId,
+                blockCalldataCommitment,
                 participantAddress,
                 onChainResult.signedBlock,
                 onChainResult.timestamp

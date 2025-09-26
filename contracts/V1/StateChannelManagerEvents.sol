@@ -6,7 +6,13 @@ import "./types/DataTypes.sol";
 interface StateChannelManagerEvents {
     event StateSnapshotUpdated(bytes32 indexed channelId, StateSnapshot stateSnapshot, uint256 timestamp);
 
-    event BlockCalldataPosted(bytes32 indexed channelId, address sender, SignedBlock signedBlock, uint256 timestamp);
+    event BlockCalldataPosted(
+        bytes32 indexed channelId,
+        bytes32 indexed commitmentHash,
+        address sender,
+        SignedBlock signedBlock,
+        uint256 timestamp
+    );
 
     event DisputeCommitted(
         bytes32 indexed channelId,

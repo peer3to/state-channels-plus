@@ -66,10 +66,16 @@ class StateChannelEventListener {
                     channelId
                 ),
             handler: (logObj: any) => {
-                const { channelId, sender, signedBlock, timestamp } =
-                    logObj.args;
+                const {
+                    channelId,
+                    commitmentHash,
+                    sender,
+                    signedBlock,
+                    timestamp
+                } = logObj.args;
                 this.eventHandler.onBlockCalldataPosted(
                     channelId,
+                    commitmentHash,
                     sender,
                     signedBlock,
                     timestamp
@@ -118,20 +124,14 @@ class StateChannelEventListener {
                     channelId
                 ),
             handler: (logObj: any) => {
-                const {
-                    forkId,
-                    reducedForkId,
-                    reductionTimestamp,
-                    forkGenesisTimestamp,
-                    reducer
-                } = logObj.args;
+                const { forkId, reducedForkId, reductionTimestamp, reducer } =
+                    logObj.args;
                 const channelId = logObj.args.channelId;
                 this.eventHandler.onDisputeReducedResultCommitted(
                     channelId,
                     forkId,
                     reducedForkId,
                     reductionTimestamp,
-                    forkGenesisTimestamp,
                     reducer
                 );
             }

@@ -45,12 +45,14 @@ export class EventHandler {
 
     onBlockCalldataPosted(
         channelId: ChannelId,
+        commitmentHash: Hash,
         sender: Address,
         signedBlock: SignedBlockStruct,
         timestamp: Timestamp
     ): void {
         this.diamondStateMachine.localDiamondContract.onBlockCalldataPosted(
             channelId,
+            commitmentHash,
             sender,
             signedBlock,
             timestamp
@@ -82,17 +84,26 @@ export class EventHandler {
 
         // isDisputeWindowRelevant?
         const isRelevant =
-            this.stateManager.forkId === dispute.outputSnapshotDataHash;
+            this.stateManager.forkId === dispute.input.disputeAuditingDataHash;
         if (!isRelevant) {
             return;
         }
-        const auditingData = await this.getOrConstructAuditingData(
-            dispute,
-            disputeAuditingData
-        );
         if (isFinal) {
+            if (!disputeAuditingData) {
+                const { isPartial, auditingData } =
+                    this.stateManager.disputeManager.getAuditingData(
+                        dispute.input.disputeAuditingDataHash,
+                        dispute.input.stateProof
+                    );
+                if (isPartial)
+                    throw new Error(
+                        "DisputeAuditingData not available on a final dispute"
+                    );
+                disputeAuditingData = auditingData;
+            }
+            // TODO - after implementing setTimeout -> reduce - come back here
             return this.stateManager.setState(
-                auditingData.latestStateStateMachineState,
+                disputeAuditingData.latestStateStateMachineState,
                 dispute.outputSnapshotDataHash,
                 disputeCreationTimestamp
             );
@@ -102,52 +113,21 @@ export class EventHandler {
         const isValid =
             await this.stateManager.disputeValidationService.validateDispute(
                 dispute,
-                auditingData
+                disputeAuditingData
             );
 
-        if (!isValid) {
-            // challenge
-            await this.stateManager.stateChannelManagerContract.challengeDispute(
-                dispute,
-                auditingData
-            );
-            // disconnect participant
-            this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                dispute.input.disputer
-            );
-            return;
+        if (isValid) {
+            // this is like success - TODO - consider moving this to DisputeStrategy.success
+            const { haveMoreEvidence, counterDisputeConfirmation } =
+                await this.checkForAdditionalEvidence(dispute);
+
+            if (haveMoreEvidence) {
+                this.stateManager.stateChannelManagerContract.uploadDispute(
+                    counterDisputeConfirmation
+                );
+            }
+            // TODO - after implementing setTimeout -> reduce - come back here
         }
-        // dispute is valid
-
-        const { haveMoreEvidence, counterDisputeConfirmation } =
-            await this.checkForAdditionalEvidence(dispute);
-
-        if (haveMoreEvidence) {
-            this.stateManager.stateChannelManagerContract.uploadDispute(
-                counterDisputeConfirmation
-            );
-        }
-    }
-
-    private async getOrConstructAuditingData(
-        dispute: DisputeStruct,
-        disputeAuditingData?: DisputeAuditingDataStruct
-    ): Promise<DisputeAuditingDataStruct> {
-        if (disputeAuditingData) {
-            return disputeAuditingData;
-        }
-
-        const { isPartial, auditingData } =
-            this.stateManager.disputeManager.getAuditingData(
-                dispute.input.disputeAuditingDataHash,
-                dispute.input.stateProof
-            );
-
-        if (isPartial) {
-            throw new Error("DisputeCommitted: Auditing data is partial");
-        }
-
-        return auditingData;
     }
 
     private async checkForAdditionalEvidence(dispute: DisputeStruct): Promise<{
@@ -216,7 +196,6 @@ export class EventHandler {
         forkId: ForkId,
         reducedForkId: ForkId,
         reductionTimestamp: Timestamp,
-        forkGenesisTimestamp: Timestamp,
         reducer: Address
     ): void {
         throw new Error("TODO - Not implemented");
@@ -225,7 +204,6 @@ export class EventHandler {
             forkId,
             reducedForkId,
             reductionTimestamp,
-            forkGenesisTimestamp,
             reducer
         );
     }
@@ -264,10 +242,12 @@ export class EventHandler {
 
         // is window deleted?
         const isWindowDeleted =
-            await this.diamondStateMachine.localDiamondContract.isDisputeWindowDeleted(
-                channelId,
-                forkId
-            );
+            Number(
+                await this.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
+                    channelId,
+                    forkId
+                )
+            ) === 0;
         if (!isWindowDeleted) return;
 
         //isDisputeWindowRelevant?
