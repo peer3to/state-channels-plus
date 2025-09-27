@@ -442,22 +442,13 @@ export class EventHandler {
 
     private async getStateForFork(
         forkId: ForkId,
-        latestStateSnapshot?: StateSnapshotStruct
+        latestStateSnapshot: StateSnapshotStruct
     ): Promise<Bytes> {
         try {
-            // Get the latest state snapshot if not provided
-            let currentLatestSnapshot = latestStateSnapshot;
-            if (!currentLatestSnapshot) {
-                currentLatestSnapshot =
-                    await this.stateManager.stateChannelManagerContract.getStateSnapshot(
-                        this.stateManager.channelId
-                    );
-            }
-
             // If the latest snapshot is for the fork we want, use its state
-            if (currentLatestSnapshot.forkId === forkId) {
+            if (latestStateSnapshot.forkId === forkId) {
                 const stateHash =
-                    currentLatestSnapshot.snapshotData.stateMachineStateHash;
+                    latestStateSnapshot.snapshotData.stateMachineStateHash;
                 const encodedState =
                     this.stateManager.storage.stateMachineStates.getStateMachineState(
                         stateHash
@@ -549,23 +540,13 @@ export class EventHandler {
     }
 
     private async getJoinChannelBlocksForFork(
-        latestStateSnapshot?: StateSnapshotStruct
+        latestStateSnapshot: StateSnapshotStruct
     ): Promise<any[]> {
         try {
-            // Get the latest state snapshot if not provided
-            let currentLatestSnapshot = latestStateSnapshot;
-            if (!currentLatestSnapshot) {
-                currentLatestSnapshot =
-                    await this.stateManager.stateChannelManagerContract.getStateSnapshot(
-                        this.stateManager.channelId
-                    );
-            }
-
             // Get all join channel blocks
             const joinChannelBlocks =
                 this.stateManager.storage.joinChannelBlocks.getBlocksInRange(
-                    currentLatestSnapshot.snapshotData
-                        .latestJoinChannelBlockHash,
+                    latestStateSnapshot.snapshotData.latestJoinChannelBlockHash,
                     ethers.ZeroHash
                 );
 
