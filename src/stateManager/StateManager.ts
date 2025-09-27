@@ -32,6 +32,7 @@ import P2PManager from "@/P2PManager";
 import StateChannelEventListener from "@/StateChannelEventListener";
 import ValidationService from "./ValidationService";
 import Storage from "@/storage";
+import { EventHandler } from "@/eventHandlers/EventHandler";
 
 // Event handlers and processors
 import P2pEventHooks from "@/P2pEventHooks";
@@ -60,6 +61,7 @@ import {
     ChannelId,
     ForkId,
     Hash,
+    ReductionTimeoutHandle,
     Timestamp
 } from "@/types/types";
 
@@ -71,7 +73,6 @@ import BlockValidationStrategy from "./validationStrategy/BlockValidationStrateg
 const DEBUG_STATE_MANAGER = false;
 
 const NULL = "0x00";
-
 class StateManager {
     diamondStateMachine: ADiamondStateMachine;
     p2pEventHooks: P2pEventHooks;
@@ -91,8 +92,9 @@ class StateManager {
     disputeValidationService: DisputeValidationService;
     storage: Storage;
     fraudProofService: FraudProofService;
-    private latestForkId: ForkId = NULL;
+    latestForkId: ForkId = NULL;
     defaultValidationStrategy: AValidationStrategy;
+    reductionTriggerMap: Map<ForkId, ReductionTimeoutHandle> = new Map();
 
     constructor(
         signer: ethers.Signer,
@@ -114,9 +116,13 @@ class StateManager {
         this.storage = storage;
 
         this.stateChannelEventListener = new StateChannelEventListener(
-            this.self,
             this.stateChannelManagerContract,
-            this.p2pEventHooks,
+            new EventHandler(
+                this.storage,
+                this.self,
+                this.p2pEventHooks,
+                this.diamondStateMachine
+            ),
             this.diamondStateMachine.localDiamondContract
         );
         this.agreementManager = new AgreementManager(this.storage);
@@ -137,7 +143,7 @@ class StateManager {
             this.diamondStateMachine,
             this.stateChannelManagerContract,
             this.timeConfig,
-            this
+            this.self
         );
         this.disputeValidationService = new DisputeValidationService(
             this.storage,
@@ -169,6 +175,26 @@ class StateManager {
     public getChannelId(): ChannelId {
         return this.channelId;
     }
+    public setReductionTimeout(forkId: ForkId, triggerTimestamp: number) {
+        const reductionHandle = this.reductionTriggerMap.get(forkId);
+        if (
+            this.forkId == forkId &&
+            (!reductionHandle ||
+                reductionHandle.triggerTimestamp < triggerTimestamp)
+        ) {
+            if (reductionHandle) clearTimeout(reductionHandle.handle);
+            const delayInMilliseconds =
+                (triggerTimestamp - Clock.getTimeInSeconds()) * 1000;
+            const newHandle = setTimeout(() => {
+                //TODO - implement after PR
+                // check locally can we reduce
+                // double check on-chain can we reduce
+                // reduce on-chain
+                // if success setState
+                // if failure interpret error
+            }, delayInMilliseconds);
+        }
+    }
     public getSignerAddress(): Address {
         return this.signerAddress;
     }
@@ -194,18 +220,7 @@ class StateManager {
             totalDeposits
         );
     }
-    //Triggered by the On-chain Event Listener when block calldata is posted on-chain
-    public async collectOnChainBlock(
-        signedBlock: SignedBlockStruct,
-        timestamp: Timestamp
-    ) {
-        const blockConfirmation: BlockConfirmationStruct = {
-            signedBlock,
-            signatures: []
-        };
 
-        return this.onBlockConfirmation(blockConfirmation, timestamp);
-    }
     private async tryExecuteFromQueue() {
         const nextBlockHeight = this.storage.blocks.getNextBlockHeight(
             this.forkId
@@ -1059,7 +1074,7 @@ class StateManager {
             // calling the same handler the event lister would have called
             // this will call collectOnChainBlock on trigger  the block validation pipeline
             // if the  the block is invalid, the signer will get slashed
-            this.stateChannelEventListener.handleBlockCalldataPosted(
+            this.stateChannelEventListener.eventHandler.onBlockCalldataPosted(
                 this.channelId,
                 blockCalldataCommitment,
                 participantAddress,

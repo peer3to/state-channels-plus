@@ -108,7 +108,10 @@ contract LocalDiamond is StateChannelManagerProxy {
             disputeData[channelId].disputeWindowMap[forkId].reducedResult.reducer = dispute.input.disputer;
 
             // Clear dispute commitments (matches on-chain behavior)
-            delete disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments;
+            delete disputeData[channelId]
+                .disputeWindowMap[forkId]
+                .evidence
+                .disputeCommitments;
         }
     }
 

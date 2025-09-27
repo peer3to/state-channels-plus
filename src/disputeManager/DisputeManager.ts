@@ -23,7 +23,7 @@ import ADiamondStateMachine from "../ADiamondStateMachine";
 import {
     StateProofStruct,
     TimeoutStruct
-} from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
 
@@ -75,7 +75,10 @@ class DisputeManager {
         forkId: ForkId,
         selfRemoval: boolean = false,
         timeoutOptions?: TimeoutOptions
-    ): Promise<void> {
+    ): Promise<{
+        dispute: DisputeStruct;
+        disputeConfirmation: DisputeConfirmationStruct;
+    }> {
         const latestBlockHeight =
             this.storage.blocks.getNextBlockHeight(forkId) - 1;
 
@@ -214,6 +217,8 @@ class DisputeManager {
         };
 
         this.stateChannelManagerContract.uploadDispute(disputeConfirmation);
+
+        return { dispute, disputeConfirmation };
     }
 
     public getAuditingData(

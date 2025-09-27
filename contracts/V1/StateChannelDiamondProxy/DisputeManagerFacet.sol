@@ -18,9 +18,10 @@ contract DisputeManagerFacet is StateChannelCommon {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         bytes32 disputeAuditingDataHash = keccak256(abi.encode(disputeAuditingData));
         require(dispute.input.disputeAuditingDataHash == disputeAuditingDataHash, ErrorAuditingDataHashMismatch());
-        _uploadDispute(disputeConfirmation, true);
-        emit DisputeAuditingDataPosted(
-            dispute.input.channelId, keccak256(disputeConfirmation.signedDispute.encodedDispute), disputeAuditingData
+        (bool isFinal, uint256 creationTimestamp) = _uploadDispute(disputeConfirmation, true);
+
+        emit DisputeCommittedWithAuditingData(
+            dispute.input.channelId, dispute, block.timestamp, isFinal, creationTimestamp, disputeAuditingData
         );
     }
 
@@ -33,7 +34,10 @@ contract DisputeManagerFacet is StateChannelCommon {
 
     // ********************** Internal/private functions
 
-    function _uploadDispute(DisputeConfirmation memory disputeConfirmation, bool isAuditingCalldataProvided) internal {
+    function _uploadDispute(DisputeConfirmation memory disputeConfirmation, bool isAuditingCalldataProvided)
+        internal
+        returns (bool isFinal, uint256 disputeWindowCreationTimestamp)
+    {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         require(msg.sender == dispute.input.disputer, ErrorDisputerNotMsgSender());
         require(_canParticipateInDisputes(dispute.input.channelId, msg.sender), ErrorCantParticipateInDispute());
@@ -81,13 +85,17 @@ contract DisputeManagerFacet is StateChannelCommon {
             disputeWindow.evidence.disputeCommitments.push(c);
         }
         disputeWindow.evidence.hasPosted[dispute.input.disputer] = true; //disputer has posted the dispute
-        emit DisputeCommitted(
-            dispute.input.channelId,
-            dispute,
-            block.timestamp,
-            isThresholdFinal,
-            disputeWindow.evidence.creationTimestamp
-        );
+
+        if (!isAuditingCalldataProvided) {
+            emit DisputeCommitted(
+                dispute.input.channelId,
+                dispute,
+                block.timestamp,
+                isThresholdFinal,
+                disputeWindow.evidence.creationTimestamp
+            );
+        }
+        return (isThresholdFinal, disputeWindow.evidence.creationTimestamp);
     }
 
     function _disputeRaceConditionCheck(Dispute memory dispute) internal view {

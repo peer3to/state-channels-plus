@@ -17,3 +17,8 @@ export type BlockOrSnapshot = {
     block?: Block;
     stateSnapshot?: StateSnapshot;
 };
+
+export type ReductionTimeoutHandle = {
+    handle: ReturnType<typeof setTimeout>;
+    triggerTimestamp: number;
+};

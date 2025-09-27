@@ -4,5 +4,5 @@ export type TimeConfig = {
     p2pTime: Timestamp;
     agreementTime: Timestamp;
     chainFallbackTime: Timestamp;
-    challengeTime: Timestamp;
+    evidenceTime: Timestamp;
 };
