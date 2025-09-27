@@ -19,8 +19,10 @@ import {
 } from "@/types/types";
 import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
+import { Codec, Type } from "@/utils";
 import { isEqual } from "lodash";
 import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
+import { ethers } from "ethers";
 
 export class EventHandler {
     constructor(
@@ -235,16 +237,15 @@ export class EventHandler {
         }
 
         // Not final - validate the reduction
-        const wasReducedCorrectly = await this.validateDisputeReduction(
+        const isValid = await this.validateDisputeReduction(
             forkId,
             reducedForkId,
             reductionTimestamp,
             reducer
         );
 
-        if (!wasReducedCorrectly) {
+        if (!isValid) {
             // Challenge the dispute reduction if it wasn't done correctly
-
             const disputes = await this.getDisputesForFork(forkId);
             const latestStateSnapshot =
                 await this.stateManager.stateChannelManagerContract.getStateSnapshot(
@@ -252,7 +253,8 @@ export class EventHandler {
                 );
             const encodedStateMachineState =
                 await this.diamondStateMachine.getState();
-            const joinChannelBlocks = await this.getJoinChannelBlocks();
+            const joinChannelBlocks =
+                await this.getJoinChannelBlocksForFork(latestStateSnapshot);
 
             await this.stateManager.stateChannelManagerContract.challengeDisputeReduction(
                 disputes,
@@ -438,23 +440,41 @@ export class EventHandler {
         }
     }
 
-    private async getStateForFork(forkId: ForkId): Promise<Bytes> {
+    private async getStateForFork(
+        forkId: ForkId,
+        latestStateSnapshot?: StateSnapshotStruct
+    ): Promise<Bytes> {
         try {
-            // Get the state for the given fork
-            // This should return the encoded state machine state for the fork
-            const stateSnapshot =
-                await this.stateManager.stateChannelManagerContract.getStateSnapshot(
-                    this.stateManager.channelId
-                );
-
-            // If the fork matches the current snapshot, return the current state
-            if (stateSnapshot.forkId === forkId) {
-                return await this.diamondStateMachine.getState();
+            // Get the latest state snapshot if not provided
+            let currentLatestSnapshot = latestStateSnapshot;
+            if (!currentLatestSnapshot) {
+                currentLatestSnapshot =
+                    await this.stateManager.stateChannelManagerContract.getStateSnapshot(
+                        this.stateManager.channelId
+                    );
             }
 
-            // Otherwise, we need to get the state for the specific fork
-            // This might require additional logic to traverse to the fork state
-            return await this.diamondStateMachine.getState();
+            // If the latest snapshot is for the fork we want, use its state
+            if (currentLatestSnapshot.forkId === forkId) {
+                const stateHash =
+                    currentLatestSnapshot.snapshotData.stateMachineStateHash;
+                const encodedState =
+                    this.stateManager.storage.stateMachineStates.getStateMachineState(
+                        stateHash
+                    );
+                if (encodedState) {
+                    return encodedState;
+                }
+            }
+
+            // Fallback: use existing getGenesisStateMachineState method
+            const genesisState =
+                this.stateManager.storage.getGenesisStateMachineState(forkId);
+            if (genesisState) {
+                return genesisState;
+            }
+
+            throw new Error(`No state found for fork ${forkId}`);
         } catch (error) {
             console.error("Error getting state for fork:", error);
             // Return current state as fallback
@@ -470,12 +490,90 @@ export class EventHandler {
         const isCurrentFork = this.stateManager.forkId !== reducedForkId;
 
         if (isLatestFork && isCurrentFork) {
+            // Get the latest state snapshot
+            const latestStateSnapshot =
+                await this.stateManager.stateChannelManagerContract.getStateSnapshot(
+                    this.stateManager.channelId
+                );
+
             // Set fork and start building on it
             await this.stateManager.setState(
-                await this.getStateForFork(reducedForkId),
+                await this.getStateForFork(reducedForkId, latestStateSnapshot),
                 reducedForkId,
                 reductionTimestamp
             );
+        }
+    }
+
+    private async getDisputesForFork(forkId: ForkId): Promise<any[]> {
+        try {
+            // Get dispute commitments for this fork using the contract
+            const disputeCommitments =
+                await this.stateManager.stateChannelManagerContract.getWindowCommitments(
+                    this.stateManager.channelId,
+                    forkId
+                );
+
+            if (disputeCommitments.length === 0) {
+                console.log(`No dispute commitments found for fork ${forkId}`);
+                return [];
+            }
+
+            const disputes: DisputeStruct[] = [];
+
+            for (const disputeCommitment of disputeCommitments) {
+                const disputeConfirmation =
+                    this.stateManager.storage.disputes.getDisputeConfirmation(
+                        disputeCommitment
+                    );
+
+                if (disputeConfirmation) {
+                    const dispute = Codec.decode(
+                        disputeConfirmation.signedDispute.encodedDispute,
+                        Type.Dispute
+                    ) as DisputeStruct;
+                    disputes.push(dispute);
+                } else {
+                    console.log(
+                        `Dispute confirmation not found for commitment ${disputeCommitment}`
+                    );
+                }
+            }
+
+            console.log(`Found ${disputes.length} disputes for fork ${forkId}`);
+            return disputes;
+        } catch (error) {
+            console.error("Error getting disputes for fork:", error);
+            return [];
+        }
+    }
+
+    private async getJoinChannelBlocksForFork(
+        latestStateSnapshot?: StateSnapshotStruct
+    ): Promise<any[]> {
+        try {
+            // Get the latest state snapshot if not provided
+            let currentLatestSnapshot = latestStateSnapshot;
+            if (!currentLatestSnapshot) {
+                currentLatestSnapshot =
+                    await this.stateManager.stateChannelManagerContract.getStateSnapshot(
+                        this.stateManager.channelId
+                    );
+            }
+
+            // Get all join channel blocks
+            const joinChannelBlocks =
+                this.stateManager.storage.joinChannelBlocks.getBlocksInRange(
+                    currentLatestSnapshot.snapshotData
+                        .latestJoinChannelBlockHash,
+                    ethers.ZeroHash
+                );
+
+            console.log(`Got ${joinChannelBlocks.length} join channel blocks`);
+            return joinChannelBlocks;
+        } catch (error) {
+            console.error("Error getting join channel blocks:", error);
+            return [];
         }
     }
 }
