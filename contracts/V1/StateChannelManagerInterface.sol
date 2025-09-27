@@ -61,6 +61,13 @@ abstract contract StateChannelManagerInterface {
 
     function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public virtual;
 
+    function challengeDisputeReduction(
+        Dispute[] memory disputes,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory encodedStateMachineState,
+        JoinChannelBlock[] memory joinChannelBlocks
+    ) public virtual;
+
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public virtual;
 
     function updateStateSnapshotFork(

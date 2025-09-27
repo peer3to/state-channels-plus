@@ -124,15 +124,23 @@ class StateChannelEventListener {
                     channelId
                 ),
             handler: (logObj: any) => {
-                const { forkId, reducedForkId, reductionTimestamp, reducer } =
-                    logObj.args;
+                const {
+                    forkId,
+                    reducedForkId,
+                    reductionTimestamp,
+                    forkGenesisTimestamp,
+                    reducer,
+                    isFinal
+                } = logObj.args;
                 const channelId = logObj.args.channelId;
                 this.eventHandler.onDisputeReducedResultCommitted(
                     channelId,
                     forkId,
                     reducedForkId,
                     reductionTimestamp,
-                    reducer
+                    forkGenesisTimestamp,
+                    reducer,
+                    isFinal
                 );
             }
         },

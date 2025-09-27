@@ -150,6 +150,21 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         );
     }
 
+    function challengeDisputeReduction(
+        Dispute[] memory disputes,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory encodedStateMachineState,
+        JoinChannelBlock[] memory joinChannelBlocks
+    ) public override {
+        _delegatecall(
+            disputeVerificationFacetAddress,
+            abi.encodeCall(
+                DisputeVerificationFacet.challengeDisputeReduction,
+                (disputes, latestStateSnapshot, encodedStateMachineState, joinChannelBlocks)
+            )
+        );
+    }
+
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public override {
         _delegatecall(
             disputeVerificationFacetAddress, abi.encodeCall(DisputeVerificationFacet.applyDisputeFraudProofs, (proofs))

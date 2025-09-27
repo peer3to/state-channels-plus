@@ -140,7 +140,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         bytes32 forkId,
         bytes32 reducedForkId,
         uint256 reductionTimestamp,
-        address reducer
+        uint256 forkGenesisTimestamp,
+        address reducer,
+        bool isFinal
     ) external {
         // Update the reduced result in the dispute window
         disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkId = reducedForkId;

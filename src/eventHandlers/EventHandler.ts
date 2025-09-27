@@ -9,7 +9,14 @@ import {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
-import { ChannelId, Timestamp, Address, Hash, ForkId } from "@/types/types";
+import {
+    ChannelId,
+    Timestamp,
+    Address,
+    Hash,
+    ForkId,
+    Bytes
+} from "@/types/types";
 import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { isEqual } from "lodash";
@@ -191,21 +198,78 @@ export class EventHandler {
         }
     }
 
-    onDisputeReducedResultCommitted(
+    async onDisputeReducedResultCommitted(
         channelId: ChannelId,
         forkId: ForkId,
         reducedForkId: ForkId,
         reductionTimestamp: Timestamp,
-        reducer: Address
-    ): void {
-        throw new Error("TODO - Not implemented");
+        forkGenesisTimestamp: Timestamp,
+        reducer: Address,
+        isFinal: boolean
+    ): Promise<void> {
+        // sync LocalDiamond state
         this.diamondStateMachine.localDiamondContract.onDisputeReducedResultCommitted(
             channelId,
             forkId,
             reducedForkId,
             reductionTimestamp,
+            forkGenesisTimestamp,
+            reducer,
+            isFinal
+        );
+
+        // if it's not part of the fork choice rule, ignore it - it's spam
+        const isRelevant = this.stateManager.forkId === forkId;
+        if (!isRelevant) {
+            return;
+        }
+
+        // isFinal?
+        if (isFinal) {
+            // If final, set fork and start building on it
+            await this.setForkIfLatestAndCurrent(
+                reducedForkId,
+                reductionTimestamp
+            );
+            return;
+        }
+
+        // Not final - validate the reduction
+        const wasReducedCorrectly = await this.validateDisputeReduction(
+            forkId,
+            reducedForkId,
+            reductionTimestamp,
             reducer
         );
+
+        if (!wasReducedCorrectly) {
+            // Challenge the dispute reduction if it wasn't done correctly
+
+            const disputes = await this.getDisputesForFork(forkId);
+            const latestStateSnapshot =
+                await this.stateManager.stateChannelManagerContract.getStateSnapshot(
+                    this.stateManager.channelId
+                );
+            const encodedStateMachineState =
+                await this.diamondStateMachine.getState();
+            const joinChannelBlocks = await this.getJoinChannelBlocks();
+
+            await this.stateManager.stateChannelManagerContract.challengeDisputeReduction(
+                disputes,
+                latestStateSnapshot,
+                encodedStateMachineState,
+                joinChannelBlocks
+            );
+
+            // Disconnect the reducer who performed the incorrect reduction
+            this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                reducer
+            );
+            return;
+        }
+
+        // Reduction is valid and correct - set fork and start building on it
+        await this.setForkIfLatestAndCurrent(reducedForkId, reductionTimestamp);
     }
 
     onWithdrawalsUpdated(channelId: ChannelId, totalWithdrawals: any): void {
@@ -340,5 +404,78 @@ export class EventHandler {
                 );
         }
         return false;
+    }
+
+    private async validateDisputeReduction(
+        forkId: ForkId,
+        reducedForkId: ForkId,
+        reductionTimestamp: Timestamp,
+        reducer: Address
+    ): Promise<boolean> {
+        try {
+            const isForkDisputed =
+                await this.stateManager.stateChannelManagerContract.isForkDisputed(
+                    this.stateManager.channelId,
+                    forkId
+                );
+
+            if (!isForkDisputed) {
+                return false;
+            }
+
+            // Validate that the reduction was performed correctly
+            const reducedResult =
+                await this.stateManager.stateChannelManagerContract.getReducedResult(
+                    this.stateManager.channelId,
+                    forkId
+                );
+
+            // Check if the reduced result matches what was committed
+            return reducedResult[0] === reducedForkId;
+        } catch (error) {
+            console.error("Error validating dispute reduction:", error);
+            return false;
+        }
+    }
+
+    private async getStateForFork(forkId: ForkId): Promise<Bytes> {
+        try {
+            // Get the state for the given fork
+            // This should return the encoded state machine state for the fork
+            const stateSnapshot =
+                await this.stateManager.stateChannelManagerContract.getStateSnapshot(
+                    this.stateManager.channelId
+                );
+
+            // If the fork matches the current snapshot, return the current state
+            if (stateSnapshot.forkId === forkId) {
+                return await this.diamondStateMachine.getState();
+            }
+
+            // Otherwise, we need to get the state for the specific fork
+            // This might require additional logic to traverse to the fork state
+            return await this.diamondStateMachine.getState();
+        } catch (error) {
+            console.error("Error getting state for fork:", error);
+            // Return current state as fallback
+            return await this.diamondStateMachine.getState();
+        }
+    }
+
+    private async setForkIfLatestAndCurrent(
+        reducedForkId: ForkId,
+        reductionTimestamp: Timestamp
+    ): Promise<void> {
+        const isLatestFork = this.stateManager.latestForkId === reducedForkId;
+        const isCurrentFork = this.stateManager.forkId !== reducedForkId;
+
+        if (isLatestFork && isCurrentFork) {
+            // Set fork and start building on it
+            await this.stateManager.setState(
+                await this.getStateForFork(reducedForkId),
+                reducedForkId,
+                reductionTimestamp
+            );
+        }
     }
 }
