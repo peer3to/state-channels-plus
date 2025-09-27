@@ -60,7 +60,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             return; //already slashed
         }
         disputeData[channelId].onChainSlashes.push(OnChainSlash(slashedParticipant, block.timestamp));
-        emit OnChainSlashAdded(channelId, slashedParticipant, block.timestamp);
+        emit ChainSlashed(channelId, slashedParticipant, block.timestamp);
     }
 
     function getOnChainThresholdSet(bytes32 channelId) public view virtual returns (address[] memory) {
@@ -96,7 +96,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function isGenesisSnapshot(StateSnapshot memory snapshot) public pure returns (bool) {
-        return snapshot.forkId == keccak256(abi.encode(snapshot.snapshotData));
+        return snapshot.forkId == keccak256(abi.encode(snapshot.snapshotData)) && snapshot.blockHeight == 0;
     }
 
     function getSnapshotParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
@@ -166,6 +166,23 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
 
     function isChannelOpen(bytes32 channelId) public view virtual returns (bool) {
         return stateSnapshots[channelId].snapshotData.participants.length > 0;
+    }
+
+    function decodeBlock(bytes memory encodedBlock) public pure returns (Block memory) {
+        return abi.decode(encodedBlock, (Block));
+    }
+
+    function isBlockAuthentic(SignedBlock memory _block) public view returns (bool) {
+        // try decode block
+        bytes memory data = abi.encodeCall(this.decodeBlock, (_block.encodedBlock));
+        (bool success, bytes memory encodedBlock) = address(this).staticcall(data);
+        if (!success) return false;
+        Block memory decodedBlock = abi.decode(encodedBlock, (Block));
+        address signer = StateChannelUtilLibrary.retriveSignerAddress(encodedBlock, _block.signature);
+        if (signer != decodedBlock.transaction.header.participant) {
+            return false;
+        }
+        return true;
     }
 
     function _applyJoins(

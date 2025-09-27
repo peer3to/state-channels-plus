@@ -32,6 +32,7 @@ import P2PManager from "@/P2PManager";
 import StateChannelEventListener from "@/StateChannelEventListener";
 import ValidationService from "./ValidationService";
 import Storage from "@/storage";
+import { EventHandler } from "@/eventHandlers/EventHandler";
 
 // Event handlers and processors
 import P2pEventHooks from "@/P2pEventHooks";
@@ -60,16 +61,18 @@ import {
     ChannelId,
     ForkId,
     Hash,
+    ReductionTimeoutHandle,
     Timestamp
 } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
 import DisputeValidationService from "./DisputeValidationService";
+import AValidationStrategy from "./validationStrategy/AValidationStrategy";
+import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
 
 const DEBUG_STATE_MANAGER = false;
 
 const NULL = "0x00";
-
 class StateManager {
     diamondStateMachine: ADiamondStateMachine;
     p2pEventHooks: P2pEventHooks;
@@ -89,7 +92,10 @@ class StateManager {
     disputeValidationService: DisputeValidationService;
     storage: Storage;
     fraudProofService: FraudProofService;
-    private latestForkId: ForkId = NULL;
+    latestForkId: ForkId = NULL;
+    defaultValidationStrategy: AValidationStrategy;
+    eventHandler: EventHandler;
+    reductionTriggerMap: Map<ForkId, ReductionTimeoutHandle> = new Map();
 
     constructor(
         signer: ethers.Signer,
@@ -109,11 +115,15 @@ class StateManager {
             stateChannelManagerContract
         );
         this.storage = storage;
-
-        this.stateChannelEventListener = new StateChannelEventListener(
+        this.eventHandler = new EventHandler(
+            this.storage,
             this.self,
-            this.stateChannelManagerContract,
             this.p2pEventHooks,
+            this.diamondStateMachine
+        );
+        this.stateChannelEventListener = new StateChannelEventListener(
+            this.stateChannelManagerContract,
+            this.eventHandler,
             this.diamondStateMachine.localDiamondContract
         );
         this.agreementManager = new AgreementManager(this.storage);
@@ -134,18 +144,20 @@ class StateManager {
             this.diamondStateMachine,
             this.stateChannelManagerContract,
             this.timeConfig,
-            this.channelId,
-            () => this.forkId
+            this.self
         );
         this.disputeValidationService = new DisputeValidationService(
             this.storage,
             this.diamondStateMachine,
             this.stateChannelManagerContract,
             this.timeConfig,
-            this.channelId,
-            () => this.forkId,
             this.disputeManager,
             this.agreementManager
+        );
+        this.defaultValidationStrategy = new BlockValidationStrategy(
+            this.storage,
+            this.p2pManager,
+            this.disputeManager
         );
     }
     //Mark resources for garbage collection
@@ -163,6 +175,26 @@ class StateManager {
     }
     public getChannelId(): ChannelId {
         return this.channelId;
+    }
+    public setReductionTimeout(forkId: ForkId, triggerTimestamp: number) {
+        const reductionHandle = this.reductionTriggerMap.get(forkId);
+        if (
+            this.forkId == forkId &&
+            (!reductionHandle ||
+                reductionHandle.triggerTimestamp < triggerTimestamp)
+        ) {
+            if (reductionHandle) clearTimeout(reductionHandle.handle);
+            const delayInMilliseconds =
+                (triggerTimestamp - Clock.getTimeInSeconds()) * 1000;
+            const newHandle = setTimeout(() => {
+                //TODO - implement after PR
+                // check locally can we reduce
+                // double check on-chain can we reduce
+                // reduce on-chain
+                // if success setState
+                // if failure interpret error
+            }, delayInMilliseconds);
+        }
     }
     public getSignerAddress(): Address {
         return this.signerAddress;
@@ -189,18 +221,7 @@ class StateManager {
             totalDeposits
         );
     }
-    //Triggered by the On-chain Event Listener when block calldata is posted on-chain
-    public async collectOnChainBlock(
-        signedBlock: SignedBlockStruct,
-        timestamp: Timestamp
-    ) {
-        const blockConfirmation: BlockConfirmationStruct = {
-            signedBlock,
-            signatures: []
-        };
 
-        return this.onBlockConfirmation(blockConfirmation, timestamp);
-    }
     private async tryExecuteFromQueue() {
         const nextBlockHeight = this.storage.blocks.getNextBlockHeight(
             this.forkId
@@ -267,54 +288,45 @@ class StateManager {
     // returns false -> the calling context should disconnect from the peer
     public async onBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct,
-        onChainTimestamp?: Timestamp
+        onChainTimestamp?: Timestamp,
+        validationStrategy?: AValidationStrategy
     ): Promise<boolean> {
         // the try/catch is to ensure that the mutex is unlocked in case of an error
         // no error is actually expected to happen, and the catch block just re-throws the error
+        const strategy = validationStrategy || this.defaultValidationStrategy;
         try {
             await this.mutex.lock();
+            let validationResult: BlockValidationResult =
+                BlockValidationResult.SUCCESS;
+            const isAuthentic =
+                await this.diamondStateMachine.localDiamondContract.isBlockAuthentic(
+                    blockConfirmation.signedBlock
+                );
 
-            const block = this.validationService.authenticateBlock(
+            if (!isAuthentic) {
+                validationResult =
+                    await strategy.authenticateBlockFailed(blockConfirmation);
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
+            }
+
+            const block = Block.fromBlockConfirmation(
                 blockConfirmation,
-                this.channelId,
                 onChainTimestamp
             );
 
-            if (!block) {
-                // disconnect
-                return false;
-            }
-
-            const validationResult =
-                await this.validationService.validateBlockConfirmation(block);
+            validationResult =
+                await this.validationService.validateBlockConfirmation(
+                    block,
+                    strategy
+                );
 
             if (validationResult !== BlockValidationResult.SUCCESS) {
                 // handle all non-success actions
-                switch (validationResult) {
-                    case BlockValidationResult.NOT_READY:
-                        // do nothing, do not disconnect
-                        return true;
-                    case BlockValidationResult.DUPLICATE:
-                        // do nothing, do not disconnect
-                        return true;
-                    case BlockValidationResult.NOT_ENOUGH_TIME:
-                        // do nothing, do not disconnect
-                        return true;
-                    case BlockValidationResult.DISCONNECT:
-                        // disconnect
-                        return false;
-
-                    case BlockValidationResult.BROADCAST:
-                        this.p2pManager.rpcProxy
-                            .onBlockConfirmation(block.blockConfirmationStruct)
-                            .broadcast();
-                        return true;
-                    case BlockValidationResult.DISPUTE:
-                        await this.dispute(blockConfirmation);
-                        return false;
-                    default:
-                        return true;
-                }
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
             }
 
             // SUCCESS, continue with state transition validation
@@ -328,10 +340,11 @@ class StateManager {
             } = await this.applyTransaction(block.transaction);
 
             if (!success) {
-                this.fraudProofService.createInvalidStateTransitionProof(block);
-                await this.dispute(blockConfirmation);
-                // disconnect
-                return false;
+                validationResult =
+                    await strategy.invalidStateTransitionDetected(block);
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
             }
 
             // Validate state snapshot hash
@@ -344,18 +357,22 @@ class StateManager {
                 );
 
             if (stateSnapshot.hash !== block.stateSnapshotHash) {
-                this.fraudProofService.createInvalidStateTransitionProof(block);
-                await this.dispute(blockConfirmation);
-                return false;
+                validationResult =
+                    await strategy.invalidStateTransitionDetected(block);
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
             }
 
             if (hash(encodedState) === stateSnapshot.stateMachineStateHash) {
-                this.fraudProofService.createInvalidStateTransitionProof(block);
-                await this.dispute(blockConfirmation);
-                // disconnect
-                return false;
+                validationResult =
+                    await strategy.invalidStateTransitionDetected(block);
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
             }
 
+            // TODO - apply strategy here too
             // All validations passed - proceed with success action
             this.success(
                 block,
@@ -1058,7 +1075,7 @@ class StateManager {
             // calling the same handler the event lister would have called
             // this will call collectOnChainBlock on trigger  the block validation pipeline
             // if the  the block is invalid, the signer will get slashed
-            this.stateChannelEventListener.handleBlockCalldataPosted(
+            this.stateChannelEventListener.eventHandler.onBlockCalldataPosted(
                 this.channelId,
                 blockCalldataCommitment,
                 participantAddress,

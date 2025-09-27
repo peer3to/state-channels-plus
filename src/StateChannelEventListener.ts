@@ -1,28 +1,24 @@
 import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import StateManager from "@/stateManager";
-import P2pEventHooks from "@/P2pEventHooks";
-import { ChannelId, Timestamp, Address, Hash } from "@/types/types";
-import { StateSnapshotStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+
+import { ChannelId } from "@/types/types";
+
+import { EventHandler } from "@/eventHandlers/EventHandler";
 
 //TODO - made a PR to ethers.js to fix Deferred Topic Filter
 
 class StateChannelEventListener {
-    stateManager: StateManager;
     stateChannelManagerContract: StateChannelManagerProxy;
-    p2pEventHooks: P2pEventHooks;
+    eventHandler: EventHandler;
     localDiamondContract: LocalDiamond;
     filters: Record<string, any> = {};
 
     constructor(
-        stateManager: StateManager,
         stateChannelManagerContract: StateChannelManagerProxy,
-        p2pEventHooks: P2pEventHooks,
+        eventHandler: EventHandler,
         localDiamondContract: LocalDiamond
     ) {
-        this.stateManager = stateManager;
         this.stateChannelManagerContract = stateChannelManagerContract;
-        this.p2pEventHooks = p2pEventHooks;
+        this.eventHandler = eventHandler;
         this.localDiamondContract = localDiamondContract;
     }
 
@@ -38,34 +34,6 @@ class StateChannelEventListener {
         await this.stateChannelManagerContract.on(this.filters[key], handler);
     }
 
-    public handleBlockCalldataPosted(
-        channelId: ChannelId,
-        commitmentHash: Hash,
-        sender: Address,
-        signedBlock: SignedBlockStruct,
-        timestamp: Timestamp
-    ): void {
-        this.localDiamondContract.onBlockCalldataPosted(
-            channelId,
-            commitmentHash,
-            sender,
-            signedBlock,
-            timestamp
-        );
-        this.p2pEventHooks.onPostedCalldata?.();
-        this.stateManager.collectOnChainBlock(signedBlock, timestamp);
-    }
-
-    public handleStateSnapshotUpdated(
-        channelId: ChannelId,
-        stateSnapshot: StateSnapshotStruct
-    ): void {
-        this.localDiamondContract.onStateSnapshotUpdated(
-            channelId,
-            stateSnapshot
-        );
-    }
-
     //Mark resources for garbage collection
     public dispose() {
         Object.values(this.filters).forEach((filter) => {
@@ -77,18 +45,20 @@ class StateChannelEventListener {
     }
 
     private readonly eventHandlers = {
-        SetState: {
+        StateSnapshotUpdated: {
             filterFactory: (channelId: ChannelId) =>
-                this.stateChannelManagerContract.filters.SetState(channelId),
-            handler: (logObj: any) => {
-                const { encodedState, forkId, timestamp } = logObj.args;
-                return this.stateManager.setState(
-                    encodedState,
-                    forkId,
-                    timestamp
+                this.stateChannelManagerContract.filters.StateSnapshotUpdated(
+                    channelId
+                ),
+            handler: async (logObj: any) => {
+                const { channelId, stateSnapshot } = logObj.args;
+                await this.eventHandler.onStateSnapshotUpdated(
+                    channelId,
+                    stateSnapshot
                 );
             }
         },
+
         BlockCalldataPosted: {
             filterFactory: (channelId: ChannelId) =>
                 this.stateChannelManagerContract.filters.BlockCalldataPosted(
@@ -102,7 +72,7 @@ class StateChannelEventListener {
                     signedBlock,
                     timestamp
                 } = logObj.args;
-                this.handleBlockCalldataPosted(
+                this.eventHandler.onBlockCalldataPosted(
                     channelId,
                     commitmentHash,
                     sender,
@@ -124,15 +94,109 @@ class StateChannelEventListener {
                     isFinal,
                     windowCreationTimestamp
                 } = logObj.args;
-                this.localDiamondContract.onDisputeCommitted(
+                this.eventHandler.onDisputeCommitted(
                     channelId,
                     dispute,
                     disputeCreationTimestamp,
                     isFinal,
                     windowCreationTimestamp
                 );
-                const timestamp = Number(windowCreationTimestamp);
-                return this.stateManager.onDisputeCommitted(dispute, timestamp);
+            }
+        },
+        ChainSlashed: {
+            filterFactory: (channelId: ChannelId) =>
+                this.stateChannelManagerContract.filters.ChainSlashed(
+                    channelId
+                ),
+            handler: (logObj: any) => {
+                const { channelId, participant, timestamp } = logObj.args;
+                this.eventHandler.onChainSlashed(
+                    channelId,
+                    participant,
+                    timestamp
+                );
+            }
+        },
+        DisputeReducedResultCommitted: {
+            filterFactory: (channelId: ChannelId) =>
+                this.stateChannelManagerContract.filters.DisputeReducedResultCommitted(
+                    channelId
+                ),
+            handler: (logObj: any) => {
+                const {
+                    forkId,
+                    channelId,
+                    reducedForkId,
+                    reductionTimestamp,
+                    reducer
+                } = logObj.args;
+                this.eventHandler.onDisputeReducedResultCommitted(
+                    channelId,
+                    forkId,
+                    reducedForkId,
+                    reductionTimestamp,
+                    reducer
+                );
+            }
+        },
+        DisputeCommittedWithAuditingData: {
+            filterFactory: (channelId: ChannelId) =>
+                this.stateChannelManagerContract.filters.DisputeCommittedWithAuditingData(
+                    channelId
+                ),
+            handler: (logObj: any) => {
+                const {
+                    channelId,
+                    dispute,
+                    disputeCreationTimestamp,
+                    isFinal,
+                    windowCreationTimestamp,
+                    disputeAuditingData
+                } = logObj.args;
+                this.eventHandler.onDisputeCommitted(
+                    channelId,
+                    dispute,
+                    disputeCreationTimestamp,
+                    isFinal,
+                    windowCreationTimestamp,
+                    disputeAuditingData
+                );
+            }
+        },
+        WithdrawalsUpdated: {
+            filterFactory: (channelId: ChannelId) =>
+                this.stateChannelManagerContract.filters.WithdrawalsUpdated(
+                    channelId
+                ),
+            handler: (logObj: any) => {
+                const { channelId, totalWithdrawals } = logObj.args;
+                this.eventHandler.onWithdrawalsUpdated(
+                    channelId,
+                    totalWithdrawals
+                );
+            }
+        },
+        ChannelStorageCleared: {
+            filterFactory: (channelId: ChannelId) =>
+                this.stateChannelManagerContract.filters.ChannelStorageCleared(
+                    channelId
+                ),
+            handler: (logObj: any) => {
+                const { channelId, latestJoinChannelBlockHash } = logObj.args;
+                this.eventHandler.onChannelStorageCleared(
+                    channelId,
+                    latestJoinChannelBlockHash
+                );
+            }
+        },
+        DisputeKilled: {
+            filterFactory: (channelId: ChannelId) =>
+                this.stateChannelManagerContract.filters.DisputeKilled(
+                    channelId
+                ),
+            handler: (logObj: any) => {
+                const { channelId, forkId, disputer } = logObj.args;
+                this.eventHandler.onDisputeKilled(channelId, forkId, disputer);
             }
         },
 
@@ -148,98 +212,11 @@ class StateChannelEventListener {
                     timestamp,
                     totalDeposits
                 } = logObj.args;
-                this.localDiamondContract.onJoinChannelProcessed(
+                this.eventHandler.onJoinChannelProcessed(
                     channelId,
                     joinChannelBlock,
                     timestamp,
                     totalDeposits
-                );
-                this.stateManager.onJoinChannel(
-                    joinChannelBlock,
-                    timestamp,
-                    totalDeposits
-                );
-            }
-        },
-        StateSnapshotUpdated: {
-            filterFactory: (channelId: ChannelId) =>
-                this.stateChannelManagerContract.filters.StateSnapshotUpdated(
-                    channelId
-                ),
-            handler: (logObj: any) => {
-                const { channelId, stateSnapshot } = logObj.args;
-                this.handleStateSnapshotUpdated(channelId, stateSnapshot);
-            }
-        },
-        OnChainSlashAdded: {
-            filterFactory: (channelId: ChannelId) =>
-                this.stateChannelManagerContract.filters.OnChainSlashAdded(
-                    channelId
-                ),
-            handler: (logObj: any) => {
-                const { channelId, participant, timestamp } = logObj.args;
-                this.localDiamondContract.onOnChainSlashAdded(
-                    channelId,
-                    participant,
-                    timestamp
-                );
-            }
-        },
-        WithdrawalsUpdated: {
-            filterFactory: (channelId: ChannelId) =>
-                this.stateChannelManagerContract.filters.WithdrawalsUpdated(
-                    channelId
-                ),
-            handler: (logObj: any) => {
-                const { channelId, totalWithdrawals } = logObj.args;
-                this.localDiamondContract.onWithdrawalsUpdated(
-                    channelId,
-                    totalWithdrawals
-                );
-            }
-        },
-        ChannelStorageCleared: {
-            filterFactory: (channelId: ChannelId) =>
-                this.stateChannelManagerContract.filters.ChannelStorageCleared(
-                    channelId
-                ),
-            handler: (logObj: any) => {
-                const { channelId, latestJoinChannelBlockHash } = logObj.args;
-                this.localDiamondContract.onChannelStorageCleared(
-                    channelId,
-                    latestJoinChannelBlockHash
-                );
-            }
-        },
-        DisputeKilled: {
-            filterFactory: (channelId: ChannelId) =>
-                this.stateChannelManagerContract.filters.DisputeKilled(
-                    channelId
-                ),
-            handler: (logObj: any) => {
-                const { channelId, forkId, disputer } = logObj.args;
-                this.localDiamondContract.onDisputeKilled(
-                    channelId,
-                    forkId,
-                    disputer
-                );
-            }
-        },
-        DisputeReducedResultCommitted: {
-            filterFactory: (channelId: ChannelId) =>
-                this.stateChannelManagerContract.filters.DisputeReducedResultCommitted(
-                    channelId
-                ),
-            handler: (logObj: any) => {
-                const { forkId, reducedForkId, reductionTimestamp, reducer } =
-                    logObj.args;
-                const channelId = logObj.args.channelId;
-                this.localDiamondContract.onDisputeReducedResultCommitted(
-                    channelId,
-                    forkId,
-                    reducedForkId,
-                    reductionTimestamp,
-                    reducer
                 );
             }
         }

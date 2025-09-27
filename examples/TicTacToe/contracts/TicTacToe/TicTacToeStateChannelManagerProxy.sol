@@ -17,7 +17,7 @@ contract TicTacToeStateChannelManagerProxy is AStateChannelManagerProxy {
         p2pTime = 5;
         agreementTime = 5;
         chainFallbackTime = 5;
-        challengeTime = 5;
+        evidenceTime = 5;
     }
 
     function openChannel(bytes32 channelId, bytes[] calldata openChannelData, bytes[] calldata signatures)

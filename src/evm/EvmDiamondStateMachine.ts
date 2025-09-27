@@ -468,7 +468,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             p2pTime: Number(configTimes[0]),
             agreementTime: Number(configTimes[1]),
             chainFallbackTime: Number(configTimes[2]),
-            challengeTime: Number(configTimes[3])
+            evidenceTime: Number(configTimes[3])
         };
 
         const signerAddress = await signer.getAddress();

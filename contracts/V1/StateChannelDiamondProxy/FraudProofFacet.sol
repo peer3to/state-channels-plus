@@ -15,8 +15,7 @@ contract FraudProofFacet is StateChannelCommon {
         FraudProof[] memory proofs = fraudProofs;
         for (uint256 i = 0; i < proofs.length; i++) {
             if (!isParticipantSlashedOnChain(fraudProofVerificationContext.channelId, proofs[i].participant)) {
-                address slashedParticipant =
-                    _getHandle(proofs[i].proofType)(proofs[i].encodedProof, fraudProofVerificationContext);
+                address slashedParticipant = _getHandle(proofs[i].proofType)(proofs[i], fraudProofVerificationContext);
                 if (slashedParticipant == address(0) || slashedParticipant != proofs[i].participant) {
                     // slash the disputer
                     slashedParticipant = msg.sender;
@@ -32,12 +31,12 @@ contract FraudProofFacet is StateChannelCommon {
     function _getHandle(FraudProofType proofType)
         internal
         returns (
-            function(bytes memory encodedFraudProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address)
+            function(FraudProof memory fraudProof, FraudProofVerificationContext memory fraudProofVerificationContext) internal returns (address)
         )
     {
         if (proofType == FraudProofType.BlockDoubleSign) return _handleBlockDoubleSign;
-        if (proofType == FraudProofType.BlockEmptyBlock) return _handleBlockEmptyBlock;
         if (proofType == FraudProofType.BlockInvalidStateTransition) return _handleBlockInvalidStateTransition;
+        if (proofType == FraudProofType.WrongGenesis) return _handleWrongGenesis;
         revert ErrorInvalidFraudProofType();
     }
 
@@ -45,10 +44,10 @@ contract FraudProofFacet is StateChannelCommon {
 
     // ------------------------------- Block Fraud Proofs ---------------------------------------
     function _handleBlockDoubleSign(
-        bytes memory encodedProof,
+        FraudProof memory fraudProof,
         FraudProofVerificationContext memory fraudProofVerificationContext
     ) internal pure returns (address) {
-        BlockDoubleSignProof memory blockDoubleSignProof = abi.decode(encodedProof, (BlockDoubleSignProof));
+        BlockDoubleSignProof memory blockDoubleSignProof = abi.decode(fraudProof.encodedProof, (BlockDoubleSignProof));
 
         Block memory block1 = abi.decode(blockDoubleSignProof.block1.encodedBlock, (Block));
         Block memory block2 = abi.decode(blockDoubleSignProof.block2.encodedBlock, (Block));
@@ -82,40 +81,12 @@ contract FraudProofFacet is StateChannelCommon {
         return signer1;
     }
 
-    function _handleBlockEmptyBlock(
-        bytes memory encodedProof,
-        FraudProofVerificationContext memory fraudProofVerificationContext
-    ) internal pure returns (address) {
-        BlockEmptyProof memory blockEmptyProof = abi.decode(encodedProof, (BlockEmptyProof));
-        Block memory fraudBlock = abi.decode(blockEmptyProof.emptyBlock.encodedBlock, (Block));
-
-        if (fraudProofVerificationContext.channelId != fraudBlock.transaction.header.channelId) {
-            revert ErrorNotSameChannelId();
-        }
-
-        if (fraudBlock.transaction.header.transactionCnt == 0) {
-            if (fraudBlock.stateSnapshotHash != fraudBlock.previousBlockHash) {
-                revert ErrorNotEmptyBlockFraud();
-            }
-        } else {
-            Block memory previousBlock = abi.decode(blockEmptyProof.previousBlock.encodedBlock, (Block));
-
-            if (fraudBlock.stateSnapshotHash != previousBlock.stateSnapshotHash) {
-                revert ErrorNotEmptyBlockFraud();
-            }
-        }
-        address signer = StateChannelUtilLibrary.retriveSignerAddress(
-            blockEmptyProof.emptyBlock.encodedBlock, blockEmptyProof.emptyBlock.signature
-        );
-        return signer;
-    }
-
     function _handleBlockInvalidStateTransition(
-        bytes memory encodedProof,
+        FraudProof memory fraudProof,
         FraudProofVerificationContext memory fraudProofVerificationContext
     ) internal returns (address) {
         BlockInvalidStateTransitionProof memory blockInvalidSTProof =
-            abi.decode(encodedProof, (BlockInvalidStateTransitionProof));
+            abi.decode(fraudProof.encodedProof, (BlockInvalidStateTransitionProof));
         Block memory fraudBlock = abi.decode(blockInvalidSTProof.invalidBlock.encodedBlock, (Block));
         StateSnapshot memory previousStateSnapshot = blockInvalidSTProof.previousBlockStateSnapshot;
         bytes memory previousStateStateMachineState = blockInvalidSTProof.previousStateStateMachineState;
@@ -172,5 +143,44 @@ contract FraudProofFacet is StateChannelCommon {
         require(fraudBlock.stateSnapshotHash == keccak256(abi.encode(newStateSnapshot)), ErrorValidStateTransition());
 
         return signer;
+    }
+
+    function _handleWrongGenesis(
+        FraudProof memory fraudProof,
+        FraudProofVerificationContext memory fraudProofVerificationContext
+    ) internal view returns (address) {
+        WrongGenesisProof memory proof = abi.decode(fraudProof.encodedProof, (WrongGenesisProof));
+        SignedBlock memory signedBlock = proof.invalidBlock;
+        if (!isBlockAuthentic(signedBlock)) return address(0); // slash the caller
+        Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
+        if (_block.transaction.header.transactionCnt != 0) return address(0); // slash the caller
+
+        bytes32 channelId = _block.transaction.header.channelId;
+        bytes32 forkId = _block.transaction.header.forkId;
+        address blockAuthor = _block.transaction.header.participant;
+        StateSnapshot memory correctGenesisSnapshot = proof.genesisSnapshot;
+        bytes32 originForkId = correctGenesisSnapshot.snapshotData.originForkId;
+        StateSnapshot memory onChainSnapshot = getStateSnapshot(channelId);
+
+        if (onChainSnapshot.forkId == forkId) {
+            require(isGenesisSnapshot(onChainSnapshot), ErrorNotGenesisSnapshot());
+            if (_block.previousBlockHash != keccak256(abi.encode(onChainSnapshot))) return blockAuthor;
+        }
+
+        // not onChainSnapshot -> need dispute window
+        if (forkId != keccak256(abi.encode(correctGenesisSnapshot.snapshotData))) return address(0);
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow =
+            _disputeData.disputeWindowMap[correctGenesisSnapshot.snapshotData.originForkId];
+        require(
+            disputeWindow.evidence.creationTimestamp != 0 && _isKillPeriodExpired(disputeWindow, getEvidenceTime()),
+            ErrorDisputeKillPeriodNotExpired()
+        );
+        (bool isAvailable, uint256 timestamp) = getGenesisTimestamp(channelId, originForkId, forkId);
+        require(isAvailable, ErrorGenesisTimestampNotAvailable());
+        if (timestamp != correctGenesisSnapshot.timestamp) return address(0);
+        if (!isGenesisSnapshot(correctGenesisSnapshot)) return address(0);
+        if (_block.previousBlockHash != keccak256(abi.encode(correctGenesisSnapshot))) return blockAuthor;
+        return address(0);
     }
 }
