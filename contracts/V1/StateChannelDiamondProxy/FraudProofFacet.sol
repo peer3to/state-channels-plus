@@ -163,7 +163,7 @@ contract FraudProofFacet is StateChannelCommon {
         StateSnapshot memory onChainSnapshot = getStateSnapshot(channelId);
 
         if (onChainSnapshot.forkId == forkId) {
-            require(isGenesisSnapshot(onChainSnapshot), ErrorNotGenesisSnapshot());
+            require(isGenesisSnapshotWithoutTimeCheck(onChainSnapshot), ErrorNotGenesisSnapshot());
             if (_block.previousBlockHash != keccak256(abi.encode(onChainSnapshot))) return blockAuthor;
         }
 
@@ -179,7 +179,7 @@ contract FraudProofFacet is StateChannelCommon {
         (bool isAvailable, uint256 timestamp) = getGenesisTimestamp(channelId, originForkId, forkId);
         require(isAvailable, ErrorGenesisTimestampNotAvailable());
         if (timestamp != correctGenesisSnapshot.timestamp) return address(0);
-        if (!isGenesisSnapshot(correctGenesisSnapshot)) return address(0);
+        if (!isGenesisSnapshotWithoutTimeCheck(correctGenesisSnapshot)) return address(0);
         if (_block.previousBlockHash != keccak256(abi.encode(correctGenesisSnapshot))) return blockAuthor;
         return address(0);
     }

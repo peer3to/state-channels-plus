@@ -281,34 +281,14 @@ contract LocalDiamond is StateChannelManagerProxy {
         return abi.decode(returnData, (bool));
     }
 
-    function verifyBalanceInvariantCheckView(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+    // Data provided from the latestStateSnapshot
+    function verifyBalanceInvariantCheckSnapshot(bytes32 channelId, SnapshotData memory snapshotData)
         public
-        view
         returns (bool)
     {
-        bytes32 channelId = dispute.input.channelId;
-        SnapshotData memory latestSnapshotData = disputeAuditingData.latestStateSnapshot.snapshotData;
-        Balance memory totalDeposits = latestSnapshotData.totalDeposits;
-        Balance memory totalWithdrawals = latestSnapshotData.totalWithdrawals;
-        bytes32 latestJoinChannelBlockHash = latestSnapshotData.latestJoinChannelBlockHash;
-        // Trick the compiler and ethers for the localEvm - delegatecall in view functions
-        return DisputeVerificationFacet(address(this)).verifyBalanceInvariantCheck(
-            channelId, totalDeposits, totalWithdrawals, latestJoinChannelBlockHash
-        );
-    }
-
-    // Data provided from the latestStateSnapshot
-    function verifyBalanceInvariantCheck(
-        bytes32 channelId,
-        Balance memory totalDeposits,
-        Balance memory totalWithdrawals,
-        bytes32 latestJoinChannelBlockHash
-    ) public returns (bool) {
         // Encode the function selector and arguments
-        bytes memory data = abi.encodeCall(
-            DisputeVerificationFacet.verifyBalanceInvariantCheck,
-            (channelId, totalDeposits, totalWithdrawals, latestJoinChannelBlockHash)
-        );
+        bytes memory data =
+            abi.encodeCall(DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot, (channelId, snapshotData));
         // Perform the low-level call with a gas limit
         (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall(data);
         if (!success) {

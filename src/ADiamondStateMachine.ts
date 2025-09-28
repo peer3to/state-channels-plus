@@ -44,23 +44,6 @@ abstract class ADiamondStateMachine {
     public abstract getTotalStateBalance(): Promise<BalanceStruct>;
 
     public abstract getZeroBalance(): Promise<BalanceStruct>;
-    public abstract computeDisputeOutputSnapshotData(
-        disputeInput: DisputeInputStruct,
-        latestStateSnapshot: StateSnapshotStruct,
-        latestStateMachineState: Bytes,
-        latestJoinChannelBlockHash: Hash
-    ): Promise<SnapshotDataStruct>;
-    public abstract reduceOutputToSnapshotData(
-        forkId: Hash,
-        reducedOutput: ReduceOutputStruct,
-        latestStateSnapshot: StateSnapshotStruct,
-        latestStateMachineState: Bytes,
-        joinChannelBlocks: JoinChannelBlockStruct[]
-    ): Promise<SnapshotDataStruct>;
-    public abstract isDisputeOutputCorrect(
-        dispute: DisputeStruct,
-        disputeAuditingData: DisputeAuditingDataStruct
-    ): Promise<boolean>;
 }
 
 export default ADiamondStateMachine;

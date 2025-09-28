@@ -213,13 +213,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         bytes memory result = _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(
-                DisputeVerificationFacet.verifyBalanceInvariantCheck,
-                (
-                    channelId,
-                    latestSnapshotData.totalDeposits,
-                    latestSnapshotData.totalWithdrawals,
-                    latestSnapshotData.latestJoinChannelBlockHash
-                )
+                DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot, (channelId, latestSnapshotData)
             )
         );
         bool isValid = abi.decode(result, (bool));

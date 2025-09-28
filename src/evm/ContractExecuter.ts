@@ -3,6 +3,8 @@ import { Address } from "@ethereumjs/util";
 import { ethers } from "ethers";
 import { Bytes } from "@/types/types";
 import { decodeErrorProxy } from "@/utils/evmErrorHandler";
+import { defaultBlock } from "node_modules/@ethereumjs/evm/dist/esm/evm";
+import Clock from "@/Clock";
 
 export default class ContractExecuter {
     private readonly evm: EVM;
@@ -19,10 +21,20 @@ export default class ContractExecuter {
         return this.contractAddress;
     }
 
-    async executeCall(data: Bytes): Promise<ExecResult> {
+    async executeCall(
+        data: Bytes,
+        caller?: Address,
+        isStatic = false
+    ): Promise<ExecResult> {
+        // set timestamp
+        let block = defaultBlock();
+        block.header.timestamp = BigInt(Clock.getTimeInSeconds());
+
         const result = await this.evm.runCall({
             data: ethers.getBytes(data),
-            to: this.contractAddress
+            to: this.contractAddress,
+            block,
+            isStatic
         });
 
         if (result.execResult.exceptionError) {

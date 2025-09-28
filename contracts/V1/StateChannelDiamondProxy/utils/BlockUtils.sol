@@ -2,6 +2,7 @@ pragma solidity ^0.8.8;
 
 import "../../types/DisputeTypes.sol";
 import "../StateChannelUtilLibrary.sol";
+import "../Errors.sol";
 
 function _getBlockHeight(Block memory _block) pure returns (uint256) {
     return _block.transaction.header.transactionCnt;
@@ -58,4 +59,19 @@ function _formExitChannelBlock(bytes32 previousBlockHash, ExitChannel[] memory e
     returns (ExitChannelBlock memory _block)
 {
     return ExitChannelBlock({exitChannels: exitChannels, previousBlockHash: previousBlockHash});
+}
+
+function _verifyExitChannelBlocks(
+    ExitChannelBlock[] memory exitChannelBlocks,
+    SnapshotData memory fromSnapshot,
+    SnapshotData memory toSnapshot
+) pure returns (bool) {
+    bytes32 previousExitChannelBlockHash = fromSnapshot.latestExitChannelBlockHash;
+    for (uint256 i = 0; i < exitChannelBlocks.length; i++) {
+        if (previousExitChannelBlockHash != exitChannelBlocks[i].previousBlockHash) {
+            return false;
+        }
+        previousExitChannelBlockHash = keccak256(abi.encode(exitChannelBlocks[i]));
+    }
+    return previousExitChannelBlockHash == toSnapshot.latestExitChannelBlockHash;
 }

@@ -15,8 +15,10 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
         DisputeData storage disputeData = disputeData[channelId];
         bytes32 targetForkId = newStateSnapshot.forkId;
-        require(newStateSnapshot.blockHeight == 0, ErrorInvalidStateSnapshot());
-        require(keccak256(abi.encode(newStateSnapshot.snapshotData)) == targetForkId, ErrorInvalidStateSnapshot());
+        require(isGenesisSnapshotWithoutTimeCheck(newStateSnapshot), ErrorInvalidStateSnapshot());
+        (bool hasGenesis, uint256 genesisTimestap) =
+            getGenesisTimestamp(channelId, newStateSnapshot.snapshotData.originForkId, targetForkId);
+        require(hasGenesis && newStateSnapshot.timestamp == genesisTimestap, ErrorInvalidStateSnapshot());
         mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
         DisputeWindow storage disputeWindow = disputeWindowMap[currentStateSnapshot.forkId];
         bool updated = false;
@@ -26,9 +28,6 @@ contract StateSnapshotFacet is StateChannelCommon {
                 && _isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime())
         ) {
             if (disputeWindow.reducedResult.forkId == targetForkId) {
-                (bool hasGenesis, uint256 genesisTimestap) =
-                    getGenesisTimestamp(channelId, newStateSnapshot.snapshotData.originForkId, targetForkId);
-                require(hasGenesis && newStateSnapshot.timestamp == genesisTimestap, ErrorInvalidStateSnapshot());
                 _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, exitChannelBlocks);
                 updated = true;
                 break;
@@ -65,7 +64,10 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot memory newSnapshot,
         ExitChannelBlock[] memory exitChannelBlocks
     ) internal {
-        _validateExitChannelBlocks(exitChannelBlocks, currentOnChainSnapshot, newSnapshot);
+        require(
+            _verifyExitChannelBlocks(exitChannelBlocks, currentOnChainSnapshot.snapshotData, newSnapshot.snapshotData),
+            ErrorExitChannelBlocksInvalid()
+        );
         _applyExitChannelBlocks(channelId, exitChannelBlocks, newSnapshot.snapshotData.latestJoinChannelBlockHash);
 
         // Update the state snapshot
@@ -82,48 +84,11 @@ contract StateSnapshotFacet is StateChannelCommon {
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         SnapshotData memory genesisSnapshotData
-    ) internal returns (bool) {
+    ) internal view returns (bool) {
         (bool isValid,) = StateChannelManagerProxy(address(this)).verifyMilestones(
             milestoneProofs, milestoneSnapshots, genesisSnapshotData
         );
         return isValid;
-    }
-
-    function _validateExitChannelBlocks(
-        ExitChannelBlock[] memory exitChannelBlocks,
-        StateSnapshot memory onChainStateSnapshot,
-        StateSnapshot memory lastProovenSnapshot
-    ) internal pure {
-        // Validate ExitChannelBlock chain if there are any blocks
-        if (exitChannelBlocks.length > 0) {
-            // Check first block points to genesis state
-            require(
-                exitChannelBlocks[0].previousBlockHash == onChainStateSnapshot.snapshotData.latestExitChannelBlockHash,
-                ErrorFirstExitChannelBlockInvalid()
-            );
-
-            // Verify all blocks are cryptographically linked if there's more than one block
-            for (uint256 i = 1; i < exitChannelBlocks.length; i++) {
-                require(
-                    exitChannelBlocks[i].previousBlockHash == keccak256(abi.encode(exitChannelBlocks[i - 1])),
-                    ErrorExitChannelBlocksNotLinked()
-                );
-            }
-
-            // Verify last snapshot points to last block
-            require(
-                lastProovenSnapshot.snapshotData.latestExitChannelBlockHash
-                    == keccak256(abi.encode(exitChannelBlocks[exitChannelBlocks.length - 1])),
-                ErrorLastSnapshotInvalid()
-            );
-        } else {
-            // If no exit blocks, verify the snapshot points to the genesis state's latest block hash
-            require(
-                lastProovenSnapshot.snapshotData.latestExitChannelBlockHash
-                    == onChainStateSnapshot.snapshotData.latestExitChannelBlockHash,
-                ErrorLastSnapshotDoesNotMatchGenesis()
-            );
-        }
     }
 
     function _applyExitChannelBlocks(

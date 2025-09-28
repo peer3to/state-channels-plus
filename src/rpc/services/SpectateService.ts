@@ -5,7 +5,7 @@ import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { Codec, Type } from "@/utils";
+import { Codec, hash, Type } from "@/utils";
 import { ethers } from "ethers";
 import { JoinChannelBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
@@ -54,8 +54,7 @@ class SpectateService extends ARpcService {
             .sendOne(transport);
 
         setTimeout(() => {
-            if (!this.didRespond(transport))
-                this.mainRpcService.p2pManager.disconnectConnection(transport);
+            if (!this.didRespond(transport)) this.abort();
         }, this.mainRpcService.p2pManager.stateManager.timeConfig.agreementTime);
     }
 
@@ -68,17 +67,17 @@ class SpectateService extends ARpcService {
 
         // Generate payload to prove the latest possible snapshot
         // (but don't send it on-chain - send it to the spectator)
-        const snapshotPayload = await this.generateSnapshotPayload(channelId);
+        const syncPayload = await this.generateSyncPayload(channelId);
 
         console.log(`onSpectateRequest - done`);
         this.mainRpcService.rpcProxy
-            .onSpectateResponse(channelId, snapshotPayload, localTime)
+            .onSpectateResponse(channelId, syncPayload, localTime)
             .sendOne(this.mainRpcService.senderTransport!);
     }
 
     public async onSpectateResponse(
         channelId: ChannelId,
-        snapshotPayload: SyncPayload
+        syncPayload: SyncPayload
     ) {
         try {
             console.log(`onSpectateResponse - start`);
@@ -89,8 +88,7 @@ class SpectateService extends ARpcService {
                 console.log(
                     "onSpectateResponse - no init time found for channel"
                 );
-                this.mainRpcService.p2pManager.disconnectAll(); // someone trying to sync us without us asking -> not cooperating
-                return;
+                return this.abort(); // someone trying to sync us without us asking -> not cooperating
             }
 
             let localTime = Clock.getTimeInSeconds();
@@ -109,8 +107,7 @@ class SpectateService extends ARpcService {
                 console.log(
                     `onSpectateResponse - RTT too high (${rtt}s), disconnecting from all peers`
                 );
-                this.mainRpcService.p2pManager.disconnectAll();
-                return;
+                return this.abort();
             }
 
             // What we ultimately want to do here is:
@@ -132,50 +129,158 @@ class SpectateService extends ARpcService {
 
             // So what we'll actually do here until the above stuff is implemented:
             // 1) Fetch the onChainSnapshot and persist/update the local EVM with it
-            // 2) Fetch all disputeWindows that where provided in the SyncPayload, verify that they're expired on-cahin and persist/update the localEVM with them
-            // 3) Run statefull reduce on our dispute windows in our local EVM - this may be a divergence from the on-chain state, but the on-chain one will have to reduce to the same one if expired - think of it as a CRDT where this time we're leading/ahead locally and the chain will eventualy reflect the same state
+            // 2) Fetch all disputeWindows that where provided in the SyncPayload:
+            //      2.1) persist/update the localEVM with them
+            //      2.2) verify that they're expired - if they're not expired abort
+            //      2.3) reduce them if they're not already reduced (do this locally + package calldata for a single multicall later to the RPC node) - this may be a divergence from the on-chain state, but the on-chain one will have to reduce to the same one if expired - think of it as a CRDT where this time we're leading/ahead locally and the chain will eventualy reflect the same state
             //      Later this will be `eth_call`(multicall(reduceAll,updateStateSnapshotFork,updateStateSnapshotSameFork)) a single atomic transaction that doesn't persist the state locally, so we don't have edge cases when we 'do' persit and when we 'do not'
-            // 4) Locally run 'updateStateSnapshotFork' & 'updateStateSnapshotSameFork' to deduct failure/success
-            // 5) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
+            //      2.4) ** If more than 1  has to be reduced -> abort **
+            //      2.5) verify that they reduce to the correct forks as given in the SyncPayload -> abort otherwise
+            //      2.6) veirify final genesisSnapshot is correct -> abort otherwise
+            //      2.7) verify exitChannelBlocks from onChainSnapshot to final genesisSnapshot
+            //      2.8) verify that gensisSnapshot.forkId is not disputed on-chain -> abort othetwise
+            //      2.9) verify stateProof proves latest state -> abort otherwise
+            //      2.10) verify exitChannelBlocks from final genesisSnapshot to latestFinalizedSnapshot
+            //      2.11) verify balance invariant of the latestFinalizedState -> abort otherwise
+            // 3) Finaly - On the RPC node as a staticcall `eth_call`(multicall(reduceAll,updateStateSnapshotFork,updateStateSnapshotSameFork)) to deduct failure/success -> on failure abort
+            // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
             // This allows us to manually update the snapshot later at will AT LEAST to the state that we were synced (that's why we're reusing the solidity function, so we know that the TX will succeed)
             //
-            // 6) on success - restore the correct onChainSnapshot in our localEVM to reflect the one on-chain we use for chaching
-            //       check balance invariant of the latestFinalizedState
-            //       set some syncFlag to true that will start executing the onBlockConfirmation pipeline with `SpectateStrategy`
-            //    on failure - abort/disconnectAll
-            //
+            // 5) set some syncFlag to true that will start executing the onBlockConfirmation pipeline with `SpectateStrategy`
 
             // ******* TODO - updateStateSnapshotFork/updateStateSnapshotSameFork need dummy contracts to process withdrawals
             const stateManager = this.mainRpcService.p2pManager.stateManager;
             const diamondStateMachine = stateManager.diamondStateMachine;
 
-            // Fetch latest on-chain snapshot from RPC node
-            const onChainSnapshot = await this.fetchOnChainSnapshot(channelId);
-            const forkIds = snapshotPayload.disputeWindows.map(
+            // 1) Fetch the onChainSnapshot and persist/update the local EVM with it
+            const onChainSnapshot =
+                await this.fetchAndPersistOnChainSnapshot(channelId);
+            let finalForkId = onChainSnapshot.forkId;
+
+            // 2) & 2.1) Fetch all disputeWindows that where provided in the SyncPayload:
+            const forkIds = syncPayload.disputeWindows.map(
                 (disputeWindow) => disputeWindow.forkId
             );
             await this.fetchAndPersistOnChainDisputeWindows(channelId, forkIds);
 
-            for (const dw of snapshotPayload.disputeWindows) {
-                await diamondStateMachine.localDiamondContract.reduceAndFinalize(
-                    dw.disputes,
-                    dw.latestStateSnapshot,
-                    dw.latestEncodedStateMachineState,
-                    dw.joinChannelBlocksAppliedInReduce
-                );
+            let notReducedCount = 0;
+            for (const dw of syncPayload.disputeWindows) {
+                // 2.2) verify that they're expired - if they're not expired abort
+                const isExpired =
+                    await diamondStateMachine.localDiamondContract.isKillPeriodExpired(
+                        channelId,
+                        dw.forkId
+                    );
+                if (!isExpired) return this.abort();
+
+                // 2.3) reduce them if they're not already reduced
+                const isReducedAndFinal =
+                    await diamondStateMachine.localDiamondContract.isReduceChallengePeriodExpired(
+                        channelId,
+                        dw.forkId
+                    );
+                if (!isReducedAndFinal) {
+                    await diamondStateMachine.localDiamondContract.reduceAndFinalize(
+                        dw.disputes,
+                        dw.latestStateSnapshot,
+                        dw.latestEncodedStateMachineState,
+                        dw.joinChannelBlocksAppliedInReduce
+                    );
+                    // 2.4) ** If more than 1  has to be reduced -> abort **
+                    if (++notReducedCount > 1) return this.abort();
+                }
+
+                // 2.5) verify that they reduce to the correct forks as given in the SyncPayload
+                const _dw = (
+                    await diamondStateMachine.localDiamondContract.getDisputeWindows(
+                        channelId,
+                        [dw.forkId]
+                    )
+                )[0];
+                if (_dw.reducedResult.forkId != dw.reducedForkId)
+                    return this.abort();
                 // if the above call fails -> local evm will throw -> catch and abort
+                finalForkId = dw.reducedForkId;
             }
+
+            // 2.6) veirify final genesisSnapshot is correct -> abort otherwise
+            let isCorrectGenesis =
+                finalForkId == syncPayload.latestForkGenesisSnapshot.forkId;
+            isCorrectGenesis =
+                isCorrectGenesis &&
+                (await diamondStateMachine.localDiamondContract.isGenesisSnapshotWithoutTimeCheck(
+                    syncPayload.latestForkGenesisSnapshot
+                ));
+            const [isAvailable, genesisTimestamp] =
+                await diamondStateMachine.localDiamondContract.getGenesisTimestamp(
+                    channelId,
+                    syncPayload.latestForkGenesisSnapshot.snapshotData
+                        .originForkId,
+                    finalForkId
+                );
+            isCorrectGenesis =
+                isCorrectGenesis &&
+                isAvailable &&
+                genesisTimestamp ==
+                    syncPayload.latestForkGenesisSnapshot.timestamp;
+            if (!isCorrectGenesis) return this.abort();
+
+            // 2.7) verify exitChannelBlocks from onChainSnapshot to final genesisSnapshot
+            let areValidExitBlocks =
+                await diamondStateMachine.localDiamondContract.verifyExitChannelBlocks(
+                    syncPayload.exitChannelBlocksUpToLatestGenesis,
+                    onChainSnapshot.snapshotData,
+                    syncPayload.latestForkGenesisSnapshot.snapshotData
+                );
+            if (!areValidExitBlocks) return this.abort();
+
+            // 2.8) verify that gensisSnapshot.forkId is not disputed on-chain -> abort othetwise
+            const _timestamp =
+                await stateManager.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
+                    channelId,
+                    finalForkId
+                );
+            if (Number(_timestamp) != 0) return this.abort();
+
+            // 2.9) verify stateProof proves latest state -> abort otherwise
+            const [isValid, _] =
+                await diamondStateMachine.localDiamondContract.verifyMilestones(
+                    syncPayload.stateProof.milestones,
+                    syncPayload.milestoneSnapshots,
+                    syncPayload.latestForkGenesisSnapshot.snapshotData
+                );
+            if (!isValid) return this.abort();
+
+            const latestFinalizedSnapshot =
+                syncPayload.milestoneSnapshots.length > 0
+                    ? syncPayload.milestoneSnapshots.at(-1)!
+                    : syncPayload.latestForkGenesisSnapshot;
+
+            if (
+                latestFinalizedSnapshot.snapshotData.stateMachineStateHash !=
+                hash(syncPayload.latestFinalizedEncodedState)
+            )
+                return this.abort();
+
+            // 2.10) verify exitChannelBlocks from final genesisSnapshot to latestFinalizedSnapshot
+            areValidExitBlocks =
+                await diamondStateMachine.localDiamondContract.verifyExitChannelBlocks(
+                    syncPayload.exitChannelBlocksUpToLatestGenesis,
+                    syncPayload.latestForkGenesisSnapshot.snapshotData,
+                    latestFinalizedSnapshot.snapshotData
+                );
+            if (!areValidExitBlocks) return this.abort();
 
             await diamondStateMachine.localDiamondContract.updateStateSnapshotFork(
                 channelId,
-                snapshotPayload.latestForkGenesisSnapshot,
-                snapshotPayload.exitChannelBlocksUpToLatestGenesis
+                syncPayload.latestForkGenesisSnapshot,
+                syncPayload.exitChannelBlocksUpToLatestGenesis
             );
             await diamondStateMachine.localDiamondContract.updateStateSnapshotSameFork(
                 channelId,
-                snapshotPayload.stateProof.milestones,
-                snapshotPayload.milestoneSnapshots,
-                snapshotPayload.exitChannelBlocksOfTheLatestFork
+                syncPayload.stateProof.milestones,
+                syncPayload.milestoneSnapshots,
+                syncPayload.exitChannelBlocksOfTheLatestFork
             );
             // TODO! verify latestFinalizedMilestone commits to latestFinalizedEncodedState
             // TODO! check invariant - what about balance tracking?
@@ -188,8 +293,8 @@ class SpectateService extends ARpcService {
 
             console.log("Spectator successfully synced to latest proven state");
         } catch (e) {
-            this.mainRpcService.p2pManager.disconnectAll();
             console.log(e);
+            this.abort();
         }
     }
 
@@ -197,7 +302,7 @@ class SpectateService extends ARpcService {
      * Generate payload to prove the latest possible snapshot
      * (but don't send it on-chain - send it to the spectator)
      */
-    private async generateSnapshotPayload(
+    private async generateSyncPayload(
         channelId: ChannelId
     ): Promise<SyncPayload> {
         const stateManager = this.mainRpcService.p2pManager.stateManager;
@@ -285,7 +390,7 @@ class SpectateService extends ARpcService {
 
             // Move to the next fork using local EVM
             const snapshotData =
-                await diamondStateMachine.reduceOutputToSnapshotData(
+                await diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
                     currentForkId,
                     reducedOutput,
                     reducedLatestStateSnapshot.toStruct(),
@@ -394,7 +499,7 @@ class SpectateService extends ARpcService {
     /**
      * Fetch latest on-chain snapshot
      */
-    private async fetchOnChainSnapshot(
+    private async fetchAndPersistOnChainSnapshot(
         channelId: ChannelId
     ): Promise<StateSnapshot> {
         // Fetch the latest on-chain snapshot from RPC node
@@ -498,6 +603,10 @@ class SpectateService extends ARpcService {
     private didRespond(transport: ATransport): boolean {
         const timestamp = this.spectateInitTimes.get(transport);
         return !timestamp;
+    }
+
+    private abort() {
+        this.mainRpcService.p2pManager.disconnectAll();
     }
 }
 

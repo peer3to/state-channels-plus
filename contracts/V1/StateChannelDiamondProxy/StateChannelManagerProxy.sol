@@ -409,12 +409,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         );
     }
 
-    function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {
-        DisputeData storage _disputeData = disputeData[channelId];
-        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
-        return _isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime());
-    }
-
     // ********** private/internal functions **********
 
     function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
@@ -452,6 +446,12 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return _isKillPeriodExpired(disputeWindow, getEvidenceTime());
     }
 
+    function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        return _isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime());
+    }
+
     function getDisputeWindows(bytes32 channelId, bytes32[] memory forkIds)
         public
         view
@@ -463,5 +463,13 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
             disputeWindows[i] = disputeData.disputeWindowMap[forkIds[i]];
         }
         return disputeWindows;
+    }
+
+    function verifyExitChannelBlocks(
+        ExitChannelBlock[] memory exitChannelBlocks,
+        SnapshotData memory fromSnapshot,
+        SnapshotData memory toSnapshot
+    ) public pure returns (bool) {
+        return _verifyExitChannelBlocks(exitChannelBlocks, fromSnapshot, toSnapshot);
     }
 }

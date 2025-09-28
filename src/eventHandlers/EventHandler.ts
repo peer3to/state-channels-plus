@@ -25,8 +25,7 @@ export class EventHandler {
 
     async onStateSnapshotUpdated(
         channelId: ChannelId,
-        stateSnapshot: StateSnapshotStruct,
-        timestamp: Timestamp
+        stateSnapshot: StateSnapshotStruct
     ): Promise<void> {
         if (!(await this.isSnapshotInPast(channelId, stateSnapshot))) {
             throw new Error(
@@ -38,8 +37,7 @@ export class EventHandler {
 
         this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
             channelId,
-            stateSnapshot,
-            timestamp
+            stateSnapshot
         );
     }
 

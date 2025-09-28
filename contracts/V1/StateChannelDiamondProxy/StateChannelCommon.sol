@@ -87,7 +87,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             // Dispute window doesn't exist
             StateSnapshot memory currentOnChainSnapshot = stateSnapshots[channelId];
             // check if current on-chain snapshot.fork == forkId
-            if (currentOnChainSnapshot.forkId == forkId && isGenesisSnapshot(currentOnChainSnapshot)) {
+            if (currentOnChainSnapshot.forkId == forkId && isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)) {
                 return (true, currentOnChainSnapshot.timestamp);
             }
             return (false, 0);
@@ -95,7 +95,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return (true, timestamp);
     }
 
-    function isGenesisSnapshot(StateSnapshot memory snapshot) public pure returns (bool) {
+    function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot) public pure returns (bool) {
         return snapshot.forkId == keccak256(abi.encode(snapshot.snapshotData)) && snapshot.blockHeight == 0;
     }
 

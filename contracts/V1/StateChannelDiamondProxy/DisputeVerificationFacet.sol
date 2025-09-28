@@ -16,7 +16,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         require(isCorrectAuditingData(dispute, disputeAuditingData), ErrorDisputeWrongAuditingData());
         require(_isCorrectGenesis(dispute), ErrorDisputeGenesisInvalid());
         require(verifyStateProof(dispute, disputeAuditingData, true), ErrorDisputeStateProofInvalid());
-        require(_verifyExitChannelBlocks(dispute, disputeAuditingData), ErrorDisputeExitChannelBlocksInvalid());
+        require(_verifyDisputeExitChannelBlocks(dispute, disputeAuditingData), ErrorDisputeExitChannelBlocksInvalid());
 
         // ***************** Generate output snapshot ***************
         (SnapshotData memory outputSnapshotData, address[] memory slashes) = computeDisputeOutputSnapshotData(
@@ -542,42 +542,42 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return previousJoinChannelBlockHash == latestJoinChannelBlockHash;
     }
 
-    function _verifyExitChannelBlocks(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+    function _verifyDisputeExitChannelBlocks(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         internal
         pure
         returns (bool)
     {
-        //check joinChannelBlocks (linked to latestSateSnapshot, chained internally and outputStateSnapshot commits to the head)
-        bytes32 previousExitChannelBlockHash = disputeAuditingData.genesisStateSnapshotData.latestExitChannelBlockHash;
-        for (uint256 i = 0; i < disputeAuditingData.exitChannelBlocks.length; i++) {
-            if (previousExitChannelBlockHash != disputeAuditingData.exitChannelBlocks[i].previousBlockHash) {
-                return false;
-            }
-            previousExitChannelBlockHash = keccak256(abi.encode(disputeAuditingData.exitChannelBlocks[i]));
-        }
-        return previousExitChannelBlockHash
-            == disputeAuditingData.latestStateSnapshot.snapshotData.latestExitChannelBlockHash;
+        return _verifyExitChannelBlocks(
+            disputeAuditingData.exitChannelBlocks,
+            disputeAuditingData.genesisStateSnapshotData,
+            disputeAuditingData.latestStateSnapshot.snapshotData
+        );
     }
-
+    /**
+     */
     /// @dev Verify latestState balance invariant - output state is calculated with correct state transition that's audited -> if input is ok -> output is ok
-    function verifyBalanceInvariantCheck(
-        bytes32 channelId,
-        Balance memory totalDeposits,
-        Balance memory totalWithdrawals,
-        bytes32 latestJoinChannelBlockHash
-    ) public view returns (bool) {
+
+    function verifyBalanceInvariantCheckSnapshot(bytes32 channelId, SnapshotData memory snapshotData)
+        public
+        view
+        returns (bool)
+    {
         ChannelBalance storage channelBalance = channelBalances[channelId];
-        Balance memory onChainDeposits = channelBalance.onChainJoinChannelMap[latestJoinChannelBlockHash].totalDeposits;
+        Balance memory onChainDeposits =
+            channelBalance.onChainJoinChannelMap[snapshotData.latestJoinChannelBlockHash].totalDeposits;
         Balance memory onChainWithdrawals = channelBalance.totalOnChainWithdrawals;
         //on-chain deposits have to match latestState deposits since deposits only happen on-chain
-        if (!stateMachineImplementation.areBalancesEqual(totalDeposits, onChainDeposits)) return false;
+        if (!stateMachineImplementation.areBalancesEqual(snapshotData.totalDeposits, onChainDeposits)) return false;
         //total withdrawals >= on-chain withdrawals since on-chain withdrawals are already processed
-        if (stateMachineImplementation.isBalanceLesserThan(totalWithdrawals, onChainWithdrawals)) return false;
+        if (stateMachineImplementation.isBalanceLesserThan(snapshotData.totalWithdrawals, onChainWithdrawals)) {
+            return false;
+        }
         Balance memory stateMachineBalance = stateMachineImplementation.getTotalStateBalance(); // The state is already set
         // totalDeposits == totalWithdrawals + stateMachineBalance
         if (
             !stateMachineImplementation.areBalancesEqual(
-                totalDeposits, stateMachineImplementation.addBalance(totalWithdrawals, stateMachineBalance)
+                snapshotData.totalDeposits,
+                stateMachineImplementation.addBalance(snapshotData.totalWithdrawals, stateMachineBalance)
             )
         ) return false;
         return true;
@@ -707,7 +707,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         ) return false;
 
         // Check exitChannelBlocks
-        if (!_verifyExitChannelBlocks(dispute, disputeAuditingData)) return false;
+        if (!_verifyDisputeExitChannelBlocks(dispute, disputeAuditingData)) return false;
 
         return true;
     }

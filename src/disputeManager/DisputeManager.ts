@@ -183,7 +183,7 @@ class DisputeManager {
 
         // generateDisputeOutputState
         const outputSnapshotData =
-            await this.diamondStateMachine.computeDisputeOutputSnapshotData(
+            await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
                 disputeInput,
                 latestStateSnapshot.toStruct(),
                 latestStateMachineState,

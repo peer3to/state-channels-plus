@@ -251,9 +251,9 @@ export default class DisputeValidationService {
 
         // (STATEFUL - compiler trick) verify balance invariant
         if (
-            !(await this.diamondStateMachine.localDiamondContract.verifyBalanceInvariantCheckView(
-                dispute,
-                disputeAuditingData
+            !(await this.diamondStateMachine.localDiamondContract.verifyBalanceInvariantCheckSnapshot.staticCall(
+                dispute.input.channelId,
+                disputeAuditingData.latestStateSnapshot.snapshotData
             ))
         ) {
             // TODO - double check with RPC node, maybe local state not synced - I didn't expose this in the normal diamond
@@ -288,7 +288,7 @@ export default class DisputeValidationService {
 
         // verify dispute output
         if (
-            !(await this.diamondStateMachine.isDisputeOutputCorrect(
+            !(await this.diamondStateMachine.localDiamondContract.isDisputeOutputCorrect.staticCall(
                 dispute,
                 disputeAuditingData
             ))

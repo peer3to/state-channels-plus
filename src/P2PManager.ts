@@ -101,7 +101,7 @@ class P2PManager implements IOnMessage {
         profile.blacklist();
         const transport = profile.getTransport();
         if (!transport) return;
-        this.removeConnection(transport);
+        this.disconnectConnection(transport);
     }
 
     public isBlacklisted(evmAddress: Address): boolean {
