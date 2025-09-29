@@ -469,7 +469,28 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         ExitChannelBlock[] memory exitChannelBlocks,
         SnapshotData memory fromSnapshot,
         SnapshotData memory toSnapshot
-    ) public pure returns (bool) {
+    ) public view returns (bool) {
         return _verifyExitChannelBlocks(exitChannelBlocks, fromSnapshot, toSnapshot);
+    }
+
+    // Data provided from the latestStateSnapshot
+    function verifyBalanceInvariantCheckSnapshot(
+        bytes32 channelId,
+        SnapshotData memory snapshotData,
+        bytes memory encodedStateMachineState
+    ) public returns (bool) {
+        // Encode the function selector and arguments
+        bytes memory data = abi.encodeCall(
+            DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot,
+            (channelId, snapshotData, encodedStateMachineState)
+        );
+        // Perform the low-level call with a gas limit
+        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall(data);
+        if (!success) {
+            assembly {
+                revert(add(returnData, 0x20), mload(returnData))
+            }
+        }
+        return abi.decode(returnData, (bool));
     }
 }

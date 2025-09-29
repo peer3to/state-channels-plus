@@ -544,7 +544,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
     function _verifyDisputeExitChannelBlocks(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         internal
-        pure
+        view
         returns (bool)
     {
         return _verifyExitChannelBlocks(
@@ -554,24 +554,50 @@ contract DisputeVerificationFacet is StateChannelCommon {
         );
     }
     /**
+     *
+     * Usefull to spactating/joining participants to prove that the channel has the right amount of funds regardless of the internal agreement of peers within it.
+     * Prevents poisoned states that could happen though N/N collusion. (e.g. colluding peers caliming they have more funds than the on-chain available balance to try and steal new deposits of joining peers)
+     *
+     * This function and in general checking balance invariants isn't usuefull to existing participants that verify every state transition - if a balance was infalted, an honest peer would detect an incorrect state transition and raise a dispute.
+     *
+     * Each snapshot commits to an aggregated sum (totalDeposits/totalWithdrawals) that represent all the funds that have entered/existed the channel up to that point in time.
+     * The snapshot also commits to some state (encodedState) that accounts for the current in-channel balance (totalDeposits-totalWithdrawals);
+     * The check verifies that all the math adds up - what the Snapshot is claming is the balance, is actually the balance that's verified against the on-chain balance.
+     *
+     * What this function does NOT do, is verify that the state is correct it just cares that the balance invariant is satisifed.
+     * (e.g. It doesn't care if Bob has 4 tokens and Alice 6 or Bob has 8 and Alice 2 - it only cares that the total is the same e.g. 10)
+     *
+     * Exits and Joins happen over their respective blockchain data strucutres (ExitChannelBlocks & JoinChannelBlocks) which are also not checked here.
+     * Snapshot commits to the head of both of these blockchains and this function assumes that the caller verified those blockchains and that the totalDeposits & totalWithdrawals that the snapshot commits to are correct
+     *
+     * Updating the snapshot on-chain will always apply the above check, so the onChainSnapshot can always be used as an objective single source of truth from which you start veryfing everything else.
+     *
+     * Esentially we don't have to impose any of these checks when updating the snapshot and let it be 'poisonous' since spectating peers can easily check is it correct
+     * onChainDeposits == onChainSnapshot.totalDeposits
+     * onChainWithdrawals == onChainSnapshot.totalWithdrawals
+     * but since this check is so trivial we'll add as the last check onSnapshotUpdate
+     *
+     * The spectating peer can also request the state at the onChainSnapshot, but it's not needed - only the latestState balance is relevant and only that needs to be checked
+     *
      */
-    /// @dev Verify latestState balance invariant - output state is calculated with correct state transition that's audited -> if input is ok -> output is ok
 
-    function verifyBalanceInvariantCheckSnapshot(bytes32 channelId, SnapshotData memory snapshotData)
-        public
-        view
-        returns (bool)
-    {
+    function verifyBalanceInvariantCheckSnapshot(
+        bytes32 channelId,
+        SnapshotData memory snapshotData,
+        bytes memory encodedStateMachineState
+    ) public returns (bool) {
         ChannelBalance storage channelBalance = channelBalances[channelId];
         Balance memory onChainDeposits =
             channelBalance.onChainJoinChannelMap[snapshotData.latestJoinChannelBlockHash].totalDeposits;
         Balance memory onChainWithdrawals = channelBalance.totalOnChainWithdrawals;
+        if (snapshotData.stateMachineStateHash != keccak256(encodedStateMachineState)) return false;
         //on-chain deposits have to match latestState deposits since deposits only happen on-chain
         if (!stateMachineImplementation.areBalancesEqual(snapshotData.totalDeposits, onChainDeposits)) return false;
         //total withdrawals >= on-chain withdrawals since on-chain withdrawals are already processed
         if (stateMachineImplementation.isBalanceLesserThan(snapshotData.totalWithdrawals, onChainWithdrawals)) {
             return false;
         }
+        stateMachineImplementation.setState(encodedStateMachineState);
         Balance memory stateMachineBalance = stateMachineImplementation.getTotalStateBalance(); // The state is already set
         // totalDeposits == totalWithdrawals + stateMachineBalance
         if (
@@ -660,7 +686,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
     function isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         public
-        pure
+        view
         returns (bool)
     {
         // Doesn't check data integrity (disputeAuditingDataHash == hash(disputeAuditingData))

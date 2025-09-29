@@ -5,14 +5,12 @@ import AValidationStrategy from "./AValidationStrategy";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
 import P2PManager from "@/P2PManager";
-import DisputeManager from "@/disputeManager";
 
-export default class BlockValidationStrategy extends AValidationStrategy {
+export default class SpectatingValidationStrategy extends AValidationStrategy {
     private readonly fraudProofService: FraudProofService;
     constructor(
         private readonly storage: Storage,
-        private readonly p2pManager: P2PManager,
-        private readonly disputeManager: DisputeManager
+        private readonly p2pManager: P2PManager
     ) {
         super();
         this.fraudProofService = new FraudProofService(this.storage);
@@ -45,11 +43,13 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         }
     }
     public async authenticateBlockFailed(
-        block: BlockConfirmationStruct
+        _block: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
+        this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
     public async wrongChannel(_block: Block): Promise<BlockValidationResult> {
+        this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
     public async channelNotOpened(
@@ -62,6 +62,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     public async notAllSingersAreParticipants(
         _block: Block
     ): Promise<BlockValidationResult> {
+        this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
     public async noNewSignaturesOnExistingBlock(
@@ -82,35 +83,32 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     public async blockAuthorIsNotParticipant(
         _block: Block
     ): Promise<BlockValidationResult> {
+        this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
     public async doubleSignDetected(
-        conflictingBlock: Block,
-        block: Block
+        _conflictingBlock: Block,
+        _block: Block
     ): Promise<BlockValidationResult> {
-        // DOUBLE SIGN
-        this.fraudProofService.createDoubleSignProof(conflictingBlock, block);
-        // TODO this.disputeManager.createDispute()
+        this.disconnect();
         return BlockValidationResult.DISPUTE;
     }
     public async invalidStateTransitionDetected(
-        block: Block
+        _block: Block
     ): Promise<BlockValidationResult> {
-        this.fraudProofService.createInvalidStateTransitionProof(block);
-        // TODO this.disputeManager.createDispute()
+        this.disconnect();
         return BlockValidationResult.DISPUTE;
     }
     public async wrongGenesisDetected(
-        block: Block
+        _block: Block
     ): Promise<BlockValidationResult> {
-        this.fraudProofService.createWrongGenesisProof(block);
-        throw new Error("Not implemented");
-        // TODO this.disputeManager.createDispute()
+        this.disconnect();
         return BlockValidationResult.DISPUTE;
     }
     public async conflictingButNotLinkedBlockDetected(
         _block: Block
     ): Promise<BlockValidationResult> {
+        this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
     public async blockForkIsDisputed(
@@ -130,18 +128,22 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     public async blockIsNotLinkedAndIsNotFirstBlock(
         _block: Block
     ): Promise<BlockValidationResult> {
+        this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
     public async objectiveInvalidTimestampDetected(
-        block: Block
+        _block: Block
     ): Promise<BlockValidationResult> {
-        this.fraudProofService.createInvalidTimestampProof(block);
-        // TODO this.disputeManager.createDispute()
+        this.disconnect();
         return BlockValidationResult.DISPUTE;
     }
     public async subjectiveInvalidTimestampDetected(
         _block: Block
     ): Promise<BlockValidationResult> {
         return BlockValidationResult.NOT_ENOUGH_TIME;
+    }
+
+    private disconnect() {
+        this.p2pManager.disconnectAll();
     }
 }

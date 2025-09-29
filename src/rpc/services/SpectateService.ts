@@ -1,6 +1,6 @@
 import { ARpcService, MainRpcService } from "@/rpc";
 import { ChannelId, Timestamp, Bytes, Hash, ForkId } from "@/types/types";
-import { StateSnapshot } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
@@ -9,12 +9,14 @@ import { Codec, hash, Type } from "@/utils";
 import { ethers } from "ethers";
 import { JoinChannelBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
+    BlockConfirmationStruct,
     ExitChannelBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 export interface DisputeWndowVerification {
-    disputes: DisputeStruct[];
+    disputes: DisputeConfirmationStruct[];
     forkId: Hash; // can deduct from disputes - don't need to include here
     latestStateSnapshot: StateSnapshotStruct;
     latestEncodedStateMachineState: Bytes;
@@ -137,7 +139,7 @@ class SpectateService extends ARpcService {
             //      2.4) ** If more than 1  has to be reduced -> abort **
             //      2.5) verify that they reduce to the correct forks as given in the SyncPayload -> abort otherwise
             //      2.6) veirify final genesisSnapshot is correct -> abort otherwise
-            //      2.7) verify exitChannelBlocks from onChainSnapshot to final genesisSnapshot
+            //      2.7) verify exitChannelBlocks from onChainSnapshot to final genesisSnapshot | TODO - think do we need to verify joinChannelBlocks
             //      2.8) verify that gensisSnapshot.forkId is not disputed on-chain -> abort othetwise
             //      2.9) verify stateProof proves latest state -> abort otherwise
             //      2.10) verify exitChannelBlocks from final genesisSnapshot to latestFinalizedSnapshot
@@ -146,7 +148,7 @@ class SpectateService extends ARpcService {
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
             // This allows us to manually update the snapshot later at will AT LEAST to the state that we were synced (that's why we're reusing the solidity function, so we know that the TX will succeed)
             //
-            // 5) set some syncFlag to true that will start executing the onBlockConfirmation pipeline with `SpectateStrategy`
+            // 5) set some syncFlag to true that will start executing the onBlockConfirmation pipeline with `SpectateStrategy` from unfinalized blocks
 
             // ******* TODO - updateStateSnapshotFork/updateStateSnapshotSameFork need dummy contracts to process withdrawals
             const stateManager = this.mainRpcService.p2pManager.stateManager;
@@ -164,6 +166,8 @@ class SpectateService extends ARpcService {
             await this.fetchAndPersistOnChainDisputeWindows(channelId, forkIds);
 
             let notReducedCount = 0;
+            let disputeWindowsThatNeedToBeReducedOnChain: DisputeWndowVerification[] =
+                [];
             for (const dw of syncPayload.disputeWindows) {
                 // 2.2) verify that they're expired - if they're not expired abort
                 const isExpired =
@@ -180,8 +184,15 @@ class SpectateService extends ARpcService {
                         dw.forkId
                     );
                 if (!isReducedAndFinal) {
+                    disputeWindowsThatNeedToBeReducedOnChain.push(dw);
                     await diamondStateMachine.localDiamondContract.reduceAndFinalize(
-                        dw.disputes,
+                        dw.disputes.map((disputeConfirmation) =>
+                            Codec.decode(
+                                disputeConfirmation.signedDispute
+                                    .encodedDispute,
+                                Type.Dispute
+                            )
+                        ),
                         dw.latestStateSnapshot,
                         dw.latestEncodedStateMachineState,
                         dw.joinChannelBlocksAppliedInReduce
@@ -271,25 +282,35 @@ class SpectateService extends ARpcService {
                 );
             if (!areValidExitBlocks) return this.abort();
 
-            await diamondStateMachine.localDiamondContract.updateStateSnapshotFork(
-                channelId,
-                syncPayload.latestForkGenesisSnapshot,
-                syncPayload.exitChannelBlocksUpToLatestGenesis
-            );
-            await diamondStateMachine.localDiamondContract.updateStateSnapshotSameFork(
-                channelId,
-                syncPayload.stateProof.milestones,
-                syncPayload.milestoneSnapshots,
-                syncPayload.exitChannelBlocksOfTheLatestFork
-            );
-            // TODO! verify latestFinalizedMilestone commits to latestFinalizedEncodedState
-            // TODO! check invariant - what about balance tracking?
-            // TODO! restore old onChainSnapshot (the actual current one) so the local evm state is consistant
-            // TODO! Deconstruct SyncPayload and persist components in storage
-            // TODO? - have a dryRun implementation to simplify these storage things in the short/mid term
-            // if we're here - the local EVM validated the sync to the latestFinalizedState
+            // 2.11) verify balance invariant of the latestFinalizedState -> abort otherwise
+            const isValidBalance =
+                await stateManager.stateChannelManagerContract.verifyBalanceInvariantCheckSnapshot.staticCall(
+                    channelId,
+                    latestFinalizedSnapshot.snapshotData,
+                    syncPayload.latestFinalizedEncodedState
+                );
+            if (!isValidBalance) this.abort();
 
-            // few more things
+            // 3) Finaly - On the RPC node as a staticcall `eth_call`(multicall(reduceAll,updateStateSnapshotFork,updateStateSnapshotSameFork)) to deduct failure/success -> on failure abort
+            const isMulticallSuccess = await this.tryMulticallSnapshotUpdate(
+                channelId,
+                onChainSnapshot,
+                syncPayload,
+                disputeWindowsThatNeedToBeReducedOnChain
+            );
+            if (!isMulticallSuccess) return this.abort();
+
+            // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
+            this.persistSyncPayload(syncPayload);
+
+            // 5) set some syncFlag to true that will start executing the onBlockConfirmation pipeline with `SpectateStrategy` from unfinalized blocks
+            // Not sure if we need to set the flag - the default one is 'SPECTATING' - think that's enough, but maybe we need 1 more flag
+            const blockConfirmations =
+                this.getUnfinalizedBlockConfirmationsFromStateProof(
+                    syncPayload.stateProof
+                );
+            for (const bc of blockConfirmations)
+                stateManager.onBlockConfirmation(bc);
 
             console.log("Spectator successfully synced to latest proven state");
         } catch (e) {
@@ -337,28 +358,30 @@ class SpectateService extends ARpcService {
                     currentForkId
                 );
             // Collect all disputes for this dispute window
-            const currentWindowDisputes: DisputeStruct[] = [];
+            const currentWindowDisputes: DisputeConfirmationStruct[] = [];
             for (const commitment of disputeCommitments) {
-                const confirmation =
+                const disputeConfirmation =
                     stateManager.storage.disputes.getDisputeConfirmation(
                         commitment
                     );
-                if (!confirmation) {
+                if (!disputeConfirmation) {
                     throw new Error(
                         `Missing Data Availability for dispute commitment ${commitment}`
                     );
                 }
-                const dispute = Codec.decode(
-                    confirmation.signedDispute.encodedDispute,
-                    Type.Dispute
-                ) as DisputeStruct;
-                currentWindowDisputes.push(dispute);
+
+                currentWindowDisputes.push(disputeConfirmation);
             }
 
             // After collecting disputes for this window, reduce to get the next fork
             const reducedOutput =
                 await diamondStateMachine.localDiamondContract.reduceProxyView(
-                    currentWindowDisputes
+                    currentWindowDisputes.map((disputeConfirmation) =>
+                        Codec.decode(
+                            disputeConfirmation.signedDispute.encodedDispute,
+                            Type.Dispute
+                        )
+                    )
                 );
 
             // reducedOutput latestStateSnapshot
@@ -538,68 +561,152 @@ class SpectateService extends ARpcService {
         }
     }
 
-    /**
-     * Sync to the latest proven state
-     */
-    private async syncToLatestProvenState(
+    private async tryMulticallSnapshotUpdate(
         channelId: ChannelId,
-        provenState: StateSnapshot
-    ) {
+        onChainSnapshot: StateSnapshotStruct,
+        syncPayload: SyncPayload,
+        disputeWindowsThatNeedToBeReducedOnChain: DisputeWndowVerification[]
+    ): Promise<boolean> {
         const stateManager = this.mainRpcService.p2pManager.stateManager;
-
-        console.log(`Syncing to latest proven state for channel ${channelId}`);
-
-        // Update the local state to match the proven state
-        try {
-            // Store the proven state snapshot in local storage
-            stateManager.storage.stateSnapshots.storeStateSnapshot(
-                provenState,
-                { hash: provenState.hash }
-            );
-
-            // Update the fork ID to match the proven state
-            stateManager.forkId = provenState.forkId;
-
-            console.log(
-                `Successfully synced to proven state: forkId=${provenState.forkId}, height=${provenState.blockHeight}`
-            );
-        } catch (error) {
-            console.error("Failed to sync to proven state:", error);
-            throw error;
+        const stateChannelManagerContract =
+            stateManager.stateChannelManagerContract;
+        // Encode data for multicall
+        const calldata: string[] = [];
+        for (const dw of disputeWindowsThatNeedToBeReducedOnChain) {
+            const reduceCalldata =
+                stateChannelManagerContract.interface.encodeFunctionData(
+                    "reduceAndFinalize",
+                    [
+                        dw.disputes.map((disputeConfirmation) =>
+                            Codec.decode(
+                                disputeConfirmation.signedDispute
+                                    .encodedDispute,
+                                Type.Dispute
+                            )
+                        ),
+                        dw.latestStateSnapshot,
+                        dw.latestEncodedStateMachineState,
+                        dw.joinChannelBlocksAppliedInReduce
+                    ]
+                );
+            calldata.push(reduceCalldata);
         }
+        // check if we need to update the genesis snapshot first
+        if (
+            onChainSnapshot.forkId !=
+            syncPayload.latestForkGenesisSnapshot.forkId
+        ) {
+            const snapshotCalldata =
+                stateChannelManagerContract.interface.encodeFunctionData(
+                    "updateStateSnapshotFork",
+                    [
+                        channelId,
+                        syncPayload.latestForkGenesisSnapshot,
+                        syncPayload.exitChannelBlocksUpToLatestGenesis
+                    ]
+                );
+            calldata.push(snapshotCalldata);
+        }
+
+        // check if we need to update the snapshot on the same fork
+        if (syncPayload.milestoneSnapshots.length > 0) {
+            const snapshotCalldata =
+                stateChannelManagerContract.interface.encodeFunctionData(
+                    "updateStateSnapshotSameFork",
+                    [
+                        channelId,
+                        syncPayload.stateProof.milestones,
+                        syncPayload.milestoneSnapshots,
+                        syncPayload.exitChannelBlocksOfTheLatestFork
+                    ]
+                );
+            calldata.push(snapshotCalldata);
+        }
+        if (calldata.length > 0) {
+            try {
+                await stateChannelManagerContract.multicall.staticCall(
+                    calldata
+                );
+            } catch (e) {
+                console.log(e);
+                return false;
+            }
+        }
+        return true;
     }
 
-    /**
-     * TODO Apply blocks from queue in blockConfirmationPipeline
-     */
-    private async applyQueuedBlocksFromPipeline(channelId: ChannelId) {
-        const stateManager = this.mainRpcService.p2pManager.stateManager;
-
-        console.log(
-            `Applying queued blocks from pipeline for channel ${channelId}`
+    private persistSyncPayload(syncPayload: SyncPayload) {
+        const storage = this.mainRpcService.p2pManager.stateManager.storage;
+        for (const dw of syncPayload.disputeWindows) {
+            for (const dispute of dw.disputes) {
+                storage.disputes.storeDisputeConfirmation(dispute);
+            }
+            storage.stateSnapshots.storeStateSnapshot(
+                StateSnapshot.from(dw.latestStateSnapshot)
+            );
+            storage.stateMachineStates.storeStateMachineState(
+                dw.latestEncodedStateMachineState
+            );
+            for (const jcb of dw.joinChannelBlocksAppliedInReduce) {
+                storage.joinChannelBlocks.storeJoinChannelBlock(jcb);
+            }
+        }
+        storage.stateSnapshots.storeStateSnapshot(
+            StateSnapshot.from(syncPayload.latestForkGenesisSnapshot)
         );
-
-        try {
-            // The spectator can now process blocks like a normal participant
-            // The existing block processing pipeline will handle incoming blocks automatically
-            console.log(
-                `Spectator is now ready to process blocks for channel ${channelId}`
+        this.persistFinalizedPartsOfStateProof(syncPayload.stateProof);
+        for (const snapshot of syncPayload.milestoneSnapshots)
+            storage.stateSnapshots.storeStateSnapshot(
+                StateSnapshot.from(snapshot)
             );
-
-            // The spectator will automatically process blocks as they come in
-            // through the normal RPC flow (onBlockConfirmation, etc.)
-            // The spectator can now receive and process block confirmations like a normal participant
-            // but won't be selected for leader election since they're not in the participant list
-
-            console.log(
-                "Spectator is now ready to receive and process block confirmations"
+        storage.stateMachineStates.storeStateMachineState(
+            syncPayload.latestFinalizedEncodedState
+        );
+        for (const ecb of syncPayload.exitChannelBlocksUpToLatestGenesis)
+            storage.exitChannelBlocks.storeExitChannelBlock(ecb);
+        for (const ecb of syncPayload.exitChannelBlocksOfTheLatestFork)
+            storage.exitChannelBlocks.storeExitChannelBlock(ecb);
+    }
+    private persistFinalizedPartsOfStateProof(stateProof: StateProofStruct) {
+        const storage = this.mainRpcService.p2pManager.stateManager.storage;
+        // for all milestones except the last persist all blocks
+        for (let i = 0; i < stateProof.milestones.length - 1; i++) {
+            for (const blockConfirmation of stateProof.milestones[i]
+                .blockConfirmations) {
+                storage.blocks.storeBlock(
+                    Block.fromBlockConfirmation(blockConfirmation)
+                );
+            }
+        }
+        // for the last milestone persist just the first (finalized) block
+        const lastMilestone = stateProof.milestones.at(-1);
+        if (lastMilestone) {
+            storage.blocks.storeBlock(
+                Block.fromBlockConfirmation(lastMilestone.blockConfirmations[0])
             );
-        } catch (error) {
-            console.error("Failed to enable block processing:", error);
-            // Don't throw - this is not critical for the spectator sync process
         }
     }
-
+    private getUnfinalizedBlockConfirmationsFromStateProof(
+        stateProof: StateProofStruct
+    ): BlockConfirmationStruct[] {
+        let blocks: BlockConfirmationStruct[] = [];
+        // last milestone
+        if (stateProof.milestones.length > 0) {
+            const lastMilestone = stateProof.milestones.at(-1)!;
+            // skip first block - the first block is finalized
+            for (let i = 1; i < lastMilestone.blockConfirmations.length; i++)
+                blocks.push(lastMilestone.blockConfirmations[i]);
+            return blocks;
+        }
+        // no milestone -> signedBlocks
+        if (stateProof.signedBlocks.length > 0) {
+            // take all signed blocks
+            for (const sb of stateProof.signedBlocks) {
+                blocks.push(Block.fromSignedBlock(sb).blockConfirmationStruct);
+            }
+        }
+        return blocks;
+    }
     private didRespond(transport: ATransport): boolean {
         const timestamp = this.spectateInitTimes.get(transport);
         return !timestamp;

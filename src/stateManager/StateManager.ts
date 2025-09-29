@@ -53,7 +53,7 @@ import {
     difference
 } from "@/utils";
 // Types
-import { BlockValidationResult, TimeConfig } from "@/types";
+import { BlockValidationResult, Status, TimeConfig } from "@/types";
 import {
     Address,
     BlockHeight,
@@ -69,6 +69,7 @@ import FraudProofService from "./utils/FraudProofService";
 import DisputeValidationService from "./DisputeValidationService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
 import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
+import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidationStrategy";
 
 const DEBUG_STATE_MANAGER = false;
 
@@ -93,9 +94,11 @@ class StateManager {
     storage: Storage;
     fraudProofService: FraudProofService;
     latestForkId: ForkId = NULL;
-    defaultValidationStrategy: AValidationStrategy;
+    blockValidationStrategy: AValidationStrategy;
+    spectatingValidationStrategy: SpectatingValidationStrategy;
     eventHandler: EventHandler;
     reductionTriggerMap: Map<ForkId, ReductionTimeoutHandle> = new Map();
+    status: Status = Status.SPECTATING;
 
     constructor(
         signer: ethers.Signer,
@@ -154,10 +157,14 @@ class StateManager {
             this.disputeManager,
             this.agreementManager
         );
-        this.defaultValidationStrategy = new BlockValidationStrategy(
+        this.blockValidationStrategy = new BlockValidationStrategy(
             this.storage,
             this.p2pManager,
             this.disputeManager
+        );
+        this.spectatingValidationStrategy = new SpectatingValidationStrategy(
+            this.storage,
+            this.p2pManager
         );
     }
     //Mark resources for garbage collection
@@ -168,6 +175,9 @@ class StateManager {
     }
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
         this.p2pEventHooks = p2pEventHooks;
+    }
+    public setStatus(status: Status) {
+        this.status = status;
     }
     public setChannelId(channelId: ChannelId) {
         this.channelId = channelId;
@@ -293,7 +303,8 @@ class StateManager {
     ): Promise<boolean> {
         // the try/catch is to ensure that the mutex is unlocked in case of an error
         // no error is actually expected to happen, and the catch block just re-throws the error
-        const strategy = validationStrategy || this.defaultValidationStrategy;
+        const strategy =
+            validationStrategy || this.getStrategyByStatus(this.status);
         try {
             await this.mutex.lock();
             let validationResult: BlockValidationResult =
@@ -1409,6 +1420,17 @@ class StateManager {
         timestamp: Timestamp
     ) {
         throw new Error("TODO - Not implemented");
+    }
+
+    private getStrategyByStatus(status: Status): AValidationStrategy {
+        switch (status) {
+            case Status.SPECTATING:
+                return this.spectatingValidationStrategy;
+            case Status.PARTICIPATING:
+                return this.blockValidationStrategy;
+            default:
+                throw new Error("Strategy must be explicit");
+        }
     }
 }
 

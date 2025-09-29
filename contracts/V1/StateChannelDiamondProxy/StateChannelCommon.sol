@@ -185,6 +185,30 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return true;
     }
 
+    function _verifyExitChannelBlocks(
+        ExitChannelBlock[] memory exitChannelBlocks,
+        SnapshotData memory fromSnapshot,
+        SnapshotData memory toSnapshot
+    ) public view returns (bool) {
+        bytes32 previousExitChannelBlockHash = fromSnapshot.latestExitChannelBlockHash;
+        Balance memory totalWithdrawals = fromSnapshot.totalWithdrawals;
+
+        for (uint256 i = 0; i < exitChannelBlocks.length; i++) {
+            if (previousExitChannelBlockHash != exitChannelBlocks[i].previousBlockHash) {
+                return false;
+            }
+            for (uint256 j = 0; j < exitChannelBlocks[i].exitChannels.length; j++) {
+                totalWithdrawals = stateMachineImplementation.addBalance(
+                    totalWithdrawals, exitChannelBlocks[i].exitChannels[j].balance
+                );
+            }
+            previousExitChannelBlockHash = keccak256(abi.encode(exitChannelBlocks[i]));
+        }
+        if (keccak256(abi.encode(totalWithdrawals)) != keccak256(abi.encode(toSnapshot.totalWithdrawals))) return false;
+
+        return previousExitChannelBlockHash == toSnapshot.latestExitChannelBlockHash;
+    }
+
     function _applyJoins(
         bytes memory encodedStateMachineState,
         JoinChannelBlock[] memory joinChannelBlocks,
