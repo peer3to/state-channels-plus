@@ -205,9 +205,7 @@ export class EventHandler {
         forkId: ForkId,
         reducedForkId: ForkId,
         reductionTimestamp: Timestamp,
-        forkGenesisTimestamp: Timestamp,
-        reducer: Address,
-        isFinal: boolean
+        reducer: Address
     ): Promise<void> {
         // sync LocalDiamond state
         this.diamondStateMachine.localDiamondContract.onDisputeReducedResultCommitted(
@@ -215,9 +213,7 @@ export class EventHandler {
             forkId,
             reducedForkId,
             reductionTimestamp,
-            forkGenesisTimestamp,
-            reducer,
-            isFinal
+            reducer
         );
 
         // if it's not part of the fork choice rule, ignore it - it's spam
@@ -227,7 +223,12 @@ export class EventHandler {
         }
 
         // isFinal?
-        if (isFinal) {
+        if (
+            await this.diamondStateMachine.localDiamondContract.isReduceChallengePeriodExpired(
+                channelId,
+                forkId
+            )
+        ) {
             // If final, set fork and start building on it
             await this.setForkIfLatestAndCurrent(
                 reducedForkId,
