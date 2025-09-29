@@ -60,6 +60,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             disputeWindow.forkId = forkId;
             disputeWindow.evidence.creationTimestamp = block.timestamp; // evidence period started
             disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp; // kill period recalculated from here
+            disputeData.disputedForks.push(forkId); // add the disputed fork to the list
         } else {
             require(!_isEvidencePeriodExpired(disputeWindow, getEvidenceTime()), ErrorDisputeEvidencePeriodExpired());
             require(!disputeWindow.evidence.hasPosted[dispute.input.disputer], ErrorDisputeAlreadyPosted());
