@@ -8,7 +8,7 @@ import { Codec, Type } from "@/utils";
 
 interface ExitChannelBlockEntry {
     block: ExitChannelBlockStruct;
-    totalWithdrawals: BalanceStruct;
+    totalWithdrawals?: BalanceStruct;
 }
 
 type StoreOptions = {
@@ -28,7 +28,7 @@ export class ExitChannelBlockStorage {
 
     storeExitChannelBlock(
         block: ExitChannelBlockStruct,
-        totalWithdrawals: BalanceStruct,
+        totalWithdrawals?: BalanceStruct,
         options?: StoreOptions
     ): Hash {
         const hash =

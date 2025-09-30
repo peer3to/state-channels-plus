@@ -1,9 +1,7 @@
 //@ts-ignore
 import Hyperswarm from "hyperswarm";
 //@ts-ignore
-import DHT from "@hyperswarm/dht-relay";
 //@ts-ignore
-import Stream from "@hyperswarm/dht-relay/ws";
 import P2PManager from "@/P2PManager";
 import { HolepunchTransport, TransportType } from "@/transport";
 import { Buffer } from "buffer";
@@ -17,7 +15,7 @@ class Holepunch {
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
         console.log("Holepunch - constructor");
-        let setup = () => {
+        const setup = () => {
             // console.log("Holepunch - setup - swarm", this.swarm);
             this.swarm.removeAllListeners(["connection"]); // since hyperwarm is injected into the runtime, creating a new Holepunch object still holds the same refrence to hyperwarm
             this.swarm.on("connection", (socket: any, info: any) => {
@@ -34,12 +32,12 @@ class Holepunch {
         if (typeof window != "undefined") {
             console.log("window.Hyperswarm");
             p2pManager.preferredTransport = TransportType.WEBRTC;
-            let relayerUrls = [
+            const relayerUrls = [
                 "wss://sigma8solution.com/dht-relay/",
                 "wss://dht1-relay.leet.ar:49443"
             ];
-            let relayerUpdateCallback = () => {
-                let swarm = HolepunchRelay.getInstance().getSwarm();
+            const relayerUpdateCallback = () => {
+                const swarm = HolepunchRelay.getInstance().getSwarm();
                 // console.log("Holepunch - callback - swarm", swarm);
                 // @ts-ignore
                 this.swarm = window.Hyperswarm || swarm;
@@ -60,14 +58,17 @@ class Holepunch {
     }
     public async join(topic: Buffer) {
         this.topics.push(topic);
-        let discovery = this.swarm.join(topic, { server: true, client: true });
+        const discovery = this.swarm.join(topic, {
+            server: true,
+            client: true
+        });
         console.log("joined topic", topic);
         return;
     }
 
     private rejoinTopics() {
-        for (let topic of this.topics) {
-            let discovery = this.swarm.join(topic, {
+        for (const topic of this.topics) {
+            const discovery = this.swarm.join(topic, {
                 server: true,
                 client: true
             });
@@ -76,7 +77,7 @@ class Holepunch {
     }
 
     private leaveTopics() {
-        for (let topic of this.topics) {
+        for (const topic of this.topics) {
             this.swarm.leave(topic);
             console.log("LEFT TOPIC", topic);
         }

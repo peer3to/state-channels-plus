@@ -1,15 +1,7 @@
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Address, Bytes, ChannelId, Hash } from "./types/types";
+import { Address, Bytes } from "./types/types";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { LocalDiamond } from "@typechain-types/index";
-import {
-    DisputeAuditingDataStruct,
-    DisputeInputStruct,
-    DisputeStruct,
-    SnapshotDataStruct,
-    StateSnapshotStruct,
-    TimeoutStruct
-} from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 type TransitionResponse = {
     success: boolean;
     exitChannels: ExitChannelStruct[];
@@ -42,16 +34,6 @@ abstract class ADiamondStateMachine {
     public abstract getTotalStateBalance(): Promise<BalanceStruct>;
 
     public abstract getZeroBalance(): Promise<BalanceStruct>;
-    public abstract computeDisputeOutputSnapshotData(
-        disputeInput: DisputeInputStruct,
-        latestStateSnapshot: StateSnapshotStruct,
-        latestStateMachineState: Bytes,
-        latestJoinChannelBlockHash: Hash
-    ): Promise<SnapshotDataStruct>;
-    public abstract isDisputeOutputCorrect(
-        dispute: DisputeStruct,
-        disputeAuditingData: DisputeAuditingDataStruct
-    ): Promise<boolean>;
 }
 
 export default ADiamondStateMachine;

@@ -75,7 +75,7 @@ function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow, ui
     returns (bool)
 {
     return block.timestamp >= disputeWindow.reducedResult.timestamp + evidenceTime
-        && _isDisputeWidnowCreated(disputeWindow);
+        && disputeWindow.reducedResult.timestamp != 0 && _isDisputeWidnowCreated(disputeWindow);
 }
 
 function _isDisputeWidnowCreated(DisputeWindow storage disputeWindow) view returns (bool) {
@@ -94,4 +94,12 @@ function areDisputesCommitted(DisputeWindow storage disputeWindow, Dispute[] mem
         }
     }
     return true;
+}
+
+function _hadParticipantPostedEvidence(DisputeWindow storage disputeWindow, address participant) view returns (bool) {
+    address[] memory hasPosted = disputeWindow.evidence.hasPosted;
+    for (uint256 i = 0; i < hasPosted.length; i++) {
+        if (hasPosted[i] == participant) return true;
+    }
+    return false;
 }

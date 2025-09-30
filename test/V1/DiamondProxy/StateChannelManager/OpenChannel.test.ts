@@ -48,16 +48,16 @@ describe("StateChannelManagerProxy", function () {
 
     describe("Open Channel - MathStateChannel", function () {
         it("2 participants - success", async function () {
-            let res = await mathChannelManager.openChannel(
+            const res = await mathChannelManager.openChannel(
                 jc1.channelId,
                 [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature as Bytes, jc2Signed.signature as Bytes]
             );
-            let receipt = await res.wait();
+            const receipt = await res.wait();
             expect(receipt?.logs.length, "Event logs").to.be.equal(1);
             receipt?.logs.forEach((event) => {
-                let e: EventLog = event as EventLog;
-                let id = e.topics[1];
+                const e: EventLog = event as EventLog;
+                const id = e.topics[1];
 
                 expect(id, "Game not created successfully").to.be.equal(
                     jc1.channelId
@@ -66,16 +66,16 @@ describe("StateChannelManagerProxy", function () {
         });
 
         it("2 participants signatures not inorder - success", async function () {
-            let res = await mathChannelManager.openChannel(
+            const res = await mathChannelManager.openChannel(
                 jc1.channelId,
                 [jc1Signed.encoded, jc2Signed.encoded],
                 [jc2Signed.signature as Bytes, jc1Signed.signature as Bytes]
             );
-            let receipt = await res.wait();
+            const receipt = await res.wait();
             expect(receipt?.logs.length, "Event logs").to.be.equal(1);
             receipt?.logs.forEach((event) => {
-                let e: EventLog = event as EventLog;
-                let id = e.topics[1];
+                const e: EventLog = event as EventLog;
+                const id = e.topics[1];
 
                 expect(id, "Game not created successfully").to.be.equal(
                     jc1.channelId
@@ -84,7 +84,7 @@ describe("StateChannelManagerProxy", function () {
         });
 
         it("2 participants 1 signature - fail", async function () {
-            let res = mathChannelManager.openChannel(
+            const res = mathChannelManager.openChannel(
                 jc1.channelId,
                 [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature]
@@ -95,7 +95,7 @@ describe("StateChannelManagerProxy", function () {
         });
 
         it("2 participants double signature - fail", async function () {
-            let res = mathChannelManager.openChannel(
+            const res = mathChannelManager.openChannel(
                 jc1.channelId,
                 [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature as Bytes, jc1Signed.signature as Bytes]
@@ -106,7 +106,7 @@ describe("StateChannelManagerProxy", function () {
         });
 
         it("2 participants wrong encoded openChannel msg - fail", async function () {
-            let res = mathChannelManager.openChannel(
+            const res = mathChannelManager.openChannel(
                 jc1.channelId,
                 [jc1Signed.encoded + "00", jc2Signed.encoded],
                 [jc1Signed.signature, jc2Signed.signature]
@@ -117,7 +117,7 @@ describe("StateChannelManagerProxy", function () {
         });
 
         it("2 participants no signatures - fail", async function () {
-            let res = mathChannelManager.openChannel(
+            const res = mathChannelManager.openChannel(
                 jc1.channelId,
                 [jc1Signed.encoded, jc2Signed.encoded],
                 []
@@ -128,7 +128,7 @@ describe("StateChannelManagerProxy", function () {
         });
 
         it("2 participants invalid signature length - fail", async function () {
-            let resultPromise = mathChannelManager.openChannel(
+            const resultPromise = mathChannelManager.openChannel(
                 jc1.channelId,
                 [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature, jc2Signed.signature + "00"]
@@ -153,7 +153,7 @@ describe("StateChannelManagerProxy", function () {
             jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
             jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
 
-            let res = mathChannelManager.openChannel(
+            const res = mathChannelManager.openChannel(
                 jc1.channelId,
                 [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature, jc2Signed.signature]
@@ -169,7 +169,7 @@ describe("StateChannelManagerProxy", function () {
                 [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature, jc2Signed.signature]
             );
-            let res = mathChannelManager.openChannel(
+            const res = mathChannelManager.openChannel(
                 jc1.channelId,
                 [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature, jc2Signed.signature]
@@ -186,7 +186,7 @@ describe("StateChannelManagerProxy", function () {
             jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
             jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
 
-            let res = mathChannelManager.openChannel(
+            const res = mathChannelManager.openChannel(
                 jc1.channelId,
                 [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature, jc2Signed.signature]
@@ -206,7 +206,7 @@ describe("StateChannelManagerProxy", function () {
             jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
             jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
 
-            let res = mathChannelManager.openChannel(
+            const res = mathChannelManager.openChannel(
                 jc1.channelId,
                 [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature, jc2Signed.signature]
@@ -223,7 +223,7 @@ describe("StateChannelManagerProxy", function () {
             jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
             jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
 
-            let res = mathChannelManager.openChannel(
+            const res = mathChannelManager.openChannel(
                 jc1.channelId,
                 [jc1Signed.encoded, jc2Signed.encoded],
                 [jc1Signed.signature, jc2Signed.signature]

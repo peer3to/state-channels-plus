@@ -4,6 +4,7 @@ import "./StateChannelManagerProxy.sol";
 import "../types/DataTypes.sol";
 import "../types/DisputeTypes.sol";
 import "../StateChannelManagerEvents.sol";
+import "./utils/DisputeUtils.sol";
 
 /**
  * @title LocalDiamond
@@ -41,9 +42,7 @@ contract LocalDiamond is StateChannelManagerProxy {
     // ========== Direct event handlers for existing events ==========
 
     // Called by StateSnapshotUpdated event
-    function onStateSnapshotUpdated(bytes32 channelId, StateSnapshot calldata stateSnapshot, uint256 timestamp)
-        external
-    {
+    function onStateSnapshotUpdated(bytes32 channelId, StateSnapshot calldata stateSnapshot) external {
         stateSnapshots[channelId] = stateSnapshot;
     }
 
@@ -93,10 +92,10 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 windowCreationTimestamp
     ) external {
         // Update dispute data based on the dispute commitment
-        bytes32 forkId = keccak256(abi.encode(dispute.input.genesisSnapshotDataHash));
+        bytes32 forkId = dispute.input.genesisSnapshotDataHash;
         disputeData[channelId].disputeWindowMap[forkId].forkId = forkId;
         disputeData[channelId].disputeWindowMap[forkId].evidence.creationTimestamp = windowCreationTimestamp;
-        disputeData[channelId].disputeWindowMap[forkId].evidence.hasPosted[dispute.input.disputer] = true;
+        disputeData[channelId].disputeWindowMap[forkId].evidence.hasPosted.push(dispute.input.disputer);
 
         bytes32 commitment = keccak256(abi.encode(dispute));
         disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments.push(commitment);
@@ -173,6 +172,26 @@ contract LocalDiamond is StateChannelManagerProxy {
         }
     }
 
+    function persistDisputeWindow(bytes32 channelId, DisputeWindow memory disputeWindow) public {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage _disputeWindow = _disputeData.disputeWindowMap[disputeWindow.forkId];
+
+        _disputeWindow.forkId = disputeWindow.forkId;
+        _disputeWindow.evidence.creationTimestamp = disputeWindow.evidence.creationTimestamp;
+        _disputeWindow.evidence.lastEvidenceSubmissionTimestamp = disputeWindow.evidence.lastEvidenceSubmissionTimestamp;
+
+        delete _disputeWindow.evidence.disputeCommitments;
+        delete _disputeWindow.evidence.hasPosted;
+        for (uint256 i = 0; i < disputeWindow.evidence.disputeCommitments.length; i++) {
+            _disputeWindow.evidence.disputeCommitments.push(disputeWindow.evidence.disputeCommitments[i]);
+            _disputeWindow.evidence.hasPosted.push(disputeWindow.evidence.hasPosted[i]);
+        }
+
+        _disputeWindow.reducedResult.forkId = disputeWindow.reducedResult.forkId;
+        _disputeWindow.reducedResult.timestamp = disputeWindow.reducedResult.timestamp;
+        _disputeWindow.reducedResult.reducer = disputeWindow.reducedResult.reducer;
+    }
+
     function getLatestJoinChannelBlockHash(bytes32 channelId) public view returns (bytes32) {
         return channelBalances[channelId].latestJoinChannelBlockHash;
     }
@@ -242,44 +261,6 @@ contract LocalDiamond is StateChannelManagerProxy {
         return abi.decode(returnData, (bool));
     }
 
-    function verifyBalanceInvariantCheckView(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        public
-        view
-        returns (bool)
-    {
-        bytes32 channelId = dispute.input.channelId;
-        SnapshotData memory latestSnapshotData = disputeAuditingData.latestStateSnapshot.snapshotData;
-        Balance memory totalDeposits = latestSnapshotData.totalDeposits;
-        Balance memory totalWithdrawals = latestSnapshotData.totalWithdrawals;
-        bytes32 latestJoinChannelBlockHash = latestSnapshotData.latestJoinChannelBlockHash;
-        // Trick the compiler and ethers for the localEvm - delegatecall in view functions
-        return DisputeVerificationFacet(address(this)).verifyBalanceInvariantCheck(
-            channelId, totalDeposits, totalWithdrawals, latestJoinChannelBlockHash
-        );
-    }
-
-    // Data provided from the latestStateSnapshot
-    function verifyBalanceInvariantCheck(
-        bytes32 channelId,
-        Balance memory totalDeposits,
-        Balance memory totalWithdrawals,
-        bytes32 latestJoinChannelBlockHash
-    ) public returns (bool) {
-        // Encode the function selector and arguments
-        bytes memory data = abi.encodeCall(
-            DisputeVerificationFacet.verifyBalanceInvariantCheck,
-            (channelId, totalDeposits, totalWithdrawals, latestJoinChannelBlockHash)
-        );
-        // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall(data);
-        if (!success) {
-            assembly {
-                revert(add(returnData, 0x20), mload(returnData))
-            }
-        }
-        return abi.decode(returnData, (bool));
-    }
-
     function verifyStateProof(
         Dispute memory dispute,
         DisputeAuditingData memory disputeAuditingData,
@@ -289,5 +270,13 @@ contract LocalDiamond is StateChannelManagerProxy {
         return DisputeVerificationFacet(disputeVerificationFacetAddress).verifyStateProof(
             dispute, disputeAuditingData, auditingDataIntegrityVerified
         );
+    }
+
+    function getLatestBlockFromStateProof(StateProof memory stateProof)
+        public
+        pure
+        returns (bool hasBlock, Block memory)
+    {
+        return _getLatestBlock(stateProof);
     }
 }

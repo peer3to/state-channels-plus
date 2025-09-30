@@ -1,7 +1,7 @@
 import { ATransport } from "@/transport";
 import { Address } from "@/types/types";
 
-//TODO? maybe rename to ParticipantProfile to be consistent with the rest of the codebase, eventhough PeerProfile sounds better
+//TODO? maybe rename to ParticipantProfile to be consistent with the rest of the codebase, even though PeerProfile sounds better
 class PeerProfile {
     transport: ATransport | undefined;
     evmAddress: Address; //TODO! - AAdress -> base class for different address types (when we do substrate and other address formats)

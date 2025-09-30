@@ -6,23 +6,20 @@ import {
     LocalDiamond
 } from "@typechain-types";
 import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { DisputeInputStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 import StateManager from "@/stateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
-import {
-    ExitChannelEthersType,
-    BalanceEthersType,
-    SnapshotDataEthersType
-} from "@/types/ethers";
+import { ExitChannelEthersType, BalanceEthersType } from "@/types/ethers";
 import { DebugProxy, decodeErrorProxy, Codec } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
-import { Address, Bytes, Hash } from "@/types/types";
-import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
-import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
+import { Address, Bytes } from "@/types/types";
+import {
+    ExitChannelStruct,
+    BalanceStruct
+} from "@typechain-types/contracts/V1/AStateMachine";
 import Storage from "@/storage";
 import {
     deployLocalDiamond,
@@ -31,12 +28,6 @@ import {
 } from "scripts/V1/deploy";
 import LocalDiamondSigner from "./LocalDiamondSigner";
 import { LocalDiamondArtifact } from "@/utils/GeneratedArtifacts";
-import {
-    DisputeAuditingDataStruct,
-    DisputeStruct,
-    SnapshotDataStruct,
-    StateSnapshotStruct
-} from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 
@@ -46,7 +37,7 @@ const DEBUG_CHANNEL_CONTRACT = true;
  */
 class EvmDiamondStateMachine extends ADiamondStateMachine {
     readonly stateMachineContractExecuter: ContractExecuter;
-    readonly diamontContractExecuter: ContractExecuter;
+    readonly diamondContractExecuter: ContractExecuter;
     readonly contractInterface: ethers.Interface;
     private p2pContractInstance?: AStateMachineContract;
     public stateManager?: StateManager;
@@ -54,13 +45,13 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     constructor(
         stateMachineContractExecuter: ContractExecuter,
         contractInterface: ethers.Interface,
-        diamontContractExecuter: ContractExecuter,
+        diamondContractExecuter: ContractExecuter,
         localDiamondContract: LocalDiamond
     ) {
         super(localDiamondContract);
         this.stateMachineContractExecuter = stateMachineContractExecuter;
         this.contractInterface = contractInterface;
-        this.diamontContractExecuter = diamontContractExecuter;
+        this.diamondContractExecuter = diamondContractExecuter;
     }
 
     private getEncodedCalldata(
@@ -185,9 +176,9 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
     }
 
-    async peekNextToWrite(encoedState: Bytes): Promise<Address> {
+    async peekNextToWrite(encodedState: Bytes): Promise<Address> {
         const state = await this.getState();
-        await this.setState(encoedState);
+        await this.setState(encodedState);
         const nextToWrite = await this.getNextToWrite();
         await this.setState(state);
         return nextToWrite;
@@ -281,54 +272,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             );
         } catch (error) {
             throw this.createContextError("getTotalStateBalance", error);
-        }
-    }
-
-    async computeDisputeOutputSnapshotData(
-        disputeInput: DisputeInputStruct,
-        latestStateSnapshot: StateSnapshotStruct,
-        latestStateMachineState: Bytes,
-        latestJoinChannelBlockHash: Hash
-    ): Promise<SnapshotDataStruct> {
-        const callData = this.localDiamondContract.interface.encodeFunctionData(
-            "computeDisputeOutputSnapshotData",
-            [
-                disputeInput,
-                latestStateSnapshot,
-                latestStateMachineState,
-                latestJoinChannelBlockHash
-            ]
-        );
-
-        try {
-            return Codec.decodeEvmResult<SnapshotDataStruct>(
-                await this.diamontContractExecuter.executeCall(callData),
-                SnapshotDataEthersType
-            );
-        } catch (error) {
-            throw this.createContextError(
-                "computeDisputeOutputSnapshotData",
-                error
-            );
-        }
-    }
-
-    async isDisputeOutputCorrect(
-        dispute: DisputeStruct,
-        disputeAuditingData: DisputeAuditingDataStruct
-    ): Promise<boolean> {
-        const callData = this.localDiamondContract.interface.encodeFunctionData(
-            "isDisputeOutputCorrect",
-            [dispute, disputeAuditingData]
-        );
-
-        try {
-            return Codec.decodeEvmResult<boolean>(
-                await this.diamontContractExecuter.executeCall(callData),
-                "bool"
-            );
-        } catch (error) {
-            throw this.createContextError("isDisputeOutputCorrect", error);
         }
     }
 

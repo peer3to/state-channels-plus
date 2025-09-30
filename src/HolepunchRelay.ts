@@ -28,12 +28,12 @@ class HolepunchRelay {
     }
 
     private connectToRelayer(): void {
-        let relayerUrl = this.pickRandomRelayer();
+        const relayerUrl = this.pickRandomRelayer();
         console.log("HolepunchRelay - Connecting to relayer", relayerUrl);
         if (!relayerUrl) return;
         try {
-            let ws = new WebSocket(relayerUrl);
-            let dht = new DHT(new Stream(true, ws));
+            const ws = new WebSocket(relayerUrl);
+            const dht = new DHT(new Stream(true, ws));
             this.swarm = new Hyperswarm({
                 dht: dht
             });
@@ -70,21 +70,21 @@ class HolepunchRelay {
 
     private pickRandomRelayer(): string | undefined {
         if (this.relayerUrls.length === 0) return undefined;
-        let index = Math.floor(Math.random() * this.relayerUrls.length);
+        const index = Math.floor(Math.random() * this.relayerUrls.length);
         return this.relayerUrls[index];
     }
 
     private removeRelayer(relayerUrl: string): boolean {
-        let index = this.relayerUrls.indexOf(relayerUrl);
+        const index = this.relayerUrls.indexOf(relayerUrl);
         if (index === -1) return false;
-        let deletedRelayer = this.relayerUrls.splice(index, 1);
+        const deletedRelayer = this.relayerUrls.splice(index, 1);
         console.log("Removed relayer", deletedRelayer);
         console.log("Current relayers", this.relayerUrls);
         return true;
     }
 
     private removeAndConnectToRelayer(relayerUrl: string): void {
-        let success = this.removeRelayer(relayerUrl);
+        const success = this.removeRelayer(relayerUrl);
         success && this.connectToRelayer();
     }
 }

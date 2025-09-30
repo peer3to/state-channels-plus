@@ -8,7 +8,7 @@ import { Codec, Type } from "@/utils";
 
 interface JoinChannelBlockEntry {
     block: JoinChannelBlockStruct;
-    totalDeposits: BalanceStruct;
+    totalDeposits?: BalanceStruct;
 }
 
 type StoreOptions = {
@@ -28,7 +28,7 @@ export class JoinChannelBlockStorage {
 
     storeJoinChannelBlock(
         block: JoinChannelBlockStruct,
-        totalDeposits: BalanceStruct,
+        totalDeposits?: BalanceStruct,
         options?: StoreOptions
     ): Hash {
         const hash =

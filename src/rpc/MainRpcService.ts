@@ -16,13 +16,15 @@ import {
     TESTJoinChannelService,
     DHTDiscoveryService,
     JoinChannelService,
-    WebRTCSetupService
+    WebRTCSetupService,
+    SpectateService
 } from "./services";
+import { SyncPayload } from "./services/SpectateService";
 import { DEBUG_RPC } from "@/utils/config";
 import { Address, ChannelId, Hash, Signature, Timestamp } from "@/types/types";
 
 //TODO! refactor this
-type JoinChanenelConfirmation = {
+type JoinChannelConfirmation = {
     signedJoinChannel: SignedJoinChannelStruct;
     confirmationSignatures: Signature[];
 };
@@ -42,13 +44,14 @@ class MainRpcService {
     testJoinChannelService = new TESTJoinChannelService(this.self);
     dhtDiscoveryService = new DHTDiscoveryService(this.self);
     joinChannelService = new JoinChannelService(this.self);
+    spectateService = new SpectateService(this.self);
 
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
         return this.self;
     }
 
-    // ********************* InitHandskaheService *********************
+    // ********************* InitHandshakeService *********************
 
     public async onInitHandshakeRequest(challengeHash: Hash, time: Timestamp) {
         this.initHandshakeService.onInitHandshakeRequest(challengeHash, time);
@@ -111,9 +114,6 @@ class MainRpcService {
     }
 
     // ********************* StateTransitionService *********************
-    public async onSignedBlock(signedBlock: SignedBlockStruct) {
-        this.stateTransitionService.onSignedBlock(signedBlock);
-    }
 
     public async onBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct
@@ -121,8 +121,16 @@ class MainRpcService {
         this.stateTransitionService.onBlockConfirmation(blockConfirmation);
     }
 
-    public async onDisputeConfirmation(signedDispute: SignedDisputeStruct) {
-        this.stateTransitionService.onDisputeConfirmation(signedDispute);
+    // ********************* SpectateService *********************
+    public async onSpectateRequest(channelId: ChannelId, time: Timestamp) {
+        this.spectateService.onSpectateRequest(channelId, time);
+    }
+
+    public async onSpectateResponse(
+        channelId: ChannelId,
+        snapshotPayload: SyncPayload
+    ) {
+        this.spectateService.onSpectateResponse(channelId, snapshotPayload);
     }
 }
 export default MainRpcService;
