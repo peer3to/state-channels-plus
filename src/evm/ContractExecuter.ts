@@ -34,7 +34,8 @@ export default class ContractExecuter {
             data: ethers.getBytes(data),
             to: this.contractAddress,
             block,
-            isStatic
+            isStatic,
+            caller
         });
 
         if (result.execResult.exceptionError) {

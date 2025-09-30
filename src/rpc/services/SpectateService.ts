@@ -73,7 +73,7 @@ class SpectateService extends ARpcService {
 
         console.log(`onSpectateRequest - done`);
         this.mainRpcService.rpcProxy
-            .onSpectateResponse(channelId, syncPayload, localTime)
+            .onSpectateResponse(channelId, syncPayload)
             .sendOne(this.mainRpcService.senderTransport!);
     }
 

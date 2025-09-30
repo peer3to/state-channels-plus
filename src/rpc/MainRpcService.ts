@@ -114,18 +114,11 @@ class MainRpcService {
     }
 
     // ********************* StateTransitionService *********************
-    public async onSignedBlock(signedBlock: SignedBlockStruct) {
-        this.stateTransitionService.onSignedBlock(signedBlock);
-    }
 
     public async onBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct
     ) {
         this.stateTransitionService.onBlockConfirmation(blockConfirmation);
-    }
-
-    public async onDisputeConfirmation(signedDispute: SignedDisputeStruct) {
-        this.stateTransitionService.onDisputeConfirmation(signedDispute);
     }
 
     // ********************* SpectateService *********************
@@ -135,14 +128,9 @@ class MainRpcService {
 
     public async onSpectateResponse(
         channelId: ChannelId,
-        snapshotPayload: SyncPayload,
-        responseTime: Timestamp
+        snapshotPayload: SyncPayload
     ) {
-        this.spectateService.onSpectateResponse(
-            channelId,
-            snapshotPayload,
-            responseTime
-        );
+        this.spectateService.onSpectateResponse(channelId, snapshotPayload);
     }
 }
 export default MainRpcService;
