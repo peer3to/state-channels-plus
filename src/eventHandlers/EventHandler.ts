@@ -246,24 +246,7 @@ export class EventHandler {
         );
 
         if (!isValid) {
-            // Challenge the dispute reduction if it wasn't done correctly
-            const disputes = await this.getDisputesForFork(forkId);
-            const latestStateSnapshot =
-                await this.stateManager.stateChannelManagerContract.getStateSnapshot(
-                    this.stateManager.channelId
-                );
-            const encodedStateMachineState =
-                await this.diamondStateMachine.getState();
-            const joinChannelBlocks =
-                await this.getJoinChannelBlocksForFork(latestStateSnapshot);
-
-            await this.stateManager.stateChannelManagerContract.challengeDisputeReduction(
-                disputes,
-                latestStateSnapshot,
-                encodedStateMachineState,
-                joinChannelBlocks
-            );
-
+            // Already challenged -> just discconect
             // Disconnect the reducer who performed the incorrect reduction
             this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
                 reducer
@@ -272,7 +255,11 @@ export class EventHandler {
         }
 
         // Reduction is valid and correct - set fork and start building on it
-        await this.setForkIfLatestAndCurrent(reducedForkId, reductionTimestamp);
+        await this.setForkIfLatestAndCurrent(
+            forkId,
+            reducedForkId,
+            reductionTimestamp
+        );
     }
 
     onWithdrawalsUpdated(channelId: ChannelId, totalWithdrawals: any): void {
@@ -478,8 +465,17 @@ export class EventHandler {
         const isValid =
             hash(Codec.encode(snapshotData, Type.SnapshotData)) ==
             reducedForkId;
-        if (!isValid)
-            this.stateManager.stateChannelManagerContract.challengeDisputeReduction();
+        if (!isValid) {
+            // while we have the context, use it, instead of returning false and having to generate it again
+            await this.stateManager.stateChannelManagerContract.challengeDisputeReduction(
+                disputes,
+                latestSnapshot,
+                state,
+                jcbs
+            );
+            return false;
+        }
+        return true;
     }
 
     private async setForkIfLatestAndCurrent(
@@ -512,68 +508,6 @@ export class EventHandler {
                 reducedForkId,
                 reductionTimestamp
             );
-        }
-    }
-
-    private async getDisputesForFork(forkId: ForkId): Promise<any[]> {
-        try {
-            // Get dispute commitments for this fork using the contract
-            const disputeCommitments =
-                await this.stateManager.stateChannelManagerContract.getWindowCommitments(
-                    this.stateManager.channelId,
-                    forkId
-                );
-
-            if (disputeCommitments.length === 0) {
-                console.log(`No dispute commitments found for fork ${forkId}`);
-                return [];
-            }
-
-            const disputes: DisputeStruct[] = [];
-
-            for (const disputeCommitment of disputeCommitments) {
-                const disputeConfirmation =
-                    this.stateManager.storage.disputes.getDisputeConfirmation(
-                        disputeCommitment
-                    );
-
-                if (disputeConfirmation) {
-                    const dispute = Codec.decode(
-                        disputeConfirmation.signedDispute.encodedDispute,
-                        Type.Dispute
-                    ) as DisputeStruct;
-                    disputes.push(dispute);
-                } else {
-                    console.log(
-                        `Dispute confirmation not found for commitment ${disputeCommitment}`
-                    );
-                }
-            }
-
-            console.log(`Found ${disputes.length} disputes for fork ${forkId}`);
-            return disputes;
-        } catch (error) {
-            console.error("Error getting disputes for fork:", error);
-            return [];
-        }
-    }
-
-    private async getJoinChannelBlocksForFork(
-        latestStateSnapshot: StateSnapshotStruct
-    ): Promise<any[]> {
-        try {
-            // Get all join channel blocks
-            const joinChannelBlocks =
-                this.stateManager.storage.joinChannelBlocks.getBlocksInRange(
-                    latestStateSnapshot.snapshotData.latestJoinChannelBlockHash,
-                    ethers.ZeroHash
-                );
-
-            console.log(`Got ${joinChannelBlocks.length} join channel blocks`);
-            return joinChannelBlocks;
-        } catch (error) {
-            console.error("Error getting join channel blocks:", error);
-            return [];
         }
     }
 }
