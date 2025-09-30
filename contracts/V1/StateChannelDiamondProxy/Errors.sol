@@ -7,7 +7,7 @@ error ErrorBlockCalldataAlreadyPosted();
 //StateSnapshot errors
 error ErrorStateSnapshotNotValid();
 error ErrorInvalidStateProof();
-error ErrorFirstExitChannelBlockInvalid();
+error ErrorExitChannelBlocksInvalid();
 error ErrorExitChannelBlocksNotLinked();
 error ErrorLastSnapshotInvalid();
 error ErrorLastSnapshotDoesNotMatchGenesis();

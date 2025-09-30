@@ -51,11 +51,10 @@ class StateChannelEventListener {
                     channelId
                 ),
             handler: async (logObj: any) => {
-                const { channelId, stateSnapshot, timestamp } = logObj.args;
+                const { channelId, stateSnapshot } = logObj.args;
                 await this.eventHandler.onStateSnapshotUpdated(
                     channelId,
-                    stateSnapshot,
-                    timestamp
+                    stateSnapshot
                 );
             }
         },
@@ -124,9 +123,13 @@ class StateChannelEventListener {
                     channelId
                 ),
             handler: (logObj: any) => {
-                const { forkId, reducedForkId, reductionTimestamp, reducer } =
-                    logObj.args;
-                const channelId = logObj.args.channelId;
+                const {
+                    forkId,
+                    channelId,
+                    reducedForkId,
+                    reductionTimestamp,
+                    reducer
+                } = logObj.args;
                 this.eventHandler.onDisputeReducedResultCommitted(
                     channelId,
                     forkId,

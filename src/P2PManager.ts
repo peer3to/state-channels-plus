@@ -45,13 +45,13 @@ class P2PManager implements IOnMessage {
     }
     public broadcastRpc(serializedRPC: string) {
         // BroadcastLocal.broadcast(serializedRPC);
-        for (let transport of this.openConnections) {
+        for (const transport of this.openConnections) {
             transport.send(serializedRPC);
         }
     }
     public onRpc(serializedRpc: string) {
         try {
-            let rpc = deserializeRpc(serializedRpc);
+            const rpc = deserializeRpc(serializedRpc);
             if (!rpc) {
                 //TODO!Disconnect
                 return;
@@ -81,18 +81,18 @@ class P2PManager implements IOnMessage {
         this.openConnections.push(transport);
         this.localRpcService.initHandshakeService.initHandshake(transport);
     }
-    public removeConnection(transport: ATransport) {
+    public disconnectConnection(transport: ATransport) {
         this.openConnections = this.openConnections.filter(
             (t) => t !== transport
         );
-        let profile = this.profileManager.getProfileByTransport(transport);
+        const profile = this.profileManager.getProfileByTransport(transport);
         profile && this.profileManager.removeTransport(transport);
     }
 
     public disconnectAndBlacklistPeer(transport: ATransport) {
         this.profileManager.getProfileByTransport(transport)?.blacklist();
 
-        this.removeConnection(transport);
+        this.disconnectConnection(transport);
     }
 
     public disconnectAndBlacklistPeerByEvmAddress(evmAddress: Address) {
@@ -101,7 +101,7 @@ class P2PManager implements IOnMessage {
         profile.blacklist();
         const transport = profile.getTransport();
         if (!transport) return;
-        this.removeConnection(transport);
+        this.disconnectConnection(transport);
     }
 
     public isBlacklisted(evmAddress: Address): boolean {
@@ -112,8 +112,8 @@ class P2PManager implements IOnMessage {
     }
 
     public disconnectAll() {
-        for (let transport of this.openConnections) {
-            this.removeConnection(transport);
+        for (const transport of this.openConnections) {
+            this.disconnectConnection(transport);
         }
     }
 }

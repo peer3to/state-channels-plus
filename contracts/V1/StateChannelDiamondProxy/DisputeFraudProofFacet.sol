@@ -39,18 +39,18 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     {
         if (proofType == DisputeFraudProofType.DisputeNotLatestState) return _handleDisputeNotLatestState;
         if (proofType == DisputeFraudProofType.DisputeInvalidOutputState) return _handleDisputeInvalidOutputState;
-        if (proofType == DisputeFraudProofType.DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifed) {
-            return _handleDisputeInvalidStateProofWithoutAuditingDataIntegrityVerifed;
+        if (proofType == DisputeFraudProofType.DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified) {
+            return _handleDisputeInvalidStateProofWithoutAuditingDataIntegrityVerified;
         }
-        if (proofType == DisputeFraudProofType.DisputeInvalidStateProofWithAuditingDataIntegrityVerifed) {
-            return _handleDisputeInvalidStateProofWithAuditingDataIntegrityVerifed;
+        if (proofType == DisputeFraudProofType.DisputeInvalidStateProofWithAuditingDataIntegrityVerified) {
+            return _handleDisputeInvalidStateProofWithAuditingDataIntegrityVerified;
         }
         if (
             proofType
                 == DisputeFraudProofType.DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks
         ) return _handleDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks;
-        if (proofType == DisputeFraudProofType.DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed) {
-            return _handleDisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed;
+        if (proofType == DisputeFraudProofType.DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified) {
+            return _handleDisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified;
         }
         if (proofType == DisputeFraudProofType.DisputeInvalidBalanceInvariant) {
             return _handleDisputeInvalidBalanceInvariant;
@@ -93,9 +93,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         }
         // if !hasBlock -> latestState should be genesis state -> if the disputer signed any block this proof is valid
 
-        // Check siganture
-        address retrivedAddress = StateChannelUtilLibrary.retriveSignerAddress(proof.encodedBlock, proof.signature);
-        if (retrivedAddress != dispute.input.disputer) revert();
+        // Check signature
+        address retrievedAddress = StateChannelUtilLibrary.retrieveSignerAddress(proof.encodedBlock, proof.signature);
+        if (retrievedAddress != dispute.input.disputer) revert();
 
         return dispute.input.disputer;
     }
@@ -108,7 +108,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // Requires correct auditing data
         require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
 
-        bytes memory result = _delegatecall(
+        bytes memory result = _delegateCall(
             disputeVerificationFacetAddress,
             abi.encodeCall(DisputeVerificationFacet.isDisputeOutputCorrect, (dispute, proof.auditingData))
         );
@@ -117,14 +117,14 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return address(0); // all good - the calling context may decide to slash the caller
     }
 
-    function _handleDisputeInvalidStateProofWithoutAuditingDataIntegrityVerifed(
+    function _handleDisputeInvalidStateProofWithoutAuditingDataIntegrityVerified(
         bytes memory encodedFraudProof,
         Dispute memory dispute
     ) internal returns (address) {
-        DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifed memory proof =
-            abi.decode(encodedFraudProof, (DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifed));
+        DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified memory proof =
+            abi.decode(encodedFraudProof, (DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified));
 
-        bytes memory result = _delegatecall(
+        bytes memory result = _delegateCall(
             disputeVerificationFacetAddress,
             abi.encodeCall(DisputeVerificationFacet.verifyStateProof, (dispute, proof.auditingData, false))
         );
@@ -133,16 +133,16 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return address(0); // all good - the calling context may decide to slash the caller
     }
 
-    function _handleDisputeInvalidStateProofWithAuditingDataIntegrityVerifed(
+    function _handleDisputeInvalidStateProofWithAuditingDataIntegrityVerified(
         bytes memory encodedFraudProof,
         Dispute memory dispute
     ) internal returns (address) {
-        DisputeInvalidStateProofWithAuditingDataIntegrityVerifed memory proof =
-            abi.decode(encodedFraudProof, (DisputeInvalidStateProofWithAuditingDataIntegrityVerifed));
+        DisputeInvalidStateProofWithAuditingDataIntegrityVerified memory proof =
+            abi.decode(encodedFraudProof, (DisputeInvalidStateProofWithAuditingDataIntegrityVerified));
         // Requires correct auditing data
         require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
 
-        bytes memory result = _delegatecall(
+        bytes memory result = _delegateCall(
             disputeVerificationFacetAddress,
             abi.encodeCall(DisputeVerificationFacet.verifyStateProof, (dispute, proof.auditingData, true))
         );
@@ -161,7 +161,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // Expect commitment to be invalid/junk
         if (_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return address(0); // the calling context may decide to slash the caller
 
-        bytes memory result = _delegatecall(
+        bytes memory result = _delegateCall(
             disputeVerificationFacetAddress,
             // Will recheck everything, but we're mostly interested in exitBlocks
             abi.encodeCall(DisputeVerificationFacet.isCorrectAuditingData, (dispute, proof.auditingData))
@@ -169,7 +169,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         bool isValid = abi.decode(result, (bool));
         if (!isValid) return address(0); // the calling context may decide to slash the caller
 
-        result = _delegatecall(
+        result = _delegateCall(
             disputeVerificationFacetAddress,
             abi.encodeCall(DisputeVerificationFacet.verifyStateProof, (dispute, proof.auditingData, false))
         );
@@ -180,16 +180,16 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return dispute.input.disputer; // slash the disputer
     }
 
-    function _handleDisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed(
+    function _handleDisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified(
         bytes memory encodedFraudProof,
         Dispute memory dispute
     ) internal returns (address) {
-        DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed memory proof =
-            abi.decode(encodedFraudProof, (DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed));
+        DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified memory proof =
+            abi.decode(encodedFraudProof, (DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified));
         // Requires correct auditing data
         require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
 
-        bytes memory result = _delegatecall(
+        bytes memory result = _delegateCall(
             disputeVerificationFacetAddress,
             abi.encodeCall(DisputeVerificationFacet.isCorrectAuditingData, (dispute, proof.auditingData))
         );
@@ -202,24 +202,19 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         internal
         returns (address)
     {
-        DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed memory proof =
-            abi.decode(encodedFraudProof, (DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed));
+        DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified memory proof =
+            abi.decode(encodedFraudProof, (DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified));
         // Requires correct auditing data
         require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
 
         bytes32 channelId = dispute.input.channelId;
         SnapshotData memory latestSnapshotData = proof.auditingData.latestStateSnapshot.snapshotData;
 
-        bytes memory result = _delegatecall(
+        bytes memory result = _delegateCall(
             disputeVerificationFacetAddress,
             abi.encodeCall(
-                DisputeVerificationFacet.verifyBalanceInvariantCheck,
-                (
-                    channelId,
-                    latestSnapshotData.totalDeposits,
-                    latestSnapshotData.totalWithdrawals,
-                    latestSnapshotData.latestJoinChannelBlockHash
-                )
+                DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot,
+                (channelId, latestSnapshotData, proof.auditingData.latestStateStateMachineState)
             )
         );
         bool isValid = abi.decode(result, (bool));
@@ -279,7 +274,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // Check timeout == thresholdBlock
         if (dispute.input.timeout.blockHeight != _getBlockHeight(thresholdBlock)) return address(0); // the calling context may decide to slash the caller
 
-        // Check is block author the participant being timedout
+        // Check is block author the participant being timed-out
         if (dispute.input.timeout.participant != thresholdBlock.transaction.header.participant) return address(0); // the calling context may decide to slash the caller
 
         //check threshold
@@ -320,7 +315,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (dispute.input.timeout.participant == address(0)) return address(0); // the calling context may decide to slash the caller
 
         address nextAuthor = getNextToWrite(dispute.input.channelId, proof.auditingData.latestStateStateMachineState);
-        // check is next author timedout
+        // check is next author timed-out
         if (dispute.input.timeout.participant != nextAuthor) return address(0); // the calling context may decide to slash the caller
         return dispute.input.disputer;
     }
@@ -355,14 +350,14 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             previousTimestamp = latestBlock.transaction.header.timestamp;
 
             // ****** check has forfeit right to extra time
-            bool hasForfeightRightToExtraTime = false;
+            bool hasForfeitedRightToExtraTime = false;
             if (dispute.input.timeout.participantSignatureOnPreviousBlock.length > 0) {
-                address signerAddress = StateChannelUtilLibrary.retriveSignerAddress(
+                address signerAddress = StateChannelUtilLibrary.retrieveSignerAddress(
                     latestSignedBlock.encodedBlock, dispute.input.timeout.participantSignatureOnPreviousBlock
                 );
-                if (signerAddress == dispute.input.timeout.participant) hasForfeightRightToExtraTime = true;
+                if (signerAddress == dispute.input.timeout.participant) hasForfeitedRightToExtraTime = true;
             }
-            if (!hasForfeightRightToExtraTime) {
+            if (!hasForfeitedRightToExtraTime) {
                 uint256 blockHeight = latestBlock.transaction.header.transactionCnt;
                 address author = latestBlock.transaction.header.participant;
                 (bool found, bytes32 commitment) = getBlockCallDataCommitment(channelId, forkId, blockHeight, author);
@@ -417,7 +412,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         internal
         returns (bool)
     {
-        bytes memory result = _delegatecall(
+        bytes memory result = _delegateCall(
             disputeVerificationFacetAddress,
             abi.encodeCall(DisputeVerificationFacet.checkDisputeAuditingDataCommitment, (dispute, disputeAuditingData))
         );

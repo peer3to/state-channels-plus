@@ -2,6 +2,7 @@ pragma solidity ^0.8.8;
 
 import "../../types/DisputeTypes.sol";
 import "../StateChannelUtilLibrary.sol";
+import "../Errors.sol";
 
 function _getBlockHeight(Block memory _block) pure returns (uint256) {
     return _block.transaction.header.transactionCnt;
@@ -44,8 +45,8 @@ function _areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks, by
             return false;
         }
         previousBlockHash = keccak256(currentBlockEncoded);
-        //verify original siganture
-        address signer = StateChannelUtilLibrary.retriveSignerAddress(currentBlockEncoded, signedBlocks[i].signature);
+        //verify original signature
+        address signer = StateChannelUtilLibrary.retrieveSignerAddress(currentBlockEncoded, signedBlocks[i].signature);
         if (signer != currentBlock.transaction.header.participant) {
             return false;
         }

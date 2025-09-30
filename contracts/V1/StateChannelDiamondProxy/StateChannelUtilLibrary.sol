@@ -14,9 +14,9 @@ library StateChannelUtilLibrary {
         bytes memory encodedData,
         bytes[] memory signatures
     ) public pure returns (bool, string memory) {
-        //It's fine if you send more signatures than in the treshold - you'll just pay more gas
+        //It's fine if you send more signatures than in the threshold - you'll just pay more gas
         if (addressesInThreshold.length > signatures.length) {
-            return (false, "Cryptography: Not enought signatures provided");
+            return (false, "Cryptography: Not enough signatures provided");
         }
 
         uint256 threshold = addressesInThreshold.length;
@@ -55,7 +55,7 @@ library StateChannelUtilLibrary {
         return (true, "");
     }
 
-    function retriveSignerAddress(bytes memory encodedData, bytes memory signature) public pure returns (address) {
+    function retrieveSignerAddress(bytes memory encodedData, bytes memory signature) public pure returns (address) {
         bytes32 _hash = keccak256(encodedData);
 
         // EIP-191 - This is what actually gets signed
@@ -197,7 +197,7 @@ library StateChannelUtilLibrary {
 
         // Add items from second array, skipping duplicates
         for (uint256 i = 0; i < array2.length; i++) {
-            // Check if item already exists in rarray1
+            // Check if item already exists in array1
             if (!isAddressInArray(result, array2[i])) {
                 result[uniqueCount] = array2[i];
                 uniqueCount++;

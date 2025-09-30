@@ -16,7 +16,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         require(isCorrectAuditingData(dispute, disputeAuditingData), ErrorDisputeWrongAuditingData());
         require(_isCorrectGenesis(dispute), ErrorDisputeGenesisInvalid());
         require(verifyStateProof(dispute, disputeAuditingData, true), ErrorDisputeStateProofInvalid());
-        require(_verifyExitChannelBlocks(dispute, disputeAuditingData), ErrorDisputeExitChannelBlocksInvalid());
+        require(_verifyDisputeExitChannelBlocks(dispute, disputeAuditingData), ErrorDisputeExitChannelBlocksInvalid());
 
         // ***************** Generate output snapshot ***************
         (SnapshotData memory outputSnapshotData, address[] memory slashes) = computeDisputeOutputSnapshotData(
@@ -52,7 +52,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         outputSnapshotData = SnapshotData({
             originForkId: latestStateSnapshot.forkId,
             stateMachineStateHash: keccak256(disputeOutputState.encodedModifiedState),
-            participants: getStatemachineParticipants(disputeOutputState.encodedModifiedState),
+            participants: getStateMachineParticipants(disputeOutputState.encodedModifiedState),
             latestJoinChannelBlockHash: latestJoinChannelBlockHash, // Joins are not applied in disputes, but in reduce -> same hash as in the genesis snapshot
             latestExitChannelBlockHash: keccak256(abi.encode(disputeOutputState.exitBlock)),
             totalDeposits: disputeOutputState.totalDeposits,
@@ -180,9 +180,9 @@ contract DisputeVerificationFacet is StateChannelCommon {
         require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.genesisSnapshotDataHash];
-        //rquire all disputes are part of commitment
+        //require all disputes are part of commitment
         require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
-        //require reduce challenge period is not expired - this also assures it's commited
+        //require reduce challenge period is not expired - this also assures it's committed
         require(
             !_isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime()), ErrorDisputeChallengePeriodExpired()
         );
@@ -297,7 +297,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return SnapshotData({
             originForkId: forkId,
             stateMachineStateHash: keccak256(outputState.encodedModifiedState),
-            participants: getStatemachineParticipants(outputState.encodedModifiedState),
+            participants: getStateMachineParticipants(outputState.encodedModifiedState),
             latestJoinChannelBlockHash: reducedOutput.latestJoinChannelBlockHash, // This has been verified in _verifyJoinChannelBlocks
             latestExitChannelBlockHash: keccak256(abi.encode(outputState.exitBlock)),
             totalDeposits: outputState.totalDeposits,
@@ -362,7 +362,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         }
 
         bytes32 latestSnapshotDataHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData));
-        bytes32 latestSnanpshotHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot));
+        bytes32 latestSnapshotHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot));
 
         if (dispute.input.stateProof.milestones.length != 0 && dispute.input.stateProof.signedBlocks.length != 0) {
             return false;
@@ -384,17 +384,17 @@ contract DisputeVerificationFacet is StateChannelCommon {
                 if (auditingDataIntegrityVerified) {
                     if (
                         dispute.input.genesisSnapshotDataHash != latestSnapshotDataHash
-                            || dispute.input.latestStateSnapshotHash != latestSnanpshotHash
+                            || dispute.input.latestStateSnapshotHash != latestSnapshotHash
                     ) return false;
                 } else {
                     require(
                         dispute.input.genesisSnapshotDataHash == latestSnapshotDataHash
-                            && dispute.input.latestStateSnapshotHash == latestSnanpshotHash,
+                            && dispute.input.latestStateSnapshotHash == latestSnapshotHash,
                         ErrorIncorrectSnapshotProvided()
                     );
                 }
             } else {
-                //check if signedBlocks are linked, signed and build on genesis
+                //check if signedBlocks are linked, signed and built on genesis
                 if (
                     !_areSignedBlocksLinkedAndVerified(
                         dispute.input.stateProof.signedBlocks, dispute.input.genesisSnapshotDataHash
@@ -461,7 +461,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
                 finalizedSnapshotHash = currentBlock.stateSnapshotHash;
             }
             // Collect signatures
-            adr = StateChannelUtilLibrary.retriveSignerAddress(
+            adr = StateChannelUtilLibrary.retrieveSignerAddress(
                 currentBlockConfirmation.signedBlock.encodedBlock, currentBlockConfirmation.signedBlock.signature
             );
             if (adr != currentBlock.transaction.header.participant) {
@@ -471,7 +471,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
                 adr, thresholdSet, thresholdCount, expectedParticipants
             );
             for (uint256 j = 0; j < currentBlockConfirmation.signatures.length; j++) {
-                adr = StateChannelUtilLibrary.retriveSignerAddress(
+                adr = StateChannelUtilLibrary.retrieveSignerAddress(
                     currentBlockConfirmation.signedBlock.encodedBlock, currentBlockConfirmation.signatures[j]
                 );
                 thresholdCount = StateChannelUtilLibrary.tryInsertAddressInThresholdSet(
@@ -484,7 +484,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return (thresholdCount == expectedParticipants.length, finalizedSnapshotHash);
     }
 
-    /// @dev Verfies ForkMilestoneBlock along with BlockConfirmations and taking into account Virtual Voting
+    /// @dev Verifies ForkMilestoneBlock along with BlockConfirmations and taking into account Virtual Voting
     function verifyMilestones(
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
@@ -504,7 +504,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             if (!isFinal) {
                 return (false, lastBlockEncoded);
             }
-            // isFinal - since this runs in isolation now (not atomically with auditing where everthing is checked), revert the transaction if the disputer didn't provide the correct snapshot
+            // isFinal - since this runs in isolation now (not atomically with auditing where everything is checked), revert the transaction if the disputer didn't provide the correct snapshot
             // Since it's final, the disputer for sure has the correct snapshot, so we can just revert if it's not provided
             require(
                 keccak256(abi.encode(milestoneSnapshots[i])) == finalizedSnapshotHash, ErrorIncorrectSnapshotProvided()
@@ -542,42 +542,68 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return previousJoinChannelBlockHash == latestJoinChannelBlockHash;
     }
 
-    function _verifyExitChannelBlocks(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+    function _verifyDisputeExitChannelBlocks(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         internal
-        pure
+        view
         returns (bool)
     {
-        //check joinChannelBlocks (linked to latestSateSnapshot, chained internally and outputStateSnapshot commits to the head)
-        bytes32 previousExitChannelBlockHash = disputeAuditingData.genesisStateSnapshotData.latestExitChannelBlockHash;
-        for (uint256 i = 0; i < disputeAuditingData.exitChannelBlocks.length; i++) {
-            if (previousExitChannelBlockHash != disputeAuditingData.exitChannelBlocks[i].previousBlockHash) {
-                return false;
-            }
-            previousExitChannelBlockHash = keccak256(abi.encode(disputeAuditingData.exitChannelBlocks[i]));
-        }
-        return previousExitChannelBlockHash
-            == disputeAuditingData.latestStateSnapshot.snapshotData.latestExitChannelBlockHash;
+        return _verifyExitChannelBlocks(
+            disputeAuditingData.exitChannelBlocks,
+            disputeAuditingData.genesisStateSnapshotData,
+            disputeAuditingData.latestStateSnapshot.snapshotData
+        );
     }
+    /**
+     *
+     * Useful to spectating/joining participants to prove that the channel has the right amount of funds regardless of the internal agreement of peers within it.
+     * Prevents poisoned states that could happen though N/N collusion. (e.g. colluding peers claiming they have more funds than the on-chain available balance to try and steal new deposits of joining peers)
+     *
+     * This function and in general checking balance invariants isn't useful to existing participants that verify every state transition - if a balance was inflated, an honest peer would detect an incorrect state transition and raise a dispute.
+     *
+     * Each snapshot commits to an aggregated sum (totalDeposits/totalWithdrawals) that represent all the funds that have entered/existed the channel up to that point in time.
+     * The snapshot also commits to some state (encodedState) that accounts for the current in-channel balance (totalDeposits-totalWithdrawals);
+     * The check verifies that all the math adds up - what the Snapshot is claiming is the balance, is actually the balance that's verified against the on-chain balance.
+     *
+     * What this function does NOT do, is verify that the state is correct it just cares that the balance invariant is satisfied.
+     * (e.g. It doesn't care if Bob has 4 tokens and Alice 6 or Bob has 8 and Alice 2 - it only cares that the total is the same e.g. 10)
+     *
+     * Exits and Joins happen over their respective blockchain data structures (ExitChannelBlocks & JoinChannelBlocks) which are also not checked here.
+     * Snapshot commits to the head of both of these blockchains and this function assumes that the caller verified those blockchains and that the totalDeposits & totalWithdrawals that the snapshot commits to are correct
+     *
+     * Updating the snapshot on-chain will always apply the above check, so the onChainSnapshot can always be used as an objective single source of truth from which you start verifying everything else.
+     *
+     * Essentially we don't have to impose any of these checks when updating the snapshot and let it be 'poisonous' since spectating peers can easily check is it correct
+     * onChainDeposits == onChainSnapshot.totalDeposits
+     * onChainWithdrawals == onChainSnapshot.totalWithdrawals
+     * but since this check is so trivial we'll add as the last check onSnapshotUpdate
+     *
+     * The spectating peer can also request the state at the onChainSnapshot, but it's not needed - only the latestState balance is relevant and only that needs to be checked
+     *
+     */
 
-    /// @dev Verify latestState balance invariant - output state is calculated with correct state transition that's audited -> if input is ok -> output is ok
-    function verifyBalanceInvariantCheck(
+    function verifyBalanceInvariantCheckSnapshot(
         bytes32 channelId,
-        Balance memory totalDeposits,
-        Balance memory totalWithdrawals,
-        bytes32 latestJoinChannelBlockHash
-    ) public view returns (bool) {
+        SnapshotData memory snapshotData,
+        bytes memory encodedStateMachineState
+    ) public returns (bool) {
         ChannelBalance storage channelBalance = channelBalances[channelId];
-        Balance memory onChainDeposits = channelBalance.onChainJoinChannelMap[latestJoinChannelBlockHash].totalDeposits;
+        Balance memory onChainDeposits =
+            channelBalance.onChainJoinChannelMap[snapshotData.latestJoinChannelBlockHash].totalDeposits;
         Balance memory onChainWithdrawals = channelBalance.totalOnChainWithdrawals;
+        if (snapshotData.stateMachineStateHash != keccak256(encodedStateMachineState)) return false;
         //on-chain deposits have to match latestState deposits since deposits only happen on-chain
-        if (!stateMachineImplementation.areBalancesEqual(totalDeposits, onChainDeposits)) return false;
+        if (!stateMachineImplementation.areBalancesEqual(snapshotData.totalDeposits, onChainDeposits)) return false;
         //total withdrawals >= on-chain withdrawals since on-chain withdrawals are already processed
-        if (stateMachineImplementation.isBalanceLesserThan(totalWithdrawals, onChainWithdrawals)) return false;
+        if (stateMachineImplementation.isBalanceLesserThan(snapshotData.totalWithdrawals, onChainWithdrawals)) {
+            return false;
+        }
+        stateMachineImplementation.setState(encodedStateMachineState);
         Balance memory stateMachineBalance = stateMachineImplementation.getTotalStateBalance(); // The state is already set
         // totalDeposits == totalWithdrawals + stateMachineBalance
         if (
             !stateMachineImplementation.areBalancesEqual(
-                totalDeposits, stateMachineImplementation.addBalance(totalWithdrawals, stateMachineBalance)
+                snapshotData.totalDeposits,
+                stateMachineImplementation.addBalance(snapshotData.totalWithdrawals, stateMachineBalance)
             )
         ) return false;
         return true;
@@ -602,7 +628,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
                 break;
             }
         }
-        // require that the dispute cimmitment exists
+        // require that the dispute commitment exists
         require(isFound, ErrorDisputeCommitmentNotAvailable());
 
         // add the disputer to on-chain slashes
@@ -660,7 +686,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
     function isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         public
-        pure
+        view
         returns (bool)
     {
         // Doesn't check data integrity (disputeAuditingDataHash == hash(disputeAuditingData))
@@ -707,7 +733,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         ) return false;
 
         // Check exitChannelBlocks
-        if (!_verifyExitChannelBlocks(dispute, disputeAuditingData)) return false;
+        if (!_verifyDisputeExitChannelBlocks(dispute, disputeAuditingData)) return false;
 
         return true;
     }
@@ -716,7 +742,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         public
         returns (bool)
     {
-        // It's anoying that this function can not be view/pure since the way we modify encoedState is semanticaly 'stateful' even though logicaly it's stateless
+        // It's annoying that this function can not be view/pure since the way we modify encodedState is semantically 'stateful' even though logically it's stateless
 
         // ***************** Generate output snapshot ***************
         (SnapshotData memory outputSnapshotData, address[] memory slashes) = computeDisputeOutputSnapshotData(

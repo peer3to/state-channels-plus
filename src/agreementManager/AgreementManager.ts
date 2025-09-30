@@ -46,20 +46,6 @@ class AgreementManager {
     }
 
     /**
-     * Get participants who haven't signed a block
-     */
-    public getParticipantsWhoDidntSign(block: Block): Address[] {
-        const thresholdAddresses = this.storage.getParticipants(
-            block.coordinates
-        );
-
-        // Return addresses that haven't signed
-        return thresholdAddresses.filter(
-            (address) => !block.allSignerAddresses.has(address)
-        );
-    }
-
-    /**
      * Get latest state proof.
      */
     public async getStateProof(
@@ -196,7 +182,7 @@ class AgreementManager {
     public getLatestBlockFromStateProof(
         stateProof: StateProofStruct
     ): Block | undefined {
-        // orignaly wanted to reuse solidity implementation for this, but the solidity implementation returns a BlockStruct which is a subset of information compared to BlockConfirmation/SignedBlock.
+        // originally wanted to reuse solidity implementation for this, but the solidity implementation returns a BlockStruct which is a subset of information compared to BlockConfirmation/SignedBlock.
         // reimplemented it here since the logic is simple, but in general - reuse the solidity stuff!
         if (
             stateProof.milestones.length === 0 &&

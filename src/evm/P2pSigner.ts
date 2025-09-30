@@ -2,17 +2,13 @@ import { ethers, Signer, TransactionResponse } from "ethers";
 
 import {
     JoinChannelStruct,
-    SignedBlockStruct,
     SignedJoinChannelStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "@/Clock";
 import P2PManager from "@/P2PManager";
-import { Codec, SignatureUtils, Type } from "@/utils";
-import { Block } from "@/models";
+import { Codec, Type } from "@/utils";
 import { Address, Amount, Bytes, Timestamp } from "@/types/types";
-import { SignedDisputeStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 class P2pSigner implements Signer {
     signer: Signer;
@@ -71,7 +67,9 @@ class P2pSigner implements Signer {
     }
 
     async call(tx: ethers.TransactionRequest): Promise<string> {
-        return await this.p2pManager.stateManager.stateMachine.runView(tx);
+        return await this.p2pManager.stateManager.diamondStateMachine.runView(
+            tx
+        );
     }
 
     resolveName(name: string): Promise<string | null> {
@@ -89,9 +87,12 @@ class P2pSigner implements Signer {
             header: {
                 channelId: this.p2pManager.stateManager.getChannelId(),
                 participant: this.p2pManager.stateManager.getSignerAddress(),
-                forkId: this.p2pManager.stateManager.getforkId(),
-                transactionCnt:
-                    this.p2pManager.stateManager.getNextBlockHeight(),
+                forkId: this.p2pManager.stateManager.forkId,
+                transactionCnt: BigInt(
+                    this.p2pManager.stateManager.storage.blocks.getNextBlockHeight(
+                        this.p2pManager.stateManager.forkId
+                    )
+                ),
                 timestamp: BigInt(Clock.getTimeInSeconds())
             },
             body: {
@@ -103,7 +104,7 @@ class P2pSigner implements Signer {
         const signedBlock =
             await this.p2pManager.stateManager.playTransaction(_tx);
         this.p2pManager.rpcProxy.onSignedBlock(signedBlock).broadcast();
-        return "There is no TransactionResponse p2p - everything executed localy" as unknown as TransactionResponse; //TODO
+        return "There is no TransactionResponse p2p - everything executed locally" as unknown as TransactionResponse; //TODO
     }
 
     signMessage(message: string | Uint8Array): Promise<string> {
@@ -121,17 +122,6 @@ class P2pSigner implements Signer {
     setChannelId(channelId: Bytes) {
         this.p2pManager.stateManager.setChannelId(channelId);
     }
-    public async confirmBlock(signedBlock: SignedBlockStruct) {
-        const block = Block.decode(signedBlock.encodedBlock);
-        const signature = await block.sign(this.signer);
-        this.p2pManager.stateManager.agreementManager.confirmBlock(
-            block,
-            signature
-        );
-        this.p2pManager.rpcProxy
-            .onBlockConfirmation(signedBlock, signature)
-            .broadcast();
-    }
 
     public setIsLeader(value: boolean) {
         this.isLeader = value;
@@ -148,29 +138,6 @@ class P2pSigner implements Signer {
 
     public disconnectFromPeers() {
         this.p2pManager.disconnectAll();
-    }
-
-    public async confirmDispute(dispute: DisputeStruct) {
-        // Add our signature
-        const { encoded, signature } = await SignatureUtils.signDispute(
-            dispute,
-            this.signer
-        );
-        const signedDispute = {
-            encodedDispute: encoded,
-            signature
-        } as SignedDisputeStruct;
-
-        // Store signature in AgreementManager
-        this.p2pManager.stateManager.agreementManager.confirmDispute(
-            dispute,
-            signature
-        );
-
-        // Broadcast confirmation with our signature
-        this.p2pManager.rpcProxy
-            .onDisputeConfirmation(signedDispute)
-            .broadcast();
     }
 
     public async joinChannel(

@@ -87,7 +87,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             // Dispute window doesn't exist
             StateSnapshot memory currentOnChainSnapshot = stateSnapshots[channelId];
             // check if current on-chain snapshot.fork == forkId
-            if (currentOnChainSnapshot.forkId == forkId && isGenesisSnapshot(currentOnChainSnapshot)) {
+            if (currentOnChainSnapshot.forkId == forkId && isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)) {
                 return (true, currentOnChainSnapshot.timestamp);
             }
             return (false, 0);
@@ -95,7 +95,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return (true, timestamp);
     }
 
-    function isGenesisSnapshot(StateSnapshot memory snapshot) public pure returns (bool) {
+    function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot) public pure returns (bool) {
         return snapshot.forkId == keccak256(abi.encode(snapshot.snapshotData)) && snapshot.blockHeight == 0;
     }
 
@@ -107,7 +107,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return disputeData[channelId].pendingParticipants;
     }
 
-    function getSnapshotforkId(bytes32 channelId) public view virtual returns (bytes32) {
+    function getSnapshotForkId(bytes32 channelId) public view virtual returns (bytes32) {
         return stateSnapshots[channelId].forkId;
     }
 
@@ -115,13 +115,13 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return stateSnapshots[channelId];
     }
 
-    function getStatemachineParticipants(bytes memory encodedState) public virtual returns (address[] memory) {
+    function getStateMachineParticipants(bytes memory encodedState) public virtual returns (address[] memory) {
         stateMachineImplementation.setState(encodedState);
         return stateMachineImplementation.getParticipants();
     }
 
     function getNextToWrite(bytes32 channelId, bytes memory encodedState) public virtual returns (address) {
-        //channelId not used currenlty since all channels have the same SM - later they can be mapped to different ones
+        //channelId not used currently since all channels have the same SM - later they can be mapped to different ones
         stateMachineImplementation.setState(encodedState);
         return stateMachineImplementation.getNextToWrite();
     }
@@ -178,11 +178,35 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         (bool success, bytes memory encodedBlock) = address(this).staticcall(data);
         if (!success) return false;
         Block memory decodedBlock = abi.decode(encodedBlock, (Block));
-        address signer = StateChannelUtilLibrary.retriveSignerAddress(encodedBlock, _block.signature);
+        address signer = StateChannelUtilLibrary.retrieveSignerAddress(encodedBlock, _block.signature);
         if (signer != decodedBlock.transaction.header.participant) {
             return false;
         }
         return true;
+    }
+
+    function _verifyExitChannelBlocks(
+        ExitChannelBlock[] memory exitChannelBlocks,
+        SnapshotData memory fromSnapshot,
+        SnapshotData memory toSnapshot
+    ) public view returns (bool) {
+        bytes32 previousExitChannelBlockHash = fromSnapshot.latestExitChannelBlockHash;
+        Balance memory totalWithdrawals = fromSnapshot.totalWithdrawals;
+
+        for (uint256 i = 0; i < exitChannelBlocks.length; i++) {
+            if (previousExitChannelBlockHash != exitChannelBlocks[i].previousBlockHash) {
+                return false;
+            }
+            for (uint256 j = 0; j < exitChannelBlocks[i].exitChannels.length; j++) {
+                totalWithdrawals = stateMachineImplementation.addBalance(
+                    totalWithdrawals, exitChannelBlocks[i].exitChannels[j].balance
+                );
+            }
+            previousExitChannelBlockHash = keccak256(abi.encode(exitChannelBlocks[i]));
+        }
+        if (keccak256(abi.encode(totalWithdrawals)) != keccak256(abi.encode(toSnapshot.totalWithdrawals))) return false;
+
+        return previousExitChannelBlockHash == toSnapshot.latestExitChannelBlockHash;
     }
 
     function _applyJoins(
@@ -214,14 +238,14 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     /// @dev Callable only by diamond facets - applies the join to the given state of the state machine and returns the modified state
-    function applyJoinChannelToStateMachine(bytes memory encodedState, JoinChannel[] memory joinCahnnels)
+    function applyJoinChannelToStateMachine(bytes memory encodedState, JoinChannel[] memory joinChannels)
         public
         onlySelf
         returns (bytes memory encodedModifiedState)
     {
         stateMachineImplementation.setState(encodedState);
-        for (uint256 i = 0; i < joinCahnnels.length; i++) {
-            bool success = stateMachineImplementation.joinChannel(joinCahnnels[i]);
+        for (uint256 i = 0; i < joinChannels.length; i++) {
+            bool success = stateMachineImplementation.joinChannel(joinChannels[i]);
             require(success, ErrorDisputeStateMachineJoiningFailed());
         }
         return (stateMachineImplementation.getState());
@@ -291,7 +315,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         );
     }
 
-    function _delegatecall(address target, bytes memory data) internal returns (bytes memory) {
+    function _delegateCall(address target, bytes memory data) internal returns (bytes memory) {
         (bool success, bytes memory result) = target.delegatecall(data);
         if (!success) {
             if (result.length == 0) {

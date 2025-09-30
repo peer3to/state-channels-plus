@@ -5,7 +5,8 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeAuditingDataStruct,
-    DisputeStruct
+    DisputeStruct,
+    DisputeConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
@@ -13,7 +14,6 @@ import { ChannelId, Timestamp, Address, Hash, ForkId } from "@/types/types";
 import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { isEqual } from "lodash";
-import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 export class EventHandler {
     constructor(
@@ -25,8 +25,7 @@ export class EventHandler {
 
     async onStateSnapshotUpdated(
         channelId: ChannelId,
-        stateSnapshot: StateSnapshotStruct,
-        timestamp: Timestamp
+        stateSnapshot: StateSnapshotStruct
     ): Promise<void> {
         if (!(await this.isSnapshotInPast(channelId, stateSnapshot))) {
             throw new Error(
@@ -38,8 +37,7 @@ export class EventHandler {
 
         this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
             channelId,
-            stateSnapshot,
-            timestamp
+            stateSnapshot
         );
     }
 

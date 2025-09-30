@@ -45,7 +45,7 @@ export default class DisputeValidationService {
             if (!isValid) {
                 return false;
             }
-            return await this.cotinueValidationWithVerifiedDisputeAuditingDataCommitment(
+            return await this.continueValidationWithVerifiedDisputeAuditingDataCommitment(
                 dispute,
                 onChainDisputeAuditingData
             );
@@ -65,12 +65,12 @@ export default class DisputeValidationService {
                 );
             if (isValidStateProof) {
                 // *********** TODO ******************
-                // *********** This is anoying and needs some thought ********************
-                // we have to run the block confirmation pipeline on unfinalized blocks and deduct are we 'behind' an honest history and in that case accept it
-                // or reuse the failue in fraudProofs to kill the malicious dispute + this time all falilures are objective since it's commited on-chain
+                // *********** This is annoying and needs some thought ********************
+                // we have to run the block confirmation pipeline on un-finalized blocks and deduct are we 'behind' an honest history and in that case accept it
+                // or reuse the failure in fraudProofs to kill the malicious dispute + this time all failures are objective since it's committed on-chain
                 // if we deduct we're at an honest state we need to sync and try and build auditingData again
                 // if we can't build it AGAIN - error since something is wrong
-                // else build it and `cotinueValidationAuditingDataConstructed`
+                // else build it and `continueValidationAuditingDataConstructed`
                 // *********** This is annoying and needs some thought ********************
                 //
                 // SCENARIO: State proof is VALID but auditing data is PARTIAL
@@ -109,14 +109,14 @@ export default class DisputeValidationService {
                 //    └─────────────────────────┘    └─────────────────────────┘
                 //
                 // IMPLEMENTATION STRATEGY:
-                // 1. Run block confirmation pipeline on unfinalized blocks
+                // 1. Run block confirmation pipeline on un-finalized blocks
                 // 2. Determine if we're "behind" an honest history:
                 //    - If YES (honest but lagging):
                 //      • Accept the situation
                 //      • Sync blockchain state
                 //      • Try to rebuild auditing data
                 //      • If rebuild fails AGAIN → error (something is wrong)
-                //      • If rebuild succeeds → continue with `cotinueValidationAuditingDataConstructed`
+                //      • If rebuild succeeds → continue with `continueValidationAuditingDataConstructed`
                 //    - If NO (malicious dispute):
                 //      • Reuse existing fraud proof failures from block confirmation pipeline
                 //      • Kill the malicious dispute using objective on-chain validations
@@ -131,13 +131,13 @@ export default class DisputeValidationService {
             }
         }
         // auditingData reconstructed in full
-        return await this.cotinueValidationAuditingDataConstructed(
+        return await this.continueValidationAuditingDataConstructed(
             dispute,
             auditingData
         );
     }
 
-    private async cotinueValidationAuditingDataConstructed(
+    private async continueValidationAuditingDataConstructed(
         dispute: DisputeStruct,
         disputeAuditingData: DisputeAuditingDataStruct
     ): Promise<boolean> {
@@ -148,7 +148,7 @@ export default class DisputeValidationService {
             )
         ) {
             // continue down the happy path
-            return await this.cotinueValidationWithVerifiedDisputeAuditingDataCommitment(
+            return await this.continueValidationWithVerifiedDisputeAuditingDataCommitment(
                 dispute,
                 disputeAuditingData
             );
@@ -163,7 +163,7 @@ export default class DisputeValidationService {
             )
         ) {
             // Full and Verified disputeAuditingData -> continue down the happy path
-            return await this.cotinueValidationWithVerifiedDisputeAuditingDataCommitment(
+            return await this.continueValidationWithVerifiedDisputeAuditingDataCommitment(
                 dispute,
                 disputeAuditingData
             );
@@ -188,11 +188,11 @@ export default class DisputeValidationService {
             return false;
         }
     }
-    private async cotinueValidationWithVerifiedDisputeAuditingDataCommitment(
+    private async continueValidationWithVerifiedDisputeAuditingDataCommitment(
         dispute: DisputeStruct,
         disputeAuditingData: DisputeAuditingDataStruct
     ): Promise<boolean> {
-        // cotinuing down the happy path with the disputeAuditingData verified against the commitment
+        // continuing down the happy path with the disputeAuditingData verified against the commitment
 
         //run stateProof with auditingDataIntegrityVerified = true
         if (
@@ -202,11 +202,11 @@ export default class DisputeValidationService {
                 true
             ))
         ) {
-            //TODO - create Dispute Fraud Proof DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed
+            //TODO - create Dispute Fraud Proof DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified
             return false;
         }
 
-        // isCorrectAuditingData - majority cheked already with stateProof - just checking exitChannelBlocks
+        // isCorrectAuditingData - majority checked already with stateProof - just checking exitChannelBlocks
         if (
             !(await this.diamondStateMachine.localDiamondContract.isCorrectAuditingData(
                 dispute,
@@ -251,9 +251,11 @@ export default class DisputeValidationService {
 
         // (STATEFUL - compiler trick) verify balance invariant
         if (
-            !(await this.diamondStateMachine.localDiamondContract.verifyBalanceInvariantCheckView(
-                dispute,
-                disputeAuditingData
+            // TODO - this will most likely fail in our localEVM since something won't be synced - should do it on the RPC node for now
+            !(await this.stateChannelManagerContract.verifyBalanceInvariantCheckSnapshot.staticCall(
+                dispute.input.channelId,
+                disputeAuditingData.latestStateSnapshot.snapshotData,
+                disputeAuditingData.latestStateStateMachineState
             ))
         ) {
             // TODO - double check with RPC node, maybe local state not synced - I didn't expose this in the normal diamond
@@ -288,7 +290,7 @@ export default class DisputeValidationService {
 
         // verify dispute output
         if (
-            !(await this.diamondStateMachine.isDisputeOutputCorrect(
+            !(await this.diamondStateMachine.localDiamondContract.isDisputeOutputCorrect.staticCall(
                 dispute,
                 disputeAuditingData
             ))

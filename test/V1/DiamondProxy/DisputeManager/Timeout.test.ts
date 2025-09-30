@@ -18,9 +18,9 @@ describe("DisputeManagerProxy", function () {
 
     async function getSigners() {
         const signers = await ethers.getSigners();
-        let firstSigner = signers[0];
-        let secondSigner = signers[1];
-        let thirdSigner = signers[2];
+        const firstSigner = signers[0];
+        const secondSigner = signers[1];
+        const thirdSigner = signers[2];
         return { firstSigner, secondSigner, thirdSigner, signers };
     }
     let snapshotId: string;
@@ -37,10 +37,10 @@ describe("DisputeManagerProxy", function () {
         const contracts = await deployMathChannelProxyFixture(ethers);
         mathChannelManager = contracts.mathChannelManager;
         mathInstance = contracts.mathInstance;
-        let signers = await getSigners();
+        const signers = await getSigners();
         firstSigner = signers.firstSigner;
         secondSigner = signers.secondSigner;
-        let deplymentTx = await getMathDeploymentTransaction(ethers);
+        const deplymentTx = await getMathDeploymentTransaction(ethers);
         p2p1 = await EvmStateMachine.p2pSetup(
             firstSigner,
             deplymentTx,
