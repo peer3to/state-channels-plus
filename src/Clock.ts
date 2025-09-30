@@ -33,20 +33,20 @@ class Clock {
         return Clock.instance;
     }
     private async syncClock() {
-        let currentTime = Clock.getTimeInSeconds();
+        const currentTime = Clock.getTimeInSeconds();
 
         const latestBlock = await this.provider.getBlock("latest");
         if (!latestBlock) throw new Error("Could not get latest block");
-        let latestTimestamp = latestBlock.timestamp;
+        const latestTimestamp = latestBlock.timestamp;
 
         const difference = latestTimestamp - currentTime;
 
-        let blockCnt = latestBlock.number >= 100 ? 100 : 0;
-        let pastBlock = await this.provider.getBlock(
+        const blockCnt = latestBlock.number >= 100 ? 100 : 0;
+        const pastBlock = await this.provider.getBlock(
             latestBlock.number - blockCnt
         );
         if (!pastBlock) throw new Error("Could not get past block");
-        let pastTimestamp = pastBlock.timestamp;
+        const pastTimestamp = pastBlock.timestamp;
 
         this.averageBlockTime = (latestTimestamp - pastTimestamp) / blockCnt;
         if (!this.averageBlockTime) {

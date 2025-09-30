@@ -8,15 +8,16 @@ class DHTDiscoveryService extends ARpcService {
 
     public async onCanJoinLeaderRequest() {
         //TODO! require init handshake
-        let amILeader = this.mainRpcService.p2pManager.p2pSigner.getIsLeader();
+        const amILeader =
+            this.mainRpcService.p2pManager.p2pSigner.getIsLeader();
         if (!amILeader) {
             //TODO! - disconnect
             return;
         }
         //TODO! analyze
-        let channelId =
+        const channelId =
             this.mainRpcService.p2pManager.stateManager.getChannelId();
-        let participants =
+        const participants =
             await this.mainRpcService.p2pManager.stateManager.getParticipantsCurrent(); //TODO! open connections that are not in the participants list
     }
 

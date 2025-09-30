@@ -13,21 +13,21 @@ describe("StateChannelUtilLibrary", function () {
         msg: string,
         signer: Signer
     ): Promise<{ encodedMsg: BytesLike; signature: string }> {
-        let encodedMsg = ethers.AbiCoder.defaultAbiCoder().encode(
+        const encodedMsg = ethers.AbiCoder.defaultAbiCoder().encode(
             ["string"],
             [msg]
         );
-        let encodedHash = ethers.keccak256(encodedMsg);
-        let econdedHashBytes = ethers.getBytes(encodedHash);
-        let signature = await signer.signMessage(econdedHashBytes);
+        const encodedHash = ethers.keccak256(encodedMsg);
+        const econdedHashBytes = ethers.getBytes(encodedHash);
+        const signature = await signer.signMessage(econdedHashBytes);
         return { encodedMsg, signature };
     }
 
     async function getSigners() {
         const signers = await ethers.getSigners();
-        let firstSigner = signers[0];
-        let secondSigner = signers[1];
-        let thirdSigner = signers[2];
+        const firstSigner = signers[0];
+        const secondSigner = signers[1];
+        const thirdSigner = signers[2];
         return { firstSigner, secondSigner, thirdSigner, signers };
     }
 
@@ -38,7 +38,7 @@ describe("StateChannelUtilLibrary", function () {
 
     this.beforeEach(async function () {
         libraryWrapper = await deployLibraryTestContract(ethers);
-        let signers = await getSigners();
+        const signers = await getSigners();
         firstSigner = signers.firstSigner;
         secondSigner = signers.secondSigner;
         thirdSigner = signers.thirdSigner;
@@ -46,10 +46,10 @@ describe("StateChannelUtilLibrary", function () {
 
     describe("Signature Verification", function () {
         it("1 of 1 - Success", async function () {
-            let msg = "Hello peers!";
-            let signed1 = await signMsg(msg, firstSigner);
+            const msg = "Hello peers!";
+            const signed1 = await signMsg(msg, firstSigner);
 
-            let result = await libraryWrapper.verifyThresholdSigned(
+            const result = await libraryWrapper.verifyThresholdSigned(
                 [firstSigner.address],
                 signed1.encodedMsg,
                 [signed1.signature]
@@ -58,10 +58,10 @@ describe("StateChannelUtilLibrary", function () {
             expect(result[0], "Signature verification failed").to.be.true;
         });
         it("1 of 1 - Wrong encoded message", async function () {
-            let msg = "Hello peers!";
-            let signed1 = await signMsg(msg, firstSigner);
+            const msg = "Hello peers!";
+            const signed1 = await signMsg(msg, firstSigner);
 
-            let result = await libraryWrapper.verifyThresholdSigned(
+            const result = await libraryWrapper.verifyThresholdSigned(
                 [firstSigner.address],
                 signed1.encodedMsg + "00",
                 [signed1.signature]
@@ -72,10 +72,10 @@ describe("StateChannelUtilLibrary", function () {
             ).to.be.true;
         });
         it("1 of 1 - No signature", async function () {
-            let msg = "Hello peers!";
-            let signed1 = await signMsg(msg, firstSigner);
+            const msg = "Hello peers!";
+            const signed1 = await signMsg(msg, firstSigner);
 
-            let result = await libraryWrapper.verifyThresholdSigned(
+            const result = await libraryWrapper.verifyThresholdSigned(
                 [firstSigner.address],
                 signed1.encodedMsg + "00",
                 []
@@ -86,10 +86,10 @@ describe("StateChannelUtilLibrary", function () {
             ).to.be.true;
         });
         it("1 of 1 - Invalid signature length", async function () {
-            let msg = "Hello peers!";
-            let signed1 = await signMsg(msg, firstSigner);
+            const msg = "Hello peers!";
+            const signed1 = await signMsg(msg, firstSigner);
 
-            let resultPromise = libraryWrapper.verifyThresholdSigned(
+            const resultPromise = libraryWrapper.verifyThresholdSigned(
                 [firstSigner.address],
                 signed1.encodedMsg,
                 [signed1.signature + "00"]
@@ -105,12 +105,12 @@ describe("StateChannelUtilLibrary", function () {
 
     describe("Treshold Signature Verification", function () {
         it("3 of 3 inorder - success", async function () {
-            let msg = "Hello peers!";
-            let signed1 = await signMsg(msg, firstSigner);
-            let signed2 = await signMsg(msg, secondSigner);
-            let signed3 = await signMsg(msg, thirdSigner);
+            const msg = "Hello peers!";
+            const signed1 = await signMsg(msg, firstSigner);
+            const signed2 = await signMsg(msg, secondSigner);
+            const signed3 = await signMsg(msg, thirdSigner);
 
-            let result = await libraryWrapper.verifyThresholdSigned(
+            const result = await libraryWrapper.verifyThresholdSigned(
                 [
                     firstSigner.address,
                     secondSigner.address,
@@ -122,12 +122,12 @@ describe("StateChannelUtilLibrary", function () {
             expect(result[0], "Threshold signature failed").to.be.true;
         });
         it("3 of 3 not inorder - success", async function () {
-            let msg = "Hello peers!";
-            let signed1 = await signMsg(msg, firstSigner);
-            let signed2 = await signMsg(msg, secondSigner);
-            let signed3 = await signMsg(msg, thirdSigner);
+            const msg = "Hello peers!";
+            const signed1 = await signMsg(msg, firstSigner);
+            const signed2 = await signMsg(msg, secondSigner);
+            const signed3 = await signMsg(msg, thirdSigner);
 
-            let result = await libraryWrapper.verifyThresholdSigned(
+            const result = await libraryWrapper.verifyThresholdSigned(
                 [
                     firstSigner.address,
                     secondSigner.address,
@@ -139,12 +139,12 @@ describe("StateChannelUtilLibrary", function () {
             expect(result[0], "Threshold signature failed").to.be.true;
         });
         it("3 of 3 with more signatures not inorder - success", async function () {
-            let msg = "Hello peers!";
-            let signed1 = await signMsg(msg, firstSigner);
-            let signed2 = await signMsg(msg, secondSigner);
-            let signed3 = await signMsg(msg, thirdSigner);
+            const msg = "Hello peers!";
+            const signed1 = await signMsg(msg, firstSigner);
+            const signed2 = await signMsg(msg, secondSigner);
+            const signed3 = await signMsg(msg, thirdSigner);
 
-            let result = await libraryWrapper.verifyThresholdSigned(
+            const result = await libraryWrapper.verifyThresholdSigned(
                 [
                     firstSigner.address,
                     secondSigner.address,
@@ -161,11 +161,11 @@ describe("StateChannelUtilLibrary", function () {
             expect(result[0], "Threshold signature failed").to.be.true;
         });
         it("2 of 3 - fail", async function () {
-            let msg = "Hello peers!";
-            let signed1 = await signMsg(msg, firstSigner);
-            let signed2 = await signMsg(msg, secondSigner);
+            const msg = "Hello peers!";
+            const signed1 = await signMsg(msg, firstSigner);
+            const signed2 = await signMsg(msg, secondSigner);
 
-            let result = await libraryWrapper.verifyThresholdSigned(
+            const result = await libraryWrapper.verifyThresholdSigned(
                 [
                     firstSigner.address,
                     secondSigner.address,
@@ -182,11 +182,11 @@ describe("StateChannelUtilLibrary", function () {
             ).to.be.true;
         });
         it("2 of 3 with one duplicate signature - fail", async function () {
-            let msg = "Hello peers!";
-            let signed1 = await signMsg(msg, firstSigner);
-            let signed2 = await signMsg(msg, secondSigner);
+            const msg = "Hello peers!";
+            const signed1 = await signMsg(msg, firstSigner);
+            const signed2 = await signMsg(msg, secondSigner);
 
-            let result = await libraryWrapper.verifyThresholdSigned(
+            const result = await libraryWrapper.verifyThresholdSigned(
                 [
                     firstSigner.address,
                     secondSigner.address,
@@ -202,11 +202,11 @@ describe("StateChannelUtilLibrary", function () {
             ).to.be.true;
         });
         it("3 of 3 with changed message - fail", async function () {
-            let msg = "Hello peers!";
-            let signed1 = await signMsg(msg, firstSigner);
-            let signed2 = await signMsg(msg, secondSigner);
+            const msg = "Hello peers!";
+            const signed1 = await signMsg(msg, firstSigner);
+            const signed2 = await signMsg(msg, secondSigner);
 
-            let result = await libraryWrapper.verifyThresholdSigned(
+            const result = await libraryWrapper.verifyThresholdSigned(
                 [
                     firstSigner.address,
                     secondSigner.address,
@@ -222,11 +222,11 @@ describe("StateChannelUtilLibrary", function () {
             ).to.be.true;
         });
         it("2 of 3 with one invalid signature length - fail", async function () {
-            let msg = "Hello peers!";
-            let signed1 = await signMsg(msg, firstSigner);
-            let signed2 = await signMsg(msg, secondSigner);
+            const msg = "Hello peers!";
+            const signed1 = await signMsg(msg, firstSigner);
+            const signed2 = await signMsg(msg, secondSigner);
 
-            let resultPromise = libraryWrapper.verifyThresholdSigned(
+            const resultPromise = libraryWrapper.verifyThresholdSigned(
                 [
                     firstSigner.address,
                     secondSigner.address,

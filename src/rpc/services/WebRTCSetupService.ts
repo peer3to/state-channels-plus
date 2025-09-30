@@ -15,9 +15,9 @@ class WebRTCSetupService extends ARpcService {
         //TODO! - require seccusfull init handshake (also on other methods)
         try {
             console.log("initiateWebRTC");
-            let connection = new RTCPeerConnection();
-            let channel = connection.createDataChannel("webRTC-DataChannel");
-            let webRTCTransport = new WebRTCTransport(
+            const connection = new RTCPeerConnection();
+            const channel = connection.createDataChannel("webRTC-DataChannel");
+            const webRTCTransport = new WebRTCTransport(
                 channel,
                 this.mainRpcService.p2pManager
             );
@@ -25,23 +25,23 @@ class WebRTCSetupService extends ARpcService {
             // Handle ICE candidates
             connection.onicecandidate = (event: any) => {
                 if (event.candidate) {
-                    let serializedCandidate = JSON.stringify(event.candidate);
+                    const serializedCandidate = JSON.stringify(event.candidate);
                     this.mainRpcService.rpcProxy
                         .onIceCandidate(serializedCandidate)
                         .sendOne(this.mainRpcService.senderTransport!);
                 }
             };
 
-            let senderTransport = this.mainRpcService.senderTransport; // catch it here since async call below
-            let offer = await connection.createOffer();
+            const senderTransport = this.mainRpcService.senderTransport; // catch it here since async call below
+            const offer = await connection.createOffer();
             connection.setLocalDescription(offer);
-            let adr =
+            const adr =
                 this.mainRpcService.p2pManager.profileManager.getProfileByTransport(
                     senderTransport!
                 )?.evmAddress;
             if (!adr) return console.log("initiateWebRTC - no EVM address");
             this.connectionMap.set(adr.toString(), connection);
-            let serializedOffer = JSON.stringify(offer);
+            const serializedOffer = JSON.stringify(offer);
             this.mainRpcService.rpcProxy
                 .onOfferWebRTC(serializedOffer)
                 .sendOne(senderTransport!);
@@ -53,11 +53,11 @@ class WebRTCSetupService extends ARpcService {
     //Ran by the peer who is responding to the connection - this creates the answer
     public async onOfferWebRTC(serializedOffer: string) {
         try {
-            let connection = new RTCPeerConnection();
+            const connection = new RTCPeerConnection();
             // Handle ICE candidates
             connection.onicecandidate = (event: any) => {
                 if (event.candidate) {
-                    let serializedCandidate = JSON.stringify(event.candidate);
+                    const serializedCandidate = JSON.stringify(event.candidate);
                     this.mainRpcService.rpcProxy
                         .onIceCandidate(serializedCandidate)
                         .sendOne(this.mainRpcService.senderTransport!);
@@ -65,24 +65,24 @@ class WebRTCSetupService extends ARpcService {
             };
             connection.ondatachannel = (event: any) => {
                 console.log("WebRTC - onOfferWebRTC - ondatachannel");
-                let webRTCTransport = new WebRTCTransport(
+                const webRTCTransport = new WebRTCTransport(
                     event.channel,
                     this.mainRpcService.p2pManager
                 );
             };
-            let senderTransport = this.mainRpcService.senderTransport; // catch it here since async call below
-            let adr =
+            const senderTransport = this.mainRpcService.senderTransport; // catch it here since async call below
+            const adr =
                 this.mainRpcService.p2pManager.profileManager.getProfileByTransport(
                     senderTransport!
                 )?.evmAddress;
             if (!adr) return console.log("initiateWebRTC - no EVM address");
             this.connectionMap.set(adr.toString(), connection);
-            let offer = JSON.parse(serializedOffer);
+            const offer = JSON.parse(serializedOffer);
             console.log("onOfferWebRTC - offer", offer);
             await connection.setRemoteDescription(offer);
-            let answer = await connection.createAnswer();
+            const answer = await connection.createAnswer();
             await connection.setLocalDescription(answer);
-            let serializedAnswer = JSON.stringify(answer);
+            const serializedAnswer = JSON.stringify(answer);
             this.mainRpcService.rpcProxy
                 .onAnswerWebRTC(serializedAnswer)
                 .sendOne(senderTransport!);
@@ -94,15 +94,15 @@ class WebRTCSetupService extends ARpcService {
     //Ran by the peer who initiated the connection - this completes the handshake (negotiation)
     public async onAnswerWebRTC(serializedAnswer: string) {
         try {
-            let adr =
+            const adr =
                 this.mainRpcService.p2pManager.profileManager.getProfileByTransport(
                     this.mainRpcService.senderTransport!
                 )?.evmAddress;
             if (!adr) return console.log("onAnswerWebRTC - no EVM address");
-            let connection = this.connectionMap.get(adr.toString());
+            const connection = this.connectionMap.get(adr.toString());
             if (!connection)
                 return console.log("onAnswerWebRTC - no connection");
-            let answer = JSON.parse(serializedAnswer);
+            const answer = JSON.parse(serializedAnswer);
             console.log("onAnswerWebRTC - answer", answer);
             await connection.setRemoteDescription(answer);
         } catch (e) {
@@ -113,16 +113,16 @@ class WebRTCSetupService extends ARpcService {
     // Handle ICE candidates
     public async onIceCandidate(serializedCandidate: string) {
         try {
-            let candidate = new RTCIceCandidate(
+            const candidate = new RTCIceCandidate(
                 JSON.parse(serializedCandidate)
             );
-            let adr =
+            const adr =
                 this.mainRpcService.p2pManager.profileManager.getProfileByTransport(
                     this.mainRpcService.senderTransport!
                 )?.evmAddress;
             if (!adr) return console.log("onIceCandidate - no EVM address");
 
-            let connection = this.connectionMap.get(adr.toString());
+            const connection = this.connectionMap.get(adr.toString());
             if (!connection)
                 return console.log("onIceCandidate - no connection");
 
