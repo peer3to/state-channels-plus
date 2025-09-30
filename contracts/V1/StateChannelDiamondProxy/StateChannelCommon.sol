@@ -121,7 +121,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function getNextToWrite(bytes32 channelId, bytes memory encodedState) public virtual returns (address) {
-        //channelId not used currenlty since all channels have the same SM - later they can be mapped to different ones
+        //channelId not used currently since all channels have the same SM - later they can be mapped to different ones
         stateMachineImplementation.setState(encodedState);
         return stateMachineImplementation.getNextToWrite();
     }
@@ -238,14 +238,14 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     /// @dev Callable only by diamond facets - applies the join to the given state of the state machine and returns the modified state
-    function applyJoinChannelToStateMachine(bytes memory encodedState, JoinChannel[] memory joinCahnnels)
+    function applyJoinChannelToStateMachine(bytes memory encodedState, JoinChannel[] memory joinChannels)
         public
         onlySelf
         returns (bytes memory encodedModifiedState)
     {
         stateMachineImplementation.setState(encodedState);
-        for (uint256 i = 0; i < joinCahnnels.length; i++) {
-            bool success = stateMachineImplementation.joinChannel(joinCahnnels[i]);
+        for (uint256 i = 0; i < joinChannels.length; i++) {
+            bool success = stateMachineImplementation.joinChannel(joinChannels[i]);
             require(success, ErrorDisputeStateMachineJoiningFailed());
         }
         return (stateMachineImplementation.getState());

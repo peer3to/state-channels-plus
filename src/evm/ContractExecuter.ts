@@ -27,7 +27,7 @@ export default class ContractExecuter {
         isStatic = false
     ): Promise<ExecResult> {
         // set timestamp
-        let block = defaultBlock();
+        const block = defaultBlock();
         block.header.timestamp = BigInt(Clock.getTimeInSeconds());
 
         const result = await this.evm.runCall({

@@ -67,7 +67,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
 
         if (isThresholdFinal) {
-            //finalize the dispute windown by making the evidence and kill period expire -> which sets the genesisTimestamp to the current block.timestamp
+            //finalize the dispute window by making the evidence and kill period expire -> which sets the genesisTimestamp to the current block.timestamp
             disputeWindow.evidence.creationTimestamp = block.timestamp - getEvidenceTime();
             disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp - getEvidenceTime(); // this implicitly sets the genesisTimestamp
             //delete all previous commitments - free up storage (gas refund)

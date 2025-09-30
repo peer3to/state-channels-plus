@@ -20,7 +20,7 @@ class InitHandshakeService extends ARpcService {
         super(mainRpcService);
     }
 
-    //Called localy to initiate the handshake
+    //Called locally to initiate the handshake
     public initHandshake(transport: ATransport) {
         console.log("initHandshake !");
         let randomChallengeHash = ethers.keccak256(ethers.randomBytes(32));
@@ -47,7 +47,7 @@ class InitHandshakeService extends ARpcService {
             console.log(
                 `onInitHandshakeRequest - time difference too big - time:${time} localTime:${localTime} diff:${
                     time - localTime
-                } aggreeTime:${
+                } agreementTime:${
                     this.mainRpcService.p2pManager.stateManager.timeConfig
                         .agreementTime
                 }`

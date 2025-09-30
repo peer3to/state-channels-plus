@@ -2,17 +2,13 @@ import { ethers, Signer, TransactionResponse } from "ethers";
 
 import {
     JoinChannelStruct,
-    SignedBlockStruct,
     SignedJoinChannelStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "@/Clock";
 import P2PManager from "@/P2PManager";
-import { Codec, SignatureUtils, Type } from "@/utils";
-import { Block } from "@/models";
+import { Codec, Type } from "@/utils";
 import { Address, Amount, Bytes, Timestamp } from "@/types/types";
-import { SignedDisputeStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 class P2pSigner implements Signer {
     signer: Signer;
@@ -108,7 +104,7 @@ class P2pSigner implements Signer {
         const signedBlock =
             await this.p2pManager.stateManager.playTransaction(_tx);
         this.p2pManager.rpcProxy.onSignedBlock(signedBlock).broadcast();
-        return "There is no TransactionResponse p2p - everything executed localy" as unknown as TransactionResponse; //TODO
+        return "There is no TransactionResponse p2p - everything executed locally" as unknown as TransactionResponse; //TODO
     }
 
     signMessage(message: string | Uint8Array): Promise<string> {

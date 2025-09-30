@@ -218,8 +218,8 @@ class JoinChannelService extends ARpcService {
         // since that is by far the most common case
 
         // when we will have a solid storage layer, what needs to be done here is one of two options:
-        // a. the ok option: look at locally sotred latest state snapshot and compare to the one on chain
-        // b. the better option: there is a "onStateSnapshotUpdated" hook (or smimilar name). this should be used to locally store the latest stateSnapshot
+        // a. the ok option: look at locally stored latest state snapshot and compare to the one on chain
+        // b. the better option: there is a "onStateSnapshotUpdated" hook (or similar name). this should be used to locally store the latest stateSnapshot
         // that is on chain - this way the comparison will not need to call the chain
         return true;
     }

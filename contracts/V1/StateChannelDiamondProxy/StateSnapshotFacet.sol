@@ -16,9 +16,9 @@ contract StateSnapshotFacet is StateChannelCommon {
         DisputeData storage disputeData = disputeData[channelId];
         bytes32 targetForkId = newStateSnapshot.forkId;
         require(isGenesisSnapshotWithoutTimeCheck(newStateSnapshot), ErrorInvalidStateSnapshot());
-        (bool hasGenesis, uint256 genesisTimestap) =
+        (bool hasGenesis, uint256 genesisTimestamp) =
             getGenesisTimestamp(channelId, newStateSnapshot.snapshotData.originForkId, targetForkId);
-        require(hasGenesis && newStateSnapshot.timestamp == genesisTimestap, ErrorInvalidStateSnapshot());
+        require(hasGenesis && newStateSnapshot.timestamp == genesisTimestamp, ErrorInvalidStateSnapshot());
         mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
         DisputeWindow storage disputeWindow = disputeWindowMap[currentStateSnapshot.forkId];
         bool updated = false;

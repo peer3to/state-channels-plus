@@ -51,7 +51,7 @@ class MainRpcService {
         return this.self;
     }
 
-    // ********************* InitHandskaheService *********************
+    // ********************* InitHandshakeService *********************
 
     public async onInitHandshakeRequest(challengeHash: Hash, time: Timestamp) {
         this.initHandshakeService.onInitHandshakeRequest(challengeHash, time);

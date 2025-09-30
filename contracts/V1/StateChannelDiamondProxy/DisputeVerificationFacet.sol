@@ -180,9 +180,9 @@ contract DisputeVerificationFacet is StateChannelCommon {
         require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.genesisSnapshotDataHash];
-        //rquire all disputes are part of commitment
+        //require all disputes are part of commitment
         require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
-        //require reduce challenge period is not expired - this also assures it's commited
+        //require reduce challenge period is not expired - this also assures it's committed
         require(
             !_isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime()), ErrorDisputeChallengePeriodExpired()
         );
@@ -362,7 +362,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         }
 
         bytes32 latestSnapshotDataHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData));
-        bytes32 latestSnanpshotHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot));
+        bytes32 latestSnapshotHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot));
 
         if (dispute.input.stateProof.milestones.length != 0 && dispute.input.stateProof.signedBlocks.length != 0) {
             return false;
@@ -384,17 +384,17 @@ contract DisputeVerificationFacet is StateChannelCommon {
                 if (auditingDataIntegrityVerified) {
                     if (
                         dispute.input.genesisSnapshotDataHash != latestSnapshotDataHash
-                            || dispute.input.latestStateSnapshotHash != latestSnanpshotHash
+                            || dispute.input.latestStateSnapshotHash != latestSnapshotHash
                     ) return false;
                 } else {
                     require(
                         dispute.input.genesisSnapshotDataHash == latestSnapshotDataHash
-                            && dispute.input.latestStateSnapshotHash == latestSnanpshotHash,
+                            && dispute.input.latestStateSnapshotHash == latestSnapshotHash,
                         ErrorIncorrectSnapshotProvided()
                     );
                 }
             } else {
-                //check if signedBlocks are linked, signed and build on genesis
+                //check if signedBlocks are linked, signed and built on genesis
                 if (
                     !_areSignedBlocksLinkedAndVerified(
                         dispute.input.stateProof.signedBlocks, dispute.input.genesisSnapshotDataHash
@@ -484,7 +484,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return (thresholdCount == expectedParticipants.length, finalizedSnapshotHash);
     }
 
-    /// @dev Verfies ForkMilestoneBlock along with BlockConfirmations and taking into account Virtual Voting
+    /// @dev Verifies ForkMilestoneBlock along with BlockConfirmations and taking into account Virtual Voting
     function verifyMilestones(
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
@@ -504,7 +504,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             if (!isFinal) {
                 return (false, lastBlockEncoded);
             }
-            // isFinal - since this runs in isolation now (not atomically with auditing where everthing is checked), revert the transaction if the disputer didn't provide the correct snapshot
+            // isFinal - since this runs in isolation now (not atomically with auditing where everything is checked), revert the transaction if the disputer didn't provide the correct snapshot
             // Since it's final, the disputer for sure has the correct snapshot, so we can just revert if it's not provided
             require(
                 keccak256(abi.encode(milestoneSnapshots[i])) == finalizedSnapshotHash, ErrorIncorrectSnapshotProvided()
@@ -555,24 +555,24 @@ contract DisputeVerificationFacet is StateChannelCommon {
     }
     /**
      *
-     * Usefull to spactating/joining participants to prove that the channel has the right amount of funds regardless of the internal agreement of peers within it.
-     * Prevents poisoned states that could happen though N/N collusion. (e.g. colluding peers caliming they have more funds than the on-chain available balance to try and steal new deposits of joining peers)
+     * Useful to spectating/joining participants to prove that the channel has the right amount of funds regardless of the internal agreement of peers within it.
+     * Prevents poisoned states that could happen though N/N collusion. (e.g. colluding peers claiming they have more funds than the on-chain available balance to try and steal new deposits of joining peers)
      *
-     * This function and in general checking balance invariants isn't usuefull to existing participants that verify every state transition - if a balance was infalted, an honest peer would detect an incorrect state transition and raise a dispute.
+     * This function and in general checking balance invariants isn't useful to existing participants that verify every state transition - if a balance was inflated, an honest peer would detect an incorrect state transition and raise a dispute.
      *
      * Each snapshot commits to an aggregated sum (totalDeposits/totalWithdrawals) that represent all the funds that have entered/existed the channel up to that point in time.
      * The snapshot also commits to some state (encodedState) that accounts for the current in-channel balance (totalDeposits-totalWithdrawals);
-     * The check verifies that all the math adds up - what the Snapshot is claming is the balance, is actually the balance that's verified against the on-chain balance.
+     * The check verifies that all the math adds up - what the Snapshot is claiming is the balance, is actually the balance that's verified against the on-chain balance.
      *
-     * What this function does NOT do, is verify that the state is correct it just cares that the balance invariant is satisifed.
+     * What this function does NOT do, is verify that the state is correct it just cares that the balance invariant is satisfied.
      * (e.g. It doesn't care if Bob has 4 tokens and Alice 6 or Bob has 8 and Alice 2 - it only cares that the total is the same e.g. 10)
      *
-     * Exits and Joins happen over their respective blockchain data strucutres (ExitChannelBlocks & JoinChannelBlocks) which are also not checked here.
+     * Exits and Joins happen over their respective blockchain data structures (ExitChannelBlocks & JoinChannelBlocks) which are also not checked here.
      * Snapshot commits to the head of both of these blockchains and this function assumes that the caller verified those blockchains and that the totalDeposits & totalWithdrawals that the snapshot commits to are correct
      *
-     * Updating the snapshot on-chain will always apply the above check, so the onChainSnapshot can always be used as an objective single source of truth from which you start veryfing everything else.
+     * Updating the snapshot on-chain will always apply the above check, so the onChainSnapshot can always be used as an objective single source of truth from which you start verifying everything else.
      *
-     * Esentially we don't have to impose any of these checks when updating the snapshot and let it be 'poisonous' since spectating peers can easily check is it correct
+     * Essentially we don't have to impose any of these checks when updating the snapshot and let it be 'poisonous' since spectating peers can easily check is it correct
      * onChainDeposits == onChainSnapshot.totalDeposits
      * onChainWithdrawals == onChainSnapshot.totalWithdrawals
      * but since this check is so trivial we'll add as the last check onSnapshotUpdate
@@ -628,7 +628,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
                 break;
             }
         }
-        // require that the dispute cimmitment exists
+        // require that the dispute commitment exists
         require(isFound, ErrorDisputeCommitmentNotAvailable());
 
         // add the disputer to on-chain slashes
@@ -742,7 +742,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         public
         returns (bool)
     {
-        // It's anoying that this function can not be view/pure since the way we modify encoedState is semanticaly 'stateful' even though logicaly it's stateless
+        // It's annoying that this function can not be view/pure since the way we modify encodedState is semantically 'stateful' even though logically it's stateless
 
         // ***************** Generate output snapshot ***************
         (SnapshotData memory outputSnapshotData, address[] memory slashes) = computeDisputeOutputSnapshotData(

@@ -41,12 +41,12 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     // ********** public/external functions **********
 
     /**
-     * Posting calldata is lightweight, since it persists a signle hash/commitment.
+     * Posting calldata is lightweight, since it persists a single hash/commitment.
      *     It's enough to check just the maxTimestamp safety guard that protects against race conditions, since everything else is committed in the block.
      *     We also don't allow overwriting the blockCalldataCommitment if it already exists.
-     *     We don't even have to check the siganture of the signedBlock, since the msg.sender takes the responsibility of provifing correct data.
-     *     If the msg.sender provides junk(an invalid SignedBlock), a fraud proof can slash the msg.sender, by verifying the junk data against the committment.
-     *     If msg.sender is not part of the channel, other peers will ignore emited events and commitments. The sender will still pay tx fees on-chain.
+     *     We don't even have to check the signature of the signedBlock, since the msg.sender takes the responsibility of providing correct data.
+     *     If the msg.sender provides junk(an invalid SignedBlock), a fraud proof can slash the msg.sender, by verifying the junk data against the commitment.
+     *     If msg.sender is not part of the channel, other peers will ignore emitted events and commitments. The sender will still pay tx fees on-chain.
      */
     function postBlockCalldata(SignedBlock memory signedBlock, uint256 maxTimestamp) public override {
         //Time is the only race condition we need to take into account
@@ -188,12 +188,12 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     // ********** public/external DIAMOND functions **********
 
-    /// @dev Callable only by diamond facets - performs the deposit of the specific assets by interpeting `joinChannel` - returns bool success
+    /// @dev Callable only by diamond facets - performs the deposit of the specific assets by interpreting `joinChannel` - returns bool success
     function depositAssetsComposable(JoinChannel memory joinChannel) public virtual onlySelf returns (bool) {
         return AConsumerFacet(consumerFacetAddress).depositAssetsComposable(joinChannel);
     }
 
-    /// @dev Callable only by diamond facets - performs the withdrawal of the specific assets by interpeting `exitChannel` - returns bool success
+    /// @dev Callable only by diamond facets - performs the withdrawal of the specific assets by interpreting `exitChannel` - returns bool success
     function withdrawAssetsComposable(ExitChannel memory exitChannel) public virtual onlySelf returns (bool) {
         return AConsumerFacet(consumerFacetAddress).withdrawAssetsComposable(exitChannel);
     }
@@ -219,7 +219,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         override
         returns (bool, bytes memory encodedModifiedState)
     {
-        //channelId not used currenlty since all channels have the same SM - later they can be mapped to different ones
+        //channelId not used currently since all channels have the same SM - later they can be mapped to different ones
         stateMachineImplementation.setState(encodedState);
         (bool success,) =
             address(stateMachineImplementation).call(abi.encodeCall(stateMachineImplementation.stateTransition, _tx));

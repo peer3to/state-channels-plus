@@ -16,8 +16,10 @@ import P2pEventHooks from "@/P2pEventHooks";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
 import { Address, Bytes } from "@/types/types";
-import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
-import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
+import {
+    ExitChannelStruct,
+    BalanceStruct
+} from "@typechain-types/contracts/V1/AStateMachine";
 import Storage from "@/storage";
 import {
     deployLocalDiamond,
@@ -35,7 +37,7 @@ const DEBUG_CHANNEL_CONTRACT = true;
  */
 class EvmDiamondStateMachine extends ADiamondStateMachine {
     readonly stateMachineContractExecuter: ContractExecuter;
-    readonly diamontContractExecuter: ContractExecuter;
+    readonly diamondContractExecuter: ContractExecuter;
     readonly contractInterface: ethers.Interface;
     private p2pContractInstance?: AStateMachineContract;
     public stateManager?: StateManager;
@@ -43,13 +45,13 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     constructor(
         stateMachineContractExecuter: ContractExecuter,
         contractInterface: ethers.Interface,
-        diamontContractExecuter: ContractExecuter,
+        diamondContractExecuter: ContractExecuter,
         localDiamondContract: LocalDiamond
     ) {
         super(localDiamondContract);
         this.stateMachineContractExecuter = stateMachineContractExecuter;
         this.contractInterface = contractInterface;
-        this.diamontContractExecuter = diamontContractExecuter;
+        this.diamondContractExecuter = diamondContractExecuter;
     }
 
     private getEncodedCalldata(

@@ -98,11 +98,11 @@ class DisputeManager {
             this.diamondStateMachine.getState(), //TODO - this should be from storage
             this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipantsUpToTimestamp(
                 this.channelId,
-                Clock.getTimeInSeconds() // this is safe as long as our local clock isn't infront of the DLT clock
+                Clock.getTimeInSeconds() // this is safe as long as our local clock isn't in front of the DLT clock
             ),
             this.diamondStateMachine.getParticipants()
         ]);
-        // onChainSlasshes
+        // onChainSlashes
         // this can be a subset of on-chain slashes, so we don't need to run any race condition checks
         let onChainSlashes = new Set<Address>(_onChainSlashes);
         const participants = new Set<Address>(_participants);
@@ -241,7 +241,7 @@ class DisputeManager {
                 this.agreementManager.getSnapshotFromMilestone(milestone);
             if (!snapshot) {
                 isPartial = true;
-                milestoneSnapshots.push(genesisStateSnapshot); // this is just to push something to satisfy the soldity length requirement in `verifyMilestone`
+                milestoneSnapshots.push(genesisStateSnapshot); // this is just to push something to satisfy the solidity length requirement in `verifyMilestone`
             } else milestoneSnapshots.push(snapshot);
         }
 

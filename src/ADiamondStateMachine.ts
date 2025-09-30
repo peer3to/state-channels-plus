@@ -1,17 +1,7 @@
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Address, Bytes, ChannelId, Hash } from "./types/types";
-import { ReduceOutputStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { Address, Bytes } from "./types/types";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { LocalDiamond } from "@typechain-types/index";
-import { JoinChannelBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import {
-    DisputeAuditingDataStruct,
-    DisputeInputStruct,
-    DisputeStruct,
-    SnapshotDataStruct,
-    StateSnapshotStruct,
-    TimeoutStruct
-} from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 type TransitionResponse = {
     success: boolean;
     exitChannels: ExitChannelStruct[];

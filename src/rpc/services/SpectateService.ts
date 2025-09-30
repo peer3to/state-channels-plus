@@ -4,18 +4,18 @@ import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Codec, hash, Type } from "@/utils";
 import { ethers } from "ethers";
-import { JoinChannelBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
+    JoinChannelBlockStruct,
     BlockConfirmationStruct,
     ExitChannelBlockStruct,
     StateSnapshotStruct
-} from "@typechain-types/contracts/V1/StateChannelManagerEvents";
-import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 
-export interface DisputeWndowVerification {
+import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+
+export interface DisputeWindowVerification {
     disputes: DisputeConfirmationStruct[];
     forkId: Hash; // can deduct from disputes - don't need to include here
     latestStateSnapshot: StateSnapshotStruct;
@@ -24,7 +24,7 @@ export interface DisputeWndowVerification {
     reducedForkId: Hash; // this is a hint, a soft commitment, so the verifier knows which dispute window to fetch on-chain, before running reduce and verifying
 }
 export interface SyncPayload {
-    disputeWindows: DisputeWndowVerification[];
+    disputeWindows: DisputeWindowVerification[];
     latestForkGenesisSnapshot: StateSnapshotStruct;
     stateProof: StateProofStruct;
     milestoneSnapshots: StateSnapshotStruct[];
@@ -46,7 +46,7 @@ class SpectateService extends ARpcService {
     // Called locally to initiate spectate sync
     public spectateSync(transport: ATransport, channelId: ChannelId) {
         console.log("spectateSync !");
-        let time = Clock.getTimeInSeconds();
+        const time = Clock.getTimeInSeconds();
 
         // Store the init time for RTT calculation per channel
         this.spectateInitTimes.set(transport, time);
@@ -93,8 +93,8 @@ class SpectateService extends ARpcService {
                 return this.abort(); // someone trying to sync us without us asking -> not cooperating
             }
 
-            let localTime = Clock.getTimeInSeconds();
-            let rtt = localTime - initTime;
+            const localTime = Clock.getTimeInSeconds();
+            const rtt = localTime - initTime;
 
             console.log(
                 `onSpectateResponse - RTT: ${rtt}s, initTime: ${initTime}, responseTime: ${localTime}`
@@ -118,14 +118,14 @@ class SpectateService extends ARpcService {
             //      2.1) The fetched/synced EVM on-chain state which we know is true
             //      2.2) The provided SyncPayload which will be verified against the fetched data
             // 3) While reusing 'updateStateSnapshotFork' & 'updateStateSnapshotSameFork' perform the call as `eth_call` would work on an RPC node
-            // This esentially simulates a 'tx' (allows 'sstore' and other state mutating opcodes and creates logs), but does NOT persist the changes (so we keep our EVM state consistent to the one on-chain)
+            // This essentially simulates a 'tx' (allows 'store' and other state mutating opcodes and creates logs), but does NOT persist the changes (so we keep our EVM state consistent to the one on-chain)
             // This verifies/proves to us that the payload is correct and that the state can really be 'teleported' to what the other peer is claiming to be the latest state and that the data provided to us is correct
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
             // This allows us to manually update the snapshot later at will AT LEAST to the state that we were synced (that's why we're reusing the solidity function, so we know that the TX will succeed)
             //
             // Up to this point we've verified the last finalized state given to us
             // What do we do next?
-            // queue all the unfinalized stateProof blocks
+            // queue all the un-finalized stateProof blocks
             // (other blocks that we're incoming would also be queued while we sync)
             // set some syncFlag to true that will start executing the onBlockConfirmation pipeline with `SpectateStrategy`
 
@@ -138,17 +138,17 @@ class SpectateService extends ARpcService {
             //      Later this will be `eth_call`(multicall(reduceAll,updateStateSnapshotFork,updateStateSnapshotSameFork)) a single atomic transaction that doesn't persist the state locally, so we don't have edge cases when we 'do' persit and when we 'do not'
             //      2.4) ** If more than 1  has to be reduced -> abort **
             //      2.5) verify that they reduce to the correct forks as given in the SyncPayload -> abort otherwise
-            //      2.6) veirify final genesisSnapshot is correct -> abort otherwise
+            //      2.6) verify final genesisSnapshot is correct -> abort otherwise
             //      2.7) verify exitChannelBlocks from onChainSnapshot to final genesisSnapshot | TODO - think do we need to verify joinChannelBlocks
-            //      2.8) verify that gensisSnapshot.forkId is not disputed on-chain -> abort othetwise
+            //      2.8) verify that genesisSnapshot.forkId is not disputed on-chain -> abort otherwise
             //      2.9) verify stateProof proves latest state -> abort otherwise
             //      2.10) verify exitChannelBlocks from final genesisSnapshot to latestFinalizedSnapshot
             //      2.11) verify balance invariant of the latestFinalizedState -> abort otherwise
-            // 3) Finaly - On the RPC node as a staticcall `eth_call`(multicall(reduceAll,updateStateSnapshotFork,updateStateSnapshotSameFork)) to deduct failure/success -> on failure abort
+            // 3) Finally - On the RPC node as a staticcall `eth_call`(multicall(reduceAll,updateStateSnapshotFork,updateStateSnapshotSameFork)) to deduct failure/success -> on failure abort
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
             // This allows us to manually update the snapshot later at will AT LEAST to the state that we were synced (that's why we're reusing the solidity function, so we know that the TX will succeed)
             //
-            // 5) set some syncFlag to true that will start executing the onBlockConfirmation pipeline with `SpectateStrategy` from unfinalized blocks
+            // 5) set some syncFlag to true that will start executing the onBlockConfirmation pipeline with `SpectateStrategy` from un-finalized blocks
 
             // ******* TODO - updateStateSnapshotFork/updateStateSnapshotSameFork need dummy contracts to process withdrawals
             const stateManager = this.mainRpcService.p2pManager.stateManager;
@@ -166,7 +166,7 @@ class SpectateService extends ARpcService {
             await this.fetchAndPersistOnChainDisputeWindows(channelId, forkIds);
 
             let notReducedCount = 0;
-            let disputeWindowsThatNeedToBeReducedOnChain: DisputeWndowVerification[] =
+            const disputeWindowsThatNeedToBeReducedOnChain: DisputeWindowVerification[] =
                 [];
             for (const dw of syncPayload.disputeWindows) {
                 // 2.2) verify that they're expired - if they're not expired abort
@@ -214,7 +214,7 @@ class SpectateService extends ARpcService {
                 finalForkId = dw.reducedForkId;
             }
 
-            // 2.6) veirify final genesisSnapshot is correct -> abort otherwise
+            // 2.6) verify final genesisSnapshot is correct -> abort otherwise
             let isCorrectGenesis =
                 finalForkId == syncPayload.latestForkGenesisSnapshot.forkId;
             isCorrectGenesis =
@@ -245,7 +245,7 @@ class SpectateService extends ARpcService {
                 );
             if (!areValidExitBlocks) return this.abort();
 
-            // 2.8) verify that gensisSnapshot.forkId is not disputed on-chain -> abort othetwise
+            // 2.8) verify that genesisSnapshot.forkId is not disputed on-chain -> abort otherwise
             const _timestamp =
                 await stateManager.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
                     channelId,
@@ -291,7 +291,7 @@ class SpectateService extends ARpcService {
                 );
             if (!isValidBalance) this.abort();
 
-            // 3) Finaly - On the RPC node as a staticcall `eth_call`(multicall(reduceAll,updateStateSnapshotFork,updateStateSnapshotSameFork)) to deduct failure/success -> on failure abort
+            // 3) Finally - On the RPC node as a staticcall `eth_call`(multicall(reduceAll,updateStateSnapshotFork,updateStateSnapshotSameFork)) to deduct failure/success -> on failure abort
             const isMulticallSuccess = await this.tryMulticallSnapshotUpdate(
                 channelId,
                 onChainSnapshot,
@@ -342,7 +342,7 @@ class SpectateService extends ARpcService {
             )
         );
 
-        let disputeWindows: DisputeWndowVerification[] = [];
+        const disputeWindows: DisputeWindowVerification[] = [];
         let currentForkId = currentOnChainSnapshot.forkId;
         let isDisputed =
             await diamondStateMachine.localDiamondContract.isForkDisputed(
@@ -442,9 +442,7 @@ class SpectateService extends ARpcService {
         }
 
         if (currentForkId != forkId)
-            throw new Error(
-                "Reduce and interate didn't derive the latest fork"
-            );
+            throw new Error("Reduce and iterate didn't derive the latest fork");
 
         // -------- Collect what is needed to prove the latest possible state in the latest fork ---------
 
@@ -484,7 +482,6 @@ class SpectateService extends ARpcService {
             });
 
         // As for a snapshot update, we prove the latest finalized one and from that one the peer can start performing SMR and validating each ST.
-        let latestFinalizedEncodedState: Bytes | undefined;
         const latestFinalizedMilestoneSnapshot =
             milestoneSnapshots.length > 0
                 ? milestoneSnapshots.at(-1)!
@@ -492,7 +489,7 @@ class SpectateService extends ARpcService {
 
         const stateHash =
             latestFinalizedMilestoneSnapshot.snapshotData.stateMachineStateHash;
-        latestFinalizedEncodedState =
+        const latestFinalizedEncodedState =
             stateManager.storage.stateMachineStates.getStateMachineState(
                 stateHash
             );
@@ -565,7 +562,7 @@ class SpectateService extends ARpcService {
         channelId: ChannelId,
         onChainSnapshot: StateSnapshotStruct,
         syncPayload: SyncPayload,
-        disputeWindowsThatNeedToBeReducedOnChain: DisputeWndowVerification[]
+        disputeWindowsThatNeedToBeReducedOnChain: DisputeWindowVerification[]
     ): Promise<boolean> {
         const stateManager = this.mainRpcService.p2pManager.stateManager;
         const stateChannelManagerContract =
@@ -689,7 +686,7 @@ class SpectateService extends ARpcService {
     private getUnfinalizedBlockConfirmationsFromStateProof(
         stateProof: StateProofStruct
     ): BlockConfirmationStruct[] {
-        let blocks: BlockConfirmationStruct[] = [];
+        const blocks: BlockConfirmationStruct[] = [];
         // last milestone
         if (stateProof.milestones.length > 0) {
             const lastMilestone = stateProof.milestones.at(-1)!;

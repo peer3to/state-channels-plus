@@ -404,7 +404,7 @@ class StateManager {
         }
     }
 
-    //Aplies a transaction to the state machine and returns the encoded state with a success callback
+    //Applies a transaction to the state machine and returns the encoded state with a success callback
     public async applyTransaction(transaction: TransactionStruct): Promise<{
         success: boolean;
         encodedState: Bytes;

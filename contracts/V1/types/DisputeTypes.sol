@@ -3,7 +3,7 @@ pragma solidity ^0.8.8;
 import "./DataTypes.sol";
 import "./ProofTypes.sol";
 
-//Just so typechain generates types for the structs bellow
+//Just so typechain generates types for the structs below
 contract DisputeTypes {
     constructor(
         Dispute memory a,
@@ -67,7 +67,7 @@ struct Timeout {
     uint256 blockHeight;
     /// @dev minimum timestamp where this timeout is valid
     uint256 minTimeStamp;
-    /// @dev True if timeout checks should ignore race condition checks on-chain - usefull when the participant being tiemdout committed to a wrong block (is not linked to the latestState), but we can't prove deviation - explained more in the docs
+    /// @dev True if timeout checks should ignore race condition checks on-chain - useful when the participant being timed out committed to a wrong block (is not linked to the latestState), but we can't prove deviation - explained more in the docs
     bool isForced;
     // ================== optional ==================
     address previousBlockProducer;
@@ -85,7 +85,7 @@ struct DisputeWindowEvidence {
     uint256 creationTimestamp;
     uint256 lastEvidenceSubmissionTimestamp;
     bytes32[] disputeCommitments;
-    address[] hasPosted; // inefficient, occupies a whole storage slot for a single bit - idealy we do a bitmask later as a f(participants) -> makes it also easy to delete the entire bitmask later. For now this is ok.
+    address[] hasPosted; // inefficient, occupies a whole storage slot for a single bit - ideally we do a bitmask later as a f(participants) -> makes it also easy to delete the entire bitmask later. For now this is ok.
 }
 
 struct DisputeWindowReducedResult {
