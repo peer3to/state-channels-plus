@@ -45,13 +45,13 @@ class P2PManager implements IOnMessage {
     }
     public broadcastRpc(serializedRPC: string) {
         // BroadcastLocal.broadcast(serializedRPC);
-        for (let transport of this.openConnections) {
+        for (const transport of this.openConnections) {
             transport.send(serializedRPC);
         }
     }
     public onRpc(serializedRpc: string) {
         try {
-            let rpc = deserializeRpc(serializedRpc);
+            const rpc = deserializeRpc(serializedRpc);
             if (!rpc) {
                 //TODO!Disconnect
                 return;
@@ -85,7 +85,7 @@ class P2PManager implements IOnMessage {
         this.openConnections = this.openConnections.filter(
             (t) => t !== transport
         );
-        let profile = this.profileManager.getProfileByTransport(transport);
+        const profile = this.profileManager.getProfileByTransport(transport);
         profile && this.profileManager.removeTransport(transport);
     }
 
@@ -112,7 +112,7 @@ class P2PManager implements IOnMessage {
     }
 
     public disconnectAll() {
-        for (let transport of this.openConnections) {
+        for (const transport of this.openConnections) {
             this.disconnectConnection(transport);
         }
     }

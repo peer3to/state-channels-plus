@@ -23,8 +23,8 @@ class InitHandshakeService extends ARpcService {
     //Called locally to initiate the handshake
     public initHandshake(transport: ATransport) {
         console.log("initHandshake !");
-        let randomChallengeHash = ethers.keccak256(ethers.randomBytes(32));
-        let time = Clock.getTimeInSeconds();
+        const randomChallengeHash = ethers.keccak256(ethers.randomBytes(32));
+        const time = Clock.getTimeInSeconds();
         this.setChallenge(transport, { randomChallengeHash, initTime: time });
         this.mainRpcService.rpcProxy
             .onInitHandshakeRequest(randomChallengeHash, time)
@@ -37,7 +37,7 @@ class InitHandshakeService extends ARpcService {
     }
 
     public async onInitHandshakeRequest(challengeHash: Hash, time: Timestamp) {
-        let localTime = Clock.getTimeInSeconds();
+        const localTime = Clock.getTimeInSeconds();
         if (
             Math.abs(time - localTime) >
             this.mainRpcService.p2pManager.stateManager.timeConfig.agreementTime
@@ -57,8 +57,8 @@ class InitHandshakeService extends ARpcService {
         console.log(
             `onInitHandshakeRequest - localTime:${localTime} time:${time}`
         );
-        let challengeHashBytes = ethers.getBytes(challengeHash);
-        let signature =
+        const challengeHashBytes = ethers.getBytes(challengeHash);
+        const signature =
             await this.mainRpcService.p2pManager.p2pSigner.signMessage(
                 challengeHashBytes
             );
@@ -78,9 +78,9 @@ class InitHandshakeService extends ARpcService {
         preferredTransport: TransportType
     ) {
         console.log(`onInitHandshakeRESPONSE - start`);
-        let senderTransport = this.mainRpcService.senderTransport;
+        const senderTransport = this.mainRpcService.senderTransport;
         if (!senderTransport) throw new Error("senderTransport is undefined");
-        let challenge = this.getChallenge(senderTransport);
+        const challenge = this.getChallenge(senderTransport);
         this.mapTransportToChallenge.delete(senderTransport);
         if (!challenge) {
             // TODO! Disconnect
@@ -89,8 +89,8 @@ class InitHandshakeService extends ARpcService {
             );
             return;
         }
-        let localTime = Clock.getTimeInSeconds();
-        let rtt = localTime - challenge.initTime;
+        const localTime = Clock.getTimeInSeconds();
+        const rtt = localTime - challenge.initTime;
         if (
             rtt >
             this.mainRpcService.p2pManager.stateManager.timeConfig.agreementTime
@@ -112,8 +112,13 @@ class InitHandshakeService extends ARpcService {
             return;
         }
         //verify signature
-        let challengeHashBytes = ethers.getBytes(challenge.randomChallengeHash);
-        let signerAddress = ethers.verifyMessage(challengeHashBytes, signature);
+        const challengeHashBytes = ethers.getBytes(
+            challenge.randomChallengeHash
+        );
+        const signerAddress = ethers.verifyMessage(
+            challengeHashBytes,
+            signature
+        );
 
         // Check if this peer is blacklisted
         if (this.mainRpcService.p2pManager.isBlacklisted(signerAddress)) {

@@ -52,7 +52,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         outputSnapshotData = SnapshotData({
             originForkId: latestStateSnapshot.forkId,
             stateMachineStateHash: keccak256(disputeOutputState.encodedModifiedState),
-            participants: getStatemachineParticipants(disputeOutputState.encodedModifiedState),
+            participants: getStateMachineParticipants(disputeOutputState.encodedModifiedState),
             latestJoinChannelBlockHash: latestJoinChannelBlockHash, // Joins are not applied in disputes, but in reduce -> same hash as in the genesis snapshot
             latestExitChannelBlockHash: keccak256(abi.encode(disputeOutputState.exitBlock)),
             totalDeposits: disputeOutputState.totalDeposits,
@@ -297,7 +297,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return SnapshotData({
             originForkId: forkId,
             stateMachineStateHash: keccak256(outputState.encodedModifiedState),
-            participants: getStatemachineParticipants(outputState.encodedModifiedState),
+            participants: getStateMachineParticipants(outputState.encodedModifiedState),
             latestJoinChannelBlockHash: reducedOutput.latestJoinChannelBlockHash, // This has been verified in _verifyJoinChannelBlocks
             latestExitChannelBlockHash: keccak256(abi.encode(outputState.exitBlock)),
             totalDeposits: outputState.totalDeposits,
@@ -461,7 +461,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
                 finalizedSnapshotHash = currentBlock.stateSnapshotHash;
             }
             // Collect signatures
-            adr = StateChannelUtilLibrary.retriveSignerAddress(
+            adr = StateChannelUtilLibrary.retrieveSignerAddress(
                 currentBlockConfirmation.signedBlock.encodedBlock, currentBlockConfirmation.signedBlock.signature
             );
             if (adr != currentBlock.transaction.header.participant) {
@@ -471,7 +471,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
                 adr, thresholdSet, thresholdCount, expectedParticipants
             );
             for (uint256 j = 0; j < currentBlockConfirmation.signatures.length; j++) {
-                adr = StateChannelUtilLibrary.retriveSignerAddress(
+                adr = StateChannelUtilLibrary.retrieveSignerAddress(
                     currentBlockConfirmation.signedBlock.encodedBlock, currentBlockConfirmation.signatures[j]
                 );
                 thresholdCount = StateChannelUtilLibrary.tryInsertAddressInThresholdSet(

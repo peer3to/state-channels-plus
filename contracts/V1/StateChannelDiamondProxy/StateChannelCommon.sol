@@ -107,7 +107,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return disputeData[channelId].pendingParticipants;
     }
 
-    function getSnapshotforkId(bytes32 channelId) public view virtual returns (bytes32) {
+    function getSnapshotForkId(bytes32 channelId) public view virtual returns (bytes32) {
         return stateSnapshots[channelId].forkId;
     }
 
@@ -115,7 +115,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return stateSnapshots[channelId];
     }
 
-    function getStatemachineParticipants(bytes memory encodedState) public virtual returns (address[] memory) {
+    function getStateMachineParticipants(bytes memory encodedState) public virtual returns (address[] memory) {
         stateMachineImplementation.setState(encodedState);
         return stateMachineImplementation.getParticipants();
     }
@@ -178,7 +178,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         (bool success, bytes memory encodedBlock) = address(this).staticcall(data);
         if (!success) return false;
         Block memory decodedBlock = abi.decode(encodedBlock, (Block));
-        address signer = StateChannelUtilLibrary.retriveSignerAddress(encodedBlock, _block.signature);
+        address signer = StateChannelUtilLibrary.retrieveSignerAddress(encodedBlock, _block.signature);
         if (signer != decodedBlock.transaction.header.participant) {
             return false;
         }
@@ -315,7 +315,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         );
     }
 
-    function _delegatecall(address target, bytes memory data) internal returns (bytes memory) {
+    function _delegateCall(address target, bytes memory data) internal returns (bytes memory) {
         (bool success, bytes memory result) = target.delegatecall(data);
         if (!success) {
             if (result.length == 0) {

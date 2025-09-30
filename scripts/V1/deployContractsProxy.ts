@@ -11,7 +11,7 @@ const getRandomSigner = () => {
     return randomSinger;
 };
 async function main() {
-    let randomSinger = getRandomSigner();
+    const randomSinger = getRandomSigner();
     const deployUtils = new DeployUtils();
     console.log("Provider url:", PROVIDER_URL);
 
@@ -21,11 +21,11 @@ async function main() {
     );
     stateChannelUtilLibraryFactory =
         stateChannelUtilLibraryFactory.connect(randomSinger);
-    let stateChannelUtilLibrary = await deployUtils.deployAsync(
+    const stateChannelUtilLibrary = await deployUtils.deployAsync(
         stateChannelUtilLibraryFactory,
         "StateChannelUtilLibrary"
     );
-    let libraryAddress = await stateChannelUtilLibrary.getAddress();
+    const libraryAddress = await stateChannelUtilLibrary.getAddress();
     console.log("Deployed StateChannelUtilLibrary at ", libraryAddress);
 
     //Deploy DisputeManagerFacet
@@ -35,11 +35,11 @@ async function main() {
     );
     disputeManagerFacetFactory =
         disputeManagerFacetFactory.connect(randomSinger);
-    let disputeManagerFacet = await deployUtils.deployAsync(
+    const disputeManagerFacet = await deployUtils.deployAsync(
         disputeManagerFacetFactory,
         "DisputeManagerFacet"
     );
-    let disputeManagerFacetAddress = await disputeManagerFacet.getAddress();
+    const disputeManagerFacetAddress = await disputeManagerFacet.getAddress();
     console.log("Deployed DisputeManagerFacet at ", disputeManagerFacetAddress);
 
     //Deploy DisputeVerificationFacet
@@ -49,11 +49,11 @@ async function main() {
     );
     disputeVerificationFacetFactory =
         disputeVerificationFacetFactory.connect(randomSinger);
-    let disputeVerificationFacet = await deployUtils.deployAsync(
+    const disputeVerificationFacet = await deployUtils.deployAsync(
         disputeVerificationFacetFactory,
         "DisputeVerificationFacet"
     );
-    let disputeVerificationFacetAddress =
+    const disputeVerificationFacetAddress =
         await disputeVerificationFacet.getAddress();
     console.log(
         "Deployed DisputeVerificationFacet at ",
@@ -64,7 +64,7 @@ async function main() {
     let mathSmFactory = await ethers.getContractFactory("MathStateMachine");
     mathSmFactory = mathSmFactory.connect(randomSinger);
     // let mathContactInstance = await mathSmFactory.deploy();
-    let mathContactInstance = await deployUtils.deployAsync(
+    const mathContactInstance = await deployUtils.deployAsync(
         mathSmFactory,
         "MathStateMachine"
     );
@@ -83,7 +83,7 @@ async function main() {
     //     await mathContactInstance.getAddress()
     // );
 
-    let mathStateChannelContactInstance = await deployUtils.deployAsync(
+    const mathStateChannelContactInstance = await deployUtils.deployAsync(
         mathSmcFactory,
         "MathStateChannelManagerProxy",
         [

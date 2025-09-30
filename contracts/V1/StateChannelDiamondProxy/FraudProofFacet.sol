@@ -69,10 +69,10 @@ contract FraudProofFacet is StateChannelCommon {
             revert ErrorDoubleSignBlocksNotSame();
         }
 
-        address signer1 = StateChannelUtilLibrary.retriveSignerAddress(
+        address signer1 = StateChannelUtilLibrary.retrieveSignerAddress(
             blockDoubleSignProof.block1.encodedBlock, blockDoubleSignProof.block1.signature
         );
-        address signer2 = StateChannelUtilLibrary.retriveSignerAddress(
+        address signer2 = StateChannelUtilLibrary.retrieveSignerAddress(
             blockDoubleSignProof.block2.encodedBlock, blockDoubleSignProof.block2.signature
         );
         if (signer1 != signer2) {
@@ -91,7 +91,7 @@ contract FraudProofFacet is StateChannelCommon {
         StateSnapshot memory previousStateSnapshot = blockInvalidSTProof.previousBlockStateSnapshot;
         bytes memory previousStateStateMachineState = blockInvalidSTProof.previousStateStateMachineState;
 
-        address signer = StateChannelUtilLibrary.retriveSignerAddress(
+        address signer = StateChannelUtilLibrary.retrieveSignerAddress(
             blockInvalidSTProof.invalidBlock.encodedBlock, blockInvalidSTProof.invalidBlock.signature
         );
 
@@ -127,7 +127,7 @@ contract FraudProofFacet is StateChannelCommon {
         SnapshotData memory newSnapshotData = SnapshotData({
             originForkId: previousStateSnapshot.forkId,
             stateMachineStateHash: keccak256(encodedModifiedState),
-            participants: getStatemachineParticipants(encodedModifiedState),
+            participants: getStateMachineParticipants(encodedModifiedState),
             latestJoinChannelBlockHash: previousStateSnapshot.snapshotData.latestJoinChannelBlockHash,
             latestExitChannelBlockHash: previousStateSnapshot.snapshotData.latestExitChannelBlockHash,
             totalDeposits: previousStateSnapshot.snapshotData.totalDeposits,

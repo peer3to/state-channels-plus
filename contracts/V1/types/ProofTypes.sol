@@ -28,7 +28,7 @@ struct FraudProof {
 }
 
 enum FraudProofType {
-    // Block releated fraud proofs
+    // Block related fraud proofs
     BlockDoubleSign,
     BlockInvalidStateTransition,
     WrongGenesis
@@ -44,10 +44,10 @@ struct DisputeFraudProof {
 enum DisputeFraudProofType {
     DisputeNotLatestState,
     DisputeInvalidOutputState,
-    DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifed,
-    DisputeInvalidStateProofWithAuditingDataIntegrityVerifed,
+    DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified,
+    DisputeInvalidStateProofWithAuditingDataIntegrityVerified,
     DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks,
-    DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed,
+    DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified,
     DisputeInvalidBalanceInvariant,
     DisputeOnChainSlashesNotSubset,
     TimeoutThreshold,

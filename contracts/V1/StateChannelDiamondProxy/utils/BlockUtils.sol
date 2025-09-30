@@ -46,7 +46,7 @@ function _areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks, by
         }
         previousBlockHash = keccak256(currentBlockEncoded);
         //verify original signature
-        address signer = StateChannelUtilLibrary.retriveSignerAddress(currentBlockEncoded, signedBlocks[i].signature);
+        address signer = StateChannelUtilLibrary.retrieveSignerAddress(currentBlockEncoded, signedBlocks[i].signature);
         if (signer != currentBlock.transaction.header.participant) {
             return false;
         }
