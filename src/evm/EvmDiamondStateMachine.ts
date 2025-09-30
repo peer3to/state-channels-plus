@@ -5,28 +5,17 @@ import {
     AStateMachine as AStateMachineContract,
     LocalDiamond
 } from "@typechain-types";
-import {
-    JoinChannelBlockStruct,
-    TransactionStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
-import {
-    DisputeInputStruct,
-    ReduceOutputStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 import StateManager from "@/stateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
-import {
-    ExitChannelEthersType,
-    BalanceEthersType,
-    SnapshotDataEthersType
-} from "@/types/ethers";
+import { ExitChannelEthersType, BalanceEthersType } from "@/types/ethers";
 import { DebugProxy, decodeErrorProxy, Codec } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
-import { Address, Bytes, Hash } from "@/types/types";
+import { Address, Bytes } from "@/types/types";
 import { ExitChannelStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
 import Storage from "@/storage";
@@ -37,12 +26,6 @@ import {
 } from "scripts/V1/deploy";
 import LocalDiamondSigner from "./LocalDiamondSigner";
 import { LocalDiamondArtifact } from "@/utils/GeneratedArtifacts";
-import {
-    DisputeAuditingDataStruct,
-    DisputeStruct,
-    SnapshotDataStruct,
-    StateSnapshotStruct
-} from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 const DEBUG_CHANNEL_CONTRACT = true;
 
