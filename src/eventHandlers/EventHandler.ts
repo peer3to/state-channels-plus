@@ -19,7 +19,7 @@ import {
 } from "@/types/types";
 import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
-import { Codec, Type } from "@/utils";
+import { Codec, hash, Type } from "@/utils";
 import { isEqual } from "lodash";
 import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 import { ethers } from "ethers";
@@ -154,12 +154,12 @@ export class EventHandler {
 
         // Compare reduced disputes to see if we have more evidence
         const ourReducedDispute =
-            await this.diamondStateMachine.localDiamondContract.reduceProxyView(
+            await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
                 [dispute]
             );
 
         const combinedReducedDispute =
-            await this.diamondStateMachine.localDiamondContract.reduceProxyView(
+            await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
                 [ourDispute, dispute]
             );
 
@@ -231,6 +231,7 @@ export class EventHandler {
         ) {
             // If final, set fork and start building on it
             await this.setForkIfLatestAndCurrent(
+                forkId,
                 reducedForkId,
                 reductionTimestamp
             );
@@ -238,11 +239,10 @@ export class EventHandler {
         }
 
         // Not final - validate the reduction
-        const isValid = await this.validateDisputeReduction(
+        const isValid = await this.validateDisputeReductionAndChallenge(
+            channelId,
             forkId,
-            reducedForkId,
-            reductionTimestamp,
-            reducer
+            reducedForkId
         );
 
         if (!isValid) {
@@ -409,88 +409,106 @@ export class EventHandler {
         return false;
     }
 
-    private async validateDisputeReduction(
+    private async validateDisputeReductionAndChallenge(
+        channelId: ChannelId,
         forkId: ForkId,
-        reducedForkId: ForkId,
-        reductionTimestamp: Timestamp,
-        reducer: Address
+        reducedForkId: ForkId
     ): Promise<boolean> {
-        try {
-            const isForkDisputed =
-                await this.stateManager.stateChannelManagerContract.isForkDisputed(
-                    this.stateManager.channelId,
-                    forkId
+        // TODO - extract this function since it's used in multiple places (e.g spectating RPC...)
+        const disputeWindow = (
+            await this.diamondStateMachine.localDiamondContract.getDisputeWindows(
+                channelId,
+                [forkId]
+            )
+        )[0];
+        const dispteuConfirmations: DisputeConfirmationStruct[] = [];
+        for (const commitment of disputeWindow.evidence.disputeCommitments) {
+            const dc = this.storage.disputes.getDisputeConfirmation(commitment);
+            if (!dc) {
+                //TODO - querry longs
+                throw new Error(
+                    `Dispute not available for commitment: ${commitment}`
                 );
-
-            if (!isForkDisputed) {
-                return false;
             }
-
-            // Validate that the reduction was performed correctly
-            const reducedResult =
-                await this.stateManager.stateChannelManagerContract.getReducedResult(
-                    this.stateManager.channelId,
-                    forkId
-                );
-
-            // Check if the reduced result matches what was committed
-            return reducedResult[0] === reducedForkId;
-        } catch (error) {
-            console.error("Error validating dispute reduction:", error);
-            return false;
+            dispteuConfirmations.push(dc);
         }
-    }
 
-    private async getStateForFork(
-        forkId: ForkId,
-        latestStateSnapshot: StateSnapshotStruct
-    ): Promise<Bytes> {
-        try {
-            // If the latest snapshot is for the fork we want, use its state
-            if (latestStateSnapshot.forkId === forkId) {
-                const stateHash =
-                    latestStateSnapshot.snapshotData.stateMachineStateHash;
-                const encodedState =
-                    this.stateManager.storage.stateMachineStates.getStateMachineState(
-                        stateHash
-                    );
-                if (encodedState) {
-                    return encodedState;
-                }
-            }
+        const disputes = dispteuConfirmations.map((dc) =>
+            Codec.decode(dc.signedDispute.encodedDispute, Type.Dispute)
+        );
 
-            // Fallback: use existing getGenesisStateMachineState method
-            const genesisState =
-                this.stateManager.storage.getGenesisStateMachineState(forkId);
-            if (genesisState) {
-                return genesisState;
-            }
+        const reduceOutput =
+            await this.stateManager.stateChannelManagerContract.reduce.staticCall(
+                disputes
+            );
+        const latestSnapshot =
+            this.storage.stateSnapshots.getStateSnapshotByHash(
+                reduceOutput.latestBlock.stateSnapshotHash
+            );
+        if (!latestSnapshot)
+            throw new Error(
+                `Snapshot not available for hash: ${reduceOutput.latestBlock.stateSnapshotHash}`
+            );
+        const state = this.storage.stateMachineStates.getStateMachineState(
+            latestSnapshot.stateMachineStateHash
+        );
+        if (!state)
+            throw new Error(
+                `StateMachineState not available for hash: ${latestSnapshot.stateMachineStateHash}`
+            );
+        const genesisSnapshot =
+            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
+        if (!genesisSnapshot)
+            throw new Error(
+                `GenesisSnapshot not available for forkId: ${forkId}`
+            );
+        const jcbs = this.storage.joinChannelBlocks.getBlocksInRange(
+            genesisSnapshot.latestJoinBlockHash,
+            latestSnapshot.latestJoinBlockHash
+        );
+        const snapshotData =
+            await this.stateManager.stateChannelManagerContract.reduceToSnapshotData.staticCall(
+                forkId,
+                reduceOutput,
+                latestSnapshot,
+                state,
+                jcbs
+            );
 
-            throw new Error(`No state found for fork ${forkId}`);
-        } catch (error) {
-            console.error("Error getting state for fork:", error);
-            // Return current state as fallback
-            return await this.diamondStateMachine.getState();
-        }
+        const isValid =
+            hash(Codec.encode(snapshotData, Type.SnapshotData)) ==
+            reducedForkId;
+        if (!isValid)
+            this.stateManager.stateChannelManagerContract.challengeDisputeReduction();
     }
 
     private async setForkIfLatestAndCurrent(
+        forkId: ForkId,
         reducedForkId: ForkId,
         reductionTimestamp: Timestamp
     ): Promise<void> {
-        const isLatestFork = this.stateManager.latestForkId === reducedForkId;
-        const isCurrentFork = this.stateManager.forkId !== reducedForkId;
-
-        if (isLatestFork && isCurrentFork) {
-            // Get the latest state snapshot
+        // enough for now - this will change later
+        if (this.stateManager.forkId == forkId) {
+            // Get the latest state snapshot - it should be reduced locally if not we'll reduce it on the spot
             const latestStateSnapshot =
-                await this.stateManager.stateChannelManagerContract.getStateSnapshot(
-                    this.stateManager.channelId
+                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                    reducedForkId
+                );
+            if (!latestStateSnapshot) {
+                // TODO reduce localy
+            }
+            const genesisStateMachineState =
+                this.storage.stateMachineStates.getStateMachineState(
+                    latestStateSnapshot!.stateMachineStateHash
                 );
 
+            if (!genesisStateMachineState) {
+                // we need to compute it - should have computed it above while reducing
+                // TODO - solidity code that returns the encodedState
+            }
             // Set fork and start building on it
             await this.stateManager.setState(
-                await this.getStateForFork(reducedForkId, latestStateSnapshot),
+                genesisStateMachineState!,
                 reducedForkId,
                 reductionTimestamp
             );
