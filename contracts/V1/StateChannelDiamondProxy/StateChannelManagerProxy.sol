@@ -400,7 +400,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return abi.decode(result, (ReduceOutput));
     }
 
-    function reduceToSnapshotData(
+    function reduceOutputToSnapshotData(
         bytes32 forkId,
         ReduceOutput memory reducedOutput,
         StateSnapshot memory latestStateSnapshot,

@@ -91,7 +91,7 @@ abstract contract StateChannelManagerInterface {
 
     function reduce(Dispute[] memory disputes) public virtual returns (ReduceOutput memory);
 
-    function reduceToSnapshotData(
+    function reduceOutputToSnapshotData(
         bytes32 forkId,
         ReduceOutput memory reducedOutput,
         StateSnapshot memory latestStateSnapshot,

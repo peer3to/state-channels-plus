@@ -454,7 +454,7 @@ export class EventHandler {
             latestSnapshot.latestJoinBlockHash
         );
         const snapshotData =
-            await this.stateManager.stateChannelManagerContract.reduceToSnapshotData.staticCall(
+            await this.stateManager.stateChannelManagerContract.reduceOutputToSnapshotData.staticCall(
                 forkId,
                 reduceOutput,
                 latestSnapshot,
