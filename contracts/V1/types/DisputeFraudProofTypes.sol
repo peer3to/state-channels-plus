@@ -6,10 +6,10 @@ contract DisputeFraudProofTypes {
     constructor(
         DisputeNotLatestState memory a,
         DisputeInvalidOutputState memory b,
-        DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifed memory c,
-        DisputeInvalidStateProofWithAuditingDataIntegrityVerifed memory d,
+        DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified memory c,
+        DisputeInvalidStateProofWithAuditingDataIntegrityVerified memory d,
         DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks memory e,
-        DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed memory f,
+        DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified memory f,
         DisputeInvalidBalanceInvariant memory g,
         TimeoutThreshold memory h,
         TimeoutCalldataPosted memory i,
@@ -22,7 +22,7 @@ contract DisputeFraudProofTypes {
 // ========================== Dispute related fraud proofs ==========================
 // Every Dispute Fraud Proof has an implicit argument/field `Dispute dispute`
 
-// This is sematically equivalent to SignedBlock, but logically it's any signature not only from the original block author
+// This is semantically equivalent to SignedBlock, but logically it's any signature not only from the original block author
 struct DisputeNotLatestState {
     bytes encodedBlock;
     bytes signature;
@@ -32,11 +32,11 @@ struct DisputeInvalidOutputState {
     DisputeAuditingData auditingData;
 }
 
-struct DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifed {
+struct DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified {
     DisputeAuditingData auditingData;
 }
 
-struct DisputeInvalidStateProofWithAuditingDataIntegrityVerifed {
+struct DisputeInvalidStateProofWithAuditingDataIntegrityVerified {
     DisputeAuditingData auditingData;
 }
 
@@ -44,7 +44,7 @@ struct DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChan
     DisputeAuditingData auditingData;
 }
 
-struct DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed {
+struct DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified {
     DisputeAuditingData auditingData;
 }
 

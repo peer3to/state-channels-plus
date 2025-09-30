@@ -176,9 +176,9 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
     }
 
-    async peekNextToWrite(encoedState: Bytes): Promise<Address> {
+    async peekNextToWrite(encodedState: Bytes): Promise<Address> {
         const state = await this.getState();
-        await this.setState(encoedState);
+        await this.setState(encodedState);
         const nextToWrite = await this.getNextToWrite();
         await this.setState(state);
         return nextToWrite;

@@ -202,7 +202,7 @@ export default class DisputeValidationService {
                 true
             ))
         ) {
-            //TODO - create Dispute Fraud Proof DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifed
+            //TODO - create Dispute Fraud Proof DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified
             return false;
         }
 

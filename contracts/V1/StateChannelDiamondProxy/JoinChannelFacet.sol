@@ -19,9 +19,9 @@ contract JoinChannelFacet is StateChannelCommon {
         // Check deadline
         require(jc.deadlineTimestamp <= block.timestamp, ErrorJoinChannelExpired());
 
-        //verify original siganture
+        //verify original signature
         require(
-            jc.participant == StateChannelUtilLibrary.retriveSignerAddress(sjc.encodedJoinChannel, sjc.signature),
+            jc.participant == StateChannelUtilLibrary.retrieveSignerAddress(sjc.encodedJoinChannel, sjc.signature),
             ErrorJoinChannelInvalidSignature()
         );
 

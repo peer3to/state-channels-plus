@@ -7,7 +7,7 @@ class DHTDiscoveryService extends ARpcService {
     }
 
     public async onCanJoinLeaderRequest() {
-        //TODO! reuqire init handshake
+        //TODO! require init handshake
         let amILeader = this.mainRpcService.p2pManager.p2pSigner.getIsLeader();
         if (!amILeader) {
             //TODO! - disconnect
@@ -24,7 +24,7 @@ class DHTDiscoveryService extends ARpcService {
         channelId: ChannelId,
         participants: Address[]
     ) {
-        // //TODO! reuqire init handshake
+        // //TODO! require init handshake
         // let amILeader = this.p2pManager.p2pSigner.getIsLeader();
         // if (!amILeader) {
         //     //TODO! - disconnect

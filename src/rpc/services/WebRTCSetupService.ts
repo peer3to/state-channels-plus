@@ -91,7 +91,7 @@ class WebRTCSetupService extends ARpcService {
         }
     }
 
-    //Ran by the peer who initiated the connection - this completes the handshake (negoation)
+    //Ran by the peer who initiated the connection - this completes the handshake (negotiation)
     public async onAnswerWebRTC(serializedAnswer: string) {
         try {
             let adr =
