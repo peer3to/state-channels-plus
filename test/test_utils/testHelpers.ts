@@ -95,7 +95,7 @@ export async function deployMathChannelProxyFixture(
         { name: "DisputeVerificationFacet", libs },
         { name: "FraudProofFacet", libs },
         { name: "DisputeFraudProofFacet", libs },
-        { name: "StateSnapshotFacet", libs: undefined },
+        { name: "StateSnapshotFacet", libs },
         { name: "JoinChannelFacet", libs },
         { name: "MathConsumerFacet", libs }
     ] as const;
@@ -126,7 +126,8 @@ export async function deployMathChannelProxyFixture(
 
     //Deploy MathStateChannelManager with all facet addresses
     const mathSmcFactory = await _ethers.getContractFactory(
-        "MathStateChannelManagerProxy"
+        "MathStateChannelManagerProxy",
+        { libraries: libs }
     );
     const mathStateChannelContactInstance = await mathSmcFactory.deploy(
         await mathContactInstance.getAddress(),

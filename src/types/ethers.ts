@@ -28,6 +28,7 @@ uint timestamp
 )`;
 
 export const SnapshotDataEthersType = `tuple(
+bytes32 originForkId,
 bytes32 stateMachineStateHash,
 address[] participants,
 bytes32 latestJoinChannelBlockHash,
@@ -84,7 +85,8 @@ uint256 blockHeight,
 uint256 minTimeStamp,
 bool isForced,
 address previousBlockProducer,
-bool previousBlockProducerPostedCalldata
+bool previousBlockProducerPostedCalldata,
+bytes participantSignatureOnPreviousBlock
 )`;
 
 export const DisputeAuditingDataEthersType = `tuple(

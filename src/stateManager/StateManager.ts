@@ -282,7 +282,8 @@ class StateManager {
             "participantTimeout"
         );
 
-        scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
+        // arrow function preserves "this", which is the StateManager instance
+        scheduleTask(() => this.tryExecuteFromQueue(), 0, "queueProcessing");
     }
 
     // Passes the signedBlock through a verification pipeline and returns shouldDisconnect flag
@@ -1173,9 +1174,14 @@ class StateManager {
     }
 
     private adjustTimestampIfNeeded(tx: TransactionStruct): void {
-        const latestBlockTimestamp = this.storage.blocks.getLatestBlock(
-            this.forkId
-        )!.timestamp;
+        const latestBlock = this.storage.blocks.getLatestBlock(this.forkId);
+
+        // If there are no blocks yet, no need to adjust timestamp
+        if (!latestBlock) {
+            return;
+        }
+
+        const latestBlockTimestamp = latestBlock.timestamp;
 
         if (Number(tx.header.timestamp) < latestBlockTimestamp) {
             tx.header.timestamp = latestBlockTimestamp + 1;
@@ -1359,7 +1365,7 @@ class StateManager {
             "participantTimeout"
         );
         // step 12 - try execute from queue
-        scheduleTask(this.tryExecuteFromQueue, 0, "queueProcessing");
+        scheduleTask(() => this.tryExecuteFromQueue(), 0, "queueProcessing");
     }
 
     private async shouldSignBlock(block: Block): Promise<boolean> {
