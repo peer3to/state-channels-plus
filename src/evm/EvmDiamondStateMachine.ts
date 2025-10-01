@@ -101,7 +101,9 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                         ...Object.values(event.args)
                     );
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.error("Error parsing log", e);
+            }
         }
     }
 

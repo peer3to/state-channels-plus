@@ -21,7 +21,6 @@ import { Codec, Type } from "@/utils";
 import { Block, StateSnapshot } from "@/models";
 import { BlockHeight, Bytes, ForkId, Timestamp } from "@/types/types";
 import { DisputeInputStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
-import { BytesLike } from "ethers";
 
 export const hash = () => ethers.hexlify(ethers.randomBytes(32));
 

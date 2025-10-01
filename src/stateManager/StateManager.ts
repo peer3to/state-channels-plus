@@ -398,8 +398,6 @@ class StateManager {
 
             // success - no disconnect
             return true;
-        } catch (error) {
-            throw error;
         } finally {
             this.mutex.unlock();
         }

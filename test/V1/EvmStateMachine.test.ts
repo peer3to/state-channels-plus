@@ -1,7 +1,6 @@
 import { ethers, ethers as hre } from "hardhat";
 import { BigNumberish } from "ethers";
 import { EvmStateMachine } from "@/evm";
-import { MathStateMachine } from "@typechain-types";
 import { Codec, Type } from "@/utils/Codec";
 import { StateSnapshot } from "@/models";
 
@@ -28,8 +27,6 @@ describe("EvmStateMachine", function () {
 
         //P2P setup;
         const deployTx = await mathSM.getDeployTransaction(500000); // this deployes the contract locally
-        let mathContractFirstPlayer: MathStateMachine;
-        let mathContractSecondPlayer: MathStateMachine;
 
         const p2pOne = await EvmStateMachine.p2pSetup(
             signerOne,
@@ -50,8 +47,8 @@ describe("EvmStateMachine", function () {
                 ...getMathP2pEventHooks(() => {}, await signerTwo.getAddress())
             } as unknown as P2pEventHooks
         );
-        mathContractFirstPlayer = p2pOne.p2pContractInstance;
-        mathContractSecondPlayer = p2pTwo.p2pContractInstance;
+        const mathContractFirstPlayer = p2pOne.p2pContractInstance;
+        const mathContractSecondPlayer = p2pTwo.p2pContractInstance;
 
         mathContractFirstPlayer.on(
             mathContractFirstPlayer.filters.Addition,
