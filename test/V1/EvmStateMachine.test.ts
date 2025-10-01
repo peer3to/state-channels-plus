@@ -1,4 +1,4 @@
-import { ethers, ethers as hre } from "hardhat";
+import { ethers } from "hardhat";
 import { BigNumberish } from "ethers";
 import { EvmStateMachine } from "@/evm";
 import { Codec, Type } from "@/utils/Codec";
@@ -15,12 +15,12 @@ import { Bytes } from "@/types/types";
 
 describe("EvmStateMachine", function () {
     it("EvmStateMachine - P2P simulation - success", async function () {
-        const signerOne = (await hre.getSigners())[0];
-        const signerTwo = (await hre.getSigners())[1];
+        const signerOne = (await ethers.getSigners())[0];
+        const signerTwo = (await ethers.getSigners())[1];
 
-        const math = await deployMathChannelProxyFixture(hre);
+        const math = await deployMathChannelProxyFixture(ethers);
 
-        const mathSM = await hre.getContractFactory("MathStateMachine");
+        const mathSM = await ethers.getContractFactory("MathStateMachine");
         const mathsm = math.mathInstance;
 
         const mathscm = math.mathChannelManager;
