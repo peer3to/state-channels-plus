@@ -107,12 +107,22 @@ async function deployFacetsLocal(
 export async function deploy(
     stateMachineAddress: string,
     consumerFacetAddress: string,
-    signer: Signer
+    signer: Signer,
+    options?: {
+        libraryAddress?: string;
+    }
 ): Promise<{ address: string; contract: StateChannelManagerProxy }> {
-    const { address: libAddress } = await deployArtifact(
-        StateChannelUtilLibraryArtifact,
-        signer
-    );
+    let libAddress: string;
+
+    if (options?.libraryAddress) {
+        libAddress = options.libraryAddress;
+    } else {
+        const { address } = await deployArtifact(
+            StateChannelUtilLibraryArtifact,
+            signer
+        );
+        libAddress = address;
+    }
 
     const facetAddresses = await deployFacets(signer, {
         StateChannelUtilLibrary: libAddress
@@ -122,7 +132,12 @@ export async function deploy(
         StateChannelManagerProxyArtifact,
         signer,
         {
-            args: [stateMachineAddress, ...facetAddresses, consumerFacetAddress]
+            args: [
+                stateMachineAddress,
+                ...facetAddresses,
+                consumerFacetAddress
+            ],
+            libs: { StateChannelUtilLibrary: libAddress }
         }
     );
 }
@@ -153,7 +168,8 @@ export async function deployLocalDiamond(
         evm,
         usedSigner,
         {
-            args: [stateMachineAddress, ...facetAddresses]
+            args: [stateMachineAddress, ...facetAddresses],
+            libs: { StateChannelUtilLibrary: libAddress.toString() }
         }
     );
 

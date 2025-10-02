@@ -36,19 +36,21 @@ export const FraudProofEthersType = `tuple(
     bytes encodedProof
 )`;
 
-export const DisputeEthersType = `tuple(
+export const DisputeInputEthersType = `tuple(
     bytes32 channelId,
     bytes32 genesisSnapshotDataHash,
     bytes32 latestStateSnapshotHash,
     ${StateProofEthersType} stateProof,
-    ${FraudProofEthersType}[] fraudProofs,
     address[] onChainSlashes,
-    bytes32 onChainLatestJoinChannelBlockHash,
-    bytes32 outputSnapshotDataHash,
     bytes32 disputeAuditingDataHash,
     address disputer,
     ${TimeoutEthersType} timeout,
     bool selfRemoval
+)`;
+
+export const DisputeEthersType = `tuple(
+    ${DisputeInputEthersType} input,
+    bytes32 outputSnapshotDataHash
 )`;
 
 export const SignedDisputeEthersType = `tuple(

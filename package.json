@@ -71,7 +71,7 @@
     "testc": "yarn lint && yarn compile && yarn hardhat test",
     "test": "yarn hardhat test",
     "test:coverage": "nyc --reporter=html yarn testts",
-    "build": "yarn lint && yarn compile && yarn generate-artifacts && rimraf dist && mkdir -p dist && tsc && npm pack && node rename-pack.js",
+    "build": "yarn compile && yarn generate-artifacts && rimraf dist && mkdir -p dist && tsc && npm pack && node rename-pack.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint src/**/*.ts test/**/*.ts",

@@ -1,4 +1,4 @@
-// @ts-ignore - get-webrtc doesn't have TypeScript declarations
+// @ts-expect-error- get-webrtc doesn't have TypeScript declarations
 import { RTCPeerConnection } from "get-webrtc";
 
 export interface P2PConnectivityInfo {
