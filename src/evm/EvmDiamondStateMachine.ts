@@ -101,7 +101,9 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                         ...Object.values(event.args)
                     );
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.error("Error parsing log", e);
+            }
         }
     }
 
@@ -289,7 +291,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         evmDiamondStateMachine: EvmDiamondStateMachine;
         deploymentResult: DeploymentResult;
     }> {
-        const evm = await EVM.create();
+        // since this is local deployment, we can allow unlimited contract size
+        const evm = await EVM.create({ allowUnlimitedContractSize: true });
 
         const stateMachineAddress = await deployLocalFromTx(
             deployStateMachineTx,
@@ -352,7 +355,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         // Connect signer to state channel contract
         deployedStateChannelContractInstance =
-            deployedStateChannelContractInstance.connect(signer);
+            await deployedStateChannelContractInstance.connect(signer);
 
         // Apply debug proxy if enabled
 

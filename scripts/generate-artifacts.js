@@ -46,14 +46,16 @@ const errorAbis = allArtifacts.flatMap((artifact) => {
 const generatedCode = `// This file is auto-generated. Do not edit manually.
 // Generated from build artifacts
 
-export const artifacts = ${JSON.stringify(allArtifacts, null, 2)} as const;
+import { Artifact } from '../types/artifacts';
+
+export const artifacts: Artifact[] = ${JSON.stringify(allArtifacts, null, 2)};
 
 export const errorAbis = ${JSON.stringify(errorAbis, null, 2)} as const;
 
 // Individual artifact exports for convenience
-${facets.map((facet) => `export const ${facet}Artifact = artifacts.find(a => a.contractName === "${facet}")!;`).join("\n")}
+${facets.map((facet) => `export const ${facet}Artifact: Artifact = artifacts.find(a => a.contractName === "${facet}")!;`).join("\n")}
 
-${stateMachineContracts.map((contract) => `export const ${contract}Artifact = artifacts.find(a => a.contractName === "${contract}")!;`).join("\n")}
+${stateMachineContracts.map((contract) => `export const ${contract}Artifact: Artifact = artifacts.find(a => a.contractName === "${contract}")!;`).join("\n")}
 `;
 
 fs.writeFileSync(outputPath, generatedCode);

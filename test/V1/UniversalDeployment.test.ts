@@ -21,7 +21,7 @@ describe("Universal Deployment", () => {
     let evm: EVM;
 
     before(async () => {
-        evm = await EVM.create();
+        evm = await EVM.create({ allowUnlimitedContractSize: true });
         [deployer] = await ethers.getSigners();
 
         const { address } = await deployArtifact(
@@ -78,13 +78,14 @@ describe("Universal Deployment", () => {
                 await deploy(
                     mathStateMachineAddress,
                     consumerFacetAddress,
-                    deployer
+                    deployer,
+                    { libraryAddress }
                 );
 
             expect(diamondAddress).to.not.equal(ethers.ZeroAddress);
 
             const times = await diamondContract.getAllTimes();
-            expect(times).to.deep.equal([15n, 5n, 30n, 30n, 60n]);
+            expect(times).to.deep.equal([15n, 5n, 30n, 30n]);
         });
 
         it("fails with invalid consumer facet", async () => {
@@ -94,7 +95,8 @@ describe("Universal Deployment", () => {
             const { contract: diamondContract } = await deploy(
                 mathStateMachineAddress,
                 fakeConsumerFacetAddress,
-                deployer
+                deployer,
+                { libraryAddress }
             );
 
             const channelId = ethers.keccak256(

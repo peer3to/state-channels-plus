@@ -9,7 +9,8 @@ import {
     BlockConfirmationStruct,
     ExitChannelBlockStruct,
     JoinChannelBlockStruct,
-    StateSnapshotStruct
+    StateSnapshotStruct,
+    SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeStruct,
@@ -18,6 +19,8 @@ import {
 import { randomInt } from "crypto";
 import { Codec, Type } from "@/utils";
 import { Block, StateSnapshot } from "@/models";
+import { BlockHeight, Bytes, ForkId, Timestamp } from "@/types/types";
+import { DisputeInputStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 export const hash = () => ethers.hexlify(ethers.randomBytes(32));
 
@@ -123,35 +126,51 @@ export function block(overrides: Partial<BlockStruct> = {}): Block {
  * @param overrides Optional override values for the dispute fields
  * @returns A DisputeStruct with default values and any provided overrides
  */
-export function dispute(overrides: Partial<DisputeStruct> = {}): DisputeStruct {
+export function dispute(
+    overrides: Partial<{
+        input: Partial<DisputeInputStruct>;
+        outputSnapshotDataHash?: Bytes;
+    }> = {}
+): DisputeStruct {
     const defaultDispute: DisputeStruct = {
-        channelId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
-        genesisSnapshotDataHash: ethers.hexlify(ethers.randomBytes(32)),
-        latestStateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
-        stateProof: {
-            milestones: [],
-            signedBlocks: []
+        input: {
+            channelId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
+            genesisSnapshotDataHash: ethers.hexlify(ethers.randomBytes(32)),
+            latestStateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
+            stateProof: {
+                milestones: [],
+                signedBlocks: []
+            },
+            onChainSlashes: [],
+            disputeAuditingDataHash: ethers.hexlify(ethers.randomBytes(32)),
+            disputer: ethers.ZeroAddress,
+            timeout: {
+                participant: ethers.ZeroAddress,
+                blockHeight: 0,
+                minTimeStamp: Math.floor(Date.now() / 1000),
+                isForced: false,
+                previousBlockProducer: ethers.ZeroAddress,
+                previousBlockProducerPostedCalldata: false,
+                participantSignatureOnPreviousBlock: ethers.hexlify(
+                    ethers.randomBytes(32)
+                )
+            },
+            selfRemoval: false
         },
-        fraudProofs: [],
-        onChainSlashes: [],
-        onChainLatestJoinChannelBlockHash: ethers.hexlify(
-            ethers.randomBytes(32)
-        ),
-        outputSnapshotDataHash: ethers.hexlify(ethers.randomBytes(32)),
-        disputeAuditingDataHash: ethers.hexlify(ethers.randomBytes(32)),
-        disputer: ethers.ZeroAddress,
-        timeout: {
-            participant: ethers.ZeroAddress,
-            blockHeight: 0,
-            minTimeStamp: Math.floor(Date.now() / 1000),
-            isForced: false,
-            previousBlockProducer: ethers.ZeroAddress,
-            previousBlockProducerPostedCalldata: false
+
+        outputSnapshotDataHash: ethers.hexlify(ethers.randomBytes(32))
+    };
+    const dispute = {
+        input: {
+            ...defaultDispute.input,
+            ...overrides.input
         },
-        selfRemoval: false
+        outputSnapshotDataHash:
+            overrides.outputSnapshotDataHash ||
+            defaultDispute.outputSnapshotDataHash
     };
 
-    return { ...defaultDispute, ...overrides };
+    return { ...dispute };
 }
 
 export function joinChannel(
@@ -225,10 +244,16 @@ export function exitChannelBlock(
 }
 
 export function stateSnapshot(
-    overrides: Partial<StateSnapshotStruct> = {}
+    overrides: Partial<{
+        snapshotData: Partial<SnapshotDataStruct>;
+        forkId?: ForkId;
+        blockHeight?: BlockHeight;
+        timestamp?: Timestamp;
+    }> = {}
 ): StateSnapshot {
     const defaultStateSnapshot: StateSnapshotStruct = {
         snapshotData: {
+            originForkId: ethers.hexlify(ethers.randomBytes(32)),
             stateMachineStateHash: ethers.hexlify(ethers.randomBytes(32)),
             participants: [
                 ethers.Wallet.createRandom().address,
@@ -249,6 +274,15 @@ export function stateSnapshot(
         blockHeight: BigInt(randomInt(0, 500)),
         timestamp: Math.floor(Date.now() / 1000)
     };
+    const snapshotData = {
+        ...defaultStateSnapshot.snapshotData,
+        ...overrides.snapshotData
+    };
+    const stateSnapshot = {
+        ...defaultStateSnapshot,
+        snapshotData,
+        ...overrides
+    };
 
-    return StateSnapshot.from({ ...defaultStateSnapshot, ...overrides });
+    return StateSnapshot.from(stateSnapshot as StateSnapshotStruct);
 }

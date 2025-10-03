@@ -178,7 +178,7 @@ describe("BlockStorage", () => {
 
         it("should prevent duplicate signatures", () => {
             const newSig = sig();
-            const prevNumSignatures = mockBlockConfirmation.signatures.length;
+            const prevNumSignatures = mockBlock.confirmationSignatures.size;
             const expectedNumSignatures = prevNumSignatures + 1;
 
             // Insert signature first time
@@ -198,7 +198,7 @@ describe("BlockStorage", () => {
 
         it("should prevent duplicate signatures by coordinates", () => {
             const newSig = sig();
-            const prevNumSignatures = mockBlockConfirmation.signatures.length;
+            const prevNumSignatures = mockBlock.confirmationSignatures.size;
             const expectedNumSignatures = prevNumSignatures + 1;
 
             // Insert signature first time
@@ -225,7 +225,7 @@ describe("BlockStorage", () => {
         });
 
         it("should allow multiple unique signatures", () => {
-            const prevNumSignatures = mockBlockConfirmation.signatures.length;
+            const prevNumSignatures = mockBlock.confirmationSignatures.size;
             const expectedNumSignatures = prevNumSignatures + 3;
             expect(
                 storage.getBlock(mockBlockHash)?.confirmationSignatures.size

@@ -1,9 +1,7 @@
 import {
     BlockConfirmationStruct,
-    SignedBlockStruct,
     SignedJoinChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { SignedDisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 import P2PManager from "@/P2PManager";
 import RpcMethodsProxy from "./RpcHandleProxy";
