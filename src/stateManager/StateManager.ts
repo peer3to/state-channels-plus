@@ -263,6 +263,12 @@ class StateManager {
         console.log("StateManager - SetState", _forkId, _timestamp);
         await this.diamondStateMachine.setState(encodedState);
 
+        // Persist the encoded state to storage
+        const stateHash = ethers.keccak256(encodedState);
+        this.storage.stateMachineStates.storeStateMachineState(encodedState, {
+            hash: stateHash
+        });
+
         // Update the forkId to the new fork
         this.forkId = _forkId;
 

@@ -195,16 +195,6 @@ describe("EvmStateMachine", function () {
             stateSnapshot
         );
 
-        // Store the corresponding encoded state machine state
-        p2pOne.p2pSigner.p2pManager.stateManager.storage.stateMachineStates.storeStateMachineState(
-            genesisStateEncoded,
-            { hash: stateMachineStateHash }
-        );
-        p2pTwo.p2pSigner.p2pManager.stateManager.storage.stateMachineStates.storeStateMachineState(
-            genesisStateEncoded,
-            { hash: stateMachineStateHash }
-        );
-
         // ===============================================
         //  End of ugly ugly work around
         // ===============================================
