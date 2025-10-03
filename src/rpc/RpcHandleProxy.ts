@@ -1,3 +1,5 @@
+import ARpcMethods from "./ARpcMethods";
+import ARpcService from "./ARpcService";
 import MainRpcService from "./MainRpcService";
 import Rpc from "./Rpc";
 import RpcHandler from "./RpcHandler";
@@ -12,12 +14,19 @@ type RpcHandleMethod<T> = T extends (...args: infer A) => any
 /**
  * Transforms all function/method return types into RpcHandlers
  */
-export type RpcHandleMethods<T extends MainRpcService> = {
-    [K in keyof T]: RpcHandleMethod<T[K]>;
+export type RpcHandleMethods<T extends ARpcMethods> = {
+    [K in keyof T as T[K] extends Function ? K : never]: RpcHandleMethod<T[K]>;
 };
 
-class RpcProxy {
-    public static createProxy<T extends MainRpcService>(service: T) {
+/**
+ * Passed by reference so that the calling context can dynamically change it
+ */
+export type RpcMethodsContextObject = {
+    serviceName: string;
+    service: ARpcService<any>; // don't care for the type here -> so any
+};
+class RpcMethodsProxy {
+    public static createProxy(ctx: RpcMethodsContextObject) {
         return new Proxy(
             {},
             {
@@ -29,14 +38,15 @@ class RpcProxy {
                     if (typeof prop === "symbol") return;
                     return (...args: any) => {
                         const rpc: Rpc = {
+                            service: ctx.serviceName,
                             method: prop.toString(),
                             params: args
                         };
-                        return new RpcHandler(rpc, service.p2pManager);
+                        return new RpcHandler(rpc, ctx.service.p2pManager);
                     };
                 }
             }
-        ) as RpcHandleMethods<T>;
+        ) as RpcHandleMethods<ReturnType<typeof ctx.service.createRPCMethods>>;
     }
 }
-export default RpcProxy;
+export default RpcMethodsProxy;

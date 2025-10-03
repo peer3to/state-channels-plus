@@ -437,7 +437,7 @@ class StateManager {
     // Used when authoring a block - Executes the transaction and returns a signed block
     public async playTransaction(
         tx: TransactionStruct
-    ): Promise<SignedBlockStruct> {
+    ): Promise<BlockConfirmationStruct> {
         await this.mutex.lock();
 
         try {
@@ -500,7 +500,7 @@ class StateManager {
                 exitChannelBlock
             );
 
-            return signedBlock;
+            return block.blockConfirmationStruct;
         } finally {
             this.mutex.unlock();
         }
@@ -1295,7 +1295,7 @@ class StateManager {
             block.expandSignatures([signature]);
         }
         // always broadcast
-        this.p2pManager.rpcProxy
+        this.p2pManager.remoteRpc.stateTransitionService
             .onBlockConfirmation(block.blockConfirmationStruct)
             .broadcast();
 

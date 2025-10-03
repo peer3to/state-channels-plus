@@ -1,4 +1,5 @@
 type Rpc = {
+    service: string;
     method: string;
     params: any[];
 };
@@ -8,7 +9,12 @@ export function serializeRpc(rpc: Rpc): string {
 export function deserializeRpc(serializedRpc: string): Rpc | undefined {
     try {
         const rpc = JSON.parse(serializedRpc);
-        if (!rpc || typeof rpc.method !== "string" || !rpc.params) {
+        if (
+            !rpc ||
+            typeof rpc.service !== "string" ||
+            typeof rpc.method !== "string" ||
+            !rpc.params
+        ) {
             return undefined;
         }
         return rpc as Rpc;

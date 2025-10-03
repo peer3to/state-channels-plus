@@ -75,7 +75,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     ): Promise<BlockValidationResult> {
         // Store new signatures and broadcast
         this.storage.blocks.storeBlock(block);
-        this.p2pManager.rpcProxy
+        this.p2pManager.remoteRpc.stateTransitionService
             .onBlockConfirmation(block.blockConfirmationStruct)
             .broadcast();
         return BlockValidationResult.BROADCAST;

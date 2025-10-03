@@ -8,17 +8,24 @@ import ProfileManager from "@/ProfileManager";
 import Holepunch from "@/Holepunch";
 import { ethers } from "ethers";
 import { DebugProxy, LocalDiscoveryServer } from "@/utils";
-import { RpcHandleMethods } from "@/rpc/RpcProxy";
+import { RpcHandleMethods } from "@/rpc/RpcHandleProxy";
 import { Buffer } from "buffer";
 import { DEBUG_P2P_MANAGER, DEBUG_LOCAL_TRANSPORT } from "@/utils/config";
 import { Address } from "./types/types";
+import {
+    hasMethod,
+    hasProperty,
+    isInstaceOfRpcService
+} from "./utils/ObjectChecks";
+import { ARpcService } from "./rpc";
+import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
 
 class P2PManager implements IOnMessage {
     stateManager: StateManager;
     p2pSigner: P2pSigner;
     profileManager = new ProfileManager();
-    localRpcService: MainRpcService;
-    rpcProxy: RpcHandleMethods<MainRpcService>;
+    localRpc: MainRpcService;
+    remoteRpc: RemoteRpcProxyType<MainRpcService>;
     //TODO - map EVM address to websocket
     openConnections: ATransport[] = [];
     holepunch: Holepunch;
@@ -32,38 +39,43 @@ class P2PManager implements IOnMessage {
             stateManager.signerAddress,
             this.self
         );
-        this.localRpcService = new MainRpcService(this.self);
-        this.rpcProxy = this.localRpcService.rpcProxy;
+        this.localRpc = new MainRpcService(this.self);
+        this.remoteRpc = RemoteRpcProxy.createProxy(this.localRpc);
         this.holepunch = new Holepunch(this.self);
         return this.self;
-        // BroadcastLocal.register(this.p2pSigner.signerAddress, this);
     }
     //Mark resources for garbage collection
     public async dispose() {
+        const remoteRpc = RemoteRpcProxy.createProxy(this.localRpc);
         await this.holepunch.dispose();
         this.disconnectAll();
     }
     public broadcastRpc(serializedRPC: string) {
-        // BroadcastLocal.broadcast(serializedRPC);
         for (const transport of this.openConnections) {
             transport.send(serializedRPC);
         }
     }
-    public onRpc(serializedRpc: string) {
+    public onRpc(serializedRpc: string, transport: ATransport) {
         try {
             const rpc = deserializeRpc(serializedRpc);
             if (!rpc) {
-                //TODO!Disconnect
+                this.disconnectConnection(transport);
                 return;
             }
-            if (!hasMethod(this.localRpcService, rpc.method)) {
-                //TODO!Disconnect
+            if (!isInstaceOfRpcService(this.localRpc, rpc.service)) {
+                this.disconnectConnection(transport);
                 return;
             }
-            //TODO! set context - calling socket/profile (ATransport)!
-            this.localRpcService[rpc.method](...rpc.params);
+            const service = this.localRpc[
+                rpc.service
+            ] as unknown as ARpcService<any>;
+            const success = service.runRPC(rpc, transport);
+            if (!success) {
+                this.disconnectConnection(transport);
+                return;
+            }
         } catch (e) {
-            //TODO - disconnect from peer
+            this.disconnectConnection(transport);
             console.error(e);
         }
     }
@@ -79,7 +91,7 @@ class P2PManager implements IOnMessage {
     }
     public addConnection(transport: ATransport) {
         this.openConnections.push(transport);
-        this.localRpcService.initHandshakeService.initHandshake(transport);
+        this.localRpc.initHandshakeService.initHandshake(transport);
     }
     public disconnectConnection(transport: ATransport) {
         this.openConnections = this.openConnections.filter(
@@ -116,26 +128,6 @@ class P2PManager implements IOnMessage {
             this.disconnectConnection(transport);
         }
     }
-}
-
-/**
- * Type guard to check if an object has a certain property.
- */
-function hasProperty<T, P extends string>(
-    obj: T,
-    prop: P
-): obj is T & Record<P, unknown> {
-    return typeof obj === "object" && obj !== null && prop in obj;
-}
-
-/**
- * Type guard to check if an object has a certain method.
- */
-function hasMethod<T, P extends string>(
-    obj: T,
-    prop: P
-): obj is T & Record<P, (...params: any[]) => any> {
-    return hasProperty(obj, prop) && typeof obj[prop] === "function";
 }
 
 export default P2PManager;
