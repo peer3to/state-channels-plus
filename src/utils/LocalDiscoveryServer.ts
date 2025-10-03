@@ -12,14 +12,14 @@ export class LocalDiscoveryServer {
     public static tryStart() {
         const wss = new WebSocketServer({ port: PORT });
         let connections: WebSocket[] = [];
-        const disoveryInfo: DiscoveryInfo[] = [];
+        const discoveryInfo: DiscoveryInfo[] = [];
         wss.on("connection", (ws) => {
             console.log("Discovery WSS connection");
             connections.push(ws);
             ws.on("message", (message) => {
                 const [peerPort, channelId] = JSON.parse(message.toString());
-                disoveryInfo.push([peerPort, channelId]);
-                for (const d of disoveryInfo) {
+                discoveryInfo.push([peerPort, channelId]);
+                for (const d of discoveryInfo) {
                     ws.send(JSON.stringify(d));
                 }
                 //broadcast to all other connections
@@ -40,7 +40,7 @@ export class LocalDiscoveryServer {
 
     public static connectToPeers(p2pManager: P2PManager, channelId?: string) {
         const myPort = Math.floor(Math.random() * 1000) + 2000;
-        // console.log("RANOM PORT ######", myPort);
+        // console.log("RANDOM PORT ######", myPort);
         // console.log(new Error().stack);
         const myServer = new WebSocketServer({ port: myPort });
         const duplicateSet = new Set<number>();

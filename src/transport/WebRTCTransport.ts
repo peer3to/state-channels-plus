@@ -20,7 +20,7 @@ class WebRTCTransport extends ATransport {
         };
         this.webRTCChannel.onclose = () => {
             console.log("WebRTC Channel Closed");
-            this.p2pManager.removeConnection(this);
+            this.p2pManager.disconnectConnection(this);
         };
     }
     send(serializedRPC: string): void {

@@ -26,7 +26,7 @@ class LocalTransport extends ATransport {
         if (this.ws && this.ws.readyState === this.ws.OPEN) {
             this.ws.close();
         }
-        this.p2pManager.removeConnection(this);
+        this.p2pManager.disconnectConnection(this);
     }
 }
 export default LocalTransport;

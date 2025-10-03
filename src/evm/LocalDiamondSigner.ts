@@ -1,7 +1,7 @@
 import { ethers, Signer, TransactionResponse, hexlify } from "ethers";
 import { ContractExecuter } from "@/evm";
 import { Bytes } from "@/types/types";
-
+import { Address } from "@ethereumjs/util";
 class LocalDiamondSigner implements Signer {
     signer: Signer;
     provider: ethers.Provider | null;
@@ -42,9 +42,14 @@ class LocalDiamondSigner implements Signer {
     }
 
     async call(tx: ethers.TransactionRequest): Promise<string> {
+        const caller = tx.from
+            ? Address.fromString(tx.from.toString())
+            : undefined;
         try {
             const result = await this.diamondExecuter.executeCall(
-                tx.data as Bytes
+                tx.data as Bytes,
+                caller,
+                true
             );
             return hexlify(result.returnValue);
         } catch (error) {
@@ -64,7 +69,10 @@ class LocalDiamondSigner implements Signer {
         tx: ethers.TransactionRequest
     ): Promise<TransactionResponse> {
         try {
-            await this.diamondExecuter.executeCall(tx.data as Bytes);
+            const caller = tx.from
+                ? Address.fromString(tx.from.toString())
+                : undefined;
+            await this.diamondExecuter.executeCall(tx.data as Bytes, caller);
 
             // Return a simple mock TransactionResponse since LocalDiamond doesn't return one
             const mockResponse = {

@@ -11,7 +11,7 @@ export type Signature = SignatureLike;
 export type Bytes = BytesLike;
 export type Amount = BigNumberish;
 
-// composiite types
+// composite types
 
 export type BlockOrSnapshot = {
     block?: Block;

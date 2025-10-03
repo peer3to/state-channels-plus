@@ -35,3 +35,9 @@ export enum AgreementFlag {
     DOUBLE_SIGN,
     NOT_READY
 }
+
+// TODO - think do we need more statuses
+export enum Status {
+    SPECTATING,
+    PARTICIPATING
+}

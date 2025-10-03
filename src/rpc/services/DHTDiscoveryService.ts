@@ -7,16 +7,17 @@ class DHTDiscoveryService extends ARpcService {
     }
 
     public async onCanJoinLeaderRequest() {
-        //TODO! reuqire init handshake
-        let amILeader = this.mainRpcService.p2pManager.p2pSigner.getIsLeader();
+        //TODO! require init handshake
+        const amILeader =
+            this.mainRpcService.p2pManager.p2pSigner.getIsLeader();
         if (!amILeader) {
             //TODO! - disconnect
             return;
         }
         //TODO! analyze
-        let channelId =
+        const channelId =
             this.mainRpcService.p2pManager.stateManager.getChannelId();
-        let participants =
+        const participants =
             await this.mainRpcService.p2pManager.stateManager.getParticipantsCurrent(); //TODO! open connections that are not in the participants list
     }
 
@@ -24,7 +25,7 @@ class DHTDiscoveryService extends ARpcService {
         channelId: ChannelId,
         participants: Address[]
     ) {
-        // //TODO! reuqire init handshake
+        // //TODO! require init handshake
         // let amILeader = this.p2pManager.p2pSigner.getIsLeader();
         // if (!amILeader) {
         //     //TODO! - disconnect
