@@ -315,7 +315,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         );
     }
 
-    function _delegateCall(address target, bytes memory data) internal returns (bytes memory) {
+    function _delegatecall(address target, bytes memory data) internal returns (bytes memory) {
         (bool success, bytes memory result) = target.delegatecall(data);
         if (!success) {
             if (result.length == 0) {

@@ -61,11 +61,13 @@ function _getMilestoneBlocks(StateProof memory stateProof) pure returns (Block[]
 
 //not used anywhere right now
 function _isEvidencePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime) view returns (bool) {
-    return block.timestamp >= disputeWindow.evidence.creationTimestamp + evidenceTime;
+    return block.timestamp >= disputeWindow.evidence.creationTimestamp + evidenceTime
+        && _isDisputeWidnowCreated(disputeWindow);
 }
 
 function _isKillPeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime) view returns (bool) {
-    return block.timestamp >= disputeWindow.evidence.lastEvidenceSubmissionTimestamp + evidenceTime;
+    return block.timestamp >= disputeWindow.evidence.lastEvidenceSubmissionTimestamp + evidenceTime
+        && _isDisputeWidnowCreated(disputeWindow);
 }
 
 function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime)
@@ -73,7 +75,11 @@ function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow, ui
     returns (bool)
 {
     return block.timestamp >= disputeWindow.reducedResult.timestamp + evidenceTime
-        && disputeWindow.reducedResult.timestamp != 0;
+        && disputeWindow.reducedResult.timestamp != 0 && _isDisputeWidnowCreated(disputeWindow);
+}
+
+function _isDisputeWidnowCreated(DisputeWindow storage disputeWindow) view returns (bool) {
+    return disputeWindow.evidence.creationTimestamp != 0;
 }
 
 function areDisputesCommitted(DisputeWindow storage disputeWindow, Dispute[] memory disputes) view returns (bool) {

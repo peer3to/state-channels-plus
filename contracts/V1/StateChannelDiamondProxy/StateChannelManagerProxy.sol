@@ -108,7 +108,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     }
 
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public override {
-        _delegateCall(
+        _delegatecall(
             disputeManagerFacetAddress, abi.encodeCall(DisputeManagerFacet.uploadDispute, (disputeConfirmation))
         );
     }
@@ -118,7 +118,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         override
         returns (address[] memory slashParticipants)
     {
-        //This is done manually since the logic is different from other _delegateCalls
+        //This is done manually since the logic is different from other _delegatecalls
 
         // Encode the function selector and arguments
         bytes memory data = abi.encodeCall(DisputeVerificationFacet.auditDispute, (dispute, disputeAuditingData));
@@ -137,21 +137,36 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         DisputeConfirmation memory disputeConfirmation,
         DisputeAuditingData memory disputeAuditingData
     ) public override {
-        _delegateCall(
+        _delegatecall(
             disputeManagerFacetAddress,
             abi.encodeCall(DisputeManagerFacet.uploadDisputeWithCalldata, (disputeConfirmation, disputeAuditingData))
         );
     }
 
     function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public override {
-        _delegateCall(
+        _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(DisputeVerificationFacet.challengeDispute, (dispute, disputeAuditingData))
         );
     }
 
+    function challengeDisputeReduction(
+        Dispute[] memory disputes,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory encodedStateMachineState,
+        JoinChannelBlock[] memory joinChannelBlocks
+    ) public override {
+        _delegatecall(
+            disputeVerificationFacetAddress,
+            abi.encodeCall(
+                DisputeVerificationFacet.challengeDisputeReduction,
+                (disputes, latestStateSnapshot, encodedStateMachineState, joinChannelBlocks)
+            )
+        );
+    }
+
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public override {
-        _delegateCall(
+        _delegatecall(
             disputeVerificationFacetAddress, abi.encodeCall(DisputeVerificationFacet.applyDisputeFraudProofs, (proofs))
         );
     }
@@ -161,7 +176,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         StateSnapshot memory newStateSnapshot,
         ExitChannelBlock[] memory exitChannelBlocks
     ) public override {
-        _delegateCall(
+        _delegatecall(
             stateSnapshotFacetAddress,
             abi.encodeCall(StateSnapshotFacet.updateStateSnapshotFork, (channelId, newStateSnapshot, exitChannelBlocks))
         );
@@ -173,7 +188,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         StateSnapshot[] memory milestoneSnapshots,
         ExitChannelBlock[] memory exitChannelBlocks
     ) public override {
-        _delegateCall(
+        _delegatecall(
             stateSnapshotFacetAddress,
             abi.encodeCall(
                 StateSnapshotFacet.updateStateSnapshotSameFork,
@@ -183,7 +198,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     }
 
     function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations) public override {
-        _delegateCall(joinChannelFacetAddress, abi.encodeCall(JoinChannelFacet.joinChannel, (joinChannelConfirmations)));
+        _delegatecall(joinChannelFacetAddress, abi.encodeCall(JoinChannelFacet.joinChannel, (joinChannelConfirmations)));
     }
 
     // ********** public/external DIAMOND functions **********
@@ -230,7 +245,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         FraudProof[] memory fraudProofs,
         FraudProofVerificationContext memory fraudProofVerificationContext //TODO - think is it safe to expose this - currently I don't see any issue
     ) public {
-        _delegateCall(
+        _delegatecall(
             fraudProofFacetAddress,
             abi.encodeCall(FraudProofFacet.applyFraudProofs, (fraudProofs, fraudProofVerificationContext))
         );
@@ -240,7 +255,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         public
         returns (bytes memory maliciousDisputesEncoded)
     {
-        bytes memory result = _delegateCall(
+        bytes memory result = _delegatecall(
             disputeFraudProofFacetAddress,
             abi.encodeCall(DisputeFraudProofFacet.verifyDisputeFraudProofs, (disputeFraudProofs))
         );
@@ -375,20 +390,31 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return (reducedResult.forkId, reducedResult.timestamp, reducedResult.reducer);
     }
 
-    function reduceProxyView(Dispute[] memory disputes) external view returns (ReduceOutput memory reducedOutput) {
-        // This should trick the compiler, but still use delegatecall under the hood. This doesn't magically allow us to mutate the state in view functions that use delegate call.
-        // Ethers and other tools won't issue a transaction, but a call that runs on a single node so even if it did modify the state it wouldn't be reflected on-chain/persisted.
-        return DisputeVerificationFacet(address(this)).reduce(disputes);
-    }
-
     function reduce(Dispute[] memory disputes) public override returns (ReduceOutput memory reducedOutput) {
         bytes memory result =
-            _delegateCall(disputeVerificationFacetAddress, abi.encodeCall(DisputeVerificationFacet.reduce, (disputes)));
+            _delegatecall(disputeVerificationFacetAddress, abi.encodeCall(DisputeVerificationFacet.reduce, (disputes)));
         return abi.decode(result, (ReduceOutput));
     }
 
+    function reduceOutputToSnapshotData(
+        bytes32 forkId,
+        ReduceOutput memory reducedOutput,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory encodedStateMachineState,
+        JoinChannelBlock[] memory joinChannelBlocks
+    ) public override returns (SnapshotData memory) {
+        bytes memory result = _delegatecall(
+            disputeVerificationFacetAddress,
+            abi.encodeCall(
+                DisputeVerificationFacet.reduceOutputToSnapshotData,
+                (forkId, reducedOutput, latestStateSnapshot, encodedStateMachineState, joinChannelBlocks)
+            )
+        );
+        return abi.decode(result, (SnapshotData));
+    }
+
     function commitToReducedResult(bytes32 channelId, bytes32 disputedForkId, bytes32 reducedForkId) public {
-        _delegateCall(
+        _delegatecall(
             disputeManagerFacetAddress,
             abi.encodeCall(DisputeManagerFacet.commitToReducedResult, (channelId, disputedForkId, reducedForkId))
         );
@@ -400,7 +426,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         bytes memory encodedStateMachineState,
         JoinChannelBlock[] memory joinChannelBlocks
     ) public override {
-        _delegateCall(
+        _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(
                 DisputeVerificationFacet.reduceAndFinalize,

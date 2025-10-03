@@ -108,7 +108,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // Requires correct auditing data
         require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
 
-        bytes memory result = _delegateCall(
+        bytes memory result = _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(DisputeVerificationFacet.isDisputeOutputCorrect, (dispute, proof.auditingData))
         );
@@ -124,7 +124,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified memory proof =
             abi.decode(encodedFraudProof, (DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified));
 
-        bytes memory result = _delegateCall(
+        bytes memory result = _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(DisputeVerificationFacet.verifyStateProof, (dispute, proof.auditingData, false))
         );
@@ -142,7 +142,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // Requires correct auditing data
         require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
 
-        bytes memory result = _delegateCall(
+        bytes memory result = _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(DisputeVerificationFacet.verifyStateProof, (dispute, proof.auditingData, true))
         );
@@ -161,7 +161,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // Expect commitment to be invalid/junk
         if (_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return address(0); // the calling context may decide to slash the caller
 
-        bytes memory result = _delegateCall(
+        bytes memory result = _delegatecall(
             disputeVerificationFacetAddress,
             // Will recheck everything, but we're mostly interested in exitBlocks
             abi.encodeCall(DisputeVerificationFacet.isCorrectAuditingData, (dispute, proof.auditingData))
@@ -169,7 +169,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         bool isValid = abi.decode(result, (bool));
         if (!isValid) return address(0); // the calling context may decide to slash the caller
 
-        result = _delegateCall(
+        result = _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(DisputeVerificationFacet.verifyStateProof, (dispute, proof.auditingData, false))
         );
@@ -189,7 +189,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // Requires correct auditing data
         require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
 
-        bytes memory result = _delegateCall(
+        bytes memory result = _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(DisputeVerificationFacet.isCorrectAuditingData, (dispute, proof.auditingData))
         );
@@ -210,7 +210,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         bytes32 channelId = dispute.input.channelId;
         SnapshotData memory latestSnapshotData = proof.auditingData.latestStateSnapshot.snapshotData;
 
-        bytes memory result = _delegateCall(
+        bytes memory result = _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(
                 DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot,
@@ -412,7 +412,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         internal
         returns (bool)
     {
-        bytes memory result = _delegateCall(
+        bytes memory result = _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(DisputeVerificationFacet.checkDisputeAuditingDataCommitment, (dispute, disputeAuditingData))
         );

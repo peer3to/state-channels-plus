@@ -61,6 +61,13 @@ abstract contract StateChannelManagerInterface {
 
     function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public virtual;
 
+    function challengeDisputeReduction(
+        Dispute[] memory disputes,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory encodedStateMachineState,
+        JoinChannelBlock[] memory joinChannelBlocks
+    ) public virtual;
+
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public virtual;
 
     function updateStateSnapshotFork(
@@ -83,6 +90,14 @@ abstract contract StateChannelManagerInterface {
     function multicall(bytes[] calldata calls) external virtual returns (bytes[] memory results);
 
     function reduce(Dispute[] memory disputes) public virtual returns (ReduceOutput memory);
+
+    function reduceOutputToSnapshotData(
+        bytes32 forkId,
+        ReduceOutput memory reducedOutput,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory encodedStateMachineState,
+        JoinChannelBlock[] memory joinChannelBlocks
+    ) public virtual returns (SnapshotData memory);
 
     function reduceAndFinalize(
         Dispute[] memory disputes,

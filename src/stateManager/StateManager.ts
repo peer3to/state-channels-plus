@@ -860,7 +860,7 @@ class StateManager {
 
                 // Use proxy view to compute reduced output cheaply (no tx)
                 const reducedOutput =
-                    await this.stateChannelManagerContract.reduceProxyView(
+                    await this.stateChannelManagerContract.reduce.staticCall(
                         disputes
                     );
 

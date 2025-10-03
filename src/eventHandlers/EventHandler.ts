@@ -10,9 +10,17 @@ import {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
-import { ChannelId, Timestamp, Address, Hash, ForkId } from "@/types/types";
+import {
+    ChannelId,
+    Timestamp,
+    Address,
+    Hash,
+    ForkId,
+    Bytes
+} from "@/types/types";
 import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
+import { Codec, hash, Type } from "@/utils";
 import { isEqual } from "lodash";
 
 export class EventHandler {
@@ -143,12 +151,12 @@ export class EventHandler {
 
         // Compare reduced disputes to see if we have more evidence
         const ourReducedDispute =
-            await this.diamondStateMachine.localDiamondContract.reduceProxyView(
+            await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
                 [dispute]
             );
 
         const combinedReducedDispute =
-            await this.diamondStateMachine.localDiamondContract.reduceProxyView(
+            await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
                 [ourDispute, dispute]
             );
 
@@ -189,20 +197,65 @@ export class EventHandler {
         }
     }
 
-    onDisputeReducedResultCommitted(
+    async onDisputeReducedResultCommitted(
         channelId: ChannelId,
         forkId: ForkId,
         reducedForkId: ForkId,
         reductionTimestamp: Timestamp,
         reducer: Address
-    ): void {
-        throw new Error("TODO - Not implemented");
+    ): Promise<void> {
+        // sync LocalDiamond state
         this.diamondStateMachine.localDiamondContract.onDisputeReducedResultCommitted(
             channelId,
             forkId,
             reducedForkId,
             reductionTimestamp,
             reducer
+        );
+
+        // if it's not part of the fork choice rule, ignore it - it's spam
+        const isRelevant = this.stateManager.forkId === forkId;
+        if (!isRelevant) {
+            return;
+        }
+
+        // isFinal?
+        if (
+            await this.diamondStateMachine.localDiamondContract.isReduceChallengePeriodExpired(
+                channelId,
+                forkId
+            )
+        ) {
+            // If final, set fork and start building on it
+            await this.setForkIfLatestAndCurrent(
+                forkId,
+                reducedForkId,
+                reductionTimestamp
+            );
+            return;
+        }
+
+        // Not final - validate the reduction
+        const isValid = await this.validateDisputeReductionAndChallenge(
+            channelId,
+            forkId,
+            reducedForkId
+        );
+
+        if (!isValid) {
+            // Already challenged -> just discconect
+            // Disconnect the reducer who performed the incorrect reduction
+            this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                reducer
+            );
+            return;
+        }
+
+        // Reduction is valid and correct - set fork and start building on it
+        await this.setForkIfLatestAndCurrent(
+            forkId,
+            reducedForkId,
+            reductionTimestamp
         );
     }
 
@@ -338,5 +391,120 @@ export class EventHandler {
                 );
         }
         return false;
+    }
+
+    private async validateDisputeReductionAndChallenge(
+        channelId: ChannelId,
+        forkId: ForkId,
+        reducedForkId: ForkId
+    ): Promise<boolean> {
+        // TODO - extract this function since it's used in multiple places (e.g spectating RPC...)
+        const disputeWindow = (
+            await this.diamondStateMachine.localDiamondContract.getDisputeWindows(
+                channelId,
+                [forkId]
+            )
+        )[0];
+        const dispteuConfirmations: DisputeConfirmationStruct[] = [];
+        for (const commitment of disputeWindow.evidence.disputeCommitments) {
+            const dc = this.storage.disputes.getDisputeConfirmation(commitment);
+            if (!dc) {
+                //TODO - querry longs
+                throw new Error(
+                    `Dispute not available for commitment: ${commitment}`
+                );
+            }
+            dispteuConfirmations.push(dc);
+        }
+
+        const disputes = dispteuConfirmations.map((dc) =>
+            Codec.decode(dc.signedDispute.encodedDispute, Type.Dispute)
+        );
+
+        const reduceOutput =
+            await this.stateManager.stateChannelManagerContract.reduce.staticCall(
+                disputes
+            );
+        const latestSnapshot =
+            this.storage.stateSnapshots.getStateSnapshotByHash(
+                reduceOutput.latestBlock.stateSnapshotHash
+            );
+        if (!latestSnapshot)
+            throw new Error(
+                `Snapshot not available for hash: ${reduceOutput.latestBlock.stateSnapshotHash}`
+            );
+        const state = this.storage.stateMachineStates.getStateMachineState(
+            latestSnapshot.stateMachineStateHash
+        );
+        if (!state)
+            throw new Error(
+                `StateMachineState not available for hash: ${latestSnapshot.stateMachineStateHash}`
+            );
+        const genesisSnapshot =
+            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
+        if (!genesisSnapshot)
+            throw new Error(
+                `GenesisSnapshot not available for forkId: ${forkId}`
+            );
+        const jcbs = this.storage.joinChannelBlocks.getBlocksInRange(
+            genesisSnapshot.latestJoinBlockHash,
+            latestSnapshot.latestJoinBlockHash
+        );
+        const snapshotData =
+            await this.stateManager.stateChannelManagerContract.reduceOutputToSnapshotData.staticCall(
+                forkId,
+                reduceOutput,
+                latestSnapshot,
+                state,
+                jcbs
+            );
+
+        const isValid =
+            hash(Codec.encode(snapshotData, Type.SnapshotData)) ==
+            reducedForkId;
+        if (!isValid) {
+            // while we have the context, use it, instead of returning false and having to generate it again
+            await this.stateManager.stateChannelManagerContract.challengeDisputeReduction(
+                disputes,
+                latestSnapshot,
+                state,
+                jcbs
+            );
+            return false;
+        }
+        return true;
+    }
+
+    private async setForkIfLatestAndCurrent(
+        forkId: ForkId,
+        reducedForkId: ForkId,
+        reductionTimestamp: Timestamp
+    ): Promise<void> {
+        // enough for now - this will change later
+        if (this.stateManager.forkId == forkId) {
+            // Get the latest state snapshot - it should be reduced locally if not we'll reduce it on the spot
+            const latestStateSnapshot =
+                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                    reducedForkId
+                );
+            if (!latestStateSnapshot) {
+                // TODO reduce localy
+            }
+            const genesisStateMachineState =
+                this.storage.stateMachineStates.getStateMachineState(
+                    latestStateSnapshot!.stateMachineStateHash
+                );
+
+            if (!genesisStateMachineState) {
+                // we need to compute it - should have computed it above while reducing
+                // TODO - solidity code that returns the encodedState
+            }
+            // Set fork and start building on it
+            await this.stateManager.setState(
+                genesisStateMachineState!,
+                reducedForkId,
+                reductionTimestamp
+            );
+        }
     }
 }
