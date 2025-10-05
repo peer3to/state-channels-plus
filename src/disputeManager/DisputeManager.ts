@@ -26,8 +26,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
-
-const DEBUG_DISPUTE_HANDLER = true;
+import { DEBUG_DISPUTE_HANDLER } from "@/utils/config";
 
 type TimeoutOptions = {
     // This is enough and the rest is deducted from storage/state

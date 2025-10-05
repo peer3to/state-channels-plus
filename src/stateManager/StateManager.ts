@@ -70,8 +70,7 @@ import DisputeValidationService from "./DisputeValidationService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
 import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
 import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidationStrategy";
-
-const DEBUG_STATE_MANAGER = false;
+import { DEBUG_STATE_MANAGER } from "@/utils/config";
 
 const NULL = "0x00";
 class StateManager {
