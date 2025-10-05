@@ -7,7 +7,7 @@ import { LocalDiscoveryServer } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import { AStateMachine, StateChannelManagerProxy } from "@typechain-types";
 import { StateSnapshot } from "@/models";
-import { ForkId, Address, ChannelId, Bytes, Signature } from "@/types/types";
+import { ForkId, Address, ChannelId } from "@/types/types";
 import { TimeConfig } from "@/types/time";
 import {
     deployMathChannelProxyFixture,
@@ -85,13 +85,10 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
 
         this.ethers = ethersInstance;
-
-        // Use test config as base, then apply any overrides
         this.harnessConfig = createConfig({
             ...testConfig,
             ...(options.configOverrides || {})
         });
-
         this.options = {
             timeConfig: options.timeConfig || {},
             channelId: options.channelId || "test-channel-" + Date.now(),
@@ -102,9 +99,6 @@ export class PeerTestHarness<T extends AStateMachine> {
             configOverrides: options.configOverrides || {}
         };
 
-        this.log("Setting up test harness with", numPeers, "peers");
-        this.log("Using config:", this.harnessConfig);
-
         await this.deployContracts();
         this.channelId = this.options.channelId;
 
@@ -112,15 +106,11 @@ export class PeerTestHarness<T extends AStateMachine> {
         for (let i = 0; i < numPeers; i++) {
             await this.createPeer(i, signers[i]);
         }
-
-        this.log("Setup complete. Peers ready:", this.peers.length);
     }
 
     private async deployContracts(): Promise<void> {
-        this.log("Deploying contracts...");
         const deployment = await deployMathChannelProxyFixture(this.ethers);
         this.channelManager = deployment.mathChannelManager;
-
         const mathSMFactory =
             await this.ethers.getContractFactory("MathStateMachine");
         this.sharedDeployTx = await mathSMFactory.getDeployTransaction(
@@ -130,8 +120,6 @@ export class PeerTestHarness<T extends AStateMachine> {
 
     private async createPeer(index: number, signer: Signer): Promise<void> {
         const address = await signer.getAddress();
-        this.log(`Creating peer ${index} (${address})...`);
-
         const eventSpies: EventSpies = {
             onConnection: sinon.spy(),
             onTurn: sinon.spy(),
@@ -144,44 +132,21 @@ export class PeerTestHarness<T extends AStateMachine> {
         };
 
         const hooks: P2pEventHooks = {
-            onConnection: (addr: Address) => {
-                this.log(`[Peer ${index}] onConnection: ${addr}`);
-                eventSpies.onConnection?.(addr);
-            },
-            onTurn: (addr: Address) => {
-                this.log(`[Peer ${index}] onTurn: ${addr}`);
-                eventSpies.onTurn?.(addr);
-            },
-            onSetState: () => {
-                this.log(`[Peer ${index}] onSetState`);
-                eventSpies.onSetState?.();
-            },
-            onPostingCalldata: () => {
-                this.log(`[Peer ${index}] onPostingCalldata`);
-                eventSpies.onPostingCalldata?.();
-            },
-            onPostedCalldata: () => {
-                this.log(`[Peer ${index}] onPostedCalldata`);
-                eventSpies.onPostedCalldata?.();
-            },
-            onInitiatingDispute: () => {
-                this.log(`[Peer ${index}] onInitiatingDispute`);
-                eventSpies.onInitiatingDispute?.();
-            },
-            onDisputeUpdate: (dispute: any) => {
-                this.log(`[Peer ${index}] onDisputeUpdate`);
-                eventSpies.onDisputeUpdate?.(dispute);
-            },
-            onJoinChannel: (joinChannelBlock: any) => {
-                this.log(`[Peer ${index}] onJoinChannel`);
-                eventSpies.onJoinChannel?.(joinChannelBlock);
-            }
+            onConnection: (addr: Address) => eventSpies.onConnection?.(addr),
+            onTurn: (addr: Address) => eventSpies.onTurn?.(addr),
+            onSetState: () => eventSpies.onSetState?.(),
+            onPostingCalldata: () => eventSpies.onPostingCalldata?.(),
+            onPostedCalldata: () => eventSpies.onPostedCalldata?.(),
+            onInitiatingDispute: () => eventSpies.onInitiatingDispute?.(),
+            onDisputeUpdate: (dispute: any) =>
+                eventSpies.onDisputeUpdate?.(dispute),
+            onJoinChannel: (joinChannelBlock: any) =>
+                eventSpies.onJoinChannel?.(joinChannelBlock)
         };
 
         const mathSMFactory =
             await this.ethers.getContractFactory("MathStateMachine");
         const mathInstance = await mathSMFactory.deploy(this.options.gasLimit);
-
         const p2pInstance = await EvmStateMachine.p2pSetup<any>(
             signer,
             this.sharedDeployTx,
@@ -190,7 +155,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             hooks
         );
 
-        const peer: TestPeer<T> = {
+        this.peers.push({
             index,
             signer,
             address,
@@ -198,27 +163,19 @@ export class PeerTestHarness<T extends AStateMachine> {
             stateManager: p2pInstance.p2pSigner.p2pManager.stateManager,
             contractInstance: p2pInstance.p2pContractInstance,
             eventSpies
-        };
-
-        this.peers.push(peer);
-        this.log(`Peer ${index} created successfully`);
+        });
     }
 
     async openChannel(): Promise<void> {
-        this.log("Opening channel with", this.peers.length, "peers...");
-
         await Clock.init(this.peers[0].signer.provider!);
 
-        const signedCommitments: { encoded: Bytes; signature: Signature }[] =
-            [];
-
+        const signedCommitments = [];
         for (const peer of this.peers) {
             const jc = createJoinChannelTestObject(
                 peer.address,
                 this.options.channelId
             );
             peer.joinChannelCommitment = jc;
-
             const signed = await SignatureUtils.signJoinChannel(
                 jc,
                 peer.signer
@@ -226,67 +183,55 @@ export class PeerTestHarness<T extends AStateMachine> {
             signedCommitments.push(signed);
         }
 
-        const allSignatures = signedCommitments.map((s) => s.signature);
-
-        this.log(
-            "Connecting peers to channel for P2P discovery and event setup..."
-        );
         for (const peer of this.peers) {
-            const channelId = peer.joinChannelCommitment!.channelId;
-            peer.p2pInstance.p2pSigner.connectToChannel(channelId);
-            this.log(`[Peer ${peer.index}] Connected to channel: ${channelId}`);
+            peer.p2pInstance.p2pSigner.connectToChannel(
+                peer.joinChannelCommitment!.channelId
+            );
         }
-
-        await sleep(1000);
 
         if (this.options.autoConnect) {
             await this.connectPeers();
         }
 
-        const hashedChannelId = this.peers[0].joinChannelCommitment!.channelId;
-        this.log("Submitting openChannel transaction...");
-        this.log(`Using hashed channel ID: ${hashedChannelId}`);
         const tx = await this.channelManager.openChannel(
-            hashedChannelId as BytesLike,
+            this.peers[0].joinChannelCommitment!.channelId as BytesLike,
             signedCommitments.map((s) => s.encoded) as BytesLike[],
-            allSignatures as BytesLike[]
+            signedCommitments.map((s) => s.signature) as BytesLike[]
         );
 
-        this.log(`Channel opened. Tx hash: ${tx.hash}`);
         await tx.wait();
-        await this.waitForEventProcessing();
-
-        this.log("Channel opened successfully");
     }
 
     async connectPeers(): Promise<void> {
         if (!this.discoveryServerStarted) {
-            this.log("Starting local discovery server...");
             LocalDiscoveryServer.tryStart();
             this.discoveryServerStarted = true;
         }
-
-        this.log("Connecting peers via local transport...");
-        for (const peer of this.peers) {
-            const hashedChannelId = peer.joinChannelCommitment!.channelId;
-            peer.p2pInstance.p2pSigner.connectToChannel(hashedChannelId);
-            await sleep(100);
-        }
-
-        await sleep(500);
-        this.log("All peers connected");
+        await this.waitForP2PConnections();
     }
 
-    /**
-     * Setup the genesis state for all peers
-     * This is a workaround until proper genesis state handling is implemented
-     */
-    async setupGenesisState(customState?: any): Promise<ForkId> {
-        this.log("Setting up genesis state...");
+    async waitForP2PConnections(timeoutMs: number = 2000): Promise<void> {
+        const startTime = Date.now();
+        while (Date.now() - startTime < timeoutMs) {
+            const connected = this.peers.filter(
+                (p) =>
+                    p.p2pInstance.p2pSigner.p2pManager.openConnections.length >
+                    0
+            ).length;
 
+            if (connected >= Math.min(2, this.peers.length)) {
+                return;
+            }
+            await sleep(50);
+        }
+        throw new Error(
+            `P2P connections not established within ${timeoutMs}ms`
+        );
+    }
+
+    async setupGenesisState(customState?: any): Promise<ForkId> {
         const participants = this.peers.map((p) => p.address);
         const balances = this.peers.map(() => this.options.initialBalance);
-
         const genesisState = customState || {
             number: 0,
             participants,
@@ -302,13 +247,11 @@ export class PeerTestHarness<T extends AStateMachine> {
             ]
         );
 
-        const stateMachineStateHash = hashUtil(genesisStateEncoded);
         const timestamp = Clock.getTimeInSeconds();
-
         const genesisSnapshotData = {
             originForkId:
                 "0x0000000000000000000000000000000000000000000000000000000000000000",
-            stateMachineStateHash: stateMachineStateHash,
+            stateMachineStateHash: hashUtil(genesisStateEncoded),
             participants,
             latestJoinChannelBlockHash:
                 "0x0000000000000000000000000000000000000000000000000000000000000000",
@@ -321,16 +264,13 @@ export class PeerTestHarness<T extends AStateMachine> {
             totalWithdrawals: { amount: 0, data: "0x00" }
         };
 
-        const snapshotDataEncoded = Codec.encode(
-            genesisSnapshotData,
-            Type.SnapshotData
+        const forkId = hashUtil(
+            Codec.encode(genesisSnapshotData, Type.SnapshotData)
         );
-        const forkId = hashUtil(snapshotDataEncoded);
-
         const genesisSnapshot = {
-            forkId: forkId,
+            forkId,
             blockHeight: BigInt(0),
-            timestamp: timestamp,
+            timestamp,
             snapshotData: genesisSnapshotData
         };
 
@@ -340,16 +280,12 @@ export class PeerTestHarness<T extends AStateMachine> {
                 forkId,
                 timestamp
             );
-
-            const stateSnapshot = StateSnapshot.from(genesisSnapshot);
             peer.stateManager.storage.stateSnapshots.storeStateSnapshot(
-                stateSnapshot
+                StateSnapshot.from(genesisSnapshot)
             );
         }
 
         this.activeForkId = forkId;
-        this.log("Genesis state setup complete. Fork ID:", forkId);
-
         return forkId;
     }
 
@@ -358,45 +294,64 @@ export class PeerTestHarness<T extends AStateMachine> {
         txFn: (contract: T) => Promise<any>
     ): Promise<void> {
         const peer = this.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
+        if (!peer) throw new Error(`Peer ${peerIndex} not found`);
 
-        this.log(`[Peer ${peerIndex}] Submitting transaction...`);
+        const result = await txFn(peer.p2pInstance.p2pContractInstance);
 
-        try {
-            const result = await txFn(peer.contractInstance);
-            this.log(
-                `[Peer ${peerIndex}] Transaction submitted via direct contract call`
-            );
-            return result;
-        } catch (error) {
-            this.log(
-                `[Peer ${peerIndex}] Error submitting transaction: ${error instanceof Error ? error.message : String(error)}`
-            );
-            throw error;
-        }
+        // Automatic state synchronization - wait for all peers to sync
+        await this.waitForSync();
+
+        return result;
     }
 
-    async waitForSync(timeout: number = 3000): Promise<void> {
-        this.log("Waiting for peers to sync...");
-        await sleep(timeout);
-        this.log("Sync wait complete");
+    async waitForSync(timeout: number = 1500): Promise<void> {
+        if (this.peers.length < 2) return;
+
+        const startTime = Date.now();
+        while (Date.now() - startTime < timeout) {
+            const forkId =
+                this.activeForkId || this.peers[0].stateManager.forkId;
+            const firstBlock =
+                this.peers[0].stateManager.storage.blocks.getLatestBlock(
+                    forkId
+                );
+
+            if (!firstBlock) {
+                await sleep(50);
+                continue;
+            }
+
+            // Check if all peers have the same block hash
+            let allSynced = true;
+            for (let i = 1; i < this.peers.length; i++) {
+                const peerBlock =
+                    this.peers[i].stateManager.storage.blocks.getLatestBlock(
+                        forkId
+                    );
+                if (!peerBlock || peerBlock.hash !== firstBlock.hash) {
+                    allSynced = false;
+                    break;
+                }
+            }
+
+            if (allSynced) return;
+            await sleep(50);
+        }
+
+        throw new Error(
+            `All ${this.peers.length} peers failed to synchronize within ${timeout}ms`
+        );
     }
 
-    async waitForEventProcessing(timeout: number = 1000): Promise<void> {
+    async waitForEventProcessing(timeout: number = 100): Promise<void> {
         await sleep(timeout);
     }
 
     async cleanup(): Promise<void> {
-        this.log("Cleaning up test harness...");
-
         for (const peer of this.peers) {
             try {
                 peer.contractInstance.removeAllListeners();
                 await peer.stateManager.dispose();
-
-                // Reset all spies
                 Object.values(peer.eventSpies).forEach((spy) =>
                     spy?.resetHistory()
                 );
@@ -404,18 +359,12 @@ export class PeerTestHarness<T extends AStateMachine> {
                 console.error(`Error cleaning up peer ${peer.index}:`, error);
             }
         }
-
         this.peers = [];
-        this.log("Cleanup complete");
     }
 
-    // ASSERTION HELPERS
     assertAllPeersInSync(expectedState?: any): void {
-        if (this.peers.length < 2) {
+        if (this.peers.length < 2)
             throw new Error("Need at least 2 peers to check sync");
-        }
-
-        this.log("Asserting all peers in sync...");
 
         const forkId = this.activeForkId || this.getActiveForkId();
         const firstPeerState = this.getStateMachineState(0, forkId);
@@ -434,43 +383,31 @@ export class PeerTestHarness<T extends AStateMachine> {
                 "Peer states do not match expected state"
             );
         }
-
-        this.log("All peers are in sync ✓");
     }
 
-    // EVENT SPY HELPERS
     assertEventCalled(
         peerIndex: number,
         eventName: keyof EventSpies,
         minTimes: number = 1
     ): void {
         const peer = this.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
+        if (!peer) throw new Error(`Peer ${peerIndex} not found`);
 
         const spy = peer.eventSpies[eventName];
-        if (!spy) {
+        if (!spy)
             throw new Error(
                 `Event ${eventName} spy not found for peer ${peerIndex}`
             );
-        }
 
         expect(spy.callCount).to.be.at.least(
             minTimes,
             `Event ${eventName} should have been called at least ${minTimes} times for peer ${peerIndex}`
         );
-
-        this.log(
-            `Event ${eventName} was called ${spy.callCount} times for peer ${peerIndex} ✓`
-        );
     }
 
     getEventCallCount(peerIndex: number, eventName: keyof EventSpies): number {
         const peer = this.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
+        if (!peer) throw new Error(`Peer ${peerIndex} not found`);
         const spy = peer.eventSpies[eventName];
         return spy ? spy.callCount : 0;
     }
@@ -481,15 +418,13 @@ export class PeerTestHarness<T extends AStateMachine> {
         callIndex: number = 0
     ): any {
         const peer = this.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
+        if (!peer) throw new Error(`Peer ${peerIndex} not found`);
+
         const spy = peer.eventSpies[eventName];
-        if (!spy) {
+        if (!spy)
             throw new Error(
                 `Event ${eventName} spy not found for peer ${peerIndex}`
             );
-        }
         if (callIndex >= spy.callCount) {
             throw new Error(
                 `Event ${eventName} was only called ${spy.callCount} times, cannot get call ${callIndex}`
@@ -501,14 +436,11 @@ export class PeerTestHarness<T extends AStateMachine> {
     resetEventSpies(peerIndex?: number): void {
         if (peerIndex !== undefined) {
             const peer = this.peers[peerIndex];
-            if (!peer) {
-                throw new Error(`Peer ${peerIndex} not found`);
-            }
+            if (!peer) throw new Error(`Peer ${peerIndex} not found`);
             Object.values(peer.eventSpies).forEach((spy) =>
                 spy?.resetHistory()
             );
         } else {
-            // Reset all peers
             this.peers.forEach((peer) => {
                 Object.values(peer.eventSpies).forEach((spy) =>
                     spy?.resetHistory()
@@ -517,12 +449,9 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
     }
 
-    // UTILITY METHODS
     getPeer(index: number): TestPeer<T> {
         const peer = this.peers[index];
-        if (!peer) {
-            throw new Error(`Peer ${index} not found`);
-        }
+        if (!peer) throw new Error(`Peer ${index} not found`);
         return peer;
     }
 
@@ -536,9 +465,7 @@ export class PeerTestHarness<T extends AStateMachine> {
 
     getStateMachineState(peerIndex: number, forkId: ForkId): any {
         const peer = this.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
+        if (!peer) throw new Error(`Peer ${peerIndex} not found`);
 
         const latestBlock =
             peer.stateManager.storage.blocks.getLatestBlock(forkId);
@@ -550,18 +477,15 @@ export class PeerTestHarness<T extends AStateMachine> {
             return genesisSnapshot ? "genesis" : null;
         }
 
-        const stateSnapshotHash = latestBlock.stateSnapshotHash;
         const stateSnapshot =
             peer.stateManager.storage.stateSnapshots.getStateSnapshotByHash(
-                stateSnapshotHash
+                latestBlock.stateSnapshotHash
             );
         return stateSnapshot ? stateSnapshot.snapshotData : null;
     }
 
     getActiveForkId(): ForkId {
-        if (this.activeForkId) {
-            return this.activeForkId;
-        }
+        if (this.activeForkId) return this.activeForkId;
         throw new Error(
             "Active fork ID not set. Call setupGenesisState first."
         );
