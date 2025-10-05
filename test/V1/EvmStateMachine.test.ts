@@ -3,6 +3,7 @@ import { BigNumberish } from "ethers";
 import { EvmStateMachine } from "@/evm";
 import { Codec, Type } from "@/utils/Codec";
 import { StateSnapshot } from "@/models";
+import { expect } from "chai";
 
 import {
     createJoinChannelTestObject,
@@ -202,7 +203,49 @@ describe("EvmStateMachine", function () {
         //start the p2p state machine
         await mathContractFirstPlayer.add(3);
 
-        // sleep for 10 seconds
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        // sleep for 500ms to allow synchronization
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        const stateManager1 = p2pOne.p2pSigner.p2pManager.stateManager;
+        const stateManager2 = p2pTwo.p2pSigner.p2pManager.stateManager;
+
+        expect(stateManager1.channelId).to.equal(
+            stateManager2.channelId,
+            "Peers should have matching channel IDs"
+        );
+
+        expect(stateManager1.forkId).to.equal(
+            stateManager2.forkId,
+            "Peers should have matching fork IDs"
+        );
+
+        // Get latest blocks from both peers
+        const latestBlock1 =
+            stateManager1.storage.blocks.getLatestBlock(forkId);
+        const latestBlock2 =
+            stateManager2.storage.blocks.getLatestBlock(forkId);
+
+        expect(latestBlock1).to.not.equal(
+            undefined,
+            "Peer 1 should have a latest block"
+        );
+        expect(latestBlock2).to.not.equal(
+            undefined,
+            "Peer 2 should have a latest block"
+        );
+        expect(latestBlock1?.hash).to.equal(
+            latestBlock2?.hash,
+            "Peer 1 and 2 should have the same latest block hash"
+        );
+
+        // Get next heights to see if they processed transactions
+        const nextHeight1 =
+            stateManager1.storage.blocks.getNextBlockHeight(forkId);
+        const nextHeight2 =
+            stateManager2.storage.blocks.getNextBlockHeight(forkId);
+        expect(nextHeight1).to.equal(
+            nextHeight2,
+            "Peer 1 and 2 should have the same next block height"
+        );
     });
 });
