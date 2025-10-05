@@ -2,6 +2,8 @@ import P2PManager from "@/P2PManager";
 import ATransport from "./ATransport";
 import { Buffer } from "buffer";
 import { TransportType } from "./TransportType";
+import { globalRateLimiter } from "@/utils/RateLimiter";
+
 class WebRTCTransport extends ATransport {
     transportType = TransportType.WEBRTC;
     p2pManager: P2PManager;
@@ -23,8 +25,18 @@ class WebRTCTransport extends ATransport {
             this.p2pManager.disconnectConnection(this);
         };
     }
+
     send(serializedRPC: string): void {
         console.log("WebRTC - SendingRPC", serializedRPC);
+
+        if (globalRateLimiter) {
+            const dataSizeBytes = Buffer.byteLength(serializedRPC, "utf8");
+            if (!globalRateLimiter.checkAndConsume(dataSizeBytes)) {
+                console.warn("WebRTC rate limit exceeded, dropping message");
+                return; // Drop the message
+            }
+        }
+
         this.webRTCChannel.send(serializedRPC);
     }
     onMessage(data: any): void {

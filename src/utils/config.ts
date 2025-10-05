@@ -6,6 +6,9 @@ export interface Config {
     DEBUG_RPC: boolean;
     DEBUG_CHANNEL_CONTRACT: boolean;
     DEBUG_LOCAL_TRANSPORT: boolean;
+    RATE_LIMIT_ENABLED: boolean;
+    RATE_LIMIT_BYTES_PER_SECOND: number;
+    RATE_LIMIT_BURST_SIZE: number;
 }
 
 function isNode() {
@@ -23,7 +26,10 @@ const DEFAULT_CONFIG: Config = {
     DEBUG_P2P_MANAGER: false,
     DEBUG_RPC: false,
     DEBUG_CHANNEL_CONTRACT: false,
-    DEBUG_LOCAL_TRANSPORT: false
+    DEBUG_LOCAL_TRANSPORT: false,
+    RATE_LIMIT_ENABLED: true,
+    RATE_LIMIT_BYTES_PER_SECOND: 10 * 1024 * 1024, // 10 MB/s
+    RATE_LIMIT_BURST_SIZE: 20 * 1024 * 1024 // 20 MB burst
 };
 
 // Create configuration: if node -> test config, else -> regular config, then apply overrides
