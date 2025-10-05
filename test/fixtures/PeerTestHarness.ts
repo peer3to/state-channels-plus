@@ -17,7 +17,7 @@ import { HardhatEthersHelpers } from "hardhat/types/runtime";
 import { SignatureUtils, Codec, Type, hash as hashUtil } from "@/utils";
 import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
-import { overrideConfig, Config } from "@/utils/config";
+import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
 
 export interface TestPeer<T extends AStateMachine> {
@@ -87,7 +87,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         this.ethers = ethersInstance;
 
         // Use test config as base, then apply any overrides
-        this.harnessConfig = overrideConfig({
+        this.harnessConfig = createConfig({
             ...testConfig,
             ...(options.configOverrides || {})
         });
@@ -237,7 +237,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             this.log(`[Peer ${peer.index}] Connected to channel: ${channelId}`);
         }
 
-        await this.sleep(1000);
+        await sleep(1000);
 
         if (this.options.autoConnect) {
             await this.connectPeers();
@@ -270,10 +270,10 @@ export class PeerTestHarness<T extends AStateMachine> {
         for (const peer of this.peers) {
             const hashedChannelId = peer.joinChannelCommitment!.channelId;
             peer.p2pInstance.p2pSigner.connectToChannel(hashedChannelId);
-            await this.sleep(100);
+            await sleep(100);
         }
 
-        await this.sleep(500);
+        await sleep(500);
         this.log("All peers connected");
     }
 
@@ -380,12 +380,12 @@ export class PeerTestHarness<T extends AStateMachine> {
 
     async waitForSync(timeout: number = 3000): Promise<void> {
         this.log("Waiting for peers to sync...");
-        await this.sleep(timeout);
+        await sleep(timeout);
         this.log("Sync wait complete");
     }
 
     async waitForEventProcessing(timeout: number = 1000): Promise<void> {
-        await this.sleep(timeout);
+        await sleep(timeout);
     }
 
     async cleanup(): Promise<void> {
@@ -567,15 +567,15 @@ export class PeerTestHarness<T extends AStateMachine> {
         );
     }
 
-    private sleep(ms: number): Promise<void> {
-        return new Promise((resolve) => setTimeout(resolve, ms));
-    }
-
     private log(...args: any[]): void {
         if (this.options?.debug) {
             console.log("[PeerTestHarness]", ...args);
         }
     }
+}
+
+export function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export default PeerTestHarness;
