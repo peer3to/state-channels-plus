@@ -15,6 +15,7 @@ import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Codec, hash, Type } from "@/utils";
 import { isEqual } from "lodash";
+import { ZeroHash } from "ethers";
 
 export class EventHandler {
     constructor(
@@ -72,6 +73,7 @@ export class EventHandler {
         windowCreationTimestamp: Timestamp,
         disputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<void> {
+        const forkId = dispute.input.disputeAuditingDataHash;
         // sync LocalDiamond state
         this.diamondStateMachine.localDiamondContract.onDisputeCommitted(
             channelId,
@@ -82,8 +84,7 @@ export class EventHandler {
         );
 
         // isDisputeWindowRelevant?
-        const isRelevant =
-            this.stateManager.forkId === dispute.input.disputeAuditingDataHash;
+        const isRelevant = this.stateManager.forkId === forkId;
         if (!isRelevant) {
             return;
         }
@@ -91,7 +92,7 @@ export class EventHandler {
             if (!disputeAuditingData) {
                 const { isPartial, auditingData } =
                     this.stateManager.disputeManager.getAuditingData(
-                        dispute.input.disputeAuditingDataHash,
+                        forkId,
                         dispute.input.stateProof
                     );
                 if (isPartial)
@@ -101,11 +102,12 @@ export class EventHandler {
                 disputeAuditingData = auditingData;
             }
             // TODO - after implementing setTimeout -> reduce - come back here
-            return this.stateManager.setState(
-                disputeAuditingData.latestStateStateMachineState,
-                dispute.outputSnapshotDataHash,
-                disputeCreationTimestamp
-            );
+            throw new Error("Not implemented yet - final dispute");
+            // return this.stateManager.setGenesisState(
+            //     disputeAuditingData.latestStateStateMachineState,
+            //     dispute.outputSnapshotDataHash,
+            //     disputeCreationTimestamp
+            // );
         }
 
         // not final - validate dispute and challenge if invalid
@@ -124,8 +126,18 @@ export class EventHandler {
                 this.stateManager.stateChannelManagerContract.uploadDispute(
                     counterDisputeConfirmation
                 );
+                return;
             }
-            // TODO - after implementing setTimeout -> reduce - come back here
+            const [_, potentialGenesisTimestamp] =
+                await this.diamondStateMachine.localDiamondContract.getGenesisTimestamp(
+                    channelId,
+                    forkId, // originForkId is this forkId
+                    ZeroHash // resulting forkId is not relevant here
+                );
+            this.stateManager.setReductionTimeout(
+                forkId,
+                Number(potentialGenesisTimestamp)
+            );
         }
     }
 
@@ -443,7 +455,7 @@ export class EventHandler {
             genesisSnapshot.latestJoinBlockHash,
             latestSnapshot.latestJoinBlockHash
         );
-        const snapshotData =
+        const [snapshotData] =
             await this.stateManager.stateChannelManagerContract.reduceOutputToSnapshotData.staticCall(
                 forkId,
                 reduceOutput,
@@ -493,11 +505,15 @@ export class EventHandler {
                 // TODO - solidity code that returns the encodedState
             }
             // Set fork and start building on it
-            await this.stateManager.setState(
-                genesisStateMachineState!,
-                reducedForkId,
-                reductionTimestamp
+            // TODO
+            throw new Error(
+                "Not implemented yet - set fork for reduceCommitment"
             );
+            // await this.stateManager.setGenesisState(
+            //     genesisStateMachineState!,
+            //     reducedForkId,
+            //     reductionTimestamp
+            // );
         }
     }
 }

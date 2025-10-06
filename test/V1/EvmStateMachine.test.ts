@@ -170,12 +170,14 @@ describe("EvmStateMachine", function () {
             snapshotData: genesisSnapshotData
         };
 
-        await p2pOne.p2pSigner.p2pManager.stateManager.setState(
+        await p2pOne.p2pSigner.p2pManager.stateManager.setGenesisState(
+            genesisSnapshotData,
             genesisStateEncoded,
             forkId,
             timestamp
         );
-        await p2pTwo.p2pSigner.p2pManager.stateManager.setState(
+        await p2pTwo.p2pSigner.p2pManager.stateManager.setGenesisState(
+            genesisSnapshotData,
             genesisStateEncoded,
             forkId,
             timestamp

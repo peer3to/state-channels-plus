@@ -172,10 +172,8 @@ contract FraudProofFacet is StateChannelCommon {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow =
             _disputeData.disputeWindowMap[correctGenesisSnapshot.snapshotData.originForkId];
-        require(
-            disputeWindow.evidence.creationTimestamp != 0 && _isKillPeriodExpired(disputeWindow, getEvidenceTime()),
-            ErrorDisputeKillPeriodNotExpired()
-        );
+        (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        require(isExpired, ErrorDisputeKillPeriodNotExpired());
         (bool isAvailable, uint256 timestamp) = getGenesisTimestamp(channelId, originForkId, forkId);
         require(isAvailable, ErrorGenesisTimestampNotAvailable());
         if (timestamp != correctGenesisSnapshot.timestamp) return address(0);

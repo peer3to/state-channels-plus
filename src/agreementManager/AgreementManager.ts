@@ -5,10 +5,22 @@ import {
     StateProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import Storage, { SortOrder } from "@/storage";
-import { Address, BlockHeight, ForkId, Signature } from "@/types/types";
+import {
+    Address,
+    BlockHeight,
+    ChannelId,
+    ForkId,
+    Signature
+} from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import { Codec, Type } from "@/utils";
 import { ethers } from "ethers";
+import {
+    DisputeConfirmationStruct,
+    ReduceOutputStruct
+} from "@typechain-types/contracts/V1/StateChannelManagerInterface";
+import { StateChannelManagerProxy } from "@typechain-types/index";
+import { ReduceData } from "@/types";
 
 /**
  * AgreementManager acts as a higher logic layer over storage
@@ -323,6 +335,71 @@ class AgreementManager {
         }
 
         return false;
+    }
+
+    public async getForkDisputeConfirmations(
+        channelId: ChannelId,
+        forkId: ForkId,
+        ethersContract: StateChannelManagerProxy
+    ): Promise<DisputeConfirmationStruct[]> {
+        // Collect disputes for this dispute window
+        const disputeCommitments = await ethersContract.getWindowCommitments(
+            channelId,
+            forkId
+        );
+        // Collect all disputes for this dispute window
+        const currentWindowDisputes: DisputeConfirmationStruct[] = [];
+        for (const commitment of disputeCommitments) {
+            const disputeConfirmation =
+                this.storage.disputes.getDisputeConfirmation(commitment);
+            if (!disputeConfirmation) {
+                throw new Error(
+                    `Missing Data Availability for dispute commitment ${commitment}`
+                );
+            }
+
+            currentWindowDisputes.push(disputeConfirmation);
+        }
+        return currentWindowDisputes;
+    }
+
+    public async getReduceData(
+        forkId: ForkId,
+        reducedOutput: ReduceOutputStruct
+    ): Promise<ReduceData> {
+        // reducedOutput latestStateSnapshot
+        const reducedLatestStateSnapshot =
+            this.storage.stateSnapshots.getStateSnapshotByHash(
+                reducedOutput.latestBlock.stateSnapshotHash // TODO - latestBlock may not exist -> genesis
+            );
+        if (!reducedLatestStateSnapshot)
+            throw new Error(
+                "Missing latestStateSnapshot for reducedOutput in storage for syncing"
+            );
+
+        // Get the corresponding stateMachineState
+        const reducedLatestEncodedStateMachineState =
+            this.storage.stateMachineStates.getStateMachineState(
+                reducedLatestStateSnapshot.stateMachineStateHash
+            );
+        if (!reducedLatestEncodedStateMachineState)
+            throw new Error(
+                "Missing latestEncodedState for reducedOutput in storage for syncing"
+            );
+
+        // Get joinChannelBlocks that were applied during reduce
+        const joinChannelBlocksAppliedInReduce =
+            this.storage.joinChannelBlocks.getBlocksInRange(
+                reducedOutput.latestJoinChannelBlockHash,
+                reducedLatestStateSnapshot.latestJoinBlockHash
+            );
+        return {
+            forkId: forkId,
+            reducedOutput: reducedOutput,
+            latestStateSnapshot: reducedLatestStateSnapshot.toStruct(),
+            encodedStateMachineState: reducedLatestEncodedStateMachineState,
+            joinChannelBlocks: joinChannelBlocksAppliedInReduce
+        };
     }
 }
 

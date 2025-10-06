@@ -97,7 +97,7 @@ abstract contract StateChannelManagerInterface {
         StateSnapshot memory latestStateSnapshot,
         bytes memory encodedStateMachineState,
         JoinChannelBlock[] memory joinChannelBlocks
-    ) public virtual returns (SnapshotData memory);
+    ) public virtual returns (SnapshotData memory, bytes memory, ExitChannelBlock memory);
 
     function reduceAndFinalize(
         Dispute[] memory disputes,

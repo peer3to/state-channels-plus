@@ -189,7 +189,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         ReduceOutput memory reducedOutput = reduce(disputes);
 
-        SnapshotData memory snapshotData = reduceOutputToSnapshotData(
+        (SnapshotData memory snapshotData,,) = reduceOutputToSnapshotData(
             forkId, reducedOutput, latestStateSnapshot, encodedStateMachineState, joinChannelBlocks
         );
 
@@ -227,7 +227,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         // compute reduced output and derive snapshot data
         ReduceOutput memory reducedOutput = reduce(disputes);
-        SnapshotData memory snapshotData = reduceOutputToSnapshotData(
+        (SnapshotData memory snapshotData,,) = reduceOutputToSnapshotData(
             forkId, reducedOutput, stateSnapshot, encodedStateMachineState, joinChannelBlocks
         );
 
@@ -252,7 +252,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         StateSnapshot memory latestStateSnapshot,
         bytes memory encodedStateMachineState,
         JoinChannelBlock[] memory joinChannelBlocks
-    ) public returns (SnapshotData memory outputSnapshotData) {
+    ) public returns (SnapshotData memory outputSnapshotData, bytes memory, ExitChannelBlock memory) {
         //verify snapshot linked to reducedOutput.latestBlock
         Block memory latestBlock = reducedOutput.latestBlock;
         if (latestBlock.transaction.header.forkId == bytes32(0)) {
@@ -294,15 +294,19 @@ contract DisputeVerificationFacet is StateChannelCommon {
             latestStateSnapshot
         );
 
-        return SnapshotData({
-            originForkId: forkId,
-            stateMachineStateHash: keccak256(outputState.encodedModifiedState),
-            participants: getStateMachineParticipants(outputState.encodedModifiedState),
-            latestJoinChannelBlockHash: reducedOutput.latestJoinChannelBlockHash, // This has been verified in _verifyJoinChannelBlocks
-            latestExitChannelBlockHash: keccak256(abi.encode(outputState.exitBlock)),
-            totalDeposits: outputState.totalDeposits,
-            totalWithdrawals: outputState.totalWithdrawals
-        });
+        return (
+            SnapshotData({
+                originForkId: forkId,
+                stateMachineStateHash: keccak256(outputState.encodedModifiedState),
+                participants: getStateMachineParticipants(outputState.encodedModifiedState),
+                latestJoinChannelBlockHash: reducedOutput.latestJoinChannelBlockHash, // This has been verified in _verifyJoinChannelBlocks
+                latestExitChannelBlockHash: keccak256(abi.encode(outputState.exitBlock)),
+                totalDeposits: outputState.totalDeposits,
+                totalWithdrawals: outputState.totalWithdrawals
+            }),
+            outputState.encodedModifiedState,
+            outputState.exitBlock
+        );
     }
 
     // Doesn't do any checks and just applies all slashes, removals and joins to a specific stateMachineState and generates the outputStateMachineState - similar logic to playTransaction in the typescript code - this is done to help the backer generate a correct output state while forging the dispute
@@ -614,10 +618,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[_getDisputeFork(dispute)];
 
         // require that the dispute window exists and is not expired
-        require(
-            disputeWindow.evidence.creationTimestamp != 0 && !_isKillPeriodExpired(disputeWindow, getEvidenceTime()),
-            ErrorDisputeExpired()
-        );
+        (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        require(!isExpired, ErrorDisputeExpired());
         bytes32 commitment = keccak256(abi.encode(dispute));
         bool isFound = false;
         uint256 foundIndex;
