@@ -1,5 +1,4 @@
 import P2PManager from "@/P2PManager";
-import { ARpcService } from "@/rpc";
 import { ATransport } from "@/transport";
 
 abstract class ARpcMethods {
