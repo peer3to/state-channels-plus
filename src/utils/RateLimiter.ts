@@ -77,11 +77,69 @@ export class RateLimiter {
 }
 
 /**
- * Global rate limiter instance for all transports
+ * Global outbound rate limiter instance for all transports
  * Uses configuration values for rate limiting
  */
-export const globalRateLimiter = config.RATE_LIMIT_ENABLED
+export const outboundRateLimiter = config.RATE_LIMIT_ENABLED
     ? new RateLimiter(
+          config.RATE_LIMIT_BYTES_PER_SECOND,
+          config.RATE_LIMIT_BURST_SIZE
+      )
+    : null;
+
+/**
+ * Manager for per-connection inbound rate limiters
+ */
+export class InboundRateLimiterManager {
+    private rateLimiters: WeakMap<ATransport, RateLimiter> = new WeakMap();
+    private readonly maxBandwidthBytesPerSecond: number;
+    private readonly burstSizeBytes: number;
+
+    constructor(maxBandwidthBytesPerSecond: number, burstSizeBytes?: number) {
+        this.maxBandwidthBytesPerSecond = maxBandwidthBytesPerSecond;
+        this.burstSizeBytes = burstSizeBytes || maxBandwidthBytesPerSecond * 2;
+    }
+
+    /**
+     * Get or create rate limiter for a transport connection
+     */
+    getRateLimiter(transport: ATransport): RateLimiter {
+        let rateLimiter = this.rateLimiters.get(transport);
+        if (!rateLimiter) {
+            rateLimiter = new RateLimiter(
+                this.maxBandwidthBytesPerSecond,
+                this.burstSizeBytes
+            );
+            this.rateLimiters.set(transport, rateLimiter);
+        }
+        return rateLimiter;
+    }
+
+    /**
+     * Check if incoming data should be allowed and consume tokens
+     */
+    checkInboundMessage(transport: ATransport, dataSizeBytes: number): boolean {
+        const rateLimiter = this.getRateLimiter(transport);
+        return rateLimiter.checkAndConsume(dataSizeBytes);
+    }
+
+    /**
+     * Remove rate limiter for a connection (cleanup)
+     */
+    removeConnection(transport: ATransport): void {
+        // WeakMap will automatically clean up when transport is garbage collected
+    }
+}
+
+// Import ATransport type
+import ATransport from "@/transport/ATransport";
+
+/**
+ * Global inbound rate limiter manager instance
+ * Uses same configuration as outbound rate limiting
+ */
+export const inboundRateLimiterManager = config.RATE_LIMIT_ENABLED
+    ? new InboundRateLimiterManager(
           config.RATE_LIMIT_BYTES_PER_SECOND,
           config.RATE_LIMIT_BURST_SIZE
       )

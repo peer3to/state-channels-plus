@@ -13,6 +13,10 @@ import { Buffer } from "buffer";
 import { DEBUG_P2P_MANAGER, DEBUG_LOCAL_TRANSPORT } from "@/utils/config";
 import { Address } from "./types/types";
 import {
+    outboundRateLimiter,
+    inboundRateLimiterManager
+} from "@/utils/RateLimiter";
+import {
     hasMethod,
     hasProperty,
     isInstanceOfRpcService
@@ -57,6 +61,25 @@ class P2PManager implements IOnMessage {
     }
     public onRpc(serializedRpc: string, transport: ATransport) {
         try {
+            // Check inbound rate limiting first (per-connection)
+            if (inboundRateLimiterManager) {
+                const dataSizeBytes = Buffer.byteLength(serializedRpc, "utf8");
+
+                // Check if message should be allowed
+                if (
+                    !inboundRateLimiterManager.checkInboundMessage(
+                        transport,
+                        dataSizeBytes
+                    )
+                ) {
+                    console.warn(
+                        `[INBOUND RATE LIMIT] Exceeded from connection - Size: ${dataSizeBytes} bytes, disconnecting peer`
+                    );
+                    this.disconnectAndBlacklistPeer(transport);
+                    return;
+                }
+            }
+
             const rpc = deserializeRpc(serializedRpc);
             if (!rpc) {
                 this.disconnectConnection(transport);
