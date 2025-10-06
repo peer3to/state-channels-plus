@@ -1,0 +1,34 @@
+import ARpcMethods from "@/rpc/ARpcMethods";
+import { ATransport } from "@/transport";
+import TESTJoinChannelService from "./TESTJoinChannelService";
+
+class TESTJoinChannelRpcMethods extends ARpcMethods {
+    service: TESTJoinChannelService;
+    constructor(transport: ATransport, service: TESTJoinChannelService) {
+        super(transport, service.p2pManager);
+        this.service = service;
+    }
+
+    public async onSignJoinChannelTEST(jcEncoded: string, jcSignature: string) {
+        console.log(`Opening channel`);
+        try {
+            const txResponse =
+                await this.p2pManager.stateManager.stateChannelManagerContract.openChannel(
+                    this.p2pManager.stateManager.getChannelId(),
+                    [
+                        this.p2pManager.p2pSigner.signedJc.encodedJoinChannel,
+                        jcEncoded
+                    ],
+                    [this.p2pManager.p2pSigner.signedJc.signature, jcSignature]
+                );
+            console.log("OPEN - TX HASH ##", txResponse.hash);
+            const txReceipt = await txResponse.wait();
+            // await block.wait(); //not needed - will be comunicated back through the event
+            console.log("CHANNEL OPENED ##", txReceipt);
+        } catch (e) {
+            console.log("ERROR - Opening channel error:", e);
+        }
+    }
+}
+
+export default TESTJoinChannelRpcMethods;

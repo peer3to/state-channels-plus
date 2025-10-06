@@ -101,14 +101,9 @@ class P2pSigner implements Signer {
             }
         };
 
-        const signedBlock =
+        const blockConfirmation =
             await this.p2pManager.stateManager.playTransaction(_tx);
-
-        const blockConfirmation = {
-            signedBlock: signedBlock,
-            signatures: []
-        };
-        this.p2pManager.rpcProxy
+        this.p2pManager.remoteRpc.stateTransitionService
             .onBlockConfirmation(blockConfirmation)
             .broadcast();
         return "There is no TransactionResponse p2p - everything executed locally" as unknown as TransactionResponse; //TODO
@@ -176,7 +171,7 @@ class P2pSigner implements Signer {
         // Store locally before broadcasting ?
 
         // Broadcast the request
-        this.p2pManager.rpcProxy
+        this.p2pManager.remoteRpc.joinChannelService
             .onJoinChannelRequest(signedJoinChannel)
             .broadcast();
     }
