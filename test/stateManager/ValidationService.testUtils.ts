@@ -1,13 +1,10 @@
 import { Block } from "../../src/models";
 import { BlockValidationResult, TimeConfig } from "../../src/types";
+import { stateSnapshot } from "../factory";
 import sinon from "sinon";
 import { ZeroHash } from "ethers";
 import Clock from "../../src/Clock";
 
-/**
- * Enumeration of validation failure points in ValidationService
- * Ordered from last to first validation step for progressive testing
- */
 export const ValidationFailure = {
     // Time validation failures (step 10 - last)
     OBJECTIVE_TIMESTAMP_TOO_LATE: "OBJECTIVE_TIMESTAMP_TOO_LATE",
@@ -53,9 +50,6 @@ export const ValidationFailure = {
 export type ValidationFailure =
     (typeof ValidationFailure)[keyof typeof ValidationFailure];
 
-/**
- * Block builder for creating test blocks with progressive failure scenarios
- */
 export class BlockBuilder {
     private blockData: any;
     private mockSetup: MockSetup;
@@ -78,9 +72,6 @@ export class BlockBuilder {
         return this;
     }
 
-    /**
-     * Build the final block with all configurations applied
-     */
     build(): Block {
         return this.blockData as Block;
     }
@@ -105,7 +96,6 @@ export class BlockBuilder {
     }
 
     private setupMocksForFailure(failure: ValidationFailure): void {
-        // Reset all mocks to passing state first
         this.mockSetup.setupForSuccess();
 
         switch (failure) {
@@ -347,9 +337,6 @@ export class BlockBuilder {
     }
 }
 
-/**
- * Mock setup utility for ValidationService tests
- */
 export class MockSetup {
     public mockStorage: any;
     public mockDiamondStateMachine: any;
@@ -357,6 +344,8 @@ export class MockSetup {
     public mockTimeConfig!: TimeConfig;
     public mockStateManager: any;
     public mockStrategy: any;
+    public mockSigner: any;
+    public mockP2pEventHooks: any;
     public clockStub!: sinon.SinonStub;
     public validationService: any; // Will be set by the test
 
@@ -369,18 +358,80 @@ export class MockSetup {
         this.clockStub = sinon.stub(Clock, "getTimeInSeconds").returns(1100);
         sinon.stub(Clock, "getAverageOnChainBlockTime").returns(12);
 
+        this.mockSigner = {
+            signMessage: sinon.stub().resolves("0xsignature"),
+            getAddress: sinon
+                .stub()
+                .resolves("0x1234567890123456789012345678901234567890")
+        };
+
         this.mockStorage = {
             queues: {
                 isBlockQueued: sinon.stub().returns(false),
-                queueBlock: sinon.stub()
+                queueBlock: sinon.stub(),
+                tryDequeue: sinon.stub().returns([])
             },
             blocks: {
                 getBlock: sinon.stub().returns(undefined),
                 getNextBlockHeight: sinon.stub().returns(2),
-                setOnChainTimestamp: sinon.stub()
+                getLatestBlockHeight: sinon.stub().returns(10),
+                getLatestBlock: sinon.stub().returns(undefined),
+                setOnChainTimestamp: sinon.stub(),
+                storeBlock: sinon.stub()
             },
             disputes: {
-                didIDispute: sinon.stub().returns(false)
+                didIDispute: sinon.stub().returns(false),
+                getDisputeConfirmation: sinon.stub().returns({
+                    signedDispute: { encodedDispute: "0xencodeddispute" }
+                })
+            },
+            stateSnapshots: {
+                getGenesisSnapshotDataByForkId: sinon.stub().returns({
+                    hash: "0xprevhash"
+                }),
+                getStateSnapshotByHash: sinon.stub().returns(stateSnapshot()),
+                storeStateSnapshot: sinon.stub()
+            },
+            exitChannelBlocks: {
+                getExitChannelBlock: sinon.stub().returns({
+                    exitChannels: [],
+                    previousBlockHash: "0x0000000000000000"
+                }),
+                getExitChannelBlockEntry: sinon.stub().returns({
+                    block: {
+                        exitChannels: [],
+                        previousBlockHash: "0x0000000000000000"
+                    }
+                }),
+                getLatestExitChannelBlockHash: sinon
+                    .stub()
+                    .returns("0x0000000000000000"),
+                getTotalWithdrawals: sinon
+                    .stub()
+                    .returns({ amount: 0n, data: "0x" }),
+                storeExitChannelBlock: sinon.stub()
+            },
+            joinChannelBlocks: {
+                getJoinChannelBlockEntry: sinon.stub().returns({
+                    block: {
+                        previousBlockHash: "0x0000000000000000"
+                    }
+                }),
+                getLatestJoinChannelBlockHash: sinon
+                    .stub()
+                    .returns("0x0000000000000000"),
+                getTotalDeposits: sinon
+                    .stub()
+                    .returns({ amount: 0n, data: "0x" }),
+                storeJoinChannelBlock: sinon.stub()
+            },
+            exitPoints: {
+                getExitPointsInRange: sinon.stub().returns([1, 3, 5, 7]),
+                storeExitPoint: sinon.stub()
+            },
+            stateMachineStates: {
+                getStateMachineState: sinon.stub().returns("0xencodedstate"),
+                storeStateMachineState: sinon.stub()
             },
             getParticipants: sinon.stub().returns(["0xauthor123", "0xsigner1"]),
             getPreviousBlockOrSnapshot: sinon.stub().returns({
@@ -391,17 +442,27 @@ export class MockSetup {
                     getRelevantTimestamp: sinon.stub().returns(900)
                 }
             }),
-            stateSnapshots: {
-                getGenesisSnapshotDataByForkId: sinon.stub().returns({
-                    hash: "0xprevhash"
-                })
-            }
+            getPreviousStateSnapshot: sinon.stub().returns(stateSnapshot()),
+            getStateSnapshot: sinon.stub().returns(stateSnapshot())
         };
 
         this.mockDiamondStateMachine = {
             getNextToWrite: sinon.stub().resolves("0xauthor123"),
+            getParticipants: sinon
+                .stub()
+                .resolves(["0x1234567890123456789012345678901234567890"]),
+            setState: sinon.stub().resolves(),
+            getState: sinon.stub().resolves("0xencodedstate"),
+            stateTransition: sinon.stub().resolves({
+                success: true,
+                successCallback: () => {},
+                exitChannels: []
+            }),
+            getZeroBalance: sinon.stub().resolves({ amount: 0n, data: "0x" }),
+            addBalance: sinon.stub().resolves({ amount: 100n, data: "0x" }),
             localDiamondContract: {
-                isForkDisputed: sinon.stub().resolves(false)
+                isForkDisputed: sinon.stub().resolves(false),
+                isBlockAuthentic: sinon.stub().resolves(true)
             }
         };
 
@@ -412,6 +473,46 @@ export class MockSetup {
             queryFilter: sinon.stub().resolves([]),
             filters: {
                 BlockCalldataPosted: sinon.stub().returns("filter")
+            },
+            getStateSnapshot: sinon.stub().resolves({
+                forkId: "0x1234567890abcdef",
+                blockHeight: 3n,
+                timestamp: 1000,
+                snapshotData: {
+                    originForkId: "0x1234567890abcdef",
+                    stateMachineStateHash: "0xabcdef1234567890",
+                    participants: [
+                        "0x1234567890123456789012345678901234567890"
+                    ],
+                    latestJoinChannelBlockHash: "0x0000000000000000",
+                    latestExitChannelBlockHash: "0x0000000000000000",
+                    totalDeposits: { amount: 0n, data: "0x" },
+                    totalWithdrawals: { amount: 0n, data: "0x" }
+                }
+            }),
+            updateStateSnapshotSameFork: sinon.stub().resolves({
+                wait: async () => ({})
+            }),
+            multicall: sinon.stub().resolves({
+                wait: async () => ({})
+            }),
+            postBlockCalldata: sinon.stub().resolves({
+                wait: async () => ({})
+            }),
+            isForkDisputed: sinon.stub().resolves(false),
+            getReducedResult: sinon.stub().resolves([null, false]),
+            getWindowCommitments: sinon.stub().resolves([]),
+            reduce: {
+                staticCall: sinon.stub().resolves({
+                    latestBlock: { stateSnapshotHash: "0xlatestsnaphash" },
+                    latestJoinChannelBlockHash: "0xlatestjoinblockhash"
+                })
+            },
+            reduceAndFinalize: sinon.stub().resolves({
+                wait: async () => ({})
+            }),
+            interface: {
+                encodeFunctionData: sinon.stub().returns("0xencodeddata")
             }
         };
 
@@ -427,7 +528,19 @@ export class MockSetup {
             forkId: "0xfork123"
         };
 
+        this.mockP2pEventHooks = {
+            onTurn: sinon.stub(),
+            onPostingCalldata: sinon.stub()
+        };
+
         this.mockStrategy = this.createMockStrategy();
+    }
+
+    async initializeClock(): Promise<void> {
+        const mockProvider = {
+            getBlock: async () => ({ timestamp: Math.floor(Date.now() / 1000) })
+        };
+        await Clock.init(mockProvider as any);
     }
 
     private createMockStrategy(): any {
@@ -480,9 +593,6 @@ export class MockSetup {
         };
     }
 
-    /**
-     * Setup all mocks for a successful validation (baseline)
-     */
     setupForSuccess(): void {
         // Set up all conditions for success - exact copy from working debug test
         this.mockStateManager.channelId = "0xchannel123";
@@ -524,9 +634,6 @@ export class MockSetup {
     }
 }
 
-/**
- * Expected results for each validation failure
- */
 export const EXPECTED_RESULTS: Record<
     ValidationFailure,
     BlockValidationResult

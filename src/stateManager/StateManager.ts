@@ -203,6 +203,12 @@ class StateManager {
                 // if success setState
                 // if failure interpret error
             }, delayInMilliseconds);
+
+            // Store the new timeout handle in the map
+            this.reductionTriggerMap.set(forkId, {
+                handle: newHandle,
+                triggerTimestamp: triggerTimestamp
+            });
         }
     }
     public getSignerAddress(): Address {
