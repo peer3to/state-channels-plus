@@ -10,7 +10,7 @@ import {
     JoinChannelBlockStruct,
     BalanceStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { MockSetup } from "./ValidationService.testUtils";
+import { MockSetup } from "./testUtils";
 
 describe("StateManager", () => {
     let stateManager: StateManager;

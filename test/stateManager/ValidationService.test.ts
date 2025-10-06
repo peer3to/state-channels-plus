@@ -8,7 +8,7 @@ import {
     MockSetup,
     ValidationFailure,
     EXPECTED_RESULTS
-} from "./ValidationService.testUtils";
+} from "./testUtils";
 
 describe("ValidationService - Progressive Validation Tests", () => {
     let validationService: ValidationService;
