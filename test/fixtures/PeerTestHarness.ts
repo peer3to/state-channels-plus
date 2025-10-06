@@ -210,9 +210,13 @@ export class PeerTestHarness<T extends AStateMachine> {
         await this.waitForP2PConnections();
     }
 
-    async waitForP2PConnections(timeoutMs: number = 2000): Promise<void> {
+    async waitForP2PConnections(timeoutMs?: number): Promise<void> {
+        const isGitHubActionsEnv = process.env.GITHUB_ACTIONS === "true";
+        const defaultTimeout = isGitHubActionsEnv ? 10000 : 2000; // 10s for CI, 2s for local
+        const actualTimeout = timeoutMs ?? defaultTimeout;
+
         const startTime = Date.now();
-        while (Date.now() - startTime < timeoutMs) {
+        while (Date.now() - startTime < actualTimeout) {
             const connected = this.peers.filter(
                 (p) =>
                     p.p2pInstance.p2pSigner.p2pManager.openConnections.length >
@@ -225,7 +229,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             await sleep(50);
         }
         throw new Error(
-            `P2P connections not established within ${timeoutMs}ms`
+            `P2P connections not established within ${actualTimeout}ms`
         );
     }
 
