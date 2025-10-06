@@ -402,7 +402,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         StateSnapshot memory latestStateSnapshot,
         bytes memory encodedStateMachineState,
         JoinChannelBlock[] memory joinChannelBlocks
-    ) public override returns (SnapshotData memory) {
+    ) public override returns (SnapshotData memory, bytes memory, ExitChannelBlock memory) {
         bytes memory result = _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(
@@ -410,7 +410,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
                 (forkId, reducedOutput, latestStateSnapshot, encodedStateMachineState, joinChannelBlocks)
             )
         );
-        return abi.decode(result, (SnapshotData));
+        return abi.decode(result, (SnapshotData, bytes, ExitChannelBlock));
     }
 
     function commitToReducedResult(bytes32 channelId, bytes32 disputedForkId, bytes32 reducedForkId) public {
@@ -466,7 +466,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return (stateMachineImplementation.getState(), exitChannels);
     }
 
-    function isKillPeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {
+    function isKillPeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool, uint256) {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
         return _isKillPeriodExpired(disputeWindow, getEvidenceTime());

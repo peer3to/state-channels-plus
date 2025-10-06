@@ -70,6 +70,9 @@ import DisputeValidationService from "./DisputeValidationService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
 import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
 import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidationStrategy";
+import { time } from "console";
+import { ReduceOutputStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
+import { SnapshotDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 const DEBUG_STATE_MANAGER = false;
 
@@ -196,15 +199,145 @@ class StateManager {
             if (reductionHandle) clearTimeout(reductionHandle.handle);
             const delayInMilliseconds =
                 (triggerTimestamp - Clock.getTimeInSeconds()) * 1000;
-            const newHandle = setTimeout(() => {
-                //TODO - implement after PR
-                // check locally can we reduce
-                // double check on-chain can we reduce
-                // reduce on-chain
-                // if success setState
-                // if failure interpret error
+            const newHandle = setTimeout(async () => {
+                this.tryReduce(forkId, triggerTimestamp);
             }, delayInMilliseconds);
+            this.reductionTriggerMap.set(forkId, {
+                handle: newHandle,
+                triggerTimestamp: triggerTimestamp
+            });
         }
+    }
+    private async tryReduce(forkId: ForkId, genesisTimestamp: number) {
+        if (this.forkId != forkId) return; // we're not on this fork anymore
+        // check locally can we reduce
+        let [canReduce, _timeRemainig] =
+            await this.diamondStateMachine.localDiamondContract.isKillPeriodExpired(
+                this.channelId,
+                forkId
+            );
+        let timeRemainig = Number(_timeRemainig);
+        let checkedOnRpcNode = false;
+        if (!canReduce) {
+            // come back later - new evidence was submitted
+            if (timeRemainig > 0)
+                return this.setReductionTimeout(
+                    forkId,
+                    Clock.getTimeInSeconds() + timeRemainig
+                );
+            // timeRemainig is 0, but not expired -> means window locally is not opened (not synced) -> check on-chain
+            [canReduce, _timeRemainig] =
+                await this.stateChannelManagerContract.isKillPeriodExpired(
+                    this.channelId,
+                    forkId
+                );
+            checkedOnRpcNode = true;
+            timeRemainig = Number(_timeRemainig);
+            // now check with updated data
+            if (!canReduce) {
+                if (timeRemainig > 0)
+                    return this.setReductionTimeout(
+                        forkId,
+                        Clock.getTimeInSeconds() + timeRemainig
+                    );
+                // on-chain timeRemainig is 0, but not expired -> not opened -> we shouldn't be here
+                throw new Error(
+                    "StateManager - setReductionTimeout - time to reduce, but window not opened on-chain"
+                );
+            }
+        }
+        // ^ the above code is an optimization to try to save compute on the RPC node
+
+        // double check on-chain can we reduce
+        if (!checkedOnRpcNode) {
+            [canReduce, _timeRemainig] =
+                await this.stateChannelManagerContract.isKillPeriodExpired(
+                    this.channelId,
+                    forkId
+                );
+            checkedOnRpcNode = true;
+            timeRemainig = Number(_timeRemainig);
+            if (!canReduce) {
+                if (timeRemainig > 0)
+                    return this.setReductionTimeout(
+                        forkId,
+                        Clock.getTimeInSeconds() + timeRemainig
+                    );
+                // on-chain timeRemainig is 0, but not expired -> not opened -> we shouldn't be here
+                throw new Error(
+                    "StateManager - setReductionTimeout - time to reduce, but window not opened on-chain"
+                );
+            }
+        }
+        // reduce on-chain
+        const disputeConfirmations =
+            await this.agreementManager.getForkDisputeConfirmations(
+                this.channelId,
+                forkId,
+                this.stateChannelManagerContract
+            );
+        const disputes = disputeConfirmations.map(
+            (dc) =>
+                Codec.decode(
+                    dc.signedDispute.encodedDispute,
+                    Type.Dispute
+                ) as DisputeStruct
+        );
+        let reducedOutput: ReduceOutputStruct;
+        try {
+            reducedOutput =
+                await this.stateChannelManagerContract.reduce.staticCall(
+                    disputes
+                );
+        } catch (error) {
+            // this should never be the case since:
+            // 1) disputeWindows is expired - double checked on-chain
+            // 2) dispute commitments - collected on-chain -> we for sure have the correct data
+            // 3) even if someone else reduces on-chain -> they would have to reduce to the same output, so race condition is not a problem
+            console.error("StateManager - tryReduce - reduce error: ", error);
+            throw error;
+        }
+        const reduceData = await this.agreementManager.getReduceData(
+            forkId,
+            reducedOutput
+        );
+        this.stateChannelManagerContract
+            .reduceAndFinalize(
+                disputes,
+                reduceData.latestStateSnapshot,
+                reduceData.encodedStateMachineState,
+                reduceData.joinChannelBlocks
+            )
+            .then((tx) => tx.wait())
+            .catch((error) => {
+                // this has to run async so everyone starts building imediately after successful simulation -> so they don't waste time
+                // if this errors here - in the honest case it should never - even under race condition it should success fracefully
+                // TODO interpret the error and panic
+                throw new Error("reduceAndFinalize error " + error);
+            });
+
+        // if we're here - the fork SHOULD BECOME succesfuly finalized on-chain and we can start building on top of it
+
+        // locally compute what will be finalized on-chain
+        const [snapshotData, encodedStateMachineState, exitChannelBlock] =
+            await this.diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
+                forkId,
+                reducedOutput,
+                reduceData.latestStateSnapshot,
+                reduceData.encodedStateMachineState,
+                reduceData.joinChannelBlocks
+            );
+        const reducedForkId = ethers.keccak256(
+            Codec.encode(snapshotData, Type.SnapshotData)
+        );
+
+        this.setGenesisState(
+            snapshotData,
+            encodedStateMachineState,
+            reducedForkId,
+            genesisTimestamp,
+            exitChannelBlock
+        );
     }
     public getSignerAddress(): Address {
         return this.signerAddress;
@@ -248,29 +381,44 @@ class StateManager {
             if (shouldDisconnect) break;
         }
     }
-    /**
-     * Triggered by the On-chain Event Listener when a new state is set on-chain
-     * called after a dispute to set the genesis of a new fork
-     * @param encodedState - Encoded state of the state machine
-     * @param _forkId - new fork count
-     * @param _timestamp - on-chain timestamp
-     */
-    public async setState(
+
+    public async setGenesisState(
+        snapshotData: SnapshotDataStruct,
         encodedState: Bytes,
         _forkId: ForkId,
-        _timestamp: Timestamp
+        genesisTimestamp: Timestamp,
+        exitChannelBlock?: ExitChannelBlockStruct
     ): Promise<void> {
-        console.log("StateManager - SetState", _forkId, _timestamp);
-        await this.diamondStateMachine.setState(encodedState);
+        console.log("StateManager - SetState", _forkId, genesisTimestamp);
+        // generate and store genesis snapshot
+        const _genesisSnapshot: StateSnapshotStruct = {
+            forkId: _forkId,
+            blockHeight: 0,
+            timestamp: genesisTimestamp,
+            snapshotData: snapshotData
+        };
+        const genesisSnapshot = StateSnapshot.from(_genesisSnapshot);
+        this.storage.stateSnapshots.storeStateSnapshot(genesisSnapshot);
 
+        // store exit channel block
+        // TODO - check if exists
+        if (exitChannelBlock)
+            this.storage.exitChannelBlocks.storeExitChannelBlock(
+                exitChannelBlock
+            );
+
+        // store genesis state
+        this.storage.stateMachineStates.storeStateMachineState(encodedState);
+
+        await this.diamondStateMachine.setState(encodedState);
         // Update the forkId to the new fork
         this.forkId = _forkId;
-
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();
-
         this.p2pEventHooks.onTurn?.(nextToWrite);
         const nextTransactionCnt =
             this.storage.blocks.getNextBlockHeight(_forkId);
+        let timeLost = Clock.getTimeInSeconds() - genesisTimestamp;
+        timeLost = timeLost < 0 ? 0 : timeLost; // if genesisTimestamp is in the future - no time is lost
         scheduleTask(
             () =>
                 this.tryTimeoutParticipant(
@@ -278,7 +426,7 @@ class StateManager {
                     nextTransactionCnt,
                     nextToWrite
                 ),
-            this.getTimeoutWaitTimeSeconds() * 1000,
+            (this.getTimeoutWaitTimeSeconds() - timeLost) * 1000,
             "participantTimeout"
         );
 
@@ -864,61 +1012,19 @@ class StateManager {
                         disputes
                     );
 
-                // Derive latest snapshot and encoded state from reduced output's latest block
-                const latestSnapshotHash =
-                    reducedOutput.latestBlock.stateSnapshotHash;
-                const latestSnapshot =
-                    this.storage.stateSnapshots.getStateSnapshotByHash(
-                        latestSnapshotHash
-                    );
-                if (!latestSnapshot) {
-                    throw new Error(
-                        "Latest snapshot for reduced output not found in local storage"
-                    );
-                }
-                const stateHash =
-                    latestSnapshot.snapshotData.stateMachineStateHash;
-                const encodedStateForReduce =
-                    this.storage.stateMachineStates.getStateMachineState(
-                        stateHash
-                    );
-                if (!encodedStateForReduce) {
-                    throw new Error(
-                        "Encoded state for reduced output not found in local storage"
-                    );
-                }
-
-                // Build join channel blocks
-                let currentJoinChannelBlockHash: Hash =
-                    reducedOutput.latestJoinChannelBlockHash;
-                const joinChannelBlocks: JoinChannelBlockStruct[] = [];
-                let currentJoinChannelBlock =
-                    this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
-                        currentJoinChannelBlockHash
-                    );
-
-                while (
-                    currentJoinChannelBlock &&
-                    currentJoinChannelBlockHash !==
-                        genesisSnapshot.snapshotData.latestJoinChannelBlockHash
-                ) {
-                    joinChannelBlocks.unshift(currentJoinChannelBlock.block);
-                    currentJoinChannelBlockHash =
-                        currentJoinChannelBlock.block.previousBlockHash;
-                    currentJoinChannelBlock =
-                        this.storage.joinChannelBlocks.getJoinChannelBlockEntry(
-                            currentJoinChannelBlock.block.previousBlockHash
-                        );
-                }
+                const reduceData = await this.agreementManager.getReduceData(
+                    currentForkId,
+                    reducedOutput
+                );
 
                 // Reduce and finalize on-chain to obtain the reduced fork id
                 try {
                     const txResponse =
                         await this.stateChannelManagerContract.reduceAndFinalize(
                             disputes,
-                            latestSnapshot.toStruct(),
-                            encodedStateForReduce,
-                            joinChannelBlocks
+                            reduceData.latestStateSnapshot,
+                            reduceData.encodedStateMachineState,
+                            reduceData.joinChannelBlocks
                         );
                     await txResponse.wait();
                 } catch (error) {

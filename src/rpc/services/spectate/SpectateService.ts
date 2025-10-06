@@ -18,7 +18,7 @@ import SpectateServiceRpcMethods from "./SpectateRpcMethods";
 import P2PManager from "@/P2PManager";
 
 export interface DisputeWindowVerification {
-    disputes: DisputeConfirmationStruct[];
+    disputeConfirmations: DisputeConfirmationStruct[];
     forkId: Hash; // can deduct from disputes - don't need to include here
     latestStateSnapshot: StateSnapshotStruct;
     latestEncodedStateMachineState: Bytes;
@@ -99,85 +99,53 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
         while (isDisputed) {
             // Collect disputes for this dispute window
-            const disputeCommitments =
-                await diamondStateMachine.localDiamondContract.getWindowCommitments(
-                    channelId,
-                    currentForkId
-                );
             // Collect all disputes for this dispute window
-            const currentWindowDisputes: DisputeConfirmationStruct[] = [];
-            for (const commitment of disputeCommitments) {
-                const disputeConfirmation =
-                    stateManager.storage.disputes.getDisputeConfirmation(
-                        commitment
-                    );
-                if (!disputeConfirmation) {
-                    throw new Error(
-                        `Missing Data Availability for dispute commitment ${commitment}`
-                    );
-                }
+            const currentWindowDisputeConfirmations =
+                await this.p2pManager.stateManager.agreementManager.getForkDisputeConfirmations(
+                    channelId,
+                    currentForkId,
+                    diamondStateMachine.localDiamondContract
+                );
 
-                currentWindowDisputes.push(disputeConfirmation);
-            }
+            const currentWindowDisputesHashes =
+                currentWindowDisputeConfirmations.map((disputeConfirmation) =>
+                    Codec.decode(
+                        disputeConfirmation.signedDispute.encodedDispute,
+                        Type.Dispute
+                    )
+                );
 
             // After collecting disputes for this window, reduce to get the next fork
             const reducedOutput =
                 await diamondStateMachine.localDiamondContract.reduce.staticCall(
-                    currentWindowDisputes.map((disputeConfirmation) =>
-                        Codec.decode(
-                            disputeConfirmation.signedDispute.encodedDispute,
-                            Type.Dispute
-                        )
-                    )
+                    currentWindowDisputesHashes
                 );
 
-            // reducedOutput latestStateSnapshot
-            const reducedLatestStateSnapshot =
-                stateManager.storage.stateSnapshots.getStateSnapshotByHash(
-                    reducedOutput.latestBlock.stateSnapshotHash
-                );
-            if (!reducedLatestStateSnapshot)
-                throw new Error(
-                    "Missing latestStateSnapshot for reducedOutput in storage for syncing"
-                );
-
-            // Get the corresponding stateMachineState
-            const reducedLatestEncodedStateMachineState =
-                stateManager.storage.stateMachineStates.getStateMachineState(
-                    reducedLatestStateSnapshot.stateMachineStateHash
-                );
-            if (!reducedLatestEncodedStateMachineState)
-                throw new Error(
-                    "Missing latestEncodedState for reducedOutput in storage for syncing"
-                );
-
-            // Get joinChannelBlocks that were applied during reduce
-            const joinChannelBlocksAppliedInReduce =
-                stateManager.storage.joinChannelBlocks.getBlocksInRange(
-                    reducedOutput.latestJoinChannelBlockHash,
-                    reducedLatestStateSnapshot.latestJoinBlockHash
+            const reduceData =
+                await this.p2pManager.stateManager.agreementManager.getReduceData(
+                    currentForkId,
+                    reducedOutput
                 );
 
             // Move to the next fork using local EVM
-            const snapshotData =
+            const [snapshotData] =
                 await diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
                     currentForkId,
                     reducedOutput,
-                    reducedLatestStateSnapshot.toStruct(),
-                    reducedLatestEncodedStateMachineState,
-                    joinChannelBlocksAppliedInReduce
+                    reduceData.latestStateSnapshot,
+                    reduceData.encodedStateMachineState,
+                    reduceData.joinChannelBlocks
                 );
             const reducedForkId = ethers.keccak256(
                 Codec.encode(snapshotData, Type.SnapshotData)
             );
             disputeWindows.push({
-                disputes: currentWindowDisputes,
+                disputeConfirmations: currentWindowDisputeConfirmations,
                 forkId: currentForkId as Hash,
-                latestStateSnapshot: reducedLatestStateSnapshot.toStruct(),
+                latestStateSnapshot: reduceData.latestStateSnapshot,
                 latestEncodedStateMachineState:
-                    reducedLatestEncodedStateMachineState,
-                joinChannelBlocksAppliedInReduce:
-                    joinChannelBlocksAppliedInReduce,
+                    reduceData.encodedStateMachineState,
+                joinChannelBlocksAppliedInReduce: reduceData.joinChannelBlocks,
                 reducedForkId
             });
             currentForkId = reducedForkId;
@@ -321,7 +289,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 stateChannelManagerContract.interface.encodeFunctionData(
                     "reduceAndFinalize",
                     [
-                        dw.disputes.map((disputeConfirmation) =>
+                        dw.disputeConfirmations.map((disputeConfirmation) =>
                             Codec.decode(
                                 disputeConfirmation.signedDispute
                                     .encodedDispute,
@@ -382,7 +350,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
     public persistSyncPayload(syncPayload: SyncPayload) {
         const storage = this.p2pManager.stateManager.storage;
         for (const dw of syncPayload.disputeWindows) {
-            for (const dispute of dw.disputes) {
+            for (const dispute of dw.disputeConfirmations) {
                 storage.disputes.storeDisputeConfirmation(dispute);
             }
             storage.stateSnapshots.storeStateSnapshot(
