@@ -1,799 +1,952 @@
-// import ValidationService from "../../src/stateManager/ValidationService";
-// import { BlockValidationResult, TimeConfig } from "../../src/types";
-// import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-// import { Block } from "../../src/models";
-// import { Codec } from "../../src/utils";
-// import sinon from "sinon";
-// import { expect } from "chai";
-// import { ethers } from "ethers";
-
-// describe("ValidationService.validateBlockConfirmation", () => {
-//     let validationService: ValidationService;
-//     let mockStorage: any;
-//     let mockStateMachine: any;
-//     let mockStateChannelManagerContract: any;
-//     let mockTimeConfig: TimeConfig;
-//     let mockChannelId: string;
-//     let mockGetForkId: sinon.SinonStub;
-//     let mockLocalDiamond: any;
-
-//     // Helper functions for creating meaningful hex values
-//     const createHexFromString = (str: string) =>
-//         ethers.hexlify(ethers.toUtf8Bytes(str));
-
-//     const createTestSignature = (identifier: string = "default") => {
-//         // Create a deterministic but valid 65-byte signature based on identifier
-//         const base = ethers.keccak256(ethers.toUtf8Bytes(identifier));
-//         // Pad to 65 bytes (130 hex chars + 0x = 132 total)
-//         return base + base.slice(2, 4); // Take first 2 chars without 0x to make it 65 bytes
-//     };
-
-//     const TestHex = {
-//         MAIN_BLOCK: createHexFromString("main_block"), // "0x6d61696e5f626c6f636b"
-//         CONFLICTING_BLOCK: createHexFromString("conflicting"), // "0x636f6e666c696374696e67"
-//         PREVIOUS_HASH: createHexFromString("prev_hash"), // "0x707265765f68617368"
-//         BLOCK_HASH: createHexFromString("block_hash"), // "0x626c6f636b5f68617368"
-
-//         SIGNATURE_AUTHOR: createTestSignature("author"),
-//         SIGNATURE_PEER1: createTestSignature("peer1"),
-//         SIGNATURE_PEER2: createTestSignature("peer2")
-//     };
-
-//     // Simplified test data builders
-//     const createBlockConfirmation = (
-//         overrides: any = {}
-//     ): BlockConfirmationStruct => ({
-//         signedBlock: {
-//             encodedBlock: TestHex.MAIN_BLOCK,
-//             signature: TestHex.SIGNATURE_AUTHOR,
-//             ...overrides.signedBlock
-//         },
-//         signatures: [TestHex.SIGNATURE_PEER1, TestHex.SIGNATURE_PEER2],
-//         ...overrides
-//     });
-
-//     const createBlock = (overrides: any = {}): Block => {
-//         const mockBlock = {
-//             channelId: mockChannelId,
-//             author: "0xauthor",
-//             forkId: "0xfork",
-//             height: 1,
-//             timestamp: 1000,
-//             previousBlockHash: TestHex.PREVIOUS_HASH,
-//             hash: TestHex.BLOCK_HASH,
-//             coordinates: { forkId: "0xfork", height: 1 },
-//             signerAddress: "0xauthor",
-//             allSignerAddresses: new Set(["0xauthor", "0xpeer1"]),
-//             confirmationSignerAddresses: new Set(["0xpeer1"]),
-//             signatureToAddress: undefined,
-//             getRelevantTimestamp: sinon.stub().returns(1000),
-//             encode: sinon
-//                 .stub()
-//                 .returns(overrides.encodedBlock || TestHex.MAIN_BLOCK),
-//             get signedBlock() {
-//                 return {
-//                     encodedBlock: this.encode(),
-//                     signature: overrides.signature || TestHex.SIGNATURE_AUTHOR
-//                 };
-//             },
-//             ...overrides
-//         } as any;
-
-//         return mockBlock;
-//     };
-
-//     // Helper to setup conflict detection scenario
-//     const setupConflictDetection = (
-//         conflictingBlock: Block,
-//         isLinked: boolean = true
-//     ) => {
-//         // Handle both getBlockEntry overloads correctly
-//         mockStorage.blocks.getBlockEntry.callsFake(
-//             (param1: any, param2?: any) => {
-//                 if (param2 === undefined) {
-//                     return undefined; // Skip duplicate detection
-//                 } else {
-//                     return {
-//                         block: conflictingBlock
-//                     };
-//                 }
-//             }
-//         );
-
-//         // Reset and properly configure Block.fromBlockConfirmation stub to handle multiple calls
-//         (Block.fromBlockConfirmation as any).restore();
-//         const blockDecodeStub = sinon.stub(Block, "fromBlockConfirmation");
-//         blockDecodeStub.callsFake((blockConfirmation: any) => {
-//             if (
-//                 blockConfirmation.signedBlock.encodedBlock ===
-//                 TestHex.MAIN_BLOCK
-//             ) {
-//                 return createBlock(); // main block
-//             }
-//             if (
-//                 blockConfirmation.signedBlock.encodedBlock ===
-//                 TestHex.CONFLICTING_BLOCK
-//             ) {
-//                 return conflictingBlock; // conflicting block
-//             }
-//             return createBlock(); // fallback
-//         });
-
-//         // Apply isLinked stub BEFORE validation logic
-//         const isLinkedStub = sinon.stub(validationService as any, "isLinked");
-//         isLinkedStub.returns(isLinked);
-//     };
-
-//     beforeEach(() => {
-//         sinon.restore();
-
-//         mockStorage = {
-//             queues: {
-//                 queueBlock: sinon.stub(),
-//                 isBlockQueued: sinon.stub().returns(false)
-//             },
-//             blocks: {
-//                 getBlockEntry: sinon.stub(),
-//                 getNextBlockHeight: sinon.stub().returns(1),
-//                 storeBlock: sinon.stub(),
-//                 setOnChainTimestamp: sinon.stub()
-//             },
-//             disputes: {
-//                 didIDispute: sinon.stub().returns(false)
-//             },
-//             getParticipants: sinon.stub().returns(["0xauthor"]),
-//             getPreviousBlockOrSnapshot: sinon.stub().returns({
-//                 block: createBlock({ hash: TestHex.PREVIOUS_HASH })
-//             }),
-//             stateSnapshots: {
-//                 getStateSnapshotByHash: sinon.stub().returns(null)
-//             },
-//             stateMachineStates: {
-//                 getStateMachineState: sinon
-//                     .stub()
-//                     .returns("0xstateMachineState")
-//             },
-//             fraudProofs: {
-//                 storeFraudProof: sinon.stub().returns("0xfraudproof")
-//             }
-//         };
-
-//         mockStateMachine = {
-//             getNextToWrite: sinon.stub().resolves("0xauthor")
-//         };
-
-//         mockStateChannelManagerContract = {
-//             getParticipants: sinon.stub().resolves(["0xauthor"]),
-//             getPendingParticipants: sinon.stub().resolves([]),
-//             getBlockCallDataCommitment: sinon.stub().resolves({ found: false }),
-//             queryFilter: sinon.stub().resolves([]),
-//             filters: { BlockCalldataPosted: sinon.stub().returns("filter") }
-//         };
-
-//         mockTimeConfig = {
-//             p2pTime: 1000,
-//             agreementTime: 2000,
-//             chainFallbackTime: 3000,
-//             evidenceTime: 4000
-//         };
-
-//         mockChannelId = "0xchannel";
-//         mockGetForkId = sinon.stub().returns("0xfork");
-//         mockLocalDiamond = {
-//             isForkDisputed: sinon.stub().resolves(false)
-//         };
-
-//         sinon
-//             .stub(Block, "fromBlockConfirmation")
-//             .callsFake(() => createBlock());
-
-//         validationService = new ValidationService(
-//             mockStorage,
-//             mockStateMachine,
-//             mockStateChannelManagerContract,
-//             mockTimeConfig
-//         );
-//     });
-
-//     afterEach(() => {
-//         sinon.restore();
-//     });
-
-//     describe("Channel Status Validation", () => {
-//         it("should return shouldDisconnect false when channel is not open", async () => {
-//             sinon
-//                 .stub(validationService as any, "isChannelOpen")
-//                 .returns(false);
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result).to.eql({ shouldDisconnect: false });
-//             expect(mockStorage.queues.queueBlock.called).to.be.true;
-//         });
-//     });
-
-//     describe("Block Authentication", () => {
-//         it("should return shouldDisconnect true when block authentication fails", async () => {
-//             sinon
-//                 .stub(validationService as any, "authenticateBlock")
-//                 .returns(null);
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result).to.eql({ shouldDisconnect: true });
-//         });
-
-//         it("should return shouldDisconnect true when block has wrong channel or signature", async () => {
-//             (Block.fromBlockConfirmation as any).returns(
-//                 createBlock({ channelId: "wrong-channel" })
-//             );
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result).to.eql({ shouldDisconnect: true });
-//         });
-//     });
-
-//     describe("Duplicate Block Detection", () => {
-//         it("should return shouldDisconnect true when duplicate block has invalid signers", async () => {
-//             mockStorage.queues.isBlockQueued.returns(true);
-//             const mockBlock = createBlock({
-//                 confirmationSignerAddresses: new Set(["0xinvalidsigner"])
-//             });
-//             // Mock allSignerAddresses getter to return invalid signers
-//             (Block.fromBlockConfirmation as any).returns(mockBlock);
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result).to.eql({ shouldDisconnect: true });
-//         });
-
-//         it("should return shouldDisconnect false when block exists with no new signatures", async () => {
-//             const block = createBlock({
-//                 confirmationSignatures: new Set([
-//                     TestHex.SIGNATURE_PEER1,
-//                     TestHex.SIGNATURE_PEER2
-//                 ])
-//             });
-//             mockStorage.blocks.getBlockEntry.returns({
-//                 block: block
-//             });
-//             (Block.fromBlockConfirmation as any).returns(block);
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result).to.eql({ shouldDisconnect: false });
-//         });
-
-//         it("should return BROADCAST action when block has new valid signatures", async () => {
-//             mockStorage.blocks.getBlockEntry.returns({
-//                 block: createBlock({
-//                     confirmationSignatures: new Set([TestHex.SIGNATURE_PEER1])
-//                 })
-//             });
-//             mockStorage.getParticipants.returns(["0xpeer1", "0xauthor"]);
-//             const mockBlock = createBlock({
-//                 confirmationSignatures: new Set([
-//                     TestHex.SIGNATURE_PEER1,
-//                     TestHex.SIGNATURE_PEER2
-//                 ]),
-//                 signatureToAddress: sinon.stub().returns("0xpeer1")
-//             });
-//             (Block.fromBlockConfirmation as any).returns(mockBlock);
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.action).to.equal(BlockValidationResult.BROADCAST);
-//         });
-//     });
-
-//     describe("Participant Validation", () => {
-//         it("should return shouldDisconnect true when author is not a participant", async () => {
-//             mockStorage.getParticipants.returns(["0xotherparticipant"]);
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.shouldDisconnect).to.be.true;
-//         });
-//     });
-
-//     describe("Conflict Detection", () => {
-//         it("should return DISPUTE for same author conflict (double sign)", async () => {
-//             const conflictingBlock = createBlock({
-//                 encodedBlock: TestHex.CONFLICTING_BLOCK
-//             });
-//             setupConflictDetection(conflictingBlock);
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result).to.eql({
-//                 shouldDisconnect: true,
-//                 action: BlockValidationResult.DISPUTE
-//             });
-//         });
-
-//         it("should return DISPUTE for different author conflict when linked", async () => {
-//             const conflictingBlock = createBlock({
-//                 author: "0xdifferentauthor",
-//                 encodedBlock: TestHex.CONFLICTING_BLOCK
-//             });
-//             setupConflictDetection(conflictingBlock, true);
-
-//             // Mock StateSnapshot with toStruct method
-//             const mockStateSnapshot = {
-//                 stateMachineStateHash: "0xstatehash",
-//                 toStruct: sinon.stub().returns({})
-//             };
-//             mockStorage.stateSnapshots.getStateSnapshotByHash.returns(
-//                 mockStateSnapshot
-//             );
-
-//             sinon.stub(Codec, "encode").returns("0xencodedproof");
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result).to.eql({
-//                 shouldDisconnect: true,
-//                 action: BlockValidationResult.DISPUTE
-//             });
-//         });
-
-//         it("should return shouldDisconnect true for different author conflict when not linked", async () => {
-//             const conflictingBlock = createBlock({
-//                 author: "0xdifferentauthor",
-//                 encodedBlock: TestHex.CONFLICTING_BLOCK
-//             });
-//             setupConflictDetection(conflictingBlock, false);
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.shouldDisconnect).to.be.true;
-//         });
-//     });
-
-//     describe("Fork and Height Validation", () => {
-//         it("should return shouldDisconnect false when fork is disputed", async () => {
-//             mockLocalDiamond.isForkDisputed.resolves(true);
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.shouldDisconnect).to.be.false;
-//         });
-
-//         it("should return shouldDisconnect false when block height is in future", async () => {
-//             mockStorage.blocks.getNextBlockHeight.returns(0);
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.shouldDisconnect).to.be.false;
-//         });
-//     });
-
-//     describe("Link Validation", () => {
-//         it("should return shouldDisconnect true when block is not linked", async () => {
-//             sinon.stub(validationService as any, "isLinked").returns(false);
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.shouldDisconnect).to.be.true;
-//         });
-
-//         it("should validate genesis block linking correctly", async () => {
-//             const genesisBlock = createBlock({
-//                 height: 0,
-//                 previousBlockHash: "0xgenesis"
-//             });
-//             (Block.fromBlockConfirmation as any).returns(genesisBlock);
-//             sinon.stub(validationService as any, "isLinked").returns(true);
-//             sinon
-//                 .stub(validationService as any, "validateTimeLogic")
-//                 .resolves(undefined);
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.action).to.equal(BlockValidationResult.SUCCESS);
-//         });
-//     });
-
-//     describe("Leader Validation", () => {
-//         it("should return DISPUTE when author is not next leader", async () => {
-//             mockStateMachine.getNextToWrite.resolves("0xdifferentleader");
-//             sinon.stub(validationService as any, "isLinked").returns(true);
-//             const mockStateSnapshot = {
-//                 stateMachineStateHash: "0xstatehash",
-//                 toStruct: sinon.stub().returns({})
-//             };
-//             mockStorage.stateSnapshots.getStateSnapshotByHash.returns(
-//                 mockStateSnapshot
-//             );
-
-//             sinon.stub(Codec, "encode").returns("0xencodedproof");
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.shouldDisconnect).to.be.true;
-//             expect(result.action).to.equal(BlockValidationResult.DISPUTE);
-//         });
-//     });
-
-//     describe("Time Logic Validation", () => {
-//         let clockStub: sinon.SinonStub;
-//         const TIMING = {
-//             BASE_TIMESTAMP: 1000,
-//             GENESIS_TIMESTAMP: 1000,
-//             CLOCK_TIME: 1100,
-//             LATE_CLOCK_TIME: 8000,
-//             ON_CHAIN_TIMESTAMP: 1200,
-//             VERY_LATE_ON_CHAIN: 8000
-//         };
-
-//         beforeEach(() => {
-//             // Mock Clock.getTimeInSeconds for subjective validation
-//             clockStub = sinon
-//                 .stub(require("../../src/Clock").default, "getTimeInSeconds")
-//                 .returns(5000);
-//         });
-
-//         afterEach(() => {
-//             clockStub.restore();
-//         });
-
-//         // Test Case 1: Author signed previous, valid timing, no on-chain timestamps
-//         it("Case 1: Author signed previous, valid P2P timing, passes subjective check", async () => {
-//             const previousBlock = createBlock({
-//                 timestamp: TIMING.BASE_TIMESTAMP,
-//                 onChainTimestamp: undefined,
-//                 getRelevantTimestamp: sinon
-//                     .stub()
-//                     .returns(TIMING.BASE_TIMESTAMP) // Author signed
-//             });
-
-//             const currentBlock = createBlock({
-//                 timestamp: TIMING.BASE_TIMESTAMP + 50, // Within p2pTime (1050)
-//                 onChainTimestamp: undefined,
-//                 author: "0xauthor"
-//             });
-
-//             mockStorage.getPreviousBlockOrSnapshot.returns({
-//                 block: previousBlock
-//             });
-//             (Block.fromBlockConfirmation as any).returns(currentBlock);
-//             sinon.stub(validationService as any, "isLinked").returns(true);
-
-//             // Mock Clock to be within agreementTime
-//             clockStub.returns(1100); // abs(1100 - 1050) = 50 <= 2000 (agreementTime)
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.action).to.equal(BlockValidationResult.SUCCESS);
-//         });
-
-//         // Test Case 2: Author didn't sign, previous has onChain, extends window
-//         it("Case 2: Author didn't sign previous, onChain extends window, valid", async () => {
-//             const previousBlock = createBlock({
-//                 timestamp: TIMING.BASE_TIMESTAMP,
-//                 onChainTimestamp: TIMING.ON_CHAIN_TIMESTAMP, // Later on-chain timestamp
-//                 getRelevantTimestamp: sinon
-//                     .stub()
-//                     .returns(TIMING.ON_CHAIN_TIMESTAMP) // Author didn't sign, uses onChain
-//             });
-
-//             const currentBlock = createBlock({
-//                 timestamp: TIMING.ON_CHAIN_TIMESTAMP + 50, // Would fail with original (1000) but passes with onChain (1200)
-//                 onChainTimestamp: undefined
-//             });
-
-//             mockStorage.getPreviousBlockOrSnapshot.returns({
-//                 block: previousBlock
-//             });
-//             (Block.fromBlockConfirmation as any).returns(currentBlock);
-//             sinon.stub(validationService as any, "isLinked").returns(true);
-
-//             clockStub.returns(1300); // Within agreementTime
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.action).to.equal(BlockValidationResult.SUCCESS);
-//         });
-
-//         // Test Case 3: Valid P2P timing but posted too late on-chain
-//         it("Case 3: Valid P2P timing but posted too late on-chain → DISPUTE", async () => {
-//             const previousBlock = createBlock({
-//                 timestamp: TIMING.BASE_TIMESTAMP,
-//                 onChainTimestamp: undefined,
-//                 getRelevantTimestamp: sinon
-//                     .stub()
-//                     .returns(TIMING.BASE_TIMESTAMP)
-//             });
-
-//             const currentBlock = createBlock({
-//                 timestamp: TIMING.BASE_TIMESTAMP + 50, // Valid P2P timing
-//                 onChainTimestamp: TIMING.VERY_LATE_ON_CHAIN // Way too late: 8000 > 1000 + 1000 + 2000 + 3000 = 7000
-//             });
-
-//             mockStorage.getPreviousBlockOrSnapshot.returns({
-//                 block: previousBlock
-//             });
-//             (Block.fromBlockConfirmation as any).returns(currentBlock);
-//             sinon.stub(validationService as any, "isLinked").returns(true);
-
-//             // Expect fraud proof creation
-//             const fraudProofStub = sinon.stub(
-//                 validationService["fraudProofService"],
-//                 "createInvalidTimestampProof"
-//             );
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.action).to.equal(BlockValidationResult.DISPUTE);
-//             expect(result.shouldDisconnect).to.be.true;
-//             expect(fraudProofStub.called).to.be.true;
-//         });
-
-//         // Test Case 4: Invalid timing, first block (genesis)
-//         it("Case 4: Invalid timing on genesis block → DISPUTE", async () => {
-//             const genesisSnapshot = {
-//                 timestamp: TIMING.BASE_TIMESTAMP
-//             };
-
-//             const currentBlock = createBlock({
-//                 timestamp: TIMING.BASE_TIMESTAMP + 1500, // Way beyond p2pTime from genesis
-//                 height: 0
-//             });
-
-//             mockStorage.getPreviousBlockOrSnapshot.returns({
-//                 stateSnapshot: genesisSnapshot
-//             });
-//             (Block.fromBlockConfirmation as any).returns(currentBlock);
-//             sinon.stub(validationService as any, "isLinked").returns(true);
-
-//             const fraudProofStub = sinon.stub(
-//                 validationService["fraudProofService"],
-//                 "createInvalidTimestampProof"
-//             );
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.action).to.equal(BlockValidationResult.DISPUTE);
-//             expect(fraudProofStub.called).to.be.true;
-//         });
-
-//         // Test Case 5: Invalid timing, previous has onChain, no retry needed
-//         it("Case 5: Invalid timing, previous already has onChain → DISPUTE", async () => {
-//             const previousBlock = createBlock({
-//                 timestamp: TIMING.BASE_TIMESTAMP,
-//                 onChainTimestamp: 1100, // Already has onChain
-//                 getRelevantTimestamp: sinon.stub().returns(1100)
-//             });
-
-//             const currentBlock = createBlock({
-//                 timestamp: 2500 // Way beyond p2pTime (1100 + 1000 = 2100)
-//             });
-
-//             mockStorage.getPreviousBlockOrSnapshot.returns({
-//                 block: previousBlock
-//             });
-//             (Block.fromBlockConfirmation as any).returns(currentBlock);
-//             sinon.stub(validationService as any, "isLinked").returns(true);
-
-//             const fraudProofStub = sinon.stub(
-//                 validationService["fraudProofService"],
-//                 "createInvalidTimestampProof"
-//             );
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.action).to.equal(BlockValidationResult.DISPUTE);
-//             expect(fraudProofStub.called).to.be.true;
-//         });
-
-//         // Test Case 6: Invalid timing, retry successful
-//         it("Case 6: Invalid timing, fetch onChain successful, recursive validation passes", async () => {
-//             const previousBlock = createBlock({
-//                 timestamp: TIMING.BASE_TIMESTAMP,
-//                 onChainTimestamp: undefined, // IMPORTANT: No onChain initially
-//                 forkId: "0xfork",
-//                 height: 1 // NOT genesis (height 0)
-//             });
-
-//             // Create a mock that will change behavior after the onChainTimestamp is set
-//             let timestampUpdated = false;
-//             previousBlock.getRelevantTimestamp = sinon.stub().callsFake(() => {
-//                 return timestampUpdated ? 1200 : 1000; // Return updated timestamp after fetch
-//             });
-
-//             const currentBlock = createBlock({
-//                 timestamp: 1250, // Invalid with original (1000 + 1000 = 2000) but valid after update (1200 + 1000 = 2200)
-//                 onChainTimestamp: undefined,
-//                 author: "0xauthor",
-//                 height: 2, // Next block
-//                 forkId: "0xfork"
-//             });
-
-//             mockStorage.getPreviousBlockOrSnapshot.returns({
-//                 block: previousBlock
-//             });
-//             mockStorage.blocks.getNextBlockHeight.returns(2); // Expect height 2
-//             (Block.fromBlockConfirmation as any).returns(currentBlock);
-//             sinon.stub(validationService as any, "isLinked").returns(true);
-
-//             // Mock successful fetch that returns better timestamp
-//             const fetchStub = sinon.stub(
-//                 validationService as any,
-//                 "fetchOnChainTimestamp"
-//             );
-//             fetchStub.resolves(1200); // Better timestamp that makes currentBlock valid
-
-//             // Mock the setOnChainTimestamp to trigger our flag
-//             const originalSetOnChain = mockStorage.blocks.setOnChainTimestamp;
-//             mockStorage.blocks.setOnChainTimestamp = sinon
-//                 .stub()
-//                 .callsFake((...args) => {
-//                     timestampUpdated = true; // Set flag when timestamp is updated
-//                     return originalSetOnChain.apply(mockStorage.blocks, args);
-//                 });
-
-//             clockStub.returns(1300); // Within agreementTime
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.action).to.equal(BlockValidationResult.SUCCESS);
-//         });
-
-//         // Test Case 7: Invalid timing, retry failed
-//         it("Case 7: Invalid timing, fetch onChain fails → DISPUTE", async () => {
-//             const previousBlock = createBlock({
-//                 timestamp: 1000,
-//                 onChainTimestamp: undefined,
-//                 getRelevantTimestamp: sinon.stub().returns(1000)
-//             });
-
-//             const currentBlock = createBlock({
-//                 timestamp: 2500 // Way beyond p2pTime
-//             });
-
-//             mockStorage.getPreviousBlockOrSnapshot.returns({
-//                 block: previousBlock
-//             });
-//             (Block.fromBlockConfirmation as any).returns(currentBlock);
-//             sinon.stub(validationService as any, "isLinked").returns(true);
-
-//             // Mock failed fetch
-//             const fetchStub = sinon.stub(
-//                 validationService as any,
-//                 "fetchOnChainTimestamp"
-//             );
-//             fetchStub.resolves(undefined); // No better timestamp available
-
-//             const fraudProofStub = sinon.stub(
-//                 validationService["fraudProofService"],
-//                 "createInvalidTimestampProof"
-//             );
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.action).to.equal(BlockValidationResult.DISPUTE);
-//             expect(fraudProofStub.called).to.be.true;
-//             expect(fetchStub.called).to.be.true;
-//         });
-
-//         // Test Case 8: Valid P2P but outside agreementTime
-//         it("Case 8: Valid P2P timing but outside agreementTime → NOT_ENOUGH_TIME", async () => {
-//             const previousBlock = createBlock({
-//                 timestamp: 1000,
-//                 onChainTimestamp: undefined,
-//                 getRelevantTimestamp: sinon.stub().returns(1000)
-//             });
-
-//             const currentBlock = createBlock({
-//                 timestamp: 1050, // Valid P2P timing
-//                 onChainTimestamp: undefined
-//             });
-
-//             mockStorage.getPreviousBlockOrSnapshot.returns({
-//                 block: previousBlock
-//             });
-//             (Block.fromBlockConfirmation as any).returns(currentBlock);
-//             sinon.stub(validationService as any, "isLinked").returns(true);
-
-//             // Mock Clock to be outside agreementTime
-//             clockStub.returns(8000); // abs(8000 - 1050) = 6950 > 2000 (agreementTime)
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.action).to.equal(
-//                 BlockValidationResult.NOT_ENOUGH_TIME
-//             );
-//             expect(result.shouldDisconnect).to.be.false;
-//         });
-
-//         // Test Case 9: Current block has onChain, skips subjective check
-//         it("Case 9: Current block has onChainTimestamp, skips subjective validation", async () => {
-//             const previousBlock = createBlock({
-//                 timestamp: 1000,
-//                 getRelevantTimestamp: sinon.stub().returns(1000)
-//             });
-
-//             const currentBlock = createBlock({
-//                 timestamp: 1050,
-//                 onChainTimestamp: 1060 // Has onChain timestamp
-//             });
-
-//             mockStorage.getPreviousBlockOrSnapshot.returns({
-//                 block: previousBlock
-//             });
-//             (Block.fromBlockConfirmation as any).returns(currentBlock);
-//             sinon.stub(validationService as any, "isLinked").returns(true);
-
-//             // Set clock way outside agreementTime - should be ignored
-//             clockStub.returns(10000);
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.action).to.equal(BlockValidationResult.SUCCESS);
-//         });
-//     });
-
-//     describe("Success Case", () => {
-//         it("should return SUCCESS when all validations pass", async () => {
-//             sinon.stub(validationService as any, "isLinked").returns(true);
-//             sinon
-//                 .stub(validationService as any, "validateTimeLogic")
-//                 .resolves(undefined);
-
-//             const result = await validationService.validateBlockConfirmation(
-//                 createBlockConfirmation()
-//             );
-
-//             expect(result.action).to.equal(BlockValidationResult.SUCCESS);
-//         });
-//     });
-// });
+import ValidationService from "../../src/stateManager/ValidationService";
+import { BlockValidationResult } from "../../src/types";
+import { expect } from "chai";
+import sinon from "sinon";
+
+import {
+    BlockBuilder,
+    MockSetup,
+    ValidationFailure,
+    EXPECTED_RESULTS
+} from "./ValidationService.testUtils";
+
+describe("ValidationService - Progressive Validation Tests", () => {
+    let validationService: ValidationService;
+    let mockSetup: MockSetup;
+
+    beforeEach(() => {
+        sinon.restore();
+        mockSetup = new MockSetup();
+
+        validationService = new ValidationService(
+            mockSetup.mockStorage,
+            mockSetup.mockDiamondStateMachine,
+            mockSetup.mockStateChannelManagerContract,
+            mockSetup.mockTimeConfig,
+            mockSetup.mockStateManager
+        );
+
+        // Make validationService available to MockSetup for internal stubs
+        mockSetup.validationService = validationService;
+    });
+
+    afterEach(() => {
+        mockSetup.cleanup();
+    });
+
+    describe("Baseline: Completely Valid Block", () => {
+        it("should pass all validations and return SUCCESS", async () => {
+            // Manually set up for success without using failWith()
+            mockSetup.setupForSuccess();
+            const validBlock = BlockBuilder.create(mockSetup).build();
+
+            const result = await validationService.validateBlockConfirmation(
+                validBlock,
+                mockSetup.mockStrategy
+            );
+
+            expect(result).to.equal(BlockValidationResult.SUCCESS);
+
+            // Verify no failure strategies were called
+            Object.values(mockSetup.mockStrategy).forEach(
+                (strategyMethod: any) => {
+                    if (typeof strategyMethod.called !== "undefined") {
+                        expect(strategyMethod.called).to.be.false;
+                    }
+                }
+            );
+        });
+    });
+
+    describe("Progressive Failures: From Last to First Validation Step", () => {
+        describe("Step 10: Time Validation Failures", () => {
+            it("should fail with subjective invalid timestamp", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.SUBJECTIVE_TIMESTAMP_INVALID)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[
+                        ValidationFailure.SUBJECTIVE_TIMESTAMP_INVALID
+                    ]
+                );
+                expect(
+                    mockSetup.mockStrategy.subjectiveInvalidTimestampDetected
+                        .called
+                ).to.be.true;
+            });
+
+            it("should fail when posted on-chain too late", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.POSTED_ON_CHAIN_TOO_LATE)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.POSTED_ON_CHAIN_TOO_LATE]
+                );
+                expect(
+                    mockSetup.mockStrategy.objectiveInvalidTimestampDetected
+                        .called
+                ).to.be.true;
+            });
+
+            it("should fail with objective invalid timestamp (too late)", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.OBJECTIVE_TIMESTAMP_TOO_LATE)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[
+                        ValidationFailure.OBJECTIVE_TIMESTAMP_TOO_LATE
+                    ]
+                );
+                expect(
+                    mockSetup.mockStrategy.objectiveInvalidTimestampDetected
+                        .called
+                ).to.be.true;
+            });
+
+            it("should fail with objective invalid timestamp (basic)", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.OBJECTIVE_TIMESTAMP_INVALID)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[
+                        ValidationFailure.OBJECTIVE_TIMESTAMP_INVALID
+                    ]
+                );
+                expect(
+                    mockSetup.mockStrategy.objectiveInvalidTimestampDetected
+                        .called
+                ).to.be.true;
+            });
+        });
+
+        describe("Step 9: Leader Validation Failures", () => {
+            it("should fail when author is not the next leader", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.WRONG_LEADER)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.WRONG_LEADER]
+                );
+                expect(
+                    mockSetup.mockStrategy.invalidStateTransitionDetected.called
+                ).to.be.true;
+            });
+        });
+
+        describe("Step 8: Linking Validation Failures", () => {
+            it("should fail with wrong genesis for unlinked genesis block", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.WRONG_GENESIS)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.WRONG_GENESIS]
+                );
+                expect(mockSetup.mockStrategy.wrongGenesisDetected.called).to.be
+                    .true;
+            });
+
+            it("should fail for unlinked non-genesis block", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.NOT_LINKED_NON_GENESIS)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.NOT_LINKED_NON_GENESIS]
+                );
+                expect(
+                    mockSetup.mockStrategy.blockIsNotLinkedAndIsNotFirstBlock
+                        .called
+                ).to.be.true;
+            });
+        });
+
+        describe("Step 7: Height Validation Failures", () => {
+            it("should fail when block height is too high (future block)", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.FUTURE_BLOCK)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.FUTURE_BLOCK]
+                );
+                expect(
+                    mockSetup.mockStrategy.blockIsNotNextAndIsInTheFuture.called
+                ).to.be.true;
+            });
+        });
+
+        describe("Step 6: Fork Dispute Validation Failures", () => {
+            it("should fail when fork is disputed locally", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.FORK_DISPUTED_LOCALLY)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.FORK_DISPUTED_LOCALLY]
+                );
+                expect(mockSetup.mockStrategy.blockForkIsDisputed.called).to.be
+                    .true;
+            });
+
+            it("should fail when fork is disputed on-chain", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.FORK_DISPUTED_ON_CHAIN)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.FORK_DISPUTED_ON_CHAIN]
+                );
+                expect(mockSetup.mockStrategy.blockForkIsDisputed.called).to.be
+                    .true;
+            });
+        });
+
+        describe("Step 5: Conflict Detection Failures", () => {
+            it("should detect double sign (same author conflict)", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.DOUBLE_SIGN)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.DOUBLE_SIGN]
+                );
+                expect(mockSetup.mockStrategy.doubleSignDetected.called).to.be
+                    .true;
+            });
+
+            it("should detect invalid state transition (different author, linked)", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.INVALID_STATE_TRANSITION)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.INVALID_STATE_TRANSITION]
+                );
+                expect(
+                    mockSetup.mockStrategy.invalidStateTransitionDetected.called
+                ).to.be.true;
+            });
+
+            it("should handle conflicting but not linked block", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.CONFLICTING_NOT_LINKED)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.CONFLICTING_NOT_LINKED]
+                );
+                expect(
+                    mockSetup.mockStrategy.conflictingButNotLinkedBlockDetected
+                        .called
+                ).to.be.true;
+            });
+        });
+
+        describe("Step 4: Author Participant Validation Failures", () => {
+            it("should fail when author is not a participant", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.AUTHOR_NOT_PARTICIPANT)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.AUTHOR_NOT_PARTICIPANT]
+                );
+                expect(
+                    mockSetup.mockStrategy.blockAuthorIsNotParticipant.called
+                ).to.be.true;
+            });
+        });
+
+        describe("Step 3: Duplicate Block Validation Failures", () => {
+            it("should handle queued block with invalid signers", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.QUEUED_INVALID_SIGNERS)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.QUEUED_INVALID_SIGNERS]
+                );
+                expect(
+                    mockSetup.mockStrategy.notAllSingersAreParticipants.called
+                ).to.be.true;
+            });
+
+            it("should handle existing block with no new signatures", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.NO_NEW_SIGNATURES)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.NO_NEW_SIGNATURES]
+                );
+                expect(
+                    mockSetup.mockStrategy.noNewSignaturesOnExistingBlock.called
+                ).to.be.true;
+            });
+
+            it("should handle existing block with new invalid signatures", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.INVALID_NEW_SIGNERS)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.INVALID_NEW_SIGNERS]
+                );
+                expect(
+                    mockSetup.mockStrategy.notAllSingersAreParticipants.called
+                ).to.be.true;
+            });
+        });
+
+        describe("Step 2: Channel Open Validation Failures", () => {
+            it("should fail when channel is not open (forkId is ZeroHash)", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.CHANNEL_NOT_OPEN)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.CHANNEL_NOT_OPEN]
+                );
+                expect(mockSetup.mockStrategy.channelNotOpened.called).to.be
+                    .true;
+            });
+        });
+
+        describe("Step 1: Channel ID Validation Failures", () => {
+            it("should fail when block has wrong channel ID", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.WRONG_CHANNEL_ID)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.WRONG_CHANNEL_ID]
+                );
+                expect(mockSetup.mockStrategy.wrongChannel.called).to.be.true;
+            });
+
+            it("should fail when state manager has no channel ID", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.NULL_CHANNEL_ID)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.NULL_CHANNEL_ID]
+                );
+                expect(mockSetup.mockStrategy.wrongChannel.called).to.be.true;
+            });
+        });
+    });
+
+    describe("Comprehensive Validation Flow Tests", () => {
+        it("should validate all failure types have correct expected results", () => {
+            // Ensure we have covered all validation failures
+            const allFailures = Object.values(
+                ValidationFailure
+            ) as ValidationFailure[];
+            const coveredFailures = Object.keys(EXPECTED_RESULTS);
+
+            expect(coveredFailures.length).to.equal(allFailures.length);
+
+            allFailures.forEach((failure) => {
+                expect(EXPECTED_RESULTS[failure]).to.not.be.undefined;
+            });
+        });
+
+        it("should demonstrate progressive failure approach concept", async () => {
+            // This test demonstrates that we have comprehensive coverage
+            // of all validation failure points from last to first step
+            const allFailures = Object.values(
+                ValidationFailure
+            ) as ValidationFailure[];
+            const coveredFailures = Object.keys(EXPECTED_RESULTS);
+
+            expect(coveredFailures.length).to.equal(allFailures.length);
+
+            // Verify we have the right progression from last validation step to first
+            const progressiveOrder = [
+                // Step 10: Time validation (last)
+                ValidationFailure.SUBJECTIVE_TIMESTAMP_INVALID,
+                ValidationFailure.POSTED_ON_CHAIN_TOO_LATE,
+                ValidationFailure.OBJECTIVE_TIMESTAMP_TOO_LATE,
+                ValidationFailure.OBJECTIVE_TIMESTAMP_INVALID,
+
+                // Step 9: Leader validation
+                ValidationFailure.WRONG_LEADER,
+
+                // Step 8: Linking validation
+                ValidationFailure.WRONG_GENESIS,
+                ValidationFailure.NOT_LINKED_NON_GENESIS,
+
+                // Step 7: Height validation
+                ValidationFailure.FUTURE_BLOCK,
+
+                // Step 6: Fork dispute validation
+                ValidationFailure.FORK_DISPUTED_LOCALLY,
+                ValidationFailure.FORK_DISPUTED_ON_CHAIN,
+
+                // Step 5: Conflict detection
+                ValidationFailure.DOUBLE_SIGN,
+                ValidationFailure.INVALID_STATE_TRANSITION,
+                ValidationFailure.CONFLICTING_NOT_LINKED,
+
+                // Step 4: Author participant validation
+                ValidationFailure.AUTHOR_NOT_PARTICIPANT,
+
+                // Step 3: Duplicate validation
+                ValidationFailure.QUEUED_INVALID_SIGNERS,
+                ValidationFailure.NO_NEW_SIGNATURES,
+                ValidationFailure.INVALID_NEW_SIGNERS,
+
+                // Step 2: Channel open validation
+                ValidationFailure.CHANNEL_NOT_OPEN,
+
+                // Step 1: Channel ID validation (first)
+                ValidationFailure.WRONG_CHANNEL_ID,
+                ValidationFailure.NULL_CHANNEL_ID
+            ];
+
+            // Verify all failures in our progressive order have expected results
+            progressiveOrder.forEach((failure) => {
+                expect(EXPECTED_RESULTS[failure]).to.not.be.undefined;
+            });
+
+            // This demonstrates the progressive approach: we test failures
+            // from the last validation step (time) to the first (channel ID)
+            expect(progressiveOrder.length).to.equal(allFailures.length);
+        });
+    });
+
+    describe("Helper Methods Coverage", () => {
+        describe("isChannelOpen", () => {
+            it("should return true for non-zero hash", () => {
+                expect((validationService as any).isChannelOpen("0xnonzero")).to
+                    .be.true;
+            });
+
+            it("should return false for ZeroHash", () => {
+                expect(
+                    (validationService as any).isChannelOpen(
+                        "0x0000000000000000000000000000000000000000000000000000000000000000"
+                    )
+                ).to.be.false;
+            });
+        });
+
+        describe("fetchOnChainTimestamp", () => {
+            it("should return undefined when commitment not found", async () => {
+                mockSetup.mockStateChannelManagerContract.getBlockCallDataCommitment.resolves(
+                    { found: false }
+                );
+
+                const result = await (
+                    validationService as any
+                ).fetchOnChainTimestamp(BlockBuilder.create(mockSetup).build());
+
+                expect(result).to.be.undefined;
+            });
+
+            it("should return timestamp when commitment found", async () => {
+                mockSetup.mockStateChannelManagerContract.getBlockCallDataCommitment.resolves(
+                    {
+                        found: true,
+                        blockCalldataCommitment: "0xcommitment"
+                    }
+                );
+                mockSetup.mockStateChannelManagerContract.queryFilter.resolves([
+                    {
+                        args: {
+                            signedBlock: {},
+                            timestamp: 1500n
+                        }
+                    }
+                ]);
+
+                const result = await (
+                    validationService as any
+                ).fetchOnChainTimestamp(BlockBuilder.create(mockSetup).build());
+
+                expect(result).to.equal(1500);
+            });
+
+            it("should handle errors gracefully", async () => {
+                mockSetup.mockStateChannelManagerContract.getBlockCallDataCommitment.rejects(
+                    new Error("Network error")
+                );
+
+                const result = await (
+                    validationService as any
+                ).fetchOnChainTimestamp(BlockBuilder.create(mockSetup).build());
+
+                expect(result).to.be.undefined;
+            });
+        });
+
+        describe("fetchBlockCommitmentCalldata", () => {
+            it("should return undefined when multiple logs found", async () => {
+                mockSetup.mockStateChannelManagerContract.queryFilter.resolves([
+                    { args: { signedBlock: {}, timestamp: 1500n } },
+                    { args: { signedBlock: {}, timestamp: 1600n } }
+                ]);
+
+                const result = await (
+                    validationService as any
+                ).fetchBlockCommitmentCalldata(
+                    BlockBuilder.create(mockSetup).build(),
+                    "0xcommitment"
+                );
+
+                expect(result).to.be.undefined;
+            });
+
+            it("should return undefined for no logs", async () => {
+                mockSetup.mockStateChannelManagerContract.queryFilter.resolves(
+                    []
+                );
+
+                const result = await (
+                    validationService as any
+                ).fetchBlockCommitmentCalldata(
+                    BlockBuilder.create(mockSetup).build(),
+                    "0xcommitment"
+                );
+
+                expect(result).to.be.undefined;
+            });
+
+            it("should return data for single log", async () => {
+                mockSetup.mockStateChannelManagerContract.queryFilter.resolves([
+                    { args: { signedBlock: {}, timestamp: 1500n } }
+                ]);
+
+                const result = await (
+                    validationService as any
+                ).fetchBlockCommitmentCalldata(
+                    BlockBuilder.create(mockSetup).build(),
+                    "0xcommitment"
+                );
+
+                expect(result).to.deep.equal({
+                    signedBlock: {},
+                    timestamp: 1500
+                });
+            });
+        });
+
+        describe("isPostedOnChainTooLate", () => {
+            it("should return true when posted too late", async () => {
+                const blockPostedLate = BlockBuilder.create(mockSetup).build();
+                blockPostedLate.onChainTimestamp = 8000; // Way too late
+
+                const result = await (
+                    validationService as any
+                ).isPostedOnChainTooLate(900, blockPostedLate);
+
+                expect(result).to.be.true;
+            });
+
+            it("should return false when posted on time", async () => {
+                const blockPostedOnTime =
+                    BlockBuilder.create(mockSetup).build();
+                blockPostedOnTime.onChainTimestamp = 5000; // Within allowed window
+
+                const result = await (
+                    validationService as any
+                ).isPostedOnChainTooLate(900, blockPostedOnTime);
+
+                expect(result).to.be.false;
+            });
+
+            it("should return false when no onChain timestamp available", async () => {
+                const blockWithoutOnChain =
+                    BlockBuilder.create(mockSetup).build();
+                blockWithoutOnChain.onChainTimestamp = undefined as any;
+                sinon
+                    .stub(validationService as any, "fetchOnChainTimestamp")
+                    .resolves(undefined);
+
+                const result = await (
+                    validationService as any
+                ).isPostedOnChainTooLate(900, blockWithoutOnChain);
+
+                expect(result).to.be.false;
+            });
+
+            it("should fetch and set onChain timestamp when not present", async () => {
+                const blockWithoutOnChain =
+                    BlockBuilder.create(mockSetup).build();
+                blockWithoutOnChain.onChainTimestamp = undefined as any;
+                (blockWithoutOnChain as any).hash = "0xblockhash";
+                sinon
+                    .stub(validationService as any, "fetchOnChainTimestamp")
+                    .resolves(1500);
+
+                const result = await (
+                    validationService as any
+                ).isPostedOnChainTooLate(900, blockWithoutOnChain);
+
+                expect(blockWithoutOnChain.onChainTimestamp).to.equal(1500);
+                expect(
+                    mockSetup.mockStorage.blocks.setOnChainTimestamp.calledWith(
+                        "0xblockhash",
+                        1500
+                    )
+                ).to.be.true;
+                expect(result).to.be.false;
+            });
+        });
+
+        describe("getParticipants", () => {
+            it("should return participants from storage when available", async () => {
+                mockSetup.mockStorage.getParticipants.returns([
+                    "0xparticipant1",
+                    "0xparticipant2"
+                ]);
+
+                const result = await (validationService as any).getParticipants(
+                    { forkId: "0xfork123", height: 1 },
+                    "0xchannel123"
+                );
+
+                expect(result).to.deep.equal(
+                    new Set(["0xparticipant1", "0xparticipant2"])
+                );
+                expect(
+                    mockSetup.mockStateChannelManagerContract.getParticipants
+                        .called
+                ).to.be.false;
+                expect(
+                    mockSetup.mockStateChannelManagerContract
+                        .getPendingParticipants.called
+                ).to.be.false;
+            });
+
+            it("should fetch participants from chain when storage is empty", async () => {
+                mockSetup.mockStorage.getParticipants.returns([]);
+                mockSetup.mockStateChannelManagerContract.getParticipants.resolves(
+                    ["0xparticipant1", "0xparticipant2"]
+                );
+                mockSetup.mockStateChannelManagerContract.getPendingParticipants.resolves(
+                    ["0xpending1"]
+                );
+
+                const result = await (validationService as any).getParticipants(
+                    { forkId: "0xfork123", height: 1 },
+                    "0xchannel123"
+                );
+
+                expect(
+                    mockSetup.mockStateChannelManagerContract.getParticipants.calledWith(
+                        "0xchannel123"
+                    )
+                ).to.be.true;
+                expect(
+                    mockSetup.mockStateChannelManagerContract.getPendingParticipants.calledWith(
+                        "0xchannel123"
+                    )
+                ).to.be.true;
+                expect(result).to.deep.equal(
+                    new Set(["0xparticipant1", "0xparticipant2", "0xpending1"])
+                );
+            });
+
+            it("should handle empty chain participants", async () => {
+                mockSetup.mockStorage.getParticipants.returns([]);
+                mockSetup.mockStateChannelManagerContract.getParticipants.resolves(
+                    []
+                );
+                mockSetup.mockStateChannelManagerContract.getPendingParticipants.resolves(
+                    []
+                );
+
+                const result = await (validationService as any).getParticipants(
+                    { forkId: "0xfork123", height: 1 },
+                    "0xchannel123"
+                );
+
+                expect(result).to.deep.equal(new Set([]));
+            });
+        });
+
+        describe("Additional Time Validation Coverage", () => {
+            it("should handle on-chain timestamp fetch and update previous block", async () => {
+                mockSetup.setupForSuccess();
+
+                const prevBlock = {
+                    height: 0,
+                    timestamp: 900,
+                    onChainTimestamp: undefined,
+                    hash: "0xprevhash",
+                    getRelevantTimestamp: sinon.stub().returns(900)
+                };
+                mockSetup.mockStorage.getPreviousBlockOrSnapshot.returns({
+                    block: prevBlock
+                });
+                mockSetup.mockStorage.blocks.getBlock
+                    .withArgs("0xfork123", 0)
+                    .returns(prevBlock);
+
+                sinon
+                    .stub(validationService as any, "fetchOnChainTimestamp")
+                    .resolves(1200);
+
+                const blockWithInvalidTime = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.OBJECTIVE_TIMESTAMP_INVALID)
+                    .build();
+                (blockWithInvalidTime as any).timestamp = 2500; // Invalid against original previousTimestamp (900)
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        blockWithInvalidTime,
+                        mockSetup.mockStrategy
+                    );
+
+                // The validation should still result in DISPUTE
+                expect(result).to.equal(BlockValidationResult.DISPUTE);
+                // The fetchOnChainTimestamp should have been called
+                expect((validationService as any).fetchOnChainTimestamp.called)
+                    .to.be.true;
+            });
+
+            it("should handle on-chain timestamp fetch returning null", async () => {
+                mockSetup.setupForSuccess();
+
+                const prevBlock = {
+                    height: 0,
+                    timestamp: 900,
+                    onChainTimestamp: undefined,
+                    hash: "0xprevhash",
+                    getRelevantTimestamp: sinon.stub().returns(900)
+                };
+                mockSetup.mockStorage.getPreviousBlockOrSnapshot.returns({
+                    block: prevBlock
+                });
+                mockSetup.mockStorage.blocks.getBlock
+                    .withArgs("0xfork123", 0)
+                    .returns(prevBlock);
+
+                sinon
+                    .stub(validationService as any, "fetchOnChainTimestamp")
+                    .resolves(undefined);
+
+                const blockWithInvalidTime = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.OBJECTIVE_TIMESTAMP_INVALID)
+                    .build();
+                (blockWithInvalidTime as any).timestamp = 2500;
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        blockWithInvalidTime,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(BlockValidationResult.DISPUTE);
+                expect(
+                    mockSetup.mockStrategy.objectiveInvalidTimestampDetected
+                        .called
+                ).to.be.true;
+            });
+
+            it("should handle on-chain timestamp fetch returning timestamp <= previousTimestamp", async () => {
+                mockSetup.setupForSuccess();
+
+                const prevBlock = {
+                    height: 0,
+                    timestamp: 900,
+                    onChainTimestamp: undefined,
+                    hash: "0xprevhash",
+                    getRelevantTimestamp: sinon.stub().returns(900)
+                };
+                mockSetup.mockStorage.getPreviousBlockOrSnapshot.returns({
+                    block: prevBlock
+                });
+                mockSetup.mockStorage.blocks.getBlock
+                    .withArgs("0xfork123", 0)
+                    .returns(prevBlock);
+
+                sinon
+                    .stub(validationService as any, "fetchOnChainTimestamp")
+                    .resolves(800); // Less than previousTimestamp
+
+                const blockWithInvalidTime = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.OBJECTIVE_TIMESTAMP_INVALID)
+                    .build();
+                (blockWithInvalidTime as any).timestamp = 2500;
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        blockWithInvalidTime,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(BlockValidationResult.DISPUTE);
+                expect(
+                    mockSetup.mockStrategy.objectiveInvalidTimestampDetected
+                        .called
+                ).to.be.true;
+            });
+
+            it("should return SUCCESS when block has onChainTimestamp", async () => {
+                mockSetup.setupForSuccess();
+
+                const prevBlock = {
+                    height: 0,
+                    hash: "0xprevhash",
+                    timestamp: 900,
+                    getRelevantTimestamp: sinon.stub().returns(900)
+                };
+                mockSetup.mockStorage.getPreviousBlockOrSnapshot.returns({
+                    block: prevBlock
+                });
+                mockSetup.mockStorage.blocks.getBlock
+                    .withArgs("0xfork123", 0)
+                    .returns(prevBlock);
+
+                sinon
+                    .stub(validationService as any, "isPostedOnChainTooLate")
+                    .resolves(false);
+
+                const blockWithOnChainTimestamp =
+                    BlockBuilder.create(mockSetup).build();
+                blockWithOnChainTimestamp.onChainTimestamp = 1000;
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        blockWithOnChainTimestamp,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(BlockValidationResult.SUCCESS);
+                expect(
+                    mockSetup.mockStrategy.subjectiveInvalidTimestampDetected
+                        .called
+                ).to.be.false;
+            });
+        });
+    });
+});
