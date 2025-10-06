@@ -7,27 +7,30 @@ on:
   pull_request:
     branches:
       - master
+      - dispute
 
 jobs:
   test:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Step 2: Set up Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 20
-          cache: 'yarn'
+          cache: "yarn"
 
-      # Step 3: Install dependencies
       - name: Install dependencies
         run: yarn
 
-      # Step 4: Compile and run tests
-      - name: Compile and run tests
+      - name: Compile
+        run: yarn compile
+
+      - name: Run tests
         run: yarn testc
+
+      - name: Lint
+        run: yarn lint:fix-only
