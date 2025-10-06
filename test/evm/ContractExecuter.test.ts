@@ -1,6 +1,6 @@
 import { ethers } from "hardhat";
 import { expect } from "chai";
-import { EVM } from "@ethereumjs/evm";
+import { createEVM, EVM } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
 import { ContractExecuter } from "@/evm";
 import { isCustomEvmError } from "@/utils/evmErrorHandler";
@@ -17,7 +17,7 @@ describe("ContractExecuter", function () {
 
     // Deploy the SimpleNumberStorage contract
     before(async function () {
-        evm = await EVM.create();
+        evm = await createEVM();
 
         SimpleNumberStorage = await getSimpleNumberStorageFactory(ethers);
 
