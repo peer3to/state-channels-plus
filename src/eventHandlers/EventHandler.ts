@@ -10,14 +10,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
-import {
-    ChannelId,
-    Timestamp,
-    Address,
-    Hash,
-    ForkId,
-    Bytes
-} from "@/types/types";
+import { ChannelId, Timestamp, Address, Hash, ForkId } from "@/types/types";
 import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Codec, hash, Type } from "@/utils";

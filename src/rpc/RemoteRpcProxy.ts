@@ -1,12 +1,9 @@
 import ARpcService from "./ARpcService";
 import MainRpcService from "./MainRpcService";
-import Rpc from "./Rpc";
-import RpcHandler from "./RpcHandler";
 import RpcMethodsProxy, {
     RpcHandleMethods,
     RpcMethodsContextObject
 } from "./RpcHandleProxy";
-import InitHandshakeRpcMethods from "./services/initHandshake/InitHandshakeRpcMethods";
 
 /**
  * Substitue the type of every 'service' in MainRpcService to the type of the coresponding 'RpcMethods' class

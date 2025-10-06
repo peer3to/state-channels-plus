@@ -1,17 +1,10 @@
-import {
-    BlockConfirmationStruct,
-    SignedJoinChannelStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { SignedJoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 import P2PManager from "@/P2PManager";
-import RpcMethodsProxy from "./RpcHandleProxy";
-import ATransport from "@/transport/ATransport";
 import { DebugProxy } from "@/utils";
-import { TransportType } from "@/transport/TransportType";
 
-import { SyncPayload } from "./services/spectate/SpectateService";
 import { DEBUG_RPC } from "@/utils/config";
-import { Address, ChannelId, Hash, Signature, Timestamp } from "@/types/types";
+import { Signature } from "@/types/types";
 import {
     DHTDiscoveryService,
     InitHandshakeService,

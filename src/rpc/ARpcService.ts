@@ -1,4 +1,3 @@
-import { MainRpcService } from "@/rpc";
 import Rpc from "./Rpc";
 import { ATransport } from "@/transport";
 import ARpcMethods from "./ARpcMethods";
