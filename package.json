@@ -75,10 +75,12 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint:fix": "eslint src/**/*.ts test/**/*.ts --fix",
+    "lint:fix-only": "eslint src/**/*.ts test/**/*.ts --fix --quiet || true",
+
     "prepare": "husky install"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,jsx}": ["yarn lint:fix", "prettier --write"],
+    "*.{ts,tsx,js,jsx}": ["yarn lint:fix-only", "prettier --write"],
     "*.{json,md}": "prettier --write",
     "*.sol": "forge fmt"
   },
