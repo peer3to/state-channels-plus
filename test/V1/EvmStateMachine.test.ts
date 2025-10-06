@@ -237,5 +237,17 @@ describe("EvmStateMachine", function () {
             nextHeight2,
             "Peer 1 and 2 should have the same next block height"
         );
+
+        // Cleanup
+        try {
+            await p2pOne.p2pSigner.p2pManager.stateManager.dispose();
+            await p2pTwo.p2pSigner.p2pManager.stateManager.dispose();
+            const { LocalDiscoveryServer } = await import(
+                "@/utils/LocalDiscoveryServer"
+            );
+            LocalDiscoveryServer.cleanup();
+        } catch (error) {
+            console.warn("Error during cleanup:", error);
+        }
     });
 });

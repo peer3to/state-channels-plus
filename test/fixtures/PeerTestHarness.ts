@@ -360,6 +360,15 @@ export class PeerTestHarness<T extends AStateMachine> {
             }
         }
         this.peers = [];
+
+        // Clean up discovery server and peer servers
+        if (this.discoveryServerStarted) {
+            const { LocalDiscoveryServer } = await import(
+                "@/utils/LocalDiscoveryServer"
+            );
+            LocalDiscoveryServer.cleanup();
+            this.discoveryServerStarted = false;
+        }
     }
 
     assertAllPeersInSync(expectedState?: any): void {
