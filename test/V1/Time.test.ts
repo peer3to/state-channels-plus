@@ -1,8 +1,9 @@
-import { ethers as EH } from "hardhat";
-import { JsonRpcProvider, ethers } from "ethers";
+import hardhat from "hardhat";
+const { ethers } = hardhat;
+import { JsonRpcProvider } from "ethers";
 
 describe.skip("Time", function () {
-    const checkTime = async (provider: ethers.JsonRpcProvider) => {
+    const checkTime = async (provider: JsonRpcProvider) => {
         const currentTimestamp = Math.floor(Date.now() / 1000);
         const latestBlock = await provider.getBlock("latest");
         const blockNumber = latestBlock!.number;
@@ -27,93 +28,93 @@ describe.skip("Time", function () {
     };
 
     it("local provider", async function () {
-        const provider = EH.provider;
-        await checkTime(provider as unknown as ethers.JsonRpcProvider);
+        const provider = ethers.provider;
+        await checkTime(provider as unknown as JsonRpcProvider);
     });
 
     it("AVAX provider", async function () {
         const provider = new JsonRpcProvider(
             "https://api.avax.network/ext/bc/C/rpc"
         );
-        await checkTime(provider as unknown as ethers.JsonRpcProvider);
+        await checkTime(provider as unknown as JsonRpcProvider);
     });
 
     it("Polygon ZKEVM provider", async function () {
         const provider = new JsonRpcProvider(
             "https://rpc.ankr.com/polygon_zkevm"
         );
-        await checkTime(provider as unknown as ethers.JsonRpcProvider);
+        await checkTime(provider as unknown as JsonRpcProvider);
     });
 
     it("Astar ZKEVM provider", async function () {
         const provider = new JsonRpcProvider(
             "https://rpc.startale.com/astar-zkevm"
         );
-        await checkTime(provider as unknown as ethers.JsonRpcProvider);
+        await checkTime(provider as unknown as JsonRpcProvider);
     });
 
     it("Moonbeam provider", async function () {
         const provider = new JsonRpcProvider(
             "https://rpc.api.moonbeam.network"
         );
-        await checkTime(provider as unknown as ethers.JsonRpcProvider);
+        await checkTime(provider as unknown as JsonRpcProvider);
     });
 
     it("EVMOS provider", async function () {
         const provider = new JsonRpcProvider(
             "https://evmos-evm-rpc.publicnode.com"
         );
-        await checkTime(provider as unknown as ethers.JsonRpcProvider);
+        await checkTime(provider as unknown as JsonRpcProvider);
     });
 
     it("Arbitrum One provider", async function () {
         const provider = new JsonRpcProvider("https://arb1.arbitrum.io/rpc");
-        await checkTime(provider as unknown as ethers.JsonRpcProvider);
+        await checkTime(provider as unknown as JsonRpcProvider);
     });
 
     it("Arbitrum Nova provider", async function () {
         const provider = new JsonRpcProvider("https://nova.arbitrum.io/rpc");
-        await checkTime(provider as unknown as ethers.JsonRpcProvider);
+        await checkTime(provider as unknown as JsonRpcProvider);
     });
 
     it("Shimmer provider", async function () {
         const provider = new JsonRpcProvider(
             "https://json-rpc.evm.shimmer.network"
         );
-        await checkTime(provider as unknown as ethers.JsonRpcProvider);
+        await checkTime(provider as unknown as JsonRpcProvider);
     });
 
     it("Fantom provider", async function () {
         const provider = new JsonRpcProvider("https://rpc.ankr.com/fantom/");
-        await checkTime(provider as unknown as ethers.JsonRpcProvider);
+        await checkTime(provider as unknown as JsonRpcProvider);
     });
 
     it("BSC provider", async function () {
         const provider = new JsonRpcProvider("https://rpc.ankr.com/bsc");
-        await checkTime(provider as unknown as ethers.JsonRpcProvider);
+        await checkTime(provider as unknown as JsonRpcProvider);
     });
 
     it("Celo provider", async function () {
         const provider = new JsonRpcProvider("https://rpc.ankr.com/celo");
-        await checkTime(provider as unknown as ethers.JsonRpcProvider);
+        await checkTime(provider as unknown as JsonRpcProvider);
     });
 
     it("Scroll provider", async function () {
         const provider = new JsonRpcProvider("https://rpc.ankr.com/scroll");
-        await checkTime(provider as unknown as ethers.JsonRpcProvider);
+        await checkTime(provider as unknown as JsonRpcProvider);
     });
 
     it("Taiko provider", async function () {
         const provider = new JsonRpcProvider(
             "https://rpc.ankr.com/taiko_katla"
         );
-        await checkTime(provider as unknown as ethers.JsonRpcProvider);
+        await checkTime(provider as unknown as JsonRpcProvider);
     });
 
     it.skip("Tenderly DevNet provider", async function () {
         const provider = new JsonRpcProvider(
             "https://rpc.vnet.tenderly.co/devnet/my-first-devnet/51eab80b-b812-4824-992e-ab358c5f478e"
         );
-        await checkTime(provider as unknown as ethers.JsonRpcProvider);
+        await checkTime(provider as unknown as JsonRpcProvider);
     });
 });

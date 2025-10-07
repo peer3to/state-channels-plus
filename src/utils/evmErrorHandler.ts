@@ -38,9 +38,40 @@ export function decodeErrorProxy<T extends object>(contract: T) {
             if (typeof originalProperty !== "function") {
                 return originalProperty;
             }
-            return async function (...args: any[]) {
+
+            const isAsync =
+                originalProperty.constructor.name === "AsyncFunction";
+
+            if (isAsync) {
+                // Wrap async functions with error handling
+                return async function (...args: any[]) {
+                    try {
+                        return await Reflect.apply(
+                            originalProperty,
+                            target,
+                            args
+                        );
+                    } catch (error: any) {
+                        const errorData = error.data
+                            ? error.data
+                            : error.execResult?.returnValue
+                              ? ethers.hexlify(error.execResult.returnValue)
+                              : null;
+
+                        const customError = decodeCustomError(errorData);
+
+                        if (customError) {
+                            throw new CustomEvmError(customError, error);
+                        }
+
+                        throw error;
+                    }
+                };
+            }
+            // For synchronous functions, wrap with sync error handling
+            return function (...args: any[]) {
                 try {
-                    return await Reflect.apply(originalProperty, target, args);
+                    return Reflect.apply(originalProperty, target, args);
                 } catch (error: any) {
                     const errorData = error.data
                         ? error.data

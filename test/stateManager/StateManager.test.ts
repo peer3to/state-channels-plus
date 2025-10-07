@@ -1,813 +1,742 @@
-// import { expect } from "chai";
-// import { ethers } from "ethers";
-// import sinon from "sinon";
-// import StateManager from "@/stateManager/StateManager";
-// import { stateSnapshot } from "../factory";
-// import { Address, BlockHeight, ForkId, Hash } from "@/types/types";
-// import Clock from "@/Clock";
-// import Block from "@/models/Block";
-
-// describe("StateManager", () => {
-//     let stateManager: StateManager;
-//     let mockContract: any;
-//     let mockStorage: any;
-//     let mockAgreementManager: any;
-//     let mockP2pEventHooks: any;
-//     let mockDiamondStateMachine: any;
-
-//     beforeEach(async () => {
-//         // Mock Clock for testing
-//         const mockProvider = {
-//             getBlock: async () => ({ timestamp: Math.floor(Date.now() / 1000) })
-//         };
-//         await Clock.init(mockProvider as any);
-
-//         // Create mock contract
-//         mockContract = {
-//             getStateSnapshot: async () => ({
-//                 forkId: "0x1234567890abcdef",
-//                 blockHeight: 3,
-//                 timestamp: 1000,
-//                 snapshotData: {
-//                     latestExitChannelBlockHash: "0x0000000000000000"
-//                 }
-//             }),
-//             updateStateSnapshotSameFork: sinon.stub().resolves({
-//                 wait: async () => ({})
-//             })
-//         };
-
-//         // Create mock storage
-//         mockStorage = {
-//             stateSnapshots: {
-//                 getGenesisSnapshotDataByForkId: () => stateSnapshot(),
-//                 getStateSnapshotByHash: () => stateSnapshot()
-//             },
-//             blocks: {
-//                 getLatestBlockHeight: () => 10,
-//                 getNextBlockHeight: () => 8 // Latest block height is 7
-//             },
-//             exitChannelBlocks: {
-//                 getExitChannelBlock: (hash: string) => {
-//                     // Create a proper chain that leads back to the on-chain hash
-//                     if (hash === "0x1234567890abcdef") {
-//                         return {
-//                             exitChannels: [],
-//                             previousBlockHash: "0x0000000000000000" // Points to on-chain hash
-//                         };
-//                     }
-//                     return {
-//                         exitChannels: [],
-//                         previousBlockHash:
-//                             "0x0000000000000000000000000000000000000000000000000000000000000000"
-//                     };
-//                 },
-//                 getLatestExitChannelBlockHash: () => "0x0000000000000000",
-//                 getTotalWithdrawals: () => ({ amount: 0n, data: "0x" })
-//             },
-//             joinChannelBlocks: {
-//                 getLatestJoinChannelBlockHash: () => "0x0000000000000000",
-//                 getTotalDeposits: () => ({ amount: 0n, data: "0x" })
-//             },
-//             exitPoints: {
-//                 getExitPointsInRange: () => [1, 3, 5, 7] // Exit points at these block heights
-//             },
-//             getStateSnapshot: () => stateSnapshot()
-//         };
-
-//         // Create mock agreement manager
-//         mockAgreementManager = {
-//             getStateProof: async () => ({
-//                 milestones: [
-//                     {
-//                         blockConfirmations: [
-//                             {
-//                                 signedBlock: {
-//                                     encodedBlock:
-//                                         "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-//                                 }
-//                             }
-//                         ]
-//                     }
-//                 ],
-//                 signedBlocks: []
-//             }),
-//             getSnapshot: (milestone: any) => {
-//                 if (milestone.blockConfirmations.length === 0) {
-//                     throw new Error("Cannot get snapshot from empty milestone");
-//                 }
-
-//                 const firstBlockConfirmation = milestone.blockConfirmations[0];
-//                 const block = Block.decode(
-//                     firstBlockConfirmation.signedBlock.encodedBlock
-//                 );
-
-//                 const snapshot =
-//                     mockStorage.stateSnapshots.getStateSnapshotByHash(
-//                         block.stateSnapshotHash
-//                     );
-
-//                 if (!snapshot) {
-//                     throw new Error(
-//                         "Milestone built but corresponding snapshot not found"
-//                     );
-//                 }
-
-//                 return snapshot;
-//             }
-//         };
-
-//         // Create mock P2P event hooks
-//         mockP2pEventHooks = {};
-
-//         // Create mock diamond state machine
-//         mockDiamondStateMachine = {
-//             getParticipants: async () => [
-//                 "0x1234567890123456789012345678901234567890"
-//             ],
-//             getNextToWrite: async () =>
-//                 "0x1234567890123456789012345678901234567890"
-//         };
-
-//         // Create StateManager instance
-//         stateManager = new StateManager(
-//             {} as ethers.Signer,
-//             "0x1234567890123456789012345678901234567890" as Address,
-//             mockContract as any,
-//             mockDiamondStateMachine as any,
-//             {
-//                 p2pTime: 15,
-//                 agreementTime: 5,
-//                 chainFallbackTime: 30,
-//                 evidenceTime: 30
-//             },
-//             mockP2pEventHooks as any,
-//             mockStorage as any
-//         );
-
-//         // Mock the agreement manager
-//         (stateManager as any).agreementManager = mockAgreementManager;
-//         stateManager.setChannelId("0xabcdef1234567890" as any);
-
-//         // Mock Block.decode to avoid ethers decoding issues
-//         const originalBlockDecode = Block.decode;
-//         Block.decode = () => ({
-//             stateSnapshotHash:
-//                 "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-//             height: 5,
-//             forkId: "0x1234567890abcdef"
-//         });
-//     });
-
-//     describe("StateSnapshot BlockHeight", () => {
-//         it("should set blockHeight to 0 for genesis snapshots", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-//             const stateMachineStateHash = "0xabcdef1234567890" as Hash;
-
-//             // Call createStateSnapshot with blockHeight = 0 (genesis)
-//             const stateSnapshot = await (
-//                 stateManager as any
-//             ).createStateSnapshot(stateMachineStateHash, forkId, 0);
-
-//             // Verify the snapshot was created correctly with blockHeight
-//             expect(stateSnapshot.toStruct().forkId).to.equal(forkId);
-//             expect(stateSnapshot.toStruct().blockHeight).to.equal(0n);
-//             expect(
-//                 stateSnapshot.toStruct().snapshotData.stateMachineStateHash
-//             ).to.equal(stateMachineStateHash);
-//         });
-
-//         it("should set blockHeight to provided value for regular blocks", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-//             const stateMachineStateHash = "0xabcdef1234567890" as Hash;
-//             const blockHeight = 5 as BlockHeight;
-
-//             // Call createStateSnapshot with blockHeight (regular block)
-//             const stateSnapshot = await (
-//                 stateManager as any
-//             ).createStateSnapshot(stateMachineStateHash, forkId, blockHeight);
-
-//             // Verify the snapshot was created correctly with blockHeight
-//             expect(stateSnapshot.toStruct().forkId).to.equal(forkId);
-//             expect(stateSnapshot.toStruct().blockHeight).to.equal(
-//                 BigInt(blockHeight)
-//             );
-//             expect(
-//                 stateSnapshot.toStruct().snapshotData.stateMachineStateHash
-//             ).to.equal(stateMachineStateHash);
-//         });
-
-//         it("should set blockHeight to 0 when explicitly passing 0", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-//             const stateMachineStateHash = "0xabcdef1234567890" as Hash;
-//             const blockHeight = 0 as BlockHeight;
-
-//             // Call createStateSnapshot with blockHeight = 0
-//             const stateSnapshot = await (
-//                 stateManager as any
-//             ).createStateSnapshot(stateMachineStateHash, forkId, blockHeight);
-
-//             // Verify the snapshot was created correctly with blockHeight
-//             expect(stateSnapshot.toStruct().forkId).to.equal(forkId);
-//             expect(stateSnapshot.toStruct().blockHeight).to.equal(0n);
-//             expect(
-//                 stateSnapshot.toStruct().snapshotData.stateMachineStateHash
-//             ).to.equal(stateMachineStateHash);
-//         });
-//     });
-
-//     describe("updateSnapshotSameFork", () => {
-//         it("should successfully update snapshot when valid data is provided", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-
-//             // Mock successful contract call
-//             const mockTxResponse = {
-//                 wait: async () => ({})
-//             };
-//             mockContract.updateStateSnapshotSameFork = sinon
-//                 .stub()
-//                 .resolves(mockTxResponse);
-
-//             // Mock state snapshot with newer timestamp and same forkId
-//             const mockSnapshot = {
-//                 forkId: "0x1234567890abcdef", // Same as current on-chain
-//                 timestamp: 2000, // Newer than current on-chain (1000)
-//                 blockHeight: 5, // Higher than current on-chain (3)
-//                 snapshotData: {
-//                     stateMachineStateHash: "0x1234567890abcdef",
-//                     participants: [
-//                         "0x1234567890123456789012345678901234567890"
-//                     ],
-//                     latestJoinChannelBlockHash: "0x0000000000000000",
-//                     latestExitChannelBlockHash: "0x1234567890abcdef", // Different from on-chain
-//                     totalDeposits: { amount: 0n, data: "0x" },
-//                     totalWithdrawals: { amount: 0n, data: "0x" }
-//                 },
-//                 toStruct: () => ({
-//                     forkId: "0x1234567890abcdef",
-//                     timestamp: 2000,
-//                     blockHeight: 5,
-//                     snapshotData: {
-//                         stateMachineStateHash: "0x1234567890abcdef",
-//                         participants: [
-//                             "0x1234567890123456789012345678901234567890"
-//                         ],
-//                         latestJoinChannelBlockHash: "0x0000000000000000",
-//                         latestExitChannelBlockHash: "0x1234567890abcdef", // Different from on-chain
-//                         totalDeposits: { amount: 0n, data: "0x" },
-//                         totalWithdrawals: { amount: 0n, data: "0x" }
-//                     }
-//                 })
-//             };
-//             mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
-//                 mockSnapshot;
-
-//             await expect(stateManager.updateSnapshotSameFork(forkId)).to.not.be
-//                 .rejected;
-//         });
-
-//         it("should return early when no relevant milestones are found", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-
-//             // Mock empty milestones
-//             mockAgreementManager.getStateProof = async () => ({
-//                 milestones: [],
-//                 signedBlocks: []
-//             });
-
-//             await stateManager.updateSnapshotSameFork(forkId);
-
-//             // Should not call the contract
-//             expect(mockContract.updateStateSnapshotSameFork.called).to.be.false;
-//         });
-
-//         it("should return early when latest snapshot block height equals current on-chain", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-
-//             // Mock snapshot with same block height as current on-chain
-//             const mockSnapshot = {
-//                 ...stateSnapshot(),
-//                 blockHeight: 3 // Same as current on-chain
-//             };
-//             mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
-//                 mockSnapshot;
-
-//             await stateManager.updateSnapshotSameFork(forkId);
-
-//             // Should not call the contract
-//             expect(mockContract.updateStateSnapshotSameFork.called).to.be.false;
-//         });
-
-//         it("should filter milestones correctly - only include newer than on-chain", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-
-//             // Mock multiple milestones with different block heights
-//             mockAgreementManager.getStateProof = async () => ({
-//                 milestones: [
-//                     {
-//                         blockConfirmations: [
-//                             {
-//                                 signedBlock: {
-//                                     encodedBlock:
-//                                         "0x1111111111111111111111111111111111111111111111111111111111111111"
-//                                 }
-//                             }
-//                         ]
-//                     },
-//                     {
-//                         blockConfirmations: [
-//                             {
-//                                 signedBlock: {
-//                                     encodedBlock:
-//                                         "0x2222222222222222222222222222222222222222222222222222222222222222"
-//                                 }
-//                             }
-//                         ]
-//                     },
-//                     {
-//                         blockConfirmations: [
-//                             {
-//                                 signedBlock: {
-//                                     encodedBlock:
-//                                         "0x3333333333333333333333333333333333333333333333333333333333333333"
-//                                 }
-//                             }
-//                         ]
-//                     }
-//                 ],
-//                 signedBlocks: []
-//             });
-
-//             // Mock snapshots with different block heights
-//             let callCount = 0;
-//             mockStorage.stateSnapshots.getStateSnapshotByHash = () => {
-//                 callCount++;
-//                 // Return different block heights: 2, 4, 6 (on-chain is 3)
-//                 const blockHeights = [2, 4, 6];
-//                 const currentHeight = blockHeights[callCount - 1];
-
-//                 return {
-//                     forkId: "0x1234567890abcdef",
-//                     timestamp: 1000 + currentHeight * 100,
-//                     blockHeight: currentHeight,
-//                     snapshotData: {
-//                         stateMachineStateHash: "0x1234567890abcdef",
-//                         participants: [
-//                             "0x1234567890123456789012345678901234567890"
-//                         ],
-//                         latestJoinChannelBlockHash: "0x0000000000000000",
-//                         latestExitChannelBlockHash: "0x0000000000000000",
-//                         totalDeposits: { amount: 0n, data: "0x" },
-//                         totalWithdrawals: { amount: 0n, data: "0x" }
-//                     },
-//                     toStruct: function () {
-//                         return {
-//                             forkId: this.forkId,
-//                             timestamp: this.timestamp,
-//                             blockHeight: this.blockHeight,
-//                             snapshotData: this.snapshotData
-//                         };
-//                     }
-//                 };
-//             };
-
-//             await stateManager.updateSnapshotSameFork(forkId);
-
-//             // Should only include milestones with blockHeight > 3 (on-chain height)
-//             // So only milestones 2 and 3 (block heights 4 and 6) should be included
-//             expect(mockContract.updateStateSnapshotSameFork.called).to.be.true;
-//         });
-
-//         it("should handle multiple exit blocks in chain correctly", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-
-//             const mockSnapshot = {
-//                 forkId: "0x1234567890abcdef",
-//                 timestamp: 2000,
-//                 blockHeight: 5,
-//                 snapshotData: {
-//                     stateMachineStateHash: "0x1234567890abcdef",
-//                     participants: [
-//                         "0x1234567890123456789012345678901234567890"
-//                     ],
-//                     latestJoinChannelBlockHash: "0x0000000000000000",
-//                     latestExitChannelBlockHash: "0x3333333333333333", // Latest exit block
-//                     totalDeposits: { amount: 0n, data: "0x" },
-//                     totalWithdrawals: { amount: 0n, data: "0x" }
-//                 },
-//                 toStruct: function () {
-//                     return {
-//                         forkId: this.forkId,
-//                         timestamp: this.timestamp,
-//                         blockHeight: this.blockHeight,
-//                         snapshotData: this.snapshotData
-//                     };
-//                 }
-//             };
-//             mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
-//                 mockSnapshot;
-
-//             // Mock a chain of 3 exit blocks: A -> B -> C
-//             // On-chain has A, we need to collect B and C
-//             mockStorage.exitChannelBlocks.getExitChannelBlock = (
-//                 hash: string
-//             ) => {
-//                 const exitBlocks = {
-//                     "0x3333333333333333": {
-//                         // Block C (latest)
-//                         exitChannels: [
-//                             {
-//                                 participant: "0x3333",
-//                                 balance: { amount: 30n, data: "0x" }
-//                             }
-//                         ],
-//                         previousBlockHash: "0x2222222222222222"
-//                     },
-//                     "0x2222222222222222": {
-//                         // Block B
-//                         exitChannels: [
-//                             {
-//                                 participant: "0x2222",
-//                                 balance: { amount: 20n, data: "0x" }
-//                             }
-//                         ],
-//                         previousBlockHash: "0x0000000000000000" // Points to on-chain
-//                     }
-//                 };
-//                 return exitBlocks[hash as keyof typeof exitBlocks];
-//             };
-
-//             await stateManager.updateSnapshotSameFork(forkId);
-
-//             // Should call contract with exit blocks in correct order (B, C)
-//             expect(mockContract.updateStateSnapshotSameFork.called).to.be.true;
-//         });
-
-//         it("should handle corrupted exit block chain gracefully", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-
-//             const mockSnapshot = {
-//                 forkId: "0x1234567890abcdef",
-//                 timestamp: 2000,
-//                 blockHeight: 5,
-//                 snapshotData: {
-//                     stateMachineStateHash: "0x1234567890abcdef",
-//                     participants: [
-//                         "0x1234567890123456789012345678901234567890"
-//                     ],
-//                     latestJoinChannelBlockHash: "0x0000000000000000",
-//                     latestExitChannelBlockHash: "0x1234567890abcdef",
-//                     totalDeposits: { amount: 0n, data: "0x" },
-//                     totalWithdrawals: { amount: 0n, data: "0x" }
-//                 },
-//                 toStruct: function () {
-//                     return {
-//                         forkId: this.forkId,
-//                         timestamp: this.timestamp,
-//                         blockHeight: this.blockHeight,
-//                         snapshotData: this.snapshotData
-//                     };
-//                 }
-//             };
-//             mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
-//                 mockSnapshot;
-
-//             // Mock missing exit block (corrupted chain)
-//             mockStorage.exitChannelBlocks.getExitChannelBlock = () => undefined;
-
-//             await expect(
-//                 stateManager.updateSnapshotSameFork(forkId)
-//             ).to.be.rejectedWith("Exit channel block not found for hash");
-//         });
-
-//         it("should handle contract transaction wait failure", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-
-//             const mockSnapshot = {
-//                 forkId: "0x1234567890abcdef",
-//                 timestamp: 2000,
-//                 blockHeight: 5,
-//                 snapshotData: {
-//                     stateMachineStateHash: "0x1234567890abcdef",
-//                     participants: [
-//                         "0x1234567890123456789012345678901234567890"
-//                     ],
-//                     latestJoinChannelBlockHash: "0x0000000000000000",
-//                     latestExitChannelBlockHash: "0x0000000000000000",
-//                     totalDeposits: { amount: 0n, data: "0x" },
-//                     totalWithdrawals: { amount: 0n, data: "0x" }
-//                 },
-//                 toStruct: function () {
-//                     return {
-//                         forkId: this.forkId,
-//                         timestamp: this.timestamp,
-//                         blockHeight: this.blockHeight,
-//                         snapshotData: this.snapshotData
-//                     };
-//                 }
-//             };
-//             mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
-//                 mockSnapshot;
-
-//             // Mock contract call success but wait failure
-//             mockContract.updateStateSnapshotSameFork = sinon.stub().resolves({
-//                 wait: async () => {
-//                     throw new Error("Transaction failed");
-//                 }
-//             });
-
-//             await expect(
-//                 stateManager.updateSnapshotSameFork(forkId)
-//             ).to.be.rejectedWith("Transaction failed");
-//         });
-
-//         it("should handle storage access errors gracefully", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-
-//             // Mock storage error
-//             mockStorage.stateSnapshots.getStateSnapshotByHash = () => {
-//                 throw new Error("Storage access failed");
-//             };
-
-//             await expect(
-//                 stateManager.updateSnapshotSameFork(forkId)
-//             ).to.be.rejectedWith("Storage access failed");
-//         });
-
-//         it("should handle empty exit channel blocks correctly", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-
-//             const mockSnapshot = {
-//                 forkId: "0x1234567890abcdef",
-//                 timestamp: 2000,
-//                 blockHeight: 5,
-//                 snapshotData: {
-//                     stateMachineStateHash: "0x1234567890abcdef",
-//                     participants: [
-//                         "0x1234567890123456789012345678901234567890"
-//                     ],
-//                     latestJoinChannelBlockHash: "0x0000000000000000",
-//                     latestExitChannelBlockHash: "0x1234567890abcdef",
-//                     totalDeposits: { amount: 0n, data: "0x" },
-//                     totalWithdrawals: { amount: 0n, data: "0x" }
-//                 },
-//                 toStruct: function () {
-//                     return {
-//                         forkId: this.forkId,
-//                         timestamp: this.timestamp,
-//                         blockHeight: this.blockHeight,
-//                         snapshotData: this.snapshotData
-//                     };
-//                 }
-//             };
-//             mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
-//                 mockSnapshot;
-
-//             // Mock exit block with empty exitChannels array
-//             mockStorage.exitChannelBlocks.getExitChannelBlock = () => ({
-//                 exitChannels: [], // Empty array
-//                 previousBlockHash: "0x0000000000000000"
-//             });
-
-//             await expect(stateManager.updateSnapshotSameFork(forkId)).to.not.be
-//                 .rejected;
-//         });
-
-//         it("should throw error when fork mismatch is detected", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-
-//             // Mock snapshot with different fork ID and higher block height
-//             const mockSnapshot = {
-//                 forkId: "0x9876543210fedcba" as ForkId, // Different fork
-//                 timestamp: 2000,
-//                 blockHeight: 5, // Higher than current on-chain (3)
-//                 snapshotData: {
-//                     stateMachineStateHash: "0x1234567890abcdef",
-//                     participants: [
-//                         "0x1234567890123456789012345678901234567890"
-//                     ],
-//                     latestJoinChannelBlockHash: "0x0000000000000000",
-//                     latestExitChannelBlockHash: "0x0000000000000000",
-//                     totalDeposits: { amount: 0n, data: "0x" },
-//                     totalWithdrawals: { amount: 0n, data: "0x" }
-//                 },
-//                 toStruct: () => ({
-//                     forkId: "0x9876543210fedcba",
-//                     timestamp: 2000,
-//                     blockHeight: 5,
-//                     snapshotData: {
-//                         stateMachineStateHash: "0x1234567890abcdef",
-//                         participants: [
-//                             "0x1234567890123456789012345678901234567890"
-//                         ],
-//                         latestJoinChannelBlockHash: "0x0000000000000000",
-//                         latestExitChannelBlockHash: "0x0000000000000000",
-//                         totalDeposits: { amount: 0n, data: "0x" },
-//                         totalWithdrawals: { amount: 0n, data: "0x" }
-//                     }
-//                 })
-//             };
-//             mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
-//                 mockSnapshot;
-
-//             await expect(
-//                 stateManager.updateSnapshotSameFork(forkId)
-//             ).to.be.rejectedWith("Fork mismatch");
-//         });
-
-//         it("should filter exit points correctly based on current on-chain block height", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-
-//             // Mock different exit block hashes to trigger exit block processing
-//             // The latest snapshot will have a different exit block hash than on-chain
-
-//             const mockSnapshot = {
-//                 forkId: "0x1234567890abcdef", // Same as current on-chain
-//                 timestamp: 2000,
-//                 blockHeight: 5, // Higher than current on-chain (3)
-//                 snapshotData: {
-//                     stateMachineStateHash: "0x1234567890abcdef",
-//                     participants: [
-//                         "0x1234567890123456789012345678901234567890"
-//                     ],
-//                     latestJoinChannelBlockHash: "0x0000000000000000",
-//                     latestExitChannelBlockHash: "0x1234567890abcdef",
-//                     totalDeposits: { amount: 0n, data: "0x" },
-//                     totalWithdrawals: { amount: 0n, data: "0x" }
-//                 },
-//                 toStruct: () => ({
-//                     forkId: "0x1234567890abcdef",
-//                     timestamp: 2000,
-//                     blockHeight: 5,
-//                     snapshotData: {
-//                         stateMachineStateHash: "0x1234567890abcdef",
-//                         participants: [
-//                             "0x1234567890123456789012345678901234567890"
-//                         ],
-//                         latestJoinChannelBlockHash: "0x0000000000000000",
-//                         latestExitChannelBlockHash: "0x1234567890abcdef",
-//                         totalDeposits: { amount: 0n, data: "0x" },
-//                         totalWithdrawals: { amount: 0n, data: "0x" }
-//                     }
-//                 })
-//             };
-//             mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
-//                 mockSnapshot;
-
-//             // Mock exit channel block retrieval
-//             let exitBlockCallCount = 0;
-//             mockStorage.exitChannelBlocks.getExitChannelBlock = (
-//                 hash: string
-//             ) => {
-//                 exitBlockCallCount++;
-//                 // Create a proper chain that leads back to the on-chain hash
-//                 if (hash === "0x1234567890abcdef") {
-//                     return {
-//                         exitChannels: [],
-//                         previousBlockHash: "0x0000000000000000" // Points to on-chain hash
-//                     };
-//                 }
-//                 return {
-//                     exitChannels: [],
-//                     previousBlockHash:
-//                         "0x0000000000000000000000000000000000000000000000000000000000000000"
-//                 };
-//             };
-
-//             await stateManager.updateSnapshotSameFork(forkId);
-
-//             // Should process exit blocks in the chain
-//             expect(exitBlockCallCount).to.be.greaterThan(0);
-//         });
-
-//         it("should handle empty milestone proof gracefully", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-
-//             // Mock milestone with empty block confirmations
-//             mockAgreementManager.getStateProof = async () => ({
-//                 milestones: [
-//                     {
-//                         blockConfirmations: []
-//                     }
-//                 ],
-//                 signedBlocks: []
-//             });
-
-//             await expect(
-//                 stateManager.updateSnapshotSameFork(forkId)
-//             ).to.be.rejectedWith("Empty milestone proof found");
-//         });
-
-//         it("should throw error when state snapshot not found", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-
-//             // Mock missing state snapshot
-//             mockStorage.stateSnapshots.getStateSnapshotByHash = () => undefined;
-
-//             await expect(
-//                 stateManager.updateSnapshotSameFork(forkId)
-//             ).to.be.rejectedWith(
-//                 "Milestone built but corresponding snapshot not found"
-//             );
-//         });
-
-//         it("should call contract with correct parameters", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-
-//             const mockSnapshot = {
-//                 forkId: "0x1234567890abcdef", // Same as current on-chain
-//                 timestamp: 2000,
-//                 blockHeight: 5, // Higher than current on-chain (3)
-//                 snapshotData: {
-//                     stateMachineStateHash: "0x1234567890abcdef",
-//                     participants: [
-//                         "0x1234567890123456789012345678901234567890"
-//                     ],
-//                     latestJoinChannelBlockHash: "0x0000000000000000",
-//                     latestExitChannelBlockHash: "0x0000000000000000",
-//                     totalDeposits: { amount: 0n, data: "0x" },
-//                     totalWithdrawals: { amount: 0n, data: "0x" }
-//                 },
-//                 toStruct: () => ({
-//                     forkId: "0x1234567890abcdef",
-//                     timestamp: 2000,
-//                     blockHeight: 5,
-//                     snapshotData: {
-//                         stateMachineStateHash: "0x1234567890abcdef",
-//                         participants: [
-//                             "0x1234567890123456789012345678901234567890"
-//                         ],
-//                         latestJoinChannelBlockHash: "0x0000000000000000",
-//                         latestExitChannelBlockHash: "0x0000000000000000",
-//                         totalDeposits: { amount: 0n, data: "0x" },
-//                         totalWithdrawals: { amount: 0n, data: "0x" }
-//                     }
-//                 })
-//             };
-//             mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
-//                 mockSnapshot;
-
-//             let contractCallParams: any = null;
-//             mockContract.updateStateSnapshotSameFork = sinon
-//                 .stub()
-//                 .callsFake((...params: any[]) => {
-//                     contractCallParams = params;
-//                     return Promise.resolve({ wait: async () => ({}) });
-//                 });
-
-//             await stateManager.updateSnapshotSameFork(forkId);
-
-//             expect(contractCallParams).to.not.be.null;
-//             expect(contractCallParams[0]).to.equal("0xabcdef1234567890"); // channelId
-//             expect(contractCallParams[1]).to.be.an("array"); // milestoneProofs
-//             expect(contractCallParams[2]).to.be.an("array"); // milestoneSnapshots
-//             expect(contractCallParams[3]).to.be.an("array"); // exitChannelBlocks
-//         });
-
-//         it("should handle contract call errors", async () => {
-//             const forkId = "0x1234567890abcdef" as ForkId;
-
-//             const mockSnapshot = {
-//                 forkId: "0x1234567890abcdef", // Same as current on-chain
-//                 timestamp: 2000,
-//                 blockHeight: 5, // Higher than current on-chain (3)
-//                 snapshotData: {
-//                     stateMachineStateHash: "0x1234567890abcdef",
-//                     participants: [
-//                         "0x1234567890123456789012345678901234567890"
-//                     ],
-//                     latestJoinChannelBlockHash: "0x0000000000000000",
-//                     latestExitChannelBlockHash: "0x0000000000000000",
-//                     totalDeposits: { amount: 0n, data: "0x" },
-//                     totalWithdrawals: { amount: 0n, data: "0x" }
-//                 },
-//                 toStruct: () => ({
-//                     forkId: "0x1234567890abcdef",
-//                     timestamp: 2000,
-//                     blockHeight: 5,
-//                     snapshotData: {
-//                         stateMachineStateHash: "0x1234567890abcdef",
-//                         participants: [
-//                             "0x1234567890123456789012345678901234567890"
-//                         ],
-//                         latestJoinChannelBlockHash: "0x0000000000000000",
-//                         latestExitChannelBlockHash: "0x0000000000000000",
-//                         totalDeposits: { amount: 0n, data: "0x" },
-//                         totalWithdrawals: { amount: 0n, data: "0x" }
-//                     }
-//                 })
-//             };
-//             mockStorage.stateSnapshots.getStateSnapshotByHash = () =>
-//                 mockSnapshot;
-
-//             // Mock contract call failure
-//             mockContract.updateStateSnapshotSameFork = sinon
-//                 .stub()
-//                 .rejects(new Error("Contract call failed"));
-
-//             await expect(
-//                 stateManager.updateSnapshotSameFork(forkId)
-//             ).to.be.rejectedWith("Contract call failed");
-//         });
-//     });
-// });
+import { expect } from "chai";
+import sinon from "sinon";
+import StateManager from "@/stateManager/StateManager";
+import { stateSnapshot } from "../factory";
+import { Address, ForkId, Hash, Timestamp } from "@/types/types";
+import { Block, StateSnapshot } from "@/models";
+import {
+    SignedBlockStruct,
+    TransactionStruct,
+    JoinChannelBlockStruct,
+    BalanceStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import { MockSetup } from "./testUtils";
+
+describe("StateManager", () => {
+    let stateManager: StateManager;
+    let mockSetup: MockSetup;
+
+    beforeEach(async () => {
+        sinon.restore();
+
+        mockSetup = new MockSetup();
+        await mockSetup.initializeClock();
+
+        mockSetup.mockTimeConfig = {
+            p2pTime: 15,
+            agreementTime: 5,
+            chainFallbackTime: 30,
+            evidenceTime: 30
+        };
+
+        stateManager = new StateManager(
+            mockSetup.mockSigner,
+            "0x1234567890123456789012345678901234567890" as Address,
+            mockSetup.mockStateChannelManagerContract as any,
+            mockSetup.mockDiamondStateMachine as any,
+            mockSetup.mockTimeConfig,
+            mockSetup.mockP2pEventHooks as any,
+            mockSetup.mockStorage as any
+        );
+
+        stateManager.setChannelId("0xabcdef1234567890" as any);
+        stateManager.forkId = "0x1234567890abcdef" as ForkId;
+    });
+
+    afterEach(() => {
+        mockSetup.cleanup();
+    });
+
+    describe("prepareUpdateSnapshotSameFork", () => {
+        it("should return undefined when no relevant milestones are found", async () => {
+            // Mock empty milestones
+            stateManager.agreementManager.getStateProof = sinon
+                .stub()
+                .resolves({
+                    milestones: [],
+                    signedBlocks: []
+                });
+
+            const result = await stateManager.prepareUpdateSnapshotSameFork(
+                "0x1234567890abcdef" as ForkId
+            );
+            expect(result).to.be.undefined;
+        });
+
+        it("should return undefined when latest snapshot equals current on-chain", async () => {
+            // Mock milestone with same block height as on-chain
+            const mockSnapshot = {
+                ...stateSnapshot(),
+                blockHeight: 3, // Same as current on-chain
+                forkId: "0x1234567890abcdef"
+            };
+
+            stateManager.agreementManager.getStateProof = sinon
+                .stub()
+                .resolves({
+                    milestones: [
+                        {
+                            blockConfirmations: [
+                                {
+                                    signedBlock: { encodedBlock: "0xencoded" }
+                                }
+                            ]
+                        }
+                    ],
+                    signedBlocks: []
+                });
+
+            stateManager.agreementManager.getSnapshotFromMilestone = sinon
+                .stub()
+                .returns(mockSnapshot);
+
+            const result = await stateManager.prepareUpdateSnapshotSameFork(
+                "0x1234567890abcdef" as ForkId
+            );
+            expect(result).to.be.undefined;
+        });
+
+        it("should successfully prepare update data when valid milestones exist", async () => {
+            // Mock milestone with newer block height
+            const mockSnapshot = {
+                ...stateSnapshot(),
+                blockHeight: 5, // Higher than current on-chain (3)
+                forkId: "0x1234567890abcdef",
+                snapshotData: {
+                    ...stateSnapshot().snapshotData,
+                    latestExitChannelBlockHash: "0x1234567890abcdef"
+                }
+            };
+
+            stateManager.agreementManager.getStateProof = sinon
+                .stub()
+                .resolves({
+                    milestones: [
+                        {
+                            blockConfirmations: [
+                                {
+                                    signedBlock: { encodedBlock: "0xencoded" }
+                                }
+                            ]
+                        }
+                    ],
+                    signedBlocks: []
+                });
+
+            stateManager.agreementManager.getSnapshotFromMilestone = sinon
+                .stub()
+                .returns(mockSnapshot);
+
+            // Mock exit channel block chain
+            mockSetup.mockStorage.exitChannelBlocks.getExitChannelBlock
+                .withArgs("0x1234567890abcdef")
+                .returns({
+                    exitChannels: [],
+                    previousBlockHash: "0x0000000000000000" // Points to on-chain hash
+                });
+
+            const result = await stateManager.prepareUpdateSnapshotSameFork(
+                "0x1234567890abcdef" as ForkId
+            );
+
+            expect(result).to.not.be.undefined;
+            expect(result!.milestoneProofs).to.have.length(1);
+            expect(result!.milestoneSnapshots).to.have.length(1);
+            expect(result!.exitChannelBlocks).to.be.an("array");
+        });
+
+        it("should throw error when fork mismatch is detected", async () => {
+            // Mock snapshot with different fork ID
+            const mockSnapshot = {
+                ...stateSnapshot(),
+                blockHeight: 5,
+                forkId: "0x9876543210fedcba" // Different fork
+            };
+
+            stateManager.agreementManager.getStateProof = sinon
+                .stub()
+                .resolves({
+                    milestones: [
+                        {
+                            blockConfirmations: [
+                                {
+                                    signedBlock: { encodedBlock: "0xencoded" }
+                                }
+                            ]
+                        }
+                    ],
+                    signedBlocks: []
+                });
+
+            stateManager.agreementManager.getSnapshotFromMilestone = sinon
+                .stub()
+                .returns(mockSnapshot);
+
+            await expect(
+                stateManager.prepareUpdateSnapshotSameFork(
+                    "0x1234567890abcdef" as ForkId
+                )
+            ).to.be.rejectedWith("Fork mismatch");
+        });
+
+        it("should throw error when empty milestone proof is found", async () => {
+            stateManager.agreementManager.getStateProof = sinon
+                .stub()
+                .resolves({
+                    milestones: [
+                        {
+                            blockConfirmations: [] // Empty
+                        }
+                    ],
+                    signedBlocks: []
+                });
+
+            await expect(
+                stateManager.prepareUpdateSnapshotSameFork(
+                    "0x1234567890abcdef" as ForkId
+                )
+            ).to.be.rejectedWith("Empty milestone proof found");
+        });
+
+        it("should throw error when snapshot not found", async () => {
+            stateManager.agreementManager.getStateProof = sinon
+                .stub()
+                .resolves({
+                    milestones: [
+                        {
+                            blockConfirmations: [
+                                {
+                                    signedBlock: { encodedBlock: "0xencoded" }
+                                }
+                            ]
+                        }
+                    ],
+                    signedBlocks: []
+                });
+
+            stateManager.agreementManager.getSnapshotFromMilestone = sinon
+                .stub()
+                .returns(undefined);
+
+            await expect(
+                stateManager.prepareUpdateSnapshotSameFork(
+                    "0x1234567890abcdef" as ForkId
+                )
+            ).to.be.rejectedWith(
+                "Milestone built but corresponding snapshot not found"
+            );
+        });
+
+        it("should handle exit channel block chain correctly", async () => {
+            const mockSnapshot = {
+                ...stateSnapshot(),
+                blockHeight: 5,
+                forkId: "0x1234567890abcdef",
+                snapshotData: {
+                    ...stateSnapshot().snapshotData,
+                    latestExitChannelBlockHash: "0x3333333333333333"
+                }
+            };
+
+            stateManager.agreementManager.getStateProof = sinon
+                .stub()
+                .resolves({
+                    milestones: [
+                        {
+                            blockConfirmations: [
+                                {
+                                    signedBlock: { encodedBlock: "0xencoded" }
+                                }
+                            ]
+                        }
+                    ],
+                    signedBlocks: []
+                });
+
+            stateManager.agreementManager.getSnapshotFromMilestone = sinon
+                .stub()
+                .returns(mockSnapshot);
+
+            // Mock a chain of exit blocks: A -> B -> C
+            const exitBlocks = {
+                "0x3333333333333333": {
+                    exitChannels: [
+                        {
+                            participant: "0x3333",
+                            balance: { amount: 30n, data: "0x" }
+                        }
+                    ],
+                    previousBlockHash: "0x2222222222222222"
+                },
+                "0x2222222222222222": {
+                    exitChannels: [
+                        {
+                            participant: "0x2222",
+                            balance: { amount: 20n, data: "0x" }
+                        }
+                    ],
+                    previousBlockHash: "0x0000000000000000" // Points to on-chain
+                }
+            };
+
+            mockSetup.mockStorage.exitChannelBlocks.getExitChannelBlock = sinon
+                .stub()
+                .callsFake((hash: string) => {
+                    return exitBlocks[hash as keyof typeof exitBlocks];
+                });
+
+            const result = await stateManager.prepareUpdateSnapshotSameFork(
+                "0x1234567890abcdef" as ForkId
+            );
+
+            expect(result).to.not.be.undefined;
+            expect(result!.exitChannelBlocks).to.have.length(2);
+        });
+
+        it("should throw error when exit channel block not found", async () => {
+            const mockSnapshot = {
+                ...stateSnapshot(),
+                blockHeight: 5,
+                forkId: "0x1234567890abcdef",
+                snapshotData: {
+                    ...stateSnapshot().snapshotData,
+                    latestExitChannelBlockHash: "0x1234567890abcdef"
+                }
+            };
+
+            stateManager.agreementManager.getStateProof = sinon
+                .stub()
+                .resolves({
+                    milestones: [
+                        {
+                            blockConfirmations: [
+                                {
+                                    signedBlock: { encodedBlock: "0xencoded" }
+                                }
+                            ]
+                        }
+                    ],
+                    signedBlocks: []
+                });
+
+            stateManager.agreementManager.getSnapshotFromMilestone = sinon
+                .stub()
+                .returns(mockSnapshot);
+
+            // Mock missing exit block
+            mockSetup.mockStorage.exitChannelBlocks.getExitChannelBlock.returns(
+                undefined
+            );
+
+            await expect(
+                stateManager.prepareUpdateSnapshotSameFork(
+                    "0x1234567890abcdef" as ForkId
+                )
+            ).to.be.rejectedWith("Exit channel block not found for hash");
+        });
+    });
+
+    describe("prepareUpdateStateSnapshotFork", () => {
+        it("should return undefined when fork is not disputed", async () => {
+            mockSetup.mockStateChannelManagerContract.isForkDisputed.resolves(
+                false
+            );
+
+            const result = await stateManager.prepareUpdateStateSnapshotFork();
+            expect(result).to.be.undefined;
+        });
+
+        it("should handle disputed fork with existing reduced result", async () => {
+            // Mock isForkDisputed to return true for initial fork, false for reduced fork
+            mockSetup.mockStateChannelManagerContract.isForkDisputed.callsFake(
+                (channelId: any, forkId: string) => {
+                    if (forkId === "0x1234567890abcdef") {
+                        return Promise.resolve(true); // Original fork is disputed
+                    } else if (forkId === "0xreducedFork") {
+                        return Promise.resolve(false); // Reduced fork is not disputed
+                    }
+                    return Promise.resolve(false);
+                }
+            );
+
+            mockSetup.mockStateChannelManagerContract.getReducedResult.callsFake(
+                (channelId: any, forkId: string) => {
+                    if (forkId === "0x1234567890abcdef") {
+                        return Promise.resolve(["0xreducedFork", true]);
+                    }
+                    return Promise.resolve([null, false]);
+                }
+            );
+
+            // Mock StateSnapshot.from to return the proper snapshot
+            sinon.stub(StateSnapshot, "from").returns({
+                forkId: "0x1234567890abcdef",
+                snapshotData: {
+                    latestExitChannelBlockHash: "0xonchain"
+                }
+            } as any);
+
+            // Mock genesis snapshot
+            mockSetup.mockStorage.stateSnapshots.getGenesisSnapshotDataByForkId.returns(
+                {
+                    forkId: "0x1234567890abcdef",
+                    snapshotData: {
+                        latestExitChannelBlockHash: "0xgenesis"
+                    }
+                }
+            );
+
+            // Mock exit channel block entry
+            mockSetup.mockStorage.exitChannelBlocks.getExitChannelBlockEntry.callsFake(
+                (hash: string) => {
+                    if (hash === "0xgenesis") {
+                        return {
+                            block: {
+                                previousBlockHash: "0xonchain"
+                            }
+                        };
+                    }
+                    return undefined;
+                }
+            );
+
+            const result = await stateManager.prepareUpdateStateSnapshotFork();
+
+            expect(result).to.not.be.undefined;
+            expect(result!.genesisSnapshot).to.exist;
+            expect(result!.exitBlocks).to.be.an("array");
+
+            // Restore the stub
+            (StateSnapshot.from as any).restore();
+        });
+
+        it("should throw error when genesis snapshot not found", async () => {
+            mockSetup.mockStateChannelManagerContract.isForkDisputed.resolves(
+                true
+            );
+            mockSetup.mockStorage.stateSnapshots.getGenesisSnapshotDataByForkId.returns(
+                undefined
+            );
+
+            await expect(
+                stateManager.prepareUpdateStateSnapshotFork()
+            ).to.be.rejectedWith("No genesis snapshot found for fork");
+        });
+    });
+
+    describe("postStateSnapshot", () => {
+        it("should call updateStateSnapshotSameFork when on same fork", async () => {
+            const forkId = "0x1234567890abcdef" as ForkId;
+
+            // Mock prepareUpdateSnapshotSameFork to return valid data
+            sinon.stub(stateManager, "prepareUpdateSnapshotSameFork").resolves({
+                milestoneProofs: [],
+                milestoneSnapshots: [],
+                exitChannelBlocks: []
+            });
+
+            await stateManager.postStateSnapshot(forkId);
+
+            expect(
+                mockSetup.mockStateChannelManagerContract
+                    .updateStateSnapshotSameFork.called
+            ).to.be.true;
+        });
+
+        it("should handle multicall when on different fork", async () => {
+            const forkId = "0x9876543210fedcba" as ForkId;
+
+            // Mock different fork on-chain
+            mockSetup.mockStateChannelManagerContract.getStateSnapshot.resolves(
+                {
+                    forkId: "0x1111111111111111", // Different fork
+                    blockHeight: 3n,
+                    timestamp: 1000,
+                    snapshotData: {
+                        latestExitChannelBlockHash: "0x0000000000000000"
+                    }
+                }
+            );
+
+            // Mock prepare methods
+            sinon
+                .stub(stateManager, "prepareUpdateStateSnapshotFork")
+                .resolves({
+                    genesisSnapshot: {
+                        forkId: forkId,
+                        toStruct: () => ({ forkId })
+                    } as any,
+                    exitBlocks: []
+                });
+
+            sinon.stub(stateManager, "prepareUpdateSnapshotSameFork").resolves({
+                milestoneProofs: [],
+                milestoneSnapshots: [],
+                exitChannelBlocks: []
+            });
+
+            await stateManager.postStateSnapshot(forkId);
+
+            expect(mockSetup.mockStateChannelManagerContract.multicall.called)
+                .to.be.true;
+        });
+
+        it("should log when no updates needed", async () => {
+            const forkId = "0x1234567890abcdef" as ForkId;
+
+            // Mock prepareUpdateSnapshotSameFork to return undefined
+            sinon
+                .stub(stateManager, "prepareUpdateSnapshotSameFork")
+                .resolves(undefined);
+
+            const consoleSpy = sinon.spy(console, "log");
+
+            await stateManager.postStateSnapshot(forkId);
+
+            expect(consoleSpy.calledWith("No state snapshot updates needed")).to
+                .be.true;
+            consoleSpy.restore();
+        });
+
+        it("should handle contract errors gracefully", async () => {
+            const forkId = "0x1234567890abcdef" as ForkId;
+
+            // Mock prepareUpdateSnapshotSameFork to return valid data
+            sinon.stub(stateManager, "prepareUpdateSnapshotSameFork").resolves({
+                milestoneProofs: [],
+                milestoneSnapshots: [],
+                exitChannelBlocks: []
+            });
+
+            // Mock contract to throw error
+            mockSetup.mockStateChannelManagerContract.updateStateSnapshotSameFork.rejects(
+                new Error("Contract error")
+            );
+
+            await expect(
+                stateManager.postStateSnapshot(forkId)
+            ).to.be.rejectedWith("Contract error");
+        });
+    });
+
+    describe("onJoinChannel", () => {
+        it("should store join channel block correctly", async () => {
+            const joinChannelBlock: JoinChannelBlockStruct = {
+                previousBlockHash: "0xprevhash" as Hash,
+                joinChannels: [
+                    {
+                        channelId: "0xabcdef1234567890",
+                        participant:
+                            "0x1234567890123456789012345678901234567890" as Address,
+                        deadlineTimestamp: 2000,
+                        balance: { amount: 100n, data: "0x" }
+                    }
+                ]
+            };
+            const timestamp = 1000 as Timestamp;
+            const totalDeposits: BalanceStruct = { amount: 100n, data: "0x" };
+
+            await stateManager.onJoinChannel(
+                joinChannelBlock,
+                timestamp,
+                totalDeposits
+            );
+
+            expect(
+                mockSetup.mockStorage.joinChannelBlocks.storeJoinChannelBlock.calledOnceWith(
+                    joinChannelBlock,
+                    totalDeposits
+                )
+            ).to.be.true;
+        });
+    });
+
+    describe("setState", () => {
+        it("should set state and trigger events correctly", async () => {
+            const encodedState = "0x1234567890abcdef" as any; // Valid hex bytes
+            const forkId = "0xnewfork" as ForkId;
+            const timestamp = 2000 as Timestamp;
+
+            await stateManager.setState(encodedState, forkId, timestamp);
+
+            expect(
+                mockSetup.mockDiamondStateMachine.setState.calledWith(
+                    encodedState
+                )
+            ).to.be.true;
+            expect(stateManager.forkId).to.equal(forkId);
+            expect(
+                mockSetup.mockStorage.stateMachineStates.storeStateMachineState
+                    .called
+            ).to.be.true;
+            expect(mockSetup.mockP2pEventHooks.onTurn.called).to.be.true;
+        });
+    });
+
+    describe("onSignedBlock", () => {
+        it("should process signed block correctly", async () => {
+            const signedBlock: SignedBlockStruct = {
+                encodedBlock: "0xencodedblock",
+                signature: "0xsignature"
+            };
+
+            // Mock Block.fromBlockConfirmation to avoid actual decoding
+            sinon.stub(Block, "fromBlockConfirmation").returns({
+                author: "0x1234567890123456789012345678901234567890",
+                forkId: "0x1234567890abcdef",
+                height: 1,
+                transaction: { header: { transactionCnt: 1n } },
+                stateSnapshotHash: "0xsnaphash",
+                blockConfirmationStruct: {
+                    signedBlock,
+                    signatures: []
+                }
+            } as any);
+
+            const result = await stateManager.onSignedBlock(signedBlock);
+
+            expect(result).to.be.a("boolean");
+        });
+    });
+
+    describe("applyTransaction", () => {
+        it("should apply transaction and return result", async () => {
+            const transaction: TransactionStruct = {
+                header: {
+                    channelId: "0xabcdef1234567890",
+                    participant: "0x1234567890123456789012345678901234567890",
+                    forkId: "0x1234567890abcdef",
+                    transactionCnt: 1n,
+                    timestamp: 1000
+                },
+                body: {
+                    encodedData: "0xtransactionbody",
+                    data: "0xdata"
+                }
+            };
+
+            const result = await stateManager.applyTransaction(transaction);
+
+            expect(result).to.have.property("success");
+            expect(result).to.have.property("encodedState");
+            expect(result).to.have.property("successCallback");
+            expect(result).to.have.property("exitChannels");
+            expect(result).to.have.property("leftParticipants");
+        });
+    });
+
+    describe("playTransaction", () => {
+        it("should throw error when channel not open", async () => {
+            const transaction: TransactionStruct = {
+                header: {
+                    channelId: "0xabcdef1234567890",
+                    participant: "0x1234567890123456789012345678901234567890",
+                    forkId: "0x1234567890abcdef",
+                    transactionCnt: 1n,
+                    timestamp: 1000
+                },
+                body: {
+                    encodedData: "0xtransactionbody",
+                    data: "0xdata"
+                }
+            };
+
+            // Mock channel as closed
+            stateManager.validationService.isChannelOpen = sinon
+                .stub()
+                .returns(false);
+
+            await expect(
+                stateManager.playTransaction(transaction)
+            ).to.be.rejectedWith("Channel not open");
+        });
+
+        it("should throw error when not player's turn", async () => {
+            const transaction: TransactionStruct = {
+                header: {
+                    channelId: "0xabcdef1234567890",
+                    participant: "0x1234567890123456789012345678901234567890",
+                    forkId: "0x1234567890abcdef",
+                    transactionCnt: 1n,
+                    timestamp: 1000
+                },
+                body: {
+                    encodedData: "0xtransactionbody",
+                    data: "0xdata"
+                }
+            };
+
+            // Mock channel as open but not player's turn
+            stateManager.validationService.isChannelOpen = sinon
+                .stub()
+                .returns(true);
+            mockSetup.mockDiamondStateMachine.getNextToWrite.resolves(
+                "0xdifferentplayer"
+            );
+
+            await expect(
+                stateManager.playTransaction(transaction)
+            ).to.be.rejectedWith("Not player turn");
+        });
+    });
+
+    describe("getParticipantsCurrent", () => {
+        it("should return current participants", async () => {
+            const participants = await stateManager.getParticipantsCurrent();
+            expect(participants).to.deep.equal([
+                "0x1234567890123456789012345678901234567890"
+            ]);
+        });
+    });
+
+    describe("dispose", () => {
+        it("should dispose resources correctly", async () => {
+            // Mock p2pManager dispose
+            const p2pManagerDisposeSpy = sinon
+                .stub(stateManager.p2pManager, "dispose")
+                .resolves();
+            const eventListenerDisposeSpy = sinon.stub(
+                stateManager.stateChannelEventListener,
+                "dispose"
+            );
+
+            await stateManager.dispose();
+
+            expect(stateManager.isDisposed).to.be.true;
+            expect(eventListenerDisposeSpy.called).to.be.true;
+            expect(p2pManagerDisposeSpy.called).to.be.true;
+        });
+    });
+
+    describe("setReductionTimeout", () => {
+        it("should set reduction timeout correctly", () => {
+            const forkId = "0x1234567890abcdef" as ForkId;
+            const triggerTimestamp = 2000;
+
+            // Ensure the stateManager's forkId matches the one we're testing
+            stateManager.forkId = forkId;
+
+            stateManager.setReductionTimeout(forkId, triggerTimestamp);
+
+            expect(stateManager.reductionTriggerMap.has(forkId)).to.be.true;
+            const reductionHandle =
+                stateManager.reductionTriggerMap.get(forkId);
+            expect(reductionHandle).to.not.be.undefined;
+            expect(reductionHandle!.triggerTimestamp).to.equal(
+                triggerTimestamp
+            );
+            expect(reductionHandle!.handle).to.not.be.undefined;
+        });
+    });
+
+    describe("onDisputeCommitted", () => {
+        it("should throw not implemented error", async () => {
+            const dispute = {} as any;
+            const timestamp = 1000 as Timestamp;
+
+            await expect(
+                stateManager.onDisputeCommitted(dispute, timestamp)
+            ).to.be.rejectedWith("TODO - Not implemented");
+        });
+    });
+});

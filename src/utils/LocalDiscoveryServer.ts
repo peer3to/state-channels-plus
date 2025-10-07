@@ -7,10 +7,16 @@ const PORT = 2001;
 type DiscoveryInfo = [number, string];
 //This is used just for express testing
 export class LocalDiscoveryServer {
+    private static discoveryServer: WebSocketServer | null = null;
+    private static peerServers: Set<WebSocketServer> = new Set();
     private constructor() {}
 
     public static tryStart() {
+        if (this.discoveryServer) {
+            return; // Already started
+        }
         const wss = new WebSocketServer({ port: PORT });
+        this.discoveryServer = wss;
         let connections: WebSocket[] = [];
         const discoveryInfo: DiscoveryInfo[] = [];
         wss.on("connection", (ws) => {
@@ -43,6 +49,7 @@ export class LocalDiscoveryServer {
         // console.log("RANDOM PORT ######", myPort);
         // console.log(new Error().stack);
         const myServer = new WebSocketServer({ port: myPort });
+        this.peerServers.add(myServer);
         const duplicateSet = new Set<number>();
         myServer.on("connection", (ws) => {
             console.log("Local WSS connection established");
@@ -84,5 +91,27 @@ export class LocalDiscoveryServer {
         ws.on("close", () => {
             console.log(`Connection to peer closed`);
         });
+    }
+
+    public static cleanup(): void {
+        // Close all peer servers
+        this.peerServers.forEach((server) => {
+            try {
+                server.close();
+            } catch (error) {
+                console.warn("Error closing peer server:", error);
+            }
+        });
+        this.peerServers.clear();
+
+        // Close discovery server
+        if (this.discoveryServer) {
+            try {
+                this.discoveryServer.close();
+            } catch (error) {
+                console.warn("Error closing discovery server:", error);
+            }
+            this.discoveryServer = null;
+        }
     }
 }

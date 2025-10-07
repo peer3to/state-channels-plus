@@ -29,7 +29,7 @@ import {
 import LocalDiamondSigner from "./LocalDiamondSigner";
 import { LocalDiamondArtifact } from "@/utils/GeneratedArtifacts";
 
-const DEBUG_CHANNEL_CONTRACT = true;
+import { DEBUG_CHANNEL_CONTRACT } from "@/utils/config";
 
 /**
  * Manages peer-to-peer communication and state machines

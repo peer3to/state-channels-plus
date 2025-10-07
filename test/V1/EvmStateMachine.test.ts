@@ -1,8 +1,10 @@
-import { ethers, ethers as hre } from "hardhat";
+import { ethers } from "hardhat";
 import { BigNumberish } from "ethers";
 import { EvmStateMachine } from "@/evm";
 import { Codec, Type } from "@/utils/Codec";
 import { StateSnapshot } from "@/models";
+import { expect } from "chai";
+import Clock from "@/Clock";
 
 import {
     createJoinChannelTestObject,
@@ -12,15 +14,17 @@ import {
 import P2pEventHooks from "@/P2pEventHooks";
 import { hash, SignatureUtils } from "@/utils";
 import { Bytes } from "@/types/types";
+import { waitForP2PConnections, waitForStateSync } from "../utils/waitFor";
+import { sleep } from "@test/fixtures/PeerTestHarness";
 
 describe("EvmStateMachine", function () {
     it("EvmStateMachine - P2P simulation - success", async function () {
-        const signerOne = (await hre.getSigners())[0];
-        const signerTwo = (await hre.getSigners())[1];
+        const signerOne = (await ethers.getSigners())[0];
+        const signerTwo = (await ethers.getSigners())[1];
 
-        const math = await deployMathChannelProxyFixture(hre);
+        const math = await deployMathChannelProxyFixture(ethers);
 
-        const mathSM = await hre.getContractFactory("MathStateMachine");
+        const mathSM = await ethers.getContractFactory("MathStateMachine");
         const mathsm = math.mathInstance;
 
         const mathscm = math.mathChannelManager;
@@ -60,13 +64,8 @@ describe("EvmStateMachine", function () {
             mathContractFirstPlayer.filters.NextToPlay,
             async (player) => {
                 console.log("Next to play ", player);
-                //sleep 1 second
-                if (signerOne.address != player) return;
-                await new Promise((resolve) => setTimeout(resolve, 1000));
                 if (player === signerOne.address) {
                     mathContractFirstPlayer.add(3);
-                } else {
-                    mathContractSecondPlayer.add(5);
                 }
             }
         );
@@ -81,12 +80,7 @@ describe("EvmStateMachine", function () {
             mathContractSecondPlayer.filters.NextToPlay,
             async (player) => {
                 console.log("Next to play ", player);
-                //sleep 1 second
-                if (signerTwo.address != player) return;
-                await new Promise((resolve) => setTimeout(resolve, 1000));
-                if (player === signerOne.address) {
-                    mathContractFirstPlayer.add(3);
-                } else {
+                if (player === signerTwo.address) {
                     mathContractSecondPlayer.add(5);
                 }
             }
@@ -123,9 +117,10 @@ describe("EvmStateMachine", function () {
             [jc1Signed.signature as Bytes, jc2Signed.signature as Bytes]
         );
         console.log(`Tx hash:${re.hash}`);
+        // Wait for P2P connections to be established
+        await waitForP2PConnections(p2pOne, p2pTwo, 500);
 
-        // sleep for 2 seconds - should be enough for the SM to pickup the channel open event and initiate
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await sleep(50); // Give connections time to establish
 
         // ============================
         //  Ugly Ugly work around to make the test pass by setting genesis snapshot manually
@@ -147,7 +142,7 @@ describe("EvmStateMachine", function () {
         );
 
         const stateMachineStateHash = hash(genesisStateEncoded);
-        const timestamp = Math.floor(Date.now() / 1000);
+        const timestamp = Clock.getTimeInSeconds();
 
         const genesisSnapshotData = {
             originForkId:
@@ -196,15 +191,65 @@ describe("EvmStateMachine", function () {
         p2pTwo.p2pSigner.p2pManager.stateManager.storage.stateSnapshots.storeStateSnapshot(
             stateSnapshot
         );
-
         // ===============================================
         //  End of ugly ugly work around
         // ===============================================
-
-        //start the p2p state machine
         await mathContractFirstPlayer.add(3);
 
-        // sleep for 10 seconds
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const stateManager1 = p2pOne.p2pSigner.p2pManager.stateManager;
+        const stateManager2 = p2pTwo.p2pSigner.p2pManager.stateManager;
+
+        await waitForStateSync(stateManager1, stateManager2, 1500);
+
+        expect(stateManager1.channelId).to.equal(
+            stateManager2.channelId,
+            "Peers should have matching channel IDs"
+        );
+
+        expect(stateManager1.forkId).to.equal(
+            stateManager2.forkId,
+            "Peers should have matching fork IDs"
+        );
+
+        // Get latest blocks from both peers
+        const latestBlock1 =
+            stateManager1.storage.blocks.getLatestBlock(forkId);
+        const latestBlock2 =
+            stateManager2.storage.blocks.getLatestBlock(forkId);
+
+        expect(latestBlock1).to.not.equal(
+            undefined,
+            "Peer 1 should have a latest block"
+        );
+        expect(latestBlock2).to.not.equal(
+            undefined,
+            "Peer 2 should have a latest block"
+        );
+        expect(latestBlock1?.hash).to.equal(
+            latestBlock2?.hash,
+            "Peer 1 and 2 should have the same latest block hash"
+        );
+
+        // Get next heights to see if they processed transactions
+        const nextHeight1 =
+            stateManager1.storage.blocks.getNextBlockHeight(forkId);
+        const nextHeight2 =
+            stateManager2.storage.blocks.getNextBlockHeight(forkId);
+        expect(nextHeight1).to.equal(
+            nextHeight2,
+            "Peer 1 and 2 should have the same next block height"
+        );
+
+        // Cleanup
+        try {
+            await p2pOne.p2pSigner.p2pManager.stateManager.dispose();
+            await p2pTwo.p2pSigner.p2pManager.stateManager.dispose();
+            const { LocalDiscoveryServer } = await import(
+                "@/utils/LocalDiscoveryServer"
+            );
+            LocalDiscoveryServer.cleanup();
+        } catch (error) {
+            console.warn("Error during cleanup:", error);
+        }
     });
 });
