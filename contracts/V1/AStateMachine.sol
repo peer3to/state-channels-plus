@@ -114,7 +114,7 @@ abstract contract AStateMachine {
         // emit TxExecutedA(success, getState());
         if (!success) {
             if (result.length == 0) {
-                revert("AStateMachine - Call failed - result lenght 0");
+                revert("AStateMachine - Call failed - result length 0");
             }
             assembly ("memory-safe") {
                 let returndata_size := mload(result)

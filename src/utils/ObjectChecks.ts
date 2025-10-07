@@ -23,7 +23,7 @@ export function hasMethod<T, P extends string>(
 /**
  * Type guard to check if an object has a certain method.
  */
-export function isInstaceOfRpcService<T, P extends string>(
+export function isInstanceOfRpcService<T, P extends string>(
     obj: T,
     prop: P
 ): obj is T & Record<P, (...params: any[]) => any> {

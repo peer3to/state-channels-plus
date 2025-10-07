@@ -15,7 +15,7 @@ import { Address } from "./types/types";
 import {
     hasMethod,
     hasProperty,
-    isInstaceOfRpcService
+    isInstanceOfRpcService
 } from "./utils/ObjectChecks";
 import { ARpcService } from "./rpc";
 import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
@@ -62,7 +62,7 @@ class P2PManager implements IOnMessage {
                 this.disconnectConnection(transport);
                 return;
             }
-            if (!isInstaceOfRpcService(this.localRpc, rpc.service)) {
+            if (!isInstanceOfRpcService(this.localRpc, rpc.service)) {
                 this.disconnectConnection(transport);
                 return;
             }
