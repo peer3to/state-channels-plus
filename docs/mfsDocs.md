@@ -9,7 +9,7 @@ This SDK is composed of 2 parts:
 
 The smart contracts provide base contracts that need to be extended for a specific use-case (state machine). The state machine executes p2p in real-time without any fees, with shared security inherited from a distributed ledger (blockchain).
 
-The TypeScript part of the SDK implements all the functionality and makes it easily available through a simple [setup](../src/evm/EvmStateMachine.ts#205) that wraps/ensrhnies [ethers](https://github.com/ethers-io/ethers.js) contract instances. After the setup, the wrapped/enshrined contracts can be used as a direct substitute for the original contracts, and the system will handle everything. The contracts preserve the same TypeChain generated type.
+The TypeScript part of the SDK implements all the functionality and makes it easily available through a simple [setup](../src/evm/EvmStateMachine.ts#205) that wraps/enshrines [ethers](https://github.com/ethers-io/ethers.js) contract instances. After the setup, the wrapped/enshrined contracts can be used as a direct substitute for the original contracts, and the system will handle everything. The contracts preserve the same TypeChain generated type.
 
 ## General Usage
 
@@ -92,7 +92,7 @@ Executed on-chain once for every unique channelId. Performs all the composable o
 
 - openChannelData - array of bytes for every participant in the channel - bytes hold commitment data (eg. amount of tokens to deposit). - usually the bytes are interpreted as [JoinChannel](../contracts/V1/types/DataTypes.sol#L80), but you can use your own custom types and have a fully custom verification logic.
 
-- signatures - array of sigantures - signed openChannelData by each participant in the channel.
+- signatures - array of signatures - signed openChannelData by each participant in the channel.
 
 ([Example](../examples/TicTacToe/contracts/TicTacToe/TicTacToeStateChannelManagerProxy.sol#L23))
 

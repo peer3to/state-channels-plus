@@ -8,7 +8,7 @@ import "../types/DisputeFraudProofTypes.sol";
 import "./utils/DisputeUtils.sol";
 
 contract DisputeFraudProofFacet is StateChannelCommon {
-    //This is a bit inefficient, since public/external functions always do a deep copy unlike internal/private that pas by reference, but this shares the context
+    //This is a bit inefficient, since public/external functions always do a deep copy unlike internal/private that pass by reference, but this shares the context
     function verifyDisputeFraudProofs(DisputeFraudProof[] memory disputeFraudProofs)
         public
         returns (Dispute[] memory maliciousDisputes)
