@@ -40,7 +40,7 @@ class RemoteRpcProxy {
                 ctx.serviceName = serviceName;
                 // @ts-ignore
                 ctx.service = val;
-                return {};
+                return rpcMethodsProxy;
             }
         }) as unknown as RemoteRpcProxyType<MainRpcService>;
     }

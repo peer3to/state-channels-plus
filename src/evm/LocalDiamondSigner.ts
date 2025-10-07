@@ -57,8 +57,14 @@ class LocalDiamondSigner implements Signer {
         }
     }
 
-    resolveName(name: string): Promise<string | null> {
-        return this.signer.resolveName(name);
+    async resolveName(name: string): Promise<string | null> {
+        try {
+            return await this.signer.resolveName(name);
+        } catch (error) {
+            const isAddress = (address: string) =>
+                address.startsWith("0x") && address.length === 42;
+            return isAddress(name) ? name : null;
+        }
     }
 
     signTransaction(tx: ethers.TransactionRequest): Promise<string> {

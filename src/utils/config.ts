@@ -1,55 +1,65 @@
-import fs from "fs";
-import path from "path";
-
-const DEFAULT_CONFIG_PATH = path.resolve(process.cwd(), "peer3.config.json");
-
-// Helper function to parse boolean values
-function parseBooleanValue(value: any, defaultValue: boolean = false): boolean {
-    if (value === undefined || value === null) return defaultValue;
-    if (typeof value === "boolean") return value;
-    if (typeof value === "string") return value.toLowerCase() === "true";
-    return defaultValue;
+export interface Config {
+    PROVIDER_URL: string;
+    DEBUG_STATE_MANAGER: boolean;
+    DEBUG_DISPUTE_HANDLER: boolean;
+    DEBUG_P2P_MANAGER: boolean;
+    DEBUG_RPC: boolean;
+    DEBUG_CHANNEL_CONTRACT: boolean;
+    DEBUG_LOCAL_TRANSPORT: boolean;
 }
 
-// Try to read config from JSON file
-function loadConfigFromFile(configPath: string = DEFAULT_CONFIG_PATH) {
-    try {
-        if (!fs.existsSync(configPath)) {
-            return {}; // File doesn't exist, use defaults
+function isNode() {
+    return (
+        typeof process !== "undefined" &&
+        process.versions &&
+        process.versions.node
+    );
+}
+
+const DEFAULT_CONFIG: Config = {
+    PROVIDER_URL: "http://localhost:8545",
+    DEBUG_STATE_MANAGER: false,
+    DEBUG_DISPUTE_HANDLER: false,
+    DEBUG_P2P_MANAGER: false,
+    DEBUG_RPC: false,
+    DEBUG_CHANNEL_CONTRACT: false,
+    DEBUG_LOCAL_TRANSPORT: false
+};
+
+// Create configuration: if node -> test config, else -> regular config, then apply overrides
+function createConfig(overrides: Partial<Config> = {}): Config {
+    let baseConfig: Partial<Config> = {};
+
+    // If running in Node.js, use test config, otherwise use regular config
+    if (isNode()) {
+        try {
+            const testConfigModule = require("../../test/peer3.test.config");
+            baseConfig = testConfigModule.default || testConfigModule;
+        } catch (e) {
+            try {
+                const regularConfigModule = require("../../peer3.config");
+                baseConfig = regularConfigModule.default || regularConfigModule;
+            } catch {
+                // Use defaults if both fail
+            }
         }
-        const raw = fs.readFileSync(configPath, "utf-8");
-        return JSON.parse(raw);
-    } catch (error) {
-        console.warn(`Failed to load ${configPath}:`, error);
-        return {}; // On error, use defaults
+    } else {
+        try {
+            const regularConfigModule = require("../../peer3.config");
+            baseConfig = regularConfigModule.default || regularConfigModule;
+        } catch {
+            // Use defaults if regular config fails
+        }
     }
+
+    return {
+        ...DEFAULT_CONFIG,
+        ...baseConfig,
+        ...overrides
+    };
 }
 
-// Load config once at startup
-const fileConfig = loadConfigFromFile();
-
-// Configuration with defaults
-export const config = {
-    PROVIDER_URL: fileConfig.PROVIDER_URL || "http://localhost:8545",
-    DEBUG_STATE_MANAGER: parseBooleanValue(
-        fileConfig.DEBUG_STATE_MANAGER,
-        false
-    ),
-    DEBUG_DISPUTE_HANDLER: parseBooleanValue(
-        fileConfig.DEBUG_DISPUTE_HANDLER,
-        false
-    ),
-    DEBUG_P2P_MANAGER: parseBooleanValue(fileConfig.DEBUG_P2P_MANAGER, false),
-    DEBUG_RPC: parseBooleanValue(fileConfig.DEBUG_RPC, false),
-    DEBUG_CHANNEL_CONTRACT: parseBooleanValue(
-        fileConfig.DEBUG_CHANNEL_CONTRACT,
-        false
-    ),
-    DEBUG_LOCAL_TRANSPORT: parseBooleanValue(
-        fileConfig.DEBUG_LOCAL_TRANSPORT,
-        false
-    )
-} as const;
+export const config = createConfig();
 
 // Export individual config values for easy import
 export const {
@@ -62,5 +72,4 @@ export const {
     DEBUG_LOCAL_TRANSPORT
 } = config;
 
-// Export loadConfigFromFile for testing
-export { loadConfigFromFile };
+export { createConfig };

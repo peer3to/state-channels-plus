@@ -17,8 +17,6 @@ import { Bytes } from "@/types/types";
 import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 describe("StateChannelManagerProxy", function () {
-    process.env.DEBUG_LOCAL_TRANSPORT = "true"; //will use local transport - these tests aren't meant to test the distributed system
-
     let mathChannelManager: MathStateChannelManagerProxy;
     let mathInstance: MathStateMachine;
     let firstSigner: HardhatEthersSigner;
