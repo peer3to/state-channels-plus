@@ -8,32 +8,6 @@ import "./utils/DisputeUtils.sol";
 import "./utils/BlockUtils.sol";
 
 contract DisputeVerificationFacet is StateChannelCommon {
-    function auditDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        external
-        onlySelf
-        returns (address[] memory slashParticipants)
-    {
-        require(isCorrectAuditingData(dispute, disputeAuditingData), ErrorDisputeWrongAuditingData());
-        require(_isCorrectGenesis(dispute), ErrorDisputeGenesisInvalid());
-        require(verifyStateProof(dispute, disputeAuditingData, true), ErrorDisputeStateProofInvalid());
-        require(_verifyDisputeExitChannelBlocks(dispute, disputeAuditingData), ErrorDisputeExitChannelBlocksInvalid());
-
-        // ***************** Generate output snapshot ***************
-        (SnapshotData memory outputSnapshotData, address[] memory slashes) = computeDisputeOutputSnapshotData(
-            dispute.input,
-            disputeAuditingData.latestStateSnapshot,
-            disputeAuditingData.latestStateStateMachineState,
-            disputeAuditingData.genesisStateSnapshotData.latestJoinChannelBlockHash
-        );
-
-        //verify outputStateSnapshot commitment
-        if (keccak256(abi.encode(outputSnapshotData)) != dispute.outputSnapshotDataHash) {
-            revert ErrorDisputeOutputStateSnapshotInvalid();
-        }
-
-        return slashes;
-    }
-
     function computeDisputeOutputSnapshotData(
         DisputeInput memory disputeInput,
         StateSnapshot memory latestStateSnapshot,
@@ -58,21 +32,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
             totalDeposits: disputeOutputState.totalDeposits,
             totalWithdrawals: disputeOutputState.totalWithdrawals
         });
-    }
-
-    function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public {
-        uint256 gasLimit = getGasLimit();
-        bytes memory data = abi.encodeCall(DisputeVerificationFacet.auditDispute, (dispute, disputeAuditingData));
-        (bool success, bytes memory returnData) = address(this).call{gas: gasLimit}(data);
-        if (success) {
-            // auditing passed - dispute is correct, slash the challenger
-            if (_canParticipateInDisputes(dispute.input.channelId, msg.sender)) {
-                addOnChainSlashedParticipant(dispute.input.channelId, msg.sender);
-            }
-        } else {
-            // auditing failed - dispute is invalid, kill it
-            _killDispute(dispute);
-        }
     }
 
     function reduce(Dispute[] memory disputes) public view returns (ReduceOutput memory reducedOutput) {
@@ -326,13 +285,11 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         // Apply slashes
         ExitChannel[] memory slashExitChannels;
-        (outputState.encodedModifiedState, slashExitChannels) = StateChannelManagerProxy(address(this))
-            .applySlashesToStateMachine(outputState.encodedModifiedState, slashParticipants);
+        // (outputState.encodedModifiedState, slashExitChannels) = _applySlashesToStateMachine(outputState.encodedModifiedState, slashParticipants);
 
         // Apply removals
         ExitChannel[] memory removalExitChannels;
-        (outputState.encodedModifiedState, removalExitChannels) = StateChannelManagerProxy(address(this))
-            .removeParticipantsFromStateMachine(outputState.encodedModifiedState, removeParticipants);
+        // (outputState.encodedModifiedState, removalExitChannels) = _removeParticipantsFromStateMachine(outputState.encodedModifiedState, removeParticipants);
 
         // Combine exit channels and calculate totals
         ExitChannel[] memory allExitChannels =
@@ -757,4 +714,33 @@ contract DisputeVerificationFacet is StateChannelCommon {
         //verify outputStateSnapshot commitment
         return (keccak256(abi.encode(outputSnapshotData)) == dispute.outputSnapshotDataHash);
     }
+
+    // function _removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
+    //     internal
+    //     returns (bytes memory encodedModifiedState, ExitChannel[] memory)
+    // {
+    //     ExitChannel[] memory exitChannels = new ExitChannel[](participants.length);
+    //     stateMachineImplementation.setState(encodedState);
+    //     for (uint256 i = 0; i < participants.length; i++) {
+    //         bool success;
+    //         (success, exitChannels[i]) = stateMachineImplementation.removeParticipant(participants[i]);
+    //         // require(success, "Remove failed");
+    //         require(success, ErrorDisputeStateMachineRemovingFailed());
+    //     }
+    //     return (stateMachineImplementation.getState(), exitChannels);
+    // }
+
+    // function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
+    //     internal
+    //     returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
+    // {
+    //     exitChannels = new ExitChannel[](slashedParticipants.length);
+    //     stateMachineImplementation.setState(encodedState);
+    //     for (uint256 i = 0; i < slashedParticipants.length; i++) {
+    //         bool success;
+    //         (success, exitChannels[i]) = stateMachineImplementation.slashParticipant(slashedParticipants[i]);
+    //         require(success, ErrorDisputeStateMachineSlashingFailed());
+    //     }
+    //     return (stateMachineImplementation.getState(), exitChannels);
+    // }
 }

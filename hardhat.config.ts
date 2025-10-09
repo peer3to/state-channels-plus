@@ -27,6 +27,9 @@ const config: HardhatUserConfig = {
             viaIR: true, // Enable the via-IR pipeline
             optimizer: {
                 enabled: true,
+                // details: {
+                //     yul: false
+                // },
                 runs: 100
             }
         }

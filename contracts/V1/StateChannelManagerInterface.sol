@@ -4,21 +4,9 @@ import "./types/DataTypes.sol";
 import "./types/DisputeTypes.sol";
 
 abstract contract StateChannelManagerInterface {
-    function openChannel(bytes32 channelId, bytes[] calldata openChannelData, bytes[] calldata signatures)
-        public
-        virtual;
-
-    function closeChannel(bytes32 channelId, bytes[] calldata closeChannelData, bytes[] calldata signatures)
-        public
-        virtual;
-
-    function removeParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
-        public
-        virtual;
-
-    function addParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
-        public
-        virtual;
+    // function openChannel(OpenChannelConfirmation calldata openChannelConfirmation)
+    //     public
+    //     virtual;
 
     function isChannelOpen(bytes32 channelId) public view virtual returns (bool);
 
@@ -53,13 +41,6 @@ abstract contract StateChannelManagerInterface {
         DisputeConfirmation memory disputeConfirmation,
         DisputeAuditingData memory disputeAuditingData
     ) public virtual;
-
-    function auditDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        public
-        virtual
-        returns (address[] memory slashParticipants);
-
-    function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public virtual;
 
     function challengeDisputeReduction(
         Dispute[] memory disputes,

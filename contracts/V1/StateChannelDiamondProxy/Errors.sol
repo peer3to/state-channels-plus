@@ -1,5 +1,9 @@
 pragma solidity ^0.8.8;
 
+//Channel Open
+// error ErrorChannelAlreadyOpen();
+// error ErrorAtLeastTwoParticipantsRequired();
+
 //Calldata errors
 error ErrorBlockCalldataTimestampTooLate();
 error ErrorBlockCalldataAlreadyPosted();
@@ -20,6 +24,9 @@ error ErrorNotGenesisSnapshot();
 //Join channel
 error ErrorJoinChannelExpired();
 error ErrorJoinChannelInvalidSignature();
+// error ErrorNoJoinChannelProvided();
+// error ErrorNoSuccessfulJoinChannel();
+// error ErrorJoinChannelAtomicFailure();
 
 //Exit channel
 error ErrorWithdrawalFailed();

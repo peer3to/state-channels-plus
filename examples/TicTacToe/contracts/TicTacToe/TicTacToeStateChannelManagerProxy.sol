@@ -88,19 +88,7 @@ contract TicTacToeStateChannelManagerProxy is AStateChannelManagerProxy {
         emit SetState(channelId, genesisStateEcoded, 0, block.timestamp);
     }
 
-    function closeChannel(bytes32 channelId, bytes[] calldata closeChannelData, bytes[] calldata signatures)
-        public
-        virtual
-        override
-    {}
-
     function removeParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
-        public
-        virtual
-        override
-    {}
-
-    function addParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
         public
         virtual
         override

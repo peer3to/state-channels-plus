@@ -4,6 +4,8 @@ import "./types/DisputeTypes.sol";
 import "./types/DataTypes.sol";
 
 interface StateChannelManagerEvents {
+    // event ChannelOpened(bytes32 indexed channelId, StateSnapshot stateSnapshot, bytes encodedState);
+
     event StateSnapshotUpdated(bytes32 indexed channelId, StateSnapshot stateSnapshot);
 
     event BlockCalldataPosted(
