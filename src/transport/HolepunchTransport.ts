@@ -2,7 +2,6 @@ import P2PManager from "@/P2PManager";
 import ATransport from "./ATransport";
 import { Buffer } from "buffer";
 import { TransportType } from "./TransportType";
-import { outboundRateLimiter } from "@/utils/RateLimiter";
 
 class HolepunchTransport extends ATransport {
     transportType = TransportType.HOLEPUNCH;
@@ -31,17 +30,9 @@ class HolepunchTransport extends ATransport {
             this.close();
         });
     }
-    send(serializedRPC: string): void {
+
+    protected _send(serializedRPC: string): void {
         console.log("SENDING RPC", serializedRPC);
-
-        if (outboundRateLimiter) {
-            const dataSizeBytes = Buffer.byteLength(serializedRPC, "utf8");
-            if (!outboundRateLimiter.checkAndConsume(dataSizeBytes)) {
-                console.warn("Holepunch rate limit exceeded, dropping message");
-                return; // Drop the message
-            }
-        }
-
         this.holepunchSocket.write(serializedRPC);
     }
     onMessage(data: any): void {
