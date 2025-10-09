@@ -8,10 +8,6 @@ abstract contract AConsumerFacet {
         external
         virtual;
 
-    function addParticipant(bytes32 channelId, bytes[] calldata addParticipantData, bytes[] calldata signatures)
-        external
-        virtual;
-
     function depositAssetsComposable(JoinChannel memory joinChannel) external virtual returns (bool);
 
     function withdrawAssetsComposable(ExitChannel memory exitChannel) external virtual returns (bool);

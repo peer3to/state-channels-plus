@@ -8,10 +8,6 @@ abstract contract StateChannelManagerInterface {
         public
         virtual;
 
-    function addParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
-        public
-        virtual;
-
     function isChannelOpen(bytes32 channelId) public view virtual returns (bool);
 
     function getParticipants(bytes32 channelId) public virtual returns (address[] memory);

@@ -71,13 +71,6 @@ contract MathConsumerFacet is AConsumerFacet {
         emit SetState(channelId, genesisStateEncoded, 0, block.timestamp);
     }
 
-    function addParticipant(bytes32 channelId, bytes[] calldata addParticipantData, bytes[] calldata signatures)
-        external
-        override
-    {
-        // Implementation for adding a new participant to the channel
-    }
-
     function depositAssetsComposable(JoinChannel memory joinChannel) external override returns (bool) {
         // Implementation for depositing assets when a participant joins
 

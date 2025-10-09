@@ -83,14 +83,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         AConsumerFacet(consumerFacetAddress).openChannel(channelId, openChannelData, signatures);
     }
 
-    function addParticipant(bytes32 channelId, bytes[] calldata addParticipantData, bytes[] calldata signatures)
-        public
-        virtual
-        override
-    {
-        AConsumerFacet(consumerFacetAddress).addParticipant(channelId, addParticipantData, signatures);
-    }
-
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public override {
         _delegatecall(
             disputeManagerFacetAddress, abi.encodeCall(DisputeManagerFacet.uploadDispute, (disputeConfirmation))
