@@ -2,10 +2,11 @@ pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
 import "./StateChannelManagerProxy.sol";
-import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
 import "../types/DisputeFraudProofTypes.sol";
 import "./utils/DisputeUtils.sol";
+import "./utils/GeneralUtils.sol";
+import "./UtilityFacet.sol";
 
 contract DisputeFraudProofFacet is StateChannelCommon {
     //This is a bit inefficient, since public/external functions always do a deep copy unlike internal/private that pass by reference, but this shares the context
@@ -94,7 +95,8 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // if !hasBlock -> latestState should be genesis state -> if the disputer signed any block this proof is valid
 
         // Check signature
-        address retrievedAddress = StateChannelUtilLibrary.retrieveSignerAddress(proof.encodedBlock, proof.signature);
+        address retrievedAddress =
+            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(proof.encodedBlock, proof.signature);
         if (retrievedAddress != dispute.input.disputer) revert();
 
         return dispute.input.disputer;
@@ -124,11 +126,8 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified memory proof =
             abi.decode(encodedFraudProof, (DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified));
 
-        bytes memory result = _delegatecall(
-            disputeVerificationFacetAddress,
-            abi.encodeCall(DisputeVerificationFacet.verifyStateProof, (dispute, proof.auditingData, false))
-        );
-        bool isValid = abi.decode(result, (bool));
+        bool isValid = UtilityFacet(utilityFacetAddress).verifyStateProof(dispute, proof.auditingData, false);
+
         if (!isValid) return dispute.input.disputer; // slash the disputer
         return address(0); // all good - the calling context may decide to slash the caller
     }
@@ -142,11 +141,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // Requires correct auditing data
         require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
 
-        bytes memory result = _delegatecall(
-            disputeVerificationFacetAddress,
-            abi.encodeCall(DisputeVerificationFacet.verifyStateProof, (dispute, proof.auditingData, true))
-        );
-        bool isValid = abi.decode(result, (bool));
+        bool isValid = UtilityFacet(utilityFacetAddress).verifyStateProof(dispute, proof.auditingData, true);
         if (!isValid) return dispute.input.disputer; // slash the disputer
         return address(0); // all good - the calling context may decide to slash the caller
     }
@@ -169,11 +164,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         bool isValid = abi.decode(result, (bool));
         if (!isValid) return address(0); // the calling context may decide to slash the caller
 
-        result = _delegatecall(
-            disputeVerificationFacetAddress,
-            abi.encodeCall(DisputeVerificationFacet.verifyStateProof, (dispute, proof.auditingData, false))
-        );
-        isValid = abi.decode(result, (bool));
+        isValid = UtilityFacet(utilityFacetAddress).verifyStateProof(dispute, proof.auditingData, false);
         if (!isValid) return address(0); // the calling context may decide to slash the caller
 
         // dispute.input.auditingDataHash is junk, stateProof is valid and auditingData is correct
@@ -279,9 +270,11 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
         //check threshold
         address[] memory thresholdParticipants = proof.auditingData.latestStateSnapshot.snapshotData.participants;
-        bytes[] memory signatures =
-            StateChannelUtilLibrary.insertBytesInByteArray(signedBlock.signature, proof.thresholdBlock.signatures);
-        (bool isValid,) = StateChannelUtilLibrary.verifyThresholdSigned(thresholdParticipants, encodedBlock, signatures);
+        bytes[] memory signatures = UtilityFacet(utilityFacetAddress).insertBytesInByteArray(
+            signedBlock.signature, proof.thresholdBlock.signatures
+        );
+        (bool isValid,) =
+            UtilityFacet(utilityFacetAddress).verifyThresholdSigned(thresholdParticipants, encodedBlock, signatures);
         if (!isValid) return address(0); // the calling context may decide to slash the caller
 
         return dispute.input.disputer;
@@ -314,7 +307,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // check is timeout set
         if (dispute.input.timeout.participant == address(0)) return address(0); // the calling context may decide to slash the caller
 
-        address nextAuthor = getNextToWrite(dispute.input.channelId, proof.auditingData.latestStateStateMachineState);
+        stateMachineImplementation.setState(proof.auditingData.latestStateStateMachineState);
+        address nextAuthor = stateMachineImplementation.getNextToWrite();
+
         // check is next author timed-out
         if (dispute.input.timeout.participant != nextAuthor) return address(0); // the calling context may decide to slash the caller
         return dispute.input.disputer;
@@ -352,7 +347,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             // ****** check has forfeit right to extra time
             bool hasForfeitedRightToExtraTime = false;
             if (dispute.input.timeout.participantSignatureOnPreviousBlock.length > 0) {
-                address signerAddress = StateChannelUtilLibrary.retrieveSignerAddress(
+                address signerAddress = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
                     latestSignedBlock.encodedBlock, dispute.input.timeout.participantSignatureOnPreviousBlock
                 );
                 if (signerAddress == dispute.input.timeout.participant) hasForfeitedRightToExtraTime = true;

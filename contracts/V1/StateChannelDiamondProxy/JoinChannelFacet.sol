@@ -2,8 +2,8 @@ pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
 import "./StateChannelManagerProxy.sol";
-import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
+import "./UtilityFacet.sol";
 
 contract JoinChannelFacet is StateChannelCommon {
     /**
@@ -21,15 +21,16 @@ contract JoinChannelFacet is StateChannelCommon {
 
         //verify original signature
         require(
-            jc.participant == StateChannelUtilLibrary.retrieveSignerAddress(sjc.encodedJoinChannel, sjc.signature),
+            jc.participant
+                == UtilityFacet(utilityFacetAddress).retrieveSignerAddress(sjc.encodedJoinChannel, sjc.signature),
             ErrorJoinChannelInvalidSignature()
         );
 
         // Check threshold from existing participant set
-        address[] memory thresholdParticipants = StateChannelUtilLibrary.concatAddressArraysNoDuplicates(
+        address[] memory thresholdParticipants = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
             getSnapshotParticipants(channelId), getPendingParticipants(channelId)
         );
-        (bool isValid,) = StateChannelUtilLibrary.verifyThresholdSigned(
+        (bool isValid,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
             thresholdParticipants, sjc.encodedJoinChannel, joinChannelConfirmation.signatures
         );
         require(isValid, ErrorJoinChannelInvalidSignature());

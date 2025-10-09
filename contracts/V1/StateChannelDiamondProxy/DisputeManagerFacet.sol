@@ -2,9 +2,9 @@ pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
 import "./StateChannelManagerProxy.sol";
-import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
 import "./utils/DisputeUtils.sol";
+import "./UtilityFacet.sol";
 
 contract DisputeManagerFacet is StateChannelCommon {
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public {
@@ -141,16 +141,12 @@ contract DisputeManagerFacet is StateChannelCommon {
         SnapshotData storage snapshotData = stateSnapshots[dispute.input.channelId].snapshotData;
         uint256 thresholdCount = snapshotData.participants.length + disputeData.pendingParticipants.length
             - disputeData.onChainSlashes.length;
-        if (
-            disputeConfirmation.signatures.length + 1
-                < snapshotData.participants.length + disputeData.pendingParticipants.length
-                    - disputeData.onChainSlashes.length
-        ) return false;
+        if (disputeConfirmation.signatures.length + 1 < thresholdCount) return false;
         address[] memory thresholdSet = getOnChainThresholdSet(dispute.input.channelId);
-        bytes[] memory signatures = StateChannelUtilLibrary.insertBytesInByteArray(
+        bytes[] memory signatures = UtilityFacet(utilityFacetAddress).insertBytesInByteArray(
             disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures
         );
-        (bool isThresholdFinal,) = StateChannelUtilLibrary.verifyThresholdSigned(
+        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
             thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures
         );
         return isThresholdFinal;
@@ -165,7 +161,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         DisputeData storage disputeData = disputeData[dispute.input.channelId];
         if (disputeConfirmation.signatures.length < disputeData.pendingParticipants.length) return true;
 
-        (bool isThresholdFinal,) = StateChannelUtilLibrary.verifyThresholdSigned(
+        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
             disputeData.pendingParticipants,
             disputeConfirmation.signedDispute.encodedDispute,
             disputeConfirmation.signatures

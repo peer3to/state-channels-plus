@@ -2,7 +2,6 @@ pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
 import "../StateChannelManagerInterface.sol";
-import "./StateChannelUtilLibrary.sol";
 import "./AConsumerFacet.sol";
 
 import "./DisputeManagerFacet.sol";
@@ -12,6 +11,8 @@ import "./DisputeFraudProofFacet.sol";
 import "./StateSnapshotFacet.sol";
 import "./JoinChannelFacet.sol";
 import "../types/DisputeTypes.sol";
+import "./utils/GeneralUtils.sol";
+import "./UtilityFacet.sol";
 
 contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelCommon {
     constructor(
@@ -22,6 +23,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         address _disputeFraudProofFacet,
         address _stateSnapshotFacet,
         address _joinChannelFacet,
+        address _utilityFacet,
         address _consumerFacet
     ) {
         stateMachineImplementation = AStateMachine(_stateMachineImplementation);
@@ -31,6 +33,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         disputeFraudProofFacetAddress = _disputeFraudProofFacet;
         stateSnapshotFacetAddress = _stateSnapshotFacet;
         joinChannelFacetAddress = _joinChannelFacet;
+        utilityFacetAddress = _utilityFacet;
         consumerFacetAddress = _consumerFacet;
         p2pTime = 15;
         agreementTime = 5;
@@ -315,29 +318,14 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return StateChannelCommon.getBlockCallDataCommitment(channelId, forkId, blockHeight, participant);
     }
 
-    function isChannelOpen(bytes32 channelId)
-        public
-        view
-        override(StateChannelCommon, StateChannelManagerInterface)
-        returns (bool)
-    {
-        return StateChannelCommon.isChannelOpen(channelId);
+    function isChannelOpen(bytes32 channelId) public view override returns (bool) {
+        return stateSnapshots[channelId].snapshotData.participants.length > 0;
     }
 
     function isForkDisputed(bytes32 channelId, bytes32 forkId) public view override returns (bool) {
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[forkId];
         return disputeWindow.evidence.creationTimestamp != 0;
-    }
-
-    function verifyMilestones(
-        MilestoneProof[] memory milestoneProofs,
-        StateSnapshot[] memory milestoneSnapshots,
-        SnapshotData memory genesisSnapshotData
-    ) public view returns (bool isValid, bytes memory lastBlockEncoded) {
-        return DisputeVerificationFacet(disputeVerificationFacetAddress).verifyMilestones(
-            milestoneProofs, milestoneSnapshots, genesisSnapshotData
-        );
     }
 
     function multicall(bytes[] calldata calls) external override returns (bytes[] memory results) {

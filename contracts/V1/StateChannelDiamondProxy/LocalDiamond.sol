@@ -20,7 +20,8 @@ contract LocalDiamond is StateChannelManagerProxy {
         address _fraudProofFacet,
         address _disputeFraudProofFacet,
         address _stateSnapshotFacet,
-        address _joinChannelFacet
+        address _joinChannelFacet,
+        address _utilityFacet
     )
         StateChannelManagerProxy(
             _stateMachineImplementation,
@@ -30,6 +31,7 @@ contract LocalDiamond is StateChannelManagerProxy {
             _disputeFraudProofFacet,
             _stateSnapshotFacet,
             _joinChannelFacet,
+            _utilityFacet,
             address(0) // Use 0x00 for consumer facet in local environment
         )
     {
@@ -93,18 +95,19 @@ contract LocalDiamond is StateChannelManagerProxy {
     ) external {
         // Update dispute data based on the dispute commitment
         bytes32 forkId = dispute.input.genesisSnapshotDataHash;
-        disputeData[channelId].disputeWindowMap[forkId].forkId = forkId;
-        disputeData[channelId].disputeWindowMap[forkId].evidence.creationTimestamp = windowCreationTimestamp;
-        disputeData[channelId].disputeWindowMap[forkId].evidence.hasPosted.push(dispute.input.disputer);
+        DisputeWindow storage disputeWindow = disputeData[channelId].disputeWindowMap[forkId];
+        disputeWindow.forkId = forkId;
+        disputeWindow.evidence.creationTimestamp = windowCreationTimestamp;
+        disputeWindow.evidence.hasPosted.push(dispute.input.disputer);
 
         bytes32 commitment = keccak256(abi.encode(dispute));
-        disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments.push(commitment);
+        disputeWindow.evidence.disputeCommitments.push(commitment);
 
         // Handle reduced result if this is a final/threshold dispute
         if (isFinal) {
-            disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkId = dispute.outputSnapshotDataHash;
-            disputeData[channelId].disputeWindowMap[forkId].reducedResult.timestamp = disputeCreationTimestamp;
-            disputeData[channelId].disputeWindowMap[forkId].reducedResult.reducer = dispute.input.disputer;
+            disputeWindow.reducedResult.forkId = dispute.outputSnapshotDataHash;
+            disputeWindow.reducedResult.timestamp = disputeCreationTimestamp;
+            disputeWindow.reducedResult.reducer = dispute.input.disputer;
 
             // Clear dispute commitments (matches on-chain behavior)
             delete disputeData[channelId]
@@ -267,9 +270,18 @@ contract LocalDiamond is StateChannelManagerProxy {
         bool auditingDataIntegrityVerified
     ) public view returns (bool) {
         // The underlying function is pure, so no need for a delegatecall
-        return DisputeVerificationFacet(disputeVerificationFacetAddress).verifyStateProof(
+        return UtilityFacet(utilityFacetAddress).verifyStateProof(
             dispute, disputeAuditingData, auditingDataIntegrityVerified
         );
+    }
+
+    function verifyMilestones(
+        MilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        SnapshotData memory genesisSnapshotData
+    ) public view returns (bool isValid, bytes memory lastBlockEncoded) {
+        return
+            UtilityFacet(utilityFacetAddress).verifyMilestones(milestoneProofs, milestoneSnapshots, genesisSnapshotData);
     }
 
     function getLatestBlockFromStateProof(StateProof memory stateProof)
@@ -278,5 +290,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         returns (bool hasBlock, Block memory)
     {
         return _getLatestBlock(stateProof);
+    }
+
+    function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot) public view returns (bool) {
+        return UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(snapshot);
     }
 }

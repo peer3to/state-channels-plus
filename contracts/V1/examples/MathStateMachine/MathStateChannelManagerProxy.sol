@@ -5,8 +5,6 @@ import "../../StateChannelDiamondProxy/StateChannelManagerProxy.sol";
 import "./MathStateMachine.sol";
 import "./MathConsumerFacet.sol";
 
-// import "../StateChannelDiamondProxy/StateChannelUtilLibrary.sol";
-
 // Uncomment this line to use console.log
 // import "hardhat/console.sol";
 
@@ -19,6 +17,7 @@ contract MathStateChannelManagerProxy is StateChannelManagerProxy {
         address disputeFraudProofFacet,
         address stateSnapshotFacet,
         address joinChannelFacet,
+        address utilityFacet,
         address mathConsumerFacet
     )
         StateChannelManagerProxy(
@@ -29,6 +28,7 @@ contract MathStateChannelManagerProxy is StateChannelManagerProxy {
             disputeFraudProofFacet,
             stateSnapshotFacet,
             joinChannelFacet,
+            utilityFacet,
             mathConsumerFacet
         )
     {
