@@ -71,13 +71,6 @@ contract MathConsumerFacet is AConsumerFacet {
         emit SetState(channelId, genesisStateEncoded, 0, block.timestamp);
     }
 
-    function removeParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
-        external
-        override
-    {
-        // Implementation for removing a participant from the channel
-    }
-
     function addParticipant(bytes32 channelId, bytes[] calldata addParticipantData, bytes[] calldata signatures)
         external
         override

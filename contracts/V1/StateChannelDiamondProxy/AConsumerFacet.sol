@@ -8,10 +8,6 @@ abstract contract AConsumerFacet {
         external
         virtual;
 
-    function removeParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
-        external
-        virtual;
-
     function addParticipant(bytes32 channelId, bytes[] calldata addParticipantData, bytes[] calldata signatures)
         external
         virtual;
