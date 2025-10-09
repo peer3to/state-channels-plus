@@ -38,71 +38,50 @@ describe("RateLimiter", () => {
     it("should allow messages within rate limit", () => {
         const result = rateLimiter.checkAndConsume(1024); // 1KB
         expect(result).to.be.true;
-        expect(rateLimiter.getTokenCount()).to.be.lessThan(2000);
+        expect(rateLimiter.getAvailableBytes()).to.be.lessThan(2048000); // Less than 2MB
     });
 
     it("should reject messages when rate limit exceeded", () => {
-        // Consume all available tokens (2MB burst = 2000 tokens)
-        // Consume in smaller chunks to ensure we exhaust all tokens
-        let totalConsumed = 0;
-        const chunkSize = 1024; // 1KB chunks
-        const totalSize = 2000 * 1024; // 2MB total
+        // Consume all available bytes (2MB burst)
+        const burstSize = 2048000; // 2MB
+        const consumed = rateLimiter.checkAndConsume(burstSize);
+        expect(consumed).to.be.true;
 
-        while (totalConsumed < totalSize) {
-            const remaining = totalSize - totalConsumed;
-            const currentChunk = Math.min(chunkSize, remaining);
-            const consumed = rateLimiter.checkAndConsume(currentChunk);
-            expect(consumed).to.be.true;
-            totalConsumed += currentChunk;
-        }
-
-        // Consume any remaining tokens
-        while (rateLimiter.getTokenCount() > 0) {
-            const consumed = rateLimiter.checkAndConsume(1024);
-            if (!consumed) break;
-        }
-
-        // Force exhaustion by consuming more than available
-        const excessSize = 10000 * 1024; // 10MB - more than available
-        rateLimiter.checkAndConsume(excessSize);
-
-        // Ensure we're truly exhausted
-        expect(rateLimiter.getTokenCount()).to.equal(0);
+        // Verify we're exhausted or very close
+        expect(rateLimiter.getAvailableBytes()).to.be.lessThan(1024);
 
         // Next message should be rejected
         const result = rateLimiter.checkAndConsume(1024);
         expect(result).to.be.false;
     });
 
-    it("should refill tokens over time", () => {
+    it("should refill bytes over time", () => {
         // Use fake timers for this test
         clock = sinon.useFakeTimers();
 
         // Create a new rate limiter with fake timers
         const testRateLimiter = new RateLimiter(1024000, 2048000);
 
-        // Consume all available tokens
-        const burstSize = 1999 * 1024; // 1999 tokens * 1024 bytes
+        // Consume all available bytes
+        const burstSize = 2048000; // 2MB
         testRateLimiter.checkAndConsume(burstSize);
-        // Consume the remaining 1 token
-        testRateLimiter.checkAndConsume(1024);
-        expect(testRateLimiter.getTokenCount()).to.equal(0);
+        expect(testRateLimiter.getAvailableBytes()).to.equal(0);
 
-        // Advance time by 1 second (should refill 1MB worth of tokens = 1000 tokens)
+        // Advance time by 1 second (should refill 1MB worth of bytes)
         clock.tick(1000);
 
         const result = testRateLimiter.checkAndConsume(1024000);
         expect(result).to.be.true;
     });
 
-    it("should reset tokens when reset", () => {
-        // Consume some tokens
+    it("should reset bytes when reset", () => {
+        // Consume some bytes
         rateLimiter.checkAndConsume(1024000);
-        expect(rateLimiter.getTokenCount()).to.be.lessThan(2000);
+        expect(rateLimiter.getAvailableBytes()).to.be.lessThan(2048000);
 
         // Reset
         rateLimiter.reset();
-        expect(rateLimiter.getTokenCount()).to.equal(2000);
+        expect(rateLimiter.getAvailableBytes()).to.equal(2048000);
     });
 });
 
@@ -135,11 +114,9 @@ describe("InboundRateLimiterManager", () => {
     });
 
     it("should track rate limiting per connection independently", () => {
-        // Consume all available tokens on transport1
-        const burstSize = 1999 * 1024; // 1999 tokens * 1024 bytes
+        // Consume all available bytes on transport1
+        const burstSize = 2048000; // 2MB
         manager.checkInboundMessage(transport1 as any, burstSize);
-        // Consume the remaining 1 token
-        manager.checkInboundMessage(transport1 as any, 1024);
 
         // transport1 should be rate limited
         const result1 = manager.checkInboundMessage(transport1 as any, 1024);
@@ -152,7 +129,7 @@ describe("InboundRateLimiterManager", () => {
 
     it("should allow multiple connections to use full bandwidth", () => {
         // Both connections should be able to use full bandwidth
-        const burstSize = 1999 * 1024; // 1999 tokens * 1024 bytes
+        const burstSize = 2048000; // 2MB
         const result1 = manager.checkInboundMessage(
             transport1 as any,
             burstSize
@@ -184,7 +161,9 @@ describe("Global Rate Limiters", () => {
         if (outboundRateLimiter && inboundRateLimiterManager) {
             // Both should use the same configuration from config.ts
             // This is tested by checking they exist and are properly instantiated
-            expect(outboundRateLimiter.getTokenCount()).to.be.greaterThan(0);
+            expect(outboundRateLimiter.getAvailableBytes()).to.be.greaterThan(
+                0
+            );
         }
     });
 });
@@ -228,14 +207,12 @@ describe("Integration Test: Per-Connection Inbound + Global Outbound", () => {
             return;
         }
 
-        // Exhaust transport1's rate limit (20MB burst = 20,480 tokens)
-        const burstSize = 20479 * 1024; // 20,479 tokens * 1024 bytes
+        // Exhaust transport1's rate limit (20MB burst)
+        const burstSize = 20 * 1024 * 1024; // 20MB
         inboundRateLimiterManager.checkInboundMessage(
             transport1 as any,
             burstSize
         );
-        // Consume the remaining 1 token
-        inboundRateLimiterManager.checkInboundMessage(transport1 as any, 1024);
 
         // transport1 should be rate limited
         const result1 = inboundRateLimiterManager.checkInboundMessage(
@@ -258,16 +235,13 @@ describe("Integration Test: Per-Connection Inbound + Global Outbound", () => {
             return;
         }
 
-        // Consume all outbound tokens (20MB burst = 20,480 tokens)
-        const burstSize = 20479 * 1024; // 20,479 tokens * 1024 bytes
+        // Consume all outbound bytes (20MB burst)
+        const burstSize = 20 * 1024 * 1024; // 20MB
         const result1 = outboundRateLimiter.checkAndConsume(burstSize);
-        // Consume the remaining 1 token
-        const result2 = outboundRateLimiter.checkAndConsume(1024);
         expect(result1).to.be.true;
-        expect(result2).to.be.true;
 
         // Next outbound message should be rate limited
-        const result3 = outboundRateLimiter.checkAndConsume(1024);
-        expect(result3).to.be.false;
+        const result2 = outboundRateLimiter.checkAndConsume(1024);
+        expect(result2).to.be.false;
     });
 });
