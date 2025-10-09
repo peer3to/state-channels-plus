@@ -54,13 +54,6 @@ abstract contract StateChannelManagerInterface {
         DisputeAuditingData memory disputeAuditingData
     ) public virtual;
 
-    function auditDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        public
-        virtual
-        returns (address[] memory slashParticipants);
-
-    function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public virtual;
-
     function challengeDisputeReduction(
         Dispute[] memory disputes,
         StateSnapshot memory latestStateSnapshot,

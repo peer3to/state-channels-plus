@@ -113,26 +113,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         );
     }
 
-    function auditDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        public
-        override
-        returns (address[] memory slashParticipants)
-    {
-        //This is done manually since the logic is different from other _delegatecalls
-
-        // Encode the function selector and arguments
-        bytes memory data = abi.encodeCall(DisputeVerificationFacet.auditDispute, (dispute, disputeAuditingData));
-        // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: getGasLimit()}(data);
-        if (!success) {
-            assembly {
-                revert(add(returnData, 0x20), mload(returnData))
-            }
-        }
-        address[] memory slashedParticipants = abi.decode(returnData, (address[]));
-        return slashedParticipants;
-    }
-
     function uploadDisputeWithCalldata(
         DisputeConfirmation memory disputeConfirmation,
         DisputeAuditingData memory disputeAuditingData
@@ -140,13 +120,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         _delegatecall(
             disputeManagerFacetAddress,
             abi.encodeCall(DisputeManagerFacet.uploadDisputeWithCalldata, (disputeConfirmation, disputeAuditingData))
-        );
-    }
-
-    function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public override {
-        _delegatecall(
-            disputeVerificationFacetAddress,
-            abi.encodeCall(DisputeVerificationFacet.challengeDispute, (dispute, disputeAuditingData))
         );
     }
 
