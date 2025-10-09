@@ -159,7 +159,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     /// @dev Callable only by diamond facets - performs the withdrawal of the specific assets by interpreting `exitChannel` - returns bool success
     function withdrawAssetsComposable(ExitChannel memory exitChannel) public virtual onlySelf returns (bool) {
-        return AConsumerFacet(consumerFacetAddress).withdrawAssetsComposable(exitChannel);
+        return AConsumerFacet(consumerFacetAddress).withdraw(exitChannel);
     }
 
     function applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)

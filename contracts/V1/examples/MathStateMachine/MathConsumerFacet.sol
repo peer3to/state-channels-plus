@@ -77,7 +77,7 @@ contract MathConsumerFacet is AConsumerFacet {
         return true; // Placeholder implementation
     }
 
-    function withdrawAssetsComposable(ExitChannel memory exitChannel) external override returns (bool) {
+    function withdraw(ExitChannel memory exitChannel) external override returns (bool) {
         // Implementation for withdrawing assets when a participant exits
         return true; // Placeholder implementation
     }

@@ -10,5 +10,5 @@ abstract contract AConsumerFacet {
 
     function deposit(JoinChannel memory joinChannel) external virtual returns (bool);
 
-    function withdrawAssetsComposable(ExitChannel memory exitChannel) external virtual returns (bool);
+    function withdraw(ExitChannel memory exitChannel) external virtual returns (bool);
 }
