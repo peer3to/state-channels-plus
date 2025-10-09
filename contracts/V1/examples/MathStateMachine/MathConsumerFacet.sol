@@ -71,7 +71,7 @@ contract MathConsumerFacet is AConsumerFacet {
         emit SetState(channelId, genesisStateEncoded, 0, block.timestamp);
     }
 
-    function depositAssetsComposable(JoinChannel memory joinChannel) external override returns (bool) {
+    function deposit(JoinChannel memory joinChannel) external override returns (bool) {
         // Implementation for depositing assets when a participant joins
 
         return true; // Placeholder implementation

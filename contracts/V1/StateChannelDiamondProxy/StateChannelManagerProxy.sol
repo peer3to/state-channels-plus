@@ -154,7 +154,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     /// @dev Callable only by diamond facets - performs the deposit of the specific assets by interpreting `joinChannel` - returns bool success
     function depositAssetsComposable(JoinChannel memory joinChannel) public virtual onlySelf returns (bool) {
-        return AConsumerFacet(consumerFacetAddress).depositAssetsComposable(joinChannel);
+        return AConsumerFacet(consumerFacetAddress).deposit(joinChannel);
     }
 
     /// @dev Callable only by diamond facets - performs the withdrawal of the specific assets by interpreting `exitChannel` - returns bool success
