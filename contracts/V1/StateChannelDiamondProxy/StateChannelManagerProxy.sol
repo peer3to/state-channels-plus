@@ -152,9 +152,55 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     // ********** public/external DIAMOND functions **********
 
-    /// @dev Callable only by diamond facets - performs the deposit of the specific assets by interpreting `joinChannel` - returns bool success
-    function depositAssetsComposable(JoinChannel memory joinChannel) public virtual onlySelf returns (bool) {
-        return AConsumerFacet(consumerFacetAddress).deposit(joinChannel);
+    // @dev Callable only by diamond facets - performs the deposit of the specific assets by interpreting `joinChannel` - returns bool success
+    function depositAssetsComposable(JoinChannel[] memory joinChannels, bool isAtomic)
+        public
+        virtual
+        onlySelf
+        returns (JoinChannelBlock memory jcb, Balance memory newTotalDeposits)
+    {
+        require(joinChannels.length > 0, ErrorNoJoinChannelProvided());
+        bytes32 channelId = joinChannels[0].channelId;
+
+        JoinChannel[] memory filteredJoinChannels = new JoinChannel[](joinChannels.length);
+        uint256 successfulJoins = 0;
+        for (uint256 i = 1; i < joinChannels.length; i++) {
+            bool success = AConsumerFacet(consumerFacetAddress).deposit(joinChannels[i]);
+            if (!success && isAtomic) revert ErrorJoinChannelAtomicFailure();
+            if (success) {
+                filteredJoinChannels[successfulJoins++] = joinChannels[i];
+            }
+        }
+        require(successfulJoins > 0, ErrorNoSuccessfulJoinChannel());
+        // Resize the array to the number of successful joins - only ok for shrinking the array
+        // TODO - find other places in the code that shrink MEMORY arrays and do the same - better than to allocate more space
+        assembly {
+            mstore(filteredJoinChannels, successfulJoins)
+        }
+
+        // Create JoinChannelBlock
+        jcb = _createJoinChannelBlock(filteredJoinChannels);
+        bytes32 blockHash = keccak256(abi.encode(jcb));
+
+        // Update on-chain balance
+        ChannelBalance storage channelBalance = channelBalances[channelId];
+        // Get previous total deposits
+        newTotalDeposits = channelBalance.onChainJoinChannelMap[channelBalance.latestJoinChannelBlockHash].totalDeposits;
+        // Calculate new totalDeposits
+        for (uint256 i = 0; i < filteredJoinChannels.length; i++) {
+            newTotalDeposits = stateMachineImplementation.addBalance(newTotalDeposits, filteredJoinChannels[i].balance);
+        }
+
+        // Persist the onChainJoinChannel in the map
+        channelBalance.onChainJoinChannelMap[blockHash] = OnChainJoinChannel({
+            previousJoinChannelBlockHash: channelBalance.latestJoinChannelBlockHash,
+            timestamp: block.timestamp,
+            totalDeposits: newTotalDeposits
+        });
+        // Update the latestJoinChannelBlockHash;
+        channelBalance.latestJoinChannelBlockHash = blockHash;
+
+        return (jcb, newTotalDeposits);
     }
 
     /// @dev Callable only by diamond facets - performs the withdrawal of the specific assets by interpreting `exitChannel` - returns bool success
@@ -467,5 +513,16 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
             }
         }
         return abi.decode(returnData, (bool));
+    }
+
+    function _createJoinChannelBlock(JoinChannel[] memory jcs) internal view returns (JoinChannelBlock memory) {
+        // require(jcs.length > 0, ErrorNoJoinChannelProvided());
+        // bytes32 channelId = jcs[0].channelId;
+        // ChannelBalance storage channelBalance = channelBalances[channelId];
+        // bytes32 latestBlockHash = channelBalance.latestJoinChannelBlockHash;
+        // bytes32 previousBlockHash = channelBalance.onChainJoinChannelMap[latestBlockHash].previousJoinChannelBlockHash;
+        // JoinChannelBlock memory joinChannelBlock =
+        //     JoinChannelBlock({previousBlockHash: previousBlockHash, joinChannels: jcs});
+        // return joinChannelBlock;
     }
 }
