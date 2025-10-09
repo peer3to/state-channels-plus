@@ -71,13 +71,6 @@ contract MathConsumerFacet is AConsumerFacet {
         emit SetState(channelId, genesisStateEncoded, 0, block.timestamp);
     }
 
-    function closeChannel(bytes32 channelId, bytes[] calldata closeChannelData, bytes[] calldata signatures)
-        external
-        override
-    {
-        // Implementation for closing the channel
-    }
-
     function removeParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
         external
         override

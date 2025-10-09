@@ -8,10 +8,6 @@ abstract contract StateChannelManagerInterface {
         public
         virtual;
 
-    function closeChannel(bytes32 channelId, bytes[] calldata closeChannelData, bytes[] calldata signatures)
-        public
-        virtual;
-
     function removeParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
         public
         virtual;

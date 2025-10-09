@@ -83,14 +83,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         AConsumerFacet(consumerFacetAddress).openChannel(channelId, openChannelData, signatures);
     }
 
-    function closeChannel(bytes32 channelId, bytes[] calldata closeChannelData, bytes[] calldata signatures)
-        public
-        virtual
-        override
-    {
-        AConsumerFacet(consumerFacetAddress).closeChannel(channelId, closeChannelData, signatures);
-    }
-
     function removeParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
         public
         virtual
