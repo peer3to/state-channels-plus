@@ -286,8 +286,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         // Apply slashes
         ExitChannel[] memory slashExitChannels;
-        (outputState.encodedModifiedState, slashExitChannels) = StateChannelManagerProxy(address(this))
-            .applySlashesToStateMachine(outputState.encodedModifiedState, slashParticipants);
+        (outputState.encodedModifiedState, slashExitChannels) =
+            _applySlashesToStateMachine(outputState.encodedModifiedState, slashParticipants);
 
         // Apply removals
         ExitChannel[] memory removalExitChannels;
@@ -540,5 +540,19 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         //verify outputStateSnapshot commitment
         return (keccak256(abi.encode(outputSnapshotData)) == dispute.outputSnapshotDataHash);
+    }
+
+    function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
+        internal
+        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
+    {
+        exitChannels = new ExitChannel[](slashedParticipants.length);
+        stateMachineImplementation.setState(encodedState);
+        for (uint256 i = 0; i < slashedParticipants.length; i++) {
+            bool success;
+            (success, exitChannels[i]) = stateMachineImplementation.slashParticipant(slashedParticipants[i]);
+            require(success, ErrorDisputeStateMachineSlashingFailed());
+        }
+        return (stateMachineImplementation.getState(), exitChannels);
     }
 }

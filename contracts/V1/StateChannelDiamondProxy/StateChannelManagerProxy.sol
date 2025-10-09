@@ -259,14 +259,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return AConsumerFacet(consumerFacetAddress).withdraw(exitChannel);
     }
 
-    function applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
-        public
-        onlySelf
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory)
-    {
-        return _applySlashesToStateMachine(encodedState, slashedParticipants);
-    }
-
     function removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
         public
         onlySelf
@@ -468,20 +460,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     // ********** private/internal functions **********
 
-    function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
-        internal
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
-    {
-        exitChannels = new ExitChannel[](slashedParticipants.length);
-        stateMachineImplementation.setState(encodedState);
-        for (uint256 i = 0; i < slashedParticipants.length; i++) {
-            bool success;
-            (success, exitChannels[i]) = stateMachineImplementation.slashParticipant(slashedParticipants[i]);
-            require(success, ErrorDisputeStateMachineSlashingFailed());
-        }
-        return (stateMachineImplementation.getState(), exitChannels);
-    }
-
     function _removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
         internal
         returns (bytes memory encodedModifiedState, ExitChannel[] memory)
@@ -552,13 +530,13 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     }
 
     function _createJoinChannelBlock(JoinChannel[] memory jcs) internal view returns (JoinChannelBlock memory) {
-        // require(jcs.length > 0, ErrorNoJoinChannelProvided());
-        // bytes32 channelId = jcs[0].channelId;
-        // ChannelBalance storage channelBalance = channelBalances[channelId];
-        // bytes32 latestBlockHash = channelBalance.latestJoinChannelBlockHash;
-        // bytes32 previousBlockHash = channelBalance.onChainJoinChannelMap[latestBlockHash].previousJoinChannelBlockHash;
-        // JoinChannelBlock memory joinChannelBlock =
-        //     JoinChannelBlock({previousBlockHash: previousBlockHash, joinChannels: jcs});
-        // return joinChannelBlock;
+        require(jcs.length > 0, ErrorNoJoinChannelProvided());
+        bytes32 channelId = jcs[0].channelId;
+        ChannelBalance storage channelBalance = channelBalances[channelId];
+        bytes32 latestBlockHash = channelBalance.latestJoinChannelBlockHash;
+        bytes32 previousBlockHash = channelBalance.onChainJoinChannelMap[latestBlockHash].previousJoinChannelBlockHash;
+        JoinChannelBlock memory joinChannelBlock =
+            JoinChannelBlock({previousBlockHash: previousBlockHash, joinChannels: jcs});
+        return joinChannelBlock;
     }
 }
