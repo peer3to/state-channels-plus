@@ -4,9 +4,7 @@ import "./types/DataTypes.sol";
 import "./types/DisputeTypes.sol";
 
 abstract contract StateChannelManagerInterface {
-    function openChannel(bytes32 channelId, bytes[] calldata openChannelData, bytes[] calldata signatures)
-        public
-        virtual;
+    function open(OpenChannelConfirmation calldata openChannelConfirmation) public virtual;
 
     function isChannelOpen(bytes32 channelId) public view virtual returns (bool);
 

@@ -77,13 +77,61 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     // ********** Consumer Facet Delegation Functions **********
 
-    function openChannel(bytes32 channelId, bytes[] calldata openChannelData, bytes[] calldata signatures)
-        public
-        virtual
-        override
-    {
-        require(!isChannelOpen(channelId), "StateChannelManagerProxy: openChannel - channel already open");
-        AConsumerFacet(consumerFacetAddress).openChannel(channelId, openChannelData, signatures);
+    function open(OpenChannelConfirmation calldata openChannelConfirmation) public virtual override {
+        OpenChannel memory openChannelData = abi.decode(openChannelConfirmation.encodedOpenChannel, (OpenChannel));
+        require(!isChannelOpen(openChannelData.channelId), ErrorChannelAlreadyOpen());
+
+        // set zero balance for on-chain deposits/withdrawals
+        Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
+        {
+            ChannelBalance storage channelBalance = channelBalances[openChannelData.channelId];
+            channelBalance.onChainJoinChannelMap[channelBalance.latestJoinChannelBlockHash].totalDeposits = zeroBalance;
+            channelBalance.totalOnChainWithdrawals = zeroBalance;
+        }
+        // verify threshold signature - must be from all participants - this is deterministic - no race condition on-chain
+        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
+            openChannelData.participants, openChannelConfirmation.encodedOpenChannel, openChannelConfirmation.signatures
+        );
+        require(isValid, reason);
+
+        JoinChannel[] memory joinChannels = new JoinChannel[](openChannelData.participants.length);
+        for (uint256 i = 0; i < openChannelData.participants.length; i++) {
+            joinChannels[i] = JoinChannel({
+                channelId: openChannelData.channelId,
+                participant: openChannelData.participants[i],
+                deadlineTimestamp: openChannelData.deadlineTimestamp,
+                balance: openChannelData.balances[i]
+            });
+        }
+
+        (JoinChannelBlock memory jcb, Balance memory newTotalDeposits) =
+            depositAssetsComposable(joinChannels, openChannelData.isAtomic);
+
+        require(jcb.joinChannels.length >= 2, ErrorAtLeastTwoParticipantsRequired());
+        (bytes memory genesisState, address[] memory participants) =
+            AConsumerFacet(consumerFacetAddress).openChannelGenesis(jcb.joinChannels, openChannelData.data);
+
+        SnapshotData memory genesisSnapshotData = SnapshotData({
+            originForkId: bytes32(0),
+            stateMachineStateHash: keccak256(genesisState),
+            participants: participants,
+            latestJoinChannelBlockHash: keccak256(abi.encode(jcb)),
+            latestExitChannelBlockHash: bytes32(0),
+            totalDeposits: newTotalDeposits,
+            totalWithdrawals: zeroBalance
+        });
+
+        bytes32 forkId = keccak256(abi.encode(genesisSnapshotData));
+        StateSnapshot memory genesisStateSnapshot = StateSnapshot({
+            snapshotData: genesisSnapshotData,
+            forkId: forkId,
+            blockHeight: 0,
+            timestamp: block.timestamp
+        });
+
+        stateSnapshots[openChannelData.channelId] = genesisStateSnapshot;
+
+        emit ChannelOpened(openChannelData.channelId, genesisStateSnapshot, genesisState);
     }
 
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public override {
