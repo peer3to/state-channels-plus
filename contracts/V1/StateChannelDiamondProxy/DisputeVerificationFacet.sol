@@ -291,8 +291,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         // Apply removals
         ExitChannel[] memory removalExitChannels;
-        (outputState.encodedModifiedState, removalExitChannels) = StateChannelManagerProxy(address(this))
-            .removeParticipantsFromStateMachine(outputState.encodedModifiedState, removeParticipants);
+        (outputState.encodedModifiedState, removalExitChannels) =
+            _removeParticipantsFromStateMachine(outputState.encodedModifiedState, removeParticipants);
 
         // Combine exit channels and calculate totals
         ExitChannel[] memory allExitChannels =
@@ -552,6 +552,21 @@ contract DisputeVerificationFacet is StateChannelCommon {
             bool success;
             (success, exitChannels[i]) = stateMachineImplementation.slashParticipant(slashedParticipants[i]);
             require(success, ErrorDisputeStateMachineSlashingFailed());
+        }
+        return (stateMachineImplementation.getState(), exitChannels);
+    }
+
+    function _removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
+        internal
+        returns (bytes memory encodedModifiedState, ExitChannel[] memory)
+    {
+        ExitChannel[] memory exitChannels = new ExitChannel[](participants.length);
+        stateMachineImplementation.setState(encodedState);
+        for (uint256 i = 0; i < participants.length; i++) {
+            bool success;
+            (success, exitChannels[i]) = stateMachineImplementation.removeParticipant(participants[i]);
+            // require(success, "Remove failed");
+            require(success, ErrorDisputeStateMachineRemovingFailed());
         }
         return (stateMachineImplementation.getState(), exitChannels);
     }

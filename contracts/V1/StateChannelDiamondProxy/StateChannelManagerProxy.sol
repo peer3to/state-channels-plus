@@ -259,14 +259,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return AConsumerFacet(consumerFacetAddress).withdraw(exitChannel);
     }
 
-    function removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
-        public
-        onlySelf
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory)
-    {
-        return _removeParticipantsFromStateMachine(encodedState, participants);
-    }
-
     function executeStateTransition(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
         public
         override
@@ -459,21 +451,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     }
 
     // ********** private/internal functions **********
-
-    function _removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
-        internal
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory)
-    {
-        ExitChannel[] memory exitChannels = new ExitChannel[](participants.length);
-        stateMachineImplementation.setState(encodedState);
-        for (uint256 i = 0; i < participants.length; i++) {
-            bool success;
-            (success, exitChannels[i]) = stateMachineImplementation.removeParticipant(participants[i]);
-            // require(success, "Remove failed");
-            require(success, ErrorDisputeStateMachineRemovingFailed());
-        }
-        return (stateMachineImplementation.getState(), exitChannels);
-    }
 
     function isKillPeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool, uint256) {
         DisputeData storage _disputeData = disputeData[channelId];
