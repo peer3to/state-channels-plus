@@ -79,10 +79,11 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[originForkId];
-        if (!_isKillPeriodExpired(disputeWindow, getEvidenceTime())) {
-            return (false, 0);
-        }
         timestamp = disputeWindow.evidence.lastEvidenceSubmissionTimestamp + getEvidenceTime();
+        (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        if (!isExpired) {
+            return (false, timestamp);
+        }
         if (timestamp == 0) {
             // Dispute window doesn't exist
             StateSnapshot memory currentOnChainSnapshot = stateSnapshots[channelId];
@@ -90,7 +91,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             if (currentOnChainSnapshot.forkId == forkId && isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)) {
                 return (true, currentOnChainSnapshot.timestamp);
             }
-            return (false, 0);
+            return (false, timestamp);
         }
         return (true, timestamp);
     }
@@ -304,7 +305,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         bytes32 reducedForkId,
         uint256 reductionTimestamp
     ) internal {
-        require(!_isKillPeriodExpired(disputeWindow, getEvidenceTime()), ErrorDisputeKillPeriodNotExpired());
+        (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        require(isExpired, ErrorDisputeKillPeriodNotExpired());
         require(disputeWindow.reducedResult.forkId == bytes32(0), ErrorDisputeAlreadyReduced());
         disputeWindow.reducedResult.forkId = reducedForkId;
         disputeWindow.reducedResult.timestamp = reductionTimestamp;

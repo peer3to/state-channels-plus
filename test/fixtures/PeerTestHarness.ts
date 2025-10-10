@@ -279,7 +279,8 @@ export class PeerTestHarness<T extends AStateMachine> {
         };
 
         for (const peer of this.peers) {
-            await peer.stateManager.setState(
+            await peer.stateManager.setGenesisState(
+                genesisSnapshotData,
                 genesisStateEncoded,
                 forkId,
                 timestamp

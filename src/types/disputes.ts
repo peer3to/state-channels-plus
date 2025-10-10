@@ -1,9 +1,16 @@
+import { ReduceOutputStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 import {
     BlockConfirmationEthersType,
     SignedBlockEthersType,
     TimeoutEthersType,
     StateSnapshotEthersType
 } from "./ethers";
+import { ForkId } from "./types";
+import {
+    JoinChannelBlockStruct,
+    StateSnapshotStruct
+} from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+import { BytesLike } from "ethers";
 
 export enum FraudProofType {
     // Block related fraud proofs
@@ -113,4 +120,12 @@ export const getEthersTypeForDisputeProof = (
     proofType: DisputeFraudProofType
 ): string => {
     return DISPUTE_PROOF_ETHERS_TYPES[proofType];
+};
+
+export type ReduceData = {
+    forkId: ForkId;
+    reducedOutput: ReduceOutputStruct;
+    latestStateSnapshot: StateSnapshotStruct;
+    encodedStateMachineState: BytesLike;
+    joinChannelBlocks: JoinChannelBlockStruct[];
 };
