@@ -2,8 +2,7 @@ import { ethers, ContractTransactionResponse, AddressLike } from "ethers";
 import { HardhatEthersHelpers } from "hardhat/types/runtime";
 import {
     MathStateChannelManagerProxy,
-    MathStateMachine,
-    StateChannelUtilLibrary
+    MathStateMachine
 } from "@typechain-types";
 
 import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -49,28 +48,6 @@ export const getCurrentTimeSeconds = (): number => {
     return Math.floor(Date.now() / 1000);
 };
 
-export async function deployLibraryTestContract(
-    _ethers: typeof ethers & HardhatEthersHelpers
-): Promise<StateChannelUtilLibrary> {
-    //Deploy library
-    const stateChannelUtilLibraryFactory = await _ethers.getContractFactory(
-        "StateChannelUtilLibrary"
-    );
-    const stateChannelUtilLibrary =
-        await stateChannelUtilLibraryFactory.deploy();
-    const libraryAddress = await stateChannelUtilLibrary.getAddress();
-
-    //Deploy DisputeManagerFacet
-    const libraryTestContractFactory = await _ethers.getContractFactory(
-        "LibraryTestContract"
-    );
-    const libraryTestContract =
-        await libraryTestContractFactory.deploy(libraryAddress);
-    const proxy = stateChannelUtilLibraryFactory.attach(
-        await libraryTestContract.getAddress()
-    );
-    return proxy as StateChannelUtilLibrary;
-}
 export async function deployMathChannelProxyFixture(
     _ethers: typeof ethers & HardhatEthersHelpers
 ): Promise<{
@@ -79,25 +56,16 @@ export async function deployMathChannelProxyFixture(
     };
     mathInstance: MathStateMachine;
 }> {
-    //Deploy library
-    const stateChannelUtilLibraryFactory = await _ethers.getContractFactory(
-        "StateChannelUtilLibrary"
-    );
-    const stateChannelUtilLibrary =
-        await stateChannelUtilLibraryFactory.deploy();
-    const libraryAddress = await stateChannelUtilLibrary.getAddress();
-
-    const libs = { StateChannelUtilLibrary: libraryAddress };
-
     // Facet configurations in constructor order
     const facetConfigs = [
-        { name: "DisputeManagerFacet", libs },
-        { name: "DisputeVerificationFacet", libs },
-        { name: "FraudProofFacet", libs },
-        { name: "DisputeFraudProofFacet", libs },
-        { name: "StateSnapshotFacet", libs },
-        { name: "JoinChannelFacet", libs },
-        { name: "MathConsumerFacet", libs }
+        { name: "DisputeManagerFacet" },
+        { name: "DisputeVerificationFacet" },
+        { name: "FraudProofFacet" },
+        { name: "DisputeFraudProofFacet" },
+        { name: "StateSnapshotFacet" },
+        { name: "JoinChannelFacet" },
+        { name: "MathConsumerFacet" },
+        { name: "UtilityFacet" }
     ] as const;
 
     // the generic are here in order to make the spread operator in mathSmcFactory.deploy work
@@ -126,8 +94,7 @@ export async function deployMathChannelProxyFixture(
 
     //Deploy MathStateChannelManager with all facet addresses
     const mathSmcFactory = await _ethers.getContractFactory(
-        "MathStateChannelManagerProxy",
-        { libraries: libs }
+        "MathStateChannelManagerProxy"
     );
     const mathStateChannelContactInstance = await mathSmcFactory.deploy(
         await mathContactInstance.getAddress(),

@@ -7,7 +7,6 @@ import {
 } from "ethers";
 import { EVM } from "@ethereumjs/evm";
 
-import StateChannelUtilLibraryArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelUtilLibrary.sol/StateChannelUtilLibrary.json";
 import DisputeVerificationFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol/DisputeVerificationFacet.json";
 import DisputeManagerFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol/DisputeManagerFacet.json";
 import FraudProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol/FraudProofFacet.json";
@@ -16,6 +15,7 @@ import StateSnapshotFacetArtifact from "../../artifacts/contracts/V1/StateChanne
 import JoinChannelFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol/JoinChannelFacet.json";
 import StateChannelManagerProxyArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol/StateChannelManagerProxy.json";
 import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol/LocalDiamond.json";
+import UtilityFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol/UtilityFacet.json";
 
 import { StateChannelManagerProxy } from "@typechain-types/index";
 import { Artifact } from "hardhat/types";
@@ -27,7 +27,8 @@ const facetArtifacts = [
     FraudProofFacetArtifact,
     DisputeFraudProofFacetArtifact,
     StateSnapshotFacetArtifact,
-    JoinChannelFacetArtifact
+    JoinChannelFacetArtifact,
+    UtilityFacetArtifact
 ];
 
 export type DeploymentResult = {
@@ -79,7 +80,7 @@ async function deployArtifactLocal(
 
 async function deployFacets(
     signer: Signer,
-    libs: Record<string, string>
+    libs: Record<string, string> = {}
 ): Promise<string[]> {
     return Promise.all(
         facetArtifacts.map((artifact) =>
@@ -93,7 +94,7 @@ async function deployFacets(
 async function deployFacetsLocal(
     evm: EVM,
     signer: Signer,
-    libs: Record<string, string>
+    libs: Record<string, string> = {}
 ): Promise<string[]> {
     return Promise.all(
         facetArtifacts.map((artifact) =>
@@ -107,37 +108,15 @@ async function deployFacetsLocal(
 export async function deploy(
     stateMachineAddress: string,
     consumerFacetAddress: string,
-    signer: Signer,
-    options?: {
-        libraryAddress?: string;
-    }
+    signer: Signer
 ): Promise<{ address: string; contract: StateChannelManagerProxy }> {
-    let libAddress: string;
-
-    if (options?.libraryAddress) {
-        libAddress = options.libraryAddress;
-    } else {
-        const { address } = await deployArtifact(
-            StateChannelUtilLibraryArtifact,
-            signer
-        );
-        libAddress = address;
-    }
-
-    const facetAddresses = await deployFacets(signer, {
-        StateChannelUtilLibrary: libAddress
-    });
+    const facetAddresses = await deployFacets(signer);
 
     return deployArtifact<StateChannelManagerProxy>(
         StateChannelManagerProxyArtifact,
         signer,
         {
-            args: [
-                stateMachineAddress,
-                ...facetAddresses,
-                consumerFacetAddress
-            ],
-            libs: { StateChannelUtilLibrary: libAddress }
+            args: [stateMachineAddress, ...facetAddresses, consumerFacetAddress]
         }
     );
 }
@@ -149,15 +128,7 @@ export async function deployLocalDiamond(
 ): Promise<DeploymentResult> {
     const usedSigner = signer || Wallet.createRandom();
 
-    const libAddress = await deployArtifactLocal(
-        StateChannelUtilLibraryArtifact,
-        evm,
-        usedSigner
-    );
-
-    const facetAddresses = await deployFacetsLocal(evm, usedSigner, {
-        StateChannelUtilLibrary: libAddress.toString()
-    });
+    const facetAddresses = await deployFacetsLocal(evm, usedSigner);
 
     const stateMachineAddress = (
         await deployLocalFromTx(stateMachineTx, evm)
@@ -168,8 +139,7 @@ export async function deployLocalDiamond(
         evm,
         usedSigner,
         {
-            args: [stateMachineAddress, ...facetAddresses],
-            libs: { StateChannelUtilLibrary: libAddress.toString() }
+            args: [stateMachineAddress, ...facetAddresses]
         }
     );
 
