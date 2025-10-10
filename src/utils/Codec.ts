@@ -2,6 +2,7 @@ import { ethers } from "ethers";
 import {
     BlockStruct,
     JoinChannelStruct,
+    OpenChannelStruct,
     TransactionStruct,
     StateSnapshotStruct,
     ExitChannelBlockStruct,
@@ -22,6 +23,7 @@ import {
     BlockCommitmentEthersType,
     DisputeEthersType,
     JoinChannelEthersType,
+    OpenChannelEthersType,
     TransactionEthersType,
     StateSnapshotEthersType,
     JoinChannelBlockEthersType,
@@ -53,6 +55,7 @@ type StructType =
     | { signedBlock: SignedBlockStruct; timestamp: Timestamp }
     | BlockConfirmationStruct
     | JoinChannelStruct
+    | OpenChannelStruct
     | TransactionStruct
     | DisputeStruct
     | StateSnapshotStruct
@@ -67,6 +70,7 @@ export enum Type {
     Block,
     BlockCommitment,
     JoinChannel,
+    OpenChannel,
     BlockConfirmation,
     Transaction,
     Dispute,
@@ -86,6 +90,7 @@ export class Codec {
         [Type.Block, BlockEthersType],
         [Type.BlockCommitment, BlockCommitmentEthersType],
         [Type.JoinChannel, JoinChannelEthersType],
+        [Type.OpenChannel, OpenChannelEthersType],
         [Type.BlockConfirmation, BlockConfirmationEthersType],
         [Type.Transaction, TransactionEthersType],
         [Type.Dispute, DisputeEthersType],
@@ -121,6 +126,10 @@ export class Codec {
         encoded: Bytes,
         type: Type.JoinChannel
     ): JoinChannelStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.OpenChannel
+    ): OpenChannelStruct;
     public static decode(
         encoded: Bytes,
         type: Type.ExitChannel

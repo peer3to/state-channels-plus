@@ -5,9 +5,13 @@ import {
     MathStateMachine
 } from "@typechain-types";
 
-import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    JoinChannelStruct,
+    OpenChannelStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import P2pEventHooks from "@/P2pEventHooks";
+import { hash } from "@/utils";
 
 export const createJoinChannelTestObject = (
     address: AddressLike,
@@ -38,6 +42,41 @@ export const createJoinChannelTestObject = (
     return jc;
 };
 
+export const createOpenChannelTestObject = (
+    participants: AddressLike[],
+    channelId?: string,
+    amount?: number
+): OpenChannelStruct => {
+    let currentTime = 0;
+    try {
+        currentTime = Clock.getTimeInSeconds();
+    } catch (e) {
+        currentTime = Math.floor(Date.now() / 1000);
+    }
+
+    const balances = participants.map(() => ({
+        amount: amount === undefined ? 500 : amount,
+        data: "0x00"
+    }));
+
+    const oc: OpenChannelStruct = {
+        channelId: channelId
+            ? hash(
+                  ethers.AbiCoder.defaultAbiCoder().encode(
+                      ["string"],
+                      [channelId]
+                  )
+              )
+            : hash("0x2371"),
+        participants: participants,
+        balances: balances,
+        deadlineTimestamp: currentTime + 120, // 2 minutes from now
+        isAtomic: true,
+        data: "0x00"
+    };
+    return oc;
+};
+
 export const getCurrentBlockTime = async (
     provider: ethers.Provider
 ): Promise<number> => {
@@ -64,8 +103,8 @@ export async function deployMathChannelProxyFixture(
         { name: "DisputeFraudProofFacet" },
         { name: "StateSnapshotFacet" },
         { name: "JoinChannelFacet" },
-        { name: "MathConsumerFacet" },
-        { name: "UtilityFacet" }
+        { name: "UtilityFacet" },
+        { name: "MathConsumerFacet" }
     ] as const;
 
     // the generic are here in order to make the spread operator in mathSmcFactory.deploy work
