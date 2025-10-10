@@ -15,9 +15,10 @@ contract JoinChannelFacet is StateChannelCommon {
         SignedJoinChannel memory sjc = joinChannelConfirmation.signedJoinChannel;
         JoinChannel memory jc = abi.decode(sjc.encodedJoinChannel, (JoinChannel));
         bytes32 channelId = jc.channelId;
+        require(channelId != bytes32(0), ErrorInvalidChannelId());
 
         // Check deadline
-        require(jc.deadlineTimestamp <= block.timestamp, ErrorJoinChannelExpired());
+        require(jc.deadlineTimestamp >= block.timestamp, ErrorJoinChannelExpired());
 
         //verify original signature
         require(

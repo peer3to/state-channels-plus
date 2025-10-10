@@ -79,6 +79,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     function open(OpenChannelConfirmation calldata openChannelConfirmation) public virtual override {
         OpenChannel memory openChannelData = abi.decode(openChannelConfirmation.encodedOpenChannel, (OpenChannel));
+        require(openChannelData.channelId != bytes32(0), ErrorInvalidJoinChannel());
         require(!isChannelOpen(openChannelData.channelId), ErrorChannelAlreadyOpen());
 
         // set zero balance for on-chain deposits/withdrawals
@@ -105,11 +106,14 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         }
 
         (JoinChannelBlock memory jcb, Balance memory newTotalDeposits) =
-            depositAssetsComposable(joinChannels, openChannelData.isAtomic);
+            StateChannelManagerProxy(address(this)).depositAssetsComposable(joinChannels, openChannelData.isAtomic);
 
         require(jcb.joinChannels.length >= 2, ErrorAtLeastTwoParticipantsRequired());
-        (bytes memory genesisState, address[] memory participants) =
-            AConsumerFacet(consumerFacetAddress).openChannelGenesis(jcb.joinChannels, openChannelData.data);
+        bytes memory result = _delegatecall(
+            consumerFacetAddress,
+            abi.encodeCall(AConsumerFacet.openChannelGenesis, (jcb.joinChannels, openChannelData.data))
+        );
+        (bytes memory genesisState, address[] memory participants) = abi.decode(result, (bytes, address[]));
 
         SnapshotData memory genesisSnapshotData = SnapshotData({
             originForkId: bytes32(0),
@@ -215,8 +219,10 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
         JoinChannel[] memory filteredJoinChannels = new JoinChannel[](joinChannels.length);
         uint256 successfulJoins = 0;
-        for (uint256 i = 1; i < joinChannels.length; i++) {
-            bool success = AConsumerFacet(consumerFacetAddress).deposit(joinChannels[i]);
+        for (uint256 i = 0; i < joinChannels.length; i++) {
+            bytes memory result =
+                _delegatecall(consumerFacetAddress, abi.encodeCall(AConsumerFacet.deposit, (joinChannels[i])));
+            bool success = abi.decode(result, (bool));
             if (!success && isAtomic) revert ErrorJoinChannelAtomicFailure();
             if (success) {
                 filteredJoinChannels[successfulJoins++] = joinChannels[i];
@@ -256,7 +262,9 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     /// @dev Callable only by diamond facets - performs the withdrawal of the specific assets by interpreting `exitChannel` - returns bool success
     function withdrawAssetsComposable(ExitChannel memory exitChannel) public virtual onlySelf returns (bool) {
-        return AConsumerFacet(consumerFacetAddress).withdraw(exitChannel);
+        bytes memory result =
+            _delegatecall(consumerFacetAddress, abi.encodeCall(AConsumerFacet.withdraw, (exitChannel)));
+        return abi.decode(result, (bool));
     }
 
     function executeStateTransition(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)

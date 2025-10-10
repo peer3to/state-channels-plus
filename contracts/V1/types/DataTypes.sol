@@ -20,7 +20,9 @@ contract DataTypes {
         ExitChannelBlock memory m,
         StateSnapshot memory n,
         SnapshotData memory o,
-        OnChainJoinChannel memory p
+        OnChainJoinChannel memory p,
+        OpenChannel memory q,
+        OpenChannelConfirmation memory r
     ) {}
 }
 

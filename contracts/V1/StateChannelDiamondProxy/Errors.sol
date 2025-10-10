@@ -1,6 +1,7 @@
 pragma solidity ^0.8.8;
 
 //Channel Open
+error ErrorInvalidJoinChannel();
 error ErrorChannelAlreadyOpen();
 error ErrorAtLeastTwoParticipantsRequired();
 
@@ -22,6 +23,7 @@ error ErrorIncorrectSnapshotProvided();
 error ErrorNotGenesisSnapshot();
 
 //Join channel
+error ErrorInvalidChannelId();
 error ErrorJoinChannelExpired();
 error ErrorJoinChannelInvalidSignature();
 error ErrorNoJoinChannelProvided();
