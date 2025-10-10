@@ -193,11 +193,13 @@ export class PeerTestHarness<T extends AStateMachine> {
             await this.connectPeers();
         }
 
-        const tx = await this.channelManager.openChannel(
-            this.peers[0].joinChannelCommitment!.channelId as BytesLike,
-            signedCommitments.map((s) => s.encoded) as BytesLike[],
-            signedCommitments.map((s) => s.signature) as BytesLike[]
-        );
+        const tx = await this.channelManager.joinChannel({
+            signedJoinChannel: {
+                encodedJoinChannel: signedCommitments[0].encoded,
+                signature: signedCommitments[0].signature as BytesLike
+            },
+            signatures: signedCommitments.map((s) => s.signature) as BytesLike[]
+        });
 
         await tx.wait();
     }

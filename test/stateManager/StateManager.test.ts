@@ -556,10 +556,9 @@ describe("StateManager", () => {
             const encodedState = "0x1234567890abcdef" as any; // Valid hex bytes
             const forkId = "0xnewfork" as ForkId;
             const timestamp = 2000 as Timestamp;
-            const snapshotData = stateSnapshot().snapshotData;
 
             await stateManager.setGenesisState(
-                snapshotData,
+                mockSetup.mockSnapshotData,
                 encodedState,
                 forkId,
                 timestamp

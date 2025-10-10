@@ -126,6 +126,14 @@ export function getMathP2pEventHooks(
     };
     return hooks;
 }
+export async function deployUtilityFacetTestContract(
+    _ethers: typeof ethers & HardhatEthersHelpers
+) {
+    const UtilityFacetFactory =
+        await _ethers.getContractFactory("UtilityFacet");
+    return await UtilityFacetFactory.deploy();
+}
+
 export async function getSigners(
     _ethers: typeof ethers & HardhatEthersHelpers
 ) {

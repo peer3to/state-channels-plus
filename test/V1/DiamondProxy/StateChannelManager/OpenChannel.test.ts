@@ -46,14 +46,19 @@ describe("StateChannelManagerProxy", function () {
 
     describe("Open Channel - MathStateChannel", function () {
         it("2 participants - success", async function () {
-            const res = await mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature as Bytes, jc2Signed.signature as Bytes]
-            );
+            const res = await mathChannelManager.joinChannel({
+                signedJoinChannel: {
+                    encodedJoinChannel: jc1Signed.encoded,
+                    signature: jc1Signed.signature as Bytes
+                },
+                signatures: [
+                    jc1Signed.signature as Bytes,
+                    jc2Signed.signature as Bytes
+                ]
+            });
             const receipt = await res.wait();
             expect(receipt?.logs.length, "Event logs").to.be.equal(1);
-            receipt?.logs.forEach((event) => {
+            receipt?.logs.forEach((event: any) => {
                 const e: EventLog = event as EventLog;
                 const id = e.topics[1];
 
@@ -64,14 +69,19 @@ describe("StateChannelManagerProxy", function () {
         });
 
         it("2 participants signatures not inorder - success", async function () {
-            const res = await mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc2Signed.signature as Bytes, jc1Signed.signature as Bytes]
-            );
+            const res = await mathChannelManager.joinChannel({
+                signedJoinChannel: {
+                    encodedJoinChannel: jc1Signed.encoded,
+                    signature: jc1Signed.signature as Bytes
+                },
+                signatures: [
+                    jc2Signed.signature as Bytes,
+                    jc1Signed.signature as Bytes
+                ]
+            });
             const receipt = await res.wait();
             expect(receipt?.logs.length, "Event logs").to.be.equal(1);
-            receipt?.logs.forEach((event) => {
+            receipt?.logs.forEach((event: any) => {
                 const e: EventLog = event as EventLog;
                 const id = e.topics[1];
 
@@ -82,55 +92,68 @@ describe("StateChannelManagerProxy", function () {
         });
 
         it("2 participants 1 signature - fail", async function () {
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature]
-            );
+            const res = mathChannelManager.joinChannel({
+                signedJoinChannel: {
+                    encodedJoinChannel: jc1Signed.encoded,
+                    signature: jc1Signed.signature as Bytes
+                },
+                signatures: [jc1Signed.signature]
+            });
             await expect(res).to.be.revertedWith(
                 "MathConsumerFacet: openChannel (openChannel <> signatures) incorrect length"
             );
         });
 
         it("2 participants double signature - fail", async function () {
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature as Bytes, jc1Signed.signature as Bytes]
-            );
+            const res = mathChannelManager.joinChannel({
+                signedJoinChannel: {
+                    encodedJoinChannel: jc1Signed.encoded,
+                    signature: jc1Signed.signature as Bytes
+                },
+                signatures: [
+                    jc1Signed.signature as Bytes,
+                    jc1Signed.signature as Bytes
+                ]
+            });
             await expect(res).to.be.revertedWith(
                 "MathConsumerFacet: openChannel (openChannel <> signatures) signatures don't match"
             );
         });
 
         it("2 participants wrong encoded openChannel msg - fail", async function () {
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded + "00", jc2Signed.encoded],
-                [jc1Signed.signature, jc2Signed.signature]
-            );
+            const res = mathChannelManager.joinChannel({
+                signedJoinChannel: {
+                    encodedJoinChannel: jc1Signed.encoded + "00",
+                    signature: jc1Signed.signature as Bytes
+                },
+                signatures: [jc1Signed.signature, jc2Signed.signature]
+            });
             await expect(res).to.be.revertedWith(
                 "MathConsumerFacet: openChannel (openChannel <> signatures) signatures don't match"
             );
         });
 
         it("2 participants no signatures - fail", async function () {
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                []
-            );
+            const res = mathChannelManager.joinChannel({
+                signedJoinChannel: {
+                    encodedJoinChannel: jc1Signed.encoded,
+                    signature: jc1Signed.signature as Bytes
+                },
+                signatures: []
+            });
             await expect(res).to.be.revertedWith(
                 "MathConsumerFacet: openChannel (openChannel <> signatures) incorrect length"
             );
         });
 
         it("2 participants invalid signature length - fail", async function () {
-            const resultPromise = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature, jc2Signed.signature + "00"]
-            );
+            const resultPromise = mathChannelManager.joinChannel({
+                signedJoinChannel: {
+                    encodedJoinChannel: jc1Signed.encoded,
+                    signature: jc1Signed.signature as Bytes
+                },
+                signatures: [jc1Signed.signature, jc2Signed.signature + "00"]
+            });
             await expect(resultPromise)
                 .to.be.revertedWithCustomError(
                     {
@@ -151,27 +174,33 @@ describe("StateChannelManagerProxy", function () {
             jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
             jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
 
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature, jc2Signed.signature]
-            );
+            const res = mathChannelManager.joinChannel({
+                signedJoinChannel: {
+                    encodedJoinChannel: jc1Signed.encoded,
+                    signature: jc1Signed.signature as Bytes
+                },
+                signatures: [jc1Signed.signature, jc2Signed.signature]
+            });
             await expect(res).to.be.revertedWith(
                 "MathConsumerFacet: openChannel channelId cannot be 0x0"
             );
         });
 
         it.skip("2 participants game already exists - fail", async function () {
-            await mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature, jc2Signed.signature]
-            );
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature, jc2Signed.signature]
-            );
+            await mathChannelManager.joinChannel({
+                signedJoinChannel: {
+                    encodedJoinChannel: jc1Signed.encoded,
+                    signature: jc1Signed.signature as Bytes
+                },
+                signatures: [jc1Signed.signature, jc2Signed.signature]
+            });
+            const res = mathChannelManager.joinChannel({
+                signedJoinChannel: {
+                    encodedJoinChannel: jc1Signed.encoded,
+                    signature: jc1Signed.signature as Bytes
+                },
+                signatures: [jc1Signed.signature, jc2Signed.signature]
+            });
             await expect(res).to.be.revertedWith(
                 "MathConsumerFacet: openChannel - channel already open"
             );
@@ -184,11 +213,13 @@ describe("StateChannelManagerProxy", function () {
             jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
             jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
 
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature, jc2Signed.signature]
-            );
+            const res = mathChannelManager.joinChannel({
+                signedJoinChannel: {
+                    encodedJoinChannel: jc1Signed.encoded,
+                    signature: jc1Signed.signature as Bytes
+                },
+                signatures: [jc1Signed.signature, jc2Signed.signature]
+            });
             await expect(res).to.be.revertedWith(
                 "MathConsumerFacet: openChannel channelId doesn't match"
             );
@@ -204,11 +235,13 @@ describe("StateChannelManagerProxy", function () {
             jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
             jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
 
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature, jc2Signed.signature]
-            );
+            const res = mathChannelManager.joinChannel({
+                signedJoinChannel: {
+                    encodedJoinChannel: jc1Signed.encoded,
+                    signature: jc1Signed.signature as Bytes
+                },
+                signatures: [jc1Signed.signature, jc2Signed.signature]
+            });
             await expect(res).to.be.revertedWith(
                 "MathConsumerFacet: openChannel amount must be greater than 0"
             );
@@ -221,11 +254,13 @@ describe("StateChannelManagerProxy", function () {
             jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
             jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
 
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature, jc2Signed.signature]
-            );
+            const res = mathChannelManager.joinChannel({
+                signedJoinChannel: {
+                    encodedJoinChannel: jc1Signed.encoded,
+                    signature: jc1Signed.signature as Bytes
+                },
+                signatures: [jc1Signed.signature, jc2Signed.signature]
+            });
             await expect(res).to.be.revertedWith(
                 "MathConsumerFacet: openChannel timestampDeadline must be in the future"
             );

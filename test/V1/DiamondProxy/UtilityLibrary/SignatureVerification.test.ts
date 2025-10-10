@@ -1,8 +1,8 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { BytesLike, Signer } from "ethers";
-import { deployLibraryTestContract } from "@test/test_utils/testHelpers";
-import { StateChannelUtilLibrary } from "@typechain-types";
+import { deployUtilityFacetTestContract } from "@test/test_utils/testHelpers";
+import { UtilityFacet } from "@typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 describe("StateChannelUtilLibrary", function () {
@@ -31,13 +31,13 @@ describe("StateChannelUtilLibrary", function () {
         return { firstSigner, secondSigner, thirdSigner, signers };
     }
 
-    let libraryWrapper: StateChannelUtilLibrary;
+    let utilityFacet: UtilityFacet;
     let firstSigner: HardhatEthersSigner;
     let secondSigner: HardhatEthersSigner;
     let thirdSigner: HardhatEthersSigner;
 
     this.beforeEach(async function () {
-        libraryWrapper = await deployLibraryTestContract(ethers);
+        utilityFacet = await deployUtilityFacetTestContract(ethers);
         const signers = await getSigners();
         firstSigner = signers.firstSigner;
         secondSigner = signers.secondSigner;
@@ -49,7 +49,7 @@ describe("StateChannelUtilLibrary", function () {
             const msg = "Hello peers!";
             const signed1 = await signMsg(msg, firstSigner);
 
-            const result = await libraryWrapper.verifyThresholdSigned(
+            const result = await utilityFacet.verifyThresholdSigned(
                 [firstSigner.address],
                 signed1.encodedMsg,
                 [signed1.signature]
@@ -61,7 +61,7 @@ describe("StateChannelUtilLibrary", function () {
             const msg = "Hello peers!";
             const signed1 = await signMsg(msg, firstSigner);
 
-            const result = await libraryWrapper.verifyThresholdSigned(
+            const result = await utilityFacet.verifyThresholdSigned(
                 [firstSigner.address],
                 signed1.encodedMsg + "00",
                 [signed1.signature]
@@ -75,7 +75,7 @@ describe("StateChannelUtilLibrary", function () {
             const msg = "Hello peers!";
             const signed1 = await signMsg(msg, firstSigner);
 
-            const result = await libraryWrapper.verifyThresholdSigned(
+            const result = await utilityFacet.verifyThresholdSigned(
                 [firstSigner.address],
                 signed1.encodedMsg + "00",
                 []
@@ -89,14 +89,14 @@ describe("StateChannelUtilLibrary", function () {
             const msg = "Hello peers!";
             const signed1 = await signMsg(msg, firstSigner);
 
-            const resultPromise = libraryWrapper.verifyThresholdSigned(
+            const resultPromise = utilityFacet.verifyThresholdSigned(
                 [firstSigner.address],
                 signed1.encodedMsg,
                 [signed1.signature + "00"]
             );
             await expect(resultPromise)
                 .to.be.revertedWithCustomError(
-                    libraryWrapper,
+                    utilityFacet,
                     "ECDSAInvalidSignatureLength"
                 )
                 .withArgs(66);
@@ -110,7 +110,7 @@ describe("StateChannelUtilLibrary", function () {
             const signed2 = await signMsg(msg, secondSigner);
             const signed3 = await signMsg(msg, thirdSigner);
 
-            const result = await libraryWrapper.verifyThresholdSigned(
+            const result = await utilityFacet.verifyThresholdSigned(
                 [
                     firstSigner.address,
                     secondSigner.address,
@@ -127,7 +127,7 @@ describe("StateChannelUtilLibrary", function () {
             const signed2 = await signMsg(msg, secondSigner);
             const signed3 = await signMsg(msg, thirdSigner);
 
-            const result = await libraryWrapper.verifyThresholdSigned(
+            const result = await utilityFacet.verifyThresholdSigned(
                 [
                     firstSigner.address,
                     secondSigner.address,
@@ -144,7 +144,7 @@ describe("StateChannelUtilLibrary", function () {
             const signed2 = await signMsg(msg, secondSigner);
             const signed3 = await signMsg(msg, thirdSigner);
 
-            const result = await libraryWrapper.verifyThresholdSigned(
+            const result = await utilityFacet.verifyThresholdSigned(
                 [
                     firstSigner.address,
                     secondSigner.address,
@@ -165,7 +165,7 @@ describe("StateChannelUtilLibrary", function () {
             const signed1 = await signMsg(msg, firstSigner);
             const signed2 = await signMsg(msg, secondSigner);
 
-            const result = await libraryWrapper.verifyThresholdSigned(
+            const result = await utilityFacet.verifyThresholdSigned(
                 [
                     firstSigner.address,
                     secondSigner.address,
@@ -185,7 +185,7 @@ describe("StateChannelUtilLibrary", function () {
             const signed1 = await signMsg(msg, firstSigner);
             const signed2 = await signMsg(msg, secondSigner);
 
-            const result = await libraryWrapper.verifyThresholdSigned(
+            const result = await utilityFacet.verifyThresholdSigned(
                 [
                     firstSigner.address,
                     secondSigner.address,
@@ -205,7 +205,7 @@ describe("StateChannelUtilLibrary", function () {
             const signed1 = await signMsg(msg, firstSigner);
             const signed2 = await signMsg(msg, secondSigner);
 
-            const result = await libraryWrapper.verifyThresholdSigned(
+            const result = await utilityFacet.verifyThresholdSigned(
                 [
                     firstSigner.address,
                     secondSigner.address,
@@ -225,7 +225,7 @@ describe("StateChannelUtilLibrary", function () {
             const signed1 = await signMsg(msg, firstSigner);
             const signed2 = await signMsg(msg, secondSigner);
 
-            const resultPromise = libraryWrapper.verifyThresholdSigned(
+            const resultPromise = utilityFacet.verifyThresholdSigned(
                 [
                     firstSigner.address,
                     secondSigner.address,
@@ -236,7 +236,7 @@ describe("StateChannelUtilLibrary", function () {
             );
             await expect(resultPromise)
                 .to.be.revertedWithCustomError(
-                    libraryWrapper,
+                    utilityFacet,
                     "ECDSAInvalidSignatureLength"
                 )
                 .withArgs(66);

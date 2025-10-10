@@ -111,11 +111,16 @@ describe("EvmStateMachine", function () {
         );
         console.log("Connection established");
         //on-chain open the channel
-        const re = await mathscm.openChannel(
-            joinChannelCommitment1.channelId,
-            [jc1Signed.encoded, jc2Signed.encoded],
-            [jc1Signed.signature as Bytes, jc2Signed.signature as Bytes]
-        );
+        const re = await mathscm.joinChannel({
+            signedJoinChannel: {
+                encodedJoinChannel: jc1Signed.encoded,
+                signature: jc1Signed.signature as Bytes
+            },
+            signatures: [
+                jc1Signed.signature as Bytes,
+                jc2Signed.signature as Bytes
+            ]
+        });
         console.log(`Tx hash:${re.hash}`);
         // Wait for P2P connections to be established
         await waitForP2PConnections(p2pOne, p2pTwo, 500);
