@@ -42,11 +42,11 @@ export class EventHandler {
             stateSnapshot,
             encodedState
         );
-        this.stateManager.setGenesisState(
+
+        await this.stateManager.setGenesisState(
             stateSnapshot.snapshotData,
             encodedState,
             stateSnapshot.forkId,
-
             Number(stateSnapshot.timestamp)
         );
     }

@@ -3,6 +3,7 @@ import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
 import { ChannelId } from "@/types/types";
 
 import { EventHandler } from "@/eventHandlers/EventHandler";
+import { Codec } from "@/utils";
 
 //TODO - made a PR to ethers.js to fix Deferred Topic Filter
 
@@ -50,11 +51,11 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.ChannelOpened(
                     channelId
                 ),
-            handler: (logObj: any) => {
+            handler: async (logObj: any) => {
                 const { channelId, stateSnapshot, encodedState } = logObj.args;
-                this.eventHandler.onChannelOpened(
+                await this.eventHandler.onChannelOpened(
                     channelId,
-                    stateSnapshot,
+                    Codec.convertEthersResultToObject(stateSnapshot),
                     encodedState
                 );
             }

@@ -213,4 +213,8 @@ export class Codec {
 
         return decoded[0] as T;
     }
+
+    public static convertEthersResultToObject<T>(result: ethers.Result): T {
+        return this.ethersResultToObjectRecursive(result) as T;
+    }
 }
