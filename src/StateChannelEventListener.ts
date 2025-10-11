@@ -45,6 +45,20 @@ class StateChannelEventListener {
     }
 
     private readonly eventHandlers = {
+        ChannelOpened: {
+            filterFactory: (channelId: ChannelId) =>
+                this.stateChannelManagerContract.filters.ChannelOpened(
+                    channelId
+                ),
+            handler: (logObj: any) => {
+                const { channelId, stateSnapshot, encodedState } = logObj.args;
+                this.eventHandler.onChannelOpened(
+                    channelId,
+                    stateSnapshot,
+                    encodedState
+                );
+            }
+        },
         StateSnapshotUpdated: {
             filterFactory: (channelId: ChannelId) =>
                 this.stateChannelManagerContract.filters.StateSnapshotUpdated(

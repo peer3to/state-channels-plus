@@ -386,14 +386,14 @@ class StateManager {
     public async setGenesisState(
         snapshotData: SnapshotDataStruct,
         encodedState: Bytes,
-        _forkId: ForkId,
+        forkId: ForkId,
         genesisTimestamp: Timestamp,
         exitChannelBlock?: ExitChannelBlockStruct
     ): Promise<void> {
-        console.log("StateManager - SetState", _forkId, genesisTimestamp);
+        console.log("StateManager - SetState", forkId, genesisTimestamp);
         // generate and store genesis snapshot
         const _genesisSnapshot: StateSnapshotStruct = {
-            forkId: _forkId,
+            forkId,
             blockHeight: 0,
             timestamp: genesisTimestamp,
             snapshotData: snapshotData
@@ -413,17 +413,17 @@ class StateManager {
 
         await this.diamondStateMachine.setState(encodedState);
         // Update the forkId to the new fork
-        this.forkId = _forkId;
+        this.forkId = forkId;
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();
         this.p2pEventHooks.onTurn?.(nextToWrite);
         const nextTransactionCnt =
-            this.storage.blocks.getNextBlockHeight(_forkId);
+            this.storage.blocks.getNextBlockHeight(forkId);
         let timeLost = Clock.getTimeInSeconds() - genesisTimestamp;
         timeLost = timeLost < 0 ? 0 : timeLost; // if genesisTimestamp is in the future - no time is lost
         scheduleTask(
             () =>
                 this.tryTimeoutParticipant(
-                    _forkId,
+                    forkId,
                     nextTransactionCnt,
                     nextToWrite
                 ),

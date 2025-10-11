@@ -43,6 +43,32 @@ contract LocalDiamond is StateChannelManagerProxy {
 
     // ========== Direct event handlers for existing events ==========
 
+    function onChannelOpened(
+        bytes32 channelId,
+        StateSnapshot calldata stateSnapshot,
+        bytes calldata /* encodedState */
+    ) external {
+        // Store the genesis state snapshot
+        stateSnapshots[channelId] = stateSnapshot;
+
+        // Initialize channel balance with zero values
+        Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
+        ChannelBalance storage channelBalance = channelBalances[channelId];
+
+        // Set initial zero balance for on-chain deposits/withdrawals
+        channelBalance.onChainJoinChannelMap[channelBalance.latestJoinChannelBlockHash].totalDeposits = zeroBalance;
+        channelBalance.totalOnChainWithdrawals = zeroBalance;
+
+        // Update with the actual join channel block data from the state snapshot
+        bytes32 joinChannelBlockHash = stateSnapshot.snapshotData.latestJoinChannelBlockHash;
+        channelBalance.onChainJoinChannelMap[joinChannelBlockHash] = OnChainJoinChannel({
+            previousJoinChannelBlockHash: channelBalance.latestJoinChannelBlockHash,
+            timestamp: stateSnapshot.timestamp,
+            totalDeposits: stateSnapshot.snapshotData.totalDeposits
+        });
+        channelBalance.latestJoinChannelBlockHash = joinChannelBlockHash;
+    }
+
     // Called by StateSnapshotUpdated event
     function onStateSnapshotUpdated(bytes32 channelId, StateSnapshot calldata stateSnapshot) external {
         stateSnapshots[channelId] = stateSnapshot;
