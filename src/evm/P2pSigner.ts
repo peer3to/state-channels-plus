@@ -101,11 +101,10 @@ class P2pSigner implements Signer {
             }
         };
 
-        const blockConfirmation =
+        const _blockConfirmation =
             await this.p2pManager.stateManager.playTransaction(_tx);
-        this.p2pManager.remoteRpc.stateTransitionService
-            .onBlockConfirmation(blockConfirmation)
-            .broadcast();
+        // NOTE: playTransaction already broadcasts via success() method, no need to broadcast again here
+
         return "There is no TransactionResponse p2p - everything executed locally" as unknown as TransactionResponse; //TODO
     }
 

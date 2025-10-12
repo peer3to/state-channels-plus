@@ -268,8 +268,13 @@ export default class ValidationService {
         }
 
         // OBJECTIVE: isValidTimestamp check
+        // Allow small clock drift tolerance (1 second backwards)
+        console.log(
+            `[ValidationService - validateTimeLogic] previousTimestamp: ${previousTimestamp}, block.timestamp: ${block.timestamp}, difference: ${block.timestamp - previousTimestamp}`
+        );
+        const CLOCK_DRIFT_TOLERANCE = 1; // seconds
         const isValidTimestamp =
-            block.timestamp >= previousTimestamp &&
+            block.timestamp + CLOCK_DRIFT_TOLERANCE >= previousTimestamp &&
             block.timestamp <= previousTimestamp + this.timeConfig.p2pTime;
 
         if (!isValidTimestamp) {

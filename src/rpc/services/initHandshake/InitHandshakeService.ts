@@ -39,7 +39,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         setTimeout(() => {
             if (!this.didRespond(transport))
                 this.p2pManager.disconnectConnection(transport);
-        }, this.p2pManager.stateManager.timeConfig.agreementTime);
+        }, this.p2pManager.stateManager.timeConfig.agreementTime * 1000);
     }
 
     public setChallenge(transport: ATransport, challenge: ConnectionChallenge) {

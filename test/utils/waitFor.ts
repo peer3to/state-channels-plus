@@ -51,7 +51,12 @@ export async function waitForStateSync(
         const latestBlock2 = stateManager2.storage.blocks.getLatestBlock(
             stateManager2.forkId
         );
-        return latestBlock1 !== undefined && latestBlock2 !== undefined;
+        // Both must have blocks AND they must have the SAME block hash
+        return (
+            latestBlock1 !== undefined &&
+            latestBlock2 !== undefined &&
+            latestBlock1.hash === latestBlock2.hash
+        );
     }, timeoutMs);
 }
 
