@@ -6,15 +6,14 @@ import StateManager from "@/stateManager";
 import { LocalDiscoveryServer } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import { AStateMachine, StateChannelManagerProxy } from "@typechain-types";
-import { StateSnapshot } from "@/models";
 import { ForkId, Address, ChannelId } from "@/types/types";
 import { TimeConfig } from "@/types/time";
 import {
     deployMathChannelProxyFixture,
-    createJoinChannelTestObject
+    createOpenChannelTestObject
 } from "@test/test_utils/testHelpers";
 import { HardhatEthersHelpers } from "hardhat/types/runtime";
-import { SignatureUtils, Codec, Type, hash as hashUtil } from "@/utils";
+import { SignatureUtils, Codec, Type } from "@/utils";
 import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import { createConfig, Config } from "@/utils/config";
@@ -169,36 +168,36 @@ export class PeerTestHarness<T extends AStateMachine> {
     async openChannel(): Promise<void> {
         await Clock.init(this.peers[0].signer.provider!);
 
-        const signedCommitments = [];
-        for (const peer of this.peers) {
-            const jc = createJoinChannelTestObject(
-                peer.address,
-                this.options.channelId
-            );
-            peer.joinChannelCommitment = jc;
-            const signed = await SignatureUtils.signJoinChannel(
-                jc,
-                peer.signer
-            );
-            signedCommitments.push(signed);
-        }
+        const openChannel = createOpenChannelTestObject(
+            this.peers.map((p) => p.address),
+            this.options.channelId,
+            this.options.initialBalance
+        );
 
+        // Connect peers to the channel
         for (const peer of this.peers) {
-            peer.p2pInstance.p2pSigner.connectToChannel(
-                peer.joinChannelCommitment!.channelId
-            );
+            peer.p2pInstance.p2pSigner.connectToChannel(openChannel.channelId);
         }
 
         if (this.options.autoConnect) {
             await this.connectPeers();
         }
 
-        const tx = await this.channelManager.joinChannel({
-            signedJoinChannel: {
-                encodedJoinChannel: signedCommitments[0].encoded,
-                signature: signedCommitments[0].signature as BytesLike
-            },
-            signatures: signedCommitments.map((s) => s.signature) as BytesLike[]
+        const signatures = await Promise.all(
+            this.peers.map(
+                async (peer) =>
+                    (
+                        await SignatureUtils.signOpenChannel(
+                            openChannel,
+                            peer.signer
+                        )
+                    ).signature as BytesLike
+            )
+        );
+
+        const tx = await this.channelManager.open({
+            encodedOpenChannel: Codec.encode(openChannel, Type.OpenChannel),
+            signatures: signatures
         });
 
         await tx.wait();
@@ -233,67 +232,6 @@ export class PeerTestHarness<T extends AStateMachine> {
         throw new Error(
             `P2P connections not established within ${actualTimeout}ms`
         );
-    }
-
-    async setupGenesisState(customState?: any): Promise<ForkId> {
-        const participants = this.peers.map((p) => p.address);
-        const balances = this.peers.map(() => this.options.initialBalance);
-        const genesisState = customState || {
-            number: 0,
-            participants,
-            balances
-        };
-
-        const genesisStateEncoded = ethers.AbiCoder.defaultAbiCoder().encode(
-            ["uint256", "address[]", "uint256[]"],
-            [
-                genesisState.number,
-                genesisState.participants,
-                genesisState.balances
-            ]
-        );
-
-        const timestamp = Clock.getTimeInSeconds();
-        const genesisSnapshotData = {
-            originForkId:
-                "0x0000000000000000000000000000000000000000000000000000000000000000",
-            stateMachineStateHash: hashUtil(genesisStateEncoded),
-            participants,
-            latestJoinChannelBlockHash:
-                "0x0000000000000000000000000000000000000000000000000000000000000000",
-            latestExitChannelBlockHash:
-                "0x0000000000000000000000000000000000000000000000000000000000000000",
-            totalDeposits: {
-                amount: participants.length * this.options.initialBalance,
-                data: "0x00"
-            },
-            totalWithdrawals: { amount: 0, data: "0x00" }
-        };
-
-        const forkId = hashUtil(
-            Codec.encode(genesisSnapshotData, Type.SnapshotData)
-        );
-        const genesisSnapshot = {
-            forkId,
-            blockHeight: BigInt(0),
-            timestamp,
-            snapshotData: genesisSnapshotData
-        };
-
-        for (const peer of this.peers) {
-            await peer.stateManager.setGenesisState(
-                genesisSnapshotData,
-                genesisStateEncoded,
-                forkId,
-                timestamp
-            );
-            peer.stateManager.storage.stateSnapshots.storeStateSnapshot(
-                StateSnapshot.from(genesisSnapshot)
-            );
-        }
-
-        this.activeForkId = forkId;
-        return forkId;
     }
 
     async submitTransaction(
