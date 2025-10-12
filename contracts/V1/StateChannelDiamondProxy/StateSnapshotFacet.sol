@@ -4,7 +4,8 @@ import "./StateChannelCommon.sol";
 import "../types/DataTypes.sol";
 import "./StateChannelManagerProxy.sol";
 import "./Errors.sol";
-import "./StateChannelUtilLibrary.sol";
+
+import "./UtilityFacet.sol";
 
 contract StateSnapshotFacet is StateChannelCommon {
     function updateStateSnapshotFork(
@@ -15,7 +16,10 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
         DisputeData storage disputeData = disputeData[channelId];
         bytes32 targetForkId = newStateSnapshot.forkId;
-        require(isGenesisSnapshotWithoutTimeCheck(newStateSnapshot), ErrorInvalidStateSnapshot());
+        require(
+            UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(newStateSnapshot),
+            ErrorInvalidStateSnapshot()
+        );
         (bool hasGenesis, uint256 genesisTimestamp) =
             getGenesisTimestamp(channelId, newStateSnapshot.snapshotData.originForkId, targetForkId);
         require(hasGenesis && newStateSnapshot.timestamp == genesisTimestamp, ErrorInvalidStateSnapshot());
@@ -85,9 +89,8 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot[] memory milestoneSnapshots,
         SnapshotData memory genesisSnapshotData
     ) internal view returns (bool) {
-        (bool isValid,) = StateChannelManagerProxy(address(this)).verifyMilestones(
-            milestoneProofs, milestoneSnapshots, genesisSnapshotData
-        );
+        (bool isValid,) =
+            UtilityFacet(utilityFacetAddress).verifyMilestones(milestoneProofs, milestoneSnapshots, genesisSnapshotData);
         return isValid;
     }
 

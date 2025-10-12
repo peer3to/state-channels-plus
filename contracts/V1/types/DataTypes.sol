@@ -20,7 +20,9 @@ contract DataTypes {
         ExitChannelBlock memory m,
         StateSnapshot memory n,
         SnapshotData memory o,
-        OnChainJoinChannel memory p
+        OnChainJoinChannel memory p,
+        OpenChannel memory q,
+        OpenChannelConfirmation memory r
     ) {}
 }
 
@@ -62,6 +64,20 @@ struct Transaction {
 struct Balance {
     uint256 amount;
     bytes data; //custom data
+}
+
+struct OpenChannel {
+    bytes32 channelId; // could be computed on-chain, but if known in advance, easy to index
+    address[] participants;
+    Balance[] balances; // parallel array to participants
+    uint256 deadlineTimestamp;
+    bool isAtomic; // (all or nothing) or allow deposits to fail and only open with successful deposits
+    bytes data; // custom data
+}
+
+struct OpenChannelConfirmation {
+    bytes encodedOpenChannel;
+    bytes[] signatures;
 }
 
 struct JoinChannel {

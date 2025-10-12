@@ -3,17 +3,12 @@ pragma solidity ^0.8.8;
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./StateChannelManagerStorage.sol";
 import "../StateChannelManagerEvents.sol";
-import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
 import "./utils/DisputeUtils.sol";
 import "./utils/BlockUtils.sol";
+import "./UtilityFacet.sol";
 
 contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEvents {
-    function getOnChainSlashes(bytes32 channelId) public view virtual returns (OnChainSlash[] memory) {
-        return disputeData[channelId].onChainSlashes;
-    }
-    // Get participants who have been slashed up to (including) timestamp
-
     function getOnChainSlashedParticipantsUpToTimestamp(bytes32 channelId, uint256 timestamp)
         public
         view
@@ -64,8 +59,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function getOnChainThresholdSet(bytes32 channelId) public view virtual returns (address[] memory) {
-        return StateChannelUtilLibrary.subtractAddressArrays(
-            StateChannelUtilLibrary.concatAddressArrays(
+        return UtilityFacet(utilityFacetAddress).subtractAddressArrays(
+            UtilityFacet(utilityFacetAddress).concatAddressArrays(
                 getSnapshotParticipants(channelId), getPendingParticipants(channelId)
             ),
             getOnChainSlashedParticipants(channelId)
@@ -88,16 +83,15 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             // Dispute window doesn't exist
             StateSnapshot memory currentOnChainSnapshot = stateSnapshots[channelId];
             // check if current on-chain snapshot.fork == forkId
-            if (currentOnChainSnapshot.forkId == forkId && isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)) {
+            if (
+                currentOnChainSnapshot.forkId == forkId
+                    && UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
+            ) {
                 return (true, currentOnChainSnapshot.timestamp);
             }
             return (false, timestamp);
         }
         return (true, timestamp);
-    }
-
-    function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot) public pure returns (bool) {
-        return snapshot.forkId == keccak256(abi.encode(snapshot.snapshotData)) && snapshot.blockHeight == 0;
     }
 
     function getSnapshotParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
@@ -108,10 +102,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return disputeData[channelId].pendingParticipants;
     }
 
-    function getSnapshotForkId(bytes32 channelId) public view virtual returns (bytes32) {
-        return stateSnapshots[channelId].forkId;
-    }
-
     function getStateSnapshot(bytes32 channelId) public view virtual returns (StateSnapshot memory) {
         return stateSnapshots[channelId];
     }
@@ -119,12 +109,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     function getStateMachineParticipants(bytes memory encodedState) public virtual returns (address[] memory) {
         stateMachineImplementation.setState(encodedState);
         return stateMachineImplementation.getParticipants();
-    }
-
-    function getNextToWrite(bytes32 channelId, bytes memory encodedState) public virtual returns (address) {
-        //channelId not used currently since all channels have the same SM - later they can be mapped to different ones
-        stateMachineImplementation.setState(encodedState);
-        return stateMachineImplementation.getNextToWrite();
     }
 
     function getP2pTime() public view virtual returns (uint256) {
@@ -165,10 +149,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return (true, commitment);
     }
 
-    function isChannelOpen(bytes32 channelId) public view virtual returns (bool) {
-        return stateSnapshots[channelId].snapshotData.participants.length > 0;
-    }
-
     function decodeBlock(bytes memory encodedBlock) public pure returns (Block memory) {
         return abi.decode(encodedBlock, (Block));
     }
@@ -179,7 +159,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         (bool success, bytes memory encodedBlock) = address(this).staticcall(data);
         if (!success) return false;
         Block memory decodedBlock = abi.decode(encodedBlock, (Block));
-        address signer = StateChannelUtilLibrary.retrieveSignerAddress(encodedBlock, _block.signature);
+        address signer = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(encodedBlock, _block.signature);
         if (signer != decodedBlock.transaction.header.participant) {
             return false;
         }
@@ -209,6 +189,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
 
         return previousExitChannelBlockHash == toSnapshot.latestExitChannelBlockHash;
     }
+    // !!!!
 
     function _applyJoins(
         bytes memory encodedStateMachineState,
@@ -226,6 +207,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             }
         }
     }
+    // !!!!!
 
     function _calculateTotalWithdrawals(Balance memory totalWithdrawals, ExitChannel[] memory exitChannels)
         internal
@@ -237,8 +219,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         }
         return totalWithdrawals;
     }
-
+    // !!!!!!!!!
     /// @dev Callable only by diamond facets - applies the join to the given state of the state machine and returns the modified state
+
     function applyJoinChannelToStateMachine(bytes memory encodedState, JoinChannel[] memory joinChannels)
         public
         onlySelf
@@ -251,8 +234,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         }
         return (stateMachineImplementation.getState());
     }
-    //stateless
 
+    // !!!!!!!
     function isDisputeCommitted(Dispute memory dispute) internal view returns (bool) {
         bytes32 channelId = dispute.input.channelId;
         DisputeData storage disputeData = disputeData[channelId];
@@ -289,15 +272,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             if (!isParticipant) return false;
         }
 
-        address[] memory onChainSlashedParticipants = getOnChainSlashedParticipants(channelId);
-        //check if slashed on-chain -> slashed participants can't participate in disputes
-        for (uint256 i = 0; i < onChainSlashedParticipants.length; i++) {
-            if (onChainSlashedParticipants[i] == participant) {
-                return false; //is slashed -> can't participate
-            }
-        }
-        return true; //is participant and not slashed -> can participate
+        return !isParticipantSlashedOnChain(channelId, participant);
     }
+    // ???????
 
     function _commitToDisputeReducedResult(
         bytes32 channelId,
@@ -315,19 +292,5 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         emit DisputeReducedResultCommitted(
             channelId, disputeWindow.forkId, reducedForkId, reductionTimestamp, msg.sender
         );
-    }
-
-    function _delegatecall(address target, bytes memory data) internal returns (bytes memory) {
-        (bool success, bytes memory result) = target.delegatecall(data);
-        if (!success) {
-            if (result.length == 0) {
-                revert("StateChannelManagerProxy - Delegatecall failed");
-            }
-            assembly ("memory-safe") {
-                let returndata_size := mload(result)
-                revert(add(32, result), returndata_size)
-            }
-        }
-        return result;
     }
 }

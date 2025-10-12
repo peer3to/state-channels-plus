@@ -2,9 +2,9 @@ pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
 import "./StateChannelManagerProxy.sol";
-import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
 import "../types/FraudProofTypes.sol";
+import "./UtilityFacet.sol";
 
 contract FraudProofFacet is StateChannelCommon {
     //This is a bit inefficient, since public/external functions always do a deep copy unlike internal/private that pas by reference, but this shares the context
@@ -46,7 +46,7 @@ contract FraudProofFacet is StateChannelCommon {
     function _handleBlockDoubleSign(
         FraudProof memory fraudProof,
         FraudProofVerificationContext memory fraudProofVerificationContext
-    ) internal pure returns (address) {
+    ) internal view returns (address) {
         BlockDoubleSignProof memory blockDoubleSignProof = abi.decode(fraudProof.encodedProof, (BlockDoubleSignProof));
 
         Block memory block1 = abi.decode(blockDoubleSignProof.block1.encodedBlock, (Block));
@@ -69,10 +69,10 @@ contract FraudProofFacet is StateChannelCommon {
             revert ErrorDoubleSignBlocksNotSame();
         }
 
-        address signer1 = StateChannelUtilLibrary.retrieveSignerAddress(
+        address signer1 = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
             blockDoubleSignProof.block1.encodedBlock, blockDoubleSignProof.block1.signature
         );
-        address signer2 = StateChannelUtilLibrary.retrieveSignerAddress(
+        address signer2 = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
             blockDoubleSignProof.block2.encodedBlock, blockDoubleSignProof.block2.signature
         );
         if (signer1 != signer2) {
@@ -91,7 +91,7 @@ contract FraudProofFacet is StateChannelCommon {
         StateSnapshot memory previousStateSnapshot = blockInvalidSTProof.previousBlockStateSnapshot;
         bytes memory previousStateStateMachineState = blockInvalidSTProof.previousStateStateMachineState;
 
-        address signer = StateChannelUtilLibrary.retrieveSignerAddress(
+        address signer = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
             blockInvalidSTProof.invalidBlock.encodedBlock, blockInvalidSTProof.invalidBlock.signature
         );
 
@@ -163,7 +163,10 @@ contract FraudProofFacet is StateChannelCommon {
         StateSnapshot memory onChainSnapshot = getStateSnapshot(channelId);
 
         if (onChainSnapshot.forkId == forkId) {
-            require(isGenesisSnapshotWithoutTimeCheck(onChainSnapshot), ErrorNotGenesisSnapshot());
+            require(
+                UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(onChainSnapshot),
+                ErrorNotGenesisSnapshot()
+            );
             if (_block.previousBlockHash != keccak256(abi.encode(onChainSnapshot))) return blockAuthor;
         }
 
@@ -177,7 +180,9 @@ contract FraudProofFacet is StateChannelCommon {
         (bool isAvailable, uint256 timestamp) = getGenesisTimestamp(channelId, originForkId, forkId);
         require(isAvailable, ErrorGenesisTimestampNotAvailable());
         if (timestamp != correctGenesisSnapshot.timestamp) return address(0);
-        if (!isGenesisSnapshotWithoutTimeCheck(correctGenesisSnapshot)) return address(0);
+        if (!UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(correctGenesisSnapshot)) {
+            return address(0);
+        }
         if (_block.previousBlockHash != keccak256(abi.encode(correctGenesisSnapshot))) return blockAuthor;
         return address(0);
     }

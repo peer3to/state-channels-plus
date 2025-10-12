@@ -2,38 +2,12 @@ pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
 import "./StateChannelManagerProxy.sol";
-import "./StateChannelUtilLibrary.sol";
 import "./Errors.sol";
 import "./utils/DisputeUtils.sol";
 import "./utils/BlockUtils.sol";
+import "./UtilityFacet.sol";
 
 contract DisputeVerificationFacet is StateChannelCommon {
-    function auditDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        external
-        onlySelf
-        returns (address[] memory slashParticipants)
-    {
-        require(isCorrectAuditingData(dispute, disputeAuditingData), ErrorDisputeWrongAuditingData());
-        require(_isCorrectGenesis(dispute), ErrorDisputeGenesisInvalid());
-        require(verifyStateProof(dispute, disputeAuditingData, true), ErrorDisputeStateProofInvalid());
-        require(_verifyDisputeExitChannelBlocks(dispute, disputeAuditingData), ErrorDisputeExitChannelBlocksInvalid());
-
-        // ***************** Generate output snapshot ***************
-        (SnapshotData memory outputSnapshotData, address[] memory slashes) = computeDisputeOutputSnapshotData(
-            dispute.input,
-            disputeAuditingData.latestStateSnapshot,
-            disputeAuditingData.latestStateStateMachineState,
-            disputeAuditingData.genesisStateSnapshotData.latestJoinChannelBlockHash
-        );
-
-        //verify outputStateSnapshot commitment
-        if (keccak256(abi.encode(outputSnapshotData)) != dispute.outputSnapshotDataHash) {
-            revert ErrorDisputeOutputStateSnapshotInvalid();
-        }
-
-        return slashes;
-    }
-
     function computeDisputeOutputSnapshotData(
         DisputeInput memory disputeInput,
         StateSnapshot memory latestStateSnapshot,
@@ -58,21 +32,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
             totalDeposits: disputeOutputState.totalDeposits,
             totalWithdrawals: disputeOutputState.totalWithdrawals
         });
-    }
-
-    function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public {
-        uint256 gasLimit = getGasLimit();
-        bytes memory data = abi.encodeCall(DisputeVerificationFacet.auditDispute, (dispute, disputeAuditingData));
-        (bool success, bytes memory returnData) = address(this).call{gas: gasLimit}(data);
-        if (success) {
-            // auditing passed - dispute is correct, slash the challenger
-            if (_canParticipateInDisputes(dispute.input.channelId, msg.sender)) {
-                addOnChainSlashedParticipant(dispute.input.channelId, msg.sender);
-            }
-        } else {
-            // auditing failed - dispute is invalid, kill it
-            _killDispute(dispute);
-        }
     }
 
     function reduce(Dispute[] memory disputes) public view returns (ReduceOutput memory reducedOutput) {
@@ -282,8 +241,9 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         address[] memory removals = reducedOutput.selfRemovals;
         if (reducedOutput.timeout.participant != address(0) && reducedOutput.slashedParticipants.length == 0) {
-            removals =
-                StateChannelUtilLibrary.insertIntoAddressArrayNoDuplicates(removals, reducedOutput.timeout.participant);
+            removals = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
+                removals, reducedOutput.timeout.participant
+            );
         }
 
         DisputeOutputState memory outputState = generateDisputeOutputState(
@@ -326,17 +286,17 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         // Apply slashes
         ExitChannel[] memory slashExitChannels;
-        (outputState.encodedModifiedState, slashExitChannels) = StateChannelManagerProxy(address(this))
-            .applySlashesToStateMachine(outputState.encodedModifiedState, slashParticipants);
+        (outputState.encodedModifiedState, slashExitChannels) =
+            _applySlashesToStateMachine(outputState.encodedModifiedState, slashParticipants);
 
         // Apply removals
         ExitChannel[] memory removalExitChannels;
-        (outputState.encodedModifiedState, removalExitChannels) = StateChannelManagerProxy(address(this))
-            .removeParticipantsFromStateMachine(outputState.encodedModifiedState, removeParticipants);
+        (outputState.encodedModifiedState, removalExitChannels) =
+            _removeParticipantsFromStateMachine(outputState.encodedModifiedState, removeParticipants);
 
         // Combine exit channels and calculate totals
         ExitChannel[] memory allExitChannels =
-            StateChannelUtilLibrary.concatExitChannelArrays(slashExitChannels, removalExitChannels);
+            UtilityFacet(utilityFacetAddress).concatExitChannelArrays(slashExitChannels, removalExitChannels);
         outputState.totalWithdrawals = _calculateTotalWithdrawals(outputState.totalWithdrawals, allExitChannels);
 
         outputState.exitBlock =
@@ -346,182 +306,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
     }
 
     // =============================== State Proofs Verification  ===============================
-
-    function verifyStateProof(
-        Dispute memory dispute,
-        DisputeAuditingData memory disputeAuditingData,
-        bool auditingDataIntegrityVerified
-    ) public pure returns (bool) {
-        if (auditingDataIntegrityVerified) {
-            if (
-                dispute.input.genesisSnapshotDataHash
-                    != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData))
-            ) return false;
-        } else {
-            require(
-                dispute.input.genesisSnapshotDataHash
-                    == keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData)),
-                ErrorDisputeGenesisInvalid()
-            );
-        }
-
-        bytes32 latestSnapshotDataHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData));
-        bytes32 latestSnapshotHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot));
-
-        if (dispute.input.stateProof.milestones.length != 0 && dispute.input.stateProof.signedBlocks.length != 0) {
-            return false;
-        }
-
-        // Milestone checking
-        (bool isValid, bytes memory lastBlockEncoded) = verifyMilestones(
-            dispute.input.stateProof.milestones,
-            disputeAuditingData.milestoneSnapshots,
-            disputeAuditingData.genesisStateSnapshotData
-        );
-        if (!isValid) {
-            return false;
-        }
-        // If no blocks in milestones
-        if (lastBlockEncoded.length == 0) {
-            if (dispute.input.stateProof.signedBlocks.length == 0) {
-                // no blocks at all => genesis == latest
-                if (auditingDataIntegrityVerified) {
-                    if (
-                        dispute.input.genesisSnapshotDataHash != latestSnapshotDataHash
-                            || dispute.input.latestStateSnapshotHash != latestSnapshotHash
-                    ) return false;
-                } else {
-                    require(
-                        dispute.input.genesisSnapshotDataHash == latestSnapshotDataHash
-                            && dispute.input.latestStateSnapshotHash == latestSnapshotHash,
-                        ErrorIncorrectSnapshotProvided()
-                    );
-                }
-            } else {
-                //check if signedBlocks are linked, signed and built on genesis
-                if (
-                    !_areSignedBlocksLinkedAndVerified(
-                        dispute.input.stateProof.signedBlocks, dispute.input.genesisSnapshotDataHash
-                    )
-                ) return false;
-
-                Block memory lastBlock = abi.decode(
-                    dispute.input.stateProof.signedBlocks[dispute.input.stateProof.signedBlocks.length - 1].encodedBlock,
-                    (Block)
-                );
-                //check if lastBlock commits to the latestStateSnapshot
-                if (lastBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash) return false;
-            }
-        } else {
-            // - At least one milestone with at least one block -
-            // Think this will never trigger, since we only build signedBlocks if there is not finality (linked to genesis), otherwise the latest state is included in a milestone
-            // TODO - think could this be exploited
-
-            // This check is redundant since we already have this check at the beginning of the function, but have it here for clarity
-            if (dispute.input.stateProof.signedBlocks.length != 0) return false;
-
-            Block memory lastBlock = abi.decode(lastBlockEncoded, (Block));
-            //check if lastBlock commits to the latestStateSnapshot
-            if (lastBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash) {
-                return false;
-            }
-        }
-        if (auditingDataIntegrityVerified) {
-            //check commitment to latestStateSnapshot
-            if (dispute.input.latestStateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot)))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    function _isMilestoneFinal(SnapshotData memory genesisSnapshotData, MilestoneProof memory milestone)
-        internal
-        pure
-        returns (bool isFinal, bytes32 finalizedSnapshotHash)
-    {
-        bytes32 genesisForkId = keccak256(abi.encode(genesisSnapshotData));
-        address[] memory expectedParticipants = genesisSnapshotData.participants;
-        address[] memory thresholdSet = new address[](expectedParticipants.length);
-        uint256 thresholdCount = 0;
-        bytes memory previousEncodedBlock;
-        BlockConfirmation memory currentBlockConfirmation;
-        Block memory currentBlock;
-        address adr;
-        if (milestone.blockConfirmations.length == 0) {
-            return (false, bytes32(0));
-        }
-        for (uint256 i = 0; i < milestone.blockConfirmations.length; i++) {
-            currentBlockConfirmation = milestone.blockConfirmations[i];
-            currentBlock = abi.decode(currentBlockConfirmation.signedBlock.encodedBlock, (Block));
-            if (currentBlock.transaction.header.forkId != genesisForkId) return (false, bytes32(0));
-            //check linked
-            if (i != 0) {
-                if (currentBlock.previousBlockHash != keccak256(previousEncodedBlock)) {
-                    return (false, bytes32(0));
-                }
-            } else {
-                finalizedSnapshotHash = currentBlock.stateSnapshotHash;
-            }
-            // Collect signatures
-            adr = StateChannelUtilLibrary.retrieveSignerAddress(
-                currentBlockConfirmation.signedBlock.encodedBlock, currentBlockConfirmation.signedBlock.signature
-            );
-            if (adr != currentBlock.transaction.header.participant) {
-                return (false, bytes32(0));
-            }
-            thresholdCount = StateChannelUtilLibrary.tryInsertAddressInThresholdSet(
-                adr, thresholdSet, thresholdCount, expectedParticipants
-            );
-            for (uint256 j = 0; j < currentBlockConfirmation.signatures.length; j++) {
-                adr = StateChannelUtilLibrary.retrieveSignerAddress(
-                    currentBlockConfirmation.signedBlock.encodedBlock, currentBlockConfirmation.signatures[j]
-                );
-                thresholdCount = StateChannelUtilLibrary.tryInsertAddressInThresholdSet(
-                    adr, thresholdSet, thresholdCount, expectedParticipants
-                );
-            }
-            previousEncodedBlock = currentBlockConfirmation.signedBlock.encodedBlock;
-        }
-
-        return (thresholdCount == expectedParticipants.length, finalizedSnapshotHash);
-    }
-
-    /// @dev Verifies ForkMilestoneBlock along with BlockConfirmations and taking into account Virtual Voting
-    function verifyMilestones(
-        MilestoneProof[] memory milestoneProofs,
-        StateSnapshot[] memory milestoneSnapshots,
-        SnapshotData memory genesisSnapshotData
-    ) public pure returns (bool isValid, bytes memory lastBlockEncoded) {
-        SnapshotData memory snapshotData = genesisSnapshotData;
-        lastBlockEncoded = "";
-
-        // For K milestones, K-1 snapshots are needed to prove the last milestone is final, but for cleaner code we include the K-th snapshot too, even though it doesn't have to be used
-        if (milestoneProofs.length != milestoneSnapshots.length) {
-            return (false, lastBlockEncoded);
-        }
-
-        for (uint256 i = 0; i < milestoneProofs.length; i++) {
-            MilestoneProof memory milestone = milestoneProofs[i];
-            (bool isFinal, bytes32 finalizedSnapshotHash) = _isMilestoneFinal(snapshotData, milestone);
-            if (!isFinal) {
-                return (false, lastBlockEncoded);
-            }
-            // isFinal - since this runs in isolation now (not atomically with auditing where everything is checked), revert the transaction if the disputer didn't provide the correct snapshot
-            // Since it's final, the disputer for sure has the correct snapshot, so we can just revert if it's not provided
-            require(
-                keccak256(abi.encode(milestoneSnapshots[i])) == finalizedSnapshotHash, ErrorIncorrectSnapshotProvided()
-            );
-
-            snapshotData = milestoneSnapshots[i].snapshotData;
-            if (i == milestoneProofs.length - 1 && milestone.blockConfirmations.length > 0) {
-                lastBlockEncoded =
-                    milestone.blockConfirmations[milestone.blockConfirmations.length - 1].signedBlock.encodedBlock;
-            }
-        }
-        return (true, lastBlockEncoded);
-    }
 
     function _isCorrectGenesis(Dispute memory dispute) internal view returns (bool) {
         (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
@@ -756,5 +540,34 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         //verify outputStateSnapshot commitment
         return (keccak256(abi.encode(outputSnapshotData)) == dispute.outputSnapshotDataHash);
+    }
+
+    function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
+        internal
+        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
+    {
+        exitChannels = new ExitChannel[](slashedParticipants.length);
+        stateMachineImplementation.setState(encodedState);
+        for (uint256 i = 0; i < slashedParticipants.length; i++) {
+            bool success;
+            (success, exitChannels[i]) = stateMachineImplementation.slashParticipant(slashedParticipants[i]);
+            require(success, ErrorDisputeStateMachineSlashingFailed());
+        }
+        return (stateMachineImplementation.getState(), exitChannels);
+    }
+
+    function _removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
+        internal
+        returns (bytes memory encodedModifiedState, ExitChannel[] memory)
+    {
+        ExitChannel[] memory exitChannels = new ExitChannel[](participants.length);
+        stateMachineImplementation.setState(encodedState);
+        for (uint256 i = 0; i < participants.length; i++) {
+            bool success;
+            (success, exitChannels[i]) = stateMachineImplementation.removeParticipant(participants[i]);
+            // require(success, "Remove failed");
+            require(success, ErrorDisputeStateMachineRemovingFailed());
+        }
+        return (stateMachineImplementation.getState(), exitChannels);
     }
 }

@@ -5,7 +5,8 @@ import { EventLog } from "ethers";
 import {
     deployMathChannelProxyFixture,
     getSigners,
-    createJoinChannelTestObject
+    createJoinChannelTestObject,
+    createOpenChannelTestObject
 } from "@test/test_utils/testHelpers";
 import { SignatureUtils } from "@/utils";
 import {
@@ -28,6 +29,10 @@ describe("StateChannelManagerProxy", function () {
     let jc1Signed: any;
     let jc2Signed: any;
 
+    // Open channel test objects
+    let openChannel: any;
+    let openChannelSigned: any;
+
     beforeEach(async function () {
         const contracts = await deployMathChannelProxyFixture(ethers);
         mathChannelManager = contracts.mathChannelManager;
@@ -42,95 +47,137 @@ describe("StateChannelManagerProxy", function () {
 
         jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
         jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
+
+        // Create open channel test objects
+        openChannel = createOpenChannelTestObject([
+            firstSigner.address,
+            secondSigner.address
+        ]);
+        openChannelSigned = await SignatureUtils.signOpenChannel(
+            openChannel,
+            firstSigner
+        );
     });
 
     describe("Open Channel - MathStateChannel", function () {
         it("2 participants - success", async function () {
-            const res = await mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature as Bytes, jc2Signed.signature as Bytes]
-            );
+            const res = await mathChannelManager.open({
+                encodedOpenChannel: openChannelSigned.encoded,
+                signatures: [
+                    await SignatureUtils.signOpenChannel(
+                        openChannel,
+                        firstSigner
+                    ).then((s) => s.signature as Bytes),
+                    await SignatureUtils.signOpenChannel(
+                        openChannel,
+                        secondSigner
+                    ).then((s) => s.signature as Bytes)
+                ]
+            });
             const receipt = await res.wait();
             expect(receipt?.logs.length, "Event logs").to.be.equal(1);
-            receipt?.logs.forEach((event) => {
+            receipt?.logs.forEach((event: any) => {
                 const e: EventLog = event as EventLog;
                 const id = e.topics[1];
 
                 expect(id, "Game not created successfully").to.be.equal(
-                    jc1.channelId
+                    openChannel.channelId
                 );
             });
         });
 
         it("2 participants signatures not inorder - success", async function () {
-            const res = await mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc2Signed.signature as Bytes, jc1Signed.signature as Bytes]
-            );
+            const res = await mathChannelManager.open({
+                encodedOpenChannel: openChannelSigned.encoded,
+                signatures: [
+                    await SignatureUtils.signOpenChannel(
+                        openChannel,
+                        secondSigner
+                    ).then((s) => s.signature as Bytes),
+                    await SignatureUtils.signOpenChannel(
+                        openChannel,
+                        firstSigner
+                    ).then((s) => s.signature as Bytes)
+                ]
+            });
             const receipt = await res.wait();
             expect(receipt?.logs.length, "Event logs").to.be.equal(1);
-            receipt?.logs.forEach((event) => {
+            receipt?.logs.forEach((event: any) => {
                 const e: EventLog = event as EventLog;
                 const id = e.topics[1];
 
                 expect(id, "Game not created successfully").to.be.equal(
-                    jc1.channelId
+                    openChannel.channelId
                 );
             });
         });
 
         it("2 participants 1 signature - fail", async function () {
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature]
-            );
+            const res = mathChannelManager.open({
+                encodedOpenChannel: openChannelSigned.encoded,
+                signatures: [
+                    await SignatureUtils.signOpenChannel(
+                        openChannel,
+                        firstSigner
+                    ).then((s) => s.signature as Bytes)
+                ]
+            });
             await expect(res).to.be.revertedWith(
-                "MathConsumerFacet: openChannel (openChannel <> signatures) incorrect length"
+                "Cryptography: Not enough signatures provided"
             );
         });
 
         it("2 participants double signature - fail", async function () {
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature as Bytes, jc1Signed.signature as Bytes]
-            );
+            const sig1 = await SignatureUtils.signOpenChannel(
+                openChannel,
+                firstSigner
+            ).then((s) => s.signature as Bytes);
+            const res = mathChannelManager.open({
+                encodedOpenChannel: openChannelSigned.encoded,
+                signatures: [sig1, sig1]
+            });
             await expect(res).to.be.revertedWith(
-                "MathConsumerFacet: openChannel (openChannel <> signatures) signatures don't match"
+                "Cryptography: Not enough valid signatures"
             );
         });
 
         it("2 participants wrong encoded openChannel msg - fail", async function () {
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded + "00", jc2Signed.encoded],
-                [jc1Signed.signature, jc2Signed.signature]
-            );
+            const res = mathChannelManager.open({
+                encodedOpenChannel: openChannelSigned.encoded + "00", // Corrupt the encoded data
+                signatures: [
+                    await SignatureUtils.signOpenChannel(
+                        openChannel,
+                        firstSigner
+                    ).then((s) => s.signature as Bytes),
+                    await SignatureUtils.signOpenChannel(
+                        openChannel,
+                        secondSigner
+                    ).then((s) => s.signature as Bytes)
+                ]
+            });
             await expect(res).to.be.revertedWith(
-                "MathConsumerFacet: openChannel (openChannel <> signatures) signatures don't match"
+                "Cryptography: Not enough valid signatures"
             );
         });
 
         it("2 participants no signatures - fail", async function () {
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                []
-            );
+            const res = mathChannelManager.open({
+                encodedOpenChannel: openChannelSigned.encoded,
+                signatures: []
+            });
             await expect(res).to.be.revertedWith(
-                "MathConsumerFacet: openChannel (openChannel <> signatures) incorrect length"
+                "Cryptography: Not enough signatures provided"
             );
         });
 
         it("2 participants invalid signature length - fail", async function () {
-            const resultPromise = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature, jc2Signed.signature + "00"]
-            );
+            const resultPromise = mathChannelManager.joinChannel({
+                signedJoinChannel: {
+                    encodedJoinChannel: jc1Signed.encoded,
+                    signature: jc1Signed.signature as Bytes
+                },
+                signatures: [jc1Signed.signature, jc2Signed.signature + "00"]
+            });
             await expect(resultPromise)
                 .to.be.revertedWithCustomError(
                     {
@@ -151,83 +198,171 @@ describe("StateChannelManagerProxy", function () {
             jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
             jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
 
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature, jc2Signed.signature]
-            );
-            await expect(res).to.be.revertedWith(
-                "MathConsumerFacet: openChannel channelId cannot be 0x0"
-            );
-        });
-
-        it.skip("2 participants game already exists - fail", async function () {
-            await mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature, jc2Signed.signature]
-            );
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature, jc2Signed.signature]
-            );
-            await expect(res).to.be.revertedWith(
-                "MathConsumerFacet: openChannel - channel already open"
+            await expect(
+                mathChannelManager.joinChannel({
+                    signedJoinChannel: {
+                        encodedJoinChannel: jc1Signed.encoded,
+                        signature: jc1Signed.signature as Bytes
+                    },
+                    signatures: [jc1Signed.signature, jc2Signed.signature]
+                })
+            ).to.be.revertedWithCustomError(
+                {
+                    interface: new ethers.Interface([
+                        "error ErrorInvalidChannelId()"
+                    ])
+                },
+                "ErrorInvalidChannelId"
             );
         });
 
-        it("2 participants channelId doesn't match - fail", async function () {
-            // Override default objects for this test
-            jc2.channelId = ethers.keccak256("0x1aaa");
+        it("2 participants channel already exists - fail", async function () {
+            // First, open a channel successfully
+            await mathChannelManager.open({
+                encodedOpenChannel: openChannelSigned.encoded,
+                signatures: [
+                    await SignatureUtils.signOpenChannel(
+                        openChannel,
+                        firstSigner
+                    ).then((s) => s.signature as Bytes),
+                    await SignatureUtils.signOpenChannel(
+                        openChannel,
+                        secondSigner
+                    ).then((s) => s.signature as Bytes)
+                ]
+            });
 
-            jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
-            jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
-
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature, jc2Signed.signature]
-            );
-            await expect(res).to.be.revertedWith(
-                "MathConsumerFacet: openChannel channelId doesn't match"
+            // Try to open the same channel again with the same channelId
+            const res = mathChannelManager.open({
+                encodedOpenChannel: openChannelSigned.encoded,
+                signatures: [
+                    await SignatureUtils.signOpenChannel(
+                        openChannel,
+                        firstSigner
+                    ).then((s) => s.signature as Bytes),
+                    await SignatureUtils.signOpenChannel(
+                        openChannel,
+                        secondSigner
+                    ).then((s) => s.signature as Bytes)
+                ]
+            });
+            await expect(res).to.be.revertedWithCustomError(
+                {
+                    interface: new ethers.Interface([
+                        "error ErrorChannelAlreadyOpen()"
+                    ])
+                },
+                "ErrorChannelAlreadyOpen"
             );
         });
 
-        it("2 participants amount 0 - fail", async function () {
-            // Override default objects for this test
-            jc2.balance = {
-                amount: 0,
-                data: "0x"
-            };
+        it("2 participants channelId cannot be 0x0 - fail", async function () {
+            // Create OpenChannel with channelId = 0x0
+            const invalidOpenChannel = createOpenChannelTestObject([
+                firstSigner.address,
+                secondSigner.address
+            ]);
+            invalidOpenChannel.channelId =
+                "0x0000000000000000000000000000000000000000000000000000000000000000";
 
-            jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
-            jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
+            const res = mathChannelManager.open({
+                encodedOpenChannel: await SignatureUtils.signOpenChannel(
+                    invalidOpenChannel,
+                    firstSigner
+                ).then((s) => s.encoded),
+                signatures: [
+                    await SignatureUtils.signOpenChannel(
+                        invalidOpenChannel,
+                        firstSigner
+                    ).then((s) => s.signature as Bytes),
+                    await SignatureUtils.signOpenChannel(
+                        invalidOpenChannel,
+                        secondSigner
+                    ).then((s) => s.signature as Bytes)
+                ]
+            });
+            await expect(res).to.be.revertedWithCustomError(
+                {
+                    interface: new ethers.Interface([
+                        "error ErrorInvalidJoinChannel()"
+                    ])
+                },
+                "ErrorInvalidJoinChannel"
+            );
+        });
 
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature, jc2Signed.signature]
+        it("2 participants amount 0 - success with zero balance", async function () {
+            // Create OpenChannel with amount 0
+            const openChannelWithZeroBalance = createOpenChannelTestObject(
+                [firstSigner.address, secondSigner.address],
+                undefined,
+                0
             );
-            await expect(res).to.be.revertedWith(
-                "MathConsumerFacet: openChannel amount must be greater than 0"
+            openChannelWithZeroBalance.balances[0].amount = 0;
+
+            const res = await mathChannelManager.open({
+                encodedOpenChannel: await SignatureUtils.signOpenChannel(
+                    openChannelWithZeroBalance,
+                    firstSigner
+                ).then((s) => s.encoded),
+                signatures: [
+                    await SignatureUtils.signOpenChannel(
+                        openChannelWithZeroBalance,
+                        firstSigner
+                    ).then((s) => s.signature as Bytes),
+                    await SignatureUtils.signOpenChannel(
+                        openChannelWithZeroBalance,
+                        secondSigner
+                    ).then((s) => s.signature as Bytes)
+                ]
+            });
+            await res.wait();
+
+            // Check that the channel was opened successfully
+            expect(
+                await mathChannelManager.isChannelOpen(
+                    openChannelWithZeroBalance.channelId
+                )
+            ).to.be.true;
+
+            // Check that the total deposits in the state snapshot is 0
+            const stateSnapshot = await mathChannelManager.getStateSnapshot(
+                openChannelWithZeroBalance.channelId
             );
+            expect(stateSnapshot.snapshotData.totalDeposits.amount).to.equal(0);
         });
 
         it("2 participants time expired - fail", async function () {
-            // Override default objects for this test
-            jc2.deadlineTimestamp = Number(jc2.deadlineTimestamp) - 300;
-
-            jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
-            jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
-
-            const res = mathChannelManager.openChannel(
-                jc1.channelId,
-                [jc1Signed.encoded, jc2Signed.encoded],
-                [jc1Signed.signature, jc2Signed.signature]
+            // Create JoinChannel with past deadline
+            const invalidJoinChannel = createJoinChannelTestObject(
+                firstSigner.address
             );
-            await expect(res).to.be.revertedWith(
-                "MathConsumerFacet: openChannel timestampDeadline must be in the future"
+            invalidJoinChannel.deadlineTimestamp =
+                Math.floor(Date.now() / 1000) - 300; // 5 minutes ago
+
+            const invalidJoinChannelSigned =
+                await SignatureUtils.signJoinChannel(
+                    invalidJoinChannel,
+                    firstSigner
+                );
+
+            const res = mathChannelManager.joinChannel({
+                signedJoinChannel: {
+                    encodedJoinChannel: invalidJoinChannelSigned.encoded,
+                    signature: invalidJoinChannelSigned.signature as Bytes
+                },
+                signatures: [
+                    invalidJoinChannelSigned.signature,
+                    jc2Signed.signature
+                ]
+            });
+            await expect(res).to.be.revertedWithCustomError(
+                {
+                    interface: new ethers.Interface([
+                        "error ErrorJoinChannelExpired()"
+                    ])
+                },
+                "ErrorJoinChannelExpired"
             );
         });
     });

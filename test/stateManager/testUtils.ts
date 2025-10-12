@@ -4,6 +4,7 @@ import { stateSnapshot } from "../factory";
 import sinon from "sinon";
 import { ZeroHash } from "ethers";
 import Clock from "../../src/Clock";
+import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export const ValidationFailure = {
     // Time validation failures (step 10 - last)
@@ -348,6 +349,7 @@ export class MockSetup {
     public mockP2pEventHooks: any;
     public clockStub!: sinon.SinonStub;
     public validationService: any; // Will be set by the test
+    public mockSnapshotData: any; // Will be set by the test
 
     constructor() {
         this.setupMocks();
@@ -534,6 +536,16 @@ export class MockSetup {
         };
 
         this.mockStrategy = this.createMockStrategy();
+
+        this.mockSnapshotData = {
+            originForkId: "0x1234567890abcdef",
+            stateMachineStateHash: "0xabcdef1234567890",
+            participants: ["0x1234567890123456789012345678901234567890"],
+            latestJoinChannelBlockHash: "0x0000000000000000",
+            latestExitChannelBlockHash: "0x0000000000000000",
+            totalDeposits: { amount: 0n, data: "0x" },
+            totalWithdrawals: { amount: 0n, data: "0x" }
+        } as SnapshotDataStruct;
     }
 
     async initializeClock(): Promise<void> {

@@ -27,9 +27,23 @@ const config: HardhatUserConfig = {
             viaIR: true, // Enable the via-IR pipeline
             optimizer: {
                 enabled: true,
+                // details: { yul: false },
                 runs: 100
             }
         }
+        // overrides: {
+        //     "contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol": {
+        //         version: "0.8.30",
+        //         settings: {
+        //             optimizer: {
+        //                 enabled: true,
+        //                 runs: 100,
+        //                 details: { yul: false }
+        //             },
+        //             viaIR: true
+        //         }
+        //     }
+        // }
     }
     // solidity: "0.8.26"
 };

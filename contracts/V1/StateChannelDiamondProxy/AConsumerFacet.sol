@@ -4,23 +4,13 @@ import "../types/DataTypes.sol";
 import "../StateChannelManagerInterface.sol";
 
 abstract contract AConsumerFacet {
-    function openChannel(bytes32 channelId, bytes[] calldata openChannelData, bytes[] calldata signatures)
+    function openChannelGenesis(JoinChannel[] memory successfulJoinChannels, bytes memory optionalOpeningData)
         external
-        virtual;
+        pure
+        virtual
+        returns (bytes memory encodedGenesisState, address[] memory participants);
 
-    function closeChannel(bytes32 channelId, bytes[] calldata closeChannelData, bytes[] calldata signatures)
-        external
-        virtual;
+    function deposit(JoinChannel memory joinChannel) external virtual returns (bool);
 
-    function removeParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
-        external
-        virtual;
-
-    function addParticipant(bytes32 channelId, bytes[] calldata addParticipantData, bytes[] calldata signatures)
-        external
-        virtual;
-
-    function depositAssetsComposable(JoinChannel memory joinChannel) external virtual returns (bool);
-
-    function withdrawAssetsComposable(ExitChannel memory exitChannel) external virtual returns (bool);
+    function withdraw(ExitChannel memory exitChannel) external virtual returns (bool);
 }

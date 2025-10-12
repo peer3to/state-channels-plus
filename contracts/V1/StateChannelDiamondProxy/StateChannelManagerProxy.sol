@@ -2,7 +2,6 @@ pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
 import "../StateChannelManagerInterface.sol";
-import "./StateChannelUtilLibrary.sol";
 import "./AConsumerFacet.sol";
 
 import "./DisputeManagerFacet.sol";
@@ -12,6 +11,8 @@ import "./DisputeFraudProofFacet.sol";
 import "./StateSnapshotFacet.sol";
 import "./JoinChannelFacet.sol";
 import "../types/DisputeTypes.sol";
+import "./utils/GeneralUtils.sol";
+import "./UtilityFacet.sol";
 
 contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelCommon {
     constructor(
@@ -22,6 +23,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         address _disputeFraudProofFacet,
         address _stateSnapshotFacet,
         address _joinChannelFacet,
+        address _utilityFacet,
         address _consumerFacet
     ) {
         stateMachineImplementation = AStateMachine(_stateMachineImplementation);
@@ -31,6 +33,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         disputeFraudProofFacetAddress = _disputeFraudProofFacet;
         stateSnapshotFacetAddress = _stateSnapshotFacet;
         joinChannelFacetAddress = _joinChannelFacet;
+        utilityFacetAddress = _utilityFacet;
         consumerFacetAddress = _consumerFacet;
         p2pTime = 15;
         agreementTime = 5;
@@ -74,63 +77,71 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     // ********** Consumer Facet Delegation Functions **********
 
-    function openChannel(bytes32 channelId, bytes[] calldata openChannelData, bytes[] calldata signatures)
-        public
-        virtual
-        override
-    {
-        require(!isChannelOpen(channelId), "StateChannelManagerProxy: openChannel - channel already open");
-        AConsumerFacet(consumerFacetAddress).openChannel(channelId, openChannelData, signatures);
-    }
+    function open(OpenChannelConfirmation calldata openChannelConfirmation) public virtual override {
+        OpenChannel memory openChannelData = abi.decode(openChannelConfirmation.encodedOpenChannel, (OpenChannel));
+        require(openChannelData.channelId != bytes32(0), ErrorInvalidJoinChannel());
+        require(!isChannelOpen(openChannelData.channelId), ErrorChannelAlreadyOpen());
 
-    function closeChannel(bytes32 channelId, bytes[] calldata closeChannelData, bytes[] calldata signatures)
-        public
-        virtual
-        override
-    {
-        AConsumerFacet(consumerFacetAddress).closeChannel(channelId, closeChannelData, signatures);
-    }
+        // set zero balance for on-chain deposits/withdrawals
+        Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
+        {
+            ChannelBalance storage channelBalance = channelBalances[openChannelData.channelId];
+            channelBalance.onChainJoinChannelMap[channelBalance.latestJoinChannelBlockHash].totalDeposits = zeroBalance;
+            channelBalance.totalOnChainWithdrawals = zeroBalance;
+        }
+        // verify threshold signature - must be from all participants - this is deterministic - no race condition on-chain
+        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
+            openChannelData.participants, openChannelConfirmation.encodedOpenChannel, openChannelConfirmation.signatures
+        );
+        require(isValid, reason);
 
-    function removeParticipant(bytes32 channelId, bytes[] calldata removeParticipantData, bytes[] calldata signatures)
-        public
-        virtual
-        override
-    {
-        AConsumerFacet(consumerFacetAddress).removeParticipant(channelId, removeParticipantData, signatures);
-    }
+        JoinChannel[] memory joinChannels = new JoinChannel[](openChannelData.participants.length);
+        for (uint256 i = 0; i < openChannelData.participants.length; i++) {
+            joinChannels[i] = JoinChannel({
+                channelId: openChannelData.channelId,
+                participant: openChannelData.participants[i],
+                deadlineTimestamp: openChannelData.deadlineTimestamp,
+                balance: openChannelData.balances[i]
+            });
+        }
 
-    function addParticipant(bytes32 channelId, bytes[] calldata addParticipantData, bytes[] calldata signatures)
-        public
-        virtual
-        override
-    {
-        AConsumerFacet(consumerFacetAddress).addParticipant(channelId, addParticipantData, signatures);
+        (JoinChannelBlock memory jcb, Balance memory newTotalDeposits) =
+            StateChannelManagerProxy(address(this)).depositAssetsComposable(joinChannels, openChannelData.isAtomic);
+
+        require(jcb.joinChannels.length >= 2, ErrorAtLeastTwoParticipantsRequired());
+        bytes memory result = _delegatecall(
+            consumerFacetAddress,
+            abi.encodeCall(AConsumerFacet.openChannelGenesis, (jcb.joinChannels, openChannelData.data))
+        );
+        (bytes memory genesisState, address[] memory participants) = abi.decode(result, (bytes, address[]));
+
+        SnapshotData memory genesisSnapshotData = SnapshotData({
+            originForkId: bytes32(0),
+            stateMachineStateHash: keccak256(genesisState),
+            participants: participants,
+            latestJoinChannelBlockHash: keccak256(abi.encode(jcb)),
+            latestExitChannelBlockHash: bytes32(0),
+            totalDeposits: newTotalDeposits,
+            totalWithdrawals: zeroBalance
+        });
+
+        bytes32 forkId = keccak256(abi.encode(genesisSnapshotData));
+        StateSnapshot memory genesisStateSnapshot = StateSnapshot({
+            snapshotData: genesisSnapshotData,
+            forkId: forkId,
+            blockHeight: 0,
+            timestamp: block.timestamp
+        });
+
+        stateSnapshots[openChannelData.channelId] = genesisStateSnapshot;
+
+        emit ChannelOpened(openChannelData.channelId, genesisStateSnapshot, genesisState);
     }
 
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public override {
         _delegatecall(
             disputeManagerFacetAddress, abi.encodeCall(DisputeManagerFacet.uploadDispute, (disputeConfirmation))
         );
-    }
-
-    function auditDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        public
-        override
-        returns (address[] memory slashParticipants)
-    {
-        //This is done manually since the logic is different from other _delegatecalls
-
-        // Encode the function selector and arguments
-        bytes memory data = abi.encodeCall(DisputeVerificationFacet.auditDispute, (dispute, disputeAuditingData));
-        // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: getGasLimit()}(data);
-        if (!success) {
-            assembly {
-                revert(add(returnData, 0x20), mload(returnData))
-            }
-        }
-        address[] memory slashedParticipants = abi.decode(returnData, (address[]));
-        return slashedParticipants;
     }
 
     function uploadDisputeWithCalldata(
@@ -140,13 +151,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         _delegatecall(
             disputeManagerFacetAddress,
             abi.encodeCall(DisputeManagerFacet.uploadDisputeWithCalldata, (disputeConfirmation, disputeAuditingData))
-        );
-    }
-
-    function challengeDispute(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData) public override {
-        _delegatecall(
-            disputeVerificationFacetAddress,
-            abi.encodeCall(DisputeVerificationFacet.challengeDispute, (dispute, disputeAuditingData))
         );
     }
 
@@ -203,30 +207,64 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     // ********** public/external DIAMOND functions **********
 
-    /// @dev Callable only by diamond facets - performs the deposit of the specific assets by interpreting `joinChannel` - returns bool success
-    function depositAssetsComposable(JoinChannel memory joinChannel) public virtual onlySelf returns (bool) {
-        return AConsumerFacet(consumerFacetAddress).depositAssetsComposable(joinChannel);
+    // @dev Callable only by diamond facets - performs the deposit of the specific assets by interpreting `joinChannel` - returns bool success
+    function depositAssetsComposable(JoinChannel[] memory joinChannels, bool isAtomic)
+        public
+        virtual
+        onlySelf
+        returns (JoinChannelBlock memory jcb, Balance memory newTotalDeposits)
+    {
+        require(joinChannels.length > 0, ErrorNoJoinChannelProvided());
+        bytes32 channelId = joinChannels[0].channelId;
+
+        JoinChannel[] memory filteredJoinChannels = new JoinChannel[](joinChannels.length);
+        uint256 successfulJoins = 0;
+        for (uint256 i = 0; i < joinChannels.length; i++) {
+            bytes memory result =
+                _delegatecall(consumerFacetAddress, abi.encodeCall(AConsumerFacet.deposit, (joinChannels[i])));
+            bool success = abi.decode(result, (bool));
+            if (!success && isAtomic) revert ErrorJoinChannelAtomicFailure();
+            if (success) {
+                filteredJoinChannels[successfulJoins++] = joinChannels[i];
+            }
+        }
+        require(successfulJoins > 0, ErrorNoSuccessfulJoinChannel());
+        // Resize the array to the number of successful joins - only ok for shrinking the array
+        // TODO - find other places in the code that shrink MEMORY arrays and do the same - better than to allocate more space
+        assembly {
+            mstore(filteredJoinChannels, successfulJoins)
+        }
+
+        // Create JoinChannelBlock
+        jcb = _createJoinChannelBlock(filteredJoinChannels);
+        bytes32 blockHash = keccak256(abi.encode(jcb));
+
+        // Update on-chain balance
+        ChannelBalance storage channelBalance = channelBalances[channelId];
+        // Get previous total deposits
+        newTotalDeposits = channelBalance.onChainJoinChannelMap[channelBalance.latestJoinChannelBlockHash].totalDeposits;
+        // Calculate new totalDeposits
+        for (uint256 i = 0; i < filteredJoinChannels.length; i++) {
+            newTotalDeposits = stateMachineImplementation.addBalance(newTotalDeposits, filteredJoinChannels[i].balance);
+        }
+
+        // Persist the onChainJoinChannel in the map
+        channelBalance.onChainJoinChannelMap[blockHash] = OnChainJoinChannel({
+            previousJoinChannelBlockHash: channelBalance.latestJoinChannelBlockHash,
+            timestamp: block.timestamp,
+            totalDeposits: newTotalDeposits
+        });
+        // Update the latestJoinChannelBlockHash;
+        channelBalance.latestJoinChannelBlockHash = blockHash;
+
+        return (jcb, newTotalDeposits);
     }
 
     /// @dev Callable only by diamond facets - performs the withdrawal of the specific assets by interpreting `exitChannel` - returns bool success
     function withdrawAssetsComposable(ExitChannel memory exitChannel) public virtual onlySelf returns (bool) {
-        return AConsumerFacet(consumerFacetAddress).withdrawAssetsComposable(exitChannel);
-    }
-
-    function applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
-        public
-        onlySelf
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory)
-    {
-        return _applySlashesToStateMachine(encodedState, slashedParticipants);
-    }
-
-    function removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
-        public
-        onlySelf
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory)
-    {
-        return _removeParticipantsFromStateMachine(encodedState, participants);
+        bytes memory result =
+            _delegatecall(consumerFacetAddress, abi.encodeCall(AConsumerFacet.withdraw, (exitChannel)));
+        return abi.decode(result, (bool));
     }
 
     function executeStateTransition(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
@@ -320,29 +358,14 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return StateChannelCommon.getBlockCallDataCommitment(channelId, forkId, blockHeight, participant);
     }
 
-    function isChannelOpen(bytes32 channelId)
-        public
-        view
-        override(StateChannelCommon, StateChannelManagerInterface)
-        returns (bool)
-    {
-        return StateChannelCommon.isChannelOpen(channelId);
+    function isChannelOpen(bytes32 channelId) public view override returns (bool) {
+        return stateSnapshots[channelId].snapshotData.participants.length > 0;
     }
 
     function isForkDisputed(bytes32 channelId, bytes32 forkId) public view override returns (bool) {
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[forkId];
         return disputeWindow.evidence.creationTimestamp != 0;
-    }
-
-    function verifyMilestones(
-        MilestoneProof[] memory milestoneProofs,
-        StateSnapshot[] memory milestoneSnapshots,
-        SnapshotData memory genesisSnapshotData
-    ) public view returns (bool isValid, bytes memory lastBlockEncoded) {
-        return DisputeVerificationFacet(disputeVerificationFacetAddress).verifyMilestones(
-            milestoneProofs, milestoneSnapshots, genesisSnapshotData
-        );
     }
 
     function multicall(bytes[] calldata calls) external override returns (bytes[] memory results) {
@@ -437,35 +460,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     // ********** private/internal functions **********
 
-    function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
-        internal
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
-    {
-        exitChannels = new ExitChannel[](slashedParticipants.length);
-        stateMachineImplementation.setState(encodedState);
-        for (uint256 i = 0; i < slashedParticipants.length; i++) {
-            bool success;
-            (success, exitChannels[i]) = stateMachineImplementation.slashParticipant(slashedParticipants[i]);
-            require(success, ErrorDisputeStateMachineSlashingFailed());
-        }
-        return (stateMachineImplementation.getState(), exitChannels);
-    }
-
-    function _removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
-        internal
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory)
-    {
-        ExitChannel[] memory exitChannels = new ExitChannel[](participants.length);
-        stateMachineImplementation.setState(encodedState);
-        for (uint256 i = 0; i < participants.length; i++) {
-            bool success;
-            (success, exitChannels[i]) = stateMachineImplementation.removeParticipant(participants[i]);
-            // require(success, "Remove failed");
-            require(success, ErrorDisputeStateMachineRemovingFailed());
-        }
-        return (stateMachineImplementation.getState(), exitChannels);
-    }
-
     function isKillPeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool, uint256) {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
@@ -518,5 +512,16 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
             }
         }
         return abi.decode(returnData, (bool));
+    }
+
+    function _createJoinChannelBlock(JoinChannel[] memory jcs) internal view returns (JoinChannelBlock memory) {
+        require(jcs.length > 0, ErrorNoJoinChannelProvided());
+        bytes32 channelId = jcs[0].channelId;
+        ChannelBalance storage channelBalance = channelBalances[channelId];
+        bytes32 latestBlockHash = channelBalance.latestJoinChannelBlockHash;
+        bytes32 previousBlockHash = channelBalance.onChainJoinChannelMap[latestBlockHash].previousJoinChannelBlockHash;
+        JoinChannelBlock memory joinChannelBlock =
+            JoinChannelBlock({previousBlockHash: previousBlockHash, joinChannels: jcs});
+        return joinChannelBlock;
     }
 }

@@ -1,18 +1,15 @@
 import { ethers } from "hardhat";
 import { BigNumberish } from "ethers";
 import { EvmStateMachine } from "@/evm";
-import { Codec, Type } from "@/utils/Codec";
-import { StateSnapshot } from "@/models";
 import { expect } from "chai";
-import Clock from "@/Clock";
 
 import {
-    createJoinChannelTestObject,
+    createOpenChannelTestObject,
     deployMathChannelProxyFixture,
     getMathP2pEventHooks
 } from "@test/test_utils/testHelpers";
 import P2pEventHooks from "@/P2pEventHooks";
-import { hash, SignatureUtils } from "@/utils";
+import { SignatureUtils } from "@/utils";
 import { Bytes } from "@/types/types";
 import { waitForP2PConnections, waitForStateSync } from "../utils/waitFor";
 import { sleep } from "@test/fixtures/PeerTestHarness";
@@ -87,119 +84,52 @@ describe("EvmStateMachine", function () {
         );
 
         //P2P disovery/matchamking (this is not done here - just the end result)
-        const joinChannelCommitment1 = createJoinChannelTestObject(
-            signerOne.address
-        );
-        const joinChannelCommitment2 = createJoinChannelTestObject(
+        const openChannel = createOpenChannelTestObject([
+            signerOne.address,
             signerTwo.address
-        );
+        ]);
 
-        const jc1Signed = await SignatureUtils.signJoinChannel(
-            joinChannelCommitment1,
+        const openChannelSigned = await SignatureUtils.signOpenChannel(
+            openChannel,
             signerOne
-        );
-        const jc2Signed = await SignatureUtils.signJoinChannel(
-            joinChannelCommitment2,
-            signerTwo
         );
 
         console.log("Establishing connection");
 
-        p2pOne.p2pSigner.connectToChannel(joinChannelCommitment1.channelId);
-        await p2pTwo.p2pSigner.connectToChannel(
-            joinChannelCommitment2.channelId
-        );
+        p2pOne.p2pSigner.connectToChannel(openChannel.channelId);
+        await p2pTwo.p2pSigner.connectToChannel(openChannel.channelId);
         console.log("Connection established");
         //on-chain open the channel
-        const re = await mathscm.openChannel(
-            joinChannelCommitment1.channelId,
-            [jc1Signed.encoded, jc2Signed.encoded],
-            [jc1Signed.signature as Bytes, jc2Signed.signature as Bytes]
-        );
+        const re = await mathscm.open({
+            encodedOpenChannel: openChannelSigned.encoded,
+            signatures: [
+                await SignatureUtils.signOpenChannel(
+                    openChannel,
+                    signerOne
+                ).then((s) => s.signature as Bytes),
+                await SignatureUtils.signOpenChannel(
+                    openChannel,
+                    signerTwo
+                ).then((s) => s.signature as Bytes)
+            ]
+        });
         console.log(`Tx hash:${re.hash}`);
         // Wait for P2P connections to be established
         await waitForP2PConnections(p2pOne, p2pTwo, 500);
 
         await sleep(50); // Give connections time to establish
 
-        // ============================
-        //  Ugly Ugly work around to make the test pass by setting genesis snapshot manually
+        // Wait for the ChannelOpened event handler to complete setting genesis state
+        await sleep(200);
 
-        // TODO: remove when https://trello.com/c/u4NqFBlJ is done
-        // ============================
-        const genesisState = {
-            number: 0,
-            participants: [signerOne.address, signerTwo.address],
-            balances: [500, 500]
-        };
-        const genesisStateEncoded = ethers.AbiCoder.defaultAbiCoder().encode(
-            ["uint256", "address[]", "uint256[]"],
-            [
-                genesisState.number,
-                genesisState.participants,
-                genesisState.balances
-            ]
-        );
-
-        const stateMachineStateHash = hash(genesisStateEncoded);
-        const timestamp = Clock.getTimeInSeconds();
-
-        const genesisSnapshotData = {
-            originForkId:
-                "0x0000000000000000000000000000000000000000000000000000000000000000",
-            stateMachineStateHash: stateMachineStateHash,
-            participants: [signerOne.address, signerTwo.address],
-            latestJoinChannelBlockHash:
-                "0x0000000000000000000000000000000000000000000000000000000000000000",
-            latestExitChannelBlockHash:
-                "0x0000000000000000000000000000000000000000000000000000000000000000",
-            totalDeposits: { amount: 1000, data: "0x00" },
-            totalWithdrawals: { amount: 0, data: "0x00" }
-        };
-
-        const snapshotDataEncoded = Codec.encode(
-            genesisSnapshotData,
-            Type.SnapshotData
-        );
-        const forkId = hash(snapshotDataEncoded);
-
-        const genesisSnapshot = {
-            forkId: forkId,
-            blockHeight: BigInt(0),
-            timestamp: timestamp,
-            snapshotData: genesisSnapshotData
-        };
-
-        await p2pOne.p2pSigner.p2pManager.stateManager.setGenesisState(
-            genesisSnapshotData,
-            genesisStateEncoded,
-            forkId,
-            timestamp
-        );
-        await p2pTwo.p2pSigner.p2pManager.stateManager.setGenesisState(
-            genesisSnapshotData,
-            genesisStateEncoded,
-            forkId,
-            timestamp
-        );
-
-        // Store the genesis state snapshot in both P2P instances
-        const stateSnapshot = StateSnapshot.from(genesisSnapshot);
-        p2pOne.p2pSigner.p2pManager.stateManager.storage.stateSnapshots.storeStateSnapshot(
-            stateSnapshot
-        );
-        p2pTwo.p2pSigner.p2pManager.stateManager.storage.stateSnapshots.storeStateSnapshot(
-            stateSnapshot
-        );
-        // ===============================================
-        //  End of ugly ugly work around
-        // ===============================================
+        console.log("=== TESTING GAME LOGIC WITHOUT WORKAROUND ===");
+        console.log("About to call mathContractFirstPlayer.add(3)...");
         await mathContractFirstPlayer.add(3);
 
         const stateManager1 = p2pOne.p2pSigner.p2pManager.stateManager;
         const stateManager2 = p2pTwo.p2pSigner.p2pManager.stateManager;
 
-        await waitForStateSync(stateManager1, stateManager2, 1500);
+        await waitForStateSync(stateManager1, stateManager2, 2000);
 
         expect(stateManager1.channelId).to.equal(
             stateManager2.channelId,
@@ -212,10 +142,12 @@ describe("EvmStateMachine", function () {
         );
 
         // Get latest blocks from both peers
-        const latestBlock1 =
-            stateManager1.storage.blocks.getLatestBlock(forkId);
-        const latestBlock2 =
-            stateManager2.storage.blocks.getLatestBlock(forkId);
+        const latestBlock1 = stateManager1.storage.blocks.getLatestBlock(
+            stateManager1.forkId
+        );
+        const latestBlock2 = stateManager2.storage.blocks.getLatestBlock(
+            stateManager2.forkId
+        );
 
         expect(latestBlock1).to.not.equal(
             undefined,
@@ -231,10 +163,12 @@ describe("EvmStateMachine", function () {
         );
 
         // Get next heights to see if they processed transactions
-        const nextHeight1 =
-            stateManager1.storage.blocks.getNextBlockHeight(forkId);
-        const nextHeight2 =
-            stateManager2.storage.blocks.getNextBlockHeight(forkId);
+        const nextHeight1 = stateManager1.storage.blocks.getNextBlockHeight(
+            stateManager1.forkId
+        );
+        const nextHeight2 = stateManager2.storage.blocks.getNextBlockHeight(
+            stateManager2.forkId
+        );
         expect(nextHeight1).to.equal(
             nextHeight2,
             "Peer 1 and 2 should have the same next block height"

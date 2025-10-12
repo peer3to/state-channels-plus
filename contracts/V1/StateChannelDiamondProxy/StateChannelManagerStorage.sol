@@ -23,6 +23,7 @@ contract StateChannelManagerStorage {
     address stateSnapshotFacetAddress;
     address joinChannelFacetAddress;
     address consumerFacetAddress;
+    address utilityFacetAddress;
 
     // =================== State on chain storage ==================
     /// @dev Channel balance tracker

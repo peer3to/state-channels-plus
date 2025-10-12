@@ -2,13 +2,16 @@ import { ethers, ContractTransactionResponse, AddressLike } from "ethers";
 import { HardhatEthersHelpers } from "hardhat/types/runtime";
 import {
     MathStateChannelManagerProxy,
-    MathStateMachine,
-    StateChannelUtilLibrary
+    MathStateMachine
 } from "@typechain-types";
 
-import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    JoinChannelStruct,
+    OpenChannelStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import P2pEventHooks from "@/P2pEventHooks";
+import { hash } from "@/utils";
 
 export const createJoinChannelTestObject = (
     address: AddressLike,
@@ -39,6 +42,41 @@ export const createJoinChannelTestObject = (
     return jc;
 };
 
+export const createOpenChannelTestObject = (
+    participants: AddressLike[],
+    channelId?: string,
+    amount?: number
+): OpenChannelStruct => {
+    let currentTime = 0;
+    try {
+        currentTime = Clock.getTimeInSeconds();
+    } catch (e) {
+        currentTime = Math.floor(Date.now() / 1000);
+    }
+
+    const balances = participants.map(() => ({
+        amount: amount === undefined ? 500 : amount,
+        data: "0x00"
+    }));
+
+    const oc: OpenChannelStruct = {
+        channelId: channelId
+            ? hash(
+                  ethers.AbiCoder.defaultAbiCoder().encode(
+                      ["string"],
+                      [channelId]
+                  )
+              )
+            : hash("0x2371"),
+        participants: participants,
+        balances: balances,
+        deadlineTimestamp: currentTime + 120, // 2 minutes from now
+        isAtomic: true,
+        data: "0x00"
+    };
+    return oc;
+};
+
 export const getCurrentBlockTime = async (
     provider: ethers.Provider
 ): Promise<number> => {
@@ -49,28 +87,6 @@ export const getCurrentTimeSeconds = (): number => {
     return Math.floor(Date.now() / 1000);
 };
 
-export async function deployLibraryTestContract(
-    _ethers: typeof ethers & HardhatEthersHelpers
-): Promise<StateChannelUtilLibrary> {
-    //Deploy library
-    const stateChannelUtilLibraryFactory = await _ethers.getContractFactory(
-        "StateChannelUtilLibrary"
-    );
-    const stateChannelUtilLibrary =
-        await stateChannelUtilLibraryFactory.deploy();
-    const libraryAddress = await stateChannelUtilLibrary.getAddress();
-
-    //Deploy DisputeManagerFacet
-    const libraryTestContractFactory = await _ethers.getContractFactory(
-        "LibraryTestContract"
-    );
-    const libraryTestContract =
-        await libraryTestContractFactory.deploy(libraryAddress);
-    const proxy = stateChannelUtilLibraryFactory.attach(
-        await libraryTestContract.getAddress()
-    );
-    return proxy as StateChannelUtilLibrary;
-}
 export async function deployMathChannelProxyFixture(
     _ethers: typeof ethers & HardhatEthersHelpers
 ): Promise<{
@@ -79,25 +95,16 @@ export async function deployMathChannelProxyFixture(
     };
     mathInstance: MathStateMachine;
 }> {
-    //Deploy library
-    const stateChannelUtilLibraryFactory = await _ethers.getContractFactory(
-        "StateChannelUtilLibrary"
-    );
-    const stateChannelUtilLibrary =
-        await stateChannelUtilLibraryFactory.deploy();
-    const libraryAddress = await stateChannelUtilLibrary.getAddress();
-
-    const libs = { StateChannelUtilLibrary: libraryAddress };
-
     // Facet configurations in constructor order
     const facetConfigs = [
-        { name: "DisputeManagerFacet", libs },
-        { name: "DisputeVerificationFacet", libs },
-        { name: "FraudProofFacet", libs },
-        { name: "DisputeFraudProofFacet", libs },
-        { name: "StateSnapshotFacet", libs },
-        { name: "JoinChannelFacet", libs },
-        { name: "MathConsumerFacet", libs }
+        { name: "DisputeManagerFacet" },
+        { name: "DisputeVerificationFacet" },
+        { name: "FraudProofFacet" },
+        { name: "DisputeFraudProofFacet" },
+        { name: "StateSnapshotFacet" },
+        { name: "JoinChannelFacet" },
+        { name: "UtilityFacet" },
+        { name: "MathConsumerFacet" }
     ] as const;
 
     // the generic are here in order to make the spread operator in mathSmcFactory.deploy work
@@ -126,8 +133,7 @@ export async function deployMathChannelProxyFixture(
 
     //Deploy MathStateChannelManager with all facet addresses
     const mathSmcFactory = await _ethers.getContractFactory(
-        "MathStateChannelManagerProxy",
-        { libraries: libs }
+        "MathStateChannelManagerProxy"
     );
     const mathStateChannelContactInstance = await mathSmcFactory.deploy(
         await mathContactInstance.getAddress(),
@@ -159,6 +165,14 @@ export function getMathP2pEventHooks(
     };
     return hooks;
 }
+export async function deployUtilityFacetTestContract(
+    _ethers: typeof ethers & HardhatEthersHelpers
+) {
+    const UtilityFacetFactory =
+        await _ethers.getContractFactory("UtilityFacet");
+    return await UtilityFacetFactory.deploy();
+}
+
 export async function getSigners(
     _ethers: typeof ethers & HardhatEthersHelpers
 ) {

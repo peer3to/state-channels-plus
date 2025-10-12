@@ -10,7 +10,14 @@ import {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
-import { ChannelId, Timestamp, Address, Hash, ForkId } from "@/types/types";
+import {
+    ChannelId,
+    Timestamp,
+    Address,
+    Hash,
+    ForkId,
+    Bytes
+} from "@/types/types";
 import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Codec, hash, Type } from "@/utils";
@@ -24,6 +31,25 @@ export class EventHandler {
         private p2pEventHooks: P2pEventHooks,
         private diamondStateMachine: ADiamondStateMachine
     ) {}
+
+    async onChannelOpened(
+        channelId: ChannelId,
+        stateSnapshot: StateSnapshotStruct,
+        encodedState: Bytes
+    ): Promise<void> {
+        this.diamondStateMachine.localDiamondContract.onChannelOpened(
+            channelId,
+            stateSnapshot,
+            encodedState
+        );
+
+        await this.stateManager.setGenesisState(
+            stateSnapshot.snapshotData,
+            encodedState,
+            stateSnapshot.forkId,
+            Number(stateSnapshot.timestamp)
+        );
+    }
 
     async onStateSnapshotUpdated(
         channelId: ChannelId,

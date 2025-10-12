@@ -62,6 +62,15 @@ uint deadlineTimestamp,
 ${BalanceEthersType} balance
 )`;
 
+export const OpenChannelEthersType = `tuple(
+bytes32 channelId,
+address[] participants,
+${BalanceEthersType}[] balances,
+uint deadlineTimestamp,
+bool isAtomic,
+bytes data
+)`;
+
 export const JoinChannelBlockEthersType = `tuple(
 bytes32 previousBlockHash,
 ${JoinChannelEthersType}[] joinChannels

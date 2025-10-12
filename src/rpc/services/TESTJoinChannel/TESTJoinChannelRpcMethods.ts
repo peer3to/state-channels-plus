@@ -9,17 +9,27 @@ class TESTJoinChannelRpcMethods extends ARpcMethods {
         this.service = service;
     }
 
-    public async onSignJoinChannelTEST(jcEncoded: string, jcSignature: string) {
+    public async onSignJoinChannelTEST(
+        _jcEncoded: string,
+        jcSignature: string
+    ) {
         console.log(`Opening channel`);
         try {
             const txResponse =
-                await this.p2pManager.stateManager.stateChannelManagerContract.openChannel(
-                    this.p2pManager.stateManager.getChannelId(),
-                    [
-                        this.p2pManager.p2pSigner.signedJc.encodedJoinChannel,
-                        jcEncoded
-                    ],
-                    [this.p2pManager.p2pSigner.signedJc.signature, jcSignature]
+                await this.p2pManager.stateManager.stateChannelManagerContract.joinChannel(
+                    {
+                        signedJoinChannel: {
+                            encodedJoinChannel:
+                                this.p2pManager.p2pSigner.signedJc
+                                    .encodedJoinChannel,
+                            signature:
+                                this.p2pManager.p2pSigner.signedJc.signature
+                        },
+                        signatures: [
+                            this.p2pManager.p2pSigner.signedJc.signature,
+                            jcSignature
+                        ]
+                    }
                 );
             console.log("OPEN - TX HASH ##", txResponse.hash);
             const txReceipt = await txResponse.wait();

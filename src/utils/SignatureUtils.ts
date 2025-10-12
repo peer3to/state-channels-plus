@@ -1,6 +1,7 @@
 import { Signer, verifyMessage, keccak256, getBytes } from "ethers";
 import {
     JoinChannelStruct,
+    OpenChannelStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -31,6 +32,15 @@ export class SignatureUtils {
         signer: Signer
     ): Promise<{ encoded: Bytes; signature: Signature }> {
         const encoded = Codec.encode(joinChannel, Type.JoinChannel);
+        const signature = await this.signMsg(encoded, signer);
+        return { encoded, signature };
+    }
+
+    public static async signOpenChannel(
+        openChannel: OpenChannelStruct,
+        signer: Signer
+    ): Promise<{ encoded: Bytes; signature: Signature }> {
+        const encoded = Codec.encode(openChannel, Type.OpenChannel);
         const signature = await this.signMsg(encoded, signer);
         return { encoded, signature };
     }
