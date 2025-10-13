@@ -170,8 +170,10 @@ export class PeerTestHarness<T extends AStateMachine> {
 
         const openChannel = createOpenChannelTestObject(
             this.peers.map((p) => p.address),
-            this.options.channelId,
-            this.options.initialBalance
+            {
+                channelId: this.options.channelId,
+                initialBalance: this.options.initialBalance
+            }
         );
 
         // Connect peers to the channel
@@ -200,7 +202,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             signatures: signatures
         });
 
-        await tx.wait();
+        await Promise.all([tx.wait(), sleep(1000)]);
     }
 
     async connectPeers(): Promise<void> {
