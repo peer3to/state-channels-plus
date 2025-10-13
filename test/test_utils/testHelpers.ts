@@ -13,6 +13,11 @@ import Clock from "@/Clock";
 import P2pEventHooks from "@/P2pEventHooks";
 import { hash } from "@/utils";
 
+export type TestObjectOptions = {
+    channelId?: string;
+    initialBalance?: number;
+};
+
 export const createJoinChannelTestObject = (
     address: AddressLike,
     channelId?: string
@@ -44,9 +49,9 @@ export const createJoinChannelTestObject = (
 
 export const createOpenChannelTestObject = (
     participants: AddressLike[],
-    channelId?: string,
-    amount?: number
+    options?: TestObjectOptions
 ): OpenChannelStruct => {
+    const { channelId, initialBalance } = options ?? {};
     let currentTime = 0;
     try {
         currentTime = Clock.getTimeInSeconds();
@@ -55,7 +60,7 @@ export const createOpenChannelTestObject = (
     }
 
     const balances = participants.map(() => ({
-        amount: amount === undefined ? 500 : amount,
+        amount: initialBalance === undefined ? 500 : initialBalance,
         data: "0x00"
     }));
 

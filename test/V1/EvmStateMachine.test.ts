@@ -1,6 +1,5 @@
 import { ethers } from "hardhat";
-import { BigNumberish } from "ethers";
-import { EvmStateMachine } from "@/evm";
+import { EvmStateMachine, P2pInstance } from "@/evm";
 import { expect } from "chai";
 
 import {
@@ -11,25 +10,41 @@ import {
 import P2pEventHooks from "@/P2pEventHooks";
 import { SignatureUtils } from "@/utils";
 import { Bytes } from "@/types/types";
-import { waitForP2PConnections, waitForStateSync } from "../utils/waitFor";
+import { waitForStateSync } from "../utils/waitFor";
 import { sleep } from "@test/fixtures/PeerTestHarness";
+import {
+    MathStateChannelManagerProxy,
+    MathStateMachine
+} from "@typechain-types/index";
+import { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import StateManager from "@/stateManager";
 
 describe("EvmStateMachine", function () {
-    it("EvmStateMachine - P2P simulation - success", async function () {
-        const signerOne = (await ethers.getSigners())[0];
-        const signerTwo = (await ethers.getSigners())[1];
+    // Only keep what we actually need to access later
+    let signerOne: HardhatEthersSigner, signerTwo: HardhatEthersSigner;
+    let p2pOne: P2pInstance<MathStateMachine>,
+        p2pTwo: P2pInstance<MathStateMachine>;
+    let mathscm: MathStateChannelManagerProxy;
+    let openChannel: OpenChannelStruct;
+    let stateManager1: StateManager, stateManager2: StateManager;
 
+    before(async function () {
+        // Get signers
+        signerOne = (await ethers.getSigners())[0];
+        signerTwo = (await ethers.getSigners())[1];
+
+        // Deploy contracts
         const math = await deployMathChannelProxyFixture(ethers);
-
         const mathSM = await ethers.getContractFactory("MathStateMachine");
         const mathsm = math.mathInstance;
+        mathscm = math.mathChannelManager;
 
-        const mathscm = math.mathChannelManager;
+        // Create deploy transaction
+        const deployTx = await mathSM.getDeployTransaction(500000);
 
-        //P2P setup;
-        const deployTx = await mathSM.getDeployTransaction(500000); // this deployes the contract locally
-
-        const p2pOne = await EvmStateMachine.p2pSetup(
+        // Setup P2P instances
+        p2pOne = await EvmStateMachine.p2pSetup(
             signerOne,
             deployTx,
             mathscm,
@@ -39,7 +54,7 @@ describe("EvmStateMachine", function () {
             } as unknown as P2pEventHooks
         );
 
-        const p2pTwo = await EvmStateMachine.p2pSetup(
+        p2pTwo = await EvmStateMachine.p2pSetup(
             signerTwo,
             deployTx,
             mathscm,
@@ -48,89 +63,58 @@ describe("EvmStateMachine", function () {
                 ...getMathP2pEventHooks(() => {}, await signerTwo.getAddress())
             } as unknown as P2pEventHooks
         );
-        const mathContractFirstPlayer = p2pOne.p2pContractInstance;
-        const mathContractSecondPlayer = p2pTwo.p2pContractInstance;
+        stateManager1 = p2pOne.p2pSigner.p2pManager.stateManager;
+        stateManager2 = p2pTwo.p2pSigner.p2pManager.stateManager;
 
-        mathContractFirstPlayer.on(
-            mathContractFirstPlayer.filters.Addition,
-            (a: BigNumberish, b: BigNumberish, sum: BigNumberish) => {
-                console.log(a, " + ", b, " = ", sum);
-            }
-        );
-        mathContractFirstPlayer.on(
-            mathContractFirstPlayer.filters.NextToPlay,
-            async (player) => {
-                console.log("Next to play ", player);
-                if (player === signerOne.address) {
-                    mathContractFirstPlayer.add(3);
-                }
-            }
-        );
-        mathContractSecondPlayer.on(
-            mathContractSecondPlayer.filters.Addition,
-            (a, b, sum) => {
-                console.log(a, " + ", b, " = ", sum);
-            }
-        );
-
-        mathContractSecondPlayer.on(
-            mathContractSecondPlayer.filters.NextToPlay,
-            async (player) => {
-                console.log("Next to play ", player);
-                if (player === signerTwo.address) {
-                    mathContractSecondPlayer.add(5);
-                }
-            }
-        );
-
-        //P2P disovery/matchamking (this is not done here - just the end result)
-        const openChannel = createOpenChannelTestObject([
+        // Create open channel object
+        openChannel = createOpenChannelTestObject([
             signerOne.address,
             signerTwo.address
         ]);
+    });
 
-        const openChannelSigned = await SignatureUtils.signOpenChannel(
-            openChannel,
-            signerOne
-        );
+    after(async function () {
+        // Cleanup
+        try {
+            await p2pOne.p2pSigner.p2pManager.stateManager.dispose();
+            await p2pTwo.p2pSigner.p2pManager.stateManager.dispose();
+            const { LocalDiscoveryServer } = await import(
+                "@/utils/LocalDiscoveryServer"
+            );
+            LocalDiscoveryServer.cleanup();
+        } catch (error) {
+            console.warn("Error during cleanup:", error);
+        }
+    });
 
-        console.log("Establishing connection");
+    it("EvmStateMachine - P2P simulation - success", async function () {
+        await Promise.all([
+            p2pOne.p2pSigner.connectToChannel(openChannel.channelId),
+            p2pTwo.p2pSigner.connectToChannel(openChannel.channelId)
+        ]);
 
-        p2pOne.p2pSigner.connectToChannel(openChannel.channelId);
-        await p2pTwo.p2pSigner.connectToChannel(openChannel.channelId);
-        console.log("Connection established");
-        //on-chain open the channel
-        const re = await mathscm.open({
-            encodedOpenChannel: openChannelSigned.encoded,
-            signatures: [
-                await SignatureUtils.signOpenChannel(
-                    openChannel,
-                    signerOne
-                ).then((s) => s.signature as Bytes),
-                await SignatureUtils.signOpenChannel(
-                    openChannel,
-                    signerTwo
-                ).then((s) => s.signature as Bytes)
-            ]
-        });
-        console.log(`Tx hash:${re.hash}`);
-        // Wait for P2P connections to be established
-        await waitForP2PConnections(p2pOne, p2pTwo, 500);
+        const signaturesOverOpenChannel = await Promise.all([
+            SignatureUtils.signOpenChannel(openChannel, signerOne),
+            SignatureUtils.signOpenChannel(openChannel, signerTwo)
+        ]);
+        const openChannelConfirmation = {
+            encodedOpenChannel: signaturesOverOpenChannel[0].encoded,
+            signatures: signaturesOverOpenChannel.map(
+                (s) => s.signature as Bytes
+            )
+        };
 
-        await sleep(50); // Give connections time to establish
+        // On-chain open the channel
+        const re = await mathscm.open(openChannelConfirmation);
+        // sleep needed in order to allow P2P connections to be established
+        await Promise.all([re.wait(), sleep(100)]);
 
-        // Wait for the ChannelOpened event handler to complete setting genesis state
-        await sleep(200);
+        await p2pOne.p2pContractInstance.add(3);
 
-        console.log("=== TESTING GAME LOGIC WITHOUT WORKAROUND ===");
-        console.log("About to call mathContractFirstPlayer.add(3)...");
-        await mathContractFirstPlayer.add(3);
-
-        const stateManager1 = p2pOne.p2pSigner.p2pManager.stateManager;
-        const stateManager2 = p2pTwo.p2pSigner.p2pManager.stateManager;
-
+        // Wait for state synchronization
         await waitForStateSync(stateManager1, stateManager2, 2000);
 
+        // Assertions
         expect(stateManager1.channelId).to.equal(
             stateManager2.channelId,
             "Peers should have matching channel IDs"
@@ -173,17 +157,5 @@ describe("EvmStateMachine", function () {
             nextHeight2,
             "Peer 1 and 2 should have the same next block height"
         );
-
-        // Cleanup
-        try {
-            await p2pOne.p2pSigner.p2pManager.stateManager.dispose();
-            await p2pTwo.p2pSigner.p2pManager.stateManager.dispose();
-            const { LocalDiscoveryServer } = await import(
-                "@/utils/LocalDiscoveryServer"
-            );
-            LocalDiscoveryServer.cleanup();
-        } catch (error) {
-            console.warn("Error during cleanup:", error);
-        }
     });
 });
