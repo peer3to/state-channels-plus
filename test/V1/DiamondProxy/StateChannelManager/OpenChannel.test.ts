@@ -295,10 +295,10 @@ describe("StateChannelManagerProxy", function () {
             // Create OpenChannel with amount 0
             const openChannelWithZeroBalance = createOpenChannelTestObject(
                 [firstSigner.address, secondSigner.address],
-                undefined,
-                0
+                {
+                    initialBalance: 0
+                }
             );
-            openChannelWithZeroBalance.balances[0].amount = 0;
 
             const res = await mathChannelManager.open({
                 encodedOpenChannel: await SignatureUtils.signOpenChannel(
