@@ -145,6 +145,48 @@ describe("ValidationService - Progressive Validation Tests", () => {
                         .called
                 ).to.be.true;
             });
+
+            it("should fail when timestamp is in the past (monotonic ordering)", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.TIMESTAMP_IN_PAST)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[ValidationFailure.TIMESTAMP_IN_PAST]
+                );
+                expect(
+                    mockSetup.mockStrategy.objectiveInvalidTimestampDetected
+                        .called
+                ).to.be.true;
+            });
+
+            it("should fail when timestamp is outside P2P time window", async () => {
+                const invalidBlock = BlockBuilder.create(mockSetup)
+                    .failWith(ValidationFailure.TIMESTAMP_OUTSIDE_P2P_WINDOW)
+                    .build();
+
+                const result =
+                    await validationService.validateBlockConfirmation(
+                        invalidBlock,
+                        mockSetup.mockStrategy
+                    );
+
+                expect(result).to.equal(
+                    EXPECTED_RESULTS[
+                        ValidationFailure.TIMESTAMP_OUTSIDE_P2P_WINDOW
+                    ]
+                );
+                expect(
+                    mockSetup.mockStrategy.objectiveInvalidTimestampDetected
+                        .called
+                ).to.be.true;
+            });
         });
 
         describe("Step 9: Leader Validation Failures", () => {
@@ -495,6 +537,8 @@ describe("ValidationService - Progressive Validation Tests", () => {
                 ValidationFailure.POSTED_ON_CHAIN_TOO_LATE,
                 ValidationFailure.OBJECTIVE_TIMESTAMP_TOO_LATE,
                 ValidationFailure.OBJECTIVE_TIMESTAMP_INVALID,
+                ValidationFailure.TIMESTAMP_IN_PAST,
+                ValidationFailure.TIMESTAMP_OUTSIDE_P2P_WINDOW,
 
                 // Step 9: Leader validation
                 ValidationFailure.WRONG_LEADER,
