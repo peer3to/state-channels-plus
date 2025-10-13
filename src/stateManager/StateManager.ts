@@ -1281,7 +1281,7 @@ class StateManager {
         }
 
         if (Number(tx.header.timestamp) <= previousTimestamp) {
-            tx.header.timestamp = BigInt(previousTimestamp + 1);
+            tx.header.timestamp = BigInt(previousTimestamp);
         }
     }
 
