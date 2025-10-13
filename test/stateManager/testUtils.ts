@@ -16,7 +16,6 @@ export const ValidationFailure = {
     // New timestamp validation failures for the split validation logic
     TIMESTAMP_IN_PAST: "TIMESTAMP_IN_PAST",
     TIMESTAMP_OUTSIDE_P2P_WINDOW: "TIMESTAMP_OUTSIDE_P2P_WINDOW",
-    CURRENT_TIMESTAMP_TOO_FAR_FUTURE: "CURRENT_TIMESTAMP_TOO_FAR_FUTURE",
 
     // Leader validation failures (step 9)
     WRONG_LEADER: "WRONG_LEADER",
@@ -315,11 +314,6 @@ export class BlockBuilder {
             case ValidationFailure.TIMESTAMP_OUTSIDE_P2P_WINDOW:
                 this.blockData.timestamp = 2000; // Way beyond p2pTime window (900 + 1000 = 1900)
                 this.blockData.currentTimestamp = 2000;
-                break;
-
-            case ValidationFailure.CURRENT_TIMESTAMP_TOO_FAR_FUTURE:
-                this.blockData.timestamp = 950; // Valid timestamp
-                this.blockData.currentTimestamp = 7000; // Way beyond max allowed time
                 break;
         }
     }
@@ -700,7 +694,5 @@ export const EXPECTED_RESULTS: Record<
         BlockValidationResult.NOT_ENOUGH_TIME,
     [ValidationFailure.TIMESTAMP_IN_PAST]: BlockValidationResult.DISPUTE,
     [ValidationFailure.TIMESTAMP_OUTSIDE_P2P_WINDOW]:
-        BlockValidationResult.DISPUTE,
-    [ValidationFailure.CURRENT_TIMESTAMP_TOO_FAR_FUTURE]:
         BlockValidationResult.DISPUTE
 };

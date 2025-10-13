@@ -273,24 +273,15 @@ export default class ValidationService {
         // OBJECTIVE: isValidTimestamp check
 
         // Check if block timestamp is not in the past
-        const isTimestampNotInPast =
+        const isTimestampInTheFuture =
             block.timestamp - previousOriginalTimestamp >= 0;
 
         // Check if block timestamp is within P2P time window
         const isWithinP2PTimeWindow =
             block.timestamp - previousTimestamp <= this.timeConfig.p2pTime;
 
-        // Check if current timestamp doesn't exceed maximum allowed time
-        const isWithinMaxAllowedTime =
-            block.currentTimestamp - previousTimestamp <=
-            this.timeConfig.p2pTime +
-                this.timeConfig.agreementTime +
-                this.timeConfig.chainFallbackTime;
-
         const isValidTimestamp =
-            isTimestampNotInPast &&
-            isWithinP2PTimeWindow &&
-            isWithinMaxAllowedTime;
+            isTimestampInTheFuture && isWithinP2PTimeWindow;
 
         if (!isValidTimestamp) {
             // if first block or previous block has on-chain timestamp -> we have all the data (best timestamp) -> safe to create a fraud proof
