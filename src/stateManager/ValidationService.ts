@@ -251,6 +251,7 @@ export default class ValidationService {
     ): Promise<BlockValidationResult> {
         // Calculate previousTimestamp
         let previousTimestamp: Timestamp;
+        let previousOriginalTimestamp: Timestamp;
         let previousBlock: Block | undefined;
         let previousStateSnapshot: StateSnapshot | undefined;
         // previous block or snapshot
@@ -262,15 +263,34 @@ export default class ValidationService {
             previousTimestamp = previousBlock.getRelevantTimestamp(
                 block.author
             );
+            previousOriginalTimestamp = previousBlock.timestamp;
         } else {
             previousStateSnapshot = previousBlockOrSnapshot.stateSnapshot;
             previousTimestamp = previousStateSnapshot!.timestamp;
+            previousOriginalTimestamp = previousStateSnapshot!.timestamp;
         }
 
         // OBJECTIVE: isValidTimestamp check
+
+        // Check if block timestamp is not in the past
+        const isTimestampNotInPast =
+            block.timestamp - previousOriginalTimestamp >= 0;
+
+        // Check if block timestamp is within P2P time window
+        const isWithinP2PTimeWindow =
+            block.timestamp - previousTimestamp <= this.timeConfig.p2pTime;
+
+        // Check if current timestamp doesn't exceed maximum allowed time
+        const isWithinMaxAllowedTime =
+            block.currentTimestamp - previousTimestamp <=
+            this.timeConfig.p2pTime +
+                this.timeConfig.agreementTime +
+                this.timeConfig.chainFallbackTime;
+
         const isValidTimestamp =
-            block.timestamp >= previousTimestamp &&
-            block.timestamp <= previousTimestamp + this.timeConfig.p2pTime;
+            isTimestampNotInPast &&
+            isWithinP2PTimeWindow &&
+            isWithinMaxAllowedTime;
 
         if (!isValidTimestamp) {
             // if first block or previous block has on-chain timestamp -> we have all the data (best timestamp) -> safe to create a fraud proof

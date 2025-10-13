@@ -13,6 +13,11 @@ export const ValidationFailure = {
     SUBJECTIVE_TIMESTAMP_INVALID: "SUBJECTIVE_TIMESTAMP_INVALID",
     POSTED_ON_CHAIN_TOO_LATE: "POSTED_ON_CHAIN_TOO_LATE",
 
+    // New timestamp validation failures for the split validation logic
+    TIMESTAMP_IN_PAST: "TIMESTAMP_IN_PAST",
+    TIMESTAMP_OUTSIDE_P2P_WINDOW: "TIMESTAMP_OUTSIDE_P2P_WINDOW",
+    CURRENT_TIMESTAMP_TOO_FAR_FUTURE: "CURRENT_TIMESTAMP_TOO_FAR_FUTURE",
+
     // Leader validation failures (step 9)
     WRONG_LEADER: "WRONG_LEADER",
 
@@ -87,11 +92,12 @@ export class BlockBuilder {
             previousBlockHash: "0xprevhash",
             hash: "0xblockhash",
             coordinates: { forkId: "0xfork123", height: 1 },
-            onChainTimestamp: undefined,
+            _onChainTimestamp: undefined,
             confirmationSignatures: new Set(["0xsig1", "0xsig2"]),
             confirmationSignerAddresses: new Set(["0xauthor123", "0xsigner1"]),
             signatureToAddress: sinon.stub().returns("0xsigner1"),
             getRelevantTimestamp: sinon.stub().returns(950),
+            currentTimestamp: 950,
             encode: sinon.stub().returns("0xencodedblock")
         };
     }
@@ -299,6 +305,21 @@ export class BlockBuilder {
                 this.mockSetup.mockStorage.blocks.getBlock
                     .withArgs("0xfork123", 0)
                     .returns(prevBlockWithOnChain);
+                break;
+
+            case ValidationFailure.TIMESTAMP_IN_PAST:
+                this.blockData.timestamp = 800; // Less than previousOriginalTimestamp (900)
+                this.blockData.currentTimestamp = 800;
+                break;
+
+            case ValidationFailure.TIMESTAMP_OUTSIDE_P2P_WINDOW:
+                this.blockData.timestamp = 2000; // Way beyond p2pTime window (900 + 1000 = 1900)
+                this.blockData.currentTimestamp = 2000;
+                break;
+
+            case ValidationFailure.CURRENT_TIMESTAMP_TOO_FAR_FUTURE:
+                this.blockData.timestamp = 950; // Valid timestamp
+                this.blockData.currentTimestamp = 7000; // Way beyond max allowed time
                 break;
         }
     }
@@ -676,5 +697,10 @@ export const EXPECTED_RESULTS: Record<
         BlockValidationResult.DISPUTE,
     [ValidationFailure.POSTED_ON_CHAIN_TOO_LATE]: BlockValidationResult.DISPUTE,
     [ValidationFailure.SUBJECTIVE_TIMESTAMP_INVALID]:
-        BlockValidationResult.NOT_ENOUGH_TIME
+        BlockValidationResult.NOT_ENOUGH_TIME,
+    [ValidationFailure.TIMESTAMP_IN_PAST]: BlockValidationResult.DISPUTE,
+    [ValidationFailure.TIMESTAMP_OUTSIDE_P2P_WINDOW]:
+        BlockValidationResult.DISPUTE,
+    [ValidationFailure.CURRENT_TIMESTAMP_TOO_FAR_FUTURE]:
+        BlockValidationResult.DISPUTE
 };
