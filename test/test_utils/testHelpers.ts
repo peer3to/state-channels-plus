@@ -52,7 +52,12 @@ export const createOpenChannelTestObject = (
     options?: TestObjectOptions
 ): OpenChannelStruct => {
     const { channelId, initialBalance } = options ?? {};
-    const currentTime = Clock.getTimeInSeconds();
+    let currentTime = 0;
+    try {
+        currentTime = Clock.getTimeInSeconds();
+    } catch (e) {
+        currentTime = Math.floor(Date.now() / 1000);
+    }
 
     const balances = participants.map(() => ({
         amount: initialBalance === undefined ? 500 : initialBalance,
