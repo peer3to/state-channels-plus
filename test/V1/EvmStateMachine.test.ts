@@ -106,9 +106,8 @@ describe("EvmStateMachine", function () {
 
         // On-chain open the channel
         const re = await mathscm.open(openChannelConfirmation);
-        // sleep needed in order to pass objective time validation
-        // without it the condition (block.timestamp >= previousTimestamp) sometime fails
-        await Promise.all([re.wait(), sleep(1000)]);
+        // sleep needed in order to allow P2P connections to be established
+        await Promise.all([re.wait(), sleep(100)]);
 
         await p2pOne.p2pContractInstance.add(3);
 

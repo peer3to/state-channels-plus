@@ -202,7 +202,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             signatures: signatures
         });
 
-        await Promise.all([tx.wait(), sleep(1000)]);
+        await Promise.all([tx.wait(), sleep(100)]);
     }
 
     async connectPeers(): Promise<void> {

@@ -1264,15 +1264,24 @@ class StateManager {
     private adjustTimestampIfNeeded(tx: TransactionStruct): void {
         const latestBlock = this.storage.blocks.getLatestBlock(this.forkId);
 
-        // If there are no blocks yet, no need to adjust timestamp
+        let previousTimestamp: Timestamp;
+
         if (!latestBlock) {
-            return;
+            // No blocks yet - check against genesis snapshot timestamp
+            const genesisSnapshot =
+                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                    this.forkId
+                );
+            if (!genesisSnapshot) {
+                return; // No genesis snapshot yet, nothing to adjust against
+            }
+            previousTimestamp = genesisSnapshot.timestamp;
+        } else {
+            previousTimestamp = latestBlock.timestamp;
         }
 
-        const latestBlockTimestamp = latestBlock.timestamp;
-
-        if (Number(tx.header.timestamp) < latestBlockTimestamp) {
-            tx.header.timestamp = latestBlockTimestamp + 1;
+        if (Number(tx.header.timestamp) <= previousTimestamp) {
+            tx.header.timestamp = BigInt(previousTimestamp + 1);
         }
     }
 
