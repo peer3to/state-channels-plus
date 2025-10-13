@@ -132,9 +132,9 @@ class P2pSigner implements Signer {
         return this.isLeader;
     }
 
-    public async connectToChannel(channelId: Bytes) {
+    public connectToChannel(channelId: Bytes) {
         this.setChannelId(channelId);
-        await this.p2pManager.tryOpenConnectionToChannel(channelId.toString());
+        return this.p2pManager.tryOpenConnectionToChannel(channelId.toString());
     }
 
     public disconnectFromPeers() {

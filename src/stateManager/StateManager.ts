@@ -390,7 +390,6 @@ class StateManager {
         genesisTimestamp: Timestamp,
         exitChannelBlock?: ExitChannelBlockStruct
     ): Promise<void> {
-        console.log("StateManager - SetState", forkId, genesisTimestamp);
         // generate and store genesis snapshot
         const _genesisSnapshot: StateSnapshotStruct = {
             forkId,
@@ -587,7 +586,6 @@ class StateManager {
         await this.mutex.lock();
 
         try {
-            console.log("Play Transaction", this.forkId);
             if (!this.validationService.isChannelOpen(this.forkId)) {
                 throw new Error("Channel not open");
             }
@@ -657,7 +655,6 @@ class StateManager {
         const participants = this.storage.getParticipants(block.coordinates);
 
         if (!block.didEveryoneSign(participants)) {
-            console.log("Posting calldata on chain!");
             this.p2pEventHooks.onPostingCalldata?.();
 
             this.stateChannelManagerContract
@@ -700,7 +697,6 @@ class StateManager {
                             sameForkData.exitChannelBlocks
                         );
                     await txResponse.wait();
-                    console.log("Successfully posted state snapshot");
                 } catch (error) {
                     if (isCustomEvmError(error)) {
                         console.error(
@@ -766,7 +762,6 @@ class StateManager {
                 const txResponse =
                     await this.stateChannelManagerContract.multicall(callData);
                 await txResponse.wait();
-                console.log("Successfully posted state snapshot");
             } catch (error) {
                 if (isCustomEvmError(error)) {
                     console.error(
@@ -840,9 +835,6 @@ class StateManager {
 
             // No relevant milestones found
             if (milestoneSnapshots.length === 0) {
-                console.log(
-                    "No relevant milestones found - state is already up to date"
-                );
                 return undefined;
             }
 
@@ -854,7 +846,6 @@ class StateManager {
                 latestSnapshot.blockHeight ===
                 currentOnChainSnapshot.blockHeight
             ) {
-                console.log("State is already up to date");
                 return undefined;
             }
 
@@ -1241,9 +1232,6 @@ class StateManager {
                 previousBlockProducer: participantAddress,
                 previousBlockProducerPostedCalldata: false
             });
-            console.log(
-                `Timeout dispute created for participant: ${participantAddress}`
-            );
         } else {
             // Schedule another timeout check after remaining delay
             scheduleTask(
@@ -1252,9 +1240,6 @@ class StateManager {
                         forkId,
                         blockHeight,
                         participantAddress
-                    );
-                    console.log(
-                        `Delayed timeout executed for participant: ${participantAddress}, delay: ${remainingDelay}s`
                     );
                 },
                 remainingDelay * 1000,
