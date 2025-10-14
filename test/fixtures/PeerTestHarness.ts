@@ -58,6 +58,11 @@ export interface HarnessOptions {
     configOverrides?: Partial<Config>; // Direct config overrides
 }
 
+export type SubmitTransactionOptions = {
+    waitForSync?: boolean;
+    waitForPeers?: number[];
+};
+
 /**
  * Main test harness for E2E peer-to-peer testing
  */
@@ -151,7 +156,8 @@ export class PeerTestHarness<T extends AStateMachine> {
             this.sharedDeployTx,
             this.channelManager,
             mathInstance,
-            hooks
+            hooks,
+            this.options.timeConfig // Pass timeConfig override for testing
         );
 
         this.peers.push({
@@ -165,7 +171,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         });
     }
 
-    async openChannel(): Promise<void> {
+    async openChannel(): Promise<ForkId> {
         await Clock.init(this.peers[0].signer.provider!);
 
         const openChannel = createOpenChannelTestObject(
@@ -203,6 +209,8 @@ export class PeerTestHarness<T extends AStateMachine> {
         });
 
         await Promise.all([tx.wait(), sleep(100)]);
+        this.activeForkId = this.peers[0].stateManager.forkId;
+        return this.activeForkId;
     }
 
     async connectPeers(): Promise<void> {
@@ -237,18 +245,25 @@ export class PeerTestHarness<T extends AStateMachine> {
     }
 
     async submitTransaction(
-        peerIndex: number,
-        txFn: (contract: T) => Promise<any>
+        peer: TestPeer<T>,
+        txFn: (contract: T) => Promise<any>,
+        options: SubmitTransactionOptions = { waitForSync: true }
     ): Promise<void> {
-        const peer = this.peers[peerIndex];
-        if (!peer) throw new Error(`Peer ${peerIndex} not found`);
-
         const result = await txFn(peer.p2pInstance.p2pContractInstance);
 
-        // Automatic state synchronization - wait for all peers to sync
-        await this.waitForSync();
+        if (options.waitForPeers && options.waitForPeers.length > 0) {
+            await this.waitForSpecificPeersSync(options.waitForPeers);
+        } else {
+            options.waitForSync && (await this.waitForSync());
+        }
 
         return result;
+    }
+    async submitNextTransaction(
+        txFn: (contract: T) => Promise<any>
+    ): Promise<void> {
+        const nextPeer = await this.getNextPeerToWrite();
+        await this.submitTransaction(nextPeer, txFn);
     }
 
     async waitForSync(timeout: number = 1500): Promise<void> {
@@ -287,6 +302,48 @@ export class PeerTestHarness<T extends AStateMachine> {
 
         throw new Error(
             `All ${this.peers.length} peers failed to synchronize within ${timeout}ms`
+        );
+    }
+
+    async waitForSpecificPeersSync(
+        peerIndices: number[],
+        timeout: number = 1500
+    ): Promise<void> {
+        if (peerIndices.length === 0) return;
+
+        const startTime = Date.now();
+        while (Date.now() - startTime < timeout) {
+            const forkId =
+                this.activeForkId || this.peers[0].stateManager.forkId;
+            const firstBlock =
+                this.peers[0].stateManager.storage.blocks.getLatestBlock(
+                    forkId
+                );
+
+            if (!firstBlock) {
+                await sleep(50);
+                continue;
+            }
+
+            // Check if all specified peers have the same block hash
+            let allSynced = true;
+            for (const peerIndex of peerIndices) {
+                const peerBlock =
+                    this.peers[
+                        peerIndex
+                    ].stateManager.storage.blocks.getLatestBlock(forkId);
+                if (!peerBlock || peerBlock.hash !== firstBlock.hash) {
+                    allSynced = false;
+                    break;
+                }
+            }
+
+            if (allSynced) return;
+            await sleep(50);
+        }
+
+        throw new Error(
+            `Peers at indices [${peerIndices.join(", ")}] failed to synchronize within ${timeout}ms`
         );
     }
 
@@ -354,7 +411,6 @@ export class PeerTestHarness<T extends AStateMachine> {
             throw new Error(
                 `Event ${eventName} spy not found for peer ${peerIndex}`
             );
-
         expect(spy.callCount).to.be.at.least(
             minTimes,
             `Event ${eventName} should have been called at least ${minTimes} times for peer ${peerIndex}`
@@ -447,10 +503,62 @@ export class PeerTestHarness<T extends AStateMachine> {
         );
     }
 
+    async getNextPeerToWrite(): Promise<TestPeer<T>> {
+        const nextAddress =
+            await this.peers[0].stateManager.diamondStateMachine.getNextToWrite();
+
+        const nextPeer = this.peers.find(
+            (peer) => peer.address === nextAddress
+        );
+        if (!nextPeer) {
+            throw new Error(`No peer found with address ${nextAddress}`);
+        }
+
+        return nextPeer;
+    }
+
     private log(...args: any[]): void {
         if (this.options?.debug) {
             console.log("[PeerTestHarness]", ...args);
         }
+    }
+
+    /**
+     * Simulates a peer becoming unresponsive by disconnecting it from P2P network
+     */
+    async simulatePeerTimeout(peerIndex: number): Promise<void> {
+        const peer = this.getPeer(peerIndex);
+
+        // Disconnect the peer from all P2P connections
+        const connections =
+            peer.p2pInstance.p2pSigner.p2pManager.openConnections;
+        for (const connection of connections) {
+            peer.p2pInstance.p2pSigner.p2pManager.disconnectConnection(
+                connection
+            );
+        }
+
+        this.log(`Peer ${peerIndex} disconnected to simulate timeout`);
+    }
+
+    /**
+     * Waits for a specific condition with timeout
+     */
+    async waitForCondition(
+        condition: () => boolean | Promise<boolean>,
+        timeoutMs: number = 10000,
+        pollIntervalMs: number = 100
+    ): Promise<boolean> {
+        const startTime = Date.now();
+
+        while (Date.now() - startTime < timeoutMs) {
+            if (await condition()) {
+                return true;
+            }
+            await sleep(pollIntervalMs);
+        }
+
+        return false;
     }
 }
 
