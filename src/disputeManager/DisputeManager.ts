@@ -217,6 +217,8 @@ class DisputeManager {
 
         this.stateChannelManagerContract.uploadDispute(disputeConfirmation);
 
+        this.p2pEventHooks.onInitiatingDispute?.();
+
         return { dispute, disputeConfirmation };
     }
 
