@@ -657,7 +657,11 @@ class StateManager {
         if (!block.didEveryoneSign(participants)) {
             this.p2pEventHooks.onPostingCalldata?.();
 
-            const maxTimestamp = Clock.getTimeInSeconds() + 2;
+            const maxTimestamp =
+                Clock.getTimeInSeconds() +
+                this.timeConfig.p2pTime +
+                this.timeConfig.agreementTime +
+                this.timeConfig.chainFallbackTime;
 
             this.stateChannelManagerContract
                 .postBlockCalldata(block.signedBlock, maxTimestamp)
