@@ -14,6 +14,7 @@ import { Address, ChannelId, ForkId, Hash, Timestamp } from "@/types/types";
 import FraudProofService from "./utils/FraudProofService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
 import StateManager from "./StateManager";
+import ATransport from "@/transport/ATransport";
 
 export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
@@ -29,7 +30,8 @@ export default class ValidationService {
 
     async validateBlockConfirmation(
         block: Block,
-        strategy: AValidationStrategy
+        strategy: AValidationStrategy,
+        senderTransport?: ATransport
     ): Promise<BlockValidationResult> {
         const forkId = block.forkId;
         const channelId = block.channelId;
@@ -44,6 +46,24 @@ export default class ValidationService {
         // Check if channel is open
         if (!this.isChannelOpen(this.stateManager.forkId)) {
             return await strategy.channelNotOpened(block);
+        }
+
+        // Check for fork mismatch - challenge peer to prove their fork
+        if (block.forkId !== this.stateManager.forkId && senderTransport) {
+            console.log(
+                `Fork mismatch: block fork=${block.forkId}, my fork=${this.stateManager.forkId}`
+            );
+
+            // Challenge peer to prove their fork
+            this.stateManager.p2pManager.localRpc.forkProofService.challengePeerFork(
+                senderTransport,
+                channelId,
+                block.forkId
+            );
+
+            // Queue the block - will process after sync if peer proves canonical fork
+            this.storage.queues.queueBlock(block);
+            return BlockValidationResult.NOT_READY;
         }
 
         //  Get participants
