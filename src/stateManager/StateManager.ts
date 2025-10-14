@@ -75,6 +75,7 @@ import BlockValidationStrategy from "./validationStrategy/BlockValidationStrateg
 import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidationStrategy";
 
 import { DEBUG_STATE_MANAGER } from "@/utils/config";
+import ATransport from "@/transport/ATransport";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 
 const NULL = "0x00";
@@ -462,7 +463,8 @@ class StateManager {
     public async onBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct,
         onChainTimestamp?: Timestamp,
-        validationStrategy?: AValidationStrategy
+        validationStrategy?: AValidationStrategy,
+        senderTransport?: ATransport
     ): Promise<boolean> {
         try {
             // the try/catch is to ensure that the mutex is unlocked in case of an error
@@ -496,7 +498,8 @@ class StateManager {
                 validationResult =
                     await this.validationService.validateBlockConfirmation(
                         block,
-                        strategy
+                        strategy,
+                        senderTransport
                     );
 
                 if (validationResult !== BlockValidationResult.SUCCESS) {
