@@ -657,8 +657,10 @@ class StateManager {
         if (!block.didEveryoneSign(participants)) {
             this.p2pEventHooks.onPostingCalldata?.();
 
+            const maxTimestamp = Clock.getTimeInSeconds() + 2;
+
             this.stateChannelManagerContract
-                .postBlockCalldata(block.signedBlock, Clock.getTimeInSeconds())
+                .postBlockCalldata(block.signedBlock, maxTimestamp)
                 .then((txResponse) => txResponse.wait())
                 .catch((error) => {
                     if (isCustomEvmError(error)) {
