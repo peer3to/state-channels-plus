@@ -67,6 +67,26 @@ export class EventHandler {
             channelId,
             stateSnapshot
         );
+
+        // Check if channel should be closed (0 participants remaining)
+        if (stateSnapshot.snapshotData.participants.length === 0) {
+            console.log(
+                `Channel ${channelId} has 0 participants remaining, closing channel`
+            );
+            await this.handleChannelClose(channelId);
+        }
+    }
+
+    private async handleChannelClose(channelId: ChannelId): Promise<void> {
+        console.log(`Handling channel close for ${channelId}`);
+
+        // Disconnect from all peers in this channel
+        this.stateManager.p2pManager.disconnectAll();
+
+        // Trigger channelclosed hook?
+        this.p2pEventHooks.onChannelClosed?.(channelId);
+
+        // Note: Storage cleanup happens on-chain via _clearStorage in StateSnapshotFacet
     }
 
     onBlockCalldataPosted(

@@ -112,7 +112,13 @@ export default class ValidationService {
     // ────────────────────── VALIDATION METHODS ─────────────────────
 
     isChannelOpen(forkId: ForkId): boolean {
-        return forkId !== ZeroHash;
+        // Match Solidity implementation: check participants.length > 0
+
+        const genesisSnapshot =
+            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
+        if (!genesisSnapshot) return false;
+
+        return genesisSnapshot.snapshotData.participants.length > 0;
     }
 
     private isLinked(block: Block): boolean {
