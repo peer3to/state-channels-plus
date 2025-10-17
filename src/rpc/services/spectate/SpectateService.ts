@@ -63,7 +63,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
         setTimeout(() => {
             if (!this.didRespond(transport)) this.abort();
-        }, this.p2pManager.stateManager.timeConfig.agreementTime);
+        }, this.p2pManager.stateManager.timeConfig.agreementTime * 1000);
     }
 
     /**
