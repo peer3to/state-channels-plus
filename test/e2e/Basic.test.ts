@@ -3,8 +3,8 @@ import { expect } from "chai";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { MathStateMachine } from "@typechain-types/index";
 
-describe("EvmStateMachine (Harness Version)", function () {
-    it("EvmStateMachine - P2P simulation - success (with harness)", async function () {
+describe("E2E: EvmStateMachine", function () {
+    it("EvmStateMachine - P2P simulation - success ", async function () {
         const harness = new PeerTestHarness<MathStateMachine>();
         await harness.setup(2, ethers, { debug: false });
         const forkId = await harness.openChannel();
