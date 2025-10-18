@@ -30,7 +30,7 @@ class ForkProofRpcMethods extends ARpcMethods {
         );
 
         // Send the proof back
-        (this.remoteRpc.forkProofService as any)
+        this.remoteRpc.forkProofService
             .onProveForkResponse(channelId, proof)
             .sendOne(this.senderTransport);
     }
