@@ -355,7 +355,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         for (const peer of this.peers) {
             try {
                 peer.contractInstance.removeAllListeners();
-                await peer.stateManager.dispose();
+                await peer.p2pInstance.dispose();
                 Object.values(peer.eventSpies).forEach((spy) =>
                     spy?.resetHistory()
                 );
