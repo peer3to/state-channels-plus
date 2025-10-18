@@ -48,7 +48,6 @@ import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 import {
     DebugProxy,
     Mutex,
-    scheduleTask,
     Codec,
     Type,
     hash,
@@ -76,6 +75,7 @@ import BlockValidationStrategy from "./validationStrategy/BlockValidationStrateg
 import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidationStrategy";
 
 import { DEBUG_STATE_MANAGER } from "@/utils/config";
+import { TimeoutManager } from "@/utils/TimeoutManager";
 
 const NULL = "0x00";
 class StateManager {
@@ -103,6 +103,7 @@ class StateManager {
     eventHandler: EventHandler;
     reductionTriggerMap: Map<ForkId, ReductionTimeoutHandle> = new Map();
     status: Status = Status.SPECTATING;
+    timeoutManager: TimeoutManager;
 
     constructor(
         signer: ethers.Signer,
@@ -170,10 +171,18 @@ class StateManager {
             this.storage,
             this.p2pManager
         );
+        this.timeoutManager = new TimeoutManager();
     }
     //Mark resources for garbage collection
     public async dispose() {
         this.isDisposed = true;
+        // Cancel all scheduled tasks
+        this.timeoutManager.dispose();
+        // Clear reduction timeouts
+        for (const [_, reductionHandle] of this.reductionTriggerMap) {
+            clearTimeout(reductionHandle.handle);
+        }
+        this.reductionTriggerMap.clear();
         this.stateChannelEventListener.dispose();
         await this.p2pManager.dispose();
     }
@@ -419,7 +428,7 @@ class StateManager {
             this.storage.blocks.getNextBlockHeight(forkId);
         let timeLost = Clock.getTimeInSeconds() - genesisTimestamp;
         timeLost = timeLost < 0 ? 0 : timeLost; // if genesisTimestamp is in the future - no time is lost
-        scheduleTask(
+        this.timeoutManager.scheduleTask(
             () =>
                 this.tryTimeoutParticipant(
                     forkId,
@@ -431,7 +440,11 @@ class StateManager {
         );
 
         // arrow function preserves "this", which is the StateManager instance
-        scheduleTask(() => this.tryExecuteFromQueue(), 0, "queueProcessing");
+        this.timeoutManager.scheduleTask(
+            () => this.tryExecuteFromQueue(),
+            0,
+            "queueProcessing"
+        );
     }
 
     // Passes the signedBlock through a verification pipeline and returns shouldDisconnect flag
@@ -654,11 +667,24 @@ class StateManager {
         // If not everyone has signed, do the on-chain post
         const participants = this.storage.getParticipants(block.coordinates);
 
+        const previousBlockOrGenesis = this.storage.getPreviousBlockOrSnapshot(
+            block.coordinates
+        );
+        const previousRelevantTimestamp = previousBlockOrGenesis.block
+            ? previousBlockOrGenesis.block.getRelevantTimestamp(block.author)
+            : previousBlockOrGenesis.stateSnapshot!.timestamp;
+
         if (!block.didEveryoneSign(participants)) {
             this.p2pEventHooks.onPostingCalldata?.();
 
+            const maxTimestamp =
+                previousRelevantTimestamp +
+                this.timeConfig.p2pTime +
+                this.timeConfig.agreementTime +
+                this.timeConfig.chainFallbackTime;
+
             this.stateChannelManagerContract
-                .postBlockCalldata(block.signedBlock, Clock.getTimeInSeconds())
+                .postBlockCalldata(block.signedBlock, maxTimestamp)
                 .then((txResponse) => txResponse.wait())
                 .catch((error) => {
                     if (isCustomEvmError(error)) {
@@ -1234,7 +1260,7 @@ class StateManager {
             });
         } else {
             // Schedule another timeout check after remaining delay
-            scheduleTask(
+            this.timeoutManager.scheduleTask(
                 async () => {
                     await this.tryTimeoutParticipant(
                         forkId,
@@ -1443,15 +1469,17 @@ class StateManager {
 
         // step 10 - maybe post block on chain
         if (block.author === this.signerAddress) {
-            scheduleTask(
-                () => this.maybePostBlockOnChain(block),
+            this.timeoutManager.scheduleTask(
+                () => {
+                    this.maybePostBlockOnChain(block);
+                },
                 this.timeConfig.agreementTime * 1000,
                 "maybePostBlockOnChain"
             );
         }
 
         // step 11 - schedule a timeout check for the next participant
-        scheduleTask(
+        this.timeoutManager.scheduleTask(
             () =>
                 this.tryTimeoutParticipant(
                     block.forkId,
@@ -1462,7 +1490,11 @@ class StateManager {
             "participantTimeout"
         );
         // step 12 - try execute from queue
-        scheduleTask(() => this.tryExecuteFromQueue(), 0, "queueProcessing");
+        this.timeoutManager.scheduleTask(
+            () => this.tryExecuteFromQueue(),
+            0,
+            "queueProcessing"
+        );
     }
 
     private async shouldSignBlock(block: Block): Promise<boolean> {
@@ -1490,7 +1522,7 @@ class StateManager {
             return;
         }
 
-        scheduleTask(
+        this.timeoutManager.scheduleTask(
             () => {
                 if (this.agreementManager.didEveryoneSignBlock(block)) {
                     // Update the snapshot with the BlockConfirmation proving the latest state to exit on-chain

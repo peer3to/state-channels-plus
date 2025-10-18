@@ -14,7 +14,6 @@ class Holepunch {
     connectionCount = 0;
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
-        console.log("Holepunch - constructor");
         const setup = () => {
             // console.log("Holepunch - setup - swarm", this.swarm);
             this.swarm.removeAllListeners(["connection"]); // since hyperwarm is injected into the runtime, creating a new Holepunch object still holds the same refrence to hyperwarm
@@ -46,7 +45,6 @@ class Holepunch {
             };
             HolepunchRelay.init(relayerUrls, relayerUpdateCallback);
         } else {
-            console.log("default.Hyperswarm");
             // @ts-ignore
             this.swarm = global.Hyperswarm || new Hyperswarm();
             setup();

@@ -28,7 +28,6 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
 
     //Called locally to initiate the handshake
     public initHandshake(transport: ATransport) {
-        console.log("initHandshake !");
         const randomChallengeHash = ethers.keccak256(ethers.randomBytes(32));
         const time = Clock.getTimeInSeconds();
         this.setChallenge(transport, { randomChallengeHash, initTime: time });
