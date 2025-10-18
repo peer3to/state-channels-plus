@@ -4,9 +4,9 @@ import ATransport from "@/transport/ATransport";
 import P2PManager from "@/P2PManager";
 import SpectateService, { SyncPayload } from "../spectate/SpectateService";
 import ARpcMethods from "@/rpc/ARpcMethods";
-import { StateSnapshot } from "@/models";
+import ForkProofRpcMethods from "./ForkProofRpcMethods";
 
-class ForkProofService extends ARpcService<ARpcMethods> {
+class ForkProofService extends ARpcService<ForkProofRpcMethods> {
     forkProofInitTimes: WeakMap<
         ATransport,
         { time: number; myForkId: ForkId; peerForkId: ForkId }
@@ -23,9 +23,7 @@ class ForkProofService extends ARpcService<ARpcMethods> {
     }
 
     public createRPCMethods(transport: ATransport) {
-        const ForkProofRpcMethodsClass =
-            require("./ForkProofRpcMethods").default;
-        return new ForkProofRpcMethodsClass(transport, this);
+        return new ForkProofRpcMethods(transport, this);
     }
 
     /**
@@ -107,7 +105,7 @@ class ForkProofService extends ARpcService<ARpcMethods> {
         // Store the init time and fork IDs for verification
         this.forkProofInitTimes.set(transport, { time, myForkId, peerForkId });
 
-        (this.remoteRpc.forkProofService as any)
+        this.remoteRpc.forkProofService
             .onProveForkRequest(channelId, peerForkId, time)
             .sendOne(transport);
 
