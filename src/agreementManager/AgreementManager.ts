@@ -368,14 +368,29 @@ class AgreementManager {
         reducedOutput: ReduceOutputStruct
     ): Promise<ReduceData> {
         // reducedOutput latestStateSnapshot
-        const reducedLatestStateSnapshot =
-            this.storage.stateSnapshots.getStateSnapshotByHash(
-                reducedOutput.latestBlock.stateSnapshotHash // TODO - latestBlock may not exist -> genesis
+        let reducedLatestStateSnapshot: StateSnapshot;
+        if (!reducedOutput.latestBlock) {
+            // Genesis state case - use the genesis snapshot for this fork
+            const genesisSnapshot =
+                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                    forkId
+                );
+            if (!genesisSnapshot) {
+                throw new Error(`No genesis snapshot found for fork ${forkId}`);
+            }
+            reducedLatestStateSnapshot = genesisSnapshot;
+        } else {
+            // Normal case - use the block's state snapshot
+            const snapshot = this.storage.stateSnapshots.getStateSnapshotByHash(
+                reducedOutput.latestBlock.stateSnapshotHash
             );
-        if (!reducedLatestStateSnapshot)
-            throw new Error(
-                "Missing latestStateSnapshot for reducedOutput in storage for syncing"
-            );
+            if (!snapshot) {
+                throw new Error(
+                    "Missing latestStateSnapshot for reducedOutput in storage for syncing"
+                );
+            }
+            reducedLatestStateSnapshot = snapshot;
+        }
 
         // Get the corresponding stateMachineState
         const reducedLatestEncodedStateMachineState =
