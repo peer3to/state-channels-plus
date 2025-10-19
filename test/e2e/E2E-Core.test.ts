@@ -218,7 +218,80 @@ describe("E2E: Core Functionality", function () {
         // Arrange: Setup 3 participants with initial balances, open channel, configure short timeout
         // Act: disconnect author peer, just when it is their turn to write
         // Assert: timeout dispute is created and submitted on-chain
-        it("should handle timeout when author peer disconnects");
+        it("should handle timeout when author peer disconnects", async function () {
+            // Arrange - Setup with 3 participants and short timeout for fast testing
+            const harness = new PeerTestHarness<MathStateMachine>();
+            await harness.setup(3, ethers, {
+                debug: true, // Enable debug logging
+                timeConfig: {
+                    p2pTime: 1,
+                    agreementTime: 1,
+                    chainFallbackTime: 1
+                    // Total timeout: 3 seconds
+                }
+            });
+            await harness.openChannel();
+
+            // Make 3 transactions to establish normal operation
+
+            await harness.submitNextTransaction((contract) => contract.add(1)); // peer 0
+            await harness.submitNextTransaction((contract) => contract.add(2)); // peer 1
+            await harness.submitNextTransaction((contract) => contract.add(3)); // peer 2
+
+            // Reset spies after setup
+            harness.resetEventSpies();
+
+            // Act
+            // Now it should be peer 0's turn again - let them create a block first
+            const nextPeer = await harness.getNextPeerToWrite();
+
+            // Disconnect peer 1 (the author peer who should write next) so they can't create a block
+
+            await harness.simulatePeerTimeout(1);
+
+            // Let peer 0 create a block (this will schedule timeout for the next participant)
+            await harness.submitTransaction(
+                nextPeer,
+                (contract) => contract.add(100),
+                { waitForPeers: [0, 2] }
+            );
+
+            // Wait for timeout dispute to be created and submitted on-chain
+            // The remaining peers (0 and 2) should detect the timeout and create a dispute
+
+            const disputeCreated = await harness.waitForCondition(
+                () => {
+                    // Check if any of the remaining peers initiated a dispute
+                    const peer0DisputeCount = harness.getEventCallCount(
+                        0,
+                        "onInitiatingDispute"
+                    );
+                    const peer2DisputeCount = harness.getEventCallCount(
+                        2,
+                        "onInitiatingDispute"
+                    );
+
+                    return peer0DisputeCount > 0 || peer2DisputeCount > 0;
+                },
+                50000 // Wait up to 5 seconds for dispute creation
+            );
+
+            // Assert - A timeout dispute should be created by one of the remaining peers
+            expect(disputeCreated).to.be.true;
+
+            // Verify that at least one peer initiated a dispute
+            const totalDisputeCount =
+                harness.getEventCallCount(0, "onInitiatingDispute") +
+                harness.getEventCallCount(2, "onInitiatingDispute");
+            expect(totalDisputeCount).to.be.at.least(1);
+
+            // Verify that the disconnected peer (peer 1) did not initiate any disputes
+            expect(
+                harness.getEventCallCount(1, "onInitiatingDispute")
+            ).to.equal(0);
+
+            await harness.cleanup();
+        });
 
         // Future test for dispute resolution
         it("should create timeout dispute for non-responsive participant");
