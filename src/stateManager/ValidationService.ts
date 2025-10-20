@@ -85,7 +85,7 @@ export default class ValidationService {
         }
 
         if (await this.isDisputedFork(block.forkId, channelId)) {
-            return await strategy.blockForkIsDisputed(block);
+            return await strategy.blockForkIsDisputed(block, senderTransport);
         }
 
         // isNext

@@ -6,6 +6,7 @@ import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
 import P2PManager from "@/P2PManager";
 import DisputeManager from "@/disputeManager";
+import ATransport from "@/transport/ATransport";
 
 export default class BlockValidationStrategy extends AValidationStrategy {
     private readonly fraudProofService: FraudProofService;
@@ -114,9 +115,19 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISCONNECT;
     }
     public async blockForkIsDisputed(
-        block: Block
+        block: Block,
+        senderTransport?: ATransport
     ): Promise<BlockValidationResult> {
-        // not ready
+        // If we have a sender transport, initiate dispute handshake
+        if (senderTransport) {
+            this.p2pManager.localRpc.isForkDisputedService.initiateIsForkDisputedHandshake(
+                senderTransport,
+                block.channelId,
+                block.forkId
+            );
+        }
+
+        // Queue the block - will process after handshake if peer acknowledges dispute
         this.storage.queues.queueBlock(block);
         return BlockValidationResult.NOT_READY;
     }
