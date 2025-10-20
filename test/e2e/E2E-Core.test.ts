@@ -226,8 +226,7 @@ describe("E2E: Core Functionality", function () {
                 timeConfig: {
                     p2pTime: 1,
                     agreementTime: 1,
-                    chainFallbackTime: 1
-                    // Total timeout: 3 seconds
+                    chainFallbackTime: 3
                 }
             });
             await harness.openChannel();
