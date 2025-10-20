@@ -79,7 +79,6 @@ contract StateSnapshotFacet is StateChannelCommon {
 
         // Check if channel should be closed (0 participants remaining)
         if (newSnapshot.snapshotData.participants.length == 0) {
-            emit ChannelClosed(channelId);
             // Clear storage when channel is closed (0 participants)
             _clearStorage(channelId, newSnapshot.snapshotData.latestJoinChannelBlockHash);
             // Clear the state snapshot
