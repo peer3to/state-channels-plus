@@ -48,17 +48,18 @@ export default class ValidationService {
             return await strategy.channelNotOpened(block);
         }
 
-        // Check for fork mismatch - challenge peer to prove their fork
+        // Check for fork mismatch - request state proof from peer to prove their state at a specific block height
         if (block.forkId !== this.stateManager.forkId && senderTransport) {
             console.log(
                 `Fork mismatch: block fork=${block.forkId}, my fork=${this.stateManager.forkId}`
             );
 
-            // Challenge peer to prove their state
+            // Request state proof from peer to prove their state at a specific block height
             this.stateManager.p2pManager.localRpc.stateProofService.requestStateProof(
                 senderTransport,
                 channelId,
-                block.forkId
+                block.forkId,
+                block.coordinates.height
             );
 
             // Queue the block - will process after sync if peer proves canonical fork

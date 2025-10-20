@@ -1,7 +1,7 @@
 import ARpcMethods from "@/rpc/ARpcMethods";
 import { ATransport } from "@/transport";
 import StateProofService from "./StateProofService";
-import { ChannelId, ForkId, Timestamp } from "@/types/types";
+import { ChannelId, ForkId, Timestamp, BlockHeight } from "@/types/types";
 import { SyncPayload } from "../spectate/SpectateService";
 
 class StateProofRpcMethods extends ARpcMethods {
@@ -18,11 +18,16 @@ class StateProofRpcMethods extends ARpcMethods {
     public async onProveStateRequest(
         channelId: ChannelId,
         challengedForkId: ForkId,
+        blockHeight: BlockHeight,
         time: Timestamp
     ) {
         console.log(`Received state proof request on channel ${channelId}`);
 
-        const proof = await this.service.generateStateProofPayload(channelId);
+        const proof = await this.service.generateStateProofPayload(
+            channelId,
+            challengedForkId,
+            blockHeight
+        );
 
         const ourForkId = this.p2pManager.stateManager.forkId;
         console.log(
