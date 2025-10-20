@@ -4,10 +4,10 @@ import ATransport from "@/transport/ATransport";
 import P2PManager from "@/P2PManager";
 import SpectateService, { SyncPayload } from "../spectate/SpectateService";
 import ARpcMethods from "@/rpc/ARpcMethods";
-import ForkProofRpcMethods from "./ForkProofRpcMethods";
+import StateProofRpcMethods from "./StateProofRpcMethods";
 
-class ForkProofService extends ARpcService<ForkProofRpcMethods> {
-    forkProofInitTimes: WeakMap<
+class StateProofService extends ARpcService<StateProofRpcMethods> {
+    stateProofInitTimes: WeakMap<
         ATransport,
         { time: number; myForkId: ForkId; peerForkId: ForkId }
     > = new WeakMap<
@@ -22,8 +22,8 @@ class ForkProofService extends ARpcService<ForkProofRpcMethods> {
         this.spectateService = spectateService;
     }
 
-    public createRPCMethods(transport: ATransport) {
-        return new ForkProofRpcMethods(transport, this);
+    public createRPCMethods(transport: ATransport): StateProofRpcMethods {
+        return new StateProofRpcMethods(transport, this);
     }
 
     /**
@@ -93,7 +93,7 @@ class ForkProofService extends ARpcService<ForkProofRpcMethods> {
      * @param channelId The channel ID
      * @param peerForkId The peer's fork ID (from the block they sent)
      */
-    public challengePeerFork(
+    public requestStateProof(
         transport: ATransport,
         channelId: ChannelId,
         peerForkId: ForkId
@@ -103,20 +103,20 @@ class ForkProofService extends ARpcService<ForkProofRpcMethods> {
         const myForkId = this.p2pManager.stateManager.forkId;
 
         // Store the init time and fork IDs for verification
-        this.forkProofInitTimes.set(transport, { time, myForkId, peerForkId });
+        this.stateProofInitTimes.set(transport, { time, myForkId, peerForkId });
 
-        this.remoteRpc.forkProofService
-            .onProveForkRequest(channelId, peerForkId, time)
+        this.remoteRpc.stateProofService
+            .onProveStateRequest(channelId, peerForkId, time)
             .sendOne(transport);
 
         // Timeout if they don't respond
         setTimeout(() => {
-            if (this.forkProofInitTimes.has(transport)) {
+            if (this.stateProofInitTimes.has(transport)) {
                 console.log(
                     `Peer failed to prove fork ${peerForkId}, disconnecting`
                 );
                 this.p2pManager.disconnectAndBlacklistPeer(transport);
-                this.forkProofInitTimes.delete(transport);
+                this.stateProofInitTimes.delete(transport);
             }
         }, this.p2pManager.stateManager.timeConfig.agreementTime * 1000);
     }
@@ -124,7 +124,7 @@ class ForkProofService extends ARpcService<ForkProofRpcMethods> {
     /**
      * Generate sync payload for our current fork (reuses spectate logic)
      */
-    public async generateForkProofPayload(
+    public async generateStateProofPayload(
         channelId: ChannelId
     ): Promise<SyncPayload> {
         return await this.spectateService.generateSyncPayload(channelId);
@@ -133,7 +133,7 @@ class ForkProofService extends ARpcService<ForkProofRpcMethods> {
     /**
      * Verify that the provided proof is for the challenged fork and is valid
      */
-    public async verifyPeerForkProof(
+    public async verifyPeerStateProof(
         channelId: ChannelId,
         syncPayload: SyncPayload,
         expectedPeerForkId: ForkId
@@ -163,8 +163,8 @@ class ForkProofService extends ARpcService<ForkProofRpcMethods> {
     }
 
     public didRespond(transport: ATransport): boolean {
-        return !this.forkProofInitTimes.has(transport);
+        return !this.stateProofInitTimes.has(transport);
     }
 }
 
-export default ForkProofService;
+export default StateProofService;

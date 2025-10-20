@@ -54,8 +54,8 @@ export default class ValidationService {
                 `Fork mismatch: block fork=${block.forkId}, my fork=${this.stateManager.forkId}`
             );
 
-            // Challenge peer to prove their fork
-            this.stateManager.p2pManager.localRpc.forkProofService.challengePeerFork(
+            // Challenge peer to prove their state
+            this.stateManager.p2pManager.localRpc.stateProofService.requestStateProof(
                 senderTransport,
                 channelId,
                 block.forkId

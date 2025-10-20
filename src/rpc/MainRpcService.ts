@@ -11,7 +11,7 @@ import {
     StateTransitionService,
     WebRTCSetupService,
     SpectateService,
-    ForkProofService,
+    StateProofService,
     JoinChannelService,
     TESTJoinChannelService
 } from "./services";
@@ -36,7 +36,7 @@ class MainRpcService {
     dhtDiscoveryService: DHTDiscoveryService;
     joinChannelService: JoinChannelService;
     spectateService: SpectateService;
-    forkProofService: ForkProofService;
+    stateProofService: StateProofService;
 
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
@@ -47,7 +47,7 @@ class MainRpcService {
             this.p2pManager
         );
         this.spectateService = new SpectateService(this.p2pManager);
-        this.forkProofService = new ForkProofService(
+        this.stateProofService = new StateProofService(
             this.p2pManager,
             this.spectateService
         );
