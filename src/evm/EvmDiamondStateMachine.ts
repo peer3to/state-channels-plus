@@ -7,7 +7,7 @@ import {
 } from "@typechain-types";
 import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
-import StateManager from "@/stateManager";
+import StateManager from "../stateManager/StateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
 import { ExitChannelEthersType, BalanceEthersType } from "@/types/ethers";

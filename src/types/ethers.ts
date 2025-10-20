@@ -99,7 +99,7 @@ bytes participantSignatureOnPreviousBlock
 )`;
 
 export const DisputeAuditingDataEthersType = `tuple(
-${StateSnapshotEthersType} genesisStateSnapshot,
+${SnapshotDataEthersType} genesisStateSnapshotData,
 ${StateSnapshotEthersType} latestStateSnapshot,
 ${StateSnapshotEthersType}[] milestoneSnapshots,
 bytes latestStateStateMachineState,

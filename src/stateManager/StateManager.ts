@@ -195,6 +195,7 @@ class StateManager {
     public setChannelId(channelId: ChannelId) {
         this.channelId = channelId;
         this.stateChannelEventListener.setChannelId(channelId);
+        this.disputeManager.setChannelId(channelId);
     }
     public getChannelId(): ChannelId {
         return this.channelId;
@@ -1131,15 +1132,7 @@ class StateManager {
 
         // Get the block entry - if it doesn't exist (can happen ONLY from setState), skip timeout
         const block = this.storage.blocks.getBlock(forkId, blockHeight);
-        if (!block) {
-            return;
-        }
-
-        // If I already signed or block has already onChainTimestamp, no timeout needed
-        if (
-            block.didISign(this.signerAddress) ||
-            block.onChainTimestamp !== undefined
-        ) {
+        if (block && block.didISign(this.signerAddress)) {
             return;
         }
 
@@ -1163,16 +1156,19 @@ class StateManager {
         }
 
         // Validate the on-chain commitment is legitimate
-        const isValidCommitment = await this.validateBlockCommitment(
-            block,
-            commitmentResponse.blockCalldataCommitment,
-            participantAddress
-        );
+        // TODO, we dont have a block in storage to validate the commitment against.
+        // what we want to do is to the the block from the calldata and run it through the block validation pipeline
+        // after which, if the block can be found in storage , then it was good and we don't timeout, oterwose => force t
+        // const isValidCommitment = await this.validateBlockCommitment(
+        //     block,
+        //     commitmentResponse.blockCalldataCommitment,
+        //     participantAddress
+        // );
 
-        if (!isValidCommitment) {
-            // Invalid commitment - force timeout
-            // TODO
-        }
+        // if (!isValidCommitment) {
+        //     // Invalid commitment - force timeout
+        //     // TODO
+        // }
     }
 
     private async validateBlockCommitment(
@@ -1252,8 +1248,8 @@ class StateManager {
 
         if (remainingDelay <= 0) {
             // Time has fully elapsed - create dispute immediately
-            this.disputeManager.createDispute(forkId, false, {
-                blockHeightToTimeout: blockHeight + 1,
+            await this.disputeManager.createDispute(forkId, false, {
+                blockHeightToTimeout: blockHeight,
                 isForced: false,
                 previousBlockProducer: participantAddress,
                 previousBlockProducerPostedCalldata: false
@@ -1483,7 +1479,7 @@ class StateManager {
             () =>
                 this.tryTimeoutParticipant(
                     block.forkId,
-                    block.height,
+                    block.height + 1, // Check for the next block that the participant should create
                     nextToWrite
                 ),
             this.getTimeoutWaitTimeSeconds() * 1000,
