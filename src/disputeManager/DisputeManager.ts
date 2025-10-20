@@ -13,7 +13,8 @@ import {
     intersection,
     Codec,
     Type,
-    SignatureUtils
+    SignatureUtils,
+    makeContractCallOrThrow
 } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import { Address, Bytes, ChannelId, ForkId, Signature } from "../types/types";
@@ -27,6 +28,7 @@ import {
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
 import { DEBUG_DISPUTE_HANDLER } from "@/utils/config";
+import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 type TimeoutOptions = {
     // This is enough and the rest is deducted from storage/state
@@ -136,10 +138,22 @@ class DisputeManager {
                 await this.diamondStateMachine.peekNextToWrite(
                     latestStateMachineState
                 );
+            const [p2pTime, agreementTime, chainFallbackTime] = (
+                await Promise.all([
+                    this.diamondStateMachine.localDiamondContract.getP2pTime(),
+                    this.diamondStateMachine.localDiamondContract.getAgreementTime(),
+                    this.diamondStateMachine.localDiamondContract.getChainFallbackTime()
+                ])
+            ).map(Number);
+
             timeoutStruct = {
                 participant: participantToTimeout,
                 blockHeight: timeoutOptions.blockHeightToTimeout,
-                minTimeStamp: Clock.getTimeInSeconds(), // we're here since some higher level logic decided it want to timeout based on our own subjective clock
+                minTimeStamp:
+                    Clock.getTimeInSeconds() +
+                    p2pTime +
+                    agreementTime +
+                    chainFallbackTime,
                 isForced: timeoutOptions.isForced || false,
                 previousBlockProducer:
                     timeoutOptions.previousBlockProducer || ethers.ZeroAddress,
@@ -181,13 +195,20 @@ class DisputeManager {
         };
 
         // generateDisputeOutputState
-        const outputSnapshotData =
-            await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
+        const result = await makeContractCallOrThrow(
+            this.stateChannelManagerContract,
+            "computeDisputeOutputSnapshotData",
+            [
                 disputeInput,
                 latestStateSnapshot.toStruct(),
                 latestStateMachineState,
-                auditingData.genesisStateSnapshotData.latestJoinChannelBlockHash // latestJoinChannelBlockHash
-            );
+                auditingData.genesisStateSnapshotData.latestJoinChannelBlockHash
+            ]
+        );
+
+        const outputSnapshotData: SnapshotDataStruct = result[0];
+        // slashes = result[1]; // address[]
+
         const outputSnapshotDataHash = hash(
             Codec.encode(outputSnapshotData, Type.SnapshotData)
         );
