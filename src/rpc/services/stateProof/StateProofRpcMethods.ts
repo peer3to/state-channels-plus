@@ -2,7 +2,7 @@ import ARpcMethods from "@/rpc/ARpcMethods";
 import { ATransport } from "@/transport";
 import StateProofService from "./StateProofService";
 import { ChannelId, ForkId, Timestamp, BlockHeight } from "@/types/types";
-import { SyncPayload } from "../spectate/SpectateService";
+import { StateProofPayload } from "./StateProofService";
 
 class StateProofRpcMethods extends ARpcMethods {
     service: StateProofService;
@@ -13,7 +13,7 @@ class StateProofRpcMethods extends ARpcMethods {
     }
 
     /**
-     * Peer receives challenge: "Prove your state"
+     * Peer receives request to prove their state at a specific block height
      */
     public async onProveStateRequest(
         channelId: ChannelId,
@@ -41,11 +41,11 @@ class StateProofRpcMethods extends ARpcMethods {
     }
 
     /**
-     * Peer A receives proof from Peer B
+     * Peer receives state proof
      */
     public async onProveStateResponse(
         channelId: ChannelId,
-        proof: SyncPayload
+        proof: StateProofPayload
     ) {
         console.log(`Received state proof response for channel ${channelId}`);
 
@@ -58,42 +58,10 @@ class StateProofRpcMethods extends ARpcMethods {
             return this.p2pManager.disconnectAndBlacklistPeer(senderTransport);
         }
 
-        const { myForkId, peerForkId } = initData;
-
-        // Get the fork they actually proved.
-        const provedForkId = proof.latestForkGenesisSnapshot.forkId;
-
+        const { forkId, blockHeight } = initData;
         console.log(
-            `Peer proved fork ${provedForkId} (we asked for ${peerForkId}, we're on ${myForkId})`
+            `Peer successfully proved their state for fork ${forkId} at block height ${blockHeight}!`
         );
-
-        // Verify the peer's proof - check if the fork they proved is canonical
-        const { isValid, isCanonical } =
-            await this.service.verifyPeerStateProof(
-                channelId,
-                proof,
-                provedForkId // Verify the fork they actually proved
-            );
-
-        if (!isValid) {
-            console.log("Peer's state proof is invalid, disconnecting");
-            return this.p2pManager.disconnectAndBlacklistPeer(senderTransport);
-        }
-
-        if (!isCanonical) {
-            console.log(
-                `Peer proved ${provedForkId} but it's not canonical, disconnecting`
-            );
-            return this.p2pManager.disconnectAndBlacklistPeer(senderTransport);
-        }
-
-        console.log(`Peer's fork ${provedForkId} is the canonical fork!`);
-        console.log(
-            `I was on fork ${myForkId}, syncing to canonical fork ${provedForkId}`
-        );
-
-        // Trigger a spectate sync to actually sync to their state
-        this.service.spectateService.spectateSync(senderTransport, channelId);
     }
 }
 
