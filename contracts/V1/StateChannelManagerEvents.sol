@@ -43,8 +43,6 @@ interface StateChannelManagerEvents {
 
     event ChannelStorageCleared(bytes32 indexed channelId, bytes32 latestJoinChannelBlockHash);
 
-    event ChannelClosed(bytes32 indexed channelId);
-
     event DisputeKilled(bytes32 indexed channelId, bytes32 forkId, address disputer);
 
     event JoinChannelProcessed(

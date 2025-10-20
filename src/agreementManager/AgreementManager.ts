@@ -14,7 +14,7 @@ import {
 } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import { Codec, Type } from "@/utils";
-import { ethers } from "ethers";
+import { ethers, ZeroHash } from "ethers";
 import {
     DisputeConfirmationStruct,
     ReduceOutputStruct
@@ -369,7 +369,10 @@ class AgreementManager {
     ): Promise<ReduceData> {
         // reducedOutput latestStateSnapshot
         let reducedLatestStateSnapshot: StateSnapshot;
-        if (!reducedOutput.latestBlock) {
+        if (
+            !reducedOutput.latestBlock ||
+            reducedOutput.latestBlock.transaction.header.forkId === ZeroHash
+        ) {
             // Genesis state case - use the genesis snapshot for this fork
             const genesisSnapshot =
                 this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
