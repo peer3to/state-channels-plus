@@ -82,6 +82,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
             ) {
                 reducedOutput.latestBlock = disputeLatestBlock;
             }
+            // Note: If no disputes have blocks (genesis case), latestBlock remains uninitialized.
+            // This is handled properly in reduceOutputToSnapshotData() and getReduceData() functions.
 
             // ***** reducedOutput.slashedParticipants *****
             for (uint256 j = 0; j < dispute.input.onChainSlashes.length; j++) {

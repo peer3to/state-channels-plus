@@ -11,7 +11,7 @@ type P2pEventHooks = {
     onInitiatingDispute?: () => void;
     onDisputeUpdate?: (dispute: DisputeStruct) => void;
     onJoinChannel?: (joinChannelBlock: JoinChannelBlockStruct) => void;
-    onChannelClosed?: (channelId: ChannelId) => void;
+    onCloseChannel?: (channelId: ChannelId) => void;
 };
 
 export default P2pEventHooks;

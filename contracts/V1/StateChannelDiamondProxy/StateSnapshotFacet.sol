@@ -82,6 +82,9 @@ contract StateSnapshotFacet is StateChannelCommon {
             emit ChannelClosed(channelId);
             // Clear storage when channel is closed (0 participants)
             _clearStorage(channelId, newSnapshot.snapshotData.latestJoinChannelBlockHash);
+            // Clear the state snapshot
+            delete stateSnapshots[channelId];
+            // TODO! send all remaining funds to the treasury
         }
 
         //check if last fork -> clearStorage
