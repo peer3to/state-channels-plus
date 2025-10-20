@@ -11,9 +11,10 @@ describe("StaticCall", function () {
     let value = await counter.x();
     expect(value).to.equal(1n);
 
-    await counter.inc.staticCall();
+    let sValue = await counter.inc.staticCall();
     value = await counter.x();
     expect(value).to.equal(1n);
+    expect(sValue).to.equal(2n);
 
     await counter.inc();
     value = await counter.x();
