@@ -18,3 +18,13 @@
 
 # Hardhat coverage reports
 /coverage
+
+/examples/**/node_modules
+/examples/**/dist
+
+/typechain-types
+/.nyc_output
+
+*.tgz
+
+/.vscode
