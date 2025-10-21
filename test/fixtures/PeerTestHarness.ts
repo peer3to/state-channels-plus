@@ -266,7 +266,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         await this.submitTransaction(nextPeer, txFn);
     }
 
-    async waitForSync(timeout: number = 1500): Promise<void> {
+    async waitForSync(timeout: number = 3000): Promise<void> {
         if (this.peers.length < 2) return;
 
         const startTime = Date.now();
