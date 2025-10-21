@@ -13,8 +13,7 @@ import {
     intersection,
     Codec,
     Type,
-    SignatureUtils,
-    makeContractCallOrThrow
+    SignatureUtils
 } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import { Address, Bytes, ChannelId, ForkId, Signature } from "../types/types";
@@ -194,17 +193,13 @@ class DisputeManager {
             selfRemoval: selfRemoval
         };
 
-        // generateDisputeOutputState
-        const result = await makeContractCallOrThrow(
-            this.stateChannelManagerContract,
-            "computeDisputeOutputSnapshotData",
-            [
+        const result =
+            await this.stateChannelManagerContract.computeDisputeOutputSnapshotData.staticCall(
                 disputeInput,
                 latestStateSnapshot.toStruct(),
                 latestStateMachineState,
                 auditingData.genesisStateSnapshotData.latestJoinChannelBlockHash
-            ]
-        );
+            );
 
         const outputSnapshotData: SnapshotDataStruct = result[0];
         // slashes = result[1]; // address[]

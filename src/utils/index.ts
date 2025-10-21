@@ -14,4 +14,3 @@ export * from "./participantUtils";
 export * from "./config";
 export * from "./hash";
 export * from "./evmErrorHandler";
-export * from "./ContractUtils";
