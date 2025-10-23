@@ -107,6 +107,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function getStateMachineParticipants(bytes memory encodedState) public virtual returns (address[] memory) {
+        // setState fails
         stateMachineImplementation.setState(encodedState);
         return stateMachineImplementation.getParticipants();
     }
