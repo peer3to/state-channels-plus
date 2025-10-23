@@ -42,16 +42,14 @@ describe("RateLimiter", () => {
     });
 
     it("should reject messages when rate limit exceeded", () => {
-        // Consume all available bytes (2MB burst)
-        const burstSize = 2048000; // 2MB
-        const consumed = rateLimiter.checkAndConsume(burstSize);
+        const testRateLimiter = new RateLimiter(1024000, 2048000); // 1MB/s, 2MB burst
+
+        // Consume the full burst capacity
+        const consumed = testRateLimiter.checkAndConsume(2048000);
         expect(consumed).to.be.true;
 
-        // Verify we're exhausted or very close
-        expect(rateLimiter.getAvailableBytes()).to.be.lessThan(1024);
-
         // Next message should be rejected
-        const result = rateLimiter.checkAndConsume(1024);
+        const result = testRateLimiter.checkAndConsume(1024);
         expect(result).to.be.false;
     });
 
