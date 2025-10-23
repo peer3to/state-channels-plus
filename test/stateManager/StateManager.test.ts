@@ -735,13 +735,31 @@ describe("StateManager", () => {
     });
 
     describe("onDisputeCommitted", () => {
-        it("should throw not implemented error", async () => {
-            const dispute = {} as any;
+        it("should request dispute acknowledgment from all peers", async () => {
+            const dispute = {
+                input: {
+                    channelId:
+                        "0x1234567890123456789012345678901234567890123456789012345678901234",
+                    genesisSnapshotDataHash:
+                        "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdef"
+                }
+            } as any;
             const timestamp = 1000 as Timestamp;
 
-            await expect(
-                stateManager.onDisputeCommitted(dispute, timestamp)
-            ).to.be.rejectedWith("TODO - Not implemented");
+            // Mock the isForkDisputedService
+            const mockRequestDisputeAcknowledgment = sinon.stub();
+            stateManager.p2pManager.localRpc.isForkDisputedService.requestDisputeAcknowledgment =
+                mockRequestDisputeAcknowledgment;
+
+            await stateManager.onDisputeCommitted(dispute, timestamp);
+
+            expect(mockRequestDisputeAcknowledgment.calledOnce).to.be.true;
+            expect(
+                mockRequestDisputeAcknowledgment.calledWith(
+                    dispute.input.channelId,
+                    dispute.input.genesisSnapshotDataHash
+                )
+            ).to.be.true;
         });
     });
 });
