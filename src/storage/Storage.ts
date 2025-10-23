@@ -12,6 +12,8 @@ import { BlockCoordinates, StateSnapshot } from "@/models";
 import { deepCopyProxy } from "@/utils";
 import { ForkId, Bytes, BlockOrSnapshot } from "@/types/types";
 import { Address } from "@/types/types";
+import { TimeoutStorage } from "./TimeoutStorage";
+import { ForceExitStorage } from "./ForceExitStorage";
 
 export class Storage {
     public readonly blocks: BlockStorage;
@@ -23,6 +25,8 @@ export class Storage {
     public readonly queues: QueueStorage;
     public readonly disputes: DisputeStorage;
     public readonly fraudProofs: FraudProofStorage;
+    public readonly timeout: TimeoutStorage;
+    public readonly forceExit: ForceExitStorage;
 
     constructor() {
         this.blocks = deepCopyProxy(new BlockStorage());
@@ -34,6 +38,8 @@ export class Storage {
         this.queues = deepCopyProxy(new QueueStorage());
         this.disputes = deepCopyProxy(new DisputeStorage());
         this.fraudProofs = deepCopyProxy(new FraudProofStorage());
+        this.timeout = deepCopyProxy(new TimeoutStorage());
+        this.forceExit = deepCopyProxy(new ForceExitStorage());
         return deepCopyProxy(this);
     }
 
@@ -104,5 +110,21 @@ export class Storage {
         const genesisSnapshot =
             this.stateSnapshots.getGenesisSnapshotDataByForkId(forkId)!;
         return { stateSnapshot: genesisSnapshot };
+    }
+
+    getPreviousRelevantTimestamp(
+        coordinates: BlockCoordinates,
+        participantAddress: Address
+    ): number {
+        const previousBlockOrSnapshot =
+            this.getPreviousBlockOrSnapshot(coordinates);
+
+        if (previousBlockOrSnapshot.block) {
+            return previousBlockOrSnapshot.block.getRelevantTimestamp(
+                participantAddress
+            );
+        }
+
+        return previousBlockOrSnapshot.stateSnapshot!.timestamp;
     }
 }

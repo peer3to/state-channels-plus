@@ -8,7 +8,7 @@ import P2PManager from "@/P2PManager";
 import DisputeManager from "@/disputeManager";
 
 export default class BlockValidationStrategy extends AValidationStrategy {
-    private readonly fraudProofService: FraudProofService;
+    readonly fraudProofService: FraudProofService;
     constructor(
         private readonly storage: Storage,
         private readonly p2pManager: P2PManager,

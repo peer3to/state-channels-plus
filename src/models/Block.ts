@@ -189,9 +189,9 @@ export default class Block {
     }
 
     getRelevantTimestamp(nextBlockAuthor: Address): Timestamp {
-        const { didSign } = this.findSignature(nextBlockAuthor);
+        const signature = this.findSignature(nextBlockAuthor);
 
-        if (didSign) {
+        if (signature) {
             // If nextBlockAuthor has signed, return block timestamp
             return this.timestamp;
         }
@@ -209,16 +209,13 @@ export default class Block {
         return ethers.verifyMessage(ethers.getBytes(this.hash), signature);
     }
 
-    findSignature(participant: Address): {
-        didSign: boolean;
-        signature: Signature | undefined;
-    } {
+    findSignature(participant: Address): Signature | undefined {
         for (const sig of this.allSignatures) {
             if (this.signatureToAddress(sig) === participant) {
-                return { didSign: true, signature: sig };
+                return sig;
             }
         }
-        return { didSign: false, signature: undefined };
+        return undefined;
     }
 
     didEveryoneSign(participants: Address[] | Set<Address>): boolean {
@@ -228,7 +225,7 @@ export default class Block {
         return isSubset(participantsSet, this.allSignerAddresses);
     }
 
-    didISign(participant: Address): boolean {
+    didSign(participant: Address): boolean {
         return this.allSignerAddresses.has(participant);
     }
 

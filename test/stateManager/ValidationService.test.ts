@@ -661,7 +661,7 @@ describe("ValidationService - Progressive Validation Tests", () => {
 
                 const result = await (
                     validationService as any
-                ).fetchBlockCommitmentCalldata(
+                ).stateManager.fetchBlockCommitmentCalldata(
                     BlockBuilder.create(mockSetup).build(),
                     "0xcommitment"
                 );
@@ -676,7 +676,7 @@ describe("ValidationService - Progressive Validation Tests", () => {
 
                 const result = await (
                     validationService as any
-                ).fetchBlockCommitmentCalldata(
+                ).stateManager.fetchBlockCommitmentCalldata(
                     BlockBuilder.create(mockSetup).build(),
                     "0xcommitment"
                 );
@@ -699,7 +699,7 @@ describe("ValidationService - Progressive Validation Tests", () => {
 
                 const result = await (
                     validationService as any
-                ).fetchBlockCommitmentCalldata(
+                ).stateManager.fetchBlockCommitmentCalldata(
                     BlockBuilder.create(mockSetup).build(),
                     "0xcommitment"
                 );

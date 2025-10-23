@@ -68,6 +68,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
             blockCalldataCommitments[channelId][msg.sender][forkId][transactionCnt] == bytes32(0),
             ErrorBlockCalldataAlreadyPosted()
         );
+        require(msg.sender == _block.transaction.header.participant, ErrorBlockCalldataMsgSenderNotBlockAuthor());
 
         blockCalldataCommitments[channelId][msg.sender][forkId][transactionCnt] = commitment;
 

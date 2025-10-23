@@ -16,7 +16,7 @@ import {
     SignatureUtils
 } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
-import { Address, Bytes, ChannelId, ForkId, Signature } from "../types/types";
+import { Address, ChannelId, ForkId } from "../types/types";
 import { StateSnapshot } from "../models";
 import Storage from "@/storage";
 import ADiamondStateMachine from "../ADiamondStateMachine";
@@ -27,16 +27,6 @@ import {
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
 import { DEBUG_DISPUTE_HANDLER } from "@/utils/config";
-
-type TimeoutOptions = {
-    // This is enough and the rest is deducted from storage/state
-    blockHeightToTimeout: number; // this could also be a boolean, but will be used as a sanity check
-    isForced?: boolean;
-    // on-chain race condition checks
-    previousBlockProducer?: Address;
-    previousBlockProducerPostedCalldata?: boolean;
-    participantSignatureOnPreviousBlock?: Signature;
-};
 
 class DisputeManager {
     signer: ethers.Signer;
@@ -70,13 +60,33 @@ class DisputeManager {
         return this.self;
     }
 
-    public async createDispute(
-        forkId: ForkId,
-        selfRemoval: boolean = false,
-        timeoutOptions?: TimeoutOptions
-    ): Promise<{
+    public async dispute(forkId: ForkId): Promise<void> {
+        const { disputeConfirmation, auditingData } =
+            await this.constructDispute(forkId);
+
+        const pendingParticipants =
+            await this.stateChannelManagerContract.getPendingParticipants(
+                this.channelId
+            );
+        if (pendingParticipants.length > 0) {
+            // TODO - do the actual check (_isAuditingCalldataRequired) when we have early finalization implemented
+            await this.stateChannelManagerContract.uploadDisputeWithCalldata(
+                disputeConfirmation,
+                auditingData
+            );
+        } else {
+            await this.stateChannelManagerContract.uploadDispute(
+                disputeConfirmation
+            );
+        }
+
+        this.p2pEventHooks.onInitiatingDispute?.();
+    }
+
+    public async constructDispute(forkId: ForkId): Promise<{
         dispute: DisputeStruct;
         disputeConfirmation: DisputeConfirmationStruct;
+        auditingData: DisputeAuditingDataStruct;
     }> {
         const latestBlockHeight =
             this.storage.blocks.getNextBlockHeight(forkId) - 1;
@@ -124,46 +134,9 @@ class DisputeManager {
         onChainSlashes = intersection(onChainSlashes, participants);
 
         // timeout
-        let timeoutStruct: TimeoutStruct;
-        if (timeoutOptions) {
-            // sanity/race condition check
-            if (timeoutOptions.blockHeightToTimeout != latestBlockHeight + 1) {
-                throw new Error(
-                    "createDispute - timeoutOptions.blockHeightToTimeout invalid"
-                );
-            }
-            const participantToTimeout =
-                await this.diamondStateMachine.peekNextToWrite(
-                    latestStateMachineState
-                );
-            const [p2pTime, agreementTime, chainFallbackTime] = (
-                await Promise.all([
-                    this.diamondStateMachine.localDiamondContract.getP2pTime(),
-                    this.diamondStateMachine.localDiamondContract.getAgreementTime(),
-                    this.diamondStateMachine.localDiamondContract.getChainFallbackTime()
-                ])
-            ).map(Number);
-
-            timeoutStruct = {
-                participant: participantToTimeout,
-                blockHeight: timeoutOptions.blockHeightToTimeout,
-                minTimeStamp:
-                    Clock.getTimeInSeconds() +
-                    p2pTime +
-                    agreementTime +
-                    chainFallbackTime,
-                isForced: timeoutOptions.isForced || false,
-                previousBlockProducer:
-                    timeoutOptions.previousBlockProducer || ethers.ZeroAddress,
-                previousBlockProducerPostedCalldata:
-                    timeoutOptions.previousBlockProducerPostedCalldata || false,
-                participantSignatureOnPreviousBlock:
-                    (timeoutOptions.participantSignatureOnPreviousBlock as Bytes) ||
-                    "0x"
-            };
-        } else {
-            timeoutStruct = this.getEmptyTimeoutStruct();
-        }
+        const timeoutStruct =
+            this.storage.timeout.getTimeout(forkId) ||
+            this.getEmptyTimeoutStruct();
 
         // AuditingData
         const { isPartial, auditingData } = this.getAuditingData(
@@ -179,6 +152,9 @@ class DisputeManager {
 
         // disputer
         const disputer = this.signerAddress;
+
+        // selfRemoval
+        const selfRemoval = this.storage.forceExit.getForceExit();
 
         const disputeInput: DisputeInputStruct = {
             channelId: this.channelId,
@@ -211,8 +187,6 @@ class DisputeManager {
 
         // ****** TODO - run auditing as a sanity check *******
 
-        // TODO - dependent on the event trigger - maybe upload with auditing
-
         // TODO - Dispute model (like block), so it's easy doing operations on it
 
         const signedDispute = await SignatureUtils.signDispute(
@@ -227,13 +201,7 @@ class DisputeManager {
             signatures: []
         };
 
-        await this.stateChannelManagerContract.uploadDispute(
-            disputeConfirmation
-        );
-
-        this.p2pEventHooks.onInitiatingDispute?.();
-
-        return { dispute, disputeConfirmation };
+        return { dispute, disputeConfirmation, auditingData };
     }
 
     public getAuditingData(
