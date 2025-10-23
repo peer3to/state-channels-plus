@@ -2,9 +2,6 @@ import { Block } from "@/models";
 import { BlockValidationResult } from "@/types";
 import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 import AValidationStrategy from "./AValidationStrategy";
-import FraudProofService from "../utils/FraudProofService";
-import Storage from "@/storage";
-import P2PManager from "@/P2PManager";
 import DisputeManager from "@/disputeManager";
 import BlockValidationStrategy from "./BlockValidationStrategy";
 
@@ -27,6 +24,7 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
     ): Promise<BlockValidationResult> {
         // The block is committed on-chain by a participant (otherwise we're not interested in the calldata) -> the participant created an objective fault
         // TODO - fraud proof for this
+        // TODO - dispute - give context
         return BlockValidationResult.DISPUTE;
     }
     public async wrongChannel(_block: Block): Promise<BlockValidationResult> {

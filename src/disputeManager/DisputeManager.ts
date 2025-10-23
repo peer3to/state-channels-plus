@@ -13,7 +13,9 @@ import {
     intersection,
     Codec,
     Type,
-    SignatureUtils
+    SignatureUtils,
+    Mutex,
+    difference
 } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import { Address, ChannelId, ForkId } from "../types/types";
@@ -27,6 +29,7 @@ import {
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
 import { DEBUG_DISPUTE_HANDLER } from "@/utils/config";
+import { FraudProofStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/FraudProofFacet";
 
 class DisputeManager {
     signer: ethers.Signer;
@@ -38,6 +41,7 @@ class DisputeManager {
     self = DEBUG_DISPUTE_HANDLER ? DebugProxy.createProxy(this) : this;
     storage: Storage;
     diamondStateMachine: ADiamondStateMachine;
+    mutex: Mutex = new Mutex();
 
     constructor(
         channelId: ChannelId,
@@ -61,32 +65,78 @@ class DisputeManager {
     }
 
     public async dispute(forkId: ForkId): Promise<void> {
-        const { disputeConfirmation, auditingData } =
-            await this.constructDispute(forkId);
+        try {
+            await this.mutex.lock();
+            if (this.storage.disputes.didIDispute(forkId)) return;
+            const { disputeConfirmation, auditingData, fraudProofsToApply } =
+                await this.constructDispute(forkId);
 
-        const pendingParticipants =
-            await this.stateChannelManagerContract.getPendingParticipants(
-                this.channelId
-            );
-        if (pendingParticipants.length > 0) {
-            // TODO - do the actual check (_isAuditingCalldataRequired) when we have early finalization implemented
-            await this.stateChannelManagerContract.uploadDisputeWithCalldata(
-                disputeConfirmation,
-                auditingData
-            );
-        } else {
-            await this.stateChannelManagerContract.uploadDispute(
-                disputeConfirmation
-            );
+            const pendingParticipants =
+                await this.stateChannelManagerContract.getPendingParticipants(
+                    this.channelId
+                );
+
+            // check if multicall is needed
+            if (fraudProofsToApply.length > 0) {
+                // 1) apply fraud proofs
+                const fraudProofCalldata = (
+                    await this.stateChannelManagerContract.applyFraudProofs.populateTransaction(
+                        fraudProofsToApply,
+                        { channelId: this.channelId }
+                    )
+                ).data;
+                // 2) upload dispute
+                let uploadDisputeCalldata: string;
+                if (pendingParticipants.length > 0) {
+                    // with calldata
+                    uploadDisputeCalldata = (
+                        await this.stateChannelManagerContract.uploadDisputeWithCalldata.populateTransaction(
+                            disputeConfirmation,
+                            auditingData
+                        )
+                    ).data!;
+                } else {
+                    // without calldata
+                    uploadDisputeCalldata = (
+                        await this.stateChannelManagerContract.uploadDispute.populateTransaction(
+                            disputeConfirmation
+                        )
+                    ).data!;
+                }
+                await this.stateChannelManagerContract.multicall([
+                    fraudProofCalldata,
+                    uploadDisputeCalldata
+                ]);
+            }
+
+            // no multicall
+            if (pendingParticipants.length > 0) {
+                // TODO - do the actual check (_isAuditingCalldataRequired) when we have early finalization implemented
+                await this.stateChannelManagerContract.uploadDisputeWithCalldata(
+                    disputeConfirmation,
+                    auditingData
+                );
+            } else {
+                await this.stateChannelManagerContract.uploadDispute(
+                    disputeConfirmation
+                );
+            }
+
+            this.storage.disputes.storeDisputedFork(forkId, true);
+            this.p2pEventHooks.onInitiatingDispute?.();
+        } catch (e) {
+            // TODO - interpret custom errors
+            this.storage.disputes.storeDisputedFork(forkId, false);
+        } finally {
+            this.mutex.unlock();
         }
-
-        this.p2pEventHooks.onInitiatingDispute?.();
     }
 
     public async constructDispute(forkId: ForkId): Promise<{
         dispute: DisputeStruct;
         disputeConfirmation: DisputeConfirmationStruct;
         auditingData: DisputeAuditingDataStruct;
+        fraudProofsToApply: FraudProofStruct[];
     }> {
         const latestBlockHeight =
             this.storage.blocks.getNextBlockHeight(forkId) - 1;
@@ -132,6 +182,22 @@ class DisputeManager {
 
         // to make sure we're trying to slash only participants - even though onChainSlashes should always be a subset of participants
         onChainSlashes = intersection(onChainSlashes, participants);
+        const participantsNotSlashedOnChain = difference(
+            participants,
+            onChainSlashes
+        );
+
+        const fraudProofsToApply: FraudProofStruct[] = [];
+        for (const participant of participantsNotSlashedOnChain) {
+            const fraudProof =
+                this.storage.fraudProofs.getFraudProofForParticipant(
+                    participant
+                );
+            if (fraudProof) {
+                fraudProofsToApply.push(fraudProof);
+                onChainSlashes.add(participant);
+            }
+        }
 
         // timeout
         const timeoutStruct =
@@ -201,7 +267,12 @@ class DisputeManager {
             signatures: []
         };
 
-        return { dispute, disputeConfirmation, auditingData };
+        return {
+            dispute,
+            disputeConfirmation,
+            auditingData,
+            fraudProofsToApply
+        };
     }
 
     public getAuditingData(
