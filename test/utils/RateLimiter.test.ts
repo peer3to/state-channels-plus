@@ -7,6 +7,7 @@ import {
     inboundRateLimiterManager
 } from "@/utils/RateLimiter";
 import sinon from "sinon";
+import { ethers } from "ethers";
 
 // Mock ATransport for testing
 class MockTransport {
@@ -243,3 +244,630 @@ describe("Integration Test: Per-Connection Inbound + Global Outbound", () => {
         expect(result2).to.be.false;
     });
 });
+
+describe("Bandwidth Management with Signature-based Deduplication", () => {
+    let bandwidthManager: InboundRateLimiterManager;
+    let clock: sinon.SinonFakeTimers;
+
+    beforeEach(() => {
+        bandwidthManager = new InboundRateLimiterManager(
+            1024000, // 1MB/s
+            2048000, // 2MB burst
+            5000 // 5 seconds agreement time
+        );
+        // Don't use fake timers for timestamp validation tests
+        clock = null as any;
+    });
+
+    afterEach(() => {
+        if (clock) {
+            clock.restore();
+        }
+        bandwidthManager.dispose();
+    });
+
+    it("should reject messages with invalid format", async () => {
+        const invalidRpc = "invalid json";
+        const result = await bandwidthManager.checkRpcMessage(invalidRpc, 1024);
+        expect(result).to.be.false;
+    });
+
+    it("should reject messages without signature", async () => {
+        const rpcWithoutSignature = JSON.stringify({
+            service: "test",
+            method: "method",
+            params: ["param"],
+            timestamp: Date.now()
+            // Missing signature
+        });
+
+        const result = await bandwidthManager.checkRpcMessage(
+            rpcWithoutSignature,
+            1024
+        );
+        expect(result).to.be.false;
+    });
+
+    it("should reject messages without timestamp", async () => {
+        const rpcWithoutTimestamp = JSON.stringify({
+            service: "test",
+            method: "method",
+            params: ["param"],
+            signature: "0x123"
+            // Missing timestamp
+        });
+
+        const result = await bandwidthManager.checkRpcMessage(
+            rpcWithoutTimestamp,
+            1024
+        );
+        expect(result).to.be.false;
+    });
+
+    it("should handle bandwidth manager disposal correctly", () => {
+        // Create a new manager
+        const testManager = new InboundRateLimiterManager(
+            1024000,
+            2048000,
+            5000
+        );
+
+        // Dispose should not throw
+        expect(() => testManager.dispose()).to.not.throw();
+    });
+
+    it("should allow messages with valid signatures", async () => {
+        // Use real timestamp for this test
+        const realTimestamp = Date.now();
+        const messageContent = JSON.stringify({
+            method: "method",
+            params: ["param"],
+            timestamp: realTimestamp
+        });
+
+        const signature = testWallet.signMessageSync(messageContent);
+        const rpc = {
+            service: "test",
+            method: "method",
+            params: ["param"],
+            timestamp: realTimestamp,
+            signature: signature
+        };
+
+        const dataSize = 1024;
+        const result = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result).to.be.true;
+    });
+
+    it("should deduplicate identical messages", async () => {
+        // Use real timestamp for this test
+        const realTimestamp = Date.now();
+        const messageContent = JSON.stringify({
+            method: "method",
+            params: ["param"],
+            timestamp: realTimestamp
+        });
+
+        const signature = testWallet.signMessageSync(messageContent);
+        const rpc = {
+            service: "test",
+            method: "method",
+            params: ["param"],
+            timestamp: realTimestamp,
+            signature: signature
+        };
+
+        const dataSize = 1024;
+
+        // First message should be allowed
+        const result1 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result1).to.be.true;
+
+        // Same message should be allowed again (deduplication)
+        const result2 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result2).to.be.true;
+    });
+
+    it("should rate limit after consuming burst", async () => {
+        const dataSize = 1024000; // 1MB - large enough to exceed any refilled amount
+
+        // Consume full burst
+        const burstSize = 2048000; // 2MB
+        const realTimestamp = Date.now();
+        const messageContent = JSON.stringify({
+            method: "method",
+            params: ["param"],
+            timestamp: realTimestamp
+        });
+
+        const signature = testWallet.signMessageSync(messageContent);
+        const burstRpc = {
+            service: "test",
+            method: "method",
+            params: ["param"],
+            timestamp: realTimestamp,
+            signature: signature
+        };
+
+        const consumed = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(burstRpc),
+            burstSize
+        );
+        expect(consumed).to.be.true;
+
+        // Next message should be rejected (run immediately to prevent refill)
+        const newTimestamp = Date.now();
+        const newMessageContent = JSON.stringify({
+            method: "method2",
+            params: ["param2"],
+            timestamp: newTimestamp
+        });
+
+        const newSignature = testWallet.signMessageSync(newMessageContent);
+        const rpc = {
+            service: "test",
+            method: "method2",
+            params: ["param2"],
+            timestamp: newTimestamp,
+            signature: newSignature
+        };
+
+        const result = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result).to.be.false;
+    });
+
+    it("should cache messages and prevent double-charging", async () => {
+        const realTimestamp = Date.now();
+        const messageContent = JSON.stringify({
+            method: "method",
+            params: ["param"],
+            timestamp: realTimestamp
+        });
+
+        const signature = testWallet.signMessageSync(messageContent);
+        const rpc = {
+            service: "test",
+            method: "method",
+            params: ["param"],
+            timestamp: realTimestamp,
+            signature: signature
+        };
+
+        const dataSize = 1024;
+
+        // First message should be allowed and cached
+        const result1 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result1).to.be.true;
+
+        // Same message should be allowed again (from cache, no bandwidth charge)
+        const result2 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result2).to.be.true;
+
+        // Different message from same signer should still be allowed
+        const newTimestamp = Date.now();
+        const newMessageContent = JSON.stringify({
+            method: "method2",
+            params: ["param2"],
+            timestamp: newTimestamp
+        });
+
+        const newSignature = testWallet.signMessageSync(newMessageContent);
+        const rpc2 = {
+            service: "test",
+            method: "method2",
+            params: ["param2"],
+            timestamp: newTimestamp,
+            signature: newSignature
+        };
+
+        const result3 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc2),
+            dataSize
+        );
+        expect(result3).to.be.true;
+    });
+
+    it("should remove cached messages after expiration time", async () => {
+        const realTimestamp = Date.now();
+        const messageContent = JSON.stringify({
+            method: "method",
+            params: ["param"],
+            timestamp: realTimestamp
+        });
+
+        const signature = testWallet.signMessageSync(messageContent);
+        const rpc = {
+            service: "test",
+            method: "method",
+            params: ["param"],
+            timestamp: realTimestamp,
+            signature: signature
+        };
+
+        const dataSize = 1024;
+
+        // First message should be allowed and cached
+        const result1 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result1).to.be.true;
+
+        // Wait for cache to expire (agreement time is 5 seconds)
+        await new Promise((resolve) => setTimeout(resolve, 6000));
+
+        // Same message should be rejected (timestamp is now too old)
+        const result2 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result2).to.be.false;
+    });
+
+    it("should handle multiple different messages correctly", async () => {
+        const dataSize = 1024;
+
+        // Create three different messages with real timestamps
+        const timestamp1 = Date.now();
+        const messageContent1 = JSON.stringify({
+            method: "method1",
+            params: ["param1"],
+            timestamp: timestamp1
+        });
+        const signature1 = testWallet.signMessageSync(messageContent1);
+        const rpc1 = {
+            service: "test",
+            method: "method1",
+            params: ["param1"],
+            timestamp: timestamp1,
+            signature: signature1
+        };
+
+        const timestamp2 = Date.now();
+        const messageContent2 = JSON.stringify({
+            method: "method2",
+            params: ["param2"],
+            timestamp: timestamp2
+        });
+        const signature2 = testWallet.signMessageSync(messageContent2);
+        const rpc2 = {
+            service: "test",
+            method: "method2",
+            params: ["param2"],
+            timestamp: timestamp2,
+            signature: signature2
+        };
+
+        const timestamp3 = Date.now();
+        const messageContent3 = JSON.stringify({
+            method: "method3",
+            params: ["param3"],
+            timestamp: timestamp3
+        });
+        const signature3 = testWallet.signMessageSync(messageContent3);
+        const rpc3 = {
+            service: "test",
+            method: "method3",
+            params: ["param3"],
+            timestamp: timestamp3,
+            signature: signature3
+        };
+
+        // All messages should be allowed
+        const result1 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc1),
+            dataSize
+        );
+        const result2 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc2),
+            dataSize
+        );
+        const result3 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc3),
+            dataSize
+        );
+
+        expect(result1).to.be.true;
+        expect(result2).to.be.true;
+        expect(result3).to.be.true;
+
+        // Same messages should be allowed again (from cache)
+        const result1Again = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc1),
+            dataSize
+        );
+        const result2Again = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc2),
+            dataSize
+        );
+        const result3Again = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc3),
+            dataSize
+        );
+
+        expect(result1Again).to.be.true;
+        expect(result2Again).to.be.true;
+        expect(result3Again).to.be.true;
+    });
+
+    it("should handle cache cleanup interval correctly", async () => {
+        const realTimestamp = Date.now();
+        const messageContent = JSON.stringify({
+            method: "method",
+            params: ["param"],
+            timestamp: realTimestamp
+        });
+
+        const signature = testWallet.signMessageSync(messageContent);
+        const rpc = {
+            service: "test",
+            method: "method",
+            params: ["param"],
+            timestamp: realTimestamp,
+            signature: signature
+        };
+
+        const dataSize = 1024;
+
+        // First message should be allowed and cached
+        const result1 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result1).to.be.true;
+
+        // Wait for cache to expire (agreement time is 5 seconds)
+        await new Promise((resolve) => setTimeout(resolve, 6000));
+
+        // Now message should be rejected (timestamp is too old)
+        const result3 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result3).to.be.false;
+    });
+
+    it("should reject messages with timestamps too far in the past", async () => {
+        // Create RPC with timestamp 10 seconds ago (beyond agreement time)
+        const oldTimestamp = Date.now() - 10000; // 10 seconds ago
+        const messageContent = JSON.stringify({
+            method: "testMethod",
+            params: ["testParam"],
+            timestamp: oldTimestamp
+        });
+
+        const signature = testWallet.signMessageSync(messageContent);
+        const rpc = {
+            service: "test",
+            method: "testMethod",
+            params: ["testParam"],
+            timestamp: oldTimestamp,
+            signature: signature
+        };
+
+        const dataSize = 1024;
+        const result = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result).to.be.false;
+    });
+
+    it("should reject messages with timestamps too far in the future", async () => {
+        // Create RPC with timestamp 10 seconds in the future (beyond agreement time)
+        const futureTimestamp = Date.now() + 10000; // 10 seconds in future
+        const messageContent = JSON.stringify({
+            method: "testMethod",
+            params: ["testParam"],
+            timestamp: futureTimestamp
+        });
+
+        const signature = testWallet.signMessageSync(messageContent);
+        const rpc = {
+            service: "test",
+            method: "testMethod",
+            params: ["testParam"],
+            timestamp: futureTimestamp,
+            signature: signature
+        };
+
+        const dataSize = 1024;
+        const result = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result).to.be.false;
+    });
+
+    it("should allow messages with timestamps within valid range", async () => {
+        // Create RPC with timestamp 2 seconds ago (within agreement time)
+        const validTimestamp = Date.now() - 2000; // 2 seconds ago
+        const messageContent = JSON.stringify({
+            method: "testMethod",
+            params: ["testParam"],
+            timestamp: validTimestamp
+        });
+
+        const signature = testWallet.signMessageSync(messageContent);
+        const rpc = {
+            service: "test",
+            method: "testMethod",
+            params: ["testParam"],
+            timestamp: validTimestamp,
+            signature: signature
+        };
+
+        const dataSize = 1024;
+        const result = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result).to.be.true;
+    });
+
+    it("should allow messages with current timestamp", async () => {
+        // Create RPC with current timestamp
+        const currentTimestamp = Date.now();
+        const messageContent = JSON.stringify({
+            method: "testMethod",
+            params: ["testParam"],
+            timestamp: currentTimestamp
+        });
+
+        const signature = testWallet.signMessageSync(messageContent);
+        const rpc = {
+            service: "test",
+            method: "testMethod",
+            params: ["testParam"],
+            timestamp: currentTimestamp,
+            signature: signature
+        };
+
+        const dataSize = 1024;
+        const result = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result).to.be.true;
+    });
+
+    it("should handle timestamp validation with clock advancement", async () => {
+        // Create RPC with current timestamp
+        const currentTimestamp = Date.now();
+        const messageContent = JSON.stringify({
+            method: "testMethod",
+            params: ["testParam"],
+            timestamp: currentTimestamp
+        });
+
+        const signature = testWallet.signMessageSync(messageContent);
+        const rpc = {
+            service: "test",
+            method: "testMethod",
+            params: ["testParam"],
+            timestamp: currentTimestamp,
+            signature: signature
+        };
+
+        const dataSize = 1024;
+
+        // Message should be allowed initially
+        const result1 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result1).to.be.true;
+
+        // Same message should still be allowed (from cache, no timestamp validation)
+        const result2 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result2).to.be.true;
+
+        // Same message should still be allowed (from cache, no timestamp validation)
+        const result3 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(rpc),
+            dataSize
+        );
+        expect(result3).to.be.true;
+
+        // Create a new message with current timestamp - should be allowed
+        const newTimestamp = Date.now();
+        const newMessageContent = JSON.stringify({
+            method: "testMethod2",
+            params: ["testParam2"],
+            timestamp: newTimestamp
+        });
+
+        const newSignature = testWallet.signMessageSync(newMessageContent);
+        const newRpc = {
+            service: "test",
+            method: "testMethod2",
+            params: ["testParam2"],
+            timestamp: newTimestamp,
+            signature: newSignature
+        };
+
+        const result4 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(newRpc),
+            dataSize
+        );
+        expect(result4).to.be.true;
+
+        // Create a message with old timestamp - should be rejected
+        const oldTimestamp = Date.now() - 10000; // 10 seconds ago
+        const oldMessageContent = JSON.stringify({
+            method: "testMethod3",
+            params: ["testParam3"],
+            timestamp: oldTimestamp
+        });
+
+        const oldSignature = testWallet.signMessageSync(oldMessageContent);
+        const oldRpc = {
+            service: "test",
+            method: "testMethod3",
+            params: ["testParam3"],
+            timestamp: oldTimestamp,
+            signature: oldSignature
+        };
+
+        const result5 = await bandwidthManager.checkRpcMessage(
+            JSON.stringify(oldRpc),
+            dataSize
+        );
+        expect(result5).to.be.false;
+    });
+});
+
+// Create a test wallet for consistent signatures
+const testWallet = new ethers.Wallet(
+    "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+);
+
+// Helper function to create test RPC messages with real signatures
+function createTestRpc(
+    method: string,
+    params: any[],
+    signerAddress: string,
+    dataSize?: number
+): string {
+    // Use a fixed timestamp to avoid issues with fake timers
+    const timestamp = 1234567890;
+    const messageContent = JSON.stringify({
+        method: method,
+        params: params,
+        timestamp: timestamp
+    });
+
+    // Create a real signature using the test wallet
+    const signature = testWallet.signMessageSync(messageContent);
+
+    const rpc = {
+        service: "test",
+        method: method,
+        params: params,
+        timestamp: timestamp,
+        signature: signature
+    };
+
+    return JSON.stringify(rpc);
+}

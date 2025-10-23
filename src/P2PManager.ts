@@ -52,6 +52,9 @@ class P2PManager implements IOnMessage {
     public async dispose() {
         const remoteRpc = RemoteRpcProxy.createProxy(this.localRpc);
         await this.holepunch.dispose();
+        if (inboundRateLimiterManager) {
+            inboundRateLimiterManager.dispose();
+        }
         this.disconnectAll();
     }
     public broadcastRpc(serializedRPC: string) {
@@ -59,19 +62,19 @@ class P2PManager implements IOnMessage {
             transport.send(serializedRPC);
         }
     }
-    public onRpc(serializedRpc: string, transport: ATransport) {
+    public async onRpc(serializedRpc: string, transport: ATransport) {
         try {
-            // Check inbound rate limiting first (per-connection)
-            if (inboundRateLimiterManager) {
-                const dataSizeBytes = Buffer.byteLength(serializedRpc, "utf8");
+            const dataSizeBytes = Buffer.byteLength(serializedRpc, "utf8");
 
-                // Check if message should be allowed
-                if (
-                    !inboundRateLimiterManager.checkInboundMessage(
-                        transport,
+            // Check bandwidth management with signature-based deduplication
+            if (inboundRateLimiterManager) {
+                const messageAllowed =
+                    await inboundRateLimiterManager.checkRpcMessage(
+                        serializedRpc,
                         dataSizeBytes
-                    )
-                ) {
+                    );
+
+                if (!messageAllowed) {
                     console.warn(
                         `[INBOUND RATE LIMIT] Exceeded from connection - Size: ${dataSizeBytes} bytes, disconnecting peer`
                     );

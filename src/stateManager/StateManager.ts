@@ -1398,9 +1398,11 @@ class StateManager {
             block.expandSignatures([signature]);
         }
         // always broadcast
-        this.p2pManager.remoteRpc.stateTransitionService
-            .onBlockConfirmation(block.blockConfirmationStruct)
-            .broadcast();
+        const rpcHandler =
+            await this.p2pManager.remoteRpc.stateTransitionService.onBlockConfirmation(
+                block.blockConfirmationStruct
+            );
+        rpcHandler.broadcast();
 
         // step 2 - persist the block
         this.storage.blocks.storeBlock(block);

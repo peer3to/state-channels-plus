@@ -38,7 +38,9 @@ class HolepunchTransport extends ATransport {
     onMessage(data: any): void {
         const serializedRPC = data.toString();
         console.log("RECEIVED RPC", serializedRPC);
-        this.p2pManager.onRpc(serializedRPC, this);
+        this.p2pManager.onRpc(serializedRPC, this).catch((error) => {
+            console.error("Error handling RPC in HolepunchTransport:", error);
+        });
     }
     _close(): void {
         console.log("closing holepunch socket");

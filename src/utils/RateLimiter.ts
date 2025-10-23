@@ -1,4 +1,6 @@
 import { config } from "./config";
+import { ethers } from "ethers";
+import ATransport from "@/transport/ATransport";
 
 /**
  * Implements a token bucket algorithm for rate limiting (using bytes directly)
@@ -81,16 +83,28 @@ export const outboundRateLimiter = config.RATE_LIMIT_ENABLED
     : null;
 
 /**
- * Manager for per-connection inbound rate limiters
+ * Manager for per-connection inbound rate limiters with bandwidth management
+ * Tracks message origin and prevents double-charging for gossiped messages
  */
 export class InboundRateLimiterManager {
     private rateLimiters: WeakMap<ATransport, RateLimiter> = new WeakMap();
+    private signerRateLimiters: Map<string, RateLimiter> = new Map();
+    private messageCache: Map<string, { timestamp: number; signer: string }> =
+        new Map();
     private readonly maxBandwidthBytesPerSecond: number;
     private readonly burstSizeBytes: number;
+    private readonly agreementTime: number;
+    private cleanupInterval: NodeJS.Timeout | null = null;
 
-    constructor(maxBandwidthBytesPerSecond: number, burstSizeBytes?: number) {
+    constructor(
+        maxBandwidthBytesPerSecond: number,
+        burstSizeBytes?: number,
+        agreementTimeMs: number = 30000
+    ) {
         this.maxBandwidthBytesPerSecond = maxBandwidthBytesPerSecond;
         this.burstSizeBytes = burstSizeBytes || maxBandwidthBytesPerSecond * 2;
+        this.agreementTime = agreementTimeMs;
+        this.startCleanup();
     }
 
     /**
@@ -117,15 +131,150 @@ export class InboundRateLimiterManager {
     }
 
     /**
+     * Check RPC message for bandwidth management with signature-based deduplication
+     * @param serializedRpc - The serialized RPC message
+     * @param dataSizeBytes - Size of the message in bytes
+     * @returns Promise<boolean> - true if message should be allowed
+     */
+    async checkRpcMessage(
+        serializedRpc: string,
+        dataSizeBytes: number
+    ): Promise<boolean> {
+        try {
+            const rpc = JSON.parse(serializedRpc);
+            if (!rpc || !rpc.signature || !rpc.timestamp) {
+                return false; // Invalid message format
+            }
+
+            // Validate timestamp freshness
+            if (!this.isTimestampValid(rpc.timestamp)) {
+                return false; // Message too old or too far in future
+            }
+
+            // Extract original signer from signature
+            const originalSigner = await this.extractSignerFromRpc(rpc);
+            if (!originalSigner) {
+                return false; // Invalid signature
+            }
+
+            // Check for message deduplication
+            const messageHash = this.createMessageHash(rpc);
+            const cachedMessage = this.messageCache.get(messageHash);
+
+            if (cachedMessage) {
+                // Message already processed, don't charge bandwidth again
+                return true;
+            }
+
+            // Get or create rate limiter for the original signer
+            let signerRateLimiter = this.signerRateLimiters.get(originalSigner);
+            if (!signerRateLimiter) {
+                signerRateLimiter = new RateLimiter(
+                    this.maxBandwidthBytesPerSecond,
+                    this.burstSizeBytes
+                );
+                this.signerRateLimiters.set(originalSigner, signerRateLimiter);
+            }
+
+            // Check if the original signer has bandwidth available
+            const allowed = signerRateLimiter.checkAndConsume(dataSizeBytes);
+
+            if (allowed) {
+                // Cache the message to prevent double-charging
+                this.messageCache.set(messageHash, {
+                    timestamp: rpc.timestamp,
+                    signer: originalSigner
+                });
+            }
+
+            return allowed;
+        } catch (error) {
+            console.error("Error in bandwidth management:", error);
+            return false;
+        }
+    }
+
+    /**
+     * Extract signer address from RPC message signature
+     */
+    private async extractSignerFromRpc(rpc: any): Promise<string | null> {
+        try {
+            const messageContent = JSON.stringify({
+                method: rpc.method,
+                params: rpc.params,
+                timestamp: rpc.timestamp
+            });
+
+            const recoveredAddress = await ethers.verifyMessage(
+                messageContent,
+                rpc.signature
+            );
+            return recoveredAddress;
+        } catch (error) {
+            console.error("Error verifying signature:", error);
+            return null;
+        }
+    }
+
+    /**
+     * Create a hash for message deduplication
+     */
+    private createMessageHash(rpc: any): string {
+        return ethers.keccak256(
+            ethers.toUtf8Bytes(
+                JSON.stringify({
+                    method: rpc.method,
+                    params: rpc.params,
+                    timestamp: rpc.timestamp,
+                    signature: rpc.signature
+                })
+            )
+        );
+    }
+
+    /**
+     * Validate if timestamp is within acceptable range
+     * Messages are valid if timestamp is within ±agreementTime of current time
+     */
+    private isTimestampValid(timestamp: number): boolean {
+        const now = Date.now();
+        const timeDiff = Math.abs(now - timestamp);
+        return timeDiff <= this.agreementTime;
+    }
+
+    /**
+     * Start cleanup process for expired messages
+     */
+    private startCleanup(): void {
+        this.cleanupInterval = setInterval(() => {
+            const now = Date.now();
+            for (const [hash, data] of this.messageCache.entries()) {
+                if (now - data.timestamp > this.agreementTime) {
+                    this.messageCache.delete(hash);
+                }
+            }
+        }, this.agreementTime); // Clean up after agreement time has passed
+    }
+
+    /**
      * Remove rate limiter for a connection (cleanup)
      */
     removeConnection(transport: ATransport): void {
         // WeakMap will automatically clean up when transport is garbage collected
     }
-}
 
-// Import ATransport type
-import ATransport from "@/transport/ATransport";
+    /**
+     * Dispose of the rate limiter manager
+     */
+    dispose(): void {
+        if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval);
+            this.cleanupInterval = null;
+        }
+        this.signerRateLimiters.clear();
+        this.messageCache.clear();
+    }
+}
 
 /**
  * Global inbound rate limiter manager instance
