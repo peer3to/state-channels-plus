@@ -2,6 +2,7 @@ type Rpc = {
     service: string;
     method: string;
     params: any[];
+    timestamp: number;
 };
 export function serializeRpc(rpc: Rpc): string {
     return JSON.stringify(rpc);
@@ -13,7 +14,8 @@ export function deserializeRpc(serializedRpc: string): Rpc | undefined {
             !rpc ||
             typeof rpc.service !== "string" ||
             typeof rpc.method !== "string" ||
-            !rpc.params
+            !rpc.params ||
+            typeof rpc.timestamp !== "number"
         ) {
             return undefined;
         }

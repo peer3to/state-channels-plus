@@ -39,7 +39,8 @@ class RpcMethodsProxy {
                         const rpc: Rpc = {
                             service: ctx.serviceName,
                             method: prop.toString(),
-                            params: args
+                            params: args,
+                            timestamp: Date.now()
                         };
                         return new RpcHandler(rpc, ctx.service.p2pManager);
                     };
