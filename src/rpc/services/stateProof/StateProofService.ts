@@ -208,6 +208,125 @@ class StateProofService extends ARpcService<StateProofRpcMethods> {
     public didRespond(transport: ATransport): boolean {
         return !this.stateProofInitTimes.has(transport);
     }
+
+    /**
+     * Verify state proof
+     */
+    public async verifyStateProof(
+        channelId: ChannelId,
+        proof: StateProofPayload
+    ): Promise<boolean> {
+        try {
+            const stateManager = this.p2pManager.stateManager;
+            const diamondStateMachine = stateManager.diamondStateMachine;
+
+            // 1. Fetch the onChainSnapshot
+            const onChainSnapshot =
+                await diamondStateMachine.localDiamondContract.getStateSnapshot(
+                    channelId
+                );
+            let finalForkId: Bytes = onChainSnapshot.forkId;
+
+            // 2. Verify dispute windows
+            for (const disputeWindow of proof.disputeWindows) {
+                // 2.1) Verify dispute confirmations exist
+                if (
+                    !disputeWindow.disputeConfirmations ||
+                    disputeWindow.disputeConfirmations.length === 0
+                ) {
+                    console.log("Invalid dispute window: no confirmations");
+                    return false;
+                }
+
+                // 2.2) Verify dispute window data
+                const disputeWindowData =
+                    await diamondStateMachine.localDiamondContract.getDisputeWindows(
+                        channelId,
+                        [disputeWindow.forkId]
+                    );
+
+                if (disputeWindowData.length === 0) {
+                    console.log("Invalid dispute window: not found on chain");
+                    return false;
+                }
+
+                // 2.3) Verify reduction produces expected result
+                const disputeHashes = disputeWindow.disputeConfirmations.map(
+                    (conf) =>
+                        Codec.decode(
+                            conf.signedDispute.encodedDispute,
+                            Type.Dispute
+                        )
+                );
+                const reducedOutput =
+                    await diamondStateMachine.localDiamondContract.reduce.staticCall(
+                        disputeHashes
+                    );
+
+                // 2.4) Verify reduced fork ID matches the expected result
+                if (
+                    disputeWindowData[0].reducedResult.forkId !==
+                    disputeWindow.reducedForkId
+                ) {
+                    console.log(
+                        "Invalid dispute window: reduced fork ID mismatch"
+                    );
+                    return false;
+                }
+
+                finalForkId = disputeWindow.reducedForkId;
+            }
+
+            // 3. Verify fork genesis snapshot
+            if (finalForkId !== proof.forkGenesisSnapshot.forkId) {
+                console.log("Invalid proof: fork ID mismatch");
+                return false;
+            }
+
+            const isCorrectGenesis =
+                await diamondStateMachine.localDiamondContract.isGenesisSnapshotWithoutTimeCheck(
+                    proof.forkGenesisSnapshot
+                );
+            if (!isCorrectGenesis) {
+                console.log("Invalid proof: incorrect genesis snapshot");
+                return false;
+            }
+
+            // 4. Verify state proof milestones
+            // Extract milestone snapshots from the milestones (same as spectate)
+            const milestoneSnapshots = proof.stateProof.milestones.map(
+                (milestone) => {
+                    // Get snapshot from milestone - this should match spectate logic
+                    const snapshot =
+                        stateManager.agreementManager.getSnapshotFromMilestone(
+                            milestone
+                        );
+                    if (!snapshot) {
+                        throw new Error(
+                            "Missing milestone snapshot for provided proof"
+                        );
+                    }
+                    return snapshot.toStruct();
+                }
+            );
+
+            const [isValid, _] =
+                await diamondStateMachine.localDiamondContract.verifyMilestones(
+                    proof.stateProof.milestones,
+                    milestoneSnapshots,
+                    proof.forkGenesisSnapshot.snapshotData
+                );
+            if (!isValid) {
+                console.log("Invalid proof: milestone verification failed");
+                return false;
+            }
+
+            return true;
+        } catch (error) {
+            console.log(`State proof verification failed: ${error}`);
+            return false;
+        }
+    }
 }
 
 export default StateProofService;

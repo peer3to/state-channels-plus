@@ -59,8 +59,23 @@ class StateProofRpcMethods extends ARpcMethods {
         }
 
         const { forkId, blockHeight } = initData;
+
+        // Verify the state proof
         console.log(
-            `Peer successfully proved their state for fork ${forkId} at block height ${blockHeight}!`
+            `Verifying state proof for fork ${forkId} at block height ${blockHeight}...`
+        );
+
+        const isValid = await this.service.verifyStateProof(channelId, proof);
+
+        if (!isValid) {
+            console.log(
+                `State proof verification failed for fork ${forkId} at block height ${blockHeight}`
+            );
+            return this.p2pManager.disconnectAndBlacklistPeer(senderTransport);
+        }
+
+        console.log(
+            `State proof verified successfully for fork ${forkId} at block height ${blockHeight}!`
         );
     }
 }
