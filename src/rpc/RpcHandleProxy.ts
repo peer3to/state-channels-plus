@@ -1,13 +1,13 @@
 import ARpcMethods from "./ARpcMethods";
 import ARpcService from "./ARpcService";
-import Rpc from "./Rpc";
+import Rpc, { createMessageContent } from "./Rpc";
 import RpcHandler from "./RpcHandler";
 
 /**
  * Transforms a function's return type into a RpcHandler
  */
 type RpcHandleMethod<T> = T extends (...args: infer A) => any
-    ? (...args: A) => RpcHandler
+    ? (...args: A) => Promise<RpcHandler>
     : T;
 
 /**
@@ -35,13 +35,32 @@ class RpcMethodsProxy {
                         return Reflect.get(target, prop, receiver);
                     }
                     if (typeof prop === "symbol") return;
-                    return (...args: any) => {
+                    return async (...args: any) => {
+                        const timestamp = Date.now();
+                        const method = prop.toString();
+
+                        // Create message content (what we want to sign)
+                        const messageContent = createMessageContent(
+                            method,
+                            args,
+                            timestamp
+                        );
+
+                        // Sign the message content using P2P signer
+                        const signature =
+                            await ctx.service.p2pManager.p2pSigner.signMessage(
+                                messageContent
+                            );
+
+                        // Create the complete RPC structure
                         const rpc: Rpc = {
                             service: ctx.serviceName,
-                            method: prop.toString(),
+                            method: method,
                             params: args,
-                            timestamp: Date.now()
+                            timestamp: timestamp,
+                            signature: signature
                         };
+
                         return new RpcHandler(rpc, ctx.service.p2pManager);
                     };
                 }
