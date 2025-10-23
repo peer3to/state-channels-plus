@@ -146,12 +146,22 @@ export async function deployLocalDiamond(
     return { address: diamondAddress, signer: usedSigner };
 }
 
+// Counter for unique deployments
+let deploymentCounter = 0;
+
 export async function deployLocalFromTx(
     tx: ContractDeployTransaction,
     evm: EVM
 ): Promise<Address> {
+    // Create a deterministic but unique caller address for each deployment
+    const counterHex = deploymentCounter.toString(16).padStart(8, "0");
+    const caller = Address.fromString(`0x${"0".repeat(32)}${counterHex}`);
+    deploymentCounter++;
+
     const deploymentResult = await evm.runCall({
-        data: ethers.getBytes(tx.data as string)
+        data: ethers.getBytes(tx.data as string),
+        caller: caller,
+        origin: caller
     });
 
     if (deploymentResult.execResult.exceptionError) {

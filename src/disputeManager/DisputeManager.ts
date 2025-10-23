@@ -27,7 +27,6 @@ import {
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
 import { DEBUG_DISPUTE_HANDLER } from "@/utils/config";
-import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 type TimeoutOptions = {
     // This is enough and the rest is deducted from storage/state
@@ -193,16 +192,13 @@ class DisputeManager {
             selfRemoval: selfRemoval
         };
 
-        const result =
-            await this.stateChannelManagerContract.computeDisputeOutputSnapshotData.staticCall(
+        const outputSnapshotData =
+            await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
                 disputeInput,
                 latestStateSnapshot.toStruct(),
                 latestStateMachineState,
                 auditingData.genesisStateSnapshotData.latestJoinChannelBlockHash
             );
-
-        const outputSnapshotData: SnapshotDataStruct = result[0];
-        // slashes = result[1]; // address[]
 
         const outputSnapshotDataHash = hash(
             Codec.encode(outputSnapshotData, Type.SnapshotData)
