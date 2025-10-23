@@ -230,26 +230,29 @@ contract LocalDiamond is StateChannelManagerProxy {
         return channelBalances[channelId].onChainJoinChannelMap[latestJoinChannelBlockHash].totalDeposits;
     }
 
-    // function computeDisputeOutputSnapshotData(
-    //     DisputeInput memory disputeInput,
-    //     StateSnapshot memory latestStateSnapshot,
-    //     bytes memory latestStateMachineState,
-    //     bytes32 latestJoinChannelBlockHash
-    // ) public returns (SnapshotData memory outputSnapshotData) {
-    //     // Encode the function selector and arguments
-    //     bytes memory data = abi.encodeCall(
-    //         DisputeVerificationFacet.computeDisputeOutputSnapshotData,
-    //         (disputeInput, latestStateSnapshot, latestStateMachineState, latestJoinChannelBlockHash)
-    //     );
-    //     // Perform the low-level call with a gas limit
-    //     (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: getGasLimit()}(data);
-    //     if (!success) {
-    //         assembly {
-    //             revert(add(returnData, 0x20), mload(returnData))
-    //         }
-    //     }
-    //     (outputSnapshotData,) = abi.decode(returnData, (SnapshotData, address[]));
-    // }
+    function computeDisputeOutputSnapshotData(
+        DisputeInput memory disputeInput,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory latestStateMachineState,
+        bytes32 latestJoinChannelBlockHash
+    ) public returns (SnapshotData memory outputSnapshotData) {
+        // Encode the function selector and arguments
+        bytes memory data = abi.encodeCall(
+            DisputeVerificationFacet.computeDisputeOutputSnapshotData,
+            (disputeInput, latestStateSnapshot, latestStateMachineState, latestJoinChannelBlockHash)
+        );
+
+        // Perform the low-level call with a gas limit
+        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: 999999}(data);
+
+        if (!success) {
+            assembly {
+                revert(add(returnData, 0x20), mload(returnData))
+            }
+        }
+
+        outputSnapshotData = abi.decode(returnData, (SnapshotData));
+    }
 
     function checkDisputeAuditingDataCommitment(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         public
