@@ -12,66 +12,86 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
     }
 
     /**
-     * Peer receives fork disputed acknowledgment request
-     * They need to check if they agree the fork is disputed
+     * Peer receives dispute acknowledgment request
+     * Check if fork is disputed and respond accordingly
      */
-    public async onIsForkDisputedRequest(channelId: ChannelId, forkId: ForkId) {
+    public async onDisputeAcknowledgmentRequest(
+        channelId: ChannelId,
+        forkId: ForkId
+    ) {
         console.log(
             `Received dispute acknowledgment request for fork ${forkId}`
         );
 
-        // Check if we agree that this fork is disputed
-        const isDisputed =
-            await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
-                channelId,
+        // Check if we already sent a request for this forkId
+        if (
+            this.service.hasAcknowledgedDisputedFork(
+                this.senderTransport,
                 forkId
-            );
-
-        // Send our acknowledgment back
-        this.remoteRpc.isForkDisputedService
-            .onIsForkDisputedResponse(channelId, forkId, isDisputed)
-            .sendOne(this.senderTransport);
-    }
-
-    /**
-     * Peer receives dispute acknowledgment response
-     * If they don't agree on the dispute status, disconnect
-     */
-    public async onIsForkDisputedResponse(
-        channelId: ChannelId,
-        forkId: ForkId,
-        peerThinksDisputed: boolean
-    ) {
-        console.log(
-            `Received disputed fork acknowledgment response for fork ${forkId}`
-        );
-
-        // Check our own view of whether the fork is disputed
-        const weThinkDisputed =
-            await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
-                channelId,
-                forkId
-            );
-
-        // If we don't agree on the disputed fork status, disconnect
-        if (weThinkDisputed !== peerThinksDisputed) {
+            )
+        ) {
             console.log(
-                `Dispute status mismatch for fork ${forkId}: we think ${weThinkDisputed}, peer thinks ${peerThinksDisputed}. Disconnecting.`
+                `Already sent request for fork ${forkId}, disconnecting`
             );
             return this.p2pManager.disconnectAndBlacklistPeer(
                 this.senderTransport
             );
         }
 
-        // If we both agree the fork is disputed, mark it as acknowledged
-        if (weThinkDisputed && peerThinksDisputed) {
-            console.log(
-                `Both peers agree fork ${forkId} is disputed. Marking as acknowledged.`
+        // Check if fork is disputed locally
+        const isDisputedLocal =
+            await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
+                channelId,
+                forkId
             );
-            this.service.acknowledgeDisputedFork(this.senderTransport, forkId);
+
+        if (isDisputedLocal) {
+            console.log(
+                `Fork ${forkId} is disputed on local diamond, responding`
+            );
+            return this.respondToDisputeAcknowledgment(channelId, forkId);
         }
 
-        console.log(`Dispute handshake completed for fork ${forkId}`);
+        // Check if fork is disputed on chain
+        const isDisputedOnChain =
+            await this.p2pManager.stateManager.stateChannelManagerContract.isForkDisputed(
+                channelId,
+                forkId
+            );
+
+        if (isDisputedOnChain) {
+            console.log(`Fork ${forkId} is disputed on-chain, responding`);
+            return this.respondToDisputeAcknowledgment(channelId, forkId);
+        }
+
+        // Fork is not disputed - disconnect
+        console.log(`Fork ${forkId} is not disputed, disconnecting`);
+        return this.p2pManager.disconnectAndBlacklistPeer(this.senderTransport);
+    }
+
+    /**
+     * Respond to dispute acknowledgment
+     */
+    private async respondToDisputeAcknowledgment(
+        channelId: ChannelId,
+        forkId: ForkId
+    ) {
+        // Check if we already responded for this forkId
+        if (
+            this.service.hasAcknowledgedDisputedFork(
+                this.senderTransport,
+                forkId
+            )
+        ) {
+            console.log(`Already responded for fork ${forkId}, disconnecting`);
+            return this.p2pManager.disconnectAndBlacklistPeer(
+                this.senderTransport
+            );
+        }
+
+        // Mark as acknowledged
+        this.service.acknowledgeDisputedFork(this.senderTransport, forkId);
+        console.log(`Acknowledged disputed fork ${forkId}`);
     }
 }
 

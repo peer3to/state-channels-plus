@@ -1553,7 +1553,15 @@ class StateManager {
         dispute: DisputeStruct,
         timestamp: Timestamp
     ) {
-        throw new Error("TODO - Not implemented");
+        console.log(
+            `Dispute committed for channel ${dispute.input.channelId}, requesting acknowledgment from all peers`
+        );
+
+        // Request all peers to acknowledge the disputed fork
+        this.p2pManager.localRpc.isForkDisputedService.requestDisputeAcknowledgment(
+            dispute.input.channelId,
+            dispute.input.genesisSnapshotDataHash
+        );
     }
 
     private getStrategyByStatus(status: Status): AValidationStrategy {

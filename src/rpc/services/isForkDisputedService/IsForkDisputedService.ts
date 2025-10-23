@@ -17,28 +17,27 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
     }
 
     /**
-     * Initiate disputed fork acknowledgment handshake for a specific fork
-     * This should be called when a peer is building on a disputed fork
+     * Request all peers to acknowledge a disputed fork
+     * This should be called when a dispute window is created on-chain
      */
-    public initiateIsForkDisputedHandshake(
-        transport: ATransport,
-        channelId: ChannelId,
-        forkId: ForkId
-    ) {
-        // Check if peer is building on an acknowledged disputed fork
-        if (this.hasAcknowledgedDisputedFork(transport, forkId)) {
-            console.log(
-                `Peer is building on acknowledged disputed fork ${forkId}, disconnecting`
-            );
-            this.p2pManager.disconnectAndBlacklistPeer(transport);
-            return;
-        }
-
-        console.log(`Initiating dispute handshake for fork ${forkId}`);
+    public requestDisputeAcknowledgment(channelId: ChannelId, forkId: ForkId) {
+        console.log(
+            `Requesting all peers to acknowledge disputed fork ${forkId}`
+        );
 
         this.remoteRpc.isForkDisputedService
-            .onIsForkDisputedRequest(channelId, forkId)
-            .sendOne(transport);
+            .onDisputeAcknowledgmentRequest(channelId, forkId)
+            .sendMultiple(this.p2pManager.openConnections);
+    }
+
+    /**
+     * Check if a transport has acknowledged a specific disputed fork
+     */
+    public didTransportAckDispute(
+        transport: ATransport,
+        forkId: ForkId
+    ): boolean {
+        return this.hasAcknowledgedDisputedFork(transport, forkId);
     }
 
     /**

@@ -118,16 +118,22 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         block: Block,
         senderTransport?: ATransport
     ): Promise<BlockValidationResult> {
-        // If we have a sender transport, initiate dispute handshake
-        if (senderTransport) {
-            this.p2pManager.localRpc.isForkDisputedService.initiateIsForkDisputedHandshake(
+        // Check if peer has already acknowledged this disputed fork
+        if (
+            senderTransport &&
+            this.p2pManager.localRpc.isForkDisputedService.didTransportAckDispute(
                 senderTransport,
-                block.channelId,
                 block.forkId
+            )
+        ) {
+            console.log(
+                `Peer is building on acknowledged disputed fork ${block.forkId}, disconnecting`
             );
+            this.p2pManager.disconnectAndBlacklistPeer(senderTransport);
+            return BlockValidationResult.DISCONNECT;
         }
 
-        // Queue the block - will process after handshake if peer acknowledges dispute
+        // Queue the block - will process normally
         this.storage.queues.queueBlock(block);
         return BlockValidationResult.NOT_READY;
     }
