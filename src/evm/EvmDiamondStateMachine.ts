@@ -7,7 +7,7 @@ import {
 } from "@typechain-types";
 import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
-import StateManager from "@/stateManager";
+import StateManager from "../stateManager/StateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
 import { ExitChannelEthersType, BalanceEthersType } from "@/types/ethers";
@@ -338,6 +338,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
      * @param deployedStateChannelContractInstance The deployed state channel manager proxy
      * @param stateMachineContractInstance The state machine contract instance
      * @param p2pEventHooks Optional event hooks for P2P interactions
+     * @param timeConfigOverride Optional time configuration override for testing
      * @returns Promise with the created P2P interaction object
      */
     public static async p2pSetup<T extends AStateMachineContract>(
@@ -345,7 +346,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         deployStateMachineTx: any,
         deployedStateChannelContractInstance: StateChannelManagerProxy,
         stateMachineContractInstance: T,
-        p2pEventHooks?: P2pEventHooks
+        p2pEventHooks?: P2pEventHooks,
+        timeConfigOverride?: Partial<TimeConfig>
     ): Promise<P2pInstance<T>> {
         // Sync clock to DLT
         await Clock.init(signer.provider!);
@@ -376,12 +378,20 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         // Get time configuration
         const configTimes =
             await deployedStateChannelContractInstance.getAllTimes();
-        const timeConfig: TimeConfig = {
+        let timeConfig: TimeConfig = {
             p2pTime: Number(configTimes[0]),
             agreementTime: Number(configTimes[1]),
             chainFallbackTime: Number(configTimes[2]),
             evidenceTime: Number(configTimes[3])
         };
+
+        // Apply time configuration override if provided (for testing)
+        if (timeConfigOverride) {
+            timeConfig = {
+                ...timeConfig,
+                ...timeConfigOverride
+            };
+        }
 
         const signerAddress = await signer.getAddress();
         const storage = new Storage();

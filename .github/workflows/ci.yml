@@ -34,3 +34,6 @@ jobs:
 
       - name: Run tests
         run: yarn test
+      # ideally this shoud run in a merge queue, but we don't have that yet
+      - name: Run e2e tests
+        run: yarn test:e2e

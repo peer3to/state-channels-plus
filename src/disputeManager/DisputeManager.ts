@@ -147,7 +147,7 @@ class DisputeManager {
                     timeoutOptions.previousBlockProducerPostedCalldata || false,
                 participantSignatureOnPreviousBlock:
                     (timeoutOptions.participantSignatureOnPreviousBlock as Bytes) ||
-                    ""
+                    "0x"
             };
         } else {
             timeoutStruct = this.getEmptyTimeoutStruct();
@@ -215,7 +215,11 @@ class DisputeManager {
             signatures: []
         };
 
-        this.stateChannelManagerContract.uploadDispute(disputeConfirmation);
+        await this.stateChannelManagerContract.uploadDispute(
+            disputeConfirmation
+        );
+
+        this.p2pEventHooks.onInitiatingDispute?.();
 
         return { dispute, disputeConfirmation };
     }
@@ -252,7 +256,7 @@ class DisputeManager {
             latestStateSnapshot = genesisStateSnapshot;
         } else {
             const snapshot = this.storage.stateSnapshots.getStateSnapshotByHash(
-                latestBlock.hash
+                latestBlock.stateSnapshotHash
             );
             if (!snapshot) {
                 isPartial = true;
@@ -301,7 +305,7 @@ class DisputeManager {
             isForced: false,
             previousBlockProducer: ethers.ZeroAddress,
             previousBlockProducerPostedCalldata: false,
-            participantSignatureOnPreviousBlock: ""
+            participantSignatureOnPreviousBlock: "0x"
         };
     }
 

@@ -67,6 +67,24 @@ export class EventHandler {
             channelId,
             stateSnapshot
         );
+
+        // Check if channel should be closed (0 participants remaining)
+        if (stateSnapshot.snapshotData.participants.length === 0) {
+            console.log(
+                `Channel ${channelId} has 0 participants remaining, closing channel`
+            );
+            await this.handleChannelClose(channelId);
+        }
+    }
+
+    private async handleChannelClose(channelId: ChannelId): Promise<void> {
+        console.log(`Handling channel close for ${channelId}`);
+
+        // Disconnect from all peers in this channel
+        this.stateManager.p2pManager.disconnectAll();
+
+        // Trigger channelclosed hook?
+        this.p2pEventHooks.onCloseChannel?.(channelId);
     }
 
     onBlockCalldataPosted(
@@ -456,20 +474,20 @@ export class EventHandler {
             await this.stateManager.stateChannelManagerContract.reduce.staticCall(
                 disputes
             );
-        const latestSnapshot =
-            this.storage.stateSnapshots.getStateSnapshotByHash(
-                reduceOutput.latestBlock.stateSnapshotHash
+
+        // Use getReduceData to properly handle genesis case (when latestBlock is undefined)
+        const reduceData =
+            await this.stateManager.agreementManager.getReduceData(
+                forkId,
+                reduceOutput
             );
-        if (!latestSnapshot)
-            throw new Error(
-                `Snapshot not available for hash: ${reduceOutput.latestBlock.stateSnapshotHash}`
-            );
+        const latestSnapshot = reduceData.latestStateSnapshot;
         const state = this.storage.stateMachineStates.getStateMachineState(
-            latestSnapshot.stateMachineStateHash
+            latestSnapshot.snapshotData.stateMachineStateHash
         );
         if (!state)
             throw new Error(
-                `StateMachineState not available for hash: ${latestSnapshot.stateMachineStateHash}`
+                `StateMachineState not available for hash: ${latestSnapshot.snapshotData.stateMachineStateHash}`
             );
         const genesisSnapshot =
             this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
@@ -478,8 +496,8 @@ export class EventHandler {
                 `GenesisSnapshot not available for forkId: ${forkId}`
             );
         const jcbs = this.storage.joinChannelBlocks.getBlocksInRange(
-            genesisSnapshot.latestJoinBlockHash,
-            latestSnapshot.latestJoinBlockHash
+            genesisSnapshot.snapshotData.latestJoinChannelBlockHash,
+            latestSnapshot.snapshotData.latestJoinChannelBlockHash
         );
         const [snapshotData] =
             await this.stateManager.stateChannelManagerContract.reduceOutputToSnapshotData.staticCall(

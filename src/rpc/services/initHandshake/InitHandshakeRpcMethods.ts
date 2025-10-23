@@ -30,13 +30,9 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             );
             return;
         }
-        console.log(
-            `onInitHandshakeRequest - localTime:${localTime} time:${time}`
-        );
         const challengeHashBytes = ethers.getBytes(challengeHash);
         const signature =
             await this.p2pManager.p2pSigner.signMessage(challengeHashBytes);
-        console.log(`onInitHandshakeRequest - done`);
         this.remoteRpc.initHandshakeService
             .onInitHandshakeResponse(
                 signature,
@@ -51,7 +47,6 @@ class InitHandshakeRpcMethods extends ARpcMethods {
         responseTime: Timestamp,
         preferredTransport: TransportType
     ) {
-        console.log(`onInitHandshakeRESPONSE - start`);
         const challenge = this.service.getChallenge(this.senderTransport);
         this.service.mapTransportToChallenge.delete(this.senderTransport);
         if (!challenge) {
@@ -113,7 +108,6 @@ class InitHandshakeRpcMethods extends ARpcMethods {
                 this.senderTransport
             );
         }
-        console.log(`onInitHandshakeRESPONSE - done`);
         //TODO! RESOLVE SUCCESS - set some flag also
         this.p2pManager.stateManager.p2pEventHooks.onConnection?.(
             signerAddress

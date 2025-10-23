@@ -11,9 +11,11 @@ export default class P2pInstance<T extends AStateMachine> {
         this.p2pSigner = p2pSigner;
     }
 
-    public async dispose() {
-        this.p2pContractInstance.removeAllListeners();
-        await this.p2pSigner.p2pManager.stateManager.dispose();
+    public dispose() {
+        return Promise.all([
+            this.p2pContractInstance.removeAllListeners(),
+            this.p2pSigner.p2pManager.stateManager.dispose()
+        ]);
     }
 
     public setHooks(p2pEventHooks: P2pEventHooks) {
