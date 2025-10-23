@@ -207,21 +207,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     // ********** public/external DIAMOND functions **********
 
-    function computeDisputeOutputSnapshotData(
-        DisputeInput memory disputeInput,
-        StateSnapshot memory latestStateSnapshot,
-        bytes memory latestStateMachineState,
-        bytes32 latestJoinChannelBlockHash
-    ) public returns (SnapshotData memory outputSnapshotData, address[] memory slashes) {
-        _delegatecall(
-            disputeVerificationFacetAddress,
-            abi.encodeCall(
-                DisputeVerificationFacet.computeDisputeOutputSnapshotData,
-                (disputeInput, latestStateSnapshot, latestStateMachineState, latestJoinChannelBlockHash)
-            )
-        );
-    }
-
     // @dev Callable only by diamond facets - performs the deposit of the specific assets by interpreting `joinChannel` - returns bool success
     function depositAssetsComposable(JoinChannel[] memory joinChannels, bool isAtomic)
         public
