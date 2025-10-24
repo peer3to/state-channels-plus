@@ -111,7 +111,9 @@ describe("E2E: Core Functionality", function () {
             for (let i = 1; i < latestBlocks.length; i++) {
                 expect(latestBlocks[0]?.hash).to.equal(
                     latestBlocks[i]?.hash,
-                    `Peers should have same block hash (comparing peer 1 with peer ${i + 1})`
+                    `Peers should have same block hash (comparing peer 1 with peer ${
+                        i + 1
+                    })`
                 );
             }
 
@@ -119,7 +121,9 @@ describe("E2E: Core Functionality", function () {
             for (let i = 1; i < latestBlocks.length; i++) {
                 expect(latestBlocks[0]?.height).to.equal(
                     latestBlocks[i]?.height,
-                    `Peers should have same block height (comparing peer 1 with peer ${i + 1})`
+                    `Peers should have same block height (comparing peer 1 with peer ${
+                        i + 1
+                    })`
                 );
             }
 
@@ -130,7 +134,9 @@ describe("E2E: Core Functionality", function () {
             for (let i = 1; i < stateSnapshots.length; i++) {
                 expect(stateSnapshots[0]).to.deep.equal(
                     stateSnapshots[i],
-                    `Peers should have same state snapshot (comparing peer 1 with peer ${i + 1})`
+                    `Peers should have same state snapshot (comparing peer 1 with peer ${
+                        i + 1
+                    })`
                 );
             }
 
@@ -217,7 +223,7 @@ describe("E2E: Core Functionality", function () {
         // Arrange: Setup 3 participants with initial balances, open channel, configure short timeout
         // Act: disconnect author peer, just when it is their turn to write
         // Assert: timeout dispute is created and submitted on-chain
-        it.skip("should handle timeout when author peer disconnects", async function () {
+        it.only("should handle timeout when author peer disconnects", async function () {
             // Arrange - Setup with 3 participants and short timeout for fast testing
             const harness = new PeerTestHarness<MathStateMachine>();
             await harness.setup(3, {
