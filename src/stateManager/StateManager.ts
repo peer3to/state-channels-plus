@@ -21,7 +21,8 @@ import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofT
 // TypeChain types - Dispute types
 import {
     DisputeStruct,
-    ReduceOutputStruct
+    ReduceOutputStruct,
+    TimeoutStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 // TypeChain types - Contract interfaces
@@ -77,7 +78,6 @@ import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidat
 
 import { DEBUG_STATE_MANAGER } from "@/utils/config";
 import { TimeoutManager } from "@/utils/TimeoutManager";
-import { TimeoutStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 const NULL = "0x00";
 class StateManager {
