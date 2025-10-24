@@ -252,6 +252,10 @@ export class BlockBuilder {
 
             case ValidationFailure.SUBJECTIVE_TIMESTAMP_INVALID:
                 this.mockSetup.clockStub.returns(8000); // Way outside agreementTime
+                // Ensure block doesn't have onChainTimestamp for subjective validation
+                this.mockSetup.mockStateManager.fetchUpdatedOnChainBlock.resolves(
+                    undefined
+                );
                 break;
         }
     }
@@ -486,7 +490,8 @@ export class MockSetup {
             addBalance: sinon.stub().resolves({ amount: 100n, data: "0x" }),
             localDiamondContract: {
                 isForkDisputed: sinon.stub().resolves(false),
-                isBlockAuthentic: sinon.stub().resolves(true)
+                isBlockAuthentic: sinon.stub().resolves(true),
+                onBlockCalldataPosted: sinon.stub().resolves()
             }
         };
 
@@ -563,7 +568,11 @@ export class MockSetup {
 
         this.mockStateManager = {
             channelId: "0xchannel123",
-            forkId: "0xfork123"
+            forkId: "0xfork123",
+            fetchUpdatedOnChainBlock: sinon.stub().resolves({
+                onChainTimestamp: 1000
+            }),
+            fetchBlockCommitmentCalldata: sinon.stub().resolves(undefined)
         };
 
         this.mockP2pEventHooks = {

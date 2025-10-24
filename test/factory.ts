@@ -21,6 +21,7 @@ import { Codec, Type } from "@/utils";
 import { Block, StateSnapshot } from "@/models";
 import { BlockHeight, Bytes, ForkId, Timestamp } from "@/types/types";
 import { DisputeInputStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 export const hash = () => ethers.hexlify(ethers.randomBytes(32));
 
@@ -40,13 +41,14 @@ export const signature = () => {
  * @returns A transaction header with default values
  */
 export function transactionHeader(
-    overrides: Partial<TransactionHeaderStruct> = {}
+    overrides: Partial<TransactionHeaderStruct> = {},
+    signer?: HardhatEthersSigner
 ): TransactionHeaderStruct {
     return {
         channelId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
         forkId: ethers.hexlify(ethers.zeroPadBytes("0x01", 32)),
         transactionCnt: 0,
-        participant: ethers.Wallet.createRandom().address,
+        participant: signer?.address || ethers.Wallet.createRandom().address,
         timestamp: Math.floor(Date.now() / 1000),
         ...overrides
     };
@@ -71,10 +73,11 @@ export function transactionBody(
  * @returns A transaction with default values
  */
 export function transaction(
-    overrides: Partial<TransactionStruct> = {}
+    overrides: Partial<TransactionStruct> = {},
+    signer?: HardhatEthersSigner
 ): TransactionStruct {
     const transaction: TransactionStruct = {
-        header: transactionHeader(),
+        header: transactionHeader(undefined, signer),
         body: transactionBody()
     };
 
@@ -96,9 +99,12 @@ export function transaction(
  * @param overrides Optional overrides for the block properties
  * @returns A mock Block instance
  */
-export function block(overrides: Partial<BlockStruct> = {}): Block {
+export function block(
+    overrides: Partial<BlockStruct> = {},
+    signer?: HardhatEthersSigner
+): Block {
     const blockStruct: BlockStruct = {
-        transaction: transaction(),
+        transaction: transaction(undefined, signer),
         previousBlockHash: ethers.hexlify(ethers.randomBytes(32)),
         stateSnapshotHash: ethers.hexlify(ethers.randomBytes(32))
     };
@@ -199,9 +205,10 @@ export function joinChannelBlock(
     return { ...defaultJoinChannelBlock, ...overrides };
 }
 export function signedBlock(
-    overrides: Partial<SignedBlockStruct> = {}
+    overrides: Partial<SignedBlockStruct> = {},
+    signer?: HardhatEthersSigner
 ): SignedBlockStruct {
-    const mockBlock = block();
+    const mockBlock = block(undefined, signer);
     const defaultSignedBlock: SignedBlockStruct = {
         encodedBlock: Codec.encode(mockBlock.blockStruct, Type.Block),
         signature: signature()
