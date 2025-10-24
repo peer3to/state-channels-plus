@@ -243,7 +243,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         );
 
         // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: 999999}(data);
+        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: getGasLimit()}(data);
 
         if (!success) {
             assembly {
