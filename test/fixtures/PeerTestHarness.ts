@@ -1,23 +1,21 @@
-import { BytesLike, ethers, Signer } from "ethers";
+import { BytesLike, Signer } from "ethers";
 import { expect } from "chai";
 import * as sinon from "sinon";
+import hre from "hardhat";
 import { EvmStateMachine, P2pInstance } from "@/evm";
 import StateManager from "@/stateManager";
 import { LocalDiscoveryServer } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import { AStateMachine, StateChannelManagerProxy } from "@typechain-types";
-import { ForkId, Address, ChannelId } from "@/types/types";
+import { ForkId, ChannelId, Address } from "@/types/types";
 import { TimeConfig } from "@/types/time";
-import {
-    deployMathChannelProxyFixture,
-    createOpenChannelTestObject
-} from "@test/test_utils/testHelpers";
-import { HardhatEthersHelpers } from "hardhat/types/runtime";
+import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { SignatureUtils, Codec, Type } from "@/utils";
 import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
+import { deploy } from "../../scripts/V1/deploy";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;
@@ -71,7 +69,6 @@ export class PeerTestHarness<T extends AStateMachine> {
     public channelManager!: StateChannelManagerProxy;
     private sharedDeployTx!: any;
     public channelId!: ChannelId;
-    private ethers!: typeof ethers & HardhatEthersHelpers;
     private options!: Required<HarnessOptions>;
     private discoveryServerStarted = false;
     public activeForkId?: ForkId;
@@ -79,16 +76,10 @@ export class PeerTestHarness<T extends AStateMachine> {
 
     constructor() {}
 
-    async setup(
-        numPeers: number,
-        ethersInstance: typeof ethers & HardhatEthersHelpers,
-        options: HarnessOptions = {}
-    ): Promise<void> {
+    async setup(numPeers: number, options: HarnessOptions = {}): Promise<void> {
         if (numPeers < 2 || numPeers > 10) {
             throw new Error("Number of peers must be between 2 and 10");
         }
-
-        this.ethers = ethersInstance;
         this.harnessConfig = createConfig({
             ...testConfig,
             ...(options.configOverrides || {})
@@ -106,20 +97,39 @@ export class PeerTestHarness<T extends AStateMachine> {
         await this.deployContracts();
         this.channelId = this.options.channelId;
 
-        const signers = await this.ethers.getSigners();
+        const signers = await hre.ethers.getSigners();
         for (let i = 0; i < numPeers; i++) {
             await this.createPeer(i, signers[i]);
         }
     }
 
     private async deployContracts(): Promise<void> {
-        const deployment = await deployMathChannelProxyFixture(this.ethers);
-        this.channelManager = deployment.mathChannelManager;
         const mathSMFactory =
-            await this.ethers.getContractFactory("MathStateMachine");
+            await hre.ethers.getContractFactory("MathStateMachine");
+        const mathInstance = await mathSMFactory.deploy(this.options.gasLimit);
+        await mathInstance.waitForDeployment();
+        const stateMachineAddress = await mathInstance.getAddress();
+
         this.sharedDeployTx = await mathSMFactory.getDeployTransaction(
             this.options.gasLimit
         );
+
+        // Deploy MathConsumerFacet
+        const mathConsumerFactory =
+            await hre.ethers.getContractFactory("MathConsumerFacet");
+        const mathConsumerInstance = await mathConsumerFactory.deploy();
+        await mathConsumerInstance.waitForDeployment();
+        const consumerFacetAddress = await mathConsumerInstance.getAddress();
+
+        const [hardhatSigner] = await hre.ethers.getSigners();
+
+        const deployment = await deploy(
+            stateMachineAddress,
+            consumerFacetAddress,
+            hardhatSigner
+        );
+
+        this.channelManager = deployment.contract;
     }
 
     private async createPeer(index: number, signer: Signer): Promise<void> {
@@ -148,9 +158,11 @@ export class PeerTestHarness<T extends AStateMachine> {
                 eventSpies.onJoinChannel?.(joinChannelBlock)
         };
 
+        // Deploy MathStateMachine for this peer
         const mathSMFactory =
-            await this.ethers.getContractFactory("MathStateMachine");
+            await hre.ethers.getContractFactory("MathStateMachine");
         const mathInstance = await mathSMFactory.deploy(this.options.gasLimit);
+
         const p2pInstance = await EvmStateMachine.p2pSetup<any>(
             signer,
             this.sharedDeployTx,
