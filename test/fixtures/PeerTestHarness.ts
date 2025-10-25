@@ -319,10 +319,13 @@ export class PeerTestHarness<T extends AStateMachine> {
 
     async waitForSpecificPeersSync(
         peerIndices: number[],
-        timeout: number = 1500
+        timeoutMs?: number
     ): Promise<void> {
         if (peerIndices.length === 0) return;
+        const isGitHubActionsEnv = process.env.GITHUB_ACTIONS === "true";
 
+        const defaultTimeout = isGitHubActionsEnv ? 15000 : 5000;
+        const timeout = timeoutMs ?? defaultTimeout;
         const startTime = Date.now();
         while (Date.now() - startTime < timeout) {
             const forkId =
