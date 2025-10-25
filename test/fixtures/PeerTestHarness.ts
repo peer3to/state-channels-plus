@@ -235,10 +235,15 @@ export class PeerTestHarness<T extends AStateMachine> {
 
     async waitForP2PConnections(timeoutMs?: number): Promise<void> {
         const isGitHubActionsEnv = process.env.GITHUB_ACTIONS === "true";
-        const defaultTimeout = isGitHubActionsEnv ? 10000 : 2000; // 10s for CI, 2s for local
+        const defaultTimeout = isGitHubActionsEnv ? 15000 : 5000;
         const actualTimeout = timeoutMs ?? defaultTimeout;
+        const pollInterval = 50;
+        const stableDurationThreshold = 200;
 
         const startTime = Date.now();
+        let lastConnectionCount = 0;
+        let stableDuration = 0;
+
         while (Date.now() - startTime < actualTimeout) {
             const connected = this.peers.filter(
                 (p) =>
@@ -246,7 +251,18 @@ export class PeerTestHarness<T extends AStateMachine> {
                     0
             ).length;
 
-            if (connected >= Math.min(2, this.peers.length)) {
+            // Require stable connections for 200ms before considering established
+            if (connected === lastConnectionCount) {
+                stableDuration += pollInterval;
+            } else {
+                stableDuration = 0;
+                lastConnectionCount = connected;
+            }
+
+            if (
+                connected >= Math.min(2, this.peers.length) &&
+                stableDuration > stableDurationThreshold
+            ) {
                 return;
             }
             await sleep(50);
@@ -282,6 +298,9 @@ export class PeerTestHarness<T extends AStateMachine> {
         if (this.peers.length < 2) return;
 
         const startTime = Date.now();
+        let pollInterval = 50; // Start with 50ms
+        const maxPollInterval = 200; // Cap at 200ms
+
         while (Date.now() - startTime < timeout) {
             const forkId =
                 this.activeForkId || this.peers[0].stateManager.forkId;
@@ -291,12 +310,14 @@ export class PeerTestHarness<T extends AStateMachine> {
                 );
 
             if (!firstBlock) {
-                await sleep(50);
+                await sleep(pollInterval);
                 continue;
             }
 
             // Check if all peers have the same block hash
             let allSynced = true;
+            let syncedPeers = 0;
+
             for (let i = 1; i < this.peers.length; i++) {
                 const peerBlock =
                     this.peers[i].stateManager.storage.blocks.getLatestBlock(
@@ -304,12 +325,21 @@ export class PeerTestHarness<T extends AStateMachine> {
                     );
                 if (!peerBlock || peerBlock.hash !== firstBlock.hash) {
                     allSynced = false;
-                    break;
+                } else {
+                    syncedPeers++;
                 }
             }
 
             if (allSynced) return;
-            await sleep(50);
+
+            // Adaptive polling: increase interval if most peers are synced
+            if (syncedPeers > this.peers.length / 2) {
+                pollInterval = Math.min(pollInterval * 1.1, maxPollInterval);
+            } else {
+                pollInterval = Math.max(pollInterval * 0.9, 25); // Minimum 25ms
+            }
+
+            await sleep(pollInterval);
         }
 
         throw new Error(
@@ -370,6 +400,14 @@ export class PeerTestHarness<T extends AStateMachine> {
         for (const peer of this.peers) {
             try {
                 peer.contractInstance.removeAllListeners();
+                // Gracefully close P2P connections
+                peer.p2pInstance.p2pSigner.p2pManager.openConnections.forEach(
+                    (connection) => {
+                        peer.p2pInstance.p2pSigner.p2pManager.disconnectConnection(
+                            connection
+                        );
+                    }
+                );
                 await peer.p2pInstance.dispose();
                 Object.values(peer.eventSpies).forEach((spy) =>
                     spy?.resetHistory()
@@ -388,6 +426,9 @@ export class PeerTestHarness<T extends AStateMachine> {
             LocalDiscoveryServer.cleanup();
             this.discoveryServerStarted = false;
         }
+
+        // Wait for cleanup to complete
+        await sleep(100);
     }
 
     assertAllPeersInSync(expectedState?: any): void {
