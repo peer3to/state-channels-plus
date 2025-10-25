@@ -3,26 +3,38 @@ import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { MathStateMachine } from "@typechain-types/index";
 
 describe("E2E: Core Functionality", function () {
+    let harness: PeerTestHarness<MathStateMachine> | null = null;
+
+    beforeEach(async function () {
+        harness = new PeerTestHarness<MathStateMachine>();
+    });
+
+    afterEach(async function () {
+        if (harness) {
+            await harness.cleanup();
+            harness = null;
+        }
+    });
+
     describe("Multi-Block Scenarios", function () {
         // Arrange: Setup 2 participants with initial balances, open channel
         // Act: Execute 10 consecutive blocks with transactions
         // Assert: All blocks are signed by both participants, state consistency maintained
         it("should handle 10 consecutive blocks between 2 participants", async function () {
             // Arrange
-            const harness = new PeerTestHarness<MathStateMachine>();
-            await harness.setup(2, { debug: false });
-            const forkId = await harness.openChannel();
+            await harness!.setup(2, { debug: false });
+            const forkId = await harness!.openChannel();
 
             // Act
             for (let i = 0; i < 10; i++) {
-                await harness.submitNextTransaction((contract) =>
+                await harness!.submitNextTransaction((contract) =>
                     contract.add(i + 1)
                 );
             }
 
             // Assert
-            const stateManager1 = harness.peers[0].stateManager;
-            const stateManager2 = harness.peers[1].stateManager;
+            const stateManager1 = harness!.peers[0].stateManager;
+            const stateManager2 = harness!.peers[1].stateManager;
 
             const latestBlock1 =
                 stateManager1.storage.blocks.getLatestBlock(forkId);
@@ -70,9 +82,7 @@ describe("E2E: Core Functionality", function () {
             );
 
             // Verify state consistency - both peers should have the same final state
-            harness.assertAllPeersInSync();
-
-            await harness.cleanup();
+            harness!.assertAllPeersInSync();
         });
 
         // Arrange: Setup 3 participants with initial balances, open channel
@@ -80,19 +90,18 @@ describe("E2E: Core Functionality", function () {
         // Assert: All blocks are signed by all 3 participants, state consistency maintained
         it("should handle 10 consecutive blocks between 3 participants", async function () {
             // Arrange
-            const harness = new PeerTestHarness<MathStateMachine>();
-            await harness.setup(3, { debug: false });
-            const forkId = await harness.openChannel();
+            await harness!.setup(3, { debug: false });
+            const forkId = await harness!.openChannel();
 
             // Act
             for (let i = 0; i < 10; i++) {
-                await harness.submitNextTransaction((contract) =>
+                await harness!.submitNextTransaction((contract) =>
                     contract.add(i + 1)
                 );
             }
 
             // Assert
-            const stateManagers = harness.peers.map(
+            const stateManagers = harness!.peers.map(
                 (peer) => peer.stateManager
             );
             const latestBlocks = stateManagers.map((stateManager) =>
@@ -140,9 +149,7 @@ describe("E2E: Core Functionality", function () {
                 );
             }
 
-            harness.assertAllPeersInSync();
-
-            await harness.cleanup();
+            harness!.assertAllPeersInSync();
         });
     });
 
@@ -153,9 +160,7 @@ describe("E2E: Core Functionality", function () {
         // Assert: calldata is posted by the author peer
         it("should handle timeout when non-author peer disconnects", async function () {
             // Arrange - Setup with 3 participants and short timeout for fast testing
-            const harness = new PeerTestHarness<MathStateMachine>();
-            await harness.setup(3, {
-                debug: false,
+            await harness!.setup(3, {
                 timeConfig: {
                     p2pTime: 1,
                     agreementTime: 1,
@@ -163,36 +168,36 @@ describe("E2E: Core Functionality", function () {
                     // Total timeout: 4 seconds
                 }
             });
-            await harness.openChannel();
+            await harness!.openChannel();
 
             // Make 3 transactions to establish normal operation
-            await harness.submitNextTransaction((contract) => contract.add(1)); // peer 0
-            await harness.submitNextTransaction((contract) => contract.add(2)); // peer 1
-            await harness.submitNextTransaction((contract) => contract.add(3)); // peer 2
+            await harness!.submitNextTransaction((contract) => contract.add(1)); // peer 0
+            await harness!.submitNextTransaction((contract) => contract.add(2)); // peer 1
+            await harness!.submitNextTransaction((contract) => contract.add(3)); // peer 2
 
             // Reset spies after setup
-            harness.resetEventSpies();
+            harness!.resetEventSpies();
 
             // Act
 
             // Now it should be peer 0's turn again
-            const nextPeer = await harness.getNextPeerToWrite();
+            const nextPeer = await harness!.getNextPeerToWrite();
             expect(nextPeer.index).to.equal(0, "Should be peer 0's turn");
 
             // Disconnect peer 2 (non-author)
-            await harness.simulatePeerTimeout(2);
+            await harness!.simulatePeerTimeout(2);
 
             // Peer 0 authors a transaction
-            await harness.submitTransaction(
+            await harness!.submitTransaction(
                 nextPeer,
                 (contract) => contract.add(100),
                 { waitForPeers: [0, 1] } // wait for peers 0 and 1 to sync
             );
 
             // Wait for calldata posting (since peer 2 can't sign)
-            const calldataPosted = await harness.waitForCondition(
+            const calldataPosted = await harness!.waitForCondition(
                 () =>
-                    harness.getEventCallCount(
+                    harness!.getEventCallCount(
                         nextPeer.index,
                         "onPostingCalldata"
                     ) > 0,
@@ -202,59 +207,53 @@ describe("E2E: Core Functionality", function () {
             // Assert - Peer 0 posts calldata when peer 2 can't sign
             expect(calldataPosted).to.be.true;
             expect(
-                harness.getEventCallCount(nextPeer.index, "onPostingCalldata")
+                harness!.getEventCallCount(nextPeer.index, "onPostingCalldata")
             ).to.be.at.least(1);
 
             // Now it should be peer 1's turn
-            const nextPeerAfter = await harness.getNextPeerToWrite();
+            const nextPeerAfter = await harness!.getNextPeerToWrite();
             expect(nextPeerAfter.index).to.equal(1, "Should be peer 1's turn");
 
             // Test liveness: Peer 1 should be able to write despite peer 2 being disconnected
-            await harness.submitTransaction(
+            await harness!.submitTransaction(
                 nextPeerAfter,
                 (contract) => contract.add(200),
                 { waitForPeers: [0, 1] } // Don't wait for sync since peer 2 is disconnected
             );
-
-            await harness.cleanup();
         });
 
         // Scenario 2: Author peer disconnects
         // Arrange: Setup 3 participants with initial balances, open channel, configure short timeout
         // Act: disconnect author peer, just when it is their turn to write
         // Assert: timeout dispute is created and submitted on-chain
-        it.only("should handle timeout when author peer disconnects", async function () {
+        it("should handle timeout when author peer disconnects", async function () {
             // Arrange - Setup with 3 participants and short timeout for fast testing
-            const harness = new PeerTestHarness<MathStateMachine>();
-            await harness.setup(3, {
-                debug: true, // Enable debug logging
+            await harness!.setup(3, {
                 timeConfig: {
                     p2pTime: 1,
                     agreementTime: 1,
                     chainFallbackTime: 3
                 }
             });
-            await harness.openChannel();
+            await harness!.openChannel();
 
             // Make 3 transactions to establish normal operation
-
-            await harness.submitNextTransaction((contract) => contract.add(1)); // peer 0
-            await harness.submitNextTransaction((contract) => contract.add(2)); // peer 1
-            await harness.submitNextTransaction((contract) => contract.add(3)); // peer 2
+            await harness!.submitNextTransaction((contract) => contract.add(1)); // peer 0
+            await harness!.submitNextTransaction((contract) => contract.add(2)); // peer 1
+            await harness!.submitNextTransaction((contract) => contract.add(3)); // peer 2
 
             // Reset spies after setup
-            harness.resetEventSpies();
+            harness!.resetEventSpies();
 
             // Act
             // Now it should be peer 0's turn again - let them create a block first
-            const nextPeer = await harness.getNextPeerToWrite();
+            const nextPeer = await harness!.getNextPeerToWrite();
 
             // Disconnect peer 1 (the author peer who should write next) so they can't create a block
-
-            await harness.simulatePeerTimeout(1);
+            await harness!.simulatePeerTimeout(1);
 
             // Let peer 0 create a block (this will schedule timeout for the next participant)
-            await harness.submitTransaction(
+            await harness!.submitTransaction(
                 nextPeer,
                 (contract) => contract.add(100),
                 { waitForPeers: [0, 2] }
@@ -262,22 +261,21 @@ describe("E2E: Core Functionality", function () {
 
             // Wait for timeout dispute to be created and submitted on-chain
             // The remaining peers (0 and 2) should detect the timeout and create a dispute
-
-            const disputeCreated = await harness.waitForCondition(
+            const disputeCreated = await harness!.waitForCondition(
                 () => {
                     // Check if any of the remaining peers initiated a dispute
-                    const peer0DisputeCount = harness.getEventCallCount(
+                    const peer0DisputeCount = harness!.getEventCallCount(
                         0,
                         "onInitiatingDispute"
                     );
-                    const peer2DisputeCount = harness.getEventCallCount(
+                    const peer2DisputeCount = harness!.getEventCallCount(
                         2,
                         "onInitiatingDispute"
                     );
 
                     return peer0DisputeCount > 0 || peer2DisputeCount > 0;
                 },
-                50000 // Wait up to 5 seconds for dispute creation
+                10000 // Wait up to 10 seconds for dispute creation
             );
 
             // Assert - A timeout dispute should be created by one of the remaining peers
@@ -285,16 +283,14 @@ describe("E2E: Core Functionality", function () {
 
             // Verify that at least one peer initiated a dispute
             const totalDisputeCount =
-                harness.getEventCallCount(0, "onInitiatingDispute") +
-                harness.getEventCallCount(2, "onInitiatingDispute");
+                harness!.getEventCallCount(0, "onInitiatingDispute") +
+                harness!.getEventCallCount(2, "onInitiatingDispute");
             expect(totalDisputeCount).to.be.at.least(1);
 
             // Verify that the disconnected peer (peer 1) did not initiate any disputes
             expect(
-                harness.getEventCallCount(1, "onInitiatingDispute")
+                harness!.getEventCallCount(1, "onInitiatingDispute")
             ).to.equal(0);
-
-            await harness.cleanup();
         });
 
         // Future test for dispute resolution
