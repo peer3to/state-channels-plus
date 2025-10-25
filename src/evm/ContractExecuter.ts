@@ -24,20 +24,19 @@ export default class ContractExecuter {
     async executeCall(
         data: Bytes,
         caller?: Address,
-        isStatic = false
+        isSimulation = false
     ): Promise<ExecResult> {
         // set timestamp
         const block = defaultBlock();
         block.header.timestamp = BigInt(Clock.getTimeInSeconds());
-
+        if (isSimulation) await this.evm.journal.checkpoint();
         const result = await this.evm.runCall({
             data: ethers.getBytes(data),
             to: this.contractAddress,
             block,
-            isStatic,
             caller
         });
-
+        if (isSimulation) await this.evm.journal.revert();
         if (result.execResult.exceptionError) {
             const exceptionError = result.execResult.exceptionError;
             const errorData = result.execResult.returnValue

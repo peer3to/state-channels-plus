@@ -52,7 +52,6 @@ import {
     Type,
     hash,
     isCustomEvmError,
-    decodeErrorProxy,
     difference
 } from "@/utils";
 // Types
@@ -119,9 +118,7 @@ class StateManager {
         this.diamondStateMachine = diamondStateMachine;
         this.p2pEventHooks = p2pEventHooks;
         this.timeConfig = timeConfig;
-        this.stateChannelManagerContract = decodeErrorProxy(
-            stateChannelManagerContract
-        );
+        this.stateChannelManagerContract = stateChannelManagerContract;
         this.storage = storage;
         this.eventHandler = new EventHandler(
             this.storage,

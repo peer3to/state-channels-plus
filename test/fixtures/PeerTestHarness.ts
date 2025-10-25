@@ -1,23 +1,21 @@
-import { BytesLike, ethers, Signer } from "ethers";
+import { BytesLike, Signer } from "ethers";
 import { expect } from "chai";
 import * as sinon from "sinon";
+import hre from "hardhat";
 import { EvmStateMachine, P2pInstance } from "@/evm";
 import StateManager from "@/stateManager";
 import { LocalDiscoveryServer } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import { AStateMachine, StateChannelManagerProxy } from "@typechain-types";
-import { ForkId, Address, ChannelId } from "@/types/types";
+import { ForkId, ChannelId, Address } from "@/types/types";
 import { TimeConfig } from "@/types/time";
-import {
-    deployMathChannelProxyFixture,
-    createOpenChannelTestObject
-} from "@test/test_utils/testHelpers";
-import { HardhatEthersHelpers } from "hardhat/types/runtime";
+import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { SignatureUtils, Codec, Type } from "@/utils";
 import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
+import { deploy } from "../../scripts/V1/deploy";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;
@@ -71,7 +69,6 @@ export class PeerTestHarness<T extends AStateMachine> {
     public channelManager!: StateChannelManagerProxy;
     private sharedDeployTx!: any;
     public channelId!: ChannelId;
-    private ethers!: typeof ethers & HardhatEthersHelpers;
     private options!: Required<HarnessOptions>;
     private discoveryServerStarted = false;
     public activeForkId?: ForkId;
@@ -79,16 +76,10 @@ export class PeerTestHarness<T extends AStateMachine> {
 
     constructor() {}
 
-    async setup(
-        numPeers: number,
-        ethersInstance: typeof ethers & HardhatEthersHelpers,
-        options: HarnessOptions = {}
-    ): Promise<void> {
+    async setup(numPeers: number, options: HarnessOptions = {}): Promise<void> {
         if (numPeers < 2 || numPeers > 10) {
             throw new Error("Number of peers must be between 2 and 10");
         }
-
-        this.ethers = ethersInstance;
         this.harnessConfig = createConfig({
             ...testConfig,
             ...(options.configOverrides || {})
@@ -106,20 +97,39 @@ export class PeerTestHarness<T extends AStateMachine> {
         await this.deployContracts();
         this.channelId = this.options.channelId;
 
-        const signers = await this.ethers.getSigners();
+        const signers = await hre.ethers.getSigners();
         for (let i = 0; i < numPeers; i++) {
             await this.createPeer(i, signers[i]);
         }
     }
 
     private async deployContracts(): Promise<void> {
-        const deployment = await deployMathChannelProxyFixture(this.ethers);
-        this.channelManager = deployment.mathChannelManager;
         const mathSMFactory =
-            await this.ethers.getContractFactory("MathStateMachine");
+            await hre.ethers.getContractFactory("MathStateMachine");
+        const mathInstance = await mathSMFactory.deploy(this.options.gasLimit);
+        await mathInstance.waitForDeployment();
+        const stateMachineAddress = await mathInstance.getAddress();
+
         this.sharedDeployTx = await mathSMFactory.getDeployTransaction(
             this.options.gasLimit
         );
+
+        // Deploy MathConsumerFacet
+        const mathConsumerFactory =
+            await hre.ethers.getContractFactory("MathConsumerFacet");
+        const mathConsumerInstance = await mathConsumerFactory.deploy();
+        await mathConsumerInstance.waitForDeployment();
+        const consumerFacetAddress = await mathConsumerInstance.getAddress();
+
+        const [hardhatSigner] = await hre.ethers.getSigners();
+
+        const deployment = await deploy(
+            stateMachineAddress,
+            consumerFacetAddress,
+            hardhatSigner
+        );
+
+        this.channelManager = deployment.contract;
     }
 
     private async createPeer(index: number, signer: Signer): Promise<void> {
@@ -148,9 +158,11 @@ export class PeerTestHarness<T extends AStateMachine> {
                 eventSpies.onJoinChannel?.(joinChannelBlock)
         };
 
+        // Deploy MathStateMachine for this peer
         const mathSMFactory =
-            await this.ethers.getContractFactory("MathStateMachine");
+            await hre.ethers.getContractFactory("MathStateMachine");
         const mathInstance = await mathSMFactory.deploy(this.options.gasLimit);
+
         const p2pInstance = await EvmStateMachine.p2pSetup<any>(
             signer,
             this.sharedDeployTx,
@@ -223,10 +235,15 @@ export class PeerTestHarness<T extends AStateMachine> {
 
     async waitForP2PConnections(timeoutMs?: number): Promise<void> {
         const isGitHubActionsEnv = process.env.GITHUB_ACTIONS === "true";
-        const defaultTimeout = isGitHubActionsEnv ? 10000 : 2000; // 10s for CI, 2s for local
+        const defaultTimeout = isGitHubActionsEnv ? 15000 : 5000;
         const actualTimeout = timeoutMs ?? defaultTimeout;
+        const pollInterval = 50;
+        const stableDurationThreshold = 200;
 
         const startTime = Date.now();
+        let lastConnectionCount = 0;
+        let stableDuration = 0;
+
         while (Date.now() - startTime < actualTimeout) {
             const connected = this.peers.filter(
                 (p) =>
@@ -234,7 +251,18 @@ export class PeerTestHarness<T extends AStateMachine> {
                     0
             ).length;
 
-            if (connected >= Math.min(2, this.peers.length)) {
+            // Require stable connections for 200ms before considering established
+            if (connected === lastConnectionCount) {
+                stableDuration += pollInterval;
+            } else {
+                stableDuration = 0;
+                lastConnectionCount = connected;
+            }
+
+            if (
+                connected >= Math.min(2, this.peers.length) &&
+                stableDuration > stableDurationThreshold
+            ) {
                 return;
             }
             await sleep(50);
@@ -270,6 +298,9 @@ export class PeerTestHarness<T extends AStateMachine> {
         if (this.peers.length < 2) return;
 
         const startTime = Date.now();
+        let pollInterval = 50; // Start with 50ms
+        const maxPollInterval = 200; // Cap at 200ms
+
         while (Date.now() - startTime < timeout) {
             const forkId =
                 this.activeForkId || this.peers[0].stateManager.forkId;
@@ -279,12 +310,14 @@ export class PeerTestHarness<T extends AStateMachine> {
                 );
 
             if (!firstBlock) {
-                await sleep(50);
+                await sleep(pollInterval);
                 continue;
             }
 
             // Check if all peers have the same block hash
             let allSynced = true;
+            let syncedPeers = 0;
+
             for (let i = 1; i < this.peers.length; i++) {
                 const peerBlock =
                     this.peers[i].stateManager.storage.blocks.getLatestBlock(
@@ -292,12 +325,21 @@ export class PeerTestHarness<T extends AStateMachine> {
                     );
                 if (!peerBlock || peerBlock.hash !== firstBlock.hash) {
                     allSynced = false;
-                    break;
+                } else {
+                    syncedPeers++;
                 }
             }
 
             if (allSynced) return;
-            await sleep(50);
+
+            // Adaptive polling: increase interval if most peers are synced
+            if (syncedPeers > this.peers.length / 2) {
+                pollInterval = Math.min(pollInterval * 1.1, maxPollInterval);
+            } else {
+                pollInterval = Math.max(pollInterval * 0.9, 25); // Minimum 25ms
+            }
+
+            await sleep(pollInterval);
         }
 
         throw new Error(
@@ -307,10 +349,13 @@ export class PeerTestHarness<T extends AStateMachine> {
 
     async waitForSpecificPeersSync(
         peerIndices: number[],
-        timeout: number = 1500
+        timeoutMs?: number
     ): Promise<void> {
         if (peerIndices.length === 0) return;
+        const isGitHubActionsEnv = process.env.GITHUB_ACTIONS === "true";
 
+        const defaultTimeout = isGitHubActionsEnv ? 15000 : 5000;
+        const timeout = timeoutMs ?? defaultTimeout;
         const startTime = Date.now();
         while (Date.now() - startTime < timeout) {
             const forkId =
@@ -355,6 +400,14 @@ export class PeerTestHarness<T extends AStateMachine> {
         for (const peer of this.peers) {
             try {
                 peer.contractInstance.removeAllListeners();
+                // Gracefully close P2P connections
+                peer.p2pInstance.p2pSigner.p2pManager.openConnections.forEach(
+                    (connection) => {
+                        peer.p2pInstance.p2pSigner.p2pManager.disconnectConnection(
+                            connection
+                        );
+                    }
+                );
                 await peer.p2pInstance.dispose();
                 Object.values(peer.eventSpies).forEach((spy) =>
                     spy?.resetHistory()
@@ -373,6 +426,9 @@ export class PeerTestHarness<T extends AStateMachine> {
             LocalDiscoveryServer.cleanup();
             this.discoveryServerStarted = false;
         }
+
+        // Wait for cleanup to complete
+        await sleep(100);
     }
 
     assertAllPeersInSync(expectedState?: any): void {

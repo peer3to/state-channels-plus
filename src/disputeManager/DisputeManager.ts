@@ -136,10 +136,22 @@ class DisputeManager {
                 await this.diamondStateMachine.peekNextToWrite(
                     latestStateMachineState
                 );
+            const [p2pTime, agreementTime, chainFallbackTime] = (
+                await Promise.all([
+                    this.diamondStateMachine.localDiamondContract.getP2pTime(),
+                    this.diamondStateMachine.localDiamondContract.getAgreementTime(),
+                    this.diamondStateMachine.localDiamondContract.getChainFallbackTime()
+                ])
+            ).map(Number);
+
             timeoutStruct = {
                 participant: participantToTimeout,
                 blockHeight: timeoutOptions.blockHeightToTimeout,
-                minTimeStamp: Clock.getTimeInSeconds(), // we're here since some higher level logic decided it want to timeout based on our own subjective clock
+                minTimeStamp:
+                    Clock.getTimeInSeconds() +
+                    p2pTime +
+                    agreementTime +
+                    chainFallbackTime,
                 isForced: timeoutOptions.isForced || false,
                 previousBlockProducer:
                     timeoutOptions.previousBlockProducer || ethers.ZeroAddress,
@@ -180,14 +192,14 @@ class DisputeManager {
             selfRemoval: selfRemoval
         };
 
-        // generateDisputeOutputState
         const outputSnapshotData =
             await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
                 disputeInput,
                 latestStateSnapshot.toStruct(),
                 latestStateMachineState,
-                auditingData.genesisStateSnapshotData.latestJoinChannelBlockHash // latestJoinChannelBlockHash
+                auditingData.genesisStateSnapshotData.latestJoinChannelBlockHash
             );
+
         const outputSnapshotDataHash = hash(
             Codec.encode(outputSnapshotData, Type.SnapshotData)
         );

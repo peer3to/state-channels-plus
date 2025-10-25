@@ -68,6 +68,7 @@
     "compile": "yarn hardhat clean && yarn hardhat compile --force && yarn hardhat typechain",
     "generate-artifacts": "node scripts/generate-artifacts.js",
     "test": "yarn hardhat test --no-compile --grep '^(?!.*[Ee]2[Ee])'",
+    "test:debug": "yarn hardhat test --no-compile",
     "test:all": "yarn hardhat test",
     "test:compile": "yarn compile && yarn test",
     "test:e2e": "yarn hardhat test test/e2e/*",
