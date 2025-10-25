@@ -614,7 +614,6 @@ class StateManager {
                 exitChannels,
                 leftParticipants
             } = await this.applyTransaction(tx);
-            console.log("encodedState", encodedState);
 
             if (!success) {
                 throw new Error(

@@ -45,11 +45,13 @@ export class LocalDiscoveryServer {
 
     public static connectToPeers(p2pManager: P2PManager, channelId?: string) {
         const myPort = Math.floor(Math.random() * 1000) + 2000;
-        // console.log("RANDOM PORT ######", myPort);
-        // console.log(new Error().stack);
         const myServer = new WebSocketServer({ port: myPort });
         this.peerServers.add(myServer);
+
         const duplicateSet = new Set<number>();
+        const connectionRetries = new Map<number, number>();
+        const maxRetries = 3;
+
         myServer.on("connection", (ws) => {
             const lt = new LocalTransport(ws, p2pManager);
             p2pManager.addConnection(lt);
@@ -60,6 +62,27 @@ export class LocalDiscoveryServer {
 
         const ws = new WebSocket(`ws://localhost:${PORT}`);
 
+        const connectToPeer = (peerPort: number) => {
+            const retryCount = connectionRetries.get(peerPort) || 0;
+            if (retryCount >= maxRetries) return;
+
+            const ws2 = new WebSocket(`ws://localhost:${peerPort}`);
+
+            ws2.on("open", () => {
+                const lt = new LocalTransport(ws2, p2pManager);
+                p2pManager.addConnection(lt);
+                connectionRetries.delete(peerPort);
+            });
+
+            ws2.on("error", () => {
+                connectionRetries.set(peerPort, retryCount + 1);
+                setTimeout(
+                    () => connectToPeer(peerPort),
+                    100 * (retryCount + 1)
+                );
+            });
+        };
+
         ws.on("open", () => {
             ws.send(JSON.stringify([myPort, channelId]));
         });
@@ -68,22 +91,13 @@ export class LocalDiscoveryServer {
             const [peerPort, peerChannelId] = JSON.parse(message.toString());
             if (duplicateSet.has(peerPort)) return;
             duplicateSet.add(peerPort);
+
             if (
-                peerPort > myPort &&
+                peerPort !== myPort && // Don't connect to self
                 (!channelId || channelId === peerChannelId)
             ) {
-                const ws2 = new WebSocket(`ws://localhost:${peerPort}`);
-                ws2.on("open", () => {
-                    const lt = new LocalTransport(ws2, p2pManager);
-                    p2pManager.addConnection(lt);
-                });
+                connectToPeer(peerPort);
             }
-        });
-        ws.on("error", (err) => {
-            console.log("WebSocket ERROR: ", err);
-        });
-        ws.on("close", () => {
-            console.log(`Connection to peer closed`);
         });
     }
 
