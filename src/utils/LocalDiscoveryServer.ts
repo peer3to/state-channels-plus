@@ -91,7 +91,7 @@ export class LocalDiscoveryServer {
             duplicateSet.add(peerPort);
 
             if (
-                peerPort !== myPort && // Don't connect to self
+                peerPort > myPort &&
                 (!channelId || channelId === peerChannelId)
             ) {
                 connectToPeer(peerPort);
