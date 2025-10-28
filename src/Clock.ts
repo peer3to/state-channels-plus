@@ -41,7 +41,7 @@ class Clock {
 
         const difference = latestTimestamp - currentTime;
 
-        const blockCnt = latestBlock.number >= 100 ? 100 : 0;
+        const blockCnt = latestBlock.number;
         const pastBlock = await this.provider.getBlock(
             latestBlock.number - blockCnt
         );
