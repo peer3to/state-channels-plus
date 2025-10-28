@@ -80,6 +80,7 @@ import { DEBUG_STATE_MANAGER } from "@/utils/config";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 
 const NULL = "0x00";
+const LOG_TAG = "[STATE MANAGER]";
 class StateManager {
     diamondStateMachine: ADiamondStateMachine;
     p2pEventHooks: P2pEventHooks;
@@ -1655,7 +1656,11 @@ class StateManager {
                     `Multiple logs found for commitment: ${blockCommitment} - logs: ${logs}`
                 );
             }
-            const signedBlock = logs[0].args.signedBlock;
+            // Create a mutable copy of signedBlock since logs[0].args is read-only
+            const signedBlock = {
+                encodedBlock: logs[0].args.signedBlock.encodedBlock,
+                signature: logs[0].args.signedBlock.signature
+            };
             const timestamp = Number(logs[0].args.timestamp);
 
             // this will also run BlockConfirmation pipeline which will also handle storage updates if needed
@@ -1678,7 +1683,7 @@ class StateManager {
                 updatedBlock: updatedBlock
             };
         } catch (error) {
-            console.error("Error fetching on-chain timestamp:", error);
+            console.error(`${LOG_TAG}-fetchBlockCommitmentCalldata:`, error);
             return undefined;
         }
     }
@@ -1708,7 +1713,7 @@ class StateManager {
                 )
             )?.updatedBlock;
         } catch (error) {
-            console.error("Error fetching on-chain timestamp:", error);
+            console.error(`${LOG_TAG}-fetchUpdatedOnChainBlock:`, error);
             return undefined;
         }
     }
