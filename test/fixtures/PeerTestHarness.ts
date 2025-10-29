@@ -16,6 +16,7 @@ import Clock from "@/Clock";
 import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
 import { deploy } from "../../scripts/V1/deploy";
+import SyncCoordinator from "@/utils/SyncCoordinator";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;
@@ -74,6 +75,7 @@ export class PeerTestHarness<T extends AStateMachine> {
     public activeForkId?: ForkId;
     private harnessConfig!: Config;
     private logger: Logger;
+    private syncCoordinator!: SyncCoordinator;
 
     constructor() {
         this.logger = createLogger({ component: "TestHarness" });
@@ -95,6 +97,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             autoConnect: options.autoConnect !== false,
             configOverrides: options.configOverrides || {}
         };
+        this.syncCoordinator = new SyncCoordinator(this.logger);
 
         await this.deployContracts();
         this.channelId = this.options.channelId;
@@ -105,6 +108,10 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
 
         this.logger.info("Test harness setup completed");
+    }
+
+    private get forkId(): ForkId {
+        return this.activeForkId || this.peers[0].stateManager.forkId;
     }
 
     private async deployContracts(): Promise<void> {
@@ -284,7 +291,34 @@ export class PeerTestHarness<T extends AStateMachine> {
         });
 
         await Promise.all([tx.wait(), sleep(100)]);
-        this.activeForkId = this.peers[0].stateManager.forkId;
+
+        // Get fork ID from the first peer that has it set
+        let forkId: ForkId | undefined;
+        for (const peer of this.peers) {
+            const peerForkId = peer.stateManager.forkId;
+            if (peerForkId && peerForkId !== "0x00" && peerForkId !== "0x0") {
+                forkId = peerForkId;
+                break;
+            }
+        }
+
+        if (!forkId) {
+            // If no peer has a valid fork ID, wait a bit more and try again
+            await sleep(50);
+            for (const peer of this.peers) {
+                const peerForkId = peer.stateManager.forkId;
+                if (
+                    peerForkId &&
+                    peerForkId !== "0x00" &&
+                    peerForkId !== "0x0"
+                ) {
+                    forkId = peerForkId;
+                    break;
+                }
+            }
+        }
+
+        this.activeForkId = forkId as ForkId;
         this.logger.info(
             `Channel opened successfully with fork ID: ${this.activeForkId}`
         );
@@ -346,12 +380,16 @@ export class PeerTestHarness<T extends AStateMachine> {
         txFn: (contract: T) => Promise<any>,
         options: SubmitTransactionOptions = { waitForSync: true }
     ): Promise<void> {
+        // Execute transaction
         const result = await txFn(peer.p2pInstance.p2pContractInstance);
 
         if (options.waitForPeers && options.waitForPeers.length > 0) {
             await this.waitForSpecificPeersSync(options.waitForPeers);
-        } else {
-            options.waitForSync && (await this.waitForSync());
+        } else if (options.waitForSync) {
+            await this.syncCoordinator.waitForPeersInSync(
+                this.peers,
+                this.forkId
+            );
         }
 
         return result;
@@ -363,56 +401,11 @@ export class PeerTestHarness<T extends AStateMachine> {
         await this.submitTransaction(nextPeer, txFn);
     }
 
-    async waitForSync(timeout: number = 3000): Promise<void> {
-        if (this.peers.length < 2) return;
-
-        const startTime = Date.now();
-        let pollInterval = 50; // Start with 50ms
-        const maxPollInterval = 200; // Cap at 200ms
-
-        while (Date.now() - startTime < timeout) {
-            const forkId =
-                this.activeForkId || this.peers[0].stateManager.forkId;
-            const firstBlock =
-                this.peers[0].stateManager.storage.blocks.getLatestBlock(
-                    forkId
-                );
-
-            if (!firstBlock) {
-                await sleep(pollInterval);
-                continue;
-            }
-
-            // Check if all peers have the same block hash
-            let allSynced = true;
-            let syncedPeers = 0;
-
-            for (let i = 1; i < this.peers.length; i++) {
-                const peerBlock =
-                    this.peers[i].stateManager.storage.blocks.getLatestBlock(
-                        forkId
-                    );
-                if (!peerBlock || peerBlock.hash !== firstBlock.hash) {
-                    allSynced = false;
-                } else {
-                    syncedPeers++;
-                }
-            }
-
-            if (allSynced) return;
-
-            // Adaptive polling: increase interval if most peers are synced
-            if (syncedPeers > this.peers.length / 2) {
-                pollInterval = Math.min(pollInterval * 1.1, maxPollInterval);
-            } else {
-                pollInterval = Math.max(pollInterval * 0.9, 25); // Minimum 25ms
-            }
-
-            await sleep(pollInterval);
-        }
-
-        throw new Error(
-            `All ${this.peers.length} peers failed to synchronize within ${timeout}ms`
+    async waitForSync(timeout?: number): Promise<void> {
+        await this.syncCoordinator.waitForPeersInSync(
+            this.peers,
+            this.forkId,
+            timeout
         );
     }
 
@@ -427,11 +420,9 @@ export class PeerTestHarness<T extends AStateMachine> {
         const timeout = timeoutMs ?? defaultTimeout;
         const startTime = Date.now();
         while (Date.now() - startTime < timeout) {
-            const forkId =
-                this.activeForkId || this.peers[0].stateManager.forkId;
             const firstBlock =
                 this.peers[0].stateManager.storage.blocks.getLatestBlock(
-                    forkId
+                    this.forkId
                 );
 
             if (!firstBlock) {
@@ -442,10 +433,9 @@ export class PeerTestHarness<T extends AStateMachine> {
             // Check if all specified peers have the same block hash
             let allSynced = true;
             for (const peerIndex of peerIndices) {
-                const peerBlock =
-                    this.peers[
-                        peerIndex
-                    ].stateManager.storage.blocks.getLatestBlock(forkId);
+                const peerBlock = this.peers[
+                    peerIndex
+                ].stateManager.storage.blocks.getLatestBlock(this.forkId);
                 if (!peerBlock || peerBlock.hash !== firstBlock.hash) {
                     allSynced = false;
                     break;
@@ -467,20 +457,28 @@ export class PeerTestHarness<T extends AStateMachine> {
 
     async cleanup(): Promise<void> {
         this.logger.info("Starting cleanup...");
+
+        // Cleanup peers
         for (const peer of this.peers) {
             try {
                 peer.logger.debug("Cleaning up peer", {
                     component: "TestHarness"
                 });
                 peer.contractInstance.removeAllListeners();
-                // Gracefully close P2P connections
-                peer.p2pInstance.p2pSigner.p2pManager.openConnections.forEach(
-                    (connection) => {
-                        peer.p2pInstance.p2pSigner.p2pManager.disconnectConnection(
-                            connection
-                        );
+
+                // Close P2P connections
+                const connections = [
+                    ...peer.p2pInstance.p2pSigner.p2pManager.openConnections
+                ];
+                for (const connection of connections) {
+                    try {
+                        connection.close();
+                    } catch (error) {
+                        peer.logger.warn(`Error closing connection: ${error}`);
                     }
-                );
+                }
+                peer.p2pInstance.p2pSigner.p2pManager.openConnections = [];
+
                 await peer.p2pInstance.dispose();
                 Object.values(peer.eventSpies).forEach((spy) =>
                     spy?.resetHistory()
@@ -496,31 +494,22 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
         this.peers = [];
 
-        // Clean up discovery server and peer servers
+        // Cleanup discovery server and peer servers
         if (this.discoveryServerStarted) {
-            const { LocalDiscoveryServer } = await import(
-                "@/utils/LocalDiscoveryServer"
-            );
             LocalDiscoveryServer.cleanup();
             this.discoveryServerStarted = false;
             this.logger.debug("Discovery server cleaned up");
         }
-
-        // Wait for cleanup to complete
-        await sleep(100);
-
-        this.logger.info("Cleanup completed");
     }
 
     assertAllPeersInSync(expectedState?: any): void {
         if (this.peers.length < 2)
             throw new Error("Need at least 2 peers to check sync");
 
-        const forkId = this.activeForkId || this.getActiveForkId();
-        const firstPeerState = this.getStateMachineState(0, forkId);
+        const firstPeerState = this.getStateMachineState(0, this.forkId);
 
         for (let i = 1; i < this.peers.length; i++) {
-            const peerState = this.getStateMachineState(i, forkId);
+            const peerState = this.getStateMachineState(i, this.forkId);
             expect(peerState).to.deep.equal(
                 firstPeerState,
                 `Peer ${i} state does not match Peer 0`
@@ -633,25 +622,47 @@ export class PeerTestHarness<T extends AStateMachine> {
         return stateSnapshot ? stateSnapshot.snapshotData : null;
     }
 
-    getActiveForkId(): ForkId {
-        if (this.activeForkId) return this.activeForkId;
-        throw new Error(
-            "Active fork ID not set. Call setupGenesisState first."
-        );
+    async getStateMachineStateHash(peerIndex: number): Promise<string> {
+        try {
+            const peer = this.peers[peerIndex];
+            if (!peer) return "peer_not_found";
+
+            const latestBlock = peer.stateManager.storage.blocks.getLatestBlock(
+                this.forkId
+            );
+            if (!latestBlock) return "no_block";
+
+            return latestBlock.stateSnapshotHash?.toString() || "no_state_hash";
+        } catch (error) {
+            return `error: ${error}`;
+        }
     }
 
     async getNextPeerToWrite(): Promise<TestPeer<T>> {
-        const nextAddress =
-            await this.peers[0].stateManager.diamondStateMachine.getNextToWrite();
+        try {
+            const nextAddress =
+                await this.peers[0].stateManager.diamondStateMachine.getNextToWrite();
 
-        const nextPeer = this.peers.find(
-            (peer) => peer.address === nextAddress
-        );
-        if (!nextPeer) {
-            throw new Error(`No peer found with address ${nextAddress}`);
+            this.logger.debug(`getNextPeerToWrite returned: ${nextAddress}`);
+
+            const nextPeer = this.peers.find(
+                (peer) => peer.address === nextAddress
+            );
+            if (!nextPeer) {
+                // Enhanced error reporting
+
+                const stateHash = await this.getStateMachineStateHash(0);
+                const peerAddresses = this.peers.map((p) => p.address);
+                throw new Error(
+                    `No peer found with address ${nextAddress}. Available peers: ${peerAddresses.join(", ")}. ForkId: ${this.forkId}, StateHash: ${stateHash}`
+                );
+            }
+
+            return nextPeer;
+        } catch (error) {
+            this.logger.error(`getNextPeerToWrite failed: ${error}`);
+            throw error;
         }
-
-        return nextPeer;
     }
 
     /**
