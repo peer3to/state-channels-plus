@@ -91,7 +91,8 @@ class StateChannelEventListener {
                     channelId,
                     commitmentHash,
                     sender,
-                    signedBlock,
+                    // important: the ethers type is readonly, this converts it to a mutable object
+                    Codec.convertEthersResultToObject(signedBlock),
                     timestamp
                 );
             }
@@ -109,9 +110,10 @@ class StateChannelEventListener {
                     isFinal,
                     windowCreationTimestamp
                 } = logObj.args;
+
                 this.eventHandler.onDisputeCommitted(
                     channelId,
-                    dispute,
+                    Codec.convertEthersResultToObject(dispute),
                     disputeCreationTimestamp,
                     isFinal,
                     windowCreationTimestamp
