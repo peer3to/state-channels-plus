@@ -7,7 +7,8 @@ import {
     BlockBuilder,
     MockSetup,
     ValidationFailure,
-    EXPECTED_RESULTS
+    EXPECTED_RESULTS,
+    ValidationFailureType
 } from "./testUtils";
 
 describe("ValidationService - Progressive Validation Tests", () => {
@@ -510,7 +511,7 @@ describe("ValidationService - Progressive Validation Tests", () => {
             // Ensure we have covered all validation failures
             const allFailures = Object.values(
                 ValidationFailure
-            ) as ValidationFailure[];
+            ) as ValidationFailureType[];
             const coveredFailures = Object.keys(EXPECTED_RESULTS);
 
             expect(coveredFailures.length).to.equal(allFailures.length);
@@ -525,7 +526,7 @@ describe("ValidationService - Progressive Validation Tests", () => {
             // of all validation failure points from last to first step
             const allFailures = Object.values(
                 ValidationFailure
-            ) as ValidationFailure[];
+            ) as ValidationFailureType[];
             const coveredFailures = Object.keys(EXPECTED_RESULTS);
 
             expect(coveredFailures.length).to.equal(allFailures.length);
