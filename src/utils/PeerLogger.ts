@@ -82,9 +82,16 @@ const peerColorFormat = winston.format.printf(
         if (component)
             prefix += `${Colors.COMPONENT}[${component}]${Colors.RESET}`;
 
-        // Metadata
+        // Metadata - handle BigInt values
         const metaStr =
-            Object.keys(meta).length > 0 ? ` ${JSON.stringify(meta)}` : "";
+            Object.keys(meta).length > 0
+                ? ` ${JSON.stringify(meta, (key, value) => {
+                      if (typeof value === "bigint") {
+                          return value.toString();
+                      }
+                      return value;
+                  })}`
+                : "";
         return `${prefix} ${message}${metaStr}`;
     }
 );
