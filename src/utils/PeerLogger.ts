@@ -25,7 +25,7 @@ const Colors = {
         error: "\x1b[31m", // Red
         warn: "\x1b[33m", // Yellow
         info: "\x1b[92m", // Bright Green
-        debug: "\x1b[96m", // Bright Cyan
+        debug: "\x1b[38;5;208m", // Orange
         verbose: "\x1b[95m" // Bright Magenta
     },
 
