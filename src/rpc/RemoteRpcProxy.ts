@@ -1,9 +1,6 @@
 import ARpcService from "./ARpcService";
 import MainRpcService from "./MainRpcService";
-import RpcMethodsProxy, {
-    RpcHandleMethods,
-    RpcMethodsContextObject
-} from "./RpcHandleProxy";
+import RpcMethodsProxy, { RpcHandleMethods } from "./RpcHandleProxy";
 
 /**
  * Substitue the type of every 'service' in MainRpcService to the type of the coresponding 'RpcMethods' class
@@ -23,11 +20,9 @@ class RemoteRpcProxy {
         // const cache = new Map<PropertyKey, unknown>();
         const ctx = {
             serviceName: "",
-            service: undefined
+            service: null as unknown as ARpcService<any>
         };
-        const rpcMethodsProxy = RpcMethodsProxy.createProxy(
-            ctx as unknown as RpcMethodsContextObject
-        );
+        const rpcMethodsProxy = RpcMethodsProxy.createProxy(ctx);
         return new Proxy(mainRpcService, {
             get(target, prop, receiver) {
                 const val = Reflect.get(target, prop, receiver);
@@ -38,7 +33,6 @@ class RemoteRpcProxy {
                 // val is a service
                 const serviceName = prop.toString();
                 ctx.serviceName = serviceName;
-                // @ts-ignore
                 ctx.service = val;
                 return rpcMethodsProxy;
             }

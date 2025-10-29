@@ -52,7 +52,7 @@ export const ValidationFailure = {
     NULL_CHANNEL_ID: "NULL_CHANNEL_ID"
 } as const;
 
-export type ValidationFailure =
+export type ValidationFailureType =
     (typeof ValidationFailure)[keyof typeof ValidationFailure];
 
 export class BlockBuilder {
@@ -71,7 +71,7 @@ export class BlockBuilder {
     /**
      * Configure the block to fail at a specific validation step
      */
-    failWith(failure: ValidationFailure): BlockBuilder {
+    failWith(failure: ValidationFailureType): BlockBuilder {
         this.setupMocksForFailure(failure);
         this.configureBlockForFailure(failure);
         return this;
@@ -101,7 +101,7 @@ export class BlockBuilder {
         };
     }
 
-    private setupMocksForFailure(failure: ValidationFailure): void {
+    private setupMocksForFailure(failure: ValidationFailureType): void {
         this.mockSetup.setupForSuccess();
 
         switch (failure) {
@@ -124,7 +124,7 @@ export class BlockBuilder {
                     .returns(["0xauthor123", "0xvalidsigner"]);
                 break;
 
-            case ValidationFailure.NO_NEW_SIGNATURES:
+            case ValidationFailure.NO_NEW_SIGNATURES: {
                 const existingBlockSame = this.createExistingBlock([
                     "0xsig1",
                     "0xsig2"
@@ -133,8 +133,9 @@ export class BlockBuilder {
                     .withArgs("0xblockhash")
                     .returns(existingBlockSame);
                 break;
+            }
 
-            case ValidationFailure.INVALID_NEW_SIGNERS:
+            case ValidationFailure.INVALID_NEW_SIGNERS: {
                 const existingBlockPartial = this.createExistingBlock([
                     "0xsig1"
                 ]);
@@ -145,6 +146,7 @@ export class BlockBuilder {
                     .withArgs(sinon.match.any)
                     .returns(["0xauthor123", "0xvalidsigner"]);
                 break;
+            }
 
             case ValidationFailure.AUTHOR_NOT_PARTICIPANT:
                 this.mockSetup.mockStorage.getParticipants
@@ -152,7 +154,7 @@ export class BlockBuilder {
                     .returns(["0xotherparticipant"]);
                 break;
 
-            case ValidationFailure.DOUBLE_SIGN:
+            case ValidationFailure.DOUBLE_SIGN: {
                 const conflictingSameAuthor = this.createConflictingBlock(
                     "0xauthor123",
                     "0xdifferenthash"
@@ -161,8 +163,9 @@ export class BlockBuilder {
                     .withArgs("0xfork123", 1)
                     .returns(conflictingSameAuthor);
                 break;
+            }
 
-            case ValidationFailure.INVALID_STATE_TRANSITION:
+            case ValidationFailure.INVALID_STATE_TRANSITION: {
                 const conflictingDiffAuthor = this.createConflictingBlock(
                     "0xdifferentauthor",
                     "0xdifferenthash"
@@ -174,8 +177,9 @@ export class BlockBuilder {
                     .stub(this.mockSetup.validationService as any, "isLinked")
                     .returns(true);
                 break;
+            }
 
-            case ValidationFailure.CONFLICTING_NOT_LINKED:
+            case ValidationFailure.CONFLICTING_NOT_LINKED: {
                 const conflictingNotLinked = this.createConflictingBlock(
                     "0xdifferentauthor",
                     "0xdifferenthash"
@@ -187,6 +191,7 @@ export class BlockBuilder {
                     .stub(this.mockSetup.validationService as any, "isLinked")
                     .returns(false);
                 break;
+            }
 
             case ValidationFailure.FORK_DISPUTED_LOCALLY:
                 this.mockSetup.mockStorage.disputes.didIDispute.returns(true);
@@ -210,12 +215,13 @@ export class BlockBuilder {
                 );
                 break;
 
-            case ValidationFailure.NOT_LINKED_NON_GENESIS:
+            case ValidationFailure.NOT_LINKED_NON_GENESIS: {
                 const prevBlock = this.createPreviousBlock("0xrightprev");
                 this.mockSetup.mockStorage.blocks.getBlock
                     .withArgs("0xfork123", 0)
                     .returns(prevBlock);
                 break;
+            }
 
             case ValidationFailure.WRONG_LEADER:
                 this.mockSetup.mockDiamondStateMachine.getNextToWrite.resolves(
@@ -250,7 +256,7 @@ export class BlockBuilder {
         }
     }
 
-    private configureBlockForFailure(failure: ValidationFailure): void {
+    private configureBlockForFailure(failure: ValidationFailureType): void {
         switch (failure) {
             case ValidationFailure.WRONG_CHANNEL_ID:
                 this.blockData.channelId = "0xwrongchannel";
@@ -294,7 +300,7 @@ export class BlockBuilder {
                 this.blockData.timestamp = 2500; // Way beyond p2pTime (900 + 1000 = 1900)
                 break;
 
-            case ValidationFailure.OBJECTIVE_TIMESTAMP_TOO_LATE:
+            case ValidationFailure.OBJECTIVE_TIMESTAMP_TOO_LATE: {
                 this.blockData.timestamp = 2500; // Invalid against previous timestamp
                 const prevBlockWithOnChain =
                     this.createPreviousBlockWithOnChain();
@@ -305,6 +311,7 @@ export class BlockBuilder {
                     .withArgs("0xfork123", 0)
                     .returns(prevBlockWithOnChain);
                 break;
+            }
 
             case ValidationFailure.TIMESTAMP_IN_PAST:
                 this.blockData.timestamp = 800; // Less than previousOriginalTimestamp (900)
@@ -676,7 +683,7 @@ export class MockSetup {
 }
 
 export const EXPECTED_RESULTS: Record<
-    ValidationFailure,
+    ValidationFailureType,
     BlockValidationResult
 > = {
     [ValidationFailure.WRONG_CHANNEL_ID]: BlockValidationResult.DISCONNECT,
