@@ -23,7 +23,7 @@ const Colors = {
     // Log level colors
     LEVEL: {
         error: "\x1b[31m", // Red
-        warn: "\x1b[33m", // Yellow
+        warn: "\x1b[38;5;202m", // Bright Orange-Red
         info: "\x1b[92m", // Bright Green
         debug: "\x1b[38;5;208m", // Orange
         verbose: "\x1b[95m" // Bright Magenta
