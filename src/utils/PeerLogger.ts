@@ -7,7 +7,6 @@ export interface LoggerContext {
     [key: string]: any; // Allow additional metadata properties
 }
 
-// ANSI color codes organized by category
 const Colors = {
     // Peer colors for rotating assignment
     PEER: [
@@ -70,7 +69,7 @@ const peerColorFormat = winston.format.printf(
 
         // Peer context
         if (peerId == null) {
-            prefix += `${Colors.SYSTEM}[SYSTEM]${Colors.RESET}`;
+            prefix += `${Colors.RESET}`;
         } else {
             const peerColor = Colors.PEER[Number(peerId) % Colors.PEER.length];
             prefix += `${peerColor}[Peer ${peerId}]${Colors.RESET}`;
@@ -91,12 +90,15 @@ const peerColorFormat = winston.format.printf(
 );
 
 class PeerLogger {
-    private static instance: PeerLogger;
     private logger: winston.Logger;
 
-    private constructor() {
+    constructor(level: string | undefined, context: LoggerContext = {}) {
+        const resolvedLevel = level
+            ? level
+            : PeerLogger.parseLogLevelFromArgs();
+
         this.logger = winston.createLogger({
-            level: "debug",
+            level: resolvedLevel,
             format: winston.format.combine(
                 winston.format.timestamp(),
                 winston.format.errors({ stack: true }),
@@ -108,15 +110,9 @@ class PeerLogger {
                     handleRejections: true
                 })
             ],
-            exitOnError: false
+            exitOnError: false,
+            defaultMeta: context
         });
-    }
-
-    public static getInstance(): PeerLogger {
-        if (!PeerLogger.instance) {
-            PeerLogger.instance = new PeerLogger();
-        }
-        return PeerLogger.instance;
     }
 
     public setLogLevel(level: string): void {
@@ -126,13 +122,6 @@ class PeerLogger {
     public cleanup(): void {
         this.logger.clear();
         this.logger.close();
-    }
-
-    public static cleanup(): void {
-        if (PeerLogger.instance) {
-            PeerLogger.instance.cleanup();
-            PeerLogger.instance = null as any;
-        }
     }
 
     private log(
@@ -181,7 +170,7 @@ class PeerLogger {
         return this.logger.child(context);
     }
 
-    public static parseLogLevelFromArgs(args: string[] = process.argv): void {
+    public static parseLogLevelFromArgs(args: string[] = process.argv): string {
         const validLevels = ["debug", "info", "warn", "error"];
         let logLevel = "info";
 
@@ -200,23 +189,17 @@ class PeerLogger {
             }
         }
 
-        PeerLogger.getInstance().setLogLevel(logLevel);
-    }
-
-    public static setLogLevel(level: string): void {
-        PeerLogger.getInstance().setLogLevel(level);
+        return logLevel;
     }
 }
 
 // Exports
-const loggerInstance = PeerLogger.getInstance();
 
-export const logger = loggerInstance;
-export const createLogger = (context: LoggerContext) =>
-    loggerInstance.child(context);
-export const systemLogger = loggerInstance.child({});
-export const parseLogLevelFromArgs = (args?: string[]) =>
-    PeerLogger.parseLogLevelFromArgs(args);
-export const setLogLevel = (level: string) => PeerLogger.setLogLevel(level);
-export const cleanupLogger = () => PeerLogger.cleanup();
+// Create a logger instance with the given context
+export const createLogger = (context: LoggerContext = {}): winston.Logger => {
+    const logLevel = PeerLogger.parseLogLevelFromArgs();
+    const peerLogger = new PeerLogger(logLevel, context);
+    return peerLogger.child({});
+};
+
 export default PeerLogger;
