@@ -197,8 +197,8 @@ export default class Block {
         }
         // If nextBlockAuthor has NOT signed, return onChainTimestamp (or fallback)
         return this._onChainTimestamp
-            ? Math.max(this._onChainTimestamp, this.timestamp)
-            : this.timestamp;
+            ? Math.max(Number(this._onChainTimestamp), Number(this.timestamp))
+            : Number(this.timestamp);
     }
 
     equals(other: Block): boolean {
