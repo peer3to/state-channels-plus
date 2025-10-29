@@ -2,8 +2,8 @@ import { expect } from "chai";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { MathStateMachine } from "@typechain-types/index";
 
-describe("E2E: EvmStateMachine", function () {
-    it("EvmStateMachine - P2P simulation - success ", async function () {
+describe("Basic P2P Simulation", function () {
+    it("should successfully transtion a single block between 2 peers", async function () {
         const harness = new PeerTestHarness<MathStateMachine>();
         await harness.setup(2);
         const forkId = await harness.openChannel();
