@@ -201,7 +201,7 @@ class StateManager {
         this.status = status;
     }
     public setChannelId(channelId: ChannelId) {
-        this.logger.debug("Setting channel ID", { channelId });
+        this.logger.verbose("Setting channel ID", { channelId });
         this.channelId = channelId;
         this.stateChannelEventListener.setChannelId(channelId);
         this.disputeManager.setChannelId(channelId);
@@ -411,7 +411,7 @@ class StateManager {
         genesisTimestamp: Timestamp,
         exitChannelBlock?: ExitChannelBlockStruct
     ): Promise<void> {
-        this.logger.debug("Setting genesis state", {
+        this.logger.verbose("Setting genesis state", {
             forkId,
             genesisTimestamp,
             participantCount: snapshotData.participants.length

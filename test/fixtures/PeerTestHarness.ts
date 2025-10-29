@@ -151,7 +151,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             peerAddress: address
         });
 
-        this.logger.info(`Creating peer ${index} at ${address}`);
+        this.logger.debug(`Creating peer ${index} at ${address}`);
 
         const eventSpies: EventSpies = {
             onConnection: sinon.spy(),
@@ -166,13 +166,13 @@ export class PeerTestHarness<T extends AStateMachine> {
 
         const hooks: P2pEventHooks = {
             onConnection: (addr: Address) => {
-                PeerLogger.debug(`Connection established with ${addr}`, {
+                PeerLogger.verbose(`Connection established with ${addr}`, {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onConnection?.(addr);
             },
             onTurn: (addr: Address) => {
-                PeerLogger.debug(`Turn received from ${addr}`, {
+                PeerLogger.verbose(`Turn received from ${addr}`, {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onTurn?.(addr);
@@ -182,13 +182,13 @@ export class PeerTestHarness<T extends AStateMachine> {
                 eventSpies.onSetState?.();
             },
             onPostingCalldata: () => {
-                PeerLogger.info("Posting calldata to blockchain", {
+                PeerLogger.debug("Posting calldata to blockchain", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onPostingCalldata?.();
             },
             onPostedCalldata: () => {
-                PeerLogger.info("Calldata posted to blockchain", {
+                PeerLogger.debug("Calldata posted to blockchain", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onPostedCalldata?.();
@@ -241,7 +241,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         };
 
         this.peers.push(peer);
-        this.logger.info(`Peer ${index} created successfully`);
+        this.logger.debug(`Peer ${index} created successfully`);
     }
 
     async openChannel(): Promise<ForkId> {
@@ -256,14 +256,17 @@ export class PeerTestHarness<T extends AStateMachine> {
             }
         );
 
-        this.logger.info(`Channel created with ID: ${openChannel.channelId}`);
+        this.logger.debug(`Channel created with ID: ${openChannel.channelId}`);
 
         // Connect peers to the channel
         for (const peer of this.peers) {
             peer.p2pInstance.p2pSigner.connectToChannel(openChannel.channelId);
-            peer.logger.debug(`Connected to channel ${openChannel.channelId}`, {
-                component: "TestHarness"
-            });
+            peer.logger.verbose(
+                `Connected to channel ${openChannel.channelId}`,
+                {
+                    component: "TestHarness"
+                }
+            );
         }
 
         if (this.options.autoConnect) {
@@ -282,7 +285,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             )
         );
 
-        this.logger.info(
+        this.logger.debug(
             "Submitting channel open transaction to blockchain..."
         );
         const tx = await this.channelManager.open({
@@ -326,14 +329,14 @@ export class PeerTestHarness<T extends AStateMachine> {
     }
 
     async connectPeers(): Promise<void> {
-        this.logger.info("Connecting peers...");
+        this.logger.debug("Connecting peers...");
         if (!this.discoveryServerStarted) {
             LocalDiscoveryServer.tryStart();
             this.discoveryServerStarted = true;
-            this.logger.debug("Discovery server started");
+            this.logger.verbose("Discovery server started");
         }
         await this.waitForP2PConnections();
-        this.logger.info("All peers connected successfully");
+        this.logger.debug("All peers connected successfully");
     }
 
     async waitForP2PConnections(timeoutMs?: number): Promise<void> {
@@ -456,12 +459,12 @@ export class PeerTestHarness<T extends AStateMachine> {
     }
 
     async cleanup(): Promise<void> {
-        this.logger.info("Starting cleanup...");
+        this.logger.debug("Starting cleanup...");
 
         // Cleanup peers
         for (const peer of this.peers) {
             try {
-                peer.logger.debug("Cleaning up peer", {
+                peer.logger.verbose("Cleaning up peer", {
                     component: "TestHarness"
                 });
                 peer.contractInstance.removeAllListeners();
@@ -483,7 +486,7 @@ export class PeerTestHarness<T extends AStateMachine> {
                 Object.values(peer.eventSpies).forEach((spy) =>
                     spy?.resetHistory()
                 );
-                peer.logger.debug("Peer cleanup completed", {
+                peer.logger.verbose("Peer cleanup completed", {
                     component: "TestHarness"
                 });
             } catch (error) {
@@ -498,7 +501,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         if (this.discoveryServerStarted) {
             LocalDiscoveryServer.cleanup();
             this.discoveryServerStarted = false;
-            this.logger.debug("Discovery server cleaned up");
+            this.logger.verbose("Discovery server cleaned up");
         }
     }
 
@@ -643,7 +646,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             const nextAddress =
                 await this.peers[0].stateManager.diamondStateMachine.getNextToWrite();
 
-            this.logger.debug(`getNextPeerToWrite returned: ${nextAddress}`);
+            this.logger.verbose(`getNextPeerToWrite returned: ${nextAddress}`);
 
             const nextPeer = this.peers.find(
                 (peer) => peer.address === nextAddress

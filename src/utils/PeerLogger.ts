@@ -25,7 +25,8 @@ const Colors = {
         error: "\x1b[31m", // Red
         warn: "\x1b[33m", // Yellow
         info: "\x1b[92m", // Bright Green
-        debug: "\x1b[37m" // White
+        debug: "\x1b[37m", // White
+        verbose: "\x1b[90m" // Gray
     },
 
     // UI element colors
@@ -104,7 +105,19 @@ class PeerLogger {
             ? level
             : PeerLogger.parseLogLevelFromArgs();
 
+        // Define custom log levels with numerical priorities
+        const customLevels = {
+            levels: {
+                error: 0,
+                warn: 1,
+                info: 2,
+                debug: 3,
+                verbose: 4
+            }
+        };
+
         this.logger = winston.createLogger({
+            levels: customLevels.levels,
             level: resolvedLevel,
             format: winston.format.combine(
                 winston.format.timestamp(),
@@ -178,7 +191,7 @@ class PeerLogger {
     }
 
     public static parseLogLevelFromArgs(args: string[] = process.argv): string {
-        const validLevels = ["debug", "info", "warn", "error"];
+        const validLevels = ["verbose", "debug", "info", "warn", "error"];
         let logLevel = "info";
 
         if (
@@ -188,7 +201,7 @@ class PeerLogger {
             logLevel = process.env.LOG_LEVEL.toLowerCase();
         }
 
-        const flags = ["--debug", "--info", "--warn", "--error"];
+        const flags = ["--verbose", "--debug", "--info", "--warn", "--error"];
         for (const flag of flags) {
             if (args.includes(flag)) {
                 logLevel = flag.substring(2);

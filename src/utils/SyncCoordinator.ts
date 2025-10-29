@@ -18,7 +18,7 @@ export class SyncCoordinator {
     ): Promise<void> {
         const startTime = Date.now();
 
-        this.logger.debug(`Waiting for ${peers.length} peers to sync`, {
+        this.logger.verbose(`Waiting for ${peers.length} peers to sync`, {
             forkId,
             timeout: timeoutMs
         });
@@ -46,7 +46,7 @@ export class SyncCoordinator {
                 }
 
                 if (allSynced) {
-                    this.logger.debug(
+                    this.logger.verbose(
                         `All ${peers.length} peers synchronized`,
                         {
                             blockHash: firstBlock.hash,
