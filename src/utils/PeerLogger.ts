@@ -25,8 +25,8 @@ const Colors = {
         error: "\x1b[31m", // Red
         warn: "\x1b[33m", // Yellow
         info: "\x1b[92m", // Bright Green
-        debug: "\x1b[37m", // White
-        verbose: "\x1b[90m" // Gray
+        debug: "\x1b[96m", // Bright Cyan
+        verbose: "\x1b[95m" // Bright Magenta
     },
 
     // UI element colors
@@ -97,14 +97,11 @@ const peerColorFormat = winston.format.printf(
     }
 );
 
-class PeerLogger {
-    private logger: winston.Logger;
+// Global singleton Winston logger to prevent multiple process event listeners
+let globalLogger: winston.Logger | null = null;
 
-    constructor(level: string | undefined, context: LoggerContext = {}) {
-        const resolvedLevel = level
-            ? level
-            : PeerLogger.parseLogLevelFromArgs();
-
+function getGlobalLogger(): winston.Logger {
+    if (!globalLogger) {
         // Define custom log levels with numerical priorities
         const customLevels = {
             levels: {
@@ -116,9 +113,12 @@ class PeerLogger {
             }
         };
 
-        this.logger = winston.createLogger({
+        const logLevel = PeerLogger.parseLogLevelFromArgs();
+
+        // Create the single global logger with exception/rejection handling
+        globalLogger = winston.createLogger({
             levels: customLevels.levels,
-            level: resolvedLevel,
+            level: logLevel,
             format: winston.format.combine(
                 winston.format.timestamp(),
                 winston.format.errors({ stack: true }),
@@ -130,9 +130,23 @@ class PeerLogger {
                     handleRejections: true
                 })
             ],
-            exitOnError: false,
-            defaultMeta: context
+            exitOnError: false
         });
+    }
+    return globalLogger;
+}
+
+class PeerLogger {
+    private logger: winston.Logger;
+
+    constructor(level: string | undefined, context: LoggerContext = {}) {
+        const globalLogger = getGlobalLogger();
+
+        if (level) {
+            globalLogger.level = level;
+        }
+
+        this.logger = globalLogger.child(context || {});
     }
 
     public setLogLevel(level: string): void {
@@ -217,9 +231,9 @@ class PeerLogger {
 
 // Create a logger instance with the given context
 export const createLogger = (context: LoggerContext = {}): winston.Logger => {
-    const logLevel = PeerLogger.parseLogLevelFromArgs();
-    const peerLogger = new PeerLogger(logLevel, context);
-    return peerLogger.child({});
+    // Use the global singleton logger and create a child with the provided context
+    const globalLogger = getGlobalLogger();
+    return globalLogger.child(context);
 };
 
 export default PeerLogger;
