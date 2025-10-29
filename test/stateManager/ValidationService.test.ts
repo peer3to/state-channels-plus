@@ -685,7 +685,15 @@ describe("ValidationService - Progressive Validation Tests", () => {
 
             it("should return data for single log", async () => {
                 mockSetup.mockStateChannelManagerContract.queryFilter.resolves([
-                    { args: { signedBlock: {}, timestamp: 1500n } }
+                    {
+                        args: {
+                            signedBlock: {
+                                encodedBlock: "0xencodedBlock",
+                                signature: "0xsig"
+                            },
+                            timestamp: 1500n
+                        }
+                    }
                 ]);
 
                 const result = await (
@@ -696,7 +704,10 @@ describe("ValidationService - Progressive Validation Tests", () => {
                 );
 
                 expect(result).to.deep.equal({
-                    signedBlock: {},
+                    signedBlock: {
+                        encodedBlock: "0xencodedBlock",
+                        signature: "0xsig"
+                    },
                     timestamp: 1500
                 });
             });
