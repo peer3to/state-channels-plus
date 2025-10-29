@@ -489,7 +489,19 @@ export class MockSetup {
             getBlockCallDataCommitment: sinon.stub().resolves({ found: false }),
             queryFilter: sinon.stub().resolves([]),
             filters: {
-                BlockCalldataPosted: sinon.stub().returns("filter")
+                ChannelOpened: sinon.stub().returns("filter"),
+                StateSnapshotUpdated: sinon.stub().returns("filter"),
+                BlockCalldataPosted: sinon.stub().returns("filter"),
+                DisputeCommitted: sinon.stub().returns("filter"),
+                ChainSlashed: sinon.stub().returns("filter"),
+                DisputeReducedResultCommitted: sinon.stub().returns("filter"),
+                DisputeCommittedWithAuditingData: sinon
+                    .stub()
+                    .returns("filter"),
+                WithdrawalsUpdated: sinon.stub().returns("filter"),
+                ChannelStorageCleared: sinon.stub().returns("filter"),
+                DisputeKilled: sinon.stub().returns("filter"),
+                JoinChannelProcessed: sinon.stub().returns("filter")
             },
             getStateSnapshot: sinon.stub().resolves({
                 forkId: "0x1234567890abcdef",
@@ -530,7 +542,9 @@ export class MockSetup {
             }),
             interface: {
                 encodeFunctionData: sinon.stub().returns("0xencodeddata")
-            }
+            },
+            on: sinon.stub().resolves(),
+            off: sinon.stub().resolves()
         };
 
         this.mockTimeConfig = {

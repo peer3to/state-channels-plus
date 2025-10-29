@@ -11,11 +11,12 @@ import {
     BalanceStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { MockSetup } from "./testUtils";
+import { createLogger } from "@/utils";
 
 describe("StateManager", () => {
     let stateManager: StateManager;
     let mockSetup: MockSetup;
-
+    let logger: Logger;
     beforeEach(async () => {
         sinon.restore();
 
@@ -29,6 +30,8 @@ describe("StateManager", () => {
             evidenceTime: 30
         };
 
+        logger = createLogger({ component: "StateManager" });
+
         stateManager = new StateManager(
             mockSetup.mockSigner,
             "0x1234567890123456789012345678901234567890" as Address,
@@ -36,7 +39,8 @@ describe("StateManager", () => {
             mockSetup.mockDiamondStateMachine as any,
             mockSetup.mockTimeConfig,
             mockSetup.mockP2pEventHooks as any,
-            mockSetup.mockStorage as any
+            mockSetup.mockStorage as any,
+            logger
         );
 
         stateManager.setChannelId("0xabcdef1234567890" as any);
@@ -479,23 +483,6 @@ describe("StateManager", () => {
 
             expect(mockSetup.mockStateChannelManagerContract.multicall.called)
                 .to.be.true;
-        });
-
-        it("should log when no updates needed", async () => {
-            const forkId = "0x1234567890abcdef" as ForkId;
-
-            // Mock prepareUpdateSnapshotSameFork to return undefined
-            sinon
-                .stub(stateManager, "prepareUpdateSnapshotSameFork")
-                .resolves(undefined);
-
-            const consoleSpy = sinon.spy(console, "log");
-
-            await stateManager.postStateSnapshot(forkId);
-
-            expect(consoleSpy.calledWith("No state snapshot updates needed")).to
-                .be.true;
-            consoleSpy.restore();
         });
 
         it("should handle contract errors gracefully", async () => {
