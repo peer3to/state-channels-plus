@@ -11,7 +11,7 @@ import {
     BalanceStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { MockSetup } from "./testUtils";
-import { createLogger } from "@/utils";
+import { createLogger, Logger } from "@/utils";
 
 describe("StateManager", () => {
     let stateManager: StateManager;

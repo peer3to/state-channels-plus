@@ -5,7 +5,7 @@ import { MathStateMachine } from "@typechain-types/index";
 describe("E2E: EvmStateMachine", function () {
     it("EvmStateMachine - P2P simulation - success ", async function () {
         const harness = new PeerTestHarness<MathStateMachine>();
-        await harness.setup(2, { debug: false });
+        await harness.setup(2);
         const forkId = await harness.openChannel();
 
         await harness.submitNextTransaction((contract) => contract.add(3));
