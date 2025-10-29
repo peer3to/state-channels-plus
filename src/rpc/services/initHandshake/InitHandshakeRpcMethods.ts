@@ -88,6 +88,10 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             this.p2pManager.profileManager.getProfileByEvmAddress(
                 signerAddress
             );
+
+        // Check if this is the first connection before updating the profile
+        const isFirstConnection = !profile || !profile.isHandshakeCompleted;
+
         if (!profile) {
             profile = new PeerProfile(this.senderTransport, signerAddress);
             this.p2pManager.profileManager.registerProfile(profile);
@@ -98,6 +102,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             );
         }
         profile.setIsHandshakeCompleted(true);
+
         if (
             (preferredTransport === TransportType.WEBRTC ||
                 this.p2pManager.preferredTransport === TransportType.WEBRTC) &&
@@ -108,10 +113,13 @@ class InitHandshakeRpcMethods extends ARpcMethods {
                 this.senderTransport
             );
         }
-        //TODO! RESOLVE SUCCESS - set some flag also
-        this.p2pManager.stateManager.p2pEventHooks.onConnection?.(
-            signerAddress
-        );
+
+        // Only fire onConnection event for the first successful handshake to prevent duplicates
+        if (isFirstConnection) {
+            this.p2pManager.stateManager.p2pEventHooks.onConnection?.(
+                signerAddress
+            );
+        }
         //TODO! TEST!!
         // this.rpcProxy
         //     .onSignJoinChannelTEST(
