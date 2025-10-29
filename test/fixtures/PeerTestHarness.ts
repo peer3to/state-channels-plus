@@ -96,9 +96,6 @@ export class PeerTestHarness<T extends AStateMachine> {
             configOverrides: options.configOverrides || {}
         };
 
-        // Parse CLI arguments to set log level (--debug, --info, --warn, --error)
-        parseLogLevelFromArgs();
-
         await this.deployContracts();
         this.channelId = this.options.channelId;
 
