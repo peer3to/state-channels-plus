@@ -52,7 +52,8 @@ import {
     Type,
     hash,
     isCustomEvmError,
-    difference
+    difference,
+    Logger
 } from "@/utils";
 // Types
 import { BlockValidationResult, Status, TimeConfig } from "@/types";
@@ -103,6 +104,7 @@ class StateManager {
     reductionTriggerMap: Map<ForkId, ReductionTimeoutHandle> = new Map();
     status: Status = Status.SPECTATING;
     timeoutManager: TimeoutManager;
+    private logger: Logger;
 
     constructor(
         signer: ethers.Signer,
@@ -111,7 +113,8 @@ class StateManager {
         diamondStateMachine: ADiamondStateMachine,
         timeConfig: TimeConfig,
         p2pEventHooks: P2pEventHooks,
-        storage: Storage
+        storage: Storage,
+        logger: Logger
     ) {
         this.signer = signer;
         this.signerAddress = signerAddress;
@@ -120,11 +123,15 @@ class StateManager {
         this.timeConfig = timeConfig;
         this.stateChannelManagerContract = stateChannelManagerContract;
         this.storage = storage;
+
+        this.logger = logger.child({ component: "StateManager" });
+
         this.eventHandler = new EventHandler(
             this.storage,
             this.self,
             this.p2pEventHooks,
-            this.diamondStateMachine
+            this.diamondStateMachine,
+            logger
         );
         this.stateChannelEventListener = new StateChannelEventListener(
             this.stateChannelManagerContract,
@@ -187,9 +194,14 @@ class StateManager {
         this.p2pEventHooks = p2pEventHooks;
     }
     public setStatus(status: Status) {
+        this.logger.debug("Status changed", {
+            oldStatus: this.status,
+            newStatus: status
+        });
         this.status = status;
     }
     public setChannelId(channelId: ChannelId) {
+        this.logger.debug("Setting channel ID", { channelId });
         this.channelId = channelId;
         this.stateChannelEventListener.setChannelId(channelId);
         this.disputeManager.setChannelId(channelId);
@@ -302,7 +314,9 @@ class StateManager {
             // 1) disputeWindows is expired - double checked on-chain
             // 2) dispute commitments - collected on-chain -> we for sure have the correct data
             // 3) even if someone else reduces on-chain -> they would have to reduce to the same output, so race condition is not a problem
-            console.error("StateManager - tryReduce - reduce error: ", error);
+            this.logger.error("tryReduce failed", {
+                error: error instanceof Error ? error.message : String(error)
+            });
             throw error;
         }
         const reduceData = await this.agreementManager.getReduceData(
@@ -397,6 +411,12 @@ class StateManager {
         genesisTimestamp: Timestamp,
         exitChannelBlock?: ExitChannelBlockStruct
     ): Promise<void> {
+        this.logger.debug("Setting genesis state", {
+            forkId,
+            genesisTimestamp,
+            participantCount: snapshotData.participants.length
+        });
+
         // generate and store genesis snapshot
         const _genesisSnapshot: StateSnapshotStruct = {
             forkId,
@@ -686,12 +706,16 @@ class StateManager {
                 .then((txResponse) => txResponse.wait())
                 .catch((error) => {
                     if (isCustomEvmError(error)) {
-                        console.log(
-                            "Error posting block on chain",
-                            error.errorDescription
-                        );
+                        this.logger.warn("Error posting block on chain", {
+                            errorDescription: error.errorDescription
+                        });
                     } else {
-                        console.log("Error posting block on chain", error);
+                        this.logger.warn("Error posting block on chain", {
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error)
+                        });
                     }
                 });
         }
@@ -723,17 +747,21 @@ class StateManager {
                     await txResponse.wait();
                 } catch (error) {
                     if (isCustomEvmError(error)) {
-                        console.error(
-                            "Error posting state snapshot:",
-                            error.errorDescription
-                        );
+                        this.logger.error("Error posting state snapshot", {
+                            errorDescription: error.errorDescription
+                        });
                     } else {
-                        console.error("Error posting state snapshot:", error);
+                        this.logger.error("Error posting state snapshot", {
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error)
+                        });
                     }
                     throw error;
                 }
             } else {
-                console.log("No state snapshot updates needed");
+                this.logger.debug("No state snapshot updates needed");
             }
             return;
         }
@@ -788,17 +816,21 @@ class StateManager {
                 await txResponse.wait();
             } catch (error) {
                 if (isCustomEvmError(error)) {
-                    console.error(
-                        "Error posting state snapshot:",
-                        error.errorDescription
-                    );
+                    this.logger.error("Error posting state snapshot", {
+                        errorDescription: error.errorDescription
+                    });
                 } else {
-                    console.error("Error posting state snapshot:", error);
+                    this.logger.error("Error posting state snapshot", {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error)
+                    });
                 }
                 throw error;
             }
         } else {
-            console.log("No state snapshot updates needed");
+            this.logger.debug("No state snapshot updates needed");
         }
     }
 
@@ -922,9 +954,12 @@ class StateManager {
                 exitChannelBlocks
             };
         } catch (error) {
-            console.error(
-                "Error preparing update snapshot for the same fork:",
-                error
+            this.logger.error(
+                "Error preparing update snapshot for the same fork",
+                {
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                }
             );
             throw error;
         }
@@ -1095,7 +1130,9 @@ class StateManager {
                 exitBlocks
             };
         } catch (error) {
-            console.error("Error preparing update state snapshot fork:", error);
+            this.logger.error("Error preparing update state snapshot fork", {
+                error: error instanceof Error ? error.message : String(error)
+            });
             throw error;
         }
     }

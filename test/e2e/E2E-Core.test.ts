@@ -22,7 +22,7 @@ describe("E2E: Core Functionality", function () {
         // Assert: All blocks are signed by both participants, state consistency maintained
         it("should handle 10 consecutive blocks between 2 participants", async function () {
             // Arrange
-            await harness!.setup(2, { debug: false });
+            await harness!.setup(2);
             const forkId = await harness!.openChannel();
 
             // Act
@@ -90,7 +90,7 @@ describe("E2E: Core Functionality", function () {
         // Assert: All blocks are signed by all 3 participants, state consistency maintained
         it("should handle 10 consecutive blocks between 3 participants", async function () {
             // Arrange
-            await harness!.setup(3, { debug: false });
+            await harness!.setup(3);
             const forkId = await harness!.openChannel();
 
             // Act

@@ -55,9 +55,7 @@ export class LocalDiscoveryServer {
         myServer.on("connection", (ws) => {
             const lt = new LocalTransport(ws, p2pManager);
             p2pManager.addConnection(lt);
-            ws.on("close", () => {
-                console.log("Connection closed");
-            });
+            ws.on("close", () => {});
         });
 
         const ws = new WebSocket(`ws://localhost:${PORT}`);

@@ -20,23 +20,33 @@ import {
 } from "@/types/types";
 import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
-import { Codec, hash, Type } from "@/utils";
+import { Codec, hash, Logger, Type } from "@/utils";
 import { isEqual } from "lodash";
 import { ZeroHash } from "ethers";
 
 export class EventHandler {
+    private logger: Logger;
+
     constructor(
         private storage: Storage,
         private stateManager: StateManager,
         private p2pEventHooks: P2pEventHooks,
-        private diamondStateMachine: ADiamondStateMachine
-    ) {}
+        private diamondStateMachine: ADiamondStateMachine,
+        logger: Logger
+    ) {
+        this.logger = logger.child({ component: "EventHandler" });
+    }
 
     async onChannelOpened(
         channelId: ChannelId,
         stateSnapshot: StateSnapshotStruct,
         encodedState: Bytes
     ): Promise<void> {
+        this.logger.info("Channel opened", {
+            channelId,
+            forkId: stateSnapshot.forkId
+        });
+
         await this.diamondStateMachine.localDiamondContract.onChannelOpened(
             channelId,
             stateSnapshot,
@@ -70,15 +80,18 @@ export class EventHandler {
 
         // Check if channel should be closed (0 participants remaining)
         if (stateSnapshot.snapshotData.participants.length === 0) {
-            console.log(
-                `Channel ${channelId} has 0 participants remaining, closing channel`
+            this.logger.info(
+                "Channel has 0 participants remaining, closing channel",
+                {
+                    channelId
+                }
             );
             await this.handleChannelClose(channelId);
         }
     }
 
     private async handleChannelClose(channelId: ChannelId): Promise<void> {
-        console.log(`Handling channel close for ${channelId}`);
+        this.logger.info("Handling channel close", { channelId });
 
         // Disconnect from all peers in this channel
         this.stateManager.p2pManager.disconnectAll();
@@ -94,6 +107,13 @@ export class EventHandler {
         signedBlock: SignedBlockStruct,
         timestamp: Timestamp
     ): Promise<void> {
+        this.logger.debug("Block calldata posted on-chain", {
+            channelId,
+            commitmentHash,
+            sender,
+            blockHeight: signedBlock.encodedBlock
+        });
+
         await this.diamondStateMachine.localDiamondContract.onBlockCalldataPosted(
             channelId,
             commitmentHash,
@@ -121,6 +141,12 @@ export class EventHandler {
         disputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<void> {
         const forkId = dispute.input.disputeAuditingDataHash;
+        this.logger.warn("Dispute committed", {
+            channelId,
+            forkId,
+            isFinal,
+            disputeCreationTimestamp
+        });
         // sync LocalDiamond state
         await this.diamondStateMachine.localDiamondContract.onDisputeCommitted(
             channelId,
