@@ -1302,20 +1302,36 @@ class StateManager {
 
         const previousBlock = previousBlockOrSnapshot.block;
 
+        let previousBlockProducerPostedCalldata = false;
+        if (previousBlock) {
+            if (previousBlock.onChainTimestamp) {
+                previousBlockProducerPostedCalldata = true;
+            } else {
+                previousBlockProducerPostedCalldata = (
+                    await this.diamondStateMachine.localDiamondContract.getBlockCallDataCommitment(
+                        this.channelId,
+                        forkId,
+                        previousBlock.height,
+                        previousBlock.author
+                    )
+                ).found;
+            }
+        }
+
         const timeout: TimeoutStruct = {
             participant: participantAddress.toString(),
             blockHeight: BigInt(blockHeight),
-            minTimeStamp: Clock.getTimeInSeconds(), // since this function is invoked, some checks determined that NOW is a good time to invoke it
+            minTimeStamp:
+                Clock.getTimeInSeconds() + this.getTimeoutWaitTimeSeconds(),
             isForced: isForced,
             previousBlockProducer: previousBlock
                 ? previousBlock.author.toString()
                 : ethers.ZeroAddress,
-            previousBlockProducerPostedCalldata: previousBlock
-                ? Boolean(previousBlock.onChainTimestamp)
-                : false,
+            previousBlockProducerPostedCalldata:
+                previousBlockProducerPostedCalldata,
             participantSignatureOnPreviousBlock:
                 (previousBlock?.findSignature(participantAddress) as Bytes) ||
-                ""
+                "0x"
         };
 
         // persist timeout locally
