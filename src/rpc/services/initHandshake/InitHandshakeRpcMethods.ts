@@ -108,7 +108,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
                 this.senderTransport
             );
         }
-        //TODO! RESOLVE SUCCESS - set some flag also
+
         this.p2pManager.stateManager.p2pEventHooks.onConnection?.(
             signerAddress
         );

@@ -28,7 +28,7 @@ describe("E2E: Core Functionality", function () {
             // Act
             for (let i = 0; i < 10; i++) {
                 await harness!.submitNextTransaction((contract) =>
-                    contract.add(i + 1)
+                    contract.add(1)
                 );
             }
 
@@ -96,7 +96,7 @@ describe("E2E: Core Functionality", function () {
             // Act
             for (let i = 0; i < 10; i++) {
                 await harness!.submitNextTransaction((contract) =>
-                    contract.add(i + 1)
+                    contract.add(1)
                 );
             }
 

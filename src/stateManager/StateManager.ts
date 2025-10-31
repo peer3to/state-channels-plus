@@ -201,7 +201,7 @@ class StateManager {
         this.status = status;
     }
     public setChannelId(channelId: ChannelId) {
-        this.logger.debug("Setting channel ID", { channelId });
+        this.logger.verbose("Setting channel ID", { channelId });
         this.channelId = channelId;
         this.stateChannelEventListener.setChannelId(channelId);
         this.disputeManager.setChannelId(channelId);
@@ -411,7 +411,7 @@ class StateManager {
         genesisTimestamp: Timestamp,
         exitChannelBlock?: ExitChannelBlockStruct
     ): Promise<void> {
-        this.logger.debug("Setting genesis state", {
+        this.logger.verbose("Setting genesis state", {
             forkId,
             genesisTimestamp,
             participantCount: snapshotData.participants.length
@@ -481,102 +481,96 @@ class StateManager {
         onChainTimestamp?: Timestamp,
         validationStrategy?: AValidationStrategy
     ): Promise<boolean> {
+        // the try/catch is to ensure that the mutex is unlocked in case of an error
+        // no error is actually expected to happen, and the catch block just re-throws the error
+        const strategy =
+            validationStrategy || this.getStrategyByStatus(this.status);
         try {
-            // the try/catch is to ensure that the mutex is unlocked in case of an error
-            // no error is actually expected to happen, and the catch block just re-throws the error
-            const strategy =
-                validationStrategy || this.getStrategyByStatus(this.status);
-            try {
-                await this.mutex.lock();
-                let validationResult: BlockValidationResult =
-                    BlockValidationResult.SUCCESS;
-                const isAuthentic =
-                    await this.diamondStateMachine.localDiamondContract.isBlockAuthentic(
-                        blockConfirmation.signedBlock
-                    );
-
-                if (!isAuthentic) {
-                    validationResult =
-                        await strategy.authenticateBlockFailed(
-                            blockConfirmation
-                        );
-                    return await strategy.interpretFinalValidationResult(
-                        validationResult
-                    );
-                }
-
-                const block = Block.fromBlockConfirmation(
-                    blockConfirmation,
-                    onChainTimestamp
+            await this.mutex.lock();
+            let validationResult: BlockValidationResult =
+                BlockValidationResult.SUCCESS;
+            const isAuthentic =
+                await this.diamondStateMachine.localDiamondContract.isBlockAuthentic(
+                    blockConfirmation.signedBlock
                 );
 
+            if (!isAuthentic) {
                 validationResult =
-                    await this.validationService.validateBlockConfirmation(
-                        block,
-                        strategy
-                    );
+                    await strategy.authenticateBlockFailed(blockConfirmation);
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
+            }
 
-                if (validationResult !== BlockValidationResult.SUCCESS) {
-                    // handle all non-success actions
-                    return await strategy.interpretFinalValidationResult(
-                        validationResult
-                    );
-                }
+            const block = Block.fromBlockConfirmation(
+                blockConfirmation,
+                onChainTimestamp
+            );
 
-                // SUCCESS, continue with state transition validation
-
-                const {
-                    success,
-                    encodedState,
-                    successCallback,
-                    exitChannels,
-                    leftParticipants
-                } = await this.applyTransaction(block.transaction);
-
-                if (!success) {
-                    validationResult =
-                        await strategy.invalidStateTransitionDetected(block);
-                    return await strategy.interpretFinalValidationResult(
-                        validationResult
-                    );
-                }
-
-                // Validate state snapshot hash
-                const { stateSnapshot, exitChannelBlock, totalWithdrawals } =
-                    await this.createStateSnapshot(
-                        hash(encodedState),
-                        block.coordinates,
-                        block.timestamp,
-                        exitChannels
-                    );
-
-                if (stateSnapshot.hash !== block.stateSnapshotHash) {
-                    validationResult =
-                        await strategy.invalidStateTransitionDetected(block);
-                    return await strategy.interpretFinalValidationResult(
-                        validationResult
-                    );
-                }
-
-                // TODO - apply strategy here too
-                // All validations passed - proceed with success action
-                this.success(
+            validationResult =
+                await this.validationService.validateBlockConfirmation(
                     block,
-                    stateSnapshot,
-                    encodedState,
-                    successCallback,
-                    totalWithdrawals,
-                    leftParticipants,
-                    exitChannelBlock
+                    strategy
                 );
 
-                // success - no disconnect
-                return true;
-            } finally {
-                this.mutex.unlock();
+            if (validationResult !== BlockValidationResult.SUCCESS) {
+                // handle all non-success actions
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
             }
-        } catch (error) {
-            throw error;
+
+            // SUCCESS, continue with state transition validation
+
+            const {
+                success,
+                encodedState,
+                successCallback,
+                exitChannels,
+                leftParticipants
+            } = await this.applyTransaction(block.transaction);
+
+            if (!success) {
+                validationResult =
+                    await strategy.invalidStateTransitionDetected(block);
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
+            }
+
+            // Validate state snapshot hash
+            const { stateSnapshot, exitChannelBlock, totalWithdrawals } =
+                await this.createStateSnapshot(
+                    hash(encodedState),
+                    block.coordinates,
+                    block.timestamp,
+                    exitChannels
+                );
+
+            if (stateSnapshot.hash !== block.stateSnapshotHash) {
+                validationResult =
+                    await strategy.invalidStateTransitionDetected(block);
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
+            }
+
+            // TODO - apply strategy here too
+            // All validations passed - proceed with success action
+            this.success(
+                block,
+                stateSnapshot,
+                encodedState,
+                successCallback,
+                totalWithdrawals,
+                leftParticipants,
+                exitChannelBlock
+            );
+
+            // success - no disconnect
+            return true;
+        } finally {
+            this.mutex.unlock();
         }
     }
 

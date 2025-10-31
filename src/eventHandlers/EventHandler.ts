@@ -42,7 +42,7 @@ export class EventHandler {
         stateSnapshot: StateSnapshotStruct,
         encodedState: Bytes
     ): Promise<void> {
-        this.logger.info("Channel opened", {
+        this.logger.debug("Channel opened", {
             channelId,
             forkId: stateSnapshot.forkId
         });
@@ -107,7 +107,7 @@ export class EventHandler {
         signedBlock: SignedBlockStruct,
         timestamp: Timestamp
     ): Promise<void> {
-        this.logger.debug("Block calldata posted on-chain", {
+        this.logger.verbose("Block calldata posted on-chain", {
             channelId,
             commitmentHash,
             sender,
