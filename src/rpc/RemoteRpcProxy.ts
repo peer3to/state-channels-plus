@@ -16,13 +16,14 @@ export type RemoteRpcProxyType<T extends MainRpcService> = {
 };
 
 class RemoteRpcProxy {
-    public static createProxy(mainRpcService: MainRpcService) {
-        // const cache = new Map<PropertyKey, unknown>();
-        const ctx = {
-            serviceName: "",
-            service: null as unknown as ARpcService<any>
-        };
-        const rpcMethodsProxy = RpcMethodsProxy.createProxy(ctx);
+    public static createProxy(
+        mainRpcService: MainRpcService
+    ): RemoteRpcProxyType<MainRpcService> {
+        const proxyCache = new Map<
+            string,
+            ReturnType<typeof RpcMethodsProxy.createProxy>
+        >();
+
         return new Proxy(mainRpcService, {
             get(target, prop, receiver) {
                 const val = Reflect.get(target, prop, receiver);
@@ -30,11 +31,23 @@ class RemoteRpcProxy {
                 if (typeof val != "object" || !(val instanceof ARpcService)) {
                     throw new Error("RemoteRpcProxy can only access services");
                 }
+
                 // val is a service
                 const serviceName = prop.toString();
-                ctx.serviceName = serviceName;
-                ctx.service = val;
-                return rpcMethodsProxy;
+
+                // Create and cache proxy per service
+                if (!proxyCache.has(serviceName)) {
+                    const ctx = {
+                        serviceName,
+                        service: val
+                    };
+                    proxyCache.set(
+                        serviceName,
+                        RpcMethodsProxy.createProxy(ctx)
+                    );
+                }
+
+                return proxyCache.get(serviceName)!;
             }
         }) as unknown as RemoteRpcProxyType<MainRpcService>;
     }
