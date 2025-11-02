@@ -52,8 +52,8 @@ import {
     Type,
     hash,
     isCustomEvmError,
-    decodeErrorProxy,
-    difference
+    difference,
+    Logger
 } from "@/utils";
 // Types
 import { BlockValidationResult, Status, TimeConfig } from "@/types";
@@ -105,6 +105,7 @@ class StateManager {
     reductionTriggerMap: Map<ForkId, ReductionTimeoutHandle> = new Map();
     status: Status = Status.SPECTATING;
     timeoutManager: TimeoutManager;
+    private logger: Logger;
 
     constructor(
         signer: ethers.Signer,
@@ -113,22 +114,25 @@ class StateManager {
         diamondStateMachine: ADiamondStateMachine,
         timeConfig: TimeConfig,
         p2pEventHooks: P2pEventHooks,
-        storage: Storage
+        storage: Storage,
+        logger: Logger
     ) {
         this.signer = signer;
         this.signerAddress = signerAddress;
         this.diamondStateMachine = diamondStateMachine;
         this.p2pEventHooks = p2pEventHooks;
         this.timeConfig = timeConfig;
-        this.stateChannelManagerContract = decodeErrorProxy(
-            stateChannelManagerContract
-        );
+        this.stateChannelManagerContract = stateChannelManagerContract;
         this.storage = storage;
+
+        this.logger = logger.child({ component: "StateManager" });
+
         this.eventHandler = new EventHandler(
             this.storage,
             this.self,
             this.p2pEventHooks,
-            this.diamondStateMachine
+            this.diamondStateMachine,
+            logger
         );
         this.stateChannelEventListener = new StateChannelEventListener(
             this.stateChannelManagerContract,
@@ -191,9 +195,14 @@ class StateManager {
         this.p2pEventHooks = p2pEventHooks;
     }
     public setStatus(status: Status) {
+        this.logger.debug("Status changed", {
+            oldStatus: this.status,
+            newStatus: status
+        });
         this.status = status;
     }
     public setChannelId(channelId: ChannelId) {
+        this.logger.verbose("Setting channel ID", { channelId });
         this.channelId = channelId;
         this.stateChannelEventListener.setChannelId(channelId);
         this.disputeManager.setChannelId(channelId);
@@ -306,7 +315,9 @@ class StateManager {
             // 1) disputeWindows is expired - double checked on-chain
             // 2) dispute commitments - collected on-chain -> we for sure have the correct data
             // 3) even if someone else reduces on-chain -> they would have to reduce to the same output, so race condition is not a problem
-            console.error("StateManager - tryReduce - reduce error: ", error);
+            this.logger.error("tryReduce failed", {
+                error: error instanceof Error ? error.message : String(error)
+            });
             throw error;
         }
         const reduceData = await this.agreementManager.getReduceData(
@@ -401,6 +412,12 @@ class StateManager {
         genesisTimestamp: Timestamp,
         exitChannelBlock?: ExitChannelBlockStruct
     ): Promise<void> {
+        this.logger.verbose("Setting genesis state", {
+            forkId,
+            genesisTimestamp,
+            participantCount: snapshotData.participants.length
+        });
+
         // generate and store genesis snapshot
         const _genesisSnapshot: StateSnapshotStruct = {
             forkId,
@@ -466,103 +483,96 @@ class StateManager {
         validationStrategy?: AValidationStrategy,
         senderTransport?: ATransport
     ): Promise<boolean> {
+        // the try/catch is to ensure that the mutex is unlocked in case of an error
+        // no error is actually expected to happen, and the catch block just re-throws the error
+        const strategy =
+            validationStrategy || this.getStrategyByStatus(this.status);
         try {
-            // the try/catch is to ensure that the mutex is unlocked in case of an error
-            // no error is actually expected to happen, and the catch block just re-throws the error
-            const strategy =
-                validationStrategy || this.getStrategyByStatus(this.status);
-            try {
-                await this.mutex.lock();
-                let validationResult: BlockValidationResult =
-                    BlockValidationResult.SUCCESS;
-                const isAuthentic =
-                    await this.diamondStateMachine.localDiamondContract.isBlockAuthentic(
-                        blockConfirmation.signedBlock
-                    );
-
-                if (!isAuthentic) {
-                    validationResult =
-                        await strategy.authenticateBlockFailed(
-                            blockConfirmation
-                        );
-                    return await strategy.interpretFinalValidationResult(
-                        validationResult
-                    );
-                }
-
-                const block = Block.fromBlockConfirmation(
-                    blockConfirmation,
-                    onChainTimestamp
+            await this.mutex.lock();
+            let validationResult: BlockValidationResult =
+                BlockValidationResult.SUCCESS;
+            const isAuthentic =
+                await this.diamondStateMachine.localDiamondContract.isBlockAuthentic(
+                    blockConfirmation.signedBlock
                 );
 
+            if (!isAuthentic) {
                 validationResult =
-                    await this.validationService.validateBlockConfirmation(
-                        block,
-                        strategy,
-                        senderTransport
-                    );
+                    await strategy.authenticateBlockFailed(blockConfirmation);
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
+            }
 
-                if (validationResult !== BlockValidationResult.SUCCESS) {
-                    // handle all non-success actions
-                    return await strategy.interpretFinalValidationResult(
-                        validationResult
-                    );
-                }
+            const block = Block.fromBlockConfirmation(
+                blockConfirmation,
+                onChainTimestamp
+            );
 
-                // SUCCESS, continue with state transition validation
-
-                const {
-                    success,
-                    encodedState,
-                    successCallback,
-                    exitChannels,
-                    leftParticipants
-                } = await this.applyTransaction(block.transaction);
-
-                if (!success) {
-                    validationResult =
-                        await strategy.invalidStateTransitionDetected(block);
-                    return await strategy.interpretFinalValidationResult(
-                        validationResult
-                    );
-                }
-
-                // Validate state snapshot hash
-                const { stateSnapshot, exitChannelBlock, totalWithdrawals } =
-                    await this.createStateSnapshot(
-                        hash(encodedState),
-                        block.coordinates,
-                        block.timestamp,
-                        exitChannels
-                    );
-
-                if (stateSnapshot.hash !== block.stateSnapshotHash) {
-                    validationResult =
-                        await strategy.invalidStateTransitionDetected(block);
-                    return await strategy.interpretFinalValidationResult(
-                        validationResult
-                    );
-                }
-
-                // TODO - apply strategy here too
-                // All validations passed - proceed with success action
-                this.success(
+            validationResult =
+                await this.validationService.validateBlockConfirmation(
                     block,
-                    stateSnapshot,
-                    encodedState,
-                    successCallback,
-                    totalWithdrawals,
-                    leftParticipants,
-                    exitChannelBlock
+                    strategy
                 );
 
-                // success - no disconnect
-                return true;
-            } finally {
-                this.mutex.unlock();
+            if (validationResult !== BlockValidationResult.SUCCESS) {
+                // handle all non-success actions
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
             }
-        } catch (error) {
-            throw error;
+
+            // SUCCESS, continue with state transition validation
+
+            const {
+                success,
+                encodedState,
+                successCallback,
+                exitChannels,
+                leftParticipants
+            } = await this.applyTransaction(block.transaction);
+
+            if (!success) {
+                validationResult =
+                    await strategy.invalidStateTransitionDetected(block);
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
+            }
+
+            // Validate state snapshot hash
+            const { stateSnapshot, exitChannelBlock, totalWithdrawals } =
+                await this.createStateSnapshot(
+                    hash(encodedState),
+                    block.coordinates,
+                    block.timestamp,
+                    exitChannels
+                );
+
+            if (stateSnapshot.hash !== block.stateSnapshotHash) {
+                validationResult =
+                    await strategy.invalidStateTransitionDetected(block);
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
+            }
+
+            // TODO - apply strategy here too
+            // All validations passed - proceed with success action
+            this.success(
+                block,
+                stateSnapshot,
+                encodedState,
+                successCallback,
+                totalWithdrawals,
+                leftParticipants,
+                exitChannelBlock
+            );
+
+            // success - no disconnect
+            return true;
+        } finally {
+            this.mutex.unlock();
         }
     }
 
@@ -692,12 +702,16 @@ class StateManager {
                 .then((txResponse) => txResponse.wait())
                 .catch((error) => {
                     if (isCustomEvmError(error)) {
-                        console.log(
-                            "Error posting block on chain",
-                            error.errorDescription
-                        );
+                        this.logger.warn("Error posting block on chain", {
+                            errorDescription: error.errorDescription
+                        });
                     } else {
-                        console.log("Error posting block on chain", error);
+                        this.logger.warn("Error posting block on chain", {
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error)
+                        });
                     }
                 });
         }
@@ -729,17 +743,21 @@ class StateManager {
                     await txResponse.wait();
                 } catch (error) {
                     if (isCustomEvmError(error)) {
-                        console.error(
-                            "Error posting state snapshot:",
-                            error.errorDescription
-                        );
+                        this.logger.error("Error posting state snapshot", {
+                            errorDescription: error.errorDescription
+                        });
                     } else {
-                        console.error("Error posting state snapshot:", error);
+                        this.logger.error("Error posting state snapshot", {
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error)
+                        });
                     }
                     throw error;
                 }
             } else {
-                console.log("No state snapshot updates needed");
+                this.logger.debug("No state snapshot updates needed");
             }
             return;
         }
@@ -794,17 +812,21 @@ class StateManager {
                 await txResponse.wait();
             } catch (error) {
                 if (isCustomEvmError(error)) {
-                    console.error(
-                        "Error posting state snapshot:",
-                        error.errorDescription
-                    );
+                    this.logger.error("Error posting state snapshot", {
+                        errorDescription: error.errorDescription
+                    });
                 } else {
-                    console.error("Error posting state snapshot:", error);
+                    this.logger.error("Error posting state snapshot", {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error)
+                    });
                 }
                 throw error;
             }
         } else {
-            console.log("No state snapshot updates needed");
+            this.logger.debug("No state snapshot updates needed");
         }
     }
 
@@ -928,9 +950,12 @@ class StateManager {
                 exitChannelBlocks
             };
         } catch (error) {
-            console.error(
-                "Error preparing update snapshot for the same fork:",
-                error
+            this.logger.error(
+                "Error preparing update snapshot for the same fork",
+                {
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                }
             );
             throw error;
         }
@@ -1101,7 +1126,9 @@ class StateManager {
                 exitBlocks
             };
         } catch (error) {
-            console.error("Error preparing update state snapshot fork:", error);
+            this.logger.error("Error preparing update state snapshot fork", {
+                error: error instanceof Error ? error.message : String(error)
+            });
             throw error;
         }
     }

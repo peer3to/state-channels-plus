@@ -20,24 +20,34 @@ import {
 } from "@/types/types";
 import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
-import { Codec, hash, Type } from "@/utils";
+import { Codec, hash, Logger, Type } from "@/utils";
 import { isEqual } from "lodash";
 import { ZeroHash } from "ethers";
 
 export class EventHandler {
+    private logger: Logger;
+
     constructor(
         private storage: Storage,
         private stateManager: StateManager,
         private p2pEventHooks: P2pEventHooks,
-        private diamondStateMachine: ADiamondStateMachine
-    ) {}
+        private diamondStateMachine: ADiamondStateMachine,
+        logger: Logger
+    ) {
+        this.logger = logger.child({ component: "EventHandler" });
+    }
 
     async onChannelOpened(
         channelId: ChannelId,
         stateSnapshot: StateSnapshotStruct,
         encodedState: Bytes
     ): Promise<void> {
-        this.diamondStateMachine.localDiamondContract.onChannelOpened(
+        this.logger.debug("Channel opened", {
+            channelId,
+            forkId: stateSnapshot.forkId
+        });
+
+        await this.diamondStateMachine.localDiamondContract.onChannelOpened(
             channelId,
             stateSnapshot,
             encodedState
@@ -63,20 +73,48 @@ export class EventHandler {
             );
         }
 
-        this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
+        await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
             channelId,
             stateSnapshot
         );
+
+        // Check if channel should be closed (0 participants remaining)
+        if (stateSnapshot.snapshotData.participants.length === 0) {
+            this.logger.info(
+                "Channel has 0 participants remaining, closing channel",
+                {
+                    channelId
+                }
+            );
+            await this.handleChannelClose(channelId);
+        }
     }
 
-    onBlockCalldataPosted(
+    private async handleChannelClose(channelId: ChannelId): Promise<void> {
+        this.logger.info("Handling channel close", { channelId });
+
+        // Disconnect from all peers in this channel
+        this.stateManager.p2pManager.disconnectAll();
+
+        // Trigger channelclosed hook?
+        this.p2pEventHooks.onCloseChannel?.(channelId);
+    }
+
+    async onBlockCalldataPosted(
         channelId: ChannelId,
         commitmentHash: Hash,
         sender: Address,
         signedBlock: SignedBlockStruct,
         timestamp: Timestamp
-    ): void {
-        this.diamondStateMachine.localDiamondContract.onBlockCalldataPosted(
+    ): Promise<void> {
+        this.logger.verbose("Block calldata posted on-chain", {
+            channelId,
+            commitmentHash,
+            sender,
+            blockHeight: signedBlock.encodedBlock
+        });
+
+        await this.diamondStateMachine.localDiamondContract.onBlockCalldataPosted(
             channelId,
             commitmentHash,
             sender,
@@ -88,7 +126,10 @@ export class EventHandler {
             signedBlock,
             signatures: []
         };
-        this.stateManager.onBlockConfirmation(blockConfirmation, timestamp);
+        await this.stateManager.onBlockConfirmation(
+            blockConfirmation,
+            timestamp
+        );
     }
 
     async onDisputeCommitted(
@@ -100,8 +141,14 @@ export class EventHandler {
         disputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<void> {
         const forkId = dispute.input.disputeAuditingDataHash;
+        this.logger.warn("Dispute committed", {
+            channelId,
+            forkId,
+            isFinal,
+            disputeCreationTimestamp
+        });
         // sync LocalDiamond state
-        this.diamondStateMachine.localDiamondContract.onDisputeCommitted(
+        await this.diamondStateMachine.localDiamondContract.onDisputeCommitted(
             channelId,
             dispute,
             disputeCreationTimestamp,
@@ -149,7 +196,7 @@ export class EventHandler {
                 await this.checkForAdditionalEvidence(dispute);
 
             if (haveMoreEvidence) {
-                this.stateManager.stateChannelManagerContract.uploadDispute(
+                await this.stateManager.stateChannelManagerContract.uploadDispute(
                     counterDisputeConfirmation
                 );
                 return;
@@ -205,7 +252,7 @@ export class EventHandler {
         participant: Address,
         timestamp: Timestamp
     ): Promise<void> {
-        this.diamondStateMachine.localDiamondContract.onOnChainSlashAdded(
+        await this.diamondStateMachine.localDiamondContract.onOnChainSlashAdded(
             channelId,
             participant,
             timestamp
@@ -236,7 +283,7 @@ export class EventHandler {
         reducer: Address
     ): Promise<void> {
         // sync LocalDiamond state
-        this.diamondStateMachine.localDiamondContract.onDisputeReducedResultCommitted(
+        await this.diamondStateMachine.localDiamondContract.onDisputeReducedResultCommitted(
             channelId,
             forkId,
             reducedForkId,
@@ -290,18 +337,21 @@ export class EventHandler {
         );
     }
 
-    onWithdrawalsUpdated(channelId: ChannelId, totalWithdrawals: any): void {
-        this.diamondStateMachine.localDiamondContract.onWithdrawalsUpdated(
+    async onWithdrawalsUpdated(
+        channelId: ChannelId,
+        totalWithdrawals: any
+    ): Promise<void> {
+        await this.diamondStateMachine.localDiamondContract.onWithdrawalsUpdated(
             channelId,
             totalWithdrawals
         );
     }
 
-    onChannelStorageCleared(
+    async onChannelStorageCleared(
         channelId: ChannelId,
         latestJoinChannelBlockHash: Hash
-    ): void {
-        this.diamondStateMachine.localDiamondContract.onChannelStorageCleared(
+    ): Promise<void> {
+        await this.diamondStateMachine.localDiamondContract.onChannelStorageCleared(
             channelId,
             latestJoinChannelBlockHash
         );
@@ -312,7 +362,7 @@ export class EventHandler {
         forkId: ForkId,
         disputer: Address
     ): Promise<void> {
-        this.diamondStateMachine.localDiamondContract.onDisputeKilled(
+        await this.diamondStateMachine.localDiamondContract.onDisputeKilled(
             channelId,
             forkId,
             disputer
@@ -340,19 +390,19 @@ export class EventHandler {
         await this.stateManager.disputeManager.createDispute(forkId, false);
     }
 
-    onJoinChannelProcessed(
+    async onJoinChannelProcessed(
         channelId: ChannelId,
         joinChannelBlock: any,
         timestamp: Timestamp,
         totalDeposits: any
-    ): void {
-        this.diamondStateMachine.localDiamondContract.onJoinChannelProcessed(
+    ): Promise<void> {
+        await this.diamondStateMachine.localDiamondContract.onJoinChannelProcessed(
             channelId,
             joinChannelBlock,
             timestamp,
             totalDeposits
         );
-        this.stateManager.onJoinChannel(
+        await this.stateManager.onJoinChannel(
             joinChannelBlock,
             timestamp,
             totalDeposits
@@ -456,20 +506,20 @@ export class EventHandler {
             await this.stateManager.stateChannelManagerContract.reduce.staticCall(
                 disputes
             );
-        const latestSnapshot =
-            this.storage.stateSnapshots.getStateSnapshotByHash(
-                reduceOutput.latestBlock.stateSnapshotHash
+
+        // Use getReduceData to properly handle genesis case (when latestBlock is undefined)
+        const reduceData =
+            await this.stateManager.agreementManager.getReduceData(
+                forkId,
+                reduceOutput
             );
-        if (!latestSnapshot)
-            throw new Error(
-                `Snapshot not available for hash: ${reduceOutput.latestBlock.stateSnapshotHash}`
-            );
+        const latestSnapshot = reduceData.latestStateSnapshot;
         const state = this.storage.stateMachineStates.getStateMachineState(
-            latestSnapshot.stateMachineStateHash
+            latestSnapshot.snapshotData.stateMachineStateHash
         );
         if (!state)
             throw new Error(
-                `StateMachineState not available for hash: ${latestSnapshot.stateMachineStateHash}`
+                `StateMachineState not available for hash: ${latestSnapshot.snapshotData.stateMachineStateHash}`
             );
         const genesisSnapshot =
             this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
@@ -478,8 +528,8 @@ export class EventHandler {
                 `GenesisSnapshot not available for forkId: ${forkId}`
             );
         const jcbs = this.storage.joinChannelBlocks.getBlocksInRange(
-            genesisSnapshot.latestJoinBlockHash,
-            latestSnapshot.latestJoinBlockHash
+            genesisSnapshot.snapshotData.latestJoinChannelBlockHash,
+            latestSnapshot.snapshotData.latestJoinChannelBlockHash
         );
         const [snapshotData] =
             await this.stateManager.stateChannelManagerContract.reduceOutputToSnapshotData.staticCall(

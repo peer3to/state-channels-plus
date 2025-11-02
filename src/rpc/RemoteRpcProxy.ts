@@ -1,9 +1,6 @@
 import ARpcService from "./ARpcService";
 import MainRpcService from "./MainRpcService";
-import RpcMethodsProxy, {
-    RpcHandleMethods,
-    RpcMethodsContextObject
-} from "./RpcHandleProxy";
+import RpcMethodsProxy, { RpcHandleMethods } from "./RpcHandleProxy";
 
 /**
  * Substitue the type of every 'service' in MainRpcService to the type of the coresponding 'RpcMethods' class
@@ -19,15 +16,14 @@ export type RemoteRpcProxyType<T extends MainRpcService> = {
 };
 
 class RemoteRpcProxy {
-    public static createProxy(mainRpcService: MainRpcService) {
-        // const cache = new Map<PropertyKey, unknown>();
-        const ctx = {
-            serviceName: "",
-            service: undefined
-        };
-        const rpcMethodsProxy = RpcMethodsProxy.createProxy(
-            ctx as unknown as RpcMethodsContextObject
-        );
+    public static createProxy(
+        mainRpcService: MainRpcService
+    ): RemoteRpcProxyType<MainRpcService> {
+        const proxyCache = new Map<
+            string,
+            ReturnType<typeof RpcMethodsProxy.createProxy>
+        >();
+
         return new Proxy(mainRpcService, {
             get(target, prop, receiver) {
                 const val = Reflect.get(target, prop, receiver);
@@ -35,12 +31,23 @@ class RemoteRpcProxy {
                 if (typeof val != "object" || !(val instanceof ARpcService)) {
                     throw new Error("RemoteRpcProxy can only access services");
                 }
+
                 // val is a service
                 const serviceName = prop.toString();
-                ctx.serviceName = serviceName;
-                // @ts-ignore
-                ctx.service = val;
-                return rpcMethodsProxy;
+
+                // Create and cache proxy per service
+                if (!proxyCache.has(serviceName)) {
+                    const ctx = {
+                        serviceName,
+                        service: val
+                    };
+                    proxyCache.set(
+                        serviceName,
+                        RpcMethodsProxy.createProxy(ctx)
+                    );
+                }
+
+                return proxyCache.get(serviceName)!;
             }
         }) as unknown as RemoteRpcProxyType<MainRpcService>;
     }

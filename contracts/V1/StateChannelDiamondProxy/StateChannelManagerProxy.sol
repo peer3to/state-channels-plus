@@ -39,6 +39,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         agreementTime = 5;
         chainFallbackTime = 30;
         evidenceTime = 30;
+        gasLimit = 3_000_000;
     }
 
     // ********** public/external functions **********

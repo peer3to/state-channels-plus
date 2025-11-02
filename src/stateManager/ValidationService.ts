@@ -438,9 +438,13 @@ export default class ValidationService {
                     `Multiple logs found for commitment: ${blockCommitment} - logs: ${logs}`
                 );
             }
+            const signedBlock = {
+                encodedBlock: logs[0].args.signedBlock.encodedBlock,
+                signature: logs[0].args.signedBlock.signature
+            };
 
             return {
-                signedBlock: logs[0].args.signedBlock,
+                signedBlock: signedBlock,
                 timestamp: Number(logs[0].args.timestamp)
             };
         } catch (error) {

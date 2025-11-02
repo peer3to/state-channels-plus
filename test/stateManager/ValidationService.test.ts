@@ -7,7 +7,8 @@ import {
     BlockBuilder,
     MockSetup,
     ValidationFailure,
-    EXPECTED_RESULTS
+    EXPECTED_RESULTS,
+    ValidationFailureType
 } from "./testUtils";
 
 describe("ValidationService - Progressive Validation Tests", () => {
@@ -510,7 +511,7 @@ describe("ValidationService - Progressive Validation Tests", () => {
             // Ensure we have covered all validation failures
             const allFailures = Object.values(
                 ValidationFailure
-            ) as ValidationFailure[];
+            ) as ValidationFailureType[];
             const coveredFailures = Object.keys(EXPECTED_RESULTS);
 
             expect(coveredFailures.length).to.equal(allFailures.length);
@@ -525,7 +526,7 @@ describe("ValidationService - Progressive Validation Tests", () => {
             // of all validation failure points from last to first step
             const allFailures = Object.values(
                 ValidationFailure
-            ) as ValidationFailure[];
+            ) as ValidationFailureType[];
             const coveredFailures = Object.keys(EXPECTED_RESULTS);
 
             expect(coveredFailures.length).to.equal(allFailures.length);
@@ -685,7 +686,15 @@ describe("ValidationService - Progressive Validation Tests", () => {
 
             it("should return data for single log", async () => {
                 mockSetup.mockStateChannelManagerContract.queryFilter.resolves([
-                    { args: { signedBlock: {}, timestamp: 1500n } }
+                    {
+                        args: {
+                            signedBlock: {
+                                encodedBlock: "0xencodedBlock",
+                                signature: "0xsig"
+                            },
+                            timestamp: 1500n
+                        }
+                    }
                 ]);
 
                 const result = await (
@@ -696,7 +705,10 @@ describe("ValidationService - Progressive Validation Tests", () => {
                 );
 
                 expect(result).to.deep.equal({
-                    signedBlock: {},
+                    signedBlock: {
+                        encodedBlock: "0xencodedBlock",
+                        signature: "0xsig"
+                    },
                     timestamp: 1500
                 });
             });

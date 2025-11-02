@@ -11,7 +11,13 @@ import StateManager from "../stateManager/StateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
 import { ExitChannelEthersType, BalanceEthersType } from "@/types/ethers";
-import { DebugProxy, decodeErrorProxy, Codec } from "@/utils";
+import {
+    DebugProxy,
+    decodeErrorProxy,
+    Codec,
+    createLogger,
+    Logger
+} from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
@@ -347,7 +353,9 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         deployedStateChannelContractInstance: StateChannelManagerProxy,
         stateMachineContractInstance: T,
         p2pEventHooks?: P2pEventHooks,
-        timeConfigOverride?: Partial<TimeConfig>
+        timeConfigOverride?: Partial<TimeConfig>,
+        peerId?: number,
+        peerLogger?: Logger
     ): Promise<P2pInstance<T>> {
         // Sync clock to DLT
         await Clock.init(signer.provider!);
@@ -396,7 +404,13 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const signerAddress = await signer.getAddress();
         const storage = new Storage();
 
-        // Create state manager with EvmStateMachine (which is an AStateMachine)
+        const logger =
+            peerLogger ||
+            createLogger({
+                peerId,
+                peerAddress: signerAddress
+            });
+
         const stateManager = new StateManager(
             signer,
             signerAddress,
@@ -404,7 +418,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             evmDiamondStateMachine,
             timeConfig,
             p2pEventHooks || {},
-            storage
+            storage,
+            logger
         );
 
         // Set state manager on P2P communication manager
