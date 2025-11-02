@@ -20,8 +20,10 @@ contract MathConsumerFacet is AConsumerFacet {
         MathState memory genesisState;
         genesisState.number = 0;
         genesisState.participants = new address[](successfulJoinChannels.length);
+        genesisState.balances = new uint256[](successfulJoinChannels.length);
         for (uint256 i = 0; i < successfulJoinChannels.length; i++) {
             genesisState.participants[i] = successfulJoinChannels[i].participant;
+            genesisState.balances[i] = successfulJoinChannels[i].balance.amount;
         }
         bytes memory genesisStateEncoded = abi.encode(genesisState);
         return (genesisStateEncoded, genesisState.participants);

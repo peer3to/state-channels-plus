@@ -241,14 +241,17 @@ contract LocalDiamond is StateChannelManagerProxy {
             DisputeVerificationFacet.computeDisputeOutputSnapshotData,
             (disputeInput, latestStateSnapshot, latestStateMachineState, latestJoinChannelBlockHash)
         );
+
         // Perform the low-level call with a gas limit
         (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: getGasLimit()}(data);
+
         if (!success) {
             assembly {
                 revert(add(returnData, 0x20), mload(returnData))
             }
         }
-        (outputSnapshotData,) = abi.decode(returnData, (SnapshotData, address[]));
+
+        outputSnapshotData = abi.decode(returnData, (SnapshotData));
     }
 
     function checkDisputeAuditingDataCommitment(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)

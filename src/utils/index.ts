@@ -1,5 +1,6 @@
 export * from "./BarrierLocal";
 export * from "./DebugProxy";
+export * from "./SyncCoordinator";
 export * from "./DeepCopyProxy";
 export * from "./DeployUtils";
 export * from "./LocalDiscoveryServer";
@@ -16,3 +17,4 @@ export * from "./hash";
 export * from "./evmErrorHandler";
 export * from "./MessageValidationService";
 export * from "./MessageCache";
+export * from "./PeerLogger";

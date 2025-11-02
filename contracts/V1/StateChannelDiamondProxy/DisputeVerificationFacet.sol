@@ -13,25 +13,33 @@ contract DisputeVerificationFacet is StateChannelCommon {
         StateSnapshot memory latestStateSnapshot,
         bytes memory latestStateMachineState,
         bytes32 latestJoinChannelBlockHash
-    ) public returns (SnapshotData memory outputSnapshotData, address[] memory slashes) {
+    ) public returns (SnapshotData memory) {
         address[] memory removals = _calculateRemovals(disputeInput);
         // Disputes don't apply joins directly, just reduce
         JoinChannelBlock[] memory emptyJoinChannelBlocks = new JoinChannelBlock[](0);
         DisputeOutputState memory disputeOutputState = generateDisputeOutputState(
             latestStateMachineState, disputeInput.onChainSlashes, removals, emptyJoinChannelBlocks, latestStateSnapshot
         );
-        SnapshotData memory latestSnapshotData = latestStateSnapshot.snapshotData;
+
+        bytes32 stateMachineStateHash = keccak256(disputeOutputState.encodedModifiedState);
+        // getStateMachineParticipants fails
+        address[] memory participants = getStateMachineParticipants(disputeOutputState.encodedModifiedState);
+        bytes32 latestJoinChannelBlockHash = latestJoinChannelBlockHash;
+        bytes32 latestExitChannelBlockHash = keccak256(abi.encode(disputeOutputState.exitBlock));
+        Balance memory totalDeposits = disputeOutputState.totalDeposits;
+        Balance memory totalWithdrawals = disputeOutputState.totalWithdrawals;
 
         // ***************** Generate output snapshot ***************
-        outputSnapshotData = SnapshotData({
+        SnapshotData memory outputSnapshotData = SnapshotData({
             originForkId: latestStateSnapshot.forkId,
-            stateMachineStateHash: keccak256(disputeOutputState.encodedModifiedState),
-            participants: getStateMachineParticipants(disputeOutputState.encodedModifiedState),
+            stateMachineStateHash: stateMachineStateHash,
+            participants: participants,
             latestJoinChannelBlockHash: latestJoinChannelBlockHash, // Joins are not applied in disputes, but in reduce -> same hash as in the genesis snapshot
-            latestExitChannelBlockHash: keccak256(abi.encode(disputeOutputState.exitBlock)),
-            totalDeposits: disputeOutputState.totalDeposits,
-            totalWithdrawals: disputeOutputState.totalWithdrawals
+            latestExitChannelBlockHash: latestExitChannelBlockHash,
+            totalDeposits: totalDeposits,
+            totalWithdrawals: totalWithdrawals
         });
+        return outputSnapshotData;
     }
 
     function reduce(Dispute[] memory disputes) public view returns (ReduceOutput memory reducedOutput) {
@@ -287,6 +295,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             _applyJoins(encodedStateMachineState, joinChannelBlocks, outputState.totalDeposits);
 
         // Apply slashes
+        // fails
         ExitChannel[] memory slashExitChannels;
         (outputState.encodedModifiedState, slashExitChannels) =
             _applySlashesToStateMachine(outputState.encodedModifiedState, slashParticipants);
@@ -444,7 +453,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         }
     }
 
-    function _calculateRemovals(DisputeInput memory disputeInput) internal view returns (address[] memory removals) {
+    function _calculateRemovals(DisputeInput memory disputeInput) internal pure returns (address[] memory removals) {
         //Try and combine timeout and selfRemoval -> max 2 removals per dispute
         uint256 removalCount = 0;
         address[] memory _removals = new address[](2);
@@ -533,7 +542,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         // It's annoying that this function can not be view/pure since the way we modify encodedState is semantically 'stateful' even though logically it's stateless
 
         // ***************** Generate output snapshot ***************
-        (SnapshotData memory outputSnapshotData, address[] memory slashes) = computeDisputeOutputSnapshotData(
+        SnapshotData memory outputSnapshotData = computeDisputeOutputSnapshotData(
             dispute.input,
             disputeAuditingData.latestStateSnapshot,
             disputeAuditingData.latestStateStateMachineState,

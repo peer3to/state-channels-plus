@@ -107,7 +107,6 @@ class P2PManager implements IOnMessage {
     }
     public async tryOpenConnectionToChannel(channelId: string) {
         if (DEBUG_LOCAL_TRANSPORT) {
-            console.log("************ USING LOCAL TRANSPORT ************");
             LocalDiscoveryServer.tryStart();
             LocalDiscoveryServer.connectToPeers(this.self, channelId);
             return;
