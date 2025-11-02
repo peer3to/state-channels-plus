@@ -126,10 +126,9 @@ export class EventHandler {
             signedBlock,
             signatures: []
         };
-        await this.stateManager.onBlockConfirmation(
-            blockConfirmation,
-            timestamp
-        );
+        await this.stateManager.onBlockConfirmation(blockConfirmation, {
+            onChainTimestamp: timestamp
+        });
     }
 
     async onDisputeCommitted(

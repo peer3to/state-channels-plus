@@ -479,14 +479,17 @@ class StateManager {
     // returns false -> the calling context should disconnect from the peer
     public async onBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct,
-        onChainTimestamp?: Timestamp,
-        validationStrategy?: AValidationStrategy,
-        senderTransport?: ATransport
+        options?: {
+            onChainTimestamp?: Timestamp;
+            validationStrategy?: AValidationStrategy;
+            senderTransport?: ATransport;
+        }
     ): Promise<boolean> {
         // the try/catch is to ensure that the mutex is unlocked in case of an error
         // no error is actually expected to happen, and the catch block just re-throws the error
         const strategy =
-            validationStrategy || this.getStrategyByStatus(this.status);
+            options?.validationStrategy ||
+            this.getStrategyByStatus(this.status);
         try {
             await this.mutex.lock();
             let validationResult: BlockValidationResult =
@@ -506,13 +509,14 @@ class StateManager {
 
             const block = Block.fromBlockConfirmation(
                 blockConfirmation,
-                onChainTimestamp
+                options?.onChainTimestamp
             );
 
             validationResult =
                 await this.validationService.validateBlockConfirmation(
                     block,
-                    strategy
+                    strategy,
+                    options?.senderTransport
                 );
 
             if (validationResult !== BlockValidationResult.SUCCESS) {
