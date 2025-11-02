@@ -1,4 +1,5 @@
 import { config } from "./config";
+import Clock from "@/Clock";
 import { ethers } from "ethers";
 import ATransport from "@/transport/ATransport";
 
@@ -237,9 +238,9 @@ export class InboundRateLimiterManager {
      * Messages are valid if timestamp is within ±agreementTime of current time
      */
     private isTimestampValid(timestamp: number): boolean {
-        const now = Date.now();
+        const now = Clock.getTimeInSeconds();
         const timeDiff = Math.abs(now - timestamp);
-        return timeDiff <= this.agreementTime;
+        return timeDiff <= Math.floor(this.agreementTime / 1000); // agreementTime is in ms
     }
 
     /**
@@ -247,9 +248,12 @@ export class InboundRateLimiterManager {
      */
     private startCleanup(): void {
         this.cleanupInterval = setInterval(() => {
-            const now = Date.now();
+            const now = Clock.getTimeInSeconds();
             for (const [hash, data] of this.messageCache.entries()) {
-                if (now - data.timestamp > this.agreementTime) {
+                if (
+                    now - data.timestamp >
+                    Math.floor(this.agreementTime / 1000)
+                ) {
                     this.messageCache.delete(hash);
                 }
             }

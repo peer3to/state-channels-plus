@@ -1,5 +1,6 @@
 import ARpcMethods from "./ARpcMethods";
 import ARpcService from "./ARpcService";
+import Clock from "@/Clock";
 import Rpc, { createMessageContent } from "./Rpc";
 import RpcHandler from "./RpcHandler";
 
@@ -36,7 +37,7 @@ class RpcMethodsProxy {
                     }
                     if (typeof prop === "symbol") return;
                     return async (...args: any) => {
-                        const timestamp = Date.now();
+                        const timestamp = Clock.getTimeInSeconds();
                         const method = prop.toString();
 
                         // Create message content (what we want to sign)

@@ -6,6 +6,7 @@ import {
     outboundRateLimiter,
     inboundRateLimiterManager
 } from "@/utils/RateLimiter";
+import Clock from "@/Clock";
 import sinon from "sinon";
 import { ethers } from "ethers";
 
@@ -249,7 +250,13 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
     let bandwidthManager: InboundRateLimiterManager;
     let clock: sinon.SinonFakeTimers;
 
-    beforeEach(() => {
+    beforeEach(async () => {
+        // Initialize Clock for timestamp validation
+        const mockProvider = {
+            getBlock: async () => ({ timestamp: Math.floor(Date.now() / 1000) })
+        };
+        await Clock.init(mockProvider as any);
+
         bandwidthManager = new InboundRateLimiterManager(
             1024000, // 1MB/s
             2048000, // 2MB burst
@@ -277,7 +284,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
             service: "test",
             method: "method",
             params: ["param"],
-            timestamp: Date.now()
+            timestamp: Clock.getTimeInSeconds()
             // Missing signature
         });
 
@@ -318,7 +325,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
 
     it("should allow messages with valid signatures", async () => {
         // Use real timestamp for this test
-        const realTimestamp = Date.now();
+        const realTimestamp = Clock.getTimeInSeconds();
         const messageContent = JSON.stringify({
             method: "method",
             params: ["param"],
@@ -344,7 +351,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
 
     it("should deduplicate identical messages", async () => {
         // Use real timestamp for this test
-        const realTimestamp = Date.now();
+        const realTimestamp = Clock.getTimeInSeconds();
         const messageContent = JSON.stringify({
             method: "method",
             params: ["param"],
@@ -382,7 +389,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
 
         // Consume full burst
         const burstSize = 2048000; // 2MB
-        const realTimestamp = Date.now();
+        const realTimestamp = Clock.getTimeInSeconds();
         const messageContent = JSON.stringify({
             method: "method",
             params: ["param"],
@@ -405,7 +412,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
         expect(consumed).to.be.true;
 
         // Next message should be rejected (run immediately to prevent refill)
-        const newTimestamp = Date.now();
+        const newTimestamp = Clock.getTimeInSeconds();
         const newMessageContent = JSON.stringify({
             method: "method2",
             params: ["param2"],
@@ -429,7 +436,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
     });
 
     it("should cache messages and prevent double-charging", async () => {
-        const realTimestamp = Date.now();
+        const realTimestamp = Clock.getTimeInSeconds();
         const messageContent = JSON.stringify({
             method: "method",
             params: ["param"],
@@ -462,7 +469,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
         expect(result2).to.be.true;
 
         // Different message from same signer should still be allowed
-        const newTimestamp = Date.now();
+        const newTimestamp = Clock.getTimeInSeconds();
         const newMessageContent = JSON.stringify({
             method: "method2",
             params: ["param2"],
@@ -486,7 +493,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
     });
 
     it("should remove cached messages after expiration time", async () => {
-        const realTimestamp = Date.now();
+        const realTimestamp = Clock.getTimeInSeconds();
         const messageContent = JSON.stringify({
             method: "method",
             params: ["param"],
@@ -526,7 +533,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
         const dataSize = 1024;
 
         // Create three different messages with real timestamps
-        const timestamp1 = Date.now();
+        const timestamp1 = Clock.getTimeInSeconds();
         const messageContent1 = JSON.stringify({
             method: "method1",
             params: ["param1"],
@@ -541,7 +548,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
             signature: signature1
         };
 
-        const timestamp2 = Date.now();
+        const timestamp2 = Clock.getTimeInSeconds();
         const messageContent2 = JSON.stringify({
             method: "method2",
             params: ["param2"],
@@ -556,7 +563,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
             signature: signature2
         };
 
-        const timestamp3 = Date.now();
+        const timestamp3 = Clock.getTimeInSeconds();
         const messageContent3 = JSON.stringify({
             method: "method3",
             params: ["param3"],
@@ -609,7 +616,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
     });
 
     it("should handle cache cleanup interval correctly", async () => {
-        const realTimestamp = Date.now();
+        const realTimestamp = Clock.getTimeInSeconds();
         const messageContent = JSON.stringify({
             method: "method",
             params: ["param"],
@@ -647,7 +654,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
 
     it("should reject messages with timestamps too far in the past", async () => {
         // Create RPC with timestamp 10 seconds ago (beyond agreement time)
-        const oldTimestamp = Date.now() - 10000; // 10 seconds ago
+        const oldTimestamp = Clock.getTimeInSeconds() - 10; // 10 seconds ago
         const messageContent = JSON.stringify({
             method: "testMethod",
             params: ["testParam"],
@@ -673,7 +680,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
 
     it("should reject messages with timestamps too far in the future", async () => {
         // Create RPC with timestamp 10 seconds in the future (beyond agreement time)
-        const futureTimestamp = Date.now() + 10000; // 10 seconds in future
+        const futureTimestamp = Clock.getTimeInSeconds() + 10; // 10 seconds in future
         const messageContent = JSON.stringify({
             method: "testMethod",
             params: ["testParam"],
@@ -699,7 +706,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
 
     it("should allow messages with timestamps within valid range", async () => {
         // Create RPC with timestamp 2 seconds ago (within agreement time)
-        const validTimestamp = Date.now() - 2000; // 2 seconds ago
+        const validTimestamp = Clock.getTimeInSeconds() - 2; // 2 seconds ago
         const messageContent = JSON.stringify({
             method: "testMethod",
             params: ["testParam"],
@@ -725,7 +732,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
 
     it("should allow messages with current timestamp", async () => {
         // Create RPC with current timestamp
-        const currentTimestamp = Date.now();
+        const currentTimestamp = Clock.getTimeInSeconds();
         const messageContent = JSON.stringify({
             method: "testMethod",
             params: ["testParam"],
@@ -751,7 +758,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
 
     it("should handle timestamp validation with clock advancement", async () => {
         // Create RPC with current timestamp
-        const currentTimestamp = Date.now();
+        const currentTimestamp = Clock.getTimeInSeconds();
         const messageContent = JSON.stringify({
             method: "testMethod",
             params: ["testParam"],
@@ -791,7 +798,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
         expect(result3).to.be.true;
 
         // Create a new message with current timestamp - should be allowed
-        const newTimestamp = Date.now();
+        const newTimestamp = Clock.getTimeInSeconds();
         const newMessageContent = JSON.stringify({
             method: "testMethod2",
             params: ["testParam2"],
@@ -814,7 +821,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
         expect(result4).to.be.true;
 
         // Create a message with old timestamp - should be rejected
-        const oldTimestamp = Date.now() - 10000; // 10 seconds ago
+        const oldTimestamp = Clock.getTimeInSeconds() - 10; // 10 seconds ago
         const oldMessageContent = JSON.stringify({
             method: "testMethod3",
             params: ["testParam3"],
@@ -850,8 +857,8 @@ function createTestRpc(
     signerAddress: string,
     dataSize?: number
 ): string {
-    // Use a fixed timestamp to avoid issues with fake timers
-    const timestamp = 1234567890;
+    // Use current timestamp from Clock
+    const timestamp = Clock.getTimeInSeconds();
     const messageContent = JSON.stringify({
         method: method,
         params: params,
