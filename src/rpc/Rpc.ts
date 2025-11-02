@@ -10,11 +10,13 @@ export function serializeRpc(rpc: Rpc): string {
 }
 
 export function createMessageContent(
+    service: string,
     method: string,
     params: any[],
     timestamp: number
 ): string {
     const messageContent = {
+        service: service,
         method: method,
         params: params,
         timestamp: timestamp

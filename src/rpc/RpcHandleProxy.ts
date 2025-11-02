@@ -42,6 +42,7 @@ class RpcMethodsProxy {
 
                         // Create message content (what we want to sign)
                         const messageContent = createMessageContent(
+                            ctx.serviceName,
                             method,
                             args,
                             timestamp

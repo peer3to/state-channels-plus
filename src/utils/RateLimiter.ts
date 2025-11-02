@@ -1,7 +1,7 @@
 import { config } from "./config";
-import Clock from "@/Clock";
-import { ethers } from "ethers";
 import ATransport from "@/transport/ATransport";
+import { MessageValidationService } from "./MessageValidationService";
+import { MessageCache } from "./MessageCache";
 
 /**
  * Implements a token bucket algorithm for rate limiting (using bytes directly)
@@ -90,12 +90,10 @@ export const outboundRateLimiter = config.RATE_LIMIT_ENABLED
 export class InboundRateLimiterManager {
     private rateLimiters: WeakMap<ATransport, RateLimiter> = new WeakMap();
     private signerRateLimiters: Map<string, RateLimiter> = new Map();
-    private messageCache: Map<string, { timestamp: number; signer: string }> =
-        new Map();
     private readonly maxBandwidthBytesPerSecond: number;
     private readonly burstSizeBytes: number;
-    private readonly agreementTime: number;
-    private cleanupInterval: NodeJS.Timeout | null = null;
+    private readonly validationService: MessageValidationService;
+    private readonly messageCache: MessageCache;
 
     constructor(
         maxBandwidthBytesPerSecond: number,
@@ -104,8 +102,8 @@ export class InboundRateLimiterManager {
     ) {
         this.maxBandwidthBytesPerSecond = maxBandwidthBytesPerSecond;
         this.burstSizeBytes = burstSizeBytes || maxBandwidthBytesPerSecond * 2;
-        this.agreementTime = agreementTimeMs;
-        this.startCleanup();
+        this.validationService = new MessageValidationService(agreementTimeMs);
+        this.messageCache = new MessageCache(agreementTimeMs);
     }
 
     /**
@@ -148,21 +146,19 @@ export class InboundRateLimiterManager {
             }
 
             // Validate timestamp freshness
-            if (!this.isTimestampValid(rpc.timestamp)) {
+            if (!this.validationService.isTimestampValid(rpc.timestamp)) {
                 return false; // Message too old or too far in future
             }
 
             // Extract original signer from signature
-            const originalSigner = await this.extractSignerFromRpc(rpc);
+            const originalSigner =
+                await this.validationService.extractSignerFromRpc(rpc);
             if (!originalSigner) {
                 return false; // Invalid signature
             }
 
             // Check for message deduplication
-            const messageHash = this.createMessageHash(rpc);
-            const cachedMessage = this.messageCache.get(messageHash);
-
-            if (cachedMessage) {
+            if (this.messageCache.isCached(rpc)) {
                 // Message already processed, don't charge bandwidth again
                 return true;
             }
@@ -182,10 +178,7 @@ export class InboundRateLimiterManager {
 
             if (allowed) {
                 // Cache the message to prevent double-charging
-                this.messageCache.set(messageHash, {
-                    timestamp: rpc.timestamp,
-                    signer: originalSigner
-                });
+                this.messageCache.cacheMessage(rpc, originalSigner);
             }
 
             return allowed;
@@ -193,71 +186,6 @@ export class InboundRateLimiterManager {
             console.error("Error in bandwidth management:", error);
             return false;
         }
-    }
-
-    /**
-     * Extract signer address from RPC message signature
-     */
-    private async extractSignerFromRpc(rpc: any): Promise<string | null> {
-        try {
-            const messageContent = JSON.stringify({
-                method: rpc.method,
-                params: rpc.params,
-                timestamp: rpc.timestamp
-            });
-
-            const recoveredAddress = await ethers.verifyMessage(
-                messageContent,
-                rpc.signature
-            );
-            return recoveredAddress;
-        } catch (error) {
-            console.error("Error verifying signature:", error);
-            return null;
-        }
-    }
-
-    /**
-     * Create a hash for message deduplication
-     */
-    private createMessageHash(rpc: any): string {
-        return ethers.keccak256(
-            ethers.toUtf8Bytes(
-                JSON.stringify({
-                    method: rpc.method,
-                    params: rpc.params,
-                    timestamp: rpc.timestamp,
-                    signature: rpc.signature
-                })
-            )
-        );
-    }
-
-    /**
-     * Validate if timestamp is within acceptable range
-     * Messages are valid if timestamp is within ±agreementTime of current time
-     */
-    private isTimestampValid(timestamp: number): boolean {
-        const now = Clock.getTimeInSeconds();
-        const timeDiff = Math.abs(now - timestamp);
-        return timeDiff <= Math.floor(this.agreementTime / 1000); // agreementTime is in ms
-    }
-
-    /**
-     * Start cleanup process for expired messages
-     */
-    private startCleanup(): void {
-        this.cleanupInterval = setInterval(() => {
-            const now = Clock.getTimeInSeconds();
-            for (const [hash, data] of this.messageCache.entries()) {
-                if (
-                    now - data.timestamp >
-                    Math.floor(this.agreementTime / 1000)
-                ) {
-                    this.messageCache.delete(hash);
-                }
-            }
-        }, this.agreementTime); // Clean up after agreement time has passed
     }
 
     /**
@@ -271,12 +199,8 @@ export class InboundRateLimiterManager {
      * Dispose of the rate limiter manager
      */
     dispose(): void {
-        if (this.cleanupInterval) {
-            clearInterval(this.cleanupInterval);
-            this.cleanupInterval = null;
-        }
         this.signerRateLimiters.clear();
-        this.messageCache.clear();
+        this.messageCache.dispose();
     }
 }
 
