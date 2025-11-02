@@ -89,9 +89,34 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
             );
         }
 
-        // Mark as acknowledged
+        // Mark as acknowledged locally (from peer's perspective)
         this.service.acknowledgeDisputedFork(this.senderTransport, forkId);
         console.log(`Acknowledged disputed fork ${forkId}`);
+
+        // Send acknowledgment response back to the requester
+        this.remoteRpc.isForkDisputedService
+            .onDisputeAcknowledgmentResponse(channelId, forkId)
+            .sendOne(this.senderTransport);
+    }
+
+    /**
+     * Receive acknowledgment response from a peer
+     */
+    public async onDisputeAcknowledgmentResponse(
+        channelId: ChannelId,
+        forkId: ForkId
+    ) {
+        console.log(
+            `Received dispute acknowledgment response for fork ${forkId}`
+        );
+
+        const senderTransport = this.senderTransport;
+        if (!senderTransport) {
+            return;
+        }
+
+        // Mark that this peer has acknowledged (from our perspective)
+        this.service.acknowledgeDisputedFork(senderTransport, forkId);
     }
 }
 

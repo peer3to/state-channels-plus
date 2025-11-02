@@ -25,9 +25,40 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
             `Requesting all peers to acknowledge disputed fork ${forkId}`
         );
 
+        // Create a snapshot of openConnections at the time of request
+        // This captures the peers we sent the request to, so we don't disconnect
+        // from peers that connect after we sent the request
+        const snapshotTransports = [...this.p2pManager.openConnections];
+
+        // Broadcast the request
         this.remoteRpc.isForkDisputedService
             .onDisputeAcknowledgmentRequest(channelId, forkId)
-            .sendMultiple(this.p2pManager.openConnections);
+            .broadcast();
+
+        setTimeout(
+            () => {
+                console.log(
+                    `Checking dispute acknowledgment for fork ${forkId}`
+                );
+
+                // Check which transports from the snapshot haven't acknowledged
+                const transportsToDisconnect: ATransport[] = [];
+                for (const transport of snapshotTransports) {
+                    if (!this.hasAcknowledgedDisputedFork(transport, forkId)) {
+                        transportsToDisconnect.push(transport);
+                    }
+                }
+
+                // Disconnect from peers that haven't acknowledged
+                for (const transport of transportsToDisconnect) {
+                    console.log(
+                        `Peer did not acknowledge disputed fork ${forkId}, disconnecting`
+                    );
+                    this.p2pManager.disconnectConnection(transport);
+                }
+            },
+            2 * this.p2pManager.stateManager.timeConfig.agreementTime * 1000
+        );
     }
 
     /**
