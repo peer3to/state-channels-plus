@@ -32,9 +32,10 @@ export interface TestPeer<T extends AStateMachine> {
 
 /**
  * Spy functions for tracking event calls
- * match with P2pEventHooks
+ * match with P2pEventHooks and EventHandler methods
  */
 export interface EventSpies {
+    // P2pEventHooks spies
     onConnection?: sinon.SinonSpy;
     onTurn?: sinon.SinonSpy;
     onSetState?: sinon.SinonSpy;
@@ -43,6 +44,18 @@ export interface EventSpies {
     onInitiatingDispute?: sinon.SinonSpy;
     onDisputeUpdate?: sinon.SinonSpy;
     onJoinChannel?: sinon.SinonSpy;
+
+    // EventHandler method spies
+    onChannelOpened?: sinon.SinonSpy;
+    onStateSnapshotUpdated?: sinon.SinonSpy;
+    onBlockCalldataPosted?: sinon.SinonSpy;
+    onDisputeCommitted?: sinon.SinonSpy;
+    onChainSlashed?: sinon.SinonSpy;
+    onDisputeReducedResultCommitted?: sinon.SinonSpy;
+    onWithdrawalsUpdated?: sinon.SinonSpy;
+    onChannelStorageCleared?: sinon.SinonSpy;
+    onDisputeKilled?: sinon.SinonSpy;
+    onJoinChannelProcessed?: sinon.SinonSpy;
 }
 
 /**
@@ -154,6 +167,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         this.logger.debug(`Creating peer ${index} at ${address}`);
 
         const eventSpies: EventSpies = {
+            // P2pEventHooks spies
             onConnection: sinon.spy(),
             onTurn: sinon.spy(),
             onSetState: sinon.spy(),
@@ -161,7 +175,19 @@ export class PeerTestHarness<T extends AStateMachine> {
             onPostedCalldata: sinon.spy(),
             onInitiatingDispute: sinon.spy(),
             onDisputeUpdate: sinon.spy(),
-            onJoinChannel: sinon.spy()
+            onJoinChannel: sinon.spy(),
+
+            // EventHandler method spies
+            onChannelOpened: sinon.spy(),
+            onStateSnapshotUpdated: sinon.spy(),
+            onBlockCalldataPosted: sinon.spy(),
+            onDisputeCommitted: sinon.spy(),
+            onChainSlashed: sinon.spy(),
+            onDisputeReducedResultCommitted: sinon.spy(),
+            onWithdrawalsUpdated: sinon.spy(),
+            onChannelStorageCleared: sinon.spy(),
+            onDisputeKilled: sinon.spy(),
+            onJoinChannelProcessed: sinon.spy()
         };
 
         const hooks: P2pEventHooks = {
@@ -194,7 +220,7 @@ export class PeerTestHarness<T extends AStateMachine> {
                 eventSpies.onPostedCalldata?.();
             },
             onInitiatingDispute: () => {
-                PeerLogger.warn("Initiating dispute", {
+                PeerLogger.info("Initiating dispute", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onInitiatingDispute?.();
@@ -240,8 +266,46 @@ export class PeerTestHarness<T extends AStateMachine> {
             logger: PeerLogger
         };
 
+        // Wrap EventHandler methods with spies (without replacing the original functionality)
+        this.wrapEventHandlerWithSpies(peer);
+
         this.peers.push(peer);
         this.logger.debug(`Peer ${index} created successfully`);
+    }
+
+    private wrapEventHandlerWithSpies(peer: TestPeer<T>): void {
+        const eventHandler = peer.stateManager.eventHandler;
+        const spies = peer.eventSpies;
+
+        // Create a proxy that intercepts EventHandler method calls and calls both the spy and original method
+        const eventHandlerProxy = new Proxy(eventHandler, {
+            get(target, prop, receiver) {
+                const originalMethod = Reflect.get(target, prop, receiver);
+
+                // Only intercept EventHandler methods that have corresponding spies
+                if (typeof originalMethod === "function" && prop in spies) {
+                    return function (...args: any[]) {
+                        // Call the spy first to record the call
+                        const spy = spies[prop as keyof EventSpies];
+                        spy?.(...args);
+
+                        // Then call the original method
+                        return Reflect.apply(
+                            originalMethod as Function,
+                            target,
+                            args
+                        );
+                    };
+                }
+
+                return originalMethod;
+            }
+        });
+
+        // Replace the eventHandler in both the stateManager and stateChannelEventListener with our proxy
+        peer.stateManager.eventHandler = eventHandlerProxy;
+        peer.stateManager.stateChannelEventListener.eventHandler =
+            eventHandlerProxy;
     }
 
     async openChannel(): Promise<ForkId> {
@@ -572,6 +636,20 @@ export class PeerTestHarness<T extends AStateMachine> {
             );
         }
         return spy.getCall(callIndex).args;
+    }
+
+    assertEventHandlerCalledTotalTimes(
+        eventName: keyof EventSpies,
+        expectedTotalCalls: number
+    ): void {
+        const totalCalls = this.peers.reduce((sum, peer) => {
+            return sum + this.getEventCallCount(peer.index, eventName);
+        }, 0);
+
+        expect(totalCalls).to.equal(
+            expectedTotalCalls,
+            `Expected ${eventName} to be called ${expectedTotalCalls} times total across all peers, but was called ${totalCalls} times`
+        );
     }
 
     resetEventSpies(peerIndex?: number): void {
