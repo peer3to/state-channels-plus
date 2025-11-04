@@ -15,7 +15,9 @@ import {
     Type,
     SignatureUtils,
     Mutex,
-    difference
+    difference,
+    isCustomEvmError,
+    Logger
 } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import { Address, ChannelId, ForkId } from "../types/types";
@@ -42,6 +44,7 @@ class DisputeManager {
     storage: Storage;
     diamondStateMachine: ADiamondStateMachine;
     mutex: Mutex = new Mutex();
+    private logger: Logger;
 
     constructor(
         channelId: ChannelId,
@@ -51,7 +54,8 @@ class DisputeManager {
         stateChannelManagerContract: StateChannelManagerProxy,
         p2pEventHooks: P2pEventHooks,
         storage: Storage,
-        diamondStateMachine: ADiamondStateMachine
+        diamondStateMachine: ADiamondStateMachine,
+        logger: Logger
     ) {
         this.channelId = channelId;
         this.signer = signer;
@@ -61,6 +65,7 @@ class DisputeManager {
         this.p2pEventHooks = p2pEventHooks;
         this.storage = storage;
         this.diamondStateMachine = diamondStateMachine;
+        this.logger = logger.child({ component: "DisputeManager" });
         return this.self;
     }
 
@@ -124,8 +129,19 @@ class DisputeManager {
 
             this.storage.disputes.storeDisputedFork(forkId, true);
             this.p2pEventHooks.onInitiatingDispute?.();
-        } catch (e) {
-            // TODO - interpret custom errors
+        } catch (error) {
+            if (isCustomEvmError(error)) {
+                this.logger.error("Error uploading dispute", {
+                    forkId,
+                    errorDescription: error.errorDescription
+                });
+            } else {
+                this.logger.error("Error uploading dispute", {
+                    forkId,
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                });
+            }
             this.storage.disputes.storeDisputedFork(forkId, false);
         } finally {
             this.mutex.unlock();

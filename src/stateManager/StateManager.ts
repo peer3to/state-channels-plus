@@ -150,7 +150,8 @@ class StateManager {
             this.stateChannelManagerContract,
             this.p2pEventHooks,
             this.storage,
-            this.diamondStateMachine
+            this.diamondStateMachine,
+            logger
         );
         this.p2pManager = new P2PManager(this.self, signer);
         this.fraudProofService = new FraudProofService(this.storage);
@@ -1321,8 +1322,7 @@ class StateManager {
         const timeout: TimeoutStruct = {
             participant: participantAddress.toString(),
             blockHeight: BigInt(blockHeight),
-            minTimeStamp:
-                Clock.getTimeInSeconds() + this.getTimeoutWaitTimeSeconds(),
+            minTimeStamp: Clock.getTimeInSeconds(),
             isForced: isForced,
             previousBlockProducer: previousBlock
                 ? previousBlock.author.toString()
