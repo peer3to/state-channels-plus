@@ -146,7 +146,7 @@ export class EventHandler {
         disputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<void> {
         const forkId = dispute.input.disputeAuditingDataHash;
-        this.logger.warn("Dispute committed", {
+        this.logger.debug("Dispute committed", {
             channelId,
             forkId,
             isFinal,

@@ -679,7 +679,12 @@ class StateManager {
         }
     }
 
-    private async maybePostBlockOnChain(block: Block): Promise<void> {
+    private async maybePostBlockOnChain(blockHash: Hash): Promise<void> {
+        // Retrieve the latest version of the block from storage (with all collected signatures)
+        const block = this.storage.blocks.getBlock(blockHash);
+        if (!block) {
+            return;
+        }
         // If not everyone has signed, do the on-chain post
         const participants = this.storage.getParticipants(block.coordinates);
 
@@ -1538,7 +1543,7 @@ class StateManager {
         if (block.author === this.signerAddress) {
             this.timeoutManager.scheduleTask(
                 () => {
-                    this.maybePostBlockOnChain(block);
+                    this.maybePostBlockOnChain(block.hash);
                 },
                 this.timeConfig.agreementTime * 1000,
                 "maybePostBlockOnChain"
