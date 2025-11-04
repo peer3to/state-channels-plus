@@ -8,7 +8,7 @@ import P2PManager from "@/P2PManager";
 import DisputeManager from "@/disputeManager";
 
 export default class BlockValidationStrategy extends AValidationStrategy {
-    private readonly fraudProofService: FraudProofService;
+    readonly fraudProofService: FraudProofService;
     constructor(
         private readonly storage: Storage,
         private readonly p2pManager: P2PManager,
@@ -90,22 +90,21 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     ): Promise<BlockValidationResult> {
         // DOUBLE SIGN
         this.fraudProofService.createDoubleSignProof(conflictingBlock, block);
-        // TODO this.disputeManager.createDispute()
+        await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
     public async invalidStateTransitionDetected(
         block: Block
     ): Promise<BlockValidationResult> {
         this.fraudProofService.createInvalidStateTransitionProof(block);
-        // TODO this.disputeManager.createDispute()
+        await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
     public async wrongGenesisDetected(
         block: Block
     ): Promise<BlockValidationResult> {
         this.fraudProofService.createWrongGenesisProof(block);
-        throw new Error("Not implemented");
-        // TODO this.disputeManager.createDispute()
+        await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
     public async conflictingButNotLinkedBlockDetected(
@@ -136,7 +135,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         block: Block
     ): Promise<BlockValidationResult> {
         this.fraudProofService.createInvalidTimestampProof(block);
-        // TODO this.disputeManager.createDispute()
+        await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
     public async subjectiveInvalidTimestampDetected(

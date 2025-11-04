@@ -23,6 +23,7 @@ import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Codec, hash, Logger, Type } from "@/utils";
 import { isEqual } from "lodash";
 import { ZeroHash } from "ethers";
+import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 
 export class EventHandler {
     private logger: Logger;
@@ -128,7 +129,11 @@ export class EventHandler {
         };
         await this.stateManager.onBlockConfirmation(
             blockConfirmation,
-            timestamp
+            timestamp,
+            new CalldataCommittedStrategy(
+                this.stateManager.disputeManager,
+                this.stateManager.blockValidationStrategy
+            )
         );
     }
 
@@ -192,13 +197,8 @@ export class EventHandler {
 
         if (isValid) {
             // this is like success - TODO - consider moving this to DisputeStrategy.success
-            const { haveMoreEvidence, counterDisputeConfirmation } =
-                await this.checkForAdditionalEvidence(dispute);
-
-            if (haveMoreEvidence) {
-                await this.stateManager.stateChannelManagerContract.uploadDispute(
-                    counterDisputeConfirmation
-                );
+            if (await this.canConstructMoreEvidence(dispute)) {
+                this.stateManager.disputeManager.dispute(forkId);
                 return;
             }
             const [_, potentialGenesisTimestamp] =
@@ -214,17 +214,15 @@ export class EventHandler {
         }
     }
 
-    private async checkForAdditionalEvidence(dispute: DisputeStruct): Promise<{
-        haveMoreEvidence: boolean;
-        counterDisputeConfirmation: DisputeConfirmationStruct;
-    }> {
+    private async canConstructMoreEvidence(
+        dispute: DisputeStruct
+    ): Promise<boolean> {
         // Create our own dispute
         const {
             dispute: ourDispute,
             disputeConfirmation: ourDisputeConfirmation
-        } = await this.stateManager.disputeManager.createDispute(
-            this.stateManager.latestForkId,
-            false
+        } = await this.stateManager.disputeManager.constructDispute(
+            this.stateManager.latestForkId
         );
 
         // Compare reduced disputes to see if we have more evidence
@@ -238,13 +236,7 @@ export class EventHandler {
                 [ourDispute, dispute]
             );
 
-        return {
-            haveMoreEvidence: !isEqual(
-                ourReducedDispute,
-                ourDisputeConfirmation
-            ),
-            counterDisputeConfirmation: ourDisputeConfirmation
-        };
+        return !isEqual(ourReducedDispute, ourDisputeConfirmation);
     }
 
     async onChainSlashed(
@@ -261,17 +253,20 @@ export class EventHandler {
             participant
         );
         const latestFork = this.stateManager.latestForkId;
-        const isDisputed =
+        let isDisputed =
             await this.diamondStateMachine.localDiamondContract.isForkDisputed(
                 channelId,
                 latestFork
             );
+        if (!isDisputed)
+            isDisputed =
+                await this.stateManager.stateChannelManagerContract.isForkDisputed(
+                    channelId,
+                    latestFork
+                );
         const participants = await this.diamondStateMachine.getParticipants();
         if (!isDisputed && participants.includes(participant.toString())) {
-            await this.stateManager.disputeManager.createDispute(
-                latestFork,
-                false
-            );
+            await this.stateManager.disputeManager.dispute(latestFork);
         }
     }
 
@@ -387,7 +382,7 @@ export class EventHandler {
         if (!isRelevant) return;
 
         // create new dispute
-        await this.stateManager.disputeManager.createDispute(forkId, false);
+        await this.stateManager.disputeManager.dispute(forkId);
     }
 
     async onJoinChannelProcessed(

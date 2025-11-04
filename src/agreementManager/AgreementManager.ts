@@ -36,9 +36,9 @@ class AgreementManager {
         const blocks = this.storage.blocks.getIterator(forkId, SortOrder.DESC);
 
         for (const block of blocks) {
-            const { didSign, signature } = block.findSignature(participantAdr);
+            const signature = block.findSignature(participantAdr);
 
-            if (didSign) {
+            if (signature) {
                 return {
                     block,
                     signature: signature as Signature

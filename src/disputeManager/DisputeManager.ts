@@ -13,10 +13,14 @@ import {
     intersection,
     Codec,
     Type,
-    SignatureUtils
+    SignatureUtils,
+    Mutex,
+    difference,
+    isCustomEvmError,
+    Logger
 } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
-import { Address, Bytes, ChannelId, ForkId, Signature } from "../types/types";
+import { Address, ChannelId, ForkId } from "../types/types";
 import { StateSnapshot } from "../models";
 import Storage from "@/storage";
 import ADiamondStateMachine from "../ADiamondStateMachine";
@@ -27,16 +31,7 @@ import {
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
 import { DEBUG_DISPUTE_HANDLER } from "@/utils/config";
-
-type TimeoutOptions = {
-    // This is enough and the rest is deducted from storage/state
-    blockHeightToTimeout: number; // this could also be a boolean, but will be used as a sanity check
-    isForced?: boolean;
-    // on-chain race condition checks
-    previousBlockProducer?: Address;
-    previousBlockProducerPostedCalldata?: boolean;
-    participantSignatureOnPreviousBlock?: Signature;
-};
+import { FraudProofStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/FraudProofFacet";
 
 class DisputeManager {
     signer: ethers.Signer;
@@ -48,6 +43,8 @@ class DisputeManager {
     self = DEBUG_DISPUTE_HANDLER ? DebugProxy.createProxy(this) : this;
     storage: Storage;
     diamondStateMachine: ADiamondStateMachine;
+    mutex: Mutex = new Mutex();
+    private logger: Logger;
 
     constructor(
         channelId: ChannelId,
@@ -57,7 +54,8 @@ class DisputeManager {
         stateChannelManagerContract: StateChannelManagerProxy,
         p2pEventHooks: P2pEventHooks,
         storage: Storage,
-        diamondStateMachine: ADiamondStateMachine
+        diamondStateMachine: ADiamondStateMachine,
+        logger: Logger
     ) {
         this.channelId = channelId;
         this.signer = signer;
@@ -67,16 +65,94 @@ class DisputeManager {
         this.p2pEventHooks = p2pEventHooks;
         this.storage = storage;
         this.diamondStateMachine = diamondStateMachine;
+        this.logger = logger.child({ component: "DisputeManager" });
         return this.self;
     }
 
-    public async createDispute(
-        forkId: ForkId,
-        selfRemoval: boolean = false,
-        timeoutOptions?: TimeoutOptions
-    ): Promise<{
+    public async dispute(forkId: ForkId): Promise<void> {
+        try {
+            await this.mutex.lock();
+            if (this.storage.disputes.didIDispute(forkId)) return;
+            const { disputeConfirmation, auditingData, fraudProofsToApply } =
+                await this.constructDispute(forkId);
+
+            const pendingParticipants =
+                await this.stateChannelManagerContract.getPendingParticipants(
+                    this.channelId
+                );
+
+            // check if multicall is needed
+            if (fraudProofsToApply.length > 0) {
+                // 1) apply fraud proofs
+                const fraudProofCalldata = (
+                    await this.stateChannelManagerContract.applyFraudProofs.populateTransaction(
+                        fraudProofsToApply,
+                        { channelId: this.channelId }
+                    )
+                ).data;
+                // 2) upload dispute
+                let uploadDisputeCalldata: string;
+                if (pendingParticipants.length > 0) {
+                    // with calldata
+                    uploadDisputeCalldata = (
+                        await this.stateChannelManagerContract.uploadDisputeWithCalldata.populateTransaction(
+                            disputeConfirmation,
+                            auditingData
+                        )
+                    ).data!;
+                } else {
+                    // without calldata
+                    uploadDisputeCalldata = (
+                        await this.stateChannelManagerContract.uploadDispute.populateTransaction(
+                            disputeConfirmation
+                        )
+                    ).data!;
+                }
+                await this.stateChannelManagerContract.multicall([
+                    fraudProofCalldata,
+                    uploadDisputeCalldata
+                ]);
+            }
+
+            // no multicall
+            if (pendingParticipants.length > 0) {
+                // TODO - do the actual check (_isAuditingCalldataRequired) when we have early finalization implemented
+                await this.stateChannelManagerContract.uploadDisputeWithCalldata(
+                    disputeConfirmation,
+                    auditingData
+                );
+            } else {
+                await this.stateChannelManagerContract.uploadDispute(
+                    disputeConfirmation
+                );
+            }
+
+            this.storage.disputes.storeDisputedFork(forkId, true);
+            this.p2pEventHooks.onInitiatingDispute?.();
+        } catch (error) {
+            if (isCustomEvmError(error)) {
+                this.logger.error("Error uploading dispute", {
+                    forkId,
+                    errorDescription: error.errorDescription
+                });
+            } else {
+                this.logger.error("Error uploading dispute", {
+                    forkId,
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                });
+            }
+            this.storage.disputes.storeDisputedFork(forkId, false);
+        } finally {
+            this.mutex.unlock();
+        }
+    }
+
+    public async constructDispute(forkId: ForkId): Promise<{
         dispute: DisputeStruct;
         disputeConfirmation: DisputeConfirmationStruct;
+        auditingData: DisputeAuditingDataStruct;
+        fraudProofsToApply: FraudProofStruct[];
     }> {
         const latestBlockHeight =
             this.storage.blocks.getNextBlockHeight(forkId) - 1;
@@ -122,48 +198,27 @@ class DisputeManager {
 
         // to make sure we're trying to slash only participants - even though onChainSlashes should always be a subset of participants
         onChainSlashes = intersection(onChainSlashes, participants);
+        const participantsNotSlashedOnChain = difference(
+            participants,
+            onChainSlashes
+        );
+
+        const fraudProofsToApply: FraudProofStruct[] = [];
+        for (const participant of participantsNotSlashedOnChain) {
+            const fraudProof =
+                this.storage.fraudProofs.getFraudProofForParticipant(
+                    participant
+                );
+            if (fraudProof) {
+                fraudProofsToApply.push(fraudProof);
+                onChainSlashes.add(participant);
+            }
+        }
 
         // timeout
-        let timeoutStruct: TimeoutStruct;
-        if (timeoutOptions) {
-            // sanity/race condition check
-            if (timeoutOptions.blockHeightToTimeout != latestBlockHeight + 1) {
-                throw new Error(
-                    "createDispute - timeoutOptions.blockHeightToTimeout invalid"
-                );
-            }
-            const participantToTimeout =
-                await this.diamondStateMachine.peekNextToWrite(
-                    latestStateMachineState
-                );
-            const [p2pTime, agreementTime, chainFallbackTime] = (
-                await Promise.all([
-                    this.diamondStateMachine.localDiamondContract.getP2pTime(),
-                    this.diamondStateMachine.localDiamondContract.getAgreementTime(),
-                    this.diamondStateMachine.localDiamondContract.getChainFallbackTime()
-                ])
-            ).map(Number);
-
-            timeoutStruct = {
-                participant: participantToTimeout,
-                blockHeight: timeoutOptions.blockHeightToTimeout,
-                minTimeStamp:
-                    Clock.getTimeInSeconds() +
-                    p2pTime +
-                    agreementTime +
-                    chainFallbackTime,
-                isForced: timeoutOptions.isForced || false,
-                previousBlockProducer:
-                    timeoutOptions.previousBlockProducer || ethers.ZeroAddress,
-                previousBlockProducerPostedCalldata:
-                    timeoutOptions.previousBlockProducerPostedCalldata || false,
-                participantSignatureOnPreviousBlock:
-                    (timeoutOptions.participantSignatureOnPreviousBlock as Bytes) ||
-                    "0x"
-            };
-        } else {
-            timeoutStruct = this.getEmptyTimeoutStruct();
-        }
+        const timeoutStruct =
+            this.storage.timeout.getTimeout(forkId) ||
+            this.getEmptyTimeoutStruct();
 
         // AuditingData
         const { isPartial, auditingData } = this.getAuditingData(
@@ -179,6 +234,9 @@ class DisputeManager {
 
         // disputer
         const disputer = this.signerAddress;
+
+        // selfRemoval
+        const selfRemoval = this.storage.forceExit.getForceExit();
 
         const disputeInput: DisputeInputStruct = {
             channelId: this.channelId,
@@ -211,8 +269,6 @@ class DisputeManager {
 
         // ****** TODO - run auditing as a sanity check *******
 
-        // TODO - dependent on the event trigger - maybe upload with auditing
-
         // TODO - Dispute model (like block), so it's easy doing operations on it
 
         const signedDispute = await SignatureUtils.signDispute(
@@ -227,13 +283,12 @@ class DisputeManager {
             signatures: []
         };
 
-        await this.stateChannelManagerContract.uploadDispute(
-            disputeConfirmation
-        );
-
-        this.p2pEventHooks.onInitiatingDispute?.();
-
-        return { dispute, disputeConfirmation };
+        return {
+            dispute,
+            disputeConfirmation,
+            auditingData,
+            fraudProofsToApply
+        };
     }
 
     public getAuditingData(

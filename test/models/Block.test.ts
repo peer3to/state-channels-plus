@@ -148,10 +148,9 @@ describe("Block Model", () => {
             };
             const realSignedBlock = Block.fromSignedBlock(signedBlockStruct);
 
-            const result = realSignedBlock.findSignature(signer.address);
+            const _signature = realSignedBlock.findSignature(signer.address);
 
-            expect(result.didSign).to.be.true;
-            expect(result.signature).to.equal(signature);
+            expect(_signature).to.equal(signature);
         });
 
         it("should handle participant who didn't sign", async () => {
@@ -163,10 +162,9 @@ describe("Block Model", () => {
 
             // Try to find signature for a different signer who didn't sign this block
             const nonSigner = signers[1];
-            const result = realSignedBlock.findSignature(nonSigner.address);
+            const signature = realSignedBlock.findSignature(nonSigner.address);
 
-            expect(result.didSign).to.be.false;
-            expect(result.signature).to.be.undefined;
+            expect(signature).to.be.undefined;
         });
 
         it("should sign block", async () => {

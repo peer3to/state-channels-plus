@@ -6,6 +6,7 @@ import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
 import * as factory from "@test/factory";
 import { MathStateChannelManagerProxy } from "@typechain-types";
 import { artifacts, errorAbis } from "@/utils/GeneratedArtifacts";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 describe("artifacts loading", () => {
     it("should load all required facet artifacts", () => {
@@ -86,15 +87,18 @@ describe("ContractCaller and ContractErrors", () => {
 
     describe("Real contract calls", () => {
         let mathChannelManager: MathStateChannelManagerProxy;
+        let testSigner: HardhatEthersSigner;
 
         beforeEach(async () => {
             const contracts = await deployMathChannelProxyFixture(hre);
             mathChannelManager = decodeErrorProxy(contracts.mathChannelManager);
+            const signers = await hre.getSigners();
+            testSigner = signers[0];
         });
 
         it("should handle postBlockCalldata success case", async () => {
             // Create test data using factory
-            const signedBlock = factory.signedBlock();
+            const signedBlock = factory.signedBlock(undefined, testSigner);
 
             // Set maxTimestamp to be in the future (success case)
             const currentBlock = await hre.provider.getBlock("latest");
@@ -111,6 +115,28 @@ describe("ContractCaller and ContractErrors", () => {
             } catch (error: any) {
                 // This should not happen
                 expect.fail(`Unexpected error: ${error.message}`);
+            }
+        });
+
+        it("should handle ErrorBlockCalldataMsgSenderNotBlockAuthor custom error", async () => {
+            const signedBlock = factory.signedBlock(); //will be random signer
+
+            const currentBlock = await hre.provider.getBlock("latest");
+            const maxTimestamp = currentBlock!.timestamp + 100;
+
+            try {
+                await mathChannelManager.postBlockCalldata(
+                    signedBlock,
+                    maxTimestamp
+                );
+                expect.fail(
+                    "Expected ErrorBlockCalldataMsgSenderNotBlockAuthor to be thrown"
+                );
+            } catch (error: any) {
+                expect(isCustomEvmError(error)).to.be.true;
+                expect(error.errorDescription.name).to.equal(
+                    "ErrorBlockCalldataMsgSenderNotBlockAuthor"
+                );
             }
         });
 
@@ -138,7 +164,7 @@ describe("ContractCaller and ContractErrors", () => {
         });
 
         it("should handle ErrorBlockCalldataAlreadyPosted custom error", async () => {
-            const signedBlock = factory.signedBlock();
+            const signedBlock = factory.signedBlock(undefined, testSigner);
 
             // Set maxTimestamp to be in the future
             const currentBlock = await hre.provider.getBlock("latest");
