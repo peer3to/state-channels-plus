@@ -29,7 +29,7 @@ import Clock from "@/Clock";
 import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
 import { deploy } from "../../scripts/V1/deploy";
-import SyncCoordinator from "@/utils/SyncCoordinator";
+import SyncCoordinator from "@test/utils/SyncCoordinator";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;

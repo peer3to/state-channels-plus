@@ -1,6 +1,5 @@
 export * from "./BarrierLocal";
 export * from "./DebugProxy";
-export * from "./SyncCoordinator";
 export * from "./DeepCopyProxy";
 export * from "./DeployUtils";
 export * from "./LocalDiscoveryServer";
