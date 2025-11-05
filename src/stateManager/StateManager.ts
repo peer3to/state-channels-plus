@@ -450,6 +450,12 @@ class StateManager {
             this.storage.blocks.getNextBlockHeight(forkId);
         let timeLost = Clock.getTimeInSeconds() - genesisTimestamp;
         timeLost = timeLost < 0 ? 0 : timeLost; // if genesisTimestamp is in the future - no time is lost
+
+        // Don't schedule timeout tasks if StateManager is disposed
+        if (this.isDisposed) {
+            return;
+        }
+
         this.timeoutManager.scheduleTask(
             () =>
                 this.tryTimeoutParticipant(
@@ -461,7 +467,6 @@ class StateManager {
             "participantTimeout"
         );
 
-        // arrow function preserves "this", which is the StateManager instance
         this.timeoutManager.scheduleTask(
             () => this.tryExecuteFromQueue(),
             0,
@@ -1551,6 +1556,11 @@ class StateManager {
         }
 
         // step 11 - schedule a timeout check for the next participant
+        // Don't schedule timeout tasks if StateManager is disposed
+        if (this.isDisposed) {
+            return;
+        }
+
         this.timeoutManager.scheduleTask(
             () =>
                 this.tryTimeoutParticipant(
