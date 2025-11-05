@@ -359,8 +359,133 @@ describe("E2E: Core Functionality", function () {
             ).to.equal(0);
         });
 
-        // Future test for dispute resolution
-        it("should create timeout dispute for non-responsive participant");
+        // Test: Forced timeout when peer posts junk calldata
+        // Arrange: Setup 3 participants, configure timeout
+        // Act: Next peer posts invalid/unlinked calldata on-chain that gets rejected by validation
+        // Assert: System creates forced timeout dispute (isForced=true), remaining peers maintain liveness
+        it("should create forced timeout when peer posts junk calldata that is rejected", async function () {
+            // Arrange
+            await harness!.setup(3, {
+                timeConfig: {
+                    p2pTime: 1,
+                    agreementTime: 1,
+                    chainFallbackTime: 2
+                }
+            });
+            await harness!.openChannel();
+
+            // Establish initial state
+            await harness!.submitNextTransaction((contract) => contract.add(1)); // peer 0
+            await harness!.submitNextTransaction((contract) => contract.add(1)); // peer 1
+
+            // Reset spies
+            harness!.resetEventSpies();
+
+            // Act
+            const nextPeer = await harness!.getNextPeerToWrite(); // peer 2
+            expect(nextPeer.index).to.equal(2, "Should be peer 2's turn");
+
+            // Get the current state so we can create an unlinked block
+            const currentBlock =
+                harness!.peers[0].stateManager.storage.blocks.getLatestBlock(
+                    harness!.activeForkId!
+                );
+            expect(currentBlock).to.not.be.undefined;
+
+            // Simulate peer 2 posting junk calldata (unlinked block) directly on-chain
+            await harness!.postJunkCalldataOnChain(2, {
+                forkId: harness!.activeForkId!,
+                height: currentBlock!.height + 1,
+                wrongPreviousHash: true // Creates block with wrong previousBlockHash
+            });
+
+            // Wait for other peers to detect the calldata and attempt validation (which will fail)
+            await harness!.waitForCondition(() => {
+                // Other peers should detect the calldata via onBlockCalldataPosted event
+                const peer0CalldataEvents = harness!.getEventCallCount(
+                    0,
+                    "onBlockCalldataPosted"
+                );
+                const peer1CalldataEvents = harness!.getEventCallCount(
+                    1,
+                    "onBlockCalldataPosted"
+                );
+                return peer0CalldataEvents == 1 && peer1CalldataEvents == 1;
+            }, 5000);
+
+            // Wait for timeout check cycle to detect forced timeout
+            const forcedTimeoutDetected = await harness!.waitForCondition(
+                () => {
+                    const peer0Disputes = harness!.getEventCallCount(
+                        0,
+                        "onInitiatingDispute"
+                    );
+                    const peer1Disputes = harness!.getEventCallCount(
+                        1,
+                        "onInitiatingDispute"
+                    );
+                    return peer0Disputes == 1 && peer1Disputes == 1;
+                },
+                10000
+            );
+
+            // Assert - Forced timeout dispute created
+            expect(forcedTimeoutDetected).to.be.true;
+            harness!.assertEventHandlerCalledTotalTimes(
+                "onDisputeCommitted",
+                6
+            );
+
+            // Verify timeout struct has isForced = true using helper method
+            const timeoutStruct = harness!.getTimeoutStruct(
+                0,
+                harness!.activeForkId!
+            );
+
+            expect(timeoutStruct).to.not.be.undefined;
+            expect(timeoutStruct!.isForced).to.be.true;
+            expect(timeoutStruct!.participant).to.equal(
+                harness!.peers[2].address
+            );
+            expect(Number(timeoutStruct!.blockHeight)).to.equal(
+                currentBlock!.height + 1
+            );
+
+            // TODO: Uncomment once dispute resolution is implemented.
+            //
+            // Forced timeout detection works - the dispute gets created and committed on-chain. But the
+            // participant removal isn't happening yet because EventHandler.setForkIfLatestAndCurrent()
+            // and the final dispute handling in onDisputeCommitted() aren't implemented. The state machine
+            // participant list doesn't get updated, so getNextToWrite() still returns the timed-out peer.
+            //
+            // See EventHandler.ts:555-590 and EventHandler.ts:170-190 for the unimplemented parts.
+
+            /*
+            // System should continue with remaining honest peers
+            const nextPeerAfter = await harness!.getNextPeerToWrite();
+            expect([0, 1]).to.include(
+                nextPeerAfter.index,
+                "Next peer should be one of the remaining honest peers"
+            );
+
+            // Verify liveness - remaining peers can continue transacting
+            await harness!.submitTransaction(
+                nextPeerAfter,
+                (contract) => contract.add(100),
+                { waitForPeers: [0, 1] }
+            );
+
+            // Assert - Remaining peers stay in sync
+            harness!.assertAllPeersInSync({ peerIndices: [0, 1] });
+
+            // Assert - No additional calldata posting needed (all active peers are signing)
+            const totalCalldataPosts =
+                harness!.getEventCallCount(0, "onPostingCalldata") +
+                harness!.getEventCallCount(1, "onPostingCalldata");
+            // Only the initial junk calldata should have triggered posting, no new ones
+            expect(totalCalldataPosts).to.equal(0, "No new calldata should be posted after forced timeout");
+            */
+        });
     });
 
     describe("Channel Lifecycle", function () {
