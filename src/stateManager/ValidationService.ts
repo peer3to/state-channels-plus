@@ -164,7 +164,7 @@ export default class ValidationService {
                 existingSignatures
             );
 
-            if (block.onChainTimestamp && !existingBlock.onChainTimestamp) {
+            if (block.onChainTimestamp) {
                 // Update the existing block's onChainTimestamp
                 this.storage.blocks.setOnChainTimestamp(
                     block.hash,
