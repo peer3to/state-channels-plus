@@ -15,15 +15,8 @@ import {
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
-// TypeChain types - Proof types
-import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-
 // TypeChain types - Dispute types
-import {
-    DisputeStruct,
-    ReduceOutputStruct,
-    TimeoutStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 // TypeChain types - Contract interfaces
 import { StateChannelManagerProxy } from "@typechain-types";
@@ -75,12 +68,18 @@ import DisputeValidationService from "./DisputeValidationService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
 import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
 import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidationStrategy";
+import ReductionController from "./services/ReductionController";
+import SnapshotService, {
+    SameForkSnapshotData,
+    SnapshotForkData
+} from "./services/SnapshotService";
+import TimeoutController from "./services/TimeoutController";
+import StateSnapshotFactory from "./services/StateSnapshotFactory";
 
 import { DEBUG_STATE_MANAGER } from "@/utils/config";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 
 const NULL = "0x00";
-const LOG_TAG = "[STATE MANAGER]";
 class StateManager {
     diamondStateMachine: ADiamondStateMachine;
     p2pEventHooks: P2pEventHooks;
@@ -107,7 +106,11 @@ class StateManager {
     reductionTriggerMap: Map<ForkId, ReductionTimeoutHandle> = new Map();
     status: Status = Status.SPECTATING;
     timeoutManager: TimeoutManager;
-    private logger: Logger;
+    readonly logger: Logger;
+    private readonly reductionController: ReductionController;
+    private readonly snapshotService: SnapshotService;
+    private readonly timeoutController: TimeoutController;
+    private readonly snapshotFactory: StateSnapshotFactory;
 
     constructor(
         signer: ethers.Signer,
@@ -116,7 +119,6 @@ class StateManager {
         diamondStateMachine: ADiamondStateMachine,
         timeConfig: TimeConfig,
         p2pEventHooks: P2pEventHooks,
-        storage: Storage,
         logger: Logger
     ) {
         this.signer = signer;
@@ -125,7 +127,7 @@ class StateManager {
         this.p2pEventHooks = p2pEventHooks;
         this.timeConfig = timeConfig;
         this.stateChannelManagerContract = stateChannelManagerContract;
-        this.storage = storage;
+        this.storage = new Storage();
 
         this.logger = logger.child({ component: "StateManager" });
 
@@ -180,6 +182,10 @@ class StateManager {
             this.p2pManager
         );
         this.timeoutManager = new TimeoutManager();
+        this.reductionController = new ReductionController(this);
+        this.snapshotService = new SnapshotService(this);
+        this.timeoutController = new TimeoutController(this);
+        this.snapshotFactory = new StateSnapshotFactory(this);
     }
     //Mark resources for garbage collection
     public async dispose() {
@@ -214,156 +220,10 @@ class StateManager {
         return this.channelId;
     }
     public setReductionTimeout(forkId: ForkId, triggerTimestamp: number) {
-        const reductionHandle = this.reductionTriggerMap.get(forkId);
-        if (
-            this.forkId == forkId &&
-            (!reductionHandle ||
-                reductionHandle.triggerTimestamp < triggerTimestamp)
-        ) {
-            if (reductionHandle) clearTimeout(reductionHandle.handle);
-            const delayInMilliseconds =
-                (triggerTimestamp - Clock.getTimeInSeconds()) * 1000;
-            const newHandle = setTimeout(async () => {
-                this.tryReduce(forkId, triggerTimestamp);
-            }, delayInMilliseconds);
-            this.reductionTriggerMap.set(forkId, {
-                handle: newHandle,
-                triggerTimestamp: triggerTimestamp
-            });
-        }
+        this.reductionController.setReductionTimeout(forkId, triggerTimestamp);
     }
     private async tryReduce(forkId: ForkId, genesisTimestamp: number) {
-        if (this.forkId != forkId) return; // we're not on this fork anymore
-        // check locally can we reduce
-        let [canReduce, _timeRemainig] =
-            await this.diamondStateMachine.localDiamondContract.isKillPeriodExpired(
-                this.channelId,
-                forkId
-            );
-        let timeRemainig = Number(_timeRemainig);
-        let checkedOnRpcNode = false;
-        if (!canReduce) {
-            // come back later - new evidence was submitted
-            if (timeRemainig > 0)
-                return this.setReductionTimeout(
-                    forkId,
-                    Clock.getTimeInSeconds() + timeRemainig
-                );
-            // timeRemainig is 0, but not expired -> means window locally is not opened (not synced) -> check on-chain
-            [canReduce, _timeRemainig] =
-                await this.stateChannelManagerContract.isKillPeriodExpired(
-                    this.channelId,
-                    forkId
-                );
-            checkedOnRpcNode = true;
-            timeRemainig = Number(_timeRemainig);
-            // now check with updated data
-            if (!canReduce) {
-                if (timeRemainig > 0)
-                    return this.setReductionTimeout(
-                        forkId,
-                        Clock.getTimeInSeconds() + timeRemainig
-                    );
-                // on-chain timeRemainig is 0, but not expired -> not opened -> we shouldn't be here
-                throw new Error(
-                    "StateManager - setReductionTimeout - time to reduce, but window not opened on-chain"
-                );
-            }
-        }
-        // ^ the above code is an optimization to try to save compute on the RPC node
-
-        // double check on-chain can we reduce
-        if (!checkedOnRpcNode) {
-            [canReduce, _timeRemainig] =
-                await this.stateChannelManagerContract.isKillPeriodExpired(
-                    this.channelId,
-                    forkId
-                );
-            checkedOnRpcNode = true;
-            timeRemainig = Number(_timeRemainig);
-            if (!canReduce) {
-                if (timeRemainig > 0)
-                    return this.setReductionTimeout(
-                        forkId,
-                        Clock.getTimeInSeconds() + timeRemainig
-                    );
-                // on-chain timeRemainig is 0, but not expired -> not opened -> we shouldn't be here
-                throw new Error(
-                    "StateManager - setReductionTimeout - time to reduce, but window not opened on-chain"
-                );
-            }
-        }
-        // reduce on-chain
-        const disputeConfirmations =
-            await this.agreementManager.getForkDisputeConfirmations(
-                this.channelId,
-                forkId,
-                this.stateChannelManagerContract
-            );
-        const disputes = disputeConfirmations.map(
-            (dc) =>
-                Codec.decode(
-                    dc.signedDispute.encodedDispute,
-                    Type.Dispute
-                ) as DisputeStruct
-        );
-        let reducedOutput: ReduceOutputStruct;
-        try {
-            reducedOutput =
-                await this.stateChannelManagerContract.reduce.staticCall(
-                    disputes
-                );
-        } catch (error) {
-            // this should never be the case since:
-            // 1) disputeWindows is expired - double checked on-chain
-            // 2) dispute commitments - collected on-chain -> we for sure have the correct data
-            // 3) even if someone else reduces on-chain -> they would have to reduce to the same output, so race condition is not a problem
-            this.logger.error("tryReduce failed", {
-                error: error instanceof Error ? error.message : String(error)
-            });
-            throw error;
-        }
-        const reduceData = await this.agreementManager.getReduceData(
-            forkId,
-            reducedOutput
-        );
-        this.stateChannelManagerContract
-            .reduceAndFinalize(
-                disputes,
-                reduceData.latestStateSnapshot,
-                reduceData.encodedStateMachineState,
-                reduceData.joinChannelBlocks
-            )
-            .then((tx) => tx.wait())
-            .catch((error) => {
-                // this has to run async so everyone starts building imediately after successful simulation -> so they don't waste time
-                // if this errors here - in the honest case it should never - even under race condition it should success fracefully
-                // TODO interpret the error and panic
-                throw new Error("reduceAndFinalize error " + error);
-            });
-
-        // if we're here - the fork SHOULD BECOME succesfuly finalized on-chain and we can start building on top of it
-
-        // locally compute what will be finalized on-chain
-        const [snapshotData, encodedStateMachineState, exitChannelBlock] =
-            await this.diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
-                forkId,
-                reducedOutput,
-                reduceData.latestStateSnapshot,
-                reduceData.encodedStateMachineState,
-                reduceData.joinChannelBlocks
-            );
-        const reducedForkId = ethers.keccak256(
-            Codec.encode(snapshotData, Type.SnapshotData)
-        );
-
-        this.setGenesisState(
-            snapshotData,
-            encodedStateMachineState,
-            reducedForkId,
-            genesisTimestamp,
-            exitChannelBlock
-        );
+        await this.reductionController.tryReduce(forkId, genesisTimestamp);
     }
     public getSignerAddress(): Address {
         return this.signerAddress;
@@ -544,7 +404,7 @@ class StateManager {
 
             // Validate state snapshot hash
             const { stateSnapshot, exitChannelBlock, totalWithdrawals } =
-                await this.createStateSnapshot(
+                await this.createStateSnapshotBlock(
                     hash(encodedState),
                     block.coordinates,
                     block.timestamp,
@@ -640,7 +500,7 @@ class StateManager {
             }
 
             const { stateSnapshot, exitChannelBlock, totalWithdrawals } =
-                await this.createStateSnapshot(
+                await this.createStateSnapshotBlock(
                     hash(encodedState),
                     {
                         forkId: this.forkId,
@@ -725,436 +585,22 @@ class StateManager {
     }
 
     public async postStateSnapshot(forkId: ForkId): Promise<void> {
-        // Get the current on-chain snapshot to check if we're on the same fork
-        const currentOnChainSnapshot = StateSnapshot.from(
-            await this.stateChannelManagerContract.getStateSnapshot(
-                this.channelId
-            )
-        );
-
-        // If we're on the same fork, call updateStateSnapshotSameFork directly
-        if (currentOnChainSnapshot.forkId === forkId) {
-            const sameForkData =
-                await this.prepareUpdateSnapshotSameFork(forkId);
-            if (sameForkData) {
-                try {
-                    const txResponse =
-                        await this.stateChannelManagerContract.updateStateSnapshotSameFork(
-                            this.channelId,
-                            sameForkData.milestoneProofs,
-                            sameForkData.milestoneSnapshots.map((snapshot) =>
-                                snapshot.toStruct()
-                            ),
-                            sameForkData.exitChannelBlocks
-                        );
-                    await txResponse.wait();
-                } catch (error) {
-                    if (isCustomEvmError(error)) {
-                        this.logger.error("Error posting state snapshot", {
-                            errorDescription: error.errorDescription
-                        });
-                    } else {
-                        this.logger.error("Error posting state snapshot", {
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : String(error)
-                        });
-                    }
-                    throw error;
-                }
-            } else {
-                this.logger.debug("No state snapshot updates needed");
-            }
-            return;
-        }
-
-        // Different fork - use multicall for both fork update and same-fork update
-        const forkData = await this.prepareUpdateStateSnapshotFork();
-        const sameForkData = await this.prepareUpdateSnapshotSameFork(forkId);
-
-        // Encode data for multicall
-        const callData: string[] = [];
-        if (forkData) {
-            // Check if the fork update will result in the same fork as the target
-            if (forkData.genesisSnapshot.forkId === forkId) {
-                const forkCalldata =
-                    this.stateChannelManagerContract.interface.encodeFunctionData(
-                        "updateStateSnapshotFork",
-                        [
-                            this.channelId,
-                            forkData.genesisSnapshot.toStruct(),
-                            forkData.exitBlocks
-                        ]
-                    );
-                callData.push(forkCalldata);
-            } else {
-                // Fork update results in a different fork
-                throw new Error(
-                    `Fork mismatch: update will result in fork ${forkData.genesisSnapshot.forkId}, but target fork is ${forkId}.`
-                );
-            }
-        }
-        if (sameForkData) {
-            const sameForkCalldata =
-                this.stateChannelManagerContract.interface.encodeFunctionData(
-                    "updateStateSnapshotSameFork",
-                    [
-                        this.channelId,
-                        sameForkData.milestoneProofs,
-                        sameForkData.milestoneSnapshots.map((snapshot) =>
-                            snapshot.toStruct()
-                        ),
-                        sameForkData.exitChannelBlocks
-                    ]
-                );
-            callData.push(sameForkCalldata);
-        }
-
-        // Execute the final snapshot updates in a single multicall transaction
-        if (callData.length > 0) {
-            try {
-                const txResponse =
-                    await this.stateChannelManagerContract.multicall(callData);
-                await txResponse.wait();
-            } catch (error) {
-                if (isCustomEvmError(error)) {
-                    this.logger.error("Error posting state snapshot", {
-                        errorDescription: error.errorDescription
-                    });
-                } else {
-                    this.logger.error("Error posting state snapshot", {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error)
-                    });
-                }
-                throw error;
-            }
-        } else {
-            this.logger.debug("No state snapshot updates needed");
-        }
+        await this.snapshotService.postStateSnapshot(forkId);
     }
 
     /**
      * Prepares data for updating the state snapshot when the fork is the same
      */
-    public async prepareUpdateSnapshotSameFork(forkId: ForkId): Promise<
-        | {
-              milestoneProofs: MilestoneProofStruct[];
-              milestoneSnapshots: StateSnapshot[];
-              exitChannelBlocks: ExitChannelBlockStruct[];
-          }
-        | undefined
-    > {
-        try {
-            // Get the current on-chain snapshot first
-            const currentOnChainSnapshot = StateSnapshot.from(
-                await this.stateChannelManagerContract.getStateSnapshot(
-                    this.channelId
-                )
-            );
-
-            // Get the latest block height for this fork from storage
-            const latestBlockHeight =
-                this.storage.blocks.getNextBlockHeight(forkId) - 1;
-
-            // Get the state proof from AgreementManager
-            const stateProof = await this.agreementManager.getStateProof(
-                forkId,
-                latestBlockHeight
-            );
-
-            // Filter milestone proofs to only include those relevant for the transition from current on-chain state
-            const milestoneProofs: MilestoneProofStruct[] = [];
-            const milestoneSnapshots: StateSnapshot[] = [];
-
-            for (const milestoneProof of stateProof.milestones) {
-                if (milestoneProof.blockConfirmations.length === 0) {
-                    throw new Error("Empty milestone proof found");
-                }
-
-                // Get the state snapshot
-                const snapshot =
-                    this.agreementManager.getSnapshotFromMilestone(
-                        milestoneProof
-                    );
-                if (!snapshot)
-                    throw new Error(
-                        "Milestone built but corresponding snapshot not found"
-                    );
-
-                // Only include milestones that are newer than the current on-chain block height
-                if (snapshot.blockHeight > currentOnChainSnapshot.blockHeight) {
-                    milestoneProofs.push(milestoneProof);
-                    milestoneSnapshots.push(snapshot);
-                }
-            }
-
-            // No relevant milestones found
-            if (milestoneSnapshots.length === 0) {
-                return undefined;
-            }
-
-            const latestSnapshot =
-                milestoneSnapshots[milestoneSnapshots.length - 1];
-
-            // Latest snapshot is the same as current on-chain
-            if (
-                latestSnapshot.blockHeight ===
-                currentOnChainSnapshot.blockHeight
-            ) {
-                return undefined;
-            }
-
-            // Verify that both snapshots belong to the same fork
-            if (currentOnChainSnapshot.forkId !== latestSnapshot.forkId) {
-                throw new Error(
-                    `Fork mismatch: current fork ${currentOnChainSnapshot.forkId}, new fork ${latestSnapshot.forkId}`
-                );
-            }
-
-            const exitChannelBlocks: ExitChannelBlockStruct[] = [];
-
-            // Get the current on-chain snapshot's latest exit channel block hash
-            const currentOnChainExitBlockHash =
-                currentOnChainSnapshot.snapshotData.latestExitChannelBlockHash;
-
-            // Get the latest local exit channel block hash from the latest state snapshot
-            if (!latestSnapshot) {
-                throw new Error(
-                    "Latest snapshot is undefined - this should not happen"
-                );
-            }
-            const latestLocalExitBlockHash =
-                latestSnapshot.snapshotData.latestExitChannelBlockHash;
-
-            // Build the chain of exit blocks from current on-chain to latest local
-            let currentHash = latestLocalExitBlockHash;
-            const exitBlockChain: ExitChannelBlockStruct[] = [];
-
-            // Walk backwards through the chain until we reach the on-chain hash
-            while (currentHash !== currentOnChainExitBlockHash) {
-                const exitBlock =
-                    this.storage.exitChannelBlocks.getExitChannelBlock(
-                        currentHash
-                    );
-                if (!exitBlock) {
-                    throw new Error(
-                        `Exit channel block not found for hash: ${currentHash}`
-                    );
-                }
-                exitBlockChain.unshift(exitBlock);
-                currentHash = exitBlock.previousBlockHash;
-            }
-
-            exitChannelBlocks.push(...exitBlockChain);
-
-            return {
-                milestoneProofs,
-                milestoneSnapshots,
-                exitChannelBlocks
-            };
-        } catch (error) {
-            this.logger.error(
-                "Error preparing update snapshot for the same fork",
-                {
-                    error:
-                        error instanceof Error ? error.message : String(error)
-                }
-            );
-            throw error;
-        }
+    public async prepareUpdateSnapshotSameFork(
+        forkId: ForkId
+    ): Promise<SameForkSnapshotData | undefined> {
+        return this.snapshotService.prepareUpdateSnapshotSameFork(forkId);
     }
 
-    /**
-     * Prepares data for updateStateSnapshotFork
-     */
     public async prepareUpdateStateSnapshotFork(): Promise<
-        | {
-              genesisSnapshot: StateSnapshot;
-              exitBlocks: ExitChannelBlockStruct[];
-          }
-        | undefined
+        SnapshotForkData | undefined
     > {
-        try {
-            // Get the current on-chain snapshot first
-            const currentOnChainSnapshot = StateSnapshot.from(
-                await this.stateChannelManagerContract.getStateSnapshot(
-                    this.channelId
-                )
-            );
-
-            let currentForkId = currentOnChainSnapshot.forkId;
-
-            // Traverse through dispute windows until we reach a fork with no disputes
-            let isDisputed =
-                await this.stateChannelManagerContract.isForkDisputed(
-                    this.channelId,
-                    currentForkId
-                );
-
-            if (!isDisputed) {
-                return undefined; // No fork update needed
-            }
-
-            // Get the genesis snapshot
-            const genesisSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                    currentForkId
-                );
-            if (!genesisSnapshot) {
-                throw new Error(
-                    `No genesis snapshot found for fork ${currentForkId}`
-                );
-            }
-
-            while (isDisputed) {
-                // If reduced result already exists on-chain, traverse to it
-                const existingReducedResult =
-                    await this.stateChannelManagerContract.getReducedResult(
-                        this.channelId,
-                        currentForkId
-                    );
-                // if reduceResult exists and is final
-                if (existingReducedResult[0]) {
-                    currentForkId = existingReducedResult[0];
-                    isDisputed =
-                        await this.stateChannelManagerContract.isForkDisputed(
-                            this.channelId,
-                            currentForkId
-                        );
-                    continue;
-                }
-
-                // Fetch dispute commitments for this window
-                const disputeCommitments =
-                    await this.stateChannelManagerContract.getWindowCommitments(
-                        this.channelId,
-                        currentForkId
-                    );
-                if (!disputeCommitments || disputeCommitments.length === 0) {
-                    // Nothing to reduce; wait for more data
-                    break;
-                }
-
-                // Build disputes from local storage confirmations
-                const disputes: DisputeStruct[] = [];
-                for (const commitment of disputeCommitments) {
-                    const confirmation =
-                        this.storage.disputes.getDisputeConfirmation(
-                            commitment
-                        );
-                    if (!confirmation) {
-                        throw new Error(
-                            `Missing Data Availability for dispute commitment ${commitment}`
-                        );
-                    }
-                    const dispute = Codec.decode(
-                        confirmation.signedDispute.encodedDispute,
-                        Type.Dispute
-                    ) as DisputeStruct;
-                    disputes.push(dispute);
-                }
-
-                // Use proxy view to compute reduced output cheaply (no tx)
-                const reducedOutput =
-                    await this.stateChannelManagerContract.reduce.staticCall(
-                        disputes
-                    );
-
-                const reduceData = await this.agreementManager.getReduceData(
-                    currentForkId,
-                    reducedOutput
-                );
-
-                // Reduce and finalize on-chain to obtain the reduced fork id
-                try {
-                    const txResponse =
-                        await this.stateChannelManagerContract.reduceAndFinalize(
-                            disputes,
-                            reduceData.latestStateSnapshot,
-                            reduceData.encodedStateMachineState,
-                            reduceData.joinChannelBlocks
-                        );
-                    await txResponse.wait();
-                } catch (error) {
-                    if (
-                        isCustomEvmError(error) &&
-                        error.errorDescription.name !==
-                            "ErrorDisputeAlreadyReduced"
-                    ) {
-                        throw error; // Re-throw other errors
-                    }
-                }
-
-                // Read canonical reduced result from chain and traverse
-                const reducedResult =
-                    await this.stateChannelManagerContract.getReducedResult(
-                        this.channelId,
-                        currentForkId
-                    );
-
-                // Traverse to the reduced fork
-                currentForkId = reducedResult[0];
-                isDisputed =
-                    await this.stateChannelManagerContract.isForkDisputed(
-                        this.channelId,
-                        currentForkId
-                    );
-            }
-
-            // Build exit blocks
-            let latestExitBlockHash =
-                genesisSnapshot.snapshotData.latestExitChannelBlockHash;
-            const currentOnChainExitBlockHash =
-                currentOnChainSnapshot.snapshotData.latestExitChannelBlockHash;
-            const exitBlocks: ExitChannelBlockStruct[] = [];
-            let currentExitBlock =
-                this.storage.exitChannelBlocks.getExitChannelBlockEntry(
-                    latestExitBlockHash
-                );
-
-            while (
-                currentExitBlock &&
-                latestExitBlockHash !== currentOnChainExitBlockHash
-            ) {
-                exitBlocks.unshift(currentExitBlock.block);
-                latestExitBlockHash = currentExitBlock.block.previousBlockHash;
-                currentExitBlock =
-                    this.storage.exitChannelBlocks.getExitChannelBlockEntry(
-                        currentExitBlock.block.previousBlockHash
-                    );
-            }
-
-            return {
-                genesisSnapshot,
-                exitBlocks
-            };
-        } catch (error) {
-            this.logger.error("Error preparing update state snapshot fork", {
-                error: error instanceof Error ? error.message : String(error)
-            });
-            throw error;
-        }
-    }
-
-    private async calculateTotalBalance(
-        balances: { balance: BalanceStruct }[],
-        initialTotal?: BalanceStruct
-    ): Promise<BalanceStruct> {
-        let total =
-            initialTotal ?? (await this.diamondStateMachine.getZeroBalance());
-
-        for (const balance of balances) {
-            total = await this.diamondStateMachine.addBalance(
-                total,
-                balance.balance
-            );
-        }
-
-        return total;
+        return this.snapshotService.prepareUpdateStateSnapshotFork();
     }
 
     // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute
@@ -1163,195 +609,15 @@ class StateManager {
         blockHeight: BlockHeight,
         participantAddress: Address
     ): Promise<void> {
-        if (participantAddress === this.signerAddress) {
-            return;
-        }
-
-        // if a block exist in storage (regardless of own signature on it) -> it was accepted
-        const block = this.storage.blocks.getBlock(forkId, blockHeight);
-        if (block) {
-            return;
-        }
-
-        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
-            {
-                forkId,
-                height: blockHeight
-            }
-        );
-        // check is good time to timeout
-        const previousRelevantTimestamp = previousBlockOrSnapshot.block
-            ? previousBlockOrSnapshot.block.getRelevantTimestamp(
-                  participantAddress
-              )
-            : previousBlockOrSnapshot.stateSnapshot!.timestamp;
-        let difference =
-            previousRelevantTimestamp +
-            this.getTimeoutWaitTimeSeconds() -
-            Clock.getTimeInSeconds();
-        if (difference > 0) {
-            this.timeoutManager.scheduleTask(
-                async () => {
-                    await this.tryTimeoutParticipant(
-                        forkId,
-                        blockHeight,
-                        participantAddress
-                    );
-                },
-                difference * 1000,
-                "timeoutParticipantDelayed"
-            );
-            return;
-        }
-
-        // (race condition) check did previous participant post on-chain granting this one extra time
-        if (
-            previousBlockOrSnapshot.block &&
-            !previousBlockOrSnapshot.block.onChainTimestamp
-        ) {
-            const updatedPreviousBlock = await this.fetchUpdatedOnChainBlock(
-                previousBlockOrSnapshot.block.forkId,
-                previousBlockOrSnapshot.block.height,
-                previousBlockOrSnapshot.block.author
-            );
-            if (updatedPreviousBlock?.onChainTimestamp) {
-                difference =
-                    updatedPreviousBlock.onChainTimestamp +
-                    this.getTimeoutWaitTimeSeconds() -
-                    Clock.getTimeInSeconds();
-                if (difference > 0) {
-                    // There's a chance that the on-chain timestamp will not persist if the BlockConfirmation pipeline didn't decide to persist the block since most likely the calldata is junk
-                    // This is not a problem since on the next run difference < 0 -> force timeout
-                    // Only inefficiency is we'd querry the RPC node for calldata for this 2 times in the case of a force timeout like this
-                    this.timeoutManager.scheduleTask(
-                        async () => {
-                            await this.tryTimeoutParticipant(
-                                forkId,
-                                blockHeight,
-                                participantAddress
-                            );
-                        },
-                        difference * 1000,
-                        "timeoutParticipantDelayed"
-                    );
-                    return;
-                }
-            }
-        }
-        // No race condition on previous block on-chain calldata
-
-        // (local) check if current block calldata slot is occupied on-chain
-        let commitment =
-            await this.diamondStateMachine.localDiamondContract.getBlockCallDataCommitment(
-                this.channelId,
-                forkId,
-                blockHeight,
-                participantAddress
-            );
-        if (commitment.found) {
-            // Commitment found, but block not accepted by BlockConfirmation pipeline -> proceed no timeout force
-            return await this.createTimeOutDispute(
-                forkId,
-                blockHeight,
-                participantAddress,
-                true
-            );
-        }
-
-        // (race condition) check if current block posted on-chain
-        const updatedBlock = await this.fetchUpdatedOnChainBlock(
+        await this.timeoutController.tryTimeoutParticipant(
             forkId,
             blockHeight,
             participantAddress
         );
-        if (updatedBlock?.onChainTimestamp) {
-            return; // block found and accepted
-        }
-        // Check locally again - if fetchUpdatedOnChainBlock found a block -> local evm is synced
-        commitment =
-            await this.diamondStateMachine.localDiamondContract.getBlockCallDataCommitment(
-                this.channelId,
-                forkId,
-                blockHeight,
-                participantAddress
-            );
-        if (commitment.found) {
-            // commitment exists on-chain, but block confirmation pipeline didn't accept it -> proceed no timeout force
-            return await this.createTimeOutDispute(
-                forkId,
-                blockHeight,
-                participantAddress,
-                true
-            );
-        }
-        // block not found on-chain -> normal timeout
-        return await this.createTimeOutDispute(
-            forkId,
-            blockHeight,
-            participantAddress,
-            false
-        );
-    }
-
-    private async createTimeOutDispute(
-        forkId: ForkId,
-        blockHeight: BlockHeight,
-        participantAddress: Address,
-        isForced: boolean = false
-    ): Promise<void> {
-        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
-            {
-                forkId,
-                height: blockHeight
-            }
-        );
-
-        const previousBlock = previousBlockOrSnapshot.block;
-
-        let previousBlockProducerPostedCalldata = false;
-        if (previousBlock) {
-            if (previousBlock.onChainTimestamp) {
-                previousBlockProducerPostedCalldata = true;
-            } else {
-                previousBlockProducerPostedCalldata = (
-                    await this.diamondStateMachine.localDiamondContract.getBlockCallDataCommitment(
-                        this.channelId,
-                        forkId,
-                        previousBlock.height,
-                        previousBlock.author
-                    )
-                ).found;
-            }
-        }
-
-        const timeout: TimeoutStruct = {
-            participant: participantAddress.toString(),
-            blockHeight: BigInt(blockHeight),
-            minTimeStamp: Clock.getTimeInSeconds(),
-            isForced: isForced,
-            previousBlockProducer: previousBlock
-                ? previousBlock.author.toString()
-                : ethers.ZeroAddress,
-            previousBlockProducerPostedCalldata:
-                previousBlockProducerPostedCalldata,
-            participantSignatureOnPreviousBlock:
-                (previousBlock?.findSignature(participantAddress) as Bytes) ||
-                "0x"
-        };
-
-        // persist timeout locally
-        this.storage.timeout.storeTimeout(forkId, timeout);
-
-        // Time has fully elapsed - create dispute immediately
-        await this.disputeManager.dispute(forkId);
     }
 
     private getTimeoutWaitTimeSeconds() {
-        return (
-            this.timeConfig.p2pTime +
-            this.timeConfig.agreementTime +
-            this.timeConfig.chainFallbackTime
-        );
+        return this.timeoutController.getTimeoutWaitTimeSeconds();
     }
 
     private async isMyTurn(): Promise<boolean> {
@@ -1383,7 +649,7 @@ class StateManager {
         }
     }
 
-    private async createStateSnapshot(
+    private async createStateSnapshotBlock(
         stateMachineStateHash: Hash,
         coordinates: BlockCoordinates,
         timestamp: Timestamp,
@@ -1393,59 +659,12 @@ class StateManager {
         exitChannelBlock?: ExitChannelBlockStruct;
         totalWithdrawals: BalanceStruct;
     }> {
-        const previousStateSnapshot =
-            this.storage.getPreviousStateSnapshot(coordinates);
-        if (!previousStateSnapshot)
-            throw new Error(
-                "createStateSnapshot for block - previousStateSnapshot undefined"
-            );
-
-        const latestJoinChannelBlockHash =
-            previousStateSnapshot.snapshotData.latestJoinChannelBlockHash;
-        const totalDeposits = previousStateSnapshot.snapshotData.totalDeposits;
-
-        let { latestExitChannelBlockHash, totalWithdrawals, participants } =
-            previousStateSnapshot.snapshotData;
-
-        let exitChannelBlock: ExitChannelBlockStruct | undefined;
-
-        if (exitChannels && exitChannels.length > 0) {
-            participants = await this.diamondStateMachine.getParticipants();
-            exitChannelBlock = {
-                exitChannels,
-                previousBlockHash: latestExitChannelBlockHash
-            };
-
-            latestExitChannelBlockHash = hash(
-                Codec.encode(exitChannelBlock, Type.ExitChannelBlock)
-            );
-
-            totalWithdrawals = await this.calculateTotalBalance(
-                exitChannels,
-                totalWithdrawals
-            );
-        }
-
-        const stateSnapshot: StateSnapshotStruct = {
-            forkId: coordinates.forkId,
-            blockHeight: BigInt(coordinates.height),
-            timestamp: timestamp,
-            snapshotData: {
-                originForkId: previousStateSnapshot.snapshotData.originForkId,
-                stateMachineStateHash: stateMachineStateHash,
-                participants,
-                latestJoinChannelBlockHash,
-                latestExitChannelBlockHash,
-                totalDeposits,
-                totalWithdrawals
-            }
-        };
-
-        return {
-            stateSnapshot: StateSnapshot.from(stateSnapshot),
-            exitChannelBlock,
-            totalWithdrawals
-        };
+        return this.snapshotFactory.createStateSnapshotBlock(
+            stateMachineStateHash,
+            coordinates,
+            timestamp,
+            exitChannels
+        );
     }
 
     private async createBlock(
@@ -1646,67 +865,12 @@ class StateManager {
         blockAuthor: Address,
         blockCommitment: Hash
     ): Promise<UpdatedBlockWithCalldata | undefined> {
-        try {
-            // filter BlockCalldataPosted calls by channelId and blockCalldataCommitment
-            const filter =
-                this.stateChannelManagerContract.filters.BlockCalldataPosted(
-                    this.channelId,
-                    blockCommitment
-                );
-
-            // Calculate how many blocks back should we look for the log on-chain
-            const avgBlockTime = Clock.getAverageOnChainBlockTime();
-            const maxTime =
-                this.timeConfig.p2pTime +
-                this.timeConfig.agreementTime +
-                this.timeConfig.chainFallbackTime;
-            const blocksToLookBack = Math.ceil(maxTime / avgBlockTime) * 2; // *2 to be safe and account for some delay/failure
-
-            const logs = await this.stateChannelManagerContract.queryFilter(
-                filter,
-                -blocksToLookBack, // from block
-                "latest" // to block
-            );
-
-            // There should be a single log if the commitment exists or none
-            if (logs.length == 0) {
-                return undefined;
-            }
-            if (logs.length > 1) {
-                throw new Error(
-                    `Multiple logs found for commitment: ${blockCommitment} - logs: ${logs}`
-                );
-            }
-            // Create a mutable copy of signedBlock since logs[0].args is read-only
-            const signedBlock = {
-                encodedBlock: logs[0].args.signedBlock.encodedBlock,
-                signature: logs[0].args.signedBlock.signature
-            };
-            const timestamp = Number(logs[0].args.timestamp);
-
-            // this will also run BlockConfirmation pipeline which will also handle storage updates if needed
-            await this.eventHandler.onBlockCalldataPosted(
-                this.channelId,
-                blockCommitment,
-                blockAuthor,
-                signedBlock,
-                timestamp
-            );
-
-            const updatedBlock = this.storage.blocks.getBlock(
-                forkId,
-                blockHeight
-            );
-
-            return {
-                signedBlock,
-                timestamp,
-                updatedBlock: updatedBlock
-            };
-        } catch (error) {
-            console.error(`${LOG_TAG}-fetchBlockCommitmentCalldata:`, error);
-            return undefined;
-        }
+        return this.timeoutController.fetchBlockCommitmentCalldata(
+            forkId,
+            blockHeight,
+            blockAuthor,
+            blockCommitment
+        );
     }
 
     async fetchUpdatedOnChainBlock(
@@ -1714,29 +878,11 @@ class StateManager {
         blockHeight: BlockHeight,
         blockAuthor: Address
     ): Promise<Block | undefined> {
-        try {
-            const commitmentResult =
-                await this.stateChannelManagerContract.getBlockCallDataCommitment(
-                    this.channelId,
-                    forkId,
-                    blockHeight,
-                    blockAuthor
-                );
-            if (!commitmentResult.found) {
-                return undefined;
-            }
-            return (
-                await this.fetchBlockCommitmentCalldata(
-                    forkId,
-                    blockHeight,
-                    blockAuthor,
-                    commitmentResult.blockCalldataCommitment
-                )
-            )?.updatedBlock;
-        } catch (error) {
-            console.error(`${LOG_TAG}-fetchUpdatedOnChainBlock:`, error);
-            return undefined;
-        }
+        return this.timeoutController.fetchUpdatedOnChainBlock(
+            forkId,
+            blockHeight,
+            blockAuthor
+        );
     }
 }
 export default StateManager;

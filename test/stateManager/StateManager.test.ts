@@ -39,7 +39,6 @@ describe("StateManager", () => {
             mockSetup.mockDiamondStateMachine as any,
             mockSetup.mockTimeConfig,
             mockSetup.mockP2pEventHooks as any,
-            mockSetup.mockStorage as any,
             logger
         );
 

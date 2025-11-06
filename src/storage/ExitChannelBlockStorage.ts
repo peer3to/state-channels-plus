@@ -83,13 +83,19 @@ export class ExitChannelBlockStorage {
         }
     }
 
+    /**
+     * Get all exit channel blocks in the range [fromBlockHash, toBlockHash)
+     * @param fromBlockHash - Iterate the blockchain backwards from this block (including this block)
+     * @param toBlockHash - Stop iterating at this block (excluding this block)
+     * @returns An array of exit channel blocks in ascending order [Block N, Block N+1 ...]
+     */
     getBlocksInRange(
         fromBlockHash: Hash,
         toBlockHash: Hash
     ): ExitChannelBlockStruct[] {
         const blocks: ExitChannelBlockStruct[] = [];
         for (const entry of this.getIterator(fromBlockHash, toBlockHash)) {
-            blocks.push(entry.block);
+            blocks.unshift(entry.block);
         }
         return blocks;
     }

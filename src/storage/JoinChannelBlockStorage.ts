@@ -82,13 +82,19 @@ export class JoinChannelBlockStorage {
         }
     }
 
+    /**
+     * Get all join channel blocks in the range [fromBlockHash, toBlockHash)
+     * @param fromBlockHash - Iterate the blockchain backwards from this block (including this block)
+     * @param toBlockHash - Stop iterating at this block (excluding this block)
+     * @returns An array of join channel blocks in ascending order [Block N, Block N+1 ...]
+     */
     getBlocksInRange(
         fromBlockHash: Hash,
         toBlockHash: Hash
     ): JoinChannelBlockStruct[] {
         const blocks: JoinChannelBlockStruct[] = [];
         for (const entry of this.getIterator(fromBlockHash, toBlockHash)) {
-            blocks.push(entry.block);
+            blocks.unshift(entry.block);
         }
         return blocks;
     }

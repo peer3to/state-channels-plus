@@ -26,7 +26,6 @@ import {
     ExitChannelStruct,
     BalanceStruct
 } from "@typechain-types/contracts/V1/AStateMachine";
-import Storage from "@/storage";
 import {
     deployLocalDiamond,
     deployLocalFromTx,
@@ -402,7 +401,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
 
         const signerAddress = await signer.getAddress();
-        const storage = new Storage();
 
         const logger =
             peerLogger ||
@@ -418,7 +416,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             evmDiamondStateMachine,
             timeConfig,
             p2pEventHooks || {},
-            storage,
             logger
         );
 

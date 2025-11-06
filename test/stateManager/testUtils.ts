@@ -392,7 +392,7 @@ export class MockSetup {
                 .stub()
                 .resolves("0x1234567890123456789012345678901234567890")
         };
-
+        // TODO - not sure why we're mocking this + this is not correct e.g. blocks.getIterator not a function
         this.mockStorage = {
             queues: {
                 isBlockQueued: sinon.stub().returns(false),
