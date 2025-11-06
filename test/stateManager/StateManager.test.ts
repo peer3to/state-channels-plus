@@ -131,12 +131,16 @@ describe("StateManager", () => {
                 .returns(mockSnapshot);
 
             // Mock exit channel block chain
-            mockSetup.mockStorage.exitChannelBlocks.getExitChannelBlock
-                .withArgs("0x1234567890abcdef")
-                .returns({
-                    exitChannels: [],
-                    previousBlockHash: "0x0000000000000000" // Points to on-chain hash
-                });
+            stateManager.storage.exitChannelBlocks.getExitChannelBlockEntry =
+                sinon
+                    .stub()
+                    .withArgs("0x1234567890abcdef")
+                    .returns({
+                        block: {
+                            exitChannels: [],
+                            previousBlockHash: "0x0000000000000000" // Points to on-chain hash
+                        }
+                    });
 
             const result = await stateManager.prepareUpdateSnapshotSameFork(
                 "0x1234567890abcdef" as ForkId
@@ -282,10 +286,22 @@ describe("StateManager", () => {
                 }
             };
 
-            mockSetup.mockStorage.exitChannelBlocks.getExitChannelBlock = sinon
+            stateManager.storage.exitChannelBlocks.getBlocksInRange = sinon
                 .stub()
-                .callsFake((hash: string) => {
-                    return exitBlocks[hash as keyof typeof exitBlocks];
+                .callsFake((startHash: string, endHash: string) => {
+                    // Iterate through exit blocks from startHash to endHash
+                    let currentHash = startHash;
+                    const blocks = [];
+                    while (currentHash && currentHash !== endHash) {
+                        const block =
+                            exitBlocks[currentHash as keyof typeof exitBlocks];
+                        if (!block) break;
+
+                        blocks.unshift(block);
+                        currentHash = block.previousBlockHash;
+                    }
+
+                    return blocks;
                 });
 
             const result = await stateManager.prepareUpdateSnapshotSameFork(
@@ -297,13 +313,14 @@ describe("StateManager", () => {
         });
 
         it("should throw error when exit channel block not found", async () => {
+            const exitChannelBlockHash = "0x1234567890abcdef";
             const mockSnapshot = {
                 ...stateSnapshot(),
                 blockHeight: 5,
                 forkId: "0x1234567890abcdef",
                 snapshotData: {
                     ...stateSnapshot().snapshotData,
-                    latestExitChannelBlockHash: "0x1234567890abcdef"
+                    latestExitChannelBlockHash: exitChannelBlockHash
                 }
             };
 
@@ -326,16 +343,13 @@ describe("StateManager", () => {
                 .stub()
                 .returns(mockSnapshot);
 
-            // Mock missing exit block
-            mockSetup.mockStorage.exitChannelBlocks.getExitChannelBlock.returns(
-                undefined
-            );
-
             await expect(
                 stateManager.prepareUpdateSnapshotSameFork(
                     "0x1234567890abcdef" as ForkId
                 )
-            ).to.be.rejectedWith("Exit channel block not found for hash");
+            ).to.be.rejectedWith(
+                `Block hash ${exitChannelBlockHash} not found in storage`
+            );
         });
     });
 
@@ -380,18 +394,17 @@ describe("StateManager", () => {
             } as any);
 
             // Mock genesis snapshot
-            mockSetup.mockStorage.stateSnapshots.getGenesisSnapshotDataByForkId.returns(
-                {
+            stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId =
+                sinon.stub().returns({
                     forkId: "0x1234567890abcdef",
                     snapshotData: {
                         latestExitChannelBlockHash: "0xgenesis"
                     }
-                }
-            );
+                });
 
             // Mock exit channel block entry
-            mockSetup.mockStorage.exitChannelBlocks.getExitChannelBlockEntry.callsFake(
-                (hash: string) => {
+            stateManager.storage.exitChannelBlocks.getExitChannelBlockEntry =
+                sinon.stub().callsFake((hash: string) => {
                     if (hash === "0xgenesis") {
                         return {
                             block: {
@@ -400,8 +413,7 @@ describe("StateManager", () => {
                         };
                     }
                     return undefined;
-                }
-            );
+                });
 
             const result = await stateManager.prepareUpdateStateSnapshotFork();
 
@@ -432,11 +444,16 @@ describe("StateManager", () => {
             const forkId = "0x1234567890abcdef" as ForkId;
 
             // Mock prepareUpdateSnapshotSameFork to return valid data
-            sinon.stub(stateManager, "prepareUpdateSnapshotSameFork").resolves({
-                milestoneProofs: [],
-                milestoneSnapshots: [],
-                exitChannelBlocks: []
-            });
+            sinon
+                .stub(
+                    (stateManager as any).snapshotService,
+                    "prepareUpdateSnapshotSameFork"
+                )
+                .resolves({
+                    milestoneProofs: [],
+                    milestoneSnapshots: [],
+                    exitChannelBlocks: []
+                });
 
             await stateManager.postStateSnapshot(forkId);
 
@@ -463,7 +480,10 @@ describe("StateManager", () => {
 
             // Mock prepare methods
             sinon
-                .stub(stateManager, "prepareUpdateStateSnapshotFork")
+                .stub(
+                    (stateManager as any).snapshotService,
+                    "prepareUpdateStateSnapshotFork"
+                )
                 .resolves({
                     genesisSnapshot: {
                         forkId: forkId,
@@ -472,11 +492,16 @@ describe("StateManager", () => {
                     exitBlocks: []
                 });
 
-            sinon.stub(stateManager, "prepareUpdateSnapshotSameFork").resolves({
-                milestoneProofs: [],
-                milestoneSnapshots: [],
-                exitChannelBlocks: []
-            });
+            sinon
+                .stub(
+                    (stateManager as any).snapshotService,
+                    "prepareUpdateSnapshotSameFork"
+                )
+                .resolves({
+                    milestoneProofs: [],
+                    milestoneSnapshots: [],
+                    exitChannelBlocks: []
+                });
 
             await stateManager.postStateSnapshot(forkId);
 
@@ -488,11 +513,16 @@ describe("StateManager", () => {
             const forkId = "0x1234567890abcdef" as ForkId;
 
             // Mock prepareUpdateSnapshotSameFork to return valid data
-            sinon.stub(stateManager, "prepareUpdateSnapshotSameFork").resolves({
-                milestoneProofs: [],
-                milestoneSnapshots: [],
-                exitChannelBlocks: []
-            });
+            sinon
+                .stub(
+                    (stateManager as any).snapshotService,
+                    "prepareUpdateSnapshotSameFork"
+                )
+                .resolves({
+                    milestoneProofs: [],
+                    milestoneSnapshots: [],
+                    exitChannelBlocks: []
+                });
 
             // Mock contract to throw error
             mockSetup.mockStateChannelManagerContract.updateStateSnapshotSameFork.rejects(
@@ -522,6 +552,11 @@ describe("StateManager", () => {
             const timestamp = 1000 as Timestamp;
             const totalDeposits: BalanceStruct = { amount: 100n, data: "0x" };
 
+            const storeJoinChannelBlockStub = sinon.stub(
+                stateManager.storage.joinChannelBlocks,
+                "storeJoinChannelBlock"
+            );
+
             await stateManager.onJoinChannel(
                 joinChannelBlock,
                 timestamp,
@@ -529,7 +564,7 @@ describe("StateManager", () => {
             );
 
             expect(
-                mockSetup.mockStorage.joinChannelBlocks.storeJoinChannelBlock.calledOnceWith(
+                storeJoinChannelBlockStub.calledOnceWithExactly(
                     joinChannelBlock,
                     totalDeposits
                 )
@@ -542,7 +577,14 @@ describe("StateManager", () => {
             const encodedState = "0x1234567890abcdef" as any; // Valid hex bytes
             const forkId = "0xnewfork" as ForkId;
             const timestamp = 2000 as Timestamp;
-
+            sinon.stub(
+                stateManager.storage.stateSnapshots,
+                "storeStateSnapshot"
+            );
+            const storeStateMachineState = sinon.stub(
+                stateManager.storage.stateMachineStates,
+                "storeStateMachineState"
+            );
             await stateManager.setGenesisState(
                 mockSetup.mockSnapshotData,
                 encodedState,
@@ -556,10 +598,7 @@ describe("StateManager", () => {
                 )
             ).to.be.true;
             expect(stateManager.forkId).to.equal(forkId);
-            expect(
-                mockSetup.mockStorage.stateMachineStates.storeStateMachineState
-                    .called
-            ).to.be.true;
+            expect(storeStateMachineState.called).to.be.true;
             expect(mockSetup.mockP2pEventHooks.onTurn.called).to.be.true;
         });
     });

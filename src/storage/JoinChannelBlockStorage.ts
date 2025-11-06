@@ -75,8 +75,11 @@ export class JoinChannelBlockStorage {
         let currentHash = fromBlockHash;
         while (currentHash != ethers.ZeroHash) {
             if (toBlockHash && currentHash === toBlockHash) break;
-            const entry = this.blockMap.get(currentHash);
-            if (!entry) return;
+            const entry = this.getJoinChannelBlockEntry(currentHash);
+            if (!entry)
+                throw new Error(
+                    `Block hash ${currentHash} not found in storage`
+                );
             yield entry;
             currentHash = entry.block.previousBlockHash;
         }

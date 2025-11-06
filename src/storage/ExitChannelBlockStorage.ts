@@ -76,8 +76,11 @@ export class ExitChannelBlockStorage {
         let currentHash = fromBlockHash;
         while (currentHash != ethers.ZeroHash) {
             if (toBlockHash && currentHash === toBlockHash) break;
-            const entry = this.blockMap.get(currentHash);
-            if (!entry) return;
+            const entry = this.getExitChannelBlockEntry(currentHash);
+            if (!entry)
+                throw new Error(
+                    `Block hash ${currentHash} not found in storage`
+                );
             yield entry;
             currentHash = entry.block.previousBlockHash;
         }
