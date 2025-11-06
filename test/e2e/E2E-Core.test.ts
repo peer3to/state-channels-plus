@@ -502,7 +502,7 @@ describe("E2E: Core Functionality", function () {
         // Arrange: Setup 3 participants, produce correct block N, post junk calldata for block N
         // Act: Next peer (for block N+1) doesn't author a block, timeout occurs
         // Assert: Timeout dispute created with previousBlockProducerPostedCalldata=true, isForced=true, previousBlock.onChainTimestamp=undefined
-        it.skip("should handle timeout when previous peer posted junk calldata and next peer doesn't author block", async function () {
+        it("should handle timeout when previous peer posted junk calldata and next peer doesn't author block", async function () {
             // Arrange - Setup with 3 participants and short timeout for fast testing
             await harness!.setup(3, {
                 timeConfig: {
