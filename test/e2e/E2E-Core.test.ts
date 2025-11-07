@@ -398,11 +398,9 @@ describe("E2E: Core Functionality", function () {
                 );
             expect(currentBlock).to.not.be.undefined;
 
-            // Simulate peer 2 posting junk calldata (unlinked block) directly on-chain
+            // Simulate peer 2 posting junk calldata (invalid signature) directly on-chain
             await harness!.postJunkCalldataOnChain(2, {
-                forkId: harness!.activeForkId!,
-                height: currentBlock!.height + 1,
-                wrongPreviousHash: true // Creates block with wrong previousBlockHash
+                height: currentBlock!.height + 1
             });
 
             // Wait for other peers to detect the calldata and attempt validation (which will fail)
@@ -542,9 +540,7 @@ describe("E2E: Core Functionality", function () {
             await sleep(2000);
 
             await harness!.postJunkCalldataOnChain(2, {
-                forkId: harness!.activeForkId!,
-                height: currentBlock!.height,
-                wrongPreviousHash: true
+                height: currentBlock!.height
             });
 
             // Wait for other peers to detect the junk calldata
@@ -559,13 +555,6 @@ describe("E2E: Core Functionality", function () {
                 );
                 return peer0CalldataEvents == 1 && peer1CalldataEvents == 1;
             }, 5000);
-
-            // at this point, peer 0 and peer 1  have detected the junk calldata and created a  frauf proof dispute
-            //  the uploading of this dispute FAILS (a bug) and we get the following error:
-            /*
-            [ERROR][Peer 2][0x3C44Cd...][DisputeManager] Error uploading dispute
-             {"forkId":"0x75048b474d06af1e9590638edb80af0aaf7fa453aa8a9bb9d141eeac2054fd8d","error":"Transaction reverted without a reason string"}
-            */
 
             // get block again from  storage
             const peer1Block =
@@ -584,44 +573,31 @@ describe("E2E: Core Functionality", function () {
             // and previousBlockProducerPostedCalldata should be true (calldata slot is occupied)
 
             // Wait for timeout dispute to be created (should target peer 0 for not producing block N+1)
-            // const timeoutDisputeCreated = await harness!.waitForCondition(
-            //     () => {
-            //         const peer1DisputeCount = harness!.getEventCallCount(
-            //             1,
-            //             "onInitiatingDispute"
-            //         );
-            //         const peer2DisputeCount = harness!.getEventCallCount(
-            //             2,
-            //             "onInitiatingDispute"
-            //         );
-            //         return peer1DisputeCount == 1 && peer2DisputeCount == 1;
-            //     },
-            //     15000 // Wait up to 15 seconds for timeout + dispute creation
-            // );
+            const timeoutDisputeCreated = await harness!.waitForCondition(
+                () => {
+                    const peer1DisputeCount = harness!.getEventCallCount(
+                        1,
+                        "onInitiatingDispute"
+                    );
+                    const peer2DisputeCount = harness!.getEventCallCount(
+                        2,
+                        "onInitiatingDispute"
+                    );
+                    return peer1DisputeCount == 1 && peer2DisputeCount == 1;
+                },
+                10000
+            );
 
             // // Assert - Timeout dispute should be created
-            // The failure of the dispute above somhow corrupts something, and the timeout dispute is not created
-            // and this assertion fails
-            // expect(timeoutDisputeCreated, "Timeout dispute should be created")
-            //     .to.be.true;
 
-            // TODO: Uncomment once bug is fixes and above assertion passes
+            expect(timeoutDisputeCreated, "Timeout dispute should be created")
+                .to.be.true;
 
-            /*
-                            const timeoutStruct = harness!.getTimeoutStruct(
+            const timeoutStruct = harness!.getTimeoutStruct(
                 1,
                 harness!.activeForkId!
             );
             expect(timeoutStruct).to.not.be.undefined;
-
-            expect(timeoutStruct!.previousBlockProducerPostedCalldata).to.be.true;
-
-            // Timeout should be forced because previous block producer posted junk calldata
-            expect(timeoutStruct!.isForced).to.be.true;
-
-            // Previous block should not have onChainTimestamp (junk was rejected)
-            expect(currentBlock!.onChainTimestamp).to.be.undefined;
-
             // Timeout should target peer 0 (next to write after peer 2)
             expect(timeoutStruct!.participant).to.equal(
                 harness!.peers[0].address
@@ -631,8 +607,15 @@ describe("E2E: Core Functionality", function () {
             expect(Number(timeoutStruct!.blockHeight)).to.equal(
                 currentBlock!.height + 1
             );
-                
-                */
+
+            // Previous block producer posted calldata (junk calldata was posted by the previous peer)
+            expect(timeoutStruct!.previousBlockProducerPostedCalldata).to.be
+                .true;
+            // Previous block should not have onChainTimestamp (junk was rejected)
+            expect(currentBlock!.onChainTimestamp).to.be.undefined;
+
+            // Timeout should not be forced (junk calldata was posted by the previous peer, not the timed out peer)
+            expect(timeoutStruct!.isForced).to.be.false;
         });
     });
 
