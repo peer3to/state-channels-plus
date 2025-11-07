@@ -185,7 +185,7 @@ class StateManager {
     public async dispose() {
         this.isDisposed = true;
         // Cancel all scheduled tasks
-        this.timeoutManager.dispose();
+        await this.timeoutManager.dispose();
         // Clear reduction timeouts
         for (const [_, reductionHandle] of this.reductionTriggerMap) {
             clearTimeout(reductionHandle.handle);

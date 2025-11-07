@@ -1,5 +1,6 @@
 export class TimeoutManager {
     private timeouts: Set<NodeJS.Timeout> = new Set();
+    private runningTasks: Set<Promise<void>> = new Set();
     private isDisposed: boolean = false;
 
     public scheduleTask(
@@ -21,17 +22,26 @@ export class TimeoutManager {
                 return; // Don't execute if already disposed
             }
 
-            try {
-                const result = task();
-                if (result instanceof Promise) {
-                    await result;
+            // Track the running task so dispose() can wait for it
+            const executeTask = async () => {
+                try {
+                    const result = task();
+                    if (result instanceof Promise) {
+                        await result;
+                    }
+                } catch (error) {
+                    console.error(
+                        `TimeoutManager: Error executing scheduled task '${taskName}':`,
+                        error
+                    );
                 }
-            } catch (error) {
-                console.error(
-                    `TimeoutManager: Error executing scheduled task '${taskName}':`,
-                    error
-                );
-            }
+            };
+
+            const taskPromise = executeTask().finally(() => {
+                this.runningTasks.delete(taskPromise);
+            });
+
+            this.runningTasks.add(taskPromise);
         }, delayMs);
 
         this.timeouts.add(timeout);
@@ -45,12 +55,19 @@ export class TimeoutManager {
         }
     }
 
-    public dispose(): void {
+    public async dispose(): Promise<void> {
         this.isDisposed = true;
 
+        // Cancel all pending timeouts
         for (const timeout of this.timeouts) {
             clearTimeout(timeout);
         }
         this.timeouts.clear();
+
+        // Wait for all currently running tasks to complete
+        if (this.runningTasks.size > 0) {
+            await Promise.allSettled([...this.runningTasks]);
+        }
+        this.runningTasks.clear();
     }
 }
