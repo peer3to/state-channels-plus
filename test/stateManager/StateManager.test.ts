@@ -1,7 +1,7 @@
 import { expect } from "chai";
 import sinon from "sinon";
 import StateManager from "@/stateManager/StateManager";
-import { stateSnapshot } from "../factory";
+import { dispute, stateSnapshot } from "../factory";
 import { Address, ForkId, Hash, Timestamp } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import {
@@ -721,32 +721,49 @@ describe("StateManager", () => {
         });
     });
 
-    describe("onDisputeCommitted", () => {
-        it("should request dispute acknowledgment from all peers", async () => {
-            const dispute = {
-                input: {
-                    channelId:
-                        "0x1234567890123456789012345678901234567890123456789012345678901234",
-                    genesisSnapshotDataHash:
-                        "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdef"
-                }
-            } as any;
-            const timestamp = 1000 as Timestamp;
+    describe("EventHandler", () => {
+        describe("onDisputeCommitted", () => {
+            it("should request dispute acknowledgment when fork is relevant", async () => {
+                const relevantForkId = stateManager.forkId;
+                const disputeStruct = dispute({
+                    input: {
+                        disputeAuditingDataHash: relevantForkId,
+                        genesisSnapshotDataHash:
+                            "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+                    }
+                });
 
-            // Mock the isForkDisputedService
-            const mockRequestDisputeAcknowledgment = sinon.stub();
-            stateManager.p2pManager.localRpc.isForkDisputedService.requestDisputeAcknowledgment =
-                mockRequestDisputeAcknowledgment;
+                const requestDisputeAcknowledgment = sinon.stub();
+                stateManager.p2pManager.localRpc.isForkDisputedService.requestDisputeAcknowledgment =
+                    requestDisputeAcknowledgment;
 
-            await stateManager.onDisputeCommitted(dispute, timestamp);
+                (
+                    stateManager.diamondStateMachine.localDiamondContract as any
+                ).onDisputeCommitted = sinon.stub().resolves();
 
-            expect(mockRequestDisputeAcknowledgment.calledOnce).to.be.true;
-            expect(
-                mockRequestDisputeAcknowledgment.calledWith(
-                    dispute.input.channelId,
-                    dispute.input.genesisSnapshotDataHash
-                )
-            ).to.be.true;
+                sinon
+                    .stub(
+                        stateManager.disputeValidationService,
+                        "validateDispute"
+                    )
+                    .resolves(false);
+
+                await stateManager.eventHandler.onDisputeCommitted(
+                    disputeStruct.input.channelId,
+                    disputeStruct,
+                    1 as Timestamp,
+                    false,
+                    2 as Timestamp
+                );
+
+                expect(requestDisputeAcknowledgment.calledOnce).to.be.true;
+                expect(
+                    requestDisputeAcknowledgment.calledWith(
+                        disputeStruct.input.channelId,
+                        disputeStruct.input.genesisSnapshotDataHash
+                    )
+                ).to.be.true;
+            });
         });
     });
 
