@@ -1,14 +1,13 @@
 import ARpcMethods from "./ARpcMethods";
 import ARpcService from "./ARpcService";
 import Clock from "@/Clock";
-import Rpc, { createMessageContent } from "./Rpc";
 import RpcHandler from "./RpcHandler";
 
 /**
  * Transforms a function's return type into a RpcHandler
  */
 type RpcHandleMethod<T> = T extends (...args: infer A) => any
-    ? (...args: A) => Promise<RpcHandler>
+    ? (...args: A) => RpcHandler
     : T;
 
 /**
@@ -36,34 +35,19 @@ class RpcMethodsProxy {
                         return Reflect.get(target, prop, receiver);
                     }
                     if (typeof prop === "symbol") return;
-                    return async (...args: any) => {
+                    return (...args: unknown[]) => {
                         const timestamp = Clock.getTimeInSeconds();
                         const method = prop.toString();
 
-                        // Create message content (what we want to sign)
-                        const messageContent = createMessageContent(
-                            ctx.serviceName,
-                            method,
-                            args,
-                            timestamp
+                        return new RpcHandler(
+                            {
+                                service: ctx.serviceName,
+                                method,
+                                params: args,
+                                timestamp
+                            },
+                            ctx.service.p2pManager
                         );
-
-                        // Sign the message content using P2P signer
-                        const signature =
-                            await ctx.service.p2pManager.p2pSigner.signMessage(
-                                messageContent
-                            );
-
-                        // Create the complete RPC structure
-                        const rpc: Rpc = {
-                            service: ctx.serviceName,
-                            method: method,
-                            params: args,
-                            timestamp: timestamp,
-                            signature: signature
-                        };
-
-                        return new RpcHandler(rpc, ctx.service.p2pManager);
                     };
                 }
             }

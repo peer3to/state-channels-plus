@@ -2,6 +2,7 @@ import { config } from "./config";
 import ATransport from "@/transport/ATransport";
 import { MessageValidationService } from "./MessageValidationService";
 import { MessageCache } from "./MessageCache";
+import Clock from "@/Clock";
 
 /**
  * Implements a token bucket algorithm for rate limiting (using bytes directly)
@@ -19,7 +20,7 @@ export class RateLimiter {
         this.maxBytes = burstSizeBytes ?? maxBandwidthBytesPerSecond * 2; // 2 seconds of burst by default
 
         this.availableBytes = this.maxBytes;
-        this.lastRefillTime = Date.now();
+        this.lastRefillTime = 0;
     }
 
     /**
@@ -28,8 +29,8 @@ export class RateLimiter {
      * @returns true if data can be sent, false if rate limited
      */
     checkAndConsume(dataSizeBytes: number): boolean {
-        const now = Date.now();
-        const timePassed = (now - this.lastRefillTime) / 1000; // seconds
+        const now = Clock.getTimeInSeconds();
+        const timePassed = now - this.lastRefillTime;
 
         // Refill bytes based on time passed
         const bytesToAdd = timePassed * this.refillRateBytesPerSecond;
@@ -68,7 +69,7 @@ export class RateLimiter {
      */
     reset(): void {
         this.availableBytes = this.maxBytes;
-        this.lastRefillTime = Date.now();
+        this.lastRefillTime = Clock.getTimeInSeconds();
     }
 }
 

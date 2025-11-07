@@ -253,7 +253,7 @@ describe("Bandwidth Management with Signature-based Deduplication", () => {
     beforeEach(async () => {
         // Initialize Clock for timestamp validation
         const mockProvider = {
-            getBlock: async () => ({ timestamp: Math.floor(Date.now() / 1000) })
+            getBlock: async () => ({ timestamp: Clock.getTimeInSeconds() })
         };
         await Clock.init(mockProvider as any);
 
