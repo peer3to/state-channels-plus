@@ -154,7 +154,6 @@ describe("E2E: Core Functionality", function () {
     });
 
     describe("Timeout Scenarios", function () {
-        // Scenario 1: Non-author peer disconnects
         // Arrange: Setup 3 participants with initial balances, open channel, configure short timeout
         // Act: Have one participant stop responding during block production
         // Assert: calldata is posted by the author peer
@@ -222,7 +221,74 @@ describe("E2E: Core Functionality", function () {
             );
         });
 
-        // Scenario 2: Author peer disconnects
+        // Arrange: Setup 3 participants with initial balances, open channel, configure short timeout
+        // Act: next peer to write, does not author a block
+        // Assert: timeout dispute is created and submitted on-chain, no calldata was posted to the blockchain during the timeout scenario
+        it("should handle timeout when next peer to write, does not author a block", async function () {
+            // Arrange - Setup with 3 participants and short timeout for fast testing
+            await harness!.setup(3, {
+                timeConfig: {
+                    p2pTime: 1,
+                    agreementTime: 1,
+                    chainFallbackTime: 3
+                }
+            });
+            await harness!.openChannel();
+
+            // Make 2 transactions to establish normal operation
+            await harness!.submitNextTransaction((contract) => contract.add(1)); // peer 0
+            await harness!.submitNextTransaction((contract) => contract.add(1)); // peer 1
+
+            // Reset spies after setup
+            harness!.resetEventSpies();
+
+            // Act (peer 2 does not author a block)
+            // Assert: A timeout dispute is created and submitted on-chain
+            const disputeCreated = await harness!.waitForCondition(
+                () => {
+                    // Check if any of the remaining peers initiated a dispute
+                    const peer0DisputeCount = harness!.getEventCallCount(
+                        0,
+                        "onInitiatingDispute"
+                    );
+                    const peer1DisputeCount = harness!.getEventCallCount(
+                        1,
+                        "onInitiatingDispute"
+                    );
+
+                    return peer0DisputeCount === 1 && peer1DisputeCount === 1;
+                },
+                10000 // Wait up to 10 seconds for dispute creation
+            );
+            expect(disputeCreated).to.be.true;
+
+            expect(
+                harness!.getEventCallCount(0, "onInitiatingDispute"),
+                "Peer 0 should have initiated 1 dispute"
+            ).to.be.equal(1);
+            expect(
+                harness!.getEventCallCount(1, "onInitiatingDispute"),
+                "Peer 1 should have initiated 1 dispute"
+            ).to.be.equal(1);
+            expect(
+                harness!.getEventCallCount(2, "onInitiatingDispute"),
+                "Peer 2 should have not initiated any disputes"
+            ).to.be.equal(0);
+
+            // Assert that the disputes events was recieved (2 peers initiated a dispute X 3 participants = 6 events)
+            harness!.assertEventHandlerCalledTotalTimes(
+                "onDisputeCommitted",
+                6
+            );
+
+            // Assert that no calldata was posted
+            harness!.assertEventHandlerCalledTotalTimes("onPostedCalldata", 0);
+            harness!.assertEventHandlerCalledTotalTimes(
+                "onBlockCalldataPosted",
+                0
+            );
+        });
+
         // Arrange: Setup 3 participants with initial balances, open channel, configure short timeout
         // Act: disconnect author peer, just when it is their turn to write
         // Assert: timeout dispute is created and submitted on-chain

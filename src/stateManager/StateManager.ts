@@ -21,7 +21,8 @@ import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofT
 // TypeChain types - Dispute types
 import {
     DisputeStruct,
-    ReduceOutputStruct
+    ReduceOutputStruct,
+    TimeoutStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 // TypeChain types - Contract interfaces
@@ -65,7 +66,8 @@ import {
     ForkId,
     Hash,
     ReductionTimeoutHandle,
-    Timestamp
+    Timestamp,
+    UpdatedBlockWithCalldata
 } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
@@ -79,6 +81,7 @@ import ATransport from "@/transport/ATransport";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 
 const NULL = "0x00";
+const LOG_TAG = "[STATE MANAGER]";
 class StateManager {
     diamondStateMachine: ADiamondStateMachine;
     p2pEventHooks: P2pEventHooks;
@@ -99,7 +102,7 @@ class StateManager {
     storage: Storage;
     fraudProofService: FraudProofService;
     latestForkId: ForkId = NULL;
-    blockValidationStrategy: AValidationStrategy;
+    blockValidationStrategy: BlockValidationStrategy;
     spectatingValidationStrategy: SpectatingValidationStrategy;
     eventHandler: EventHandler;
     reductionTriggerMap: Map<ForkId, ReductionTimeoutHandle> = new Map();
@@ -148,7 +151,8 @@ class StateManager {
             this.stateChannelManagerContract,
             this.p2pEventHooks,
             this.storage,
-            this.diamondStateMachine
+            this.diamondStateMachine,
+            logger
         );
         this.p2pManager = new P2PManager(this.self, signer);
         this.fraudProofService = new FraudProofService(this.storage);
@@ -681,16 +685,21 @@ class StateManager {
         }
     }
 
-    private async maybePostBlockOnChain(block: Block): Promise<void> {
+    private async maybePostBlockOnChain(blockHash: Hash): Promise<void> {
+        // Retrieve the latest version of the block from storage (with all collected signatures)
+        const block = this.storage.blocks.getBlock(blockHash);
+        if (!block) {
+            return;
+        }
         // If not everyone has signed, do the on-chain post
         const participants = this.storage.getParticipants(block.coordinates);
 
-        const previousBlockOrGenesis = this.storage.getPreviousBlockOrSnapshot(
-            block.coordinates
-        );
-        const previousRelevantTimestamp = previousBlockOrGenesis.block
-            ? previousBlockOrGenesis.block.getRelevantTimestamp(block.author)
-            : previousBlockOrGenesis.stateSnapshot!.timestamp;
+        // TODO - this can be race conditioned and we could be granted extra time, but we don't care to check that on-chain and will assume we're not granted extra time for this
+        const previousRelevantTimestamp =
+            this.storage.getPreviousRelevantTimestamp(
+                block.coordinates,
+                block.author
+            );
 
         if (!block.didEveryoneSign(participants)) {
             this.p2pEventHooks.onPostingCalldata?.();
@@ -1164,132 +1173,29 @@ class StateManager {
             return;
         }
 
-        // Get the block entry - if it doesn't exist (can happen ONLY from setState), skip timeout
+        // if a block exist in storage (regardless of own signature on it) -> it was accepted
         const block = this.storage.blocks.getBlock(forkId, blockHeight);
-        if (block && block.didISign(this.signerAddress)) {
+        if (block) {
             return;
         }
 
-        // Check if participant posted a commitment on-chain
-        const commitmentResponse =
-            await this.stateChannelManagerContract.getBlockCallDataCommitment(
-                this.channelId,
-                forkId,
-                blockHeight,
-                participantAddress
-            );
-
-        if (!commitmentResponse.found) {
-            // No commitment posted - proceed with timeout
-            await this.createTimeOutDispute(
-                forkId,
-                blockHeight,
-                participantAddress
-            );
-            return;
-        }
-
-        // Validate the on-chain commitment is legitimate
-        // TODO, we dont have a block in storage to validate the commitment against.
-        // what we want to do is to the the block from the calldata and run it through the block validation pipeline
-        // after which, if the block can be found in storage , then it was good and we don't timeout, oterwose => force t
-        // const isValidCommitment = await this.validateBlockCommitment(
-        //     block,
-        //     commitmentResponse.blockCalldataCommitment,
-        //     participantAddress
-        // );
-
-        // if (!isValidCommitment) {
-        //     // Invalid commitment - force timeout
-        //     // TODO
-        // }
-    }
-
-    private async validateBlockCommitment(
-        block: Block,
-        blockCalldataCommitment: Hash,
-        participantAddress: Address
-    ): Promise<boolean> {
-        const onChainResult =
-            await this.validationService.fetchBlockCommitmentCalldata(
-                block,
-                blockCalldataCommitment
-            );
-
-        if (!onChainResult) {
-            return false;
-        }
-
-        const expectedCommitment = hash(
-            Codec.encode(
-                {
-                    signedBlock: block.signedBlock,
-                    timestamp: onChainResult.timestamp
-                },
-                Type.BlockCommitment
-            )
-        );
-
-        const isValid = expectedCommitment === blockCalldataCommitment;
-
-        if (isValid) {
-            // we should have already been notified the event listener.
-            // calling the same handler the event lister would have called
-            // this will call collectOnChainBlock on trigger  the block validation pipeline
-            // if the  the block is invalid, the signer will get slashed
-            this.stateChannelEventListener.eventHandler.onBlockCalldataPosted(
-                this.channelId,
-                blockCalldataCommitment,
-                participantAddress,
-                onChainResult.signedBlock,
-                onChainResult.timestamp
-            );
-        }
-
-        return isValid;
-    }
-
-    private async createTimeOutDispute(
-        forkId: ForkId,
-        blockHeight: BlockHeight,
-        participantAddress: Address
-    ): Promise<void> {
         const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
             {
                 forkId,
                 height: blockHeight
             }
         );
-
-        // Calculate when the participant should have acted
-        const expectedBlockTime: Timestamp = previousBlockOrSnapshot.block
+        // check is good time to timeout
+        const previousRelevantTimestamp = previousBlockOrSnapshot.block
             ? previousBlockOrSnapshot.block.getRelevantTimestamp(
                   participantAddress
               )
             : previousBlockOrSnapshot.stateSnapshot!.timestamp;
-
-        const currentTime = Clock.getTimeInSeconds();
-        const timeoutDeadline =
-            expectedBlockTime + this.getTimeoutWaitTimeSeconds();
-
-        // If timeout period hasn't elapsed yet, don't create dispute
-        if (currentTime < timeoutDeadline) {
-            return;
-        }
-
-        const elapsedTime = currentTime - expectedBlockTime;
-        const remainingDelay = this.getTimeoutWaitTimeSeconds() - elapsedTime;
-
-        if (remainingDelay <= 0) {
-            // Time has fully elapsed - create dispute immediately
-            await this.disputeManager.createDispute(forkId, false, {
-                blockHeightToTimeout: blockHeight,
-                isForced: false,
-                previousBlockProducer: participantAddress,
-                previousBlockProducerPostedCalldata: false
-            });
-        } else {
-            // Schedule another timeout check after remaining delay
+        let difference =
+            previousRelevantTimestamp +
+            this.getTimeoutWaitTimeSeconds() -
+            Clock.getTimeInSeconds();
+        if (difference > 0) {
             this.timeoutManager.scheduleTask(
                 async () => {
                     await this.tryTimeoutParticipant(
@@ -1298,10 +1204,152 @@ class StateManager {
                         participantAddress
                     );
                 },
-                remainingDelay * 1000,
+                difference * 1000,
                 "timeoutParticipantDelayed"
             );
+            return;
         }
+
+        // (race condition) check did previous participant post on-chain granting this one extra time
+        if (
+            previousBlockOrSnapshot.block &&
+            !previousBlockOrSnapshot.block.onChainTimestamp
+        ) {
+            const updatedPreviousBlock = await this.fetchUpdatedOnChainBlock(
+                previousBlockOrSnapshot.block.forkId,
+                previousBlockOrSnapshot.block.height,
+                previousBlockOrSnapshot.block.author
+            );
+            if (updatedPreviousBlock?.onChainTimestamp) {
+                difference =
+                    updatedPreviousBlock.onChainTimestamp +
+                    this.getTimeoutWaitTimeSeconds() -
+                    Clock.getTimeInSeconds();
+                if (difference > 0) {
+                    // There's a chance that the on-chain timestamp will not persist if the BlockConfirmation pipeline didn't decide to persist the block since most likely the calldata is junk
+                    // This is not a problem since on the next run difference < 0 -> force timeout
+                    // Only inefficiency is we'd querry the RPC node for calldata for this 2 times in the case of a force timeout like this
+                    this.timeoutManager.scheduleTask(
+                        async () => {
+                            await this.tryTimeoutParticipant(
+                                forkId,
+                                blockHeight,
+                                participantAddress
+                            );
+                        },
+                        difference * 1000,
+                        "timeoutParticipantDelayed"
+                    );
+                    return;
+                }
+            }
+        }
+        // No race condition on previous block on-chain calldata
+
+        // (local) check if current block calldata slot is occupied on-chain
+        let commitment =
+            await this.diamondStateMachine.localDiamondContract.getBlockCallDataCommitment(
+                this.channelId,
+                forkId,
+                blockHeight,
+                participantAddress
+            );
+        if (commitment.found) {
+            // Commitment found, but block not accepted by BlockConfirmation pipeline -> proceed no timeout force
+            return await this.createTimeOutDispute(
+                forkId,
+                blockHeight,
+                participantAddress,
+                true
+            );
+        }
+
+        // (race condition) check if current block posted on-chain
+        const updatedBlock = await this.fetchUpdatedOnChainBlock(
+            forkId,
+            blockHeight,
+            participantAddress
+        );
+        if (updatedBlock?.onChainTimestamp) {
+            return; // block found and accepted
+        }
+        // Check locally again - if fetchUpdatedOnChainBlock found a block -> local evm is synced
+        commitment =
+            await this.diamondStateMachine.localDiamondContract.getBlockCallDataCommitment(
+                this.channelId,
+                forkId,
+                blockHeight,
+                participantAddress
+            );
+        if (commitment.found) {
+            // commitment exists on-chain, but block confirmation pipeline didn't accept it -> proceed no timeout force
+            return await this.createTimeOutDispute(
+                forkId,
+                blockHeight,
+                participantAddress,
+                true
+            );
+        }
+        // block not found on-chain -> normal timeout
+        return await this.createTimeOutDispute(
+            forkId,
+            blockHeight,
+            participantAddress,
+            false
+        );
+    }
+
+    private async createTimeOutDispute(
+        forkId: ForkId,
+        blockHeight: BlockHeight,
+        participantAddress: Address,
+        isForced: boolean = false
+    ): Promise<void> {
+        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
+            {
+                forkId,
+                height: blockHeight
+            }
+        );
+
+        const previousBlock = previousBlockOrSnapshot.block;
+
+        let previousBlockProducerPostedCalldata = false;
+        if (previousBlock) {
+            if (previousBlock.onChainTimestamp) {
+                previousBlockProducerPostedCalldata = true;
+            } else {
+                previousBlockProducerPostedCalldata = (
+                    await this.diamondStateMachine.localDiamondContract.getBlockCallDataCommitment(
+                        this.channelId,
+                        forkId,
+                        previousBlock.height,
+                        previousBlock.author
+                    )
+                ).found;
+            }
+        }
+
+        const timeout: TimeoutStruct = {
+            participant: participantAddress.toString(),
+            blockHeight: BigInt(blockHeight),
+            minTimeStamp: Clock.getTimeInSeconds(),
+            isForced: isForced,
+            previousBlockProducer: previousBlock
+                ? previousBlock.author.toString()
+                : ethers.ZeroAddress,
+            previousBlockProducerPostedCalldata:
+                previousBlockProducerPostedCalldata,
+            participantSignatureOnPreviousBlock:
+                (previousBlock?.findSignature(participantAddress) as Bytes) ||
+                "0x"
+        };
+
+        // persist timeout locally
+        this.storage.timeout.storeTimeout(forkId, timeout);
+
+        // Time has fully elapsed - create dispute immediately
+        await this.disputeManager.dispute(forkId);
     }
 
     private getTimeoutWaitTimeSeconds() {
@@ -1501,7 +1549,7 @@ class StateManager {
         if (block.author === this.signerAddress) {
             this.timeoutManager.scheduleTask(
                 () => {
-                    this.maybePostBlockOnChain(block);
+                    this.maybePostBlockOnChain(block.hash);
                 },
                 this.timeConfig.agreementTime * 1000,
                 "maybePostBlockOnChain"
@@ -1605,6 +1653,104 @@ class StateManager {
                 throw new Error("Strategy must be explicit");
         }
     }
-}
 
+    async fetchBlockCommitmentCalldata(
+        forkId: ForkId,
+        blockHeight: BlockHeight,
+        blockAuthor: Address,
+        blockCommitment: Hash
+    ): Promise<UpdatedBlockWithCalldata | undefined> {
+        try {
+            // filter BlockCalldataPosted calls by channelId and blockCalldataCommitment
+            const filter =
+                this.stateChannelManagerContract.filters.BlockCalldataPosted(
+                    this.channelId,
+                    blockCommitment
+                );
+
+            // Calculate how many blocks back should we look for the log on-chain
+            const avgBlockTime = Clock.getAverageOnChainBlockTime();
+            const maxTime =
+                this.timeConfig.p2pTime +
+                this.timeConfig.agreementTime +
+                this.timeConfig.chainFallbackTime;
+            const blocksToLookBack = Math.ceil(maxTime / avgBlockTime) * 2; // *2 to be safe and account for some delay/failure
+
+            const logs = await this.stateChannelManagerContract.queryFilter(
+                filter,
+                -blocksToLookBack, // from block
+                "latest" // to block
+            );
+
+            // There should be a single log if the commitment exists or none
+            if (logs.length == 0) {
+                return undefined;
+            }
+            if (logs.length > 1) {
+                throw new Error(
+                    `Multiple logs found for commitment: ${blockCommitment} - logs: ${logs}`
+                );
+            }
+            // Create a mutable copy of signedBlock since logs[0].args is read-only
+            const signedBlock = {
+                encodedBlock: logs[0].args.signedBlock.encodedBlock,
+                signature: logs[0].args.signedBlock.signature
+            };
+            const timestamp = Number(logs[0].args.timestamp);
+
+            // this will also run BlockConfirmation pipeline which will also handle storage updates if needed
+            await this.eventHandler.onBlockCalldataPosted(
+                this.channelId,
+                blockCommitment,
+                blockAuthor,
+                signedBlock,
+                timestamp
+            );
+
+            const updatedBlock = this.storage.blocks.getBlock(
+                forkId,
+                blockHeight
+            );
+
+            return {
+                signedBlock,
+                timestamp,
+                updatedBlock: updatedBlock
+            };
+        } catch (error) {
+            console.error(`${LOG_TAG}-fetchBlockCommitmentCalldata:`, error);
+            return undefined;
+        }
+    }
+
+    async fetchUpdatedOnChainBlock(
+        forkId: ForkId,
+        blockHeight: BlockHeight,
+        blockAuthor: Address
+    ): Promise<Block | undefined> {
+        try {
+            const commitmentResult =
+                await this.stateChannelManagerContract.getBlockCallDataCommitment(
+                    this.channelId,
+                    forkId,
+                    blockHeight,
+                    blockAuthor
+                );
+            if (!commitmentResult.found) {
+                return undefined;
+            }
+            return (
+                await this.fetchBlockCommitmentCalldata(
+                    forkId,
+                    blockHeight,
+                    blockAuthor,
+                    commitmentResult.blockCalldataCommitment
+                )
+            )?.updatedBlock;
+        } catch (error) {
+            console.error(`${LOG_TAG}-fetchUpdatedOnChainBlock:`, error);
+            return undefined;
+        }
+    }
+}
 export default StateManager;

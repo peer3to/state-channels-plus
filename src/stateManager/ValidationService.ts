@@ -1,5 +1,3 @@
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-
 import { StateChannelManagerProxy } from "@typechain-types";
 import { ZeroHash } from "ethers";
 
@@ -9,11 +7,11 @@ import Storage from "@/storage";
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 import { difference, isSubset } from "@/utils";
 import { BlockValidationResult, TimeConfig } from "@/types";
-import { Address, ChannelId, ForkId, Hash, Timestamp } from "@/types/types";
+import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
-import StateManager from "./StateManager";
+import StateManager from "@/stateManager";
 import ATransport from "@/transport/ATransport";
 
 export default class ValidationService {
@@ -303,8 +301,13 @@ export default class ValidationService {
             }
 
             // Try on-chain query to update previous block on-chain timestamp
-            const previousBlockOnChainTimestamp =
-                await this.fetchOnChainTimestamp(previousBlock);
+            const previousBlockOnChainTimestamp = (
+                await this.stateManager.fetchUpdatedOnChainBlock(
+                    previousBlock.forkId,
+                    previousBlock.height,
+                    previousBlock.author
+                )
+            )?.onChainTimestamp;
 
             // if previousBlockOnChainTimestamp not set/updated or less than previousTimestamp -> we have the best timestamp already -> safe to create a fraud proof
             if (
@@ -375,91 +378,19 @@ export default class ValidationService {
         return participants;
     }
 
-    private async fetchOnChainTimestamp(
-        block: Block
-    ): Promise<Timestamp | undefined> {
-        try {
-            const commitmentResult =
-                await this.stateChannelManagerContract.getBlockCallDataCommitment(
-                    block.channelId,
-                    block.forkId,
-                    block.height,
-                    block.author
-                );
-            if (!commitmentResult.found) {
-                return undefined;
-            }
-            return (
-                await this.fetchBlockCommitmentCalldata(
-                    block,
-                    commitmentResult.blockCalldataCommitment
-                )
-            )?.timestamp;
-        } catch (error) {
-            console.error("Error fetching on-chain timestamp:", error);
-            return undefined;
-        }
-    }
-
-    async fetchBlockCommitmentCalldata(
-        block: Block,
-        blockCommitment: Hash
-    ): Promise<
-        { signedBlock: SignedBlockStruct; timestamp: Timestamp } | undefined
-    > {
-        try {
-            // filter BlockCalldataPosted calls by channelId and blockCalldataCommitment
-            const filter =
-                this.stateChannelManagerContract.filters.BlockCalldataPosted(
-                    block.channelId,
-                    blockCommitment
-                );
-
-            // Calculate how many blocks back should we look for the log on-chain
-            const avgBlockTime = Clock.getAverageOnChainBlockTime();
-            const maxTime =
-                this.timeConfig.p2pTime +
-                this.timeConfig.agreementTime +
-                this.timeConfig.chainFallbackTime;
-            const blocksToLookBack = Math.ceil(maxTime / avgBlockTime) * 2; // *2 to be safe and account for some delay/failure
-
-            const logs = await this.stateChannelManagerContract.queryFilter(
-                filter,
-                -blocksToLookBack, // from block
-                "latest" // to block
-            );
-
-            // There should be a single log if the commitment exists or none
-            if (logs.length == 0) {
-                return undefined;
-            }
-            if (logs.length > 1) {
-                throw new Error(
-                    `Multiple logs found for commitment: ${blockCommitment} - logs: ${logs}`
-                );
-            }
-            const signedBlock = {
-                encodedBlock: logs[0].args.signedBlock.encodedBlock,
-                signature: logs[0].args.signedBlock.signature
-            };
-
-            return {
-                signedBlock: signedBlock,
-                timestamp: Number(logs[0].args.timestamp)
-            };
-        } catch (error) {
-            console.error("Error fetching on-chain timestamp:", error);
-            return undefined;
-        }
-    }
-
     private async isPostedOnChainTooLate(
         previousTimestamp: Timestamp,
         block: Block
     ): Promise<boolean> {
         // if doesn't have on-chain timestamp try and fetch it
         if (!block.onChainTimestamp) {
-            const onChainTimestamp = await this.fetchOnChainTimestamp(block);
+            const onChainTimestamp = (
+                await this.stateManager.fetchUpdatedOnChainBlock(
+                    block.forkId,
+                    block.height,
+                    block.author
+                )
+            )?.onChainTimestamp;
             // if still doesn't have on-chain timestamp return false - not posted at all
             if (!onChainTimestamp) return false;
             block.onChainTimestamp = onChainTimestamp;

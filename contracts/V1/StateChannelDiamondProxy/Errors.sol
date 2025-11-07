@@ -8,6 +8,7 @@ error ErrorAtLeastTwoParticipantsRequired();
 //Calldata errors
 error ErrorBlockCalldataTimestampTooLate();
 error ErrorBlockCalldataAlreadyPosted();
+error ErrorBlockCalldataMsgSenderNotBlockAuthor();
 
 //StateSnapshot errors
 error ErrorStateSnapshotNotValid();

@@ -125,7 +125,7 @@ contract DisputeManagerFacet is StateChannelCommon {
                     revert ErrorDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch();
                 }
             }
-            if (block.timestamp > dispute.input.timeout.minTimeStamp) {
+            if (block.timestamp < dispute.input.timeout.minTimeStamp) {
                 revert ErrorDisputeTimeoutNotMinTimestamp();
             }
         }
@@ -141,7 +141,9 @@ contract DisputeManagerFacet is StateChannelCommon {
         SnapshotData storage snapshotData = stateSnapshots[dispute.input.channelId].snapshotData;
         uint256 thresholdCount = snapshotData.participants.length + disputeData.pendingParticipants.length
             - disputeData.onChainSlashes.length;
-        if (disputeConfirmation.signatures.length + 1 < thresholdCount) return false;
+        if (disputeConfirmation.signatures.length + 1 < thresholdCount) {
+            return false;
+        }
         address[] memory thresholdSet = getOnChainThresholdSet(dispute.input.channelId);
         bytes[] memory signatures = UtilityFacet(utilityFacetAddress).insertBytesInByteArray(
             disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures

@@ -749,4 +749,65 @@ describe("StateManager", () => {
             ).to.be.true;
         });
     });
+
+    describe("fetchUpdatedOnChainBlock", () => {
+        it("should return undefined when commitment not found", async () => {
+            mockSetup.mockStateChannelManagerContract.getBlockCallDataCommitment.resolves(
+                { found: false }
+            );
+
+            const result = await stateManager.fetchUpdatedOnChainBlock(
+                "0xfork123",
+                1,
+                "0xauthor123"
+            );
+
+            expect(result).to.be.undefined;
+        });
+
+        it("should handle errors gracefully", async () => {
+            mockSetup.mockStateChannelManagerContract.getBlockCallDataCommitment.rejects(
+                new Error("Network error")
+            );
+
+            const result = await stateManager.fetchUpdatedOnChainBlock(
+                "0xfork123",
+                1,
+                "0xauthor123"
+            );
+
+            expect(result).to.be.undefined;
+        });
+    });
+
+    describe("fetchBlockCommitmentCalldata", () => {
+        it("should return undefined when multiple logs found", async () => {
+            mockSetup.mockStateChannelManagerContract.queryFilter.resolves([
+                { args: { signedBlock: {}, timestamp: 1500n } },
+                { args: { signedBlock: {}, timestamp: 1600n } }
+            ]);
+
+            const result = await stateManager.fetchBlockCommitmentCalldata(
+                "0xfork123",
+                1,
+                "0xauthor123",
+                "0xcommitment"
+            );
+
+            expect(result).to.be.undefined;
+        });
+
+        it("should return undefined for no logs", async () => {
+            mockSetup.mockStateChannelManagerContract.queryFilter.resolves([]);
+
+            const result = await stateManager.fetchBlockCommitmentCalldata(
+                "0xfork123",
+                1,
+                "0xauthor123",
+                "0xcommitment"
+            );
+
+            expect(result).to.be.undefined;
+        });
+    });
 });
