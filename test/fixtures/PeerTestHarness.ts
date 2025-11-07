@@ -787,47 +787,31 @@ export class PeerTestHarness<T extends AStateMachine> {
         return false;
     }
 
-    /**
-     * Posts junk (invalid) calldata to the blockchain
-     * This simulates a peer posting an unlinked or invalid block directly on-chain
-     *
-     * @param peerIndex - The peer who is posting the junk calldata
-     * @param options - Configuration for the junk block
-     * @param options.forkId - The fork ID
-     * @param options.height - The block height
-     * @param options.wrongPreviousHash - Whether to use a wrong previous block hash (default: true)
-     * @param options.encodedData - Optional pre-encoded function calldata. If not provided, uses generic junk data
-     * @returns The posted block structure
-     */
     async postJunkCalldataOnChain(
         peerIndex: number,
         options: {
-            forkId: ForkId;
             height: BlockHeight;
-            wrongPreviousHash?: boolean;
+            forkId?: ForkId;
             encodedData?: Bytes;
         }
     ): Promise<BlockStruct> {
         const peer = this.getPeer(peerIndex);
-        const {
-            forkId,
-            height,
-            wrongPreviousHash = true,
-            encodedData
-        } = options;
+        const forkId = options.forkId || this.activeForkId!;
+        const height = options.height;
 
         const previousBlock =
             peer.stateManager.storage.blocks.getLatestBlock(forkId);
 
-        // Create a wrong previousBlockHash
-        const invalidPreviousHash: Hash = wrongPreviousHash
-            ? ethers.keccak256(
-                  ethers.toUtf8Bytes("wrong_previous_hash_" + Date.now())
-              )
-            : previousBlock?.hash || ethers.ZeroHash;
+        const previousBlockHash: Hash =
+            previousBlock?.hash ||
+            peer.stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                forkId
+            )?.hash ||
+            ethers.ZeroHash;
 
-        const encodedFunctionData: Bytes =
-            encodedData || (ethers.hexlify(ethers.randomBytes(64)) as Bytes);
+        const encodedData: Bytes =
+            options.encodedData ||
+            (ethers.hexlify(ethers.randomBytes(64)) as Bytes);
 
         const transaction: TransactionStruct = {
             header: {
@@ -839,41 +823,42 @@ export class PeerTestHarness<T extends AStateMachine> {
             },
             body: {
                 // Use the provided encoded data or generic junk data
-                encodedData: encodedFunctionData,
-                data: encodedFunctionData
+                encodedData: encodedData,
+                data: encodedData
             }
         };
 
-        const invalidStateSnapshotHash: Hash = ethers.keccak256(
-            ethers.toUtf8Bytes("invalid_state_snapshot_" + Date.now())
-        );
+        const stateSnapshotHash: Hash = previousBlock
+            ? previousBlock.stateSnapshotHash
+            : peer.stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                  forkId
+              )?.hash || ethers.ZeroHash;
 
-        // Create the invalid block
         const blockStruct: BlockStruct = {
             transaction: transaction,
-            stateSnapshotHash: invalidStateSnapshotHash,
-            previousBlockHash: invalidPreviousHash
+            stateSnapshotHash: stateSnapshotHash,
+            previousBlockHash: previousBlockHash
         };
 
-        // Encode and sign the block
         const encodedBlock = Codec.encode(blockStruct, Type.Block);
         const blockHash = hash(encodedBlock);
-        const signature = await peer.signer.signMessage(
-            ethers.getBytes(blockHash)
+        const corruptedBlockHash = hash(blockHash);
+
+        const invalidSignature = await peer.signer.signMessage(
+            ethers.getBytes(corruptedBlockHash)
         );
 
         const signedBlock: SignedBlockStruct = {
             encodedBlock: encodedBlock,
-            signature: signature as Bytes
+            signature: invalidSignature
         };
 
-        // Calculate maxTimestamp (use a large value to ensure it passes the time check)
+        // big maxTimestamp (use a large value to ensure it passes the time check)
         const maxTimestamp = Clock.getTimeInSeconds() + 1000;
 
-        // Post the junk calldata directly to the contract
-        this.logger.warn(
-            `Peer ${peerIndex} posting junk calldata for height ${height}`,
-            { forkId, wrongPreviousHash }
+        this.logger.debug(
+            `Peer ${peerIndex} posting junk calldata with invalid signature for height ${height}`,
+            { forkId }
         );
 
         const tx =
