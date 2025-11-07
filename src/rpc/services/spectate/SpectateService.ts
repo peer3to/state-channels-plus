@@ -16,6 +16,7 @@ import {
 import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import SpectateServiceRpcMethods from "./SpectateRpcMethods";
 import P2PManager from "@/P2PManager";
+import StateManager from "@/stateManager";
 
 export interface DisputeWindowVerification {
     disputeConfirmations: DisputeConfirmationStruct[];
@@ -33,6 +34,92 @@ export interface SyncPayload {
     latestFinalizedEncodedState: Bytes;
     exitChannelBlocksUpToLatestGenesis: ExitChannelBlockStruct[];
     exitChannelBlocksOfTheLatestFork: ExitChannelBlockStruct[];
+}
+
+export async function collectDisputeWindows(
+    stateManager: StateManager,
+    channelId: ChannelId
+): Promise<{
+    disputeWindows: DisputeWindowVerification[];
+    currentForkId: ForkId;
+    onChainSnapshot: StateSnapshot;
+}> {
+    const agreementManager = stateManager.agreementManager;
+    const diamondStateMachine = stateManager.diamondStateMachine;
+
+    const onChainSnapshot = StateSnapshot.from(
+        await diamondStateMachine.localDiamondContract.getStateSnapshot(
+            channelId
+        )
+    );
+
+    const disputeWindows: DisputeWindowVerification[] = [];
+    let currentForkId = onChainSnapshot.forkId as ForkId;
+    let isDisputed =
+        await diamondStateMachine.localDiamondContract.isForkDisputed(
+            channelId,
+            currentForkId
+        );
+
+    while (isDisputed) {
+        const disputeConfirmations =
+            await agreementManager.getForkDisputeConfirmations(
+                channelId,
+                currentForkId,
+                diamondStateMachine.localDiamondContract
+            );
+
+        const disputeHashes = disputeConfirmations.map((disputeConfirmation) =>
+            Codec.decode(
+                disputeConfirmation.signedDispute.encodedDispute,
+                Type.Dispute
+            )
+        );
+
+        const reducedOutput =
+            await diamondStateMachine.localDiamondContract.reduce.staticCall(
+                disputeHashes
+            );
+
+        const reduceData = await agreementManager.getReduceData(
+            currentForkId,
+            reducedOutput
+        );
+
+        const [snapshotData] =
+            await diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
+                currentForkId,
+                reducedOutput,
+                reduceData.latestStateSnapshot,
+                reduceData.encodedStateMachineState,
+                reduceData.joinChannelBlocks
+            );
+        const reducedForkId = ethers.keccak256(
+            Codec.encode(snapshotData, Type.SnapshotData)
+        ) as ForkId;
+
+        disputeWindows.push({
+            disputeConfirmations,
+            forkId: currentForkId as Hash,
+            latestStateSnapshot: reduceData.latestStateSnapshot,
+            latestEncodedStateMachineState: reduceData.encodedStateMachineState,
+            joinChannelBlocksAppliedInReduce: reduceData.joinChannelBlocks,
+            reducedForkId
+        });
+
+        currentForkId = reducedForkId;
+        isDisputed =
+            await diamondStateMachine.localDiamondContract.isForkDisputed(
+                channelId,
+                currentForkId
+            );
+    }
+
+    return {
+        disputeWindows,
+        currentForkId,
+        onChainSnapshot
+    };
 }
 
 class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
@@ -75,86 +162,14 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
     ): Promise<SyncPayload> {
         const stateManager = this.p2pManager.stateManager;
         const agreementManager = stateManager.agreementManager;
-        const diamondStateMachine = stateManager.diamondStateMachine;
         // Get the current fork ID
         const forkId = stateManager.forkId;
 
-        // -------- Collect what is needed to prove the latestForkGenesisSnapshot starting from the onChainSnapshot --------
-        // We'll do all the computation on our local state. If our local state is not synced we shouldn't even be syncing the spectator and we probably have bigger problems
-
-        // Get current on-chain snapshot to start the fork traversal
-        const currentOnChainSnapshot = StateSnapshot.from(
-            await diamondStateMachine.localDiamondContract.getStateSnapshot(
-                channelId
-            )
-        );
-
-        const disputeWindows: DisputeWindowVerification[] = [];
-        let currentForkId = currentOnChainSnapshot.forkId;
-        let isDisputed =
-            await diamondStateMachine.localDiamondContract.isForkDisputed(
-                channelId,
-                currentForkId
-            );
-
-        while (isDisputed) {
-            // Collect disputes for this dispute window
-            // Collect all disputes for this dispute window
-            const currentWindowDisputeConfirmations =
-                await this.p2pManager.stateManager.agreementManager.getForkDisputeConfirmations(
-                    channelId,
-                    currentForkId,
-                    diamondStateMachine.localDiamondContract
-                );
-
-            const currentWindowDisputesHashes =
-                currentWindowDisputeConfirmations.map((disputeConfirmation) =>
-                    Codec.decode(
-                        disputeConfirmation.signedDispute.encodedDispute,
-                        Type.Dispute
-                    )
-                );
-
-            // After collecting disputes for this window, reduce to get the next fork
-            const reducedOutput =
-                await diamondStateMachine.localDiamondContract.reduce.staticCall(
-                    currentWindowDisputesHashes
-                );
-
-            const reduceData =
-                await this.p2pManager.stateManager.agreementManager.getReduceData(
-                    currentForkId,
-                    reducedOutput
-                );
-
-            // Move to the next fork using local EVM
-            const [snapshotData] =
-                await diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
-                    currentForkId,
-                    reducedOutput,
-                    reduceData.latestStateSnapshot,
-                    reduceData.encodedStateMachineState,
-                    reduceData.joinChannelBlocks
-                );
-            const reducedForkId = ethers.keccak256(
-                Codec.encode(snapshotData, Type.SnapshotData)
-            );
-            disputeWindows.push({
-                disputeConfirmations: currentWindowDisputeConfirmations,
-                forkId: currentForkId as Hash,
-                latestStateSnapshot: reduceData.latestStateSnapshot,
-                latestEncodedStateMachineState:
-                    reduceData.encodedStateMachineState,
-                joinChannelBlocksAppliedInReduce: reduceData.joinChannelBlocks,
-                reducedForkId
-            });
-            currentForkId = reducedForkId;
-            isDisputed =
-                await diamondStateMachine.localDiamondContract.isForkDisputed(
-                    channelId,
-                    currentForkId
-                );
-        }
+        const {
+            disputeWindows,
+            currentForkId,
+            onChainSnapshot: currentOnChainSnapshot
+        } = await collectDisputeWindows(stateManager, channelId);
 
         if (currentForkId != forkId)
             throw new Error("Reduce and iterate didn't derive the latest fork");
