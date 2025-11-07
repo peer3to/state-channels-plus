@@ -34,11 +34,7 @@ contract UtilityFacet {
         }
 
         for (uint256 i = 0; i < signatures.length; i++) {
-            // Use tryRecover to handle invalid signatures (recover reverts if signature is invalid)
-            (address signer, ECDSA.RecoverError error,) = ECDSA.tryRecover(signedHash, signatures[i]);
-            if (error != ECDSA.RecoverError.NoError) {
-                continue; // Skip invalid signatures
-            }
+            address signer = ECDSA.recover(signedHash, signatures[i]);
             //Hopefully the caller will sort signatures so this matches
             if (i < threshold && signer == addressesInThreshold[i] && countRemaining[i] == 1) {
                 count++;
