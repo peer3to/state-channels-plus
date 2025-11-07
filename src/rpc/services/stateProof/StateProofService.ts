@@ -19,6 +19,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import Clock from "@/Clock";
 
 export interface DisputeWindowVerification {
     disputeConfirmations: DisputeConfirmationStruct[];
@@ -73,7 +74,7 @@ class StateProofService extends ARpcService<StateProofRpcMethods> {
         console.log(
             `Requesting peer to prove their state at block height ${blockHeight}`
         );
-        const time = Date.now();
+        const time = Clock.getTimeInSeconds();
 
         // Store the init time, fork ID, and block height for timeout
         this.stateProofInitTimes.set(transport, {

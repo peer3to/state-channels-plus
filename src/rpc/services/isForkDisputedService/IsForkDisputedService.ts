@@ -54,21 +54,29 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
                     console.log(
                         `Peer did not acknowledge disputed fork ${forkId}, disconnecting`
                     );
-                    this.p2pManager.disconnectConnection(transport);
+                    this.p2pManager.disconnectAndBlacklistPeer(transport);
                 }
             },
             2 * this.p2pManager.stateManager.timeConfig.agreementTime * 1000
         );
     }
 
-    /**
-     * Check if a transport has acknowledged a specific disputed fork
-     */
-    public didTransportAckDispute(
+    public respondToDisputeAcknowledgment(
         transport: ATransport,
+        channelId: ChannelId,
         forkId: ForkId
-    ): boolean {
-        return this.hasAcknowledgedDisputedFork(transport, forkId);
+    ): Promise<void> | void {
+        if (this.hasAcknowledgedDisputedFork(transport, forkId)) {
+            console.log(`Already responded for fork ${forkId}, disconnecting`);
+            return this.p2pManager.disconnectAndBlacklistPeer(transport);
+        }
+
+        this.acknowledgeDisputedFork(transport, forkId);
+        console.log(`Acknowledged disputed fork ${forkId}`);
+
+        this.remoteRpc.isForkDisputedService
+            .onDisputeAcknowledgmentResponse(channelId, forkId)
+            .sendOne(transport);
     }
 
     /**

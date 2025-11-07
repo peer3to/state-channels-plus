@@ -121,7 +121,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         // Check if peer has already acknowledged this disputed fork
         if (
             senderTransport &&
-            this.p2pManager.localRpc.isForkDisputedService.didTransportAckDispute(
+            this.p2pManager.localRpc.isForkDisputedService.hasAcknowledgedDisputedFork(
                 senderTransport,
                 block.forkId
             )

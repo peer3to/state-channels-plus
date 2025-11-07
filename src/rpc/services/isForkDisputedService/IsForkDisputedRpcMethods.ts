@@ -23,21 +23,6 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
             `Received dispute acknowledgment request for fork ${forkId}`
         );
 
-        // Check if we already sent a request for this forkId
-        if (
-            this.service.hasAcknowledgedDisputedFork(
-                this.senderTransport,
-                forkId
-            )
-        ) {
-            console.log(
-                `Already sent request for fork ${forkId}, disconnecting`
-            );
-            return this.p2pManager.disconnectAndBlacklistPeer(
-                this.senderTransport
-            );
-        }
-
         // Check if fork is disputed locally
         const isDisputedLocal =
             await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
@@ -49,7 +34,15 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
             console.log(
                 `Fork ${forkId} is disputed on local diamond, responding`
             );
-            return this.respondToDisputeAcknowledgment(channelId, forkId);
+            const senderTransport = this.senderTransport;
+            if (!senderTransport) {
+                return;
+            }
+            return this.service.respondToDisputeAcknowledgment(
+                senderTransport,
+                channelId,
+                forkId
+            );
         }
 
         // Check if fork is disputed on chain
@@ -61,42 +54,20 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
 
         if (isDisputedOnChain) {
             console.log(`Fork ${forkId} is disputed on-chain, responding`);
-            return this.respondToDisputeAcknowledgment(channelId, forkId);
+            const senderTransport = this.senderTransport;
+            if (!senderTransport) {
+                return;
+            }
+            return this.service.respondToDisputeAcknowledgment(
+                senderTransport,
+                channelId,
+                forkId
+            );
         }
 
         // Fork is not disputed - disconnect
         console.log(`Fork ${forkId} is not disputed, disconnecting`);
         return this.p2pManager.disconnectAndBlacklistPeer(this.senderTransport);
-    }
-
-    /**
-     * Respond to dispute acknowledgment
-     */
-    private async respondToDisputeAcknowledgment(
-        channelId: ChannelId,
-        forkId: ForkId
-    ) {
-        // Check if we already responded for this forkId
-        if (
-            this.service.hasAcknowledgedDisputedFork(
-                this.senderTransport,
-                forkId
-            )
-        ) {
-            console.log(`Already responded for fork ${forkId}, disconnecting`);
-            return this.p2pManager.disconnectAndBlacklistPeer(
-                this.senderTransport
-            );
-        }
-
-        // Mark as acknowledged locally (from peer's perspective)
-        this.service.acknowledgeDisputedFork(this.senderTransport, forkId);
-        console.log(`Acknowledged disputed fork ${forkId}`);
-
-        // Send acknowledgment response back to the requester
-        this.remoteRpc.isForkDisputedService
-            .onDisputeAcknowledgmentResponse(channelId, forkId)
-            .sendOne(this.senderTransport);
     }
 
     /**
