@@ -43,7 +43,6 @@ describe("Codec", () => {
         describe("Error handling", () => {
             it("should throw error for invalid type in encode", () => {
                 expect(() => {
-                    // @ts-expect-error - testing invalid type
                     Codec.encode({}, 999 as Type);
                 }).to.throw("No ethers type mapping found");
             });
