@@ -50,19 +50,16 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
     }
 
     // Called locally to initiate spectate sync
-    public async spectateSync(transport: ATransport, channelId: ChannelId) {
+    public spectateSync(transport: ATransport, channelId: ChannelId) {
         console.log("spectateSync !");
         const time = Clock.getTimeInSeconds();
 
         // Store the init time for RTT calculation per channel
         this.spectateInitTimes.set(transport, time);
 
-        const rpcHandler =
-            await this.remoteRpc.spectateService.onSpectateRequest(
-                channelId,
-                time
-            );
-        rpcHandler.sendOne(transport);
+        this.remoteRpc.spectateService
+            .onSpectateRequest(channelId, time)
+            .sendOne(transport);
 
         setTimeout(() => {
             if (!this.didRespond(transport)) this.abort();

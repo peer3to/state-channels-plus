@@ -7,7 +7,7 @@ type UnsignedRpc = Omit<Rpc, "signature">;
 class RpcHandler {
     private readonly rpcPayload: UnsignedRpc;
     private readonly p2pManager: P2PManager;
-    private signedRpcPromise: Promise<Rpc> | null = null;
+    private signedRpc: Rpc | undefined;
 
     constructor(rpcPayload: UnsignedRpc, p2pManager: P2PManager) {
         this.rpcPayload = rpcPayload;
@@ -15,8 +15,8 @@ class RpcHandler {
     }
 
     private async buildSignedRpc(): Promise<Rpc> {
-        if (!this.signedRpcPromise) {
-            this.signedRpcPromise = (async () => {
+        if (!this.signedRpc) {
+            this.signedRpc = await (async () => {
                 const messageContent = createMessageContent(
                     this.rpcPayload.service,
                     this.rpcPayload.method,
@@ -31,7 +31,7 @@ class RpcHandler {
                 };
             })();
         }
-        return this.signedRpcPromise;
+        return this.signedRpc;
     }
 
     private async getSerializedRpc(): Promise<string> {

@@ -30,14 +30,12 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
             );
 
             // Handle ICE candidates
-            connection.onicecandidate = async (event: any) => {
+            connection.onicecandidate = (event: any) => {
                 if (event.candidate) {
                     const serializedCandidate = JSON.stringify(event.candidate);
-                    const rpcHandler =
-                        await this.remoteRpc.webRTCSetupService.onIceCandidate(
-                            serializedCandidate
-                        );
-                    rpcHandler.sendOne(transport);
+                    this.remoteRpc.webRTCSetupService
+                        .onIceCandidate(serializedCandidate)
+                        .sendOne(transport);
                 }
             };
 
@@ -50,11 +48,9 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
             if (!adr) return console.log("initiateWebRTC - no EVM address");
             this.connectionMap.set(adr.toString(), connection);
             const serializedOffer = JSON.stringify(offer);
-            const rpcHandler =
-                await this.remoteRpc.webRTCSetupService.onOfferWebRTC(
-                    serializedOffer
-                );
-            rpcHandler.sendOne(transport);
+            this.remoteRpc.webRTCSetupService
+                .onOfferWebRTC(serializedOffer)
+                .sendOne(transport);
         } catch (e) {
             console.log("initiateWebRTC - error", e);
         }
