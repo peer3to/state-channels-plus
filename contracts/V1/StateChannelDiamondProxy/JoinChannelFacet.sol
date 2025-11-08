@@ -21,11 +21,9 @@ contract JoinChannelFacet is StateChannelCommon {
         require(jc.deadlineTimestamp >= block.timestamp, ErrorJoinChannelExpired());
 
         //verify original signature
-        require(
-            jc.participant
-                == UtilityFacet(utilityFacetAddress).retrieveSignerAddress(sjc.encodedJoinChannel, sjc.signature),
-            ErrorJoinChannelInvalidSignature()
-        );
+        (address retrievedAddress, bool isValidSignature) =
+            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(sjc.encodedJoinChannel, sjc.signature);
+        require(jc.participant == retrievedAddress && isValidSignature, ErrorJoinChannelInvalidSignature());
 
         // Check threshold from existing participant set
         address[] memory thresholdParticipants = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(

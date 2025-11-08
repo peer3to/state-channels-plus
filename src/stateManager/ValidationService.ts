@@ -164,6 +164,14 @@ export default class ValidationService {
                 existingSignatures
             );
 
+            if (block.onChainTimestamp) {
+                // Update the existing block's onChainTimestamp
+                this.storage.blocks.setOnChainTimestamp(
+                    block.hash,
+                    block.onChainTimestamp
+                );
+            }
+
             // no new signatures
             if (newSignatures.size === 0) {
                 return await strategy.noNewSignaturesOnExistingBlock(block);

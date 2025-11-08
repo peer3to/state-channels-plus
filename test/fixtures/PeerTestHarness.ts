@@ -1,4 +1,4 @@
-import { BytesLike, Signer } from "ethers";
+import { BytesLike, Signer, ethers } from "ethers";
 import { expect } from "chai";
 import * as sinon from "sinon";
 import hre from "hardhat";
@@ -7,16 +7,29 @@ import StateManager from "@/stateManager";
 import { createLogger, LocalDiscoveryServer, Logger } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import { AStateMachine, StateChannelManagerProxy } from "@typechain-types";
-import { ForkId, ChannelId, Address } from "@/types/types";
+import {
+    ForkId,
+    ChannelId,
+    Address,
+    BlockHeight,
+    Hash,
+    Bytes
+} from "@/types/types";
 import { TimeConfig } from "@/types/time";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
-import { SignatureUtils, Codec, Type } from "@/utils";
-import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { SignatureUtils, Codec, Type, hash } from "@/utils";
+import {
+    JoinChannelStruct,
+    BlockStruct,
+    TransactionStruct,
+    SignedBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import { TimeoutStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 import Clock from "@/Clock";
 import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
 import { deploy } from "../../scripts/V1/deploy";
-import SyncCoordinator from "@/utils/SyncCoordinator";
+import SyncCoordinator from "@test/utils/SyncCoordinator";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;
@@ -73,6 +86,11 @@ export interface HarnessOptions {
 export type SubmitTransactionOptions = {
     waitForSync?: boolean;
     waitForPeers?: number[];
+};
+
+export type AssertAllPeersInSyncOptions = {
+    expectedState?: Bytes;
+    peerIndices?: number[];
 };
 
 /**
@@ -450,12 +468,13 @@ export class PeerTestHarness<T extends AStateMachine> {
         // Execute transaction
         const result = await txFn(peer.p2pInstance.p2pContractInstance);
 
-        if (options.waitForPeers && options.waitForPeers.length > 0) {
-            await this.waitForSpecificPeersSync(options.waitForPeers);
-        } else if (options.waitForSync) {
+        if (options.waitForSync) {
             await this.syncCoordinator.waitForPeersInSync(
                 this.peers,
-                this.forkId
+                this.forkId,
+                {
+                    peerIndices: options.waitForPeers
+                }
             );
         }
 
@@ -469,53 +488,9 @@ export class PeerTestHarness<T extends AStateMachine> {
     }
 
     async waitForSync(timeout?: number): Promise<void> {
-        await this.syncCoordinator.waitForPeersInSync(
-            this.peers,
-            this.forkId,
+        await this.syncCoordinator.waitForPeersInSync(this.peers, this.forkId, {
             timeout
-        );
-    }
-
-    async waitForSpecificPeersSync(
-        peerIndices: number[],
-        timeoutMs?: number
-    ): Promise<void> {
-        if (peerIndices.length === 0) return;
-        const isGitHubActionsEnv = process.env.GITHUB_ACTIONS === "true";
-
-        const defaultTimeout = isGitHubActionsEnv ? 15000 : 5000;
-        const timeout = timeoutMs ?? defaultTimeout;
-        const startTime = Date.now();
-        while (Date.now() - startTime < timeout) {
-            const firstBlock =
-                this.peers[0].stateManager.storage.blocks.getLatestBlock(
-                    this.forkId
-                );
-
-            if (!firstBlock) {
-                await sleep(50);
-                continue;
-            }
-
-            // Check if all specified peers have the same block hash
-            let allSynced = true;
-            for (const peerIndex of peerIndices) {
-                const peerBlock = this.peers[
-                    peerIndex
-                ].stateManager.storage.blocks.getLatestBlock(this.forkId);
-                if (!peerBlock || peerBlock.hash !== firstBlock.hash) {
-                    allSynced = false;
-                    break;
-                }
-            }
-
-            if (allSynced) return;
-            await sleep(50);
-        }
-
-        throw new Error(
-            `Peers at indices [${peerIndices.join(", ")}] failed to synchronize within ${timeout}ms`
-        );
+        });
     }
 
     async waitForEventProcessing(timeout: number = 100): Promise<void> {
@@ -569,17 +544,45 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
     }
 
-    assertAllPeersInSync(expectedState?: any): void {
-        if (this.peers.length < 2)
+    assertAllPeersInSync(options: AssertAllPeersInSyncOptions = {}): void {
+        const { expectedState, peerIndices } = options;
+        const indicesToCheck =
+            peerIndices ??
+            Array.from({ length: this.peers.length }, (_, i) => i);
+
+        if (indicesToCheck.length < 2)
             throw new Error("Need at least 2 peers to check sync");
 
-        const firstPeerState = this.getStateMachineState(0, this.forkId);
+        const syncStatus = this.syncCoordinator.checkPeersInSync(
+            this.peers,
+            this.forkId,
+            peerIndices
+        );
 
-        for (let i = 1; i < this.peers.length; i++) {
-            const peerState = this.getStateMachineState(i, this.forkId);
+        if (!syncStatus.inSync) {
+            const details = syncStatus.syncDetails
+                .map(
+                    (d) =>
+                        `Peer ${d.peerIndex}: hash=${d.blockHash} height=${d.height}`
+                )
+                .join("; ");
+            throw new Error(`Peers not in sync - ${details}`);
+        }
+
+        // Check state machine state synchronization
+        const firstPeerIndex = indicesToCheck[0];
+        const firstPeerState = this.getStateMachineState(
+            firstPeerIndex,
+            this.forkId
+        );
+
+        for (let i = 1; i < indicesToCheck.length; i++) {
+            const peerIndex = indicesToCheck[i];
+            const peerState = this.getStateMachineState(peerIndex, this.forkId);
+
             expect(peerState).to.deep.equal(
                 firstPeerState,
-                `Peer ${i} state does not match Peer 0`
+                `Peer ${peerIndex} state does not match Peer ${firstPeerIndex}`
             );
         }
 
@@ -782,6 +785,100 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
 
         return false;
+    }
+
+    async postJunkCalldataOnChain(
+        peerIndex: number,
+        options: {
+            height: BlockHeight;
+            forkId?: ForkId;
+            encodedData?: Bytes;
+        }
+    ): Promise<BlockStruct> {
+        const peer = this.getPeer(peerIndex);
+        const forkId = options.forkId || this.activeForkId!;
+        const height = options.height;
+
+        const previousBlock =
+            peer.stateManager.storage.blocks.getLatestBlock(forkId);
+
+        const previousBlockHash: Hash =
+            previousBlock?.hash ||
+            peer.stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                forkId
+            )?.hash ||
+            ethers.ZeroHash;
+
+        const encodedData: Bytes =
+            options.encodedData ||
+            (ethers.hexlify(ethers.randomBytes(64)) as Bytes);
+
+        const transaction: TransactionStruct = {
+            header: {
+                channelId: peer.stateManager.getChannelId(),
+                participant: peer.address,
+                forkId: forkId,
+                transactionCnt: BigInt(height),
+                timestamp: BigInt(Clock.getTimeInSeconds())
+            },
+            body: {
+                // Use the provided encoded data or generic junk data
+                encodedData: encodedData,
+                data: encodedData
+            }
+        };
+
+        const stateSnapshotHash: Hash = previousBlock
+            ? previousBlock.stateSnapshotHash
+            : peer.stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                  forkId
+              )?.hash || ethers.ZeroHash;
+
+        const blockStruct: BlockStruct = {
+            transaction: transaction,
+            stateSnapshotHash: stateSnapshotHash,
+            previousBlockHash: previousBlockHash
+        };
+
+        const encodedBlock = Codec.encode(blockStruct, Type.Block);
+        const blockHash = hash(encodedBlock);
+        const corruptedBlockHash = hash(blockHash);
+
+        const invalidSignature = await peer.signer.signMessage(
+            ethers.getBytes(corruptedBlockHash)
+        );
+
+        const signedBlock: SignedBlockStruct = {
+            encodedBlock: encodedBlock,
+            signature: invalidSignature
+        };
+
+        // big maxTimestamp (use a large value to ensure it passes the time check)
+        const maxTimestamp = Clock.getTimeInSeconds() + 1000;
+
+        this.logger.debug(
+            `Peer ${peerIndex} posting junk calldata with invalid signature for height ${height}`,
+            { forkId }
+        );
+
+        const tx =
+            await peer.stateManager.stateChannelManagerContract.postBlockCalldata(
+                signedBlock,
+                maxTimestamp
+            );
+        await tx.wait();
+
+        this.logger.info(`Junk calldata posted on-chain by peer ${peerIndex}`);
+
+        return blockStruct;
+    }
+
+    getTimeoutStruct(
+        peerIndex: number,
+        forkId: ForkId
+    ): TimeoutStruct | undefined {
+        const peer = this.getPeer(peerIndex);
+        return peer.stateManager.storage.timeout.getTimeout(forkId);
     }
 }
 

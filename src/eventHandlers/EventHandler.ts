@@ -150,7 +150,8 @@ export class EventHandler {
             channelId,
             forkId,
             isFinal,
-            disputeCreationTimestamp
+            disputeCreationTimestamp,
+            isForced: dispute.input.timeout?.isForced
         });
         // sync LocalDiamond state
         await this.diamondStateMachine.localDiamondContract.onDisputeCommitted(

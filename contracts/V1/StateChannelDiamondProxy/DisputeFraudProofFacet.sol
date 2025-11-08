@@ -95,9 +95,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // if !hasBlock -> latestState should be genesis state -> if the disputer signed any block this proof is valid
 
         // Check signature
-        address retrievedAddress =
+        (address retrievedAddress, bool isValid) =
             UtilityFacet(utilityFacetAddress).retrieveSignerAddress(proof.encodedBlock, proof.signature);
-        if (retrievedAddress != dispute.input.disputer) revert();
+        if (retrievedAddress != dispute.input.disputer || !isValid) revert();
 
         return dispute.input.disputer;
     }
@@ -347,10 +347,10 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             // ****** check has forfeit right to extra time
             bool hasForfeitedRightToExtraTime = false;
             if (dispute.input.timeout.participantSignatureOnPreviousBlock.length > 0) {
-                address signerAddress = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
+                (address signerAddress, bool isValid) = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
                     latestSignedBlock.encodedBlock, dispute.input.timeout.participantSignatureOnPreviousBlock
                 );
-                if (signerAddress == dispute.input.timeout.participant) hasForfeitedRightToExtraTime = true;
+                if (signerAddress == dispute.input.timeout.participant && isValid) hasForfeitedRightToExtraTime = true;
             }
             if (!hasForfeitedRightToExtraTime) {
                 uint256 blockHeight = latestBlock.transaction.header.transactionCnt;

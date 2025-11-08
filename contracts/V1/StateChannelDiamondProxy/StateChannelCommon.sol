@@ -160,8 +160,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         (bool success, bytes memory encodedBlock) = address(this).staticcall(data);
         if (!success) return false;
         Block memory decodedBlock = abi.decode(encodedBlock, (Block));
-        address signer = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(encodedBlock, _block.signature);
-        if (signer != decodedBlock.transaction.header.participant) {
+        (address signer, bool isValid) =
+            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(encodedBlock, _block.signature);
+        if (signer != decodedBlock.transaction.header.participant || !isValid) {
             return false;
         }
         return true;
