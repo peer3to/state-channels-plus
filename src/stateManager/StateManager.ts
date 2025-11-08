@@ -108,7 +108,7 @@ class StateManager {
     reductionTriggerMap: Map<ForkId, ReductionTimeoutHandle> = new Map();
     status: Status = Status.SPECTATING;
     timeoutManager: TimeoutManager;
-    private logger: Logger;
+    logger: Logger;
 
     constructor(
         signer: ethers.Signer,
@@ -142,7 +142,7 @@ class StateManager {
             this.eventHandler,
             this.diamondStateMachine.localDiamondContract
         );
-        this.agreementManager = new AgreementManager(this.storage);
+        this.agreementManager = new AgreementManager(this.storage, this.logger);
         this.disputeManager = new DisputeManager(
             this.channelId,
             signer,

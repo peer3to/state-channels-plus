@@ -16,7 +16,8 @@ import {
 import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import SpectateServiceRpcMethods from "./SpectateRpcMethods";
 import P2PManager from "@/P2PManager";
-import StateManager from "@/stateManager";
+import { TimeoutManager } from "@/utils/TimeoutManager";
+import { Status } from "@/types";
 
 export interface DisputeWindowVerification {
     disputeConfirmations: DisputeConfirmationStruct[];
@@ -35,101 +36,27 @@ export interface SyncPayload {
     exitChannelBlocksUpToLatestGenesis: ExitChannelBlockStruct[];
     exitChannelBlocksOfTheLatestFork: ExitChannelBlockStruct[];
 }
-
-export async function collectDisputeWindows(
-    stateManager: StateManager,
-    channelId: ChannelId
-): Promise<{
-    disputeWindows: DisputeWindowVerification[];
-    currentForkId: ForkId;
-    onChainSnapshot: StateSnapshot;
-}> {
-    const agreementManager = stateManager.agreementManager;
-    const diamondStateMachine = stateManager.diamondStateMachine;
-
-    const onChainSnapshot = StateSnapshot.from(
-        await diamondStateMachine.localDiamondContract.getStateSnapshot(
-            channelId
-        )
-    );
-
-    const disputeWindows: DisputeWindowVerification[] = [];
-    let currentForkId = onChainSnapshot.forkId as ForkId;
-    let isDisputed =
-        await diamondStateMachine.localDiamondContract.isForkDisputed(
-            channelId,
-            currentForkId
-        );
-
-    while (isDisputed) {
-        const disputeConfirmations =
-            await agreementManager.getForkDisputeConfirmations(
-                channelId,
-                currentForkId,
-                diamondStateMachine.localDiamondContract
-            );
-
-        const disputeHashes = disputeConfirmations.map((disputeConfirmation) =>
-            Codec.decode(
-                disputeConfirmation.signedDispute.encodedDispute,
-                Type.Dispute
-            )
-        );
-
-        const reducedOutput =
-            await diamondStateMachine.localDiamondContract.reduce.staticCall(
-                disputeHashes
-            );
-
-        const reduceData = await agreementManager.getReduceData(
-            currentForkId,
-            reducedOutput
-        );
-
-        const [snapshotData] =
-            await diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
-                currentForkId,
-                reducedOutput,
-                reduceData.latestStateSnapshot,
-                reduceData.encodedStateMachineState,
-                reduceData.joinChannelBlocks
-            );
-        const reducedForkId = ethers.keccak256(
-            Codec.encode(snapshotData, Type.SnapshotData)
-        ) as ForkId;
-
-        disputeWindows.push({
-            disputeConfirmations,
-            forkId: currentForkId as Hash,
-            latestStateSnapshot: reduceData.latestStateSnapshot,
-            latestEncodedStateMachineState: reduceData.encodedStateMachineState,
-            joinChannelBlocksAppliedInReduce: reduceData.joinChannelBlocks,
-            reducedForkId
-        });
-
-        currentForkId = reducedForkId;
-        isDisputed =
-            await diamondStateMachine.localDiamondContract.isForkDisputed(
-                channelId,
-                currentForkId
-            );
-    }
-
-    return {
-        disputeWindows,
-        currentForkId,
-        onChainSnapshot
-    };
+export interface SyncRequest {
+    channelId: ChannelId;
+    initTime: Timestamp;
+    forkId?: ForkId;
+    blockHeight?: number;
 }
-
 class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
-    spectateInitTimes: WeakMap<ATransport, number> = new WeakMap<
+    requestMap: WeakMap<ATransport, SyncRequest> = new WeakMap<
         ATransport,
-        number
+        SyncRequest
     >();
+    timeoutManager: TimeoutManager;
 
     constructor(p2pManager: P2PManager) {
-        super(p2pManager);
+        super(
+            p2pManager,
+            p2pManager.stateManager.logger.child({
+                component: "SpectateService"
+            })
+        );
+        this.timeoutManager = p2pManager.stateManager.timeoutManager;
     }
 
     public createRPCMethods(transport: ATransport): SpectateServiceRpcMethods {
@@ -137,20 +64,33 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
     }
 
     // Called locally to initiate spectate sync
-    public spectateSync(transport: ATransport, channelId: ChannelId) {
-        console.log("spectateSync !");
-        const time = Clock.getTimeInSeconds();
-
+    public sync(
+        transport: ATransport,
+        channelId: ChannelId,
+        forkId?: ForkId,
+        blockHeight?: number
+    ) {
+        this.logger.debug("spectateSync !");
+        const syncRequest: SyncRequest = {
+            channelId,
+            initTime: Clock.getTimeInSeconds(),
+            forkId,
+            blockHeight
+        };
         // Store the init time for RTT calculation per channel
-        this.spectateInitTimes.set(transport, time);
+        this.requestMap.set(transport, syncRequest);
 
         this.remoteRpc.spectateService
-            .onSpectateRequest(channelId, time)
+            .onSpectateRequest(syncRequest)
             .sendOne(transport);
 
-        setTimeout(() => {
-            if (!this.didRespond(transport)) this.abort();
-        }, this.p2pManager.stateManager.timeConfig.agreementTime * 1000);
+        this.timeoutManager.scheduleTask(
+            () => {
+                if (!this.didRespond(transport)) this.abort(transport);
+            },
+            this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
+            "SpectateService - spectateSync timeout"
+        );
     }
 
     /**
@@ -158,18 +98,92 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
      * (but don't send it on-chain - send it to the spectator)
      */
     public async generateSyncPayload(
-        channelId: ChannelId
-    ): Promise<SyncPayload> {
+        channelId: ChannelId,
+        _forkId?: ForkId,
+        _blockHeight?: number
+    ): Promise<SyncPayload | undefined> {
         const stateManager = this.p2pManager.stateManager;
         const agreementManager = stateManager.agreementManager;
+        const diamondStateMachine = stateManager.diamondStateMachine;
         // Get the current fork ID
-        const forkId = stateManager.forkId;
+        const forkId = _forkId || stateManager.forkId;
 
-        const {
-            disputeWindows,
-            currentForkId,
-            onChainSnapshot: currentOnChainSnapshot
-        } = await collectDisputeWindows(stateManager, channelId);
+        // -------- Collect what is needed to prove the latestForkGenesisSnapshot starting from the onChainSnapshot --------
+        // We'll do all the computation on our local state. If our local state is not synced we shouldn't even be syncing the spectator and we probably have bigger problems
+
+        // Get current on-chain snapshot to start the fork traversal
+        const currentOnChainSnapshot = StateSnapshot.from(
+            await diamondStateMachine.localDiamondContract.getStateSnapshot(
+                channelId
+            )
+        );
+
+        const disputeWindows: DisputeWindowVerification[] = [];
+        let currentForkId = currentOnChainSnapshot.forkId;
+        let isDisputed =
+            await diamondStateMachine.localDiamondContract.isForkDisputed(
+                channelId,
+                currentForkId
+            );
+
+        while (isDisputed) {
+            // Collect disputes for this dispute window
+            // Collect all disputes for this dispute window
+            const currentWindowDisputeConfirmations =
+                await this.p2pManager.stateManager.agreementManager.getForkDisputeConfirmations(
+                    channelId,
+                    currentForkId,
+                    diamondStateMachine.localDiamondContract
+                );
+
+            const currentWindowDisputesHashes =
+                currentWindowDisputeConfirmations.map((disputeConfirmation) =>
+                    Codec.decode(
+                        disputeConfirmation.signedDispute.encodedDispute,
+                        Type.Dispute
+                    )
+                );
+
+            // After collecting disputes for this window, reduce to get the next fork
+            const reducedOutput =
+                await diamondStateMachine.localDiamondContract.reduce.staticCall(
+                    currentWindowDisputesHashes
+                );
+
+            const reduceData =
+                await this.p2pManager.stateManager.agreementManager.getReduceData(
+                    currentForkId,
+                    reducedOutput
+                );
+
+            // Move to the next fork using local EVM
+            const [snapshotData] =
+                await diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
+                    currentForkId,
+                    reducedOutput,
+                    reduceData.latestStateSnapshot,
+                    reduceData.encodedStateMachineState,
+                    reduceData.joinChannelBlocks
+                );
+            const reducedForkId = ethers.keccak256(
+                Codec.encode(snapshotData, Type.SnapshotData)
+            );
+            disputeWindows.push({
+                disputeConfirmations: currentWindowDisputeConfirmations,
+                forkId: currentForkId as Hash,
+                latestStateSnapshot: reduceData.latestStateSnapshot,
+                latestEncodedStateMachineState:
+                    reduceData.encodedStateMachineState,
+                joinChannelBlocksAppliedInReduce: reduceData.joinChannelBlocks,
+                reducedForkId
+            });
+            currentForkId = reducedForkId;
+            isDisputed =
+                await diamondStateMachine.localDiamondContract.isForkDisputed(
+                    channelId,
+                    currentForkId
+                );
+        }
 
         if (currentForkId != forkId)
             throw new Error("Reduce and iterate didn't derive the latest fork");
@@ -195,10 +209,17 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
 
         // There are blocks, so we can do a same-fork update
-        const latestStateProof = await agreementManager.getStateProof(
+        const latestStateProof = await agreementManager.tryGetStateProof(
             forkId,
-            latestBlockHeight
+            _blockHeight || latestBlockHeight
         );
+
+        if (!latestStateProof) {
+            this.logger.debug(
+                `No state proof found for fork ${forkId} blockHeight ${_blockHeight || latestBlockHeight}`
+            );
+            return undefined;
+        }
         // Collect concrete milestone snapshots
         const milestoneSnapshots: StateSnapshot[] =
             latestStateProof.milestones.map((m) => {
@@ -355,7 +376,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     calldata
                 );
             } catch (e) {
-                console.log(e);
+                this.logger.debug(e);
                 return false;
             }
         }
@@ -363,6 +384,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
     }
 
     public persistSyncPayload(syncPayload: SyncPayload) {
+        // TODO - check in the case of syncing to the requested (forkId, blockHeight), that storage stays consistent - what was already there should still be there
         const storage = this.p2pManager.stateManager.storage;
         for (const dw of syncPayload.disputeWindows) {
             for (const dispute of dw.disputeConfirmations) {
@@ -435,12 +457,16 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         return blocks;
     }
     public didRespond(transport: ATransport): boolean {
-        const timestamp = this.spectateInitTimes.get(transport);
-        return !timestamp;
+        return !this.requestMap.has(transport);
     }
 
-    public abort() {
-        this.p2pManager.disconnectAll();
+    public abort(transport: ATransport) {
+        if (this.p2pManager.stateManager.status == Status.SPECTATING) {
+            this.p2pManager.disconnectAll();
+            return;
+        }
+
+        return this.p2pManager.disconnectAndBlacklistPeer(transport);
     }
 }
 

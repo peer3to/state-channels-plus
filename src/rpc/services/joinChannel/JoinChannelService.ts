@@ -26,7 +26,12 @@ class JoinChannelService extends ARpcService<JoinChannelRpcMethods> {
     joinChannelMap = new SignatureCollectionMap();
 
     constructor(p2pManager: P2PManager) {
-        super(p2pManager);
+        super(
+            p2pManager,
+            p2pManager.stateManager.logger.child({
+                component: "JoinChannelService"
+            })
+        );
     }
 
     public createRPCMethods(transport: ATransport): JoinChannelRpcMethods {
