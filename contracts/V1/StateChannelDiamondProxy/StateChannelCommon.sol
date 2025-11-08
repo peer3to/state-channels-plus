@@ -161,6 +161,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         if (!success) return false;
         Block memory decodedBlock = abi.decode(encodedBlock, (Block));
         address signer = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(encodedBlock, _block.signature);
+        // take care oif the attack vector where somone signed with adddress 0
         if (signer != decodedBlock.transaction.header.participant) {
             return false;
         }

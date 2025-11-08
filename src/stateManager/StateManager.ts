@@ -179,7 +179,7 @@ class StateManager {
             this.storage,
             this.p2pManager
         );
-        this.timeoutManager = new TimeoutManager();
+        this.timeoutManager = new TimeoutManager(logger);
     }
     //Mark resources for garbage collection
     public async dispose() {
@@ -450,11 +450,6 @@ class StateManager {
             this.storage.blocks.getNextBlockHeight(forkId);
         let timeLost = Clock.getTimeInSeconds() - genesisTimestamp;
         timeLost = timeLost < 0 ? 0 : timeLost; // if genesisTimestamp is in the future - no time is lost
-
-        // Don't schedule timeout tasks if StateManager is disposed
-        if (this.isDisposed) {
-            return;
-        }
 
         this.timeoutManager.scheduleTask(
             () =>
@@ -1555,10 +1550,6 @@ class StateManager {
         }
 
         // step 11 - schedule a timeout check for the next participant
-        // Don't schedule timeout tasks if StateManager is disposed
-        if (this.isDisposed) {
-            return;
-        }
 
         this.timeoutManager.scheduleTask(
             () =>

@@ -1,7 +1,14 @@
+import { Logger } from "./PeerLogger";
+
 export class TimeoutManager {
     private timeouts: Set<NodeJS.Timeout> = new Set();
     private runningTasks: Set<Promise<void>> = new Set();
     private isDisposed: boolean = false;
+    private logger: Logger;
+
+    constructor(logger: Logger) {
+        this.logger = logger.child({ component: "TimeoutManager" });
+    }
 
     public scheduleTask(
         task: () => void | Promise<void>,
@@ -9,8 +16,8 @@ export class TimeoutManager {
         taskName: string = "unnamed"
     ): ReturnType<typeof setTimeout> {
         if (this.isDisposed) {
-            console.warn(
-                `TimeoutManager: Attempted to schedule task '${taskName}' after disposal`
+            this.logger.verbose(
+                `Attempted to schedule task '${taskName}' after disposal`
             );
             return {} as ReturnType<typeof setTimeout>;
         }
