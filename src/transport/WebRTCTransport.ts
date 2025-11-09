@@ -34,9 +34,7 @@ class WebRTCTransport extends ATransport {
         if (data instanceof Buffer) data = data.toString();
         const serializedRPC = data;
         console.log("WebRTC - onMessage", serializedRPC);
-        this.p2pManager.onRpc(serializedRPC, this).catch((error) => {
-            console.error("Error handling RPC in WebRTC:", error);
-        });
+        this.p2pManager.onRpc(serializedRPC, this);
     }
     _close(): void {
         console.log("closing webRTC channel");

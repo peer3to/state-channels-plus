@@ -13,16 +13,14 @@ import { Buffer } from "buffer";
 import { DEBUG_P2P_MANAGER, DEBUG_LOCAL_TRANSPORT } from "@/utils/config";
 import { Address } from "./types/types";
 import {
-    outboundRateLimiter,
-    inboundRateLimiterManager
-} from "@/utils/RateLimiter";
-import {
     hasMethod,
     hasProperty,
     isInstanceOfRpcService
 } from "./utils/ObjectChecks";
 import { ARpcService } from "./rpc";
 import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
+import { RpcFileter } from "./utils/RpcFilter";
+import { createRateLimiter, RateLimiter } from "./utils/RateLimiter";
 
 class P2PManager implements IOnMessage {
     stateManager: StateManager;
@@ -35,6 +33,8 @@ class P2PManager implements IOnMessage {
     holepunch: Holepunch;
     self = DEBUG_P2P_MANAGER ? DebugProxy.createProxy(this) : this;
     preferredTransport: TransportType = TransportType.HOLEPUNCH;
+    rpcFilter: RpcFileter;
+    outboundRateLimiters: Map<ATransport, RateLimiter> = new Map();
 
     constructor(stateManager: StateManager, signer: ethers.Signer) {
         this.stateManager = stateManager;
@@ -46,44 +46,44 @@ class P2PManager implements IOnMessage {
         this.localRpc = new MainRpcService(this.self);
         this.remoteRpc = RemoteRpcProxy.createProxy(this.localRpc);
         this.holepunch = new Holepunch(this.self);
+        this.rpcFilter = new RpcFileter(this.self);
         return this.self;
     }
     //Mark resources for garbage collection
     public async dispose() {
         const remoteRpc = RemoteRpcProxy.createProxy(this.localRpc);
         await this.holepunch.dispose();
-        if (inboundRateLimiterManager) {
-            inboundRateLimiterManager.dispose();
-        }
+        this.rpcFilter.dispose();
+        this.outboundRateLimiters.clear();
         this.disconnectAll();
     }
-    public broadcastRpc(serializedRPC: string) {
+    public broadcastRpc(
+        serializedRPC: string,
+        shouldOutboundRateLimit = false
+    ) {
         for (const transport of this.openConnections) {
+            if (shouldOutboundRateLimit) {
+                const rateLimiter = this.getOutboundRateLimiter(transport);
+                transport.send(serializedRPC, rateLimiter);
+                continue;
+            }
             transport.send(serializedRPC);
         }
     }
+    getOutboundRateLimiter(transport: ATransport): RateLimiter {
+        let rateLimiter = this.outboundRateLimiters.get(transport);
+        if (!rateLimiter) {
+            rateLimiter = createRateLimiter();
+            this.outboundRateLimiters.set(transport, rateLimiter);
+        }
+        return rateLimiter;
+    }
     public async onRpc(serializedRpc: string, transport: ATransport) {
         try {
-            const dataSizeBytes = Buffer.byteLength(serializedRpc, "utf8");
-
-            // Check bandwidth management with signature-based deduplication
-            if (inboundRateLimiterManager) {
-                const messageAllowed =
-                    await inboundRateLimiterManager.checkRpcMessage(
-                        serializedRpc,
-                        dataSizeBytes
-                    );
-
-                if (!messageAllowed) {
-                    console.warn(
-                        `[INBOUND RATE LIMIT] Exceeded from connection - Size: ${dataSizeBytes} bytes, disconnecting peer`
-                    );
-                    this.disconnectAndBlacklistPeer(transport);
-                    return;
-                }
-            }
-
-            const rpc = deserializeRpc(serializedRpc);
+            const rpc = await this.rpcFilter.filterRpcMessage(
+                serializedRpc,
+                transport
+            );
             if (!rpc) {
                 this.disconnectConnection(transport);
                 return;
@@ -100,6 +100,7 @@ class P2PManager implements IOnMessage {
                 this.disconnectConnection(transport);
                 return;
             }
+            this.broadcastRpc(serializedRpc, false); // gossip the rpc
         } catch (e) {
             this.disconnectConnection(transport);
             console.error(e);

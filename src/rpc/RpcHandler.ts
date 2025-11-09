@@ -1,6 +1,7 @@
 import P2PManager from "../P2PManager";
 import ATransport from "../transport/ATransport";
-import Rpc, { createMessageContent, serializeRpc } from "./Rpc";
+import Rpc, { createRpcSigningHash, serializeRpc } from "./Rpc";
+import { ethers } from "ethers";
 
 type UnsignedRpc = Omit<Rpc, "signature">;
 
@@ -17,14 +18,15 @@ class RpcHandler {
     private async buildSignedRpc(): Promise<Rpc> {
         if (!this.signedRpc) {
             this.signedRpc = await (async () => {
-                const messageContent = createMessageContent(
+                const signingHash = createRpcSigningHash(
                     this.rpcPayload.service,
                     this.rpcPayload.method,
                     this.rpcPayload.params,
                     this.rpcPayload.timestamp
                 );
-                const signature =
-                    await this.p2pManager.p2pSigner.signMessage(messageContent);
+                const signature = await this.p2pManager.p2pSigner.signMessage(
+                    ethers.getBytes(signingHash)
+                );
                 return {
                     ...this.rpcPayload,
                     signature
@@ -41,18 +43,21 @@ class RpcHandler {
 
     public async broadcast(): Promise<void> {
         const serializedRpc = await this.getSerializedRpc();
-        this.p2pManager.broadcastRpc(serializedRpc);
+        this.p2pManager.broadcastRpc(serializedRpc, true);
     }
 
     public async sendOne(transport: ATransport): Promise<void> {
         const serializedRpc = await this.getSerializedRpc();
-        transport.send(serializedRpc);
+        const rateLimiter = this.p2pManager.getOutboundRateLimiter(transport);
+        transport.send(serializedRpc, rateLimiter);
     }
 
     public async sendMultiple(transports: ATransport[]): Promise<void> {
         const serializedRpc = await this.getSerializedRpc();
         transports.forEach((transport) => {
-            transport.send(serializedRpc);
+            const rateLimiter =
+                this.p2pManager.getOutboundRateLimiter(transport);
+            transport.send(serializedRpc, rateLimiter);
         });
     }
 }

@@ -1,3 +1,5 @@
+import { Hash } from "@/types/types";
+import { ethers } from "ethers";
 type Rpc = {
     service: string;
     method: string;
@@ -9,19 +11,28 @@ export function serializeRpc(rpc: Rpc): string {
     return JSON.stringify(rpc);
 }
 
-export function createMessageContent(
+export function createRpcSigningHash(
     service: string,
     method: string,
     params: any[],
     timestamp: number
-): string {
-    const messageContent = {
+): Hash {
+    const signingContent = {
         service: service,
         method: method,
         params: params,
         timestamp: timestamp
     };
-    return JSON.stringify(messageContent);
+    return ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(signingContent)));
+}
+
+export function createRpcSigningHashFromRpc(rpc: Rpc): Hash {
+    return createRpcSigningHash(
+        rpc.service,
+        rpc.method,
+        rpc.params,
+        rpc.timestamp
+    );
 }
 
 export function deserializeRpc(serializedRpc: string): Rpc | undefined {

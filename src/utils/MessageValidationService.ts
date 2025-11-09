@@ -1,4 +1,6 @@
 import Clock from "@/Clock";
+import Rpc, { createRpcSigningHashFromRpc } from "@/rpc/Rpc";
+import { Address } from "@/types/types";
 import { ethers } from "ethers";
 
 /**
@@ -6,39 +8,40 @@ import { ethers } from "ethers";
  * Handles message validation: signature verification and timestamp validation
  */
 export class MessageValidationService {
-    private readonly agreementTime: number; // in milliseconds
+    private readonly agreementTime: number; // in seconds
 
-    constructor(agreementTimeMs: number) {
-        this.agreementTime = agreementTimeMs;
+    constructor(agreementTime: number) {
+        this.agreementTime = agreementTime;
     }
 
     /**
      * Validate timestamp is within acceptable range
      * Messages are valid if timestamp is within ±agreementTime of current time
      */
-    isTimestampValid(timestamp: number): boolean {
+    isAcceptableTimestamp(timestamp: number): boolean {
         const now = Clock.getTimeInSeconds();
         const timeDiff = Math.abs(now - timestamp);
-        return timeDiff <= Math.floor(this.agreementTime / 1000); // agreementTime is in ms
+        return timeDiff <= this.agreementTime;
+    }
+
+    isTimetampFradulent(timestamp: number): boolean {
+        const now = Clock.getTimeInSeconds();
+        const timeDiff = Math.abs(now - timestamp);
+        return !(timeDiff <= this.agreementTime * 2);
     }
 
     /**
      * Extract signer address from RPC message signature
      */
-    async extractSignerFromRpc(rpc: any): Promise<string | null> {
+    async recoverAddressFromRpc(rpc: Rpc): Promise<Address | null> {
         try {
-            const messageContent = JSON.stringify({
-                service: rpc.service,
-                method: rpc.method,
-                params: rpc.params,
-                timestamp: rpc.timestamp
-            });
+            const signingHash = createRpcSigningHashFromRpc(rpc);
 
             const recoveredAddress = await ethers.verifyMessage(
-                messageContent,
+                ethers.getBytes(signingHash),
                 rpc.signature
             );
-            return recoveredAddress.toLowerCase();
+            return recoveredAddress;
         } catch (error) {
             return null;
         }

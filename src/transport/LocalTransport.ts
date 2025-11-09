@@ -19,9 +19,7 @@ class LocalTransport extends ATransport {
     }
     onMessage(data: any): void {
         const serializedRPC = data.toString();
-        this.p2pManager.onRpc(serializedRPC, this).catch((error) => {
-            console.error("Error handling RPC in LocalTransport:", error);
-        });
+        this.p2pManager.onRpc(serializedRPC, this);
     }
     _close(): void {
         if (this.ws && this.ws.readyState === this.ws.OPEN) {

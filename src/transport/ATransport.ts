@@ -1,5 +1,5 @@
+import { RateLimiter } from "@/utils/RateLimiter";
 import { TransportType } from "./TransportType";
-import { outboundRateLimiter } from "@/utils/RateLimiter";
 
 abstract class ATransport {
     abstract transportType: TransportType;
@@ -8,18 +8,15 @@ abstract class ATransport {
     /**
      * Public send method that handles rate limiting and other shared logic
      */
-    send(serializedRPC: string): void {
-        // Check outbound rate limiting
-        if (outboundRateLimiter) {
+    send(serializedRPC: string, rateLimiter?: RateLimiter): void {
+        if (rateLimiter) {
             const dataSizeBytes = Buffer.byteLength(serializedRPC, "utf8");
-            if (!outboundRateLimiter.checkAndConsume(dataSizeBytes)) {
-                console.warn(
-                    `${this.transportType} rate limit exceeded, dropping message`
-                );
-                return; // Drop the message
+            const isAllowed = rateLimiter.checkAndConsume(dataSizeBytes);
+            if (!isAllowed) {
+                // TODO Handle rate limit exceeded
+                return;
             }
         }
-
         // Delegate to transport-specific implementation
         this._send(serializedRPC);
     }
