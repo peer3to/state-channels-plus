@@ -2,7 +2,7 @@ import { Address, Bytes } from "@/types/types";
 import { zeroHex } from "../../factory";
 /**
  * Minimal test implementation of Diamond State Machine
-
+ * for UNIT testing of StateManager
  */
 export class TestDiamondStateMachine {
     private state: Bytes = "0x";

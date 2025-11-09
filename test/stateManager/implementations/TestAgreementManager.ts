@@ -4,6 +4,10 @@ import { StateSnapshot } from "@/models";
 import AgreementManager from "@/agreementManager/AgreementManager";
 import Storage from "@/storage";
 
+/**
+ * test mock of AgreementManager
+ * for UNIT testing of StateManager
+ */
 export class TestAgreementManager extends AgreementManager {
     private proofs: Map<string, StateProofStruct> = new Map();
     private milestoneSnapshot: StateSnapshot | undefined = undefined;
