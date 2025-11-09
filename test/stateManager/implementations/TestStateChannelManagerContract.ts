@@ -3,13 +3,14 @@ import { zeroHex } from "@test/factory";
 import sinon from "sinon";
 
 /**
- * Minimal test mock for StateChannelManagerContract
+ * test mock of StateChannelManagerContract
+ * for UNIT testing of StateManager
  *
  * Philosophy:
  * - Only stubs methods that tests explicitly configure
  * - Unconfigured methods throw explicit errors (no silent failures)
  * - This forces tests to be explicit about dependencies
- * - Reduces mock drift from real contract interface
+
  */
 export class TestStateChannelManagerContract {
     // ===== CORE METHODS (stubbed, but throw by default) =====
