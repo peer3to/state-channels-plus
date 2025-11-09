@@ -3,19 +3,22 @@ import StateManager from "@/stateManager/StateManager";
 import Storage from "@/storage";
 import { TestAgreementManager } from "./implementations/TestAgreementManager";
 import { TestDiamondStateMachine } from "./implementations/TestDiamondStateMachine";
-import { Address, Bytes, ChannelId, ForkId } from "@/types/types";
+import { TestStateChannelManagerContract } from "./implementations/TestStateChannelManagerContract";
+import { Address, ChannelId, ForkId, Hash } from "@/types/types";
 import { TimeConfig } from "@/types/time";
 import { createLogger, Codec, Type } from "@/utils";
-import { Block } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 import {
     BlockStruct,
-    SignedBlockStruct
+    ExitChannelBlockStruct,
+    SignedBlockStruct,
+    SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
+import { zeroHex, hexString } from "@test/factory";
 
 /**
  * Minimal test builder for StateManager
- * Only implements what's actually needed - no overengineering
  *
  * Example usage:
  *   const sm = new StateManagerTestBuilder()
@@ -26,15 +29,23 @@ import Clock from "@/Clock";
 
 export const defaults = {
     channelId:
-        "0x700909316746ebacbfa48a7d4d1e5086696d503f75bef6fbd74805d8b6b6390f" as ChannelId,
-    forkId: "0xf5af30cd04f85777516e3ee5525df003d0cc962c0df64356bbf5bd9202c9aa8f" as ForkId,
-    emptyBlockHash:
-        "0x0000000000000000000000000000000000000000000000000000000000000000" as Bytes
+        "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890" as ChannelId,
+    forkId: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" as ForkId,
+    differentForkId:
+        "0x9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba" as ForkId,
+    emptyBlockHash: zeroHex(32) as Hash,
+    // Common test values
+    onChainBlockHeight: 3n,
+    milestoneBlockHeight: 5n,
+    defaultTimestamp: 1000,
+    defaultExitChannelBlockHash:
+        "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890" as Hash,
+    signerAddress: hexString(20) as Address
 };
 
 export class StateManagerTestBuilder {
     private storage = new Storage();
-    private agreementManager = new TestAgreementManager();
+    private agreementManager: TestAgreementManager;
     private diamondStateMachine = new TestDiamondStateMachine();
     private channelId: ChannelId = "0xdefaultchannel" as ChannelId;
     private forkId: ForkId = "0xdefaultfork" as ForkId;
@@ -44,79 +55,21 @@ export class StateManagerTestBuilder {
         chainFallbackTime: 30,
         evidenceTime: 30
     };
-    private mockContract: any;
+    private testContract: TestStateChannelManagerContract;
     private mockP2pEventHooks: any;
 
     constructor() {
-        // Initialize minimal mocks for dependencies we can't avoid
-        this.mockContract = this.createMockContract();
+        // Initialize test implementations for external dependencies
+        this.testContract = new TestStateChannelManagerContract();
         this.mockP2pEventHooks = { onTurn: () => {} };
+        this.agreementManager = new TestAgreementManager(this.storage);
     }
 
-    /**
-     * Create minimal contract mock - only stub what StateManager actually calls
-     */
-    private createMockContract() {
-        return {
-            getStateSnapshot: sinon.stub().resolves({
-                forkId: this.forkId,
-                blockHeight: 3n,
-                timestamp: 1000,
-                snapshotData: {
-                    originForkId: this.forkId,
-                    stateMachineStateHash: "0x",
-                    participants: [],
-                    latestJoinChannelBlockHash: "0x",
-                    latestExitChannelBlockHash: "0x",
-                    totalDeposits: { amount: 0n, data: "0x" },
-                    totalWithdrawals: { amount: 0n, data: "0x" }
-                }
-            }),
-            isForkDisputed: sinon.stub().resolves(false),
-            getReducedResult: sinon.stub().resolves([null, false]),
-            multicall: sinon.stub().resolves({ wait: async () => ({}) }),
-            updateStateSnapshotSameFork: sinon
-                .stub()
-                .resolves({ wait: async () => ({}) }),
-            interface: {
-                encodeFunctionData: sinon.stub().returns("0x")
-            },
-            // Event filters needed by StateChannelEventListener
-            filters: {
-                ChannelOpened: sinon.stub().returns("ChannelOpened_filter"),
-                StateSnapshotUpdated: sinon
-                    .stub()
-                    .returns("StateSnapshotUpdated_filter"),
-                BlockCalldataPosted: sinon
-                    .stub()
-                    .returns("BlockCalldataPosted_filter"),
-                DisputeCommitted: sinon
-                    .stub()
-                    .returns("DisputeCommitted_filter"),
-                ChainSlashed: sinon.stub().returns("ChainSlashed_filter"),
-                DisputeReducedResultCommitted: sinon
-                    .stub()
-                    .returns("DisputeReducedResultCommitted_filter"),
-                DisputeCommittedWithAuditingData: sinon
-                    .stub()
-                    .returns("DisputeCommittedWithAuditingData_filter"),
-                WithdrawalsUpdated: sinon
-                    .stub()
-                    .returns("WithdrawalsUpdated_filter"),
-                ChannelStorageCleared: sinon
-                    .stub()
-                    .returns("ChannelStorageCleared_filter"),
-                DisputeKilled: sinon.stub().returns("DisputeKilled_filter"),
-                JoinChannelProcessed: sinon
-                    .stub()
-                    .returns("JoinChannelProcessed_filter")
-            },
-            on: sinon.stub().resolves(),
-            off: sinon.stub().resolves()
-        };
+    getTestContract(): TestStateChannelManagerContract {
+        return this.testContract;
     }
 
-    // Builder methods - add only what tests actually need
+    // Builder methods
 
     withChannel(channelId: ChannelId): this {
         this.channelId = channelId;
@@ -128,14 +81,9 @@ export class StateManagerTestBuilder {
         return this;
     }
 
-    withAgreementManager(manager: TestAgreementManager): this {
-        this.agreementManager = manager;
-        return this;
-    }
-
     /**
      * Get the agreement manager for direct configuration
-     * Example: builder.agreementManager.withProof(...)
+     * Example: builder.getAgreementManager().withProof(...)
      */
     getAgreementManager(): TestAgreementManager {
         return this.agreementManager;
@@ -144,10 +92,47 @@ export class StateManagerTestBuilder {
     /**
      * Set an exit channel block for testing
      */
-    withExitChannelBlock(hash: string, block: any): this {
+    withExitChannelBlock(hash: Hash, block: ExitChannelBlockStruct): this {
         this.storage.exitChannelBlocks.storeExitChannelBlock(block, undefined, {
             hash
         });
+        return this;
+    }
+
+    /**
+     * Store an exit channel block and return its hash
+     */
+    storeExitChannelBlock(block: ExitChannelBlockStruct): Hash {
+        return this.storage.exitChannelBlocks.storeExitChannelBlock(block);
+    }
+
+    withGenesisSnapshot(
+        forkId: ForkId,
+        snapshotData: Partial<SnapshotDataStruct>
+    ): this {
+        const fullSnapshotData = {
+            originForkId: forkId,
+            stateMachineStateHash: defaults.emptyBlockHash,
+            participants: [],
+            latestJoinChannelBlockHash: defaults.emptyBlockHash,
+            latestExitChannelBlockHash: defaults.emptyBlockHash,
+            totalDeposits: { amount: 0n, data: "0x" },
+            totalWithdrawals: { amount: 0n, data: "0x" },
+            ...snapshotData // Override with provided data
+        };
+
+        const snapshotStruct = {
+            forkId,
+            blockHeight: 0n,
+            timestamp: 0,
+            snapshotData: fullSnapshotData
+        };
+
+        const genesisSnapshot = StateSnapshot.from(snapshotStruct);
+        (this.storage.stateSnapshots as any).genesisSnapshotDataByForkId.set(
+            forkId,
+            genesisSnapshot
+        );
         return this;
     }
 
@@ -158,15 +143,13 @@ export class StateManagerTestBuilder {
         // Create a minimal block struct
         const blockStruct: BlockStruct = {
             previousBlockHash: defaults.emptyBlockHash,
-            stateSnapshotHash:
-                "0xccc141f2e5e971802d39c9cc698923cc72dc93cd6f986f5846973672ae97f413" as Bytes,
+            stateSnapshotHash: hexString(32) as Hash,
             transaction: {
                 header: {
                     channelId: this.channelId,
                     forkId: this.forkId,
                     transactionCnt: 0n,
-                    participant:
-                        "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as Address,
+                    participant: hexString(20) as Address,
                     timestamp: 1000
                 },
                 body: {
@@ -185,14 +168,6 @@ export class StateManagerTestBuilder {
         // Create proper Block instance
         const dummyBlock = Block.fromSignedBlock(signedBlockStruct);
         this.storage.blocks.storeBlock(dummyBlock);
-        return this;
-    }
-
-    /**
-     * Configure contract mock - for tests that need specific contract behavior
-     */
-    configureContract(configure: (contract: any) => void): this {
-        configure(this.mockContract);
         return this;
     }
 
@@ -217,16 +192,14 @@ export class StateManagerTestBuilder {
         // Create a minimal signer mock
         const mockSigner = {
             signMessage: sinon.stub().resolves("0xsignature"),
-            getAddress: sinon
-                .stub()
-                .resolves("0x1234567890123456789012345678901234567890")
+            getAddress: sinon.stub().resolves(defaults.signerAddress)
         };
 
         // Create StateManager with all dependencies
         const stateManager = new StateManager(
             mockSigner as any,
-            "0x1234567890123456789012345678901234567890" as Address,
-            this.mockContract as any,
+            defaults.signerAddress,
+            this.testContract as any,
             this.diamondStateMachine as any,
             this.timeConfig,
             this.mockP2pEventHooks as any,
@@ -237,10 +210,11 @@ export class StateManagerTestBuilder {
         // Configure it
         stateManager.setChannelId(this.channelId);
         stateManager.forkId = this.forkId;
-        stateManager.agreementManager = this.agreementManager as any;
 
-        // Update contract mock to return the correct forkId
-        this.mockContract.getStateSnapshot.resolves({
+        stateManager.agreementManager = this.agreementManager;
+
+        // Configure default contract behavior
+        this.testContract.withStateSnapshot({
             forkId: this.forkId,
             blockHeight: 3n,
             timestamp: 1000,

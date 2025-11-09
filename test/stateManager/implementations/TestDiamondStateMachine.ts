@@ -1,14 +1,12 @@
 import { Address, Bytes } from "@/types/types";
-
+import { zeroHex } from "../../factory";
 /**
  * Minimal test implementation of Diamond State Machine
- * Only implements what tests need - defaults to no-op or sensible defaults
- *
- * This is NOT a full implementation, just the methods StateManager uses in tests
+
  */
 export class TestDiamondStateMachine {
     private state: Bytes = "0x";
-    private nextToWrite: Address = "0x0000000000000000000000000000000000000000";
+    private nextToWrite: Address = zeroHex(20) as Address;
     private isForkDisputed_value: boolean = false;
 
     constructor(config?: { nextToWrite?: Address; initialState?: Bytes }) {
@@ -28,6 +26,10 @@ export class TestDiamondStateMachine {
         return this.state;
     }
 
+    async getParticipants(): Promise<Address[]> {
+        return [];
+    }
+
     // For tests that need to simulate fork disputes
     setForkDisputed(value: boolean): void {
         this.isForkDisputed_value = value;
@@ -36,6 +38,8 @@ export class TestDiamondStateMachine {
     // Local diamond contract mock - minimal interface
     localDiamondContract = {
         isForkDisputed: async () => this.isForkDisputed_value,
-        isBlockAuthentic: async () => true
+        isBlockAuthentic: async () => true,
+        getBlockCallDataCommitment: async () => zeroHex(32),
+        getOnChainSlashedParticipantsUpToTimestamp: async () => []
     };
 }

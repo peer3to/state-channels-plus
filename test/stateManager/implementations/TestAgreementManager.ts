@@ -1,11 +1,18 @@
 import { BlockHeight, ForkId } from "@/types/types";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { StateSnapshot } from "@/models";
+import AgreementManager from "@/agreementManager/AgreementManager";
+import Storage from "@/storage";
 
-export class TestAgreementManager {
+export class TestAgreementManager extends AgreementManager {
     private proofs: Map<string, StateProofStruct> = new Map();
-    private milestoneSnapshot: StateSnapshot | null = null;
+    private milestoneSnapshot: StateSnapshot | undefined = undefined;
 
+    constructor(storage: Storage) {
+        super(storage);
+    }
+
+    // Override getStateProof to return configured test proofs
     async getStateProof(
         forkId: ForkId,
         height: BlockHeight
@@ -14,8 +21,9 @@ export class TestAgreementManager {
         return this.proofs.get(key) || { milestones: [], signedBlocks: [] };
     }
 
-    getSnapshotFromMilestone(_milestoneProof: any): StateSnapshot | null {
-        return this.milestoneSnapshot;
+    // Override getSnapshotFromMilestone to return configured test snapshot
+    getSnapshotFromMilestone(_milestoneProof: any): StateSnapshot | undefined {
+        return this.milestoneSnapshot ?? undefined;
     }
 
     // Builder pattern for test configuration
@@ -29,7 +37,7 @@ export class TestAgreementManager {
         return this;
     }
 
-    withMilestoneSnapshot(snapshot: StateSnapshot | null): this {
+    withMilestoneSnapshot(snapshot: StateSnapshot | undefined): this {
         this.milestoneSnapshot = snapshot;
         return this;
     }
