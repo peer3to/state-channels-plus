@@ -56,13 +56,22 @@ contract UtilityFacet {
         return (true, "");
     }
 
-    function retrieveSignerAddress(bytes memory encodedData, bytes memory signature) public pure returns (address) {
+    function retrieveSignerAddress(bytes memory encodedData, bytes memory signature)
+        public
+        pure
+        returns (address, bool)
+    {
         bytes32 _hash = keccak256(encodedData);
 
         // EIP-191 - This is what actually gets signed
         bytes32 signedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _hash));
 
-        return ECDSA.recover(signedHash, signature);
+        // Use tryRecover to handle invalid signatures (recover reverts if signature is invalid)
+        (address recovered, ECDSA.RecoverError error,) = ECDSA.tryRecover(signedHash, signature);
+        if (error != ECDSA.RecoverError.NoError) {
+            return (recovered, false);
+        }
+        return (recovered, true);
     }
 
     function isAddressInArray(address[] memory array, address adr) public pure returns (bool) {
@@ -343,6 +352,7 @@ contract UtilityFacet {
         BlockConfirmation memory currentBlockConfirmation;
         Block memory currentBlock;
         address adr;
+        bool isValid;
         if (milestone.blockConfirmations.length == 0) {
             return (false, bytes32(0));
         }
@@ -359,17 +369,20 @@ contract UtilityFacet {
                 finalizedSnapshotHash = currentBlock.stateSnapshotHash;
             }
             // Collect signatures
-            adr = retrieveSignerAddress(
+            (adr, isValid) = retrieveSignerAddress(
                 currentBlockConfirmation.signedBlock.encodedBlock, currentBlockConfirmation.signedBlock.signature
             );
-            if (adr != currentBlock.transaction.header.participant) {
+            if (!isValid || adr != currentBlock.transaction.header.participant) {
                 return (false, bytes32(0));
             }
             thresholdCount = tryInsertAddressInThresholdSet(adr, thresholdSet, thresholdCount, expectedParticipants);
             for (uint256 j = 0; j < currentBlockConfirmation.signatures.length; j++) {
-                adr = retrieveSignerAddress(
+                (adr, isValid) = retrieveSignerAddress(
                     currentBlockConfirmation.signedBlock.encodedBlock, currentBlockConfirmation.signatures[j]
                 );
+                if (!isValid) {
+                    return (false, bytes32(0));
+                }
                 thresholdCount = tryInsertAddressInThresholdSet(adr, thresholdSet, thresholdCount, expectedParticipants);
             }
             previousEncodedBlock = currentBlockConfirmation.signedBlock.encodedBlock;
@@ -428,7 +441,10 @@ contract UtilityFacet {
             }
             previousBlockHash = keccak256(currentBlockEncoded);
             //verify original signature
-            address signer = retrieveSignerAddress(currentBlockEncoded, signedBlocks[i].signature);
+            (address signer, bool isValid) = retrieveSignerAddress(currentBlockEncoded, signedBlocks[i].signature);
+            if (!isValid) {
+                return false;
+            }
             if (signer != currentBlock.transaction.header.participant) {
                 return false;
             }

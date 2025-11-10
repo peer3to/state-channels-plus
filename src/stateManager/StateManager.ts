@@ -129,6 +129,7 @@ class StateManager {
         this.storage = storage;
 
         this.logger = logger.child({ component: "StateManager" });
+        this.timeoutManager = new TimeoutManager(logger);
 
         this.eventHandler = new EventHandler(
             this.storage,
@@ -180,13 +181,12 @@ class StateManager {
             this.storage,
             this.p2pManager
         );
-        this.timeoutManager = new TimeoutManager();
     }
     //Mark resources for garbage collection
     public async dispose() {
         this.isDisposed = true;
         // Cancel all scheduled tasks
-        this.timeoutManager.dispose();
+        await this.timeoutManager.dispose();
         // Clear reduction timeouts
         for (const [_, reductionHandle] of this.reductionTriggerMap) {
             clearTimeout(reductionHandle.handle);
@@ -451,6 +451,7 @@ class StateManager {
             this.storage.blocks.getNextBlockHeight(forkId);
         let timeLost = Clock.getTimeInSeconds() - genesisTimestamp;
         timeLost = timeLost < 0 ? 0 : timeLost; // if genesisTimestamp is in the future - no time is lost
+
         this.timeoutManager.scheduleTask(
             () =>
                 this.tryTimeoutParticipant(
@@ -462,7 +463,6 @@ class StateManager {
             "participantTimeout"
         );
 
-        // arrow function preserves "this", which is the StateManager instance
         this.timeoutManager.scheduleTask(
             () => this.tryExecuteFromQueue(),
             0,
@@ -1274,7 +1274,6 @@ class StateManager {
         );
 
         const previousBlock = previousBlockOrSnapshot.block;
-
         let previousBlockProducerPostedCalldata = false;
         if (previousBlock) {
             if (previousBlock.onChainTimestamp) {
@@ -1518,6 +1517,7 @@ class StateManager {
         }
 
         // step 11 - schedule a timeout check for the next participant
+
         this.timeoutManager.scheduleTask(
             () =>
                 this.tryTimeoutParticipant(

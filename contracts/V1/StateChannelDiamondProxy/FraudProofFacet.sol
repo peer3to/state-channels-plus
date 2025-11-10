@@ -69,10 +69,10 @@ contract FraudProofFacet is StateChannelCommon {
             revert ErrorDoubleSignBlocksNotSame();
         }
 
-        address signer1 = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
+        (address signer1,) = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
             blockDoubleSignProof.block1.encodedBlock, blockDoubleSignProof.block1.signature
         );
-        address signer2 = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
+        (address signer2,) = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
             blockDoubleSignProof.block2.encodedBlock, blockDoubleSignProof.block2.signature
         );
         if (signer1 != signer2) {
@@ -91,7 +91,7 @@ contract FraudProofFacet is StateChannelCommon {
         StateSnapshot memory previousStateSnapshot = blockInvalidSTProof.previousBlockStateSnapshot;
         bytes memory previousStateStateMachineState = blockInvalidSTProof.previousStateStateMachineState;
 
-        address signer = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
+        (address signer,) = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
             blockInvalidSTProof.invalidBlock.encodedBlock, blockInvalidSTProof.invalidBlock.signature
         );
 
