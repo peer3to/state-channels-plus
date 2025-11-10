@@ -108,7 +108,7 @@ class StateManager {
     reductionTriggerMap: Map<ForkId, ReductionTimeoutHandle> = new Map();
     status: Status = Status.SPECTATING;
     timeoutManager: TimeoutManager;
-    private logger: Logger;
+    logger: Logger;
 
     constructor(
         signer: ethers.Signer,
@@ -142,7 +142,7 @@ class StateManager {
             this.eventHandler,
             this.diamondStateMachine.localDiamondContract
         );
-        this.agreementManager = new AgreementManager(this.storage);
+        this.agreementManager = new AgreementManager(this.storage, this.logger);
         this.disputeManager = new DisputeManager(
             this.channelId,
             signer,
@@ -921,41 +921,15 @@ class StateManager {
                 );
             }
 
-            const exitChannelBlocks: ExitChannelBlockStruct[] = [];
-
-            // Get the current on-chain snapshot's latest exit channel block hash
             const currentOnChainExitBlockHash =
                 currentOnChainSnapshot.snapshotData.latestExitChannelBlockHash;
-
-            // Get the latest local exit channel block hash from the latest state snapshot
-            if (!latestSnapshot) {
-                throw new Error(
-                    "Latest snapshot is undefined - this should not happen"
-                );
-            }
             const latestLocalExitBlockHash =
                 latestSnapshot.snapshotData.latestExitChannelBlockHash;
-
-            // Build the chain of exit blocks from current on-chain to latest local
-            let currentHash = latestLocalExitBlockHash;
-            const exitBlockChain: ExitChannelBlockStruct[] = [];
-
-            // Walk backwards through the chain until we reach the on-chain hash
-            while (currentHash !== currentOnChainExitBlockHash) {
-                const exitBlock =
-                    this.storage.exitChannelBlocks.getExitChannelBlock(
-                        currentHash
-                    );
-                if (!exitBlock) {
-                    throw new Error(
-                        `Exit channel block not found for hash: ${currentHash}`
-                    );
-                }
-                exitBlockChain.unshift(exitBlock);
-                currentHash = exitBlock.previousBlockHash;
-            }
-
-            exitChannelBlocks.push(...exitBlockChain);
+            const exitChannelBlocks =
+                this.storage.exitChannelBlocks.getBlocksInRange(
+                    latestLocalExitBlockHash,
+                    currentOnChainExitBlockHash
+                );
 
             return {
                 milestoneProofs,
@@ -1112,27 +1086,14 @@ class StateManager {
             }
 
             // Build exit blocks
-            let latestExitBlockHash =
+            const latestExitBlockHash =
                 genesisSnapshot.snapshotData.latestExitChannelBlockHash;
             const currentOnChainExitBlockHash =
                 currentOnChainSnapshot.snapshotData.latestExitChannelBlockHash;
-            const exitBlocks: ExitChannelBlockStruct[] = [];
-            let currentExitBlock =
-                this.storage.exitChannelBlocks.getExitChannelBlockEntry(
-                    latestExitBlockHash
-                );
-
-            while (
-                currentExitBlock &&
-                latestExitBlockHash !== currentOnChainExitBlockHash
-            ) {
-                exitBlocks.unshift(currentExitBlock.block);
-                latestExitBlockHash = currentExitBlock.block.previousBlockHash;
-                currentExitBlock =
-                    this.storage.exitChannelBlocks.getExitChannelBlockEntry(
-                        currentExitBlock.block.previousBlockHash
-                    );
-            }
+            const exitBlocks = this.storage.exitChannelBlocks.getBlocksInRange(
+                latestExitBlockHash,
+                currentOnChainExitBlockHash
+            );
 
             return {
                 genesisSnapshot,

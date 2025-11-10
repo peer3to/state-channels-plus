@@ -3,12 +3,15 @@ import { ATransport } from "@/transport";
 import ARpcMethods from "./ARpcMethods";
 import { hasMethod } from "@/utils/ObjectChecks";
 import P2PManager from "@/P2PManager";
+import { Logger } from "@/utils";
 
 abstract class ARpcService<R extends ARpcMethods> {
     p2pManager: P2PManager;
+    logger: Logger;
 
-    constructor(p2pManager: P2PManager) {
+    constructor(p2pManager: P2PManager, logger: Logger) {
         this.p2pManager = p2pManager;
+        this.logger = logger;
     }
 
     public abstract createRPCMethods(transport: ATransport): R;

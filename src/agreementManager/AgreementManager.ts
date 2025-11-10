@@ -13,7 +13,7 @@ import {
     Signature
 } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
-import { Codec, Type } from "@/utils";
+import { Codec, Logger, Type } from "@/utils";
 import { ethers, ZeroHash } from "ethers";
 import {
     DisputeConfirmationStruct,
@@ -27,7 +27,12 @@ import { ReduceData } from "@/types";
  * It interprets storage data and provides convenience methods
  */
 class AgreementManager {
-    constructor(private storage: Storage) {}
+    constructor(
+        private storage: Storage,
+        private logger: Logger
+    ) {
+        this.logger = logger.child({ module: "AgreementManager" });
+    }
 
     public getLatestSignedBlockByParticipant(
         forkId: ForkId,
@@ -55,6 +60,18 @@ class AgreementManager {
         );
 
         return block.didEveryoneSign(thresholdAddresses);
+    }
+
+    public async tryGetStateProof(
+        forkId: ForkId,
+        blockHeight: BlockHeight
+    ): Promise<StateProofStruct | undefined> {
+        try {
+            return await this.getStateProof(forkId, blockHeight);
+        } catch (error) {
+            this.logger.error(`Failed to get state proof: ${error}`);
+            return undefined;
+        }
     }
 
     /**
