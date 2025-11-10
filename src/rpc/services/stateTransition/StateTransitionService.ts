@@ -7,12 +7,7 @@ import { ATransport } from "@/transport";
 
 class StateTransitionService extends ARpcService<StateTransitionRpcMethods> {
     constructor(p2pManager: P2PManager) {
-        super(
-            p2pManager,
-            p2pManager.stateManager.logger.child({
-                component: "StateTransitionService"
-            })
-        );
+        super(p2pManager);
     }
     public createRPCMethods(transport: ATransport): StateTransitionRpcMethods {
         return new StateTransitionRpcMethods(transport, this);

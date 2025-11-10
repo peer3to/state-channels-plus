@@ -1,4 +1,5 @@
 import Clock from "@/Clock";
+import { ARpcService } from "@/rpc";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import { ATransport, TransportType } from "@/transport";
 import { Hash, Signature, Timestamp } from "@/types/types";
@@ -20,7 +21,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             this.p2pManager.stateManager.timeConfig.agreementTime
         ) {
             this.p2pManager.disconnectConnection(this.senderTransport);
-            this.service.logger.debug(
+            console.log(
                 `onInitHandshakeRequest - time difference too big - time:${time} localTime:${localTime} diff:${
                     time - localTime
                 } agreementTime:${
@@ -76,7 +77,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
 
         // Check if this peer is blacklisted
         if (this.p2pManager.isBlacklisted(signerAddress)) {
-            this.service.logger.debug(
+            console.log(
                 `Rejecting handshake from blacklisted peer: ${signerAddress}`
             );
             this.p2pManager.disconnectConnection(this.senderTransport);

@@ -46,6 +46,11 @@ export default class ValidationService {
             return await strategy.channelNotOpened(block);
         }
 
+        // Check for fork mismatch - request state proof from peer to prove their state at a specific block height
+        if (block.forkId !== this.stateManager.forkId && senderTransport) {
+            return await this.handleForkMismatch(block, senderTransport);
+        }
+
         //  Get participants
         const participants = await this.getParticipants(
             block.coordinates,
@@ -404,5 +409,26 @@ export default class ValidationService {
             this.timeConfig.chainFallbackTime;
 
         return block.onChainTimestamp > maxAllowedTimestamp;
+    }
+
+    private async handleForkMismatch(
+        block: Block,
+        senderTransport: ATransport
+    ): Promise<BlockValidationResult> {
+        console.log(
+            `Fork mismatch: block fork=${block.forkId}, my fork=${this.stateManager.forkId}`
+        );
+
+        // Request state proof from peer to prove their state at a specific block height
+        this.stateManager.p2pManager.localRpc.stateProofService.requestStateProof(
+            senderTransport,
+            block.channelId,
+            block.forkId,
+            block.coordinates.height
+        );
+
+        // Queue the block - will process after sync if peer proves the state
+        this.storage.queues.queueBlock(block);
+        return BlockValidationResult.NOT_READY;
     }
 }

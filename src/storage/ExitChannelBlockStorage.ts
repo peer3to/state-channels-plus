@@ -76,29 +76,20 @@ export class ExitChannelBlockStorage {
         let currentHash = fromBlockHash;
         while (currentHash != ethers.ZeroHash) {
             if (toBlockHash && currentHash === toBlockHash) break;
-            const entry = this.getExitChannelBlockEntry(currentHash);
-            if (!entry)
-                throw new Error(
-                    `Block hash ${currentHash} not found in storage`
-                );
+            const entry = this.blockMap.get(currentHash);
+            if (!entry) return;
             yield entry;
             currentHash = entry.block.previousBlockHash;
         }
     }
 
-    /**
-     * Get all exit channel blocks in the range [fromBlockHash, toBlockHash)
-     * @param fromBlockHash - Iterate the blockchain backwards from this block (including this block)
-     * @param toBlockHash - Stop iterating at this block (excluding this block)
-     * @returns An array of exit channel blocks in ascending order [Block N, Block N+1 ...]
-     */
     getBlocksInRange(
         fromBlockHash: Hash,
         toBlockHash: Hash
     ): ExitChannelBlockStruct[] {
         const blocks: ExitChannelBlockStruct[] = [];
         for (const entry of this.getIterator(fromBlockHash, toBlockHash)) {
-            blocks.unshift(entry.block);
+            blocks.push(entry.block);
         }
         return blocks;
     }

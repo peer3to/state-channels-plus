@@ -8,7 +8,6 @@ import PeerProfile from "@/PeerProfile";
 import { Hash, Signature, Timestamp } from "@/types/types";
 import InitHandshakeRpcMethods from "./InitHandshakeRpcMethods";
 import P2PManager from "@/P2PManager";
-import { TimeoutManager } from "@/utils/TimeoutManager";
 
 type ConnectionChallenge = {
     randomChallengeHash: string;
@@ -18,15 +17,9 @@ type ConnectionChallenge = {
 class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
     mapTransportToChallenge: WeakMap<ATransport, ConnectionChallenge> =
         new WeakMap<ATransport, ConnectionChallenge>();
-    timeoutManager: TimeoutManager;
+
     constructor(p2pManager: P2PManager) {
-        super(
-            p2pManager,
-            p2pManager.stateManager.logger.child({
-                module: "InitHandshakeService"
-            })
-        );
-        this.timeoutManager = p2pManager.stateManager.timeoutManager;
+        super(p2pManager);
     }
 
     public createRPCMethods(transport: ATransport): InitHandshakeRpcMethods {
@@ -42,14 +35,10 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
             .onInitHandshakeRequest(randomChallengeHash, time)
             .sendOne(transport);
         // expect a response or disconnect
-        this.timeoutManager.scheduleTask(
-            () => {
-                if (!this.didRespond(transport))
-                    this.p2pManager.disconnectConnection(transport);
-            },
-            this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
-            "InitHandshakeService - initHandshake timeout"
-        );
+        setTimeout(() => {
+            if (!this.didRespond(transport))
+                this.p2pManager.disconnectConnection(transport);
+        }, this.p2pManager.stateManager.timeConfig.agreementTime * 1000);
     }
 
     public setChallenge(transport: ATransport, challenge: ConnectionChallenge) {

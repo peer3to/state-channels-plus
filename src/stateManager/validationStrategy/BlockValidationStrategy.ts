@@ -120,7 +120,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         // Check if peer has already acknowledged this disputed fork
         if (
             senderTransport &&
-            this.p2pManager.localRpc.isForkDisputedService.didPeerAcknowledgeDisputedFork(
+            this.p2pManager.localRpc.isForkDisputedService.hasAcknowledgedDisputedFork(
                 senderTransport,
                 block.forkId
             )
@@ -137,17 +137,9 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotNextAndIsInTheFuture(
-        block: Block,
-        senderTransport?: ATransport
+        block: Block
     ): Promise<BlockValidationResult> {
         // not ready
-        if (senderTransport)
-            this.p2pManager.localRpc.spectateService.sync(
-                senderTransport,
-                block.channelId,
-                block.forkId,
-                block.height
-            );
         this.storage.queues.queueBlock(block);
         return BlockValidationResult.NOT_READY;
     }

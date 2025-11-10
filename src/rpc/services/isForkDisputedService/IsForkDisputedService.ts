@@ -3,23 +3,13 @@ import { ChannelId, ForkId, Timestamp } from "@/types/types";
 import ATransport from "@/transport/ATransport";
 import P2PManager from "@/P2PManager";
 import IsForkDisputedRpcMethods from "./IsForkDisputedRpcMethods";
-import { TimeoutManager } from "@/utils/TimeoutManager";
 
 class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
     // Track acknowledged disputed forks
-    peerAcknowledgements: WeakMap<ATransport, Set<ForkId>> = new WeakMap();
-    myAcknowledgements: WeakMap<ATransport, Set<ForkId>> = new WeakMap();
-    disputedForks: Set<ForkId> = new Set();
-    timeoutManager: TimeoutManager;
+    acknowledgedDisputedForks: WeakMap<ATransport, Set<ForkId>> = new WeakMap();
 
     constructor(p2pManager: P2PManager) {
-        super(
-            p2pManager,
-            p2pManager.stateManager.logger.child({
-                component: "IsForkDisputedService"
-            })
-        );
-        this.timeoutManager = p2pManager.stateManager.timeoutManager;
+        super(p2pManager);
     }
 
     public createRPCMethods(transport: ATransport): IsForkDisputedRpcMethods {
@@ -31,14 +21,7 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
      * This should be called when a dispute window is created on-chain
      */
     public requestDisputeAcknowledgment(channelId: ChannelId, forkId: ForkId) {
-        if (this.disputedForks.has(forkId)) {
-            this.logger.debug(
-                `Already requested all peers to acknowledge disputed fork ${forkId} - skipping...`
-            );
-            return;
-        }
-        this.disputedForks.add(forkId);
-        this.logger.debug(
+        console.log(
             `Requesting all peers to acknowledge disputed fork ${forkId}`
         );
 
@@ -52,32 +35,29 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
             .onDisputeAcknowledgmentRequest(channelId, forkId)
             .broadcast();
 
-        this.timeoutManager.scheduleTask(
+        setTimeout(
             () => {
-                this.logger.debug(
+                console.log(
                     `Checking dispute acknowledgment for fork ${forkId}`
                 );
 
                 // Check which transports from the snapshot haven't acknowledged
                 const transportsToDisconnect: ATransport[] = [];
                 for (const transport of snapshotTransports) {
-                    if (
-                        !this.didPeerAcknowledgeDisputedFork(transport, forkId)
-                    ) {
+                    if (!this.hasAcknowledgedDisputedFork(transport, forkId)) {
                         transportsToDisconnect.push(transport);
                     }
                 }
 
                 // Disconnect from peers that haven't acknowledged
                 for (const transport of transportsToDisconnect) {
-                    this.logger.debug(
+                    console.log(
                         `Peer did not acknowledge disputed fork ${forkId}, disconnecting`
                     );
                     this.p2pManager.disconnectAndBlacklistPeer(transport);
                 }
             },
-            2 * this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
-            "isForkDisputedService:awaitingDisputeAcknowledgments"
+            2 * this.p2pManager.stateManager.timeConfig.agreementTime * 1000
         );
     }
 
@@ -86,15 +66,13 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
         channelId: ChannelId,
         forkId: ForkId
     ): Promise<void> | void {
-        if (this.didIAcknowledgeDisputedFork(transport, forkId)) {
-            this.logger.debug(
-                `Already responded for fork ${forkId}, disconnecting`
-            );
+        if (this.hasAcknowledgedDisputedFork(transport, forkId)) {
+            console.log(`Already responded for fork ${forkId}, disconnecting`);
             return this.p2pManager.disconnectAndBlacklistPeer(transport);
         }
 
-        this.IAcknowledgeDisputedFork(transport, forkId);
-        this.logger.debug(`Acknowledged disputed fork ${forkId}`);
+        this.acknowledgeDisputedFork(transport, forkId);
+        console.log(`Acknowledged disputed fork ${forkId}`);
 
         this.remoteRpc.isForkDisputedService
             .onDisputeAcknowledgmentResponse(channelId, forkId)
@@ -104,53 +82,22 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
     /**
      * Check if a peer has acknowledged that a fork is disputed
      */
-    public didPeerAcknowledgeDisputedFork(
+    public hasAcknowledgedDisputedFork(
         transport: ATransport,
         forkId: ForkId
     ): boolean {
-        const acknowledgedForks = this.peerAcknowledgements.get(transport);
-        return acknowledgedForks ? acknowledgedForks.has(forkId) : false;
-    }
-
-    /**
-     * Check if I have acknowledged that a fork is disputed
-     */
-    public didIAcknowledgeDisputedFork(
-        transport: ATransport,
-        forkId: ForkId
-    ): boolean {
-        const acknowledgedForks = this.myAcknowledgements.get(transport);
+        const acknowledgedForks = this.acknowledgedDisputedForks.get(transport);
         return acknowledgedForks ? acknowledgedForks.has(forkId) : false;
     }
 
     /**
      * Mark that a peer has acknowledged a fork as disputed
      */
-    public peerAcknowledgesDisputedFork(transport: ATransport, forkId: ForkId) {
-        if (this.didPeerAcknowledgeDisputedFork(transport, forkId)) {
-            this.p2pManager.disconnectAndBlacklistPeer(transport);
-            return;
-        }
-        let acknowledgedForks = this.peerAcknowledgements.get(transport);
+    public acknowledgeDisputedFork(transport: ATransport, forkId: ForkId) {
+        let acknowledgedForks = this.acknowledgedDisputedForks.get(transport);
         if (!acknowledgedForks) {
             acknowledgedForks = new Set();
-            this.peerAcknowledgements.set(transport, acknowledgedForks);
-        }
-        acknowledgedForks.add(forkId);
-    }
-
-    /**
-     * Mark that a peer has acknowledged a fork as disputed
-     */
-    public IAcknowledgeDisputedFork(transport: ATransport, forkId: ForkId) {
-        if (this.didIAcknowledgeDisputedFork(transport, forkId)) {
-            this.p2pManager.disconnectAndBlacklistPeer(transport);
-            return;
-        }
-        let acknowledgedForks = this.myAcknowledgements.get(transport);
-        if (!acknowledgedForks) {
-            acknowledgedForks = new Set();
-            this.myAcknowledgements.set(transport, acknowledgedForks);
+            this.acknowledgedDisputedForks.set(transport, acknowledgedForks);
         }
         acknowledgedForks.add(forkId);
     }

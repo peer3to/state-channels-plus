@@ -57,8 +57,7 @@ export default abstract class AValidationStrategy {
     ): Promise<BlockValidationResult>;
 
     public abstract blockIsNotNextAndIsInTheFuture(
-        block: Block,
-        senderTransport?: ATransport
+        block: Block
     ): Promise<BlockValidationResult>;
 
     public abstract blockIsNotLinkedAndIsNotFirstBlock(
