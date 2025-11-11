@@ -30,7 +30,8 @@ import {
     JoinChannelStruct,
     BlockStruct,
     TransactionStruct,
-    SignedBlockStruct
+    SignedBlockStruct,
+    BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { TimeoutStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 import Clock from "@/Clock";
@@ -371,6 +372,10 @@ export class PeerTestHarness<T extends AStateMachine> {
                     ).signature as BytesLike
             )
         );
+
+        for (const peer of this.peers) {
+            peer.stateManager.setStatus(Status.PARTICIPATING);
+        }
 
         this.logger.debug(
             "Submitting channel open transaction to blockchain..."
