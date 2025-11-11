@@ -101,39 +101,4 @@ describe("Universal Deployment", () => {
                 .reverted;
         });
     });
-
-    describe("linkLibraries function", () => {
-        // it("should replace library placeholders with addresses", () => {
-        //     const libraryAddress = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
-        //     const linkedArtifact = linkLibraries(
-        //         DisputeFraudProofFacetArtifact,
-        //         { StateChannelUtilLibrary: libraryAddress }
-        //     );
-        //     // Assert that placeholders are replaced (should find 0 placeholders)
-        //     const placeholderPattern = /__\$[a-fA-F0-9]+\$__/g;
-        //     const placeholderMatches =
-        //         linkedArtifact.bytecode.match(placeholderPattern);
-        //     expect(placeholderMatches).to.be.null;
-        //     // Assert that the library address appears the expected number of times (2 times based on linkReferences)
-        //     const normalizedAddress = libraryAddress
-        //         .toLowerCase()
-        //         .replace(/^0x/, "")
-        //         .padStart(40, "0");
-        //     const addressMatches = linkedArtifact.bytecode.match(
-        //         new RegExp(normalizedAddress, "g")
-        //     );
-        //     const expectedLength =
-        //         DisputeFraudProofFacetArtifact.linkReferences[
-        //             "contracts/V1/StateChannelDiamondProxy/StateChannelUtilLibrary.sol"
-        //         ].StateChannelUtilLibrary.length;
-        //     expect(addressMatches).to.have.length(expectedLength);
-        // });
-        // it("should throw error when library address is missing", () => {
-        //     expect(() => {
-        //         linkLibraries(DisputeFraudProofFacetArtifact, {});
-        //     }).to.throw(
-        //         "Missing deployed address for library 'StateChannelUtilLibrary'"
-        //     );
-        // });
-    });
 });
