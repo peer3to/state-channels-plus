@@ -1,9 +1,74 @@
+import { expect } from "chai";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { MathStateMachine } from "@typechain-types/index";
+
 describe("E2E: Advanced Security", function () {
+    let harness: PeerTestHarness<MathStateMachine> | null = null;
+
+    beforeEach(async function () {
+        harness = new PeerTestHarness<MathStateMachine>();
+    });
+
+    afterEach(async function () {
+        if (harness) {
+            await harness.cleanup();
+            harness = null;
+        }
+    });
+
     describe("Byzantine Participant Behavior", function () {
         // Arrange: Setup channel, participant creates two conflicting blocks at same height
         // Act: Participant signs both blocks and sends to different peers
         // Assert: System detects double-signing violation
-        it("should detect double-signing by participant");
+        it("should detect double-signing by participant", async function () {
+            // Arrange
+            await harness!.setup(2);
+            const forkId = await harness!.openChannel();
+
+            // Create 2 blocks so peers sync on blocks at height 0 and height 1
+            await harness!.submitNextTransaction((contract) => contract.add(1)); // peer 0 - height 0
+            await harness!.submitNextTransaction((contract) => contract.add(2)); // peer 1 - height 1
+
+            // Verify both peers are in sync after 2 blocks
+            harness!.assertAllPeersInSync();
+            const latestBlock =
+                harness!.peers[0].stateManager.storage.blocks.getLatestBlock(
+                    forkId
+                );
+            expect(latestBlock?.height).to.equal(
+                1,
+                "Should be at height 1 after 2 blocks"
+            );
+
+            // Reset spies after setup
+            harness!.resetEventSpies();
+
+            // Act: Peer 1 (who authored the block at height 1) submits a double-sign block at height 1
+            await harness!.submitDoubleSignBlock(1, { forkId });
+
+            // Assert: The other peer (peer 0) should detect peer 1's double-sign
+            // Wait for peer 0 to detect the double-sign and initiate dispute
+            const doubleSignDetected = await harness!.waitForCondition(() => {
+                const peer0DisputeCount = harness!.getEventCallCount(
+                    0,
+                    "onInitiatingDispute"
+                );
+                return peer0DisputeCount > 0;
+            }, 5000);
+
+            expect(doubleSignDetected).to.be.true;
+            expect(
+                harness!.getEventCallCount(0, "onInitiatingDispute"),
+                "Peer 0 should have detected double-sign and initiated dispute"
+            ).to.be.at.least(1);
+
+            // Verify dispute was committed on-chain
+            const disputeCommitted = await harness!.waitForCondition(
+                () => harness!.getEventCallCount(0, "onDisputeCommitted") > 0,
+                2000
+            );
+            expect(disputeCommitted).to.be.true;
+        });
 
         // Arrange: Same as above
         // Act: Double-signing is detected and dispute evidence is gathered

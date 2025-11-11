@@ -4,7 +4,6 @@ import * as sinon from "sinon";
 import hre from "hardhat";
 import { EvmStateMachine, P2pInstance } from "@/evm";
 import StateManager from "@/stateManager";
-import { createLogger, LocalDiscoveryServer, Logger } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import { AStateMachine, StateChannelManagerProxy } from "@typechain-types";
 import {
@@ -17,12 +16,22 @@ import {
 } from "@/types/types";
 import { TimeConfig } from "@/types/time";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
-import { SignatureUtils, Codec, Type, hash } from "@/utils";
+import {
+    createLogger,
+    LocalDiscoveryServer,
+    Logger,
+    SignatureUtils,
+    Codec,
+    Type,
+    hash
+} from "@/utils";
+import Block from "@/models/Block";
 import {
     JoinChannelStruct,
     BlockStruct,
     TransactionStruct,
-    SignedBlockStruct
+    SignedBlockStruct,
+    BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { TimeoutStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 import Clock from "@/Clock";
@@ -30,6 +39,7 @@ import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
 import { deploy } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
+import { Status } from "@/types";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;
@@ -362,6 +372,10 @@ export class PeerTestHarness<T extends AStateMachine> {
                     ).signature as BytesLike
             )
         );
+
+        for (const peer of this.peers) {
+            peer.stateManager.setStatus(Status.PARTICIPATING);
+        }
 
         this.logger.debug(
             "Submitting channel open transaction to blockchain..."
@@ -875,6 +889,103 @@ export class PeerTestHarness<T extends AStateMachine> {
     ): TimeoutStruct | undefined {
         const peer = this.getPeer(peerIndex);
         return peer.stateManager.storage.timeout.getTimeout(forkId);
+    }
+
+    async submitDoubleSignBlock(
+        peerIndex: number,
+        options?: {
+            forkId?: ForkId;
+            transactionData?: Bytes;
+        }
+    ): Promise<{
+        conflictingBlock: Block;
+        originalBlock: Block;
+        signedBlock: SignedBlockStruct;
+        blockConfirmation: BlockConfirmationStruct;
+    }> {
+        const peer = this.getPeer(peerIndex);
+        const forkId = options?.forkId || this.activeForkId!;
+
+        this.logger.debug(
+            `Peer ${peerIndex} creating double-sign block for fork ${forkId}`
+        );
+
+        // 1. Get the latest block
+        const originalBlock =
+            peer.stateManager.storage.blocks.getLatestBlock(forkId);
+        if (!originalBlock) {
+            throw new Error(`No block found for fork ${forkId}`);
+        }
+
+        this.logger.debug(
+            `Original block found: height=${originalBlock.height}, hash=${originalBlock.hash}`
+        );
+
+        // 2. Create conflicting block with same coordinates but different content
+        const conflictingTransactionData: Bytes =
+            options?.transactionData ||
+            (ethers.hexlify(ethers.randomBytes(64)) as Bytes);
+
+        const conflictingStateSnapshotHash: Hash = hash(
+            ethers.randomBytes(32)
+        ) as Hash;
+
+        const conflictingBlockStruct: BlockStruct = {
+            transaction: {
+                header: {
+                    channelId: originalBlock.channelId,
+                    participant: originalBlock.author,
+                    forkId: originalBlock.forkId,
+                    transactionCnt: BigInt(originalBlock.height),
+                    timestamp: originalBlock.timestamp
+                },
+                body: {
+                    encodedData: conflictingTransactionData,
+                    data: conflictingTransactionData
+                }
+            },
+            stateSnapshotHash: conflictingStateSnapshotHash,
+            previousBlockHash: originalBlock.previousBlockHash
+        };
+
+        // 3. Sign the conflicting block
+        const encodedBlock = Codec.encode(conflictingBlockStruct, Type.Block);
+        const blockHash = hash(encodedBlock);
+        const signature = await peer.signer.signMessage(
+            ethers.getBytes(blockHash)
+        );
+
+        const signedBlock: SignedBlockStruct = {
+            encodedBlock: encodedBlock,
+            signature: signature
+        };
+
+        // 4. Create BlockConfirmationStruct
+        const blockConfirmation: BlockConfirmationStruct = {
+            signedBlock: signedBlock,
+            signatures: []
+        };
+
+        // 5. Create Block object from BlockConfirmationStruct
+        const conflictingBlock = Block.fromBlockConfirmation(blockConfirmation);
+
+        this.logger.info(
+            `Peer ${peerIndex} broadcasting double-sign block: height=${conflictingBlock.height}, hash=${conflictingBlock.hash}`
+        );
+
+        // 6. Broadcast via P2P
+        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
+            .onBlockConfirmation(blockConfirmation)
+            .broadcast();
+
+        this.logger.info(`Double-sign block broadcasted by peer ${peerIndex}`);
+
+        return {
+            conflictingBlock,
+            originalBlock,
+            signedBlock,
+            blockConfirmation
+        };
     }
 }
 
