@@ -910,7 +910,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             `Peer ${peerIndex} creating double-sign block for fork ${forkId}`
         );
 
-        // 1. Get the latest block
+        // Get the latest block
         const originalBlock =
             peer.stateManager.storage.blocks.getLatestBlock(forkId);
         if (!originalBlock) {
@@ -921,7 +921,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             `Original block found: height=${originalBlock.height}, hash=${originalBlock.hash}`
         );
 
-        // 2. Create conflicting block with same coordinates but different content
+        // Create conflicting block with same coordinates but different content
         const conflictingTransactionData: Bytes =
             options?.transactionData ||
             (ethers.hexlify(ethers.randomBytes(64)) as Bytes);
@@ -948,7 +948,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             previousBlockHash: originalBlock.previousBlockHash
         };
 
-        // 3. Sign the conflicting block
+        // Sign the conflicting block
         const encodedBlock = Codec.encode(conflictingBlockStruct, Type.Block);
         const blockHash = hash(encodedBlock);
         const signature = await peer.signer.signMessage(
@@ -960,20 +960,20 @@ export class PeerTestHarness<T extends AStateMachine> {
             signature: signature
         };
 
-        // 4. Create BlockConfirmationStruct
+        // Create BlockConfirmationStruct
         const blockConfirmation: BlockConfirmationStruct = {
             signedBlock: signedBlock,
             signatures: []
         };
 
-        // 5. Create Block object from BlockConfirmationStruct
+        //  Create Block
         const conflictingBlock = Block.fromBlockConfirmation(blockConfirmation);
 
         this.logger.info(
             `Peer ${peerIndex} broadcasting double-sign block: height=${conflictingBlock.height}, hash=${conflictingBlock.hash}`
         );
 
-        // 6. Broadcast via P2P
+        // Broadcast
         peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
             .onBlockConfirmation(blockConfirmation)
             .broadcast();
