@@ -30,8 +30,7 @@ import {
     JoinChannelStruct,
     BlockStruct,
     TransactionStruct,
-    SignedBlockStruct,
-    BlockConfirmationStruct
+    SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { TimeoutStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 import Clock from "@/Clock";
