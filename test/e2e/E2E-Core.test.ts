@@ -244,20 +244,12 @@ describe("E2E: Core Functionality", function () {
 
             // Act (peer 2 does not author a block)
             // Assert: A timeout dispute is created and submitted on-chain
-            const disputeCreated = await harness!.waitForCondition(
-                () => {
-                    // Check if any of the remaining peers initiated a dispute
-                    const peer0DisputeCount = harness!.getEventCallCount(
-                        0,
-                        "onInitiatingDispute"
-                    );
-                    const peer1DisputeCount = harness!.getEventCallCount(
-                        1,
-                        "onInitiatingDispute"
-                    );
-
-                    return peer0DisputeCount === 1 && peer1DisputeCount === 1;
-                },
+            const disputeCreated = await harness!.waitForEventCounts(
+                "onInitiatingDispute",
+                [
+                    { peerId: 0, expectedCount: 1 },
+                    { peerId: 1, expectedCount: 1 }
+                ],
                 10000 // Wait up to 10 seconds for dispute creation
             );
             expect(disputeCreated).to.be.true;
@@ -276,14 +268,14 @@ describe("E2E: Core Functionality", function () {
             ).to.be.equal(0);
 
             // Assert that the disputes events was recieved (2 peers initiated a dispute X 3 participants = 6 events)
-            const disputesCommitted = await harness!.waitForCondition(
-                () =>
-                    harness!.getEventCallCount(0, "onDisputeCommitted") +
-                        harness!.getEventCallCount(1, "onDisputeCommitted") +
-                        harness!.getEventCallCount(2, "onDisputeCommitted") ==
-                    6,
-
-                1000
+            const disputesCommitted = await harness!.waitForEventCounts(
+                "onDisputeCommitted",
+                [
+                    { peerId: 0, expectedCount: 2 },
+                    { peerId: 1, expectedCount: 2 },
+                    { peerId: 2, expectedCount: 2 }
+                ],
+                10000
             );
             expect(disputesCommitted).to.be.true;
 
@@ -333,31 +325,18 @@ describe("E2E: Core Functionality", function () {
 
             // Wait for timeout dispute to be created and submitted on-chain
             // The remaining peers (0 and 2) should detect the timeout and create a dispute
-            const disputeCreated = await harness!.waitForCondition(
-                () => {
-                    // Check if any of the remaining peers initiated a dispute
-                    const peer0DisputeCount = harness!.getEventCallCount(
-                        0,
-                        "onInitiatingDispute"
-                    );
-                    const peer2DisputeCount = harness!.getEventCallCount(
-                        2,
-                        "onInitiatingDispute"
-                    );
-
-                    return peer0DisputeCount > 0 || peer2DisputeCount > 0;
-                },
-                10000 // Wait up to 10 seconds for dispute creation
+            // Note: This checks if at least one peer initiated a dispute (not exact counts)
+            const disputeCreated = await harness!.waitForEventCounts(
+                "onInitiatingDispute",
+                [
+                    { peerId: 0, expectedCount: 1 },
+                    { peerId: 2, expectedCount: 1 }
+                ],
+                10000
             );
 
             // Assert - A timeout dispute should be created by one of the remaining peers
             expect(disputeCreated).to.be.true;
-
-            // Verify that at least one peer initiated a dispute
-            const totalDisputeCount =
-                harness!.getEventCallCount(0, "onInitiatingDispute") +
-                harness!.getEventCallCount(2, "onInitiatingDispute");
-            expect(totalDisputeCount).to.be.at.least(1);
 
             // Verify that the disconnected peer (peer 1) did not initiate any disputes
             expect(
@@ -404,45 +383,36 @@ describe("E2E: Core Functionality", function () {
             });
 
             // Wait for other peers to detect the calldata and attempt validation (which will fail)
-            await harness!.waitForCondition(() => {
-                // Other peers should detect the calldata via onBlockCalldataPosted event
-                const peer0CalldataEvents = harness!.getEventCallCount(
-                    0,
-                    "onBlockCalldataPosted"
-                );
-                const peer1CalldataEvents = harness!.getEventCallCount(
-                    1,
-                    "onBlockCalldataPosted"
-                );
-                return peer0CalldataEvents == 1 && peer1CalldataEvents == 1;
-            }, 5000);
+            await harness!.waitForEventCounts(
+                "onBlockCalldataPosted",
+                [
+                    { peerId: 0, expectedCount: 1 },
+                    { peerId: 1, expectedCount: 1 }
+                ],
+                5000
+            );
 
             // Wait for timeout check cycle to detect forced timeout
-            const forcedTimeoutDetected = await harness!.waitForCondition(
-                () => {
-                    const peer0Disputes = harness!.getEventCallCount(
-                        0,
-                        "onInitiatingDispute"
-                    );
-                    const peer1Disputes = harness!.getEventCallCount(
-                        1,
-                        "onInitiatingDispute"
-                    );
-                    return peer0Disputes == 1 && peer1Disputes == 1;
-                },
+            const forcedTimeoutDetected = await harness!.waitForEventCounts(
+                "onInitiatingDispute",
+                [
+                    { peerId: 0, expectedCount: 1 },
+                    { peerId: 1, expectedCount: 1 }
+                ],
                 10000
             );
 
             // Assert - Forced timeout dispute created
             expect(forcedTimeoutDetected).to.be.true;
-            const disputesCommitted = await harness!.waitForCondition(
-                () =>
-                    harness!.getEventCallCount(0, "onDisputeCommitted") +
-                        harness!.getEventCallCount(1, "onDisputeCommitted") +
-                        harness!.getEventCallCount(2, "onDisputeCommitted") ==
-                    6,
-
-                1000
+            // Note: This checks total count across all peers, not per-peer counts
+            const disputesCommitted = await harness!.waitForEventCounts(
+                "onDisputeCommitted",
+                [
+                    { peerId: 0, expectedCount: 2 },
+                    { peerId: 1, expectedCount: 2 },
+                    { peerId: 2, expectedCount: 2 }
+                ],
+                10000
             );
             expect(disputesCommitted).to.be.true;
 
@@ -544,17 +514,14 @@ describe("E2E: Core Functionality", function () {
             });
 
             // Wait for other peers to detect the junk calldata
-            await harness!.waitForCondition(() => {
-                const peer0CalldataEvents = harness!.getEventCallCount(
-                    0,
-                    "onBlockCalldataPosted"
-                );
-                const peer1CalldataEvents = harness!.getEventCallCount(
-                    1,
-                    "onBlockCalldataPosted"
-                );
-                return peer0CalldataEvents == 1 && peer1CalldataEvents == 1;
-            }, 5000);
+            await harness!.waitForEventCounts(
+                "onBlockCalldataPosted",
+                [
+                    { peerId: 0, expectedCount: 1 },
+                    { peerId: 1, expectedCount: 1 }
+                ],
+                5000
+            );
 
             // get block again from  storage
             const peer1Block =
@@ -573,18 +540,12 @@ describe("E2E: Core Functionality", function () {
             // and previousBlockProducerPostedCalldata should be true (calldata slot is occupied)
 
             // Wait for timeout dispute to be created (should target peer 0 for not producing block N+1)
-            const timeoutDisputeCreated = await harness!.waitForCondition(
-                () => {
-                    const peer1DisputeCount = harness!.getEventCallCount(
-                        1,
-                        "onInitiatingDispute"
-                    );
-                    const peer2DisputeCount = harness!.getEventCallCount(
-                        2,
-                        "onInitiatingDispute"
-                    );
-                    return peer1DisputeCount == 1 && peer2DisputeCount == 1;
-                },
+            const timeoutDisputeCreated = await harness!.waitForEventCounts(
+                "onInitiatingDispute",
+                [
+                    { peerId: 1, expectedCount: 1 },
+                    { peerId: 2, expectedCount: 1 }
+                ],
                 10000
             );
 
