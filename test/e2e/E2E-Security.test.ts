@@ -19,8 +19,8 @@ describe("E2E: Advanced Security", function () {
     describe("Byzantine Participant Behavior", function () {
         // Arrange: Setup channel, participant creates two conflicting blocks at same height
         // Act: Participant signs both blocks and sends to different peers
-        // Assert: System detects double-signing violation
-        it("should detect double-signing by participant", async function () {
+        // Assert: Double sign  Dispute is created and committed on-chain
+        it("should create dispute for double-sign detected", async function () {
             // Arrange
             await harness!.setup(2);
             const forkId = await harness!.openChannel();
@@ -48,23 +48,24 @@ describe("E2E: Advanced Security", function () {
 
             // Assert: The other peer (peer 0) should detect peer 1's double-sign
             // Wait for peer 0 to detect the double-sign and initiate dispute
-            const doubleSignDetected = await harness!.waitForCondition(() => {
-                const peer0DisputeCount = harness!.getEventCallCount(
-                    0,
-                    "onInitiatingDispute"
-                );
-                return peer0DisputeCount > 0;
-            }, 5000);
+            const doubleSignDetected = await harness!.waitForEventCounts(
+                "onInitiatingDispute",
+                [
+                    { peerId: 0, expectedCount: 1 },
+                    { peerId: 1, expectedCount: 0 }
+                ],
+                5000
+            );
 
             expect(doubleSignDetected).to.be.true;
-            expect(
-                harness!.getEventCallCount(0, "onInitiatingDispute"),
-                "Peer 0 should have detected double-sign and initiated dispute"
-            ).to.be.at.least(1);
 
             // Verify dispute was committed on-chain
-            const disputeCommitted = await harness!.waitForCondition(
-                () => harness!.getEventCallCount(0, "onDisputeCommitted") > 0,
+            const disputeCommitted = await harness!.waitForEventCounts(
+                "onDisputeCommitted",
+                [
+                    { peerId: 0, expectedCount: 1 },
+                    { peerId: 1, expectedCount: 1 }
+                ],
                 2000
             );
             expect(disputeCommitted).to.be.true;
