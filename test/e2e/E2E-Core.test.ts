@@ -325,7 +325,6 @@ describe("E2E: Core Functionality", function () {
 
             // Wait for timeout dispute to be created and submitted on-chain
             // The remaining peers (0 and 2) should detect the timeout and create a dispute
-            // Note: This checks if at least one peer initiated a dispute (not exact counts)
             const disputeCreated = await harness!.waitForEventCounts(
                 "onInitiatingDispute",
                 [
@@ -404,7 +403,6 @@ describe("E2E: Core Functionality", function () {
 
             // Assert - Forced timeout dispute created
             expect(forcedTimeoutDetected).to.be.true;
-            // Note: This checks total count across all peers, not per-peer counts
             const disputesCommitted = await harness!.waitForEventCounts(
                 "onDisputeCommitted",
                 [
