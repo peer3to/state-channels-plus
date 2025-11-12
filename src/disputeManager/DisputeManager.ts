@@ -7,6 +7,7 @@ import {
     DisputeAuditingDataStruct,
     DisputeInputStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import {
     DebugProxy,
     hash,
@@ -31,7 +32,6 @@ import {
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
 import { DEBUG_DISPUTE_HANDLER } from "@/utils/config";
-import { FraudProofStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/FraudProofFacet";
 
 class DisputeManager {
     signer: ethers.Signer;
@@ -112,19 +112,19 @@ class DisputeManager {
                     fraudProofCalldata,
                     uploadDisputeCalldata
                 ]);
-            }
-
-            // no multicall
-            if (pendingParticipants.length > 0) {
-                // TODO - do the actual check (_isAuditingCalldataRequired) when we have early finalization implemented
-                await this.stateChannelManagerContract.uploadDisputeWithCalldata(
-                    disputeConfirmation,
-                    auditingData
-                );
             } else {
-                await this.stateChannelManagerContract.uploadDispute(
-                    disputeConfirmation
-                );
+                // no multicall - upload dispute separately
+                if (pendingParticipants.length > 0) {
+                    // TODO - do the actual check (_isAuditingCalldataRequired) when we have early finalization implemented
+                    await this.stateChannelManagerContract.uploadDisputeWithCalldata(
+                        disputeConfirmation,
+                        auditingData
+                    );
+                } else {
+                    await this.stateChannelManagerContract.uploadDispute(
+                        disputeConfirmation
+                    );
+                }
             }
 
             this.storage.disputes.storeDisputedFork(forkId, true);
