@@ -39,7 +39,6 @@ import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
 import { deploy } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
-import { Status } from "@/types";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;
@@ -373,10 +372,6 @@ export class PeerTestHarness<T extends AStateMachine> {
             )
         );
 
-        for (const peer of this.peers) {
-            peer.stateManager.setStatus(Status.PARTICIPATING);
-        }
-
         this.logger.debug(
             "Submitting channel open transaction to blockchain..."
         );
@@ -628,6 +623,22 @@ export class PeerTestHarness<T extends AStateMachine> {
         if (!peer) throw new Error(`Peer ${peerIndex} not found`);
         const spy = peer.eventSpies[eventName];
         return spy ? spy.callCount : 0;
+    }
+
+    async waitForEventCounts(
+        eventName: keyof EventSpies,
+        expectedCounts: Array<{ peerId: number; expectedCount: number }>,
+        timeoutMs: number = 10000
+    ): Promise<boolean> {
+        return this.waitForCondition(() => {
+            for (const { peerId, expectedCount } of expectedCounts) {
+                const actualCount = this.getEventCallCount(peerId, eventName);
+                if (actualCount !== expectedCount) {
+                    return false;
+                }
+            }
+            return true;
+        }, timeoutMs);
     }
 
     getEventArgs(

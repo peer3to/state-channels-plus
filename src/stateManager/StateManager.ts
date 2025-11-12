@@ -444,6 +444,9 @@ class StateManager {
         await this.diamondStateMachine.setState(encodedState);
         // Update the forkId to the new fork
         this.forkId = forkId;
+
+        this.setStatus(Status.PARTICIPATING);
+
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();
         this.p2pEventHooks.onTurn?.(nextToWrite);
         const nextTransactionCnt =
