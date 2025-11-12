@@ -978,7 +978,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             );
         if (!peerAcknowledged) return false;
 
-        const reverseTransport =
+        const responseTransport =
             respondingPeer.stateManager.p2pManager.openConnections.find((t) => {
                 const profile =
                     respondingPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
@@ -986,10 +986,10 @@ export class PeerTestHarness<T extends AStateMachine> {
                     );
                 return profile?.evmAddress === requestingPeer.address;
             });
-        if (!reverseTransport) return false;
+        if (!responseTransport) return false;
 
         const iAcknowledged = respondingPeerService.didIAcknowledgeDisputedFork(
-            reverseTransport,
+            responseTransport,
             forkId
         );
 
