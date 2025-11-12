@@ -71,20 +71,68 @@ describe("E2E: Advanced Security", function () {
             expect(disputeCommitted).to.be.true;
         });
 
-        // Arrange: Same as above
-        // Act: Double-signing is detected and dispute evidence is gathered
-        // Assert: Dispute is created and submitted on-chain with proof
-        it("should create dispute for double-sign detected");
-
         // Arrange: Setup channel, participant creates block with invalid state transition
-        // Act: Block is processed that violates state machine rules
-        // Assert: Invalid transition is detected and flagged
-        it("should detect invalid state transition");
-
-        // Arrange: Same as above
         // Act: Invalid transition detection triggers dispute creation
         // Assert: Dispute is created for invalid state transition
-        it("should create dispute for invalid state transition");
+        it("should create dispute for invalid state transition", async function () {
+            // Arrange
+            await harness!.setup(2);
+            const forkId = await harness!.openChannel();
+
+            // Create 2 blocks so peers sync on blocks at height 0 and height 1
+            await harness!.submitNextTransaction((contract) => contract.add(1)); // peer 0 - height 0
+            await harness!.submitNextTransaction((contract) => contract.add(2)); // peer 1 - height 1
+
+            // Verify both peers are in sync after 2 blocks
+            harness!.assertAllPeersInSync();
+            const latestBlock =
+                harness!.peers[0].stateManager.storage.blocks.getLatestBlock(
+                    forkId
+                );
+            expect(latestBlock?.height).to.equal(
+                1,
+                "Should be at height 1 after 2 blocks"
+            );
+
+            // Reset spies after setup
+            harness!.resetEventSpies();
+
+            // Act: Get the next peer to write and have them submit an invalid state transition block
+            // The block will have a valid transaction but wrong state snapshot hash
+            const nextPeer = await harness!.getNextPeerToWrite();
+            await harness!.submitInvalidStateTransitionBlock(nextPeer.index, {
+                forkId
+            });
+
+            // Assert: The other peer should detect the invalid state transition and initiate dispute
+            // Wait for the other peer to detect the invalid state transition and initiate dispute
+            const otherPeerIndex = nextPeer.index === 0 ? 1 : 0; // Get the other peer
+            const invalidStateTransitionDetected =
+                await harness!.waitForEventCounts(
+                    "onInitiatingDispute",
+                    [
+                        {
+                            peerId: otherPeerIndex,
+                            expectedCount: 1
+                        },
+                        { peerId: nextPeer.index, expectedCount: 0 }
+                    ],
+                    5000
+                );
+
+            expect(invalidStateTransitionDetected).to.be.true;
+
+            // Verify dispute was committed on-chain
+            const disputeCommitted = await harness!.waitForEventCounts(
+                "onDisputeCommitted",
+                [
+                    { peerId: 0, expectedCount: 1 },
+                    { peerId: 1, expectedCount: 1 }
+                ],
+                2000
+            );
+            expect(disputeCommitted).to.be.true;
+        });
 
         // Arrange: Setup channel with known correct genesis, participant provides different genesis
         // Act: Malicious participant tries to use wrong genesis block

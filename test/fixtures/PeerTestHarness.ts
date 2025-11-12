@@ -30,8 +30,7 @@ import {
     JoinChannelStruct,
     BlockStruct,
     TransactionStruct,
-    SignedBlockStruct,
-    BlockConfirmationStruct
+    SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { TimeoutStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 import Clock from "@/Clock";
@@ -39,6 +38,7 @@ import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
 import { deploy } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
+import { ZeroHash } from "ethers";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;
@@ -808,6 +808,45 @@ export class PeerTestHarness<T extends AStateMachine> {
         return false;
     }
 
+    private getPreviousBlockHash(
+        peer: TestPeer<T>,
+        forkId: ForkId,
+        height?: BlockHeight
+    ): Hash {
+        if (height !== undefined) {
+            const previousBlockOrSnapshot =
+                peer.stateManager.storage.getPreviousBlockOrSnapshot({
+                    forkId,
+                    height
+                });
+            return previousBlockOrSnapshot.block
+                ? previousBlockOrSnapshot.block.hash
+                : previousBlockOrSnapshot.stateSnapshot!.hash;
+        }
+
+        const previousBlock =
+            peer.stateManager.storage.blocks.getLatestBlock(forkId);
+        return (
+            previousBlock?.hash ||
+            peer.stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                forkId
+            )?.hash ||
+            ethers.ZeroHash
+        );
+    }
+
+    private getStateSnapshotHash(
+        peer: TestPeer<T>,
+        forkId: ForkId,
+        previousBlock?: Block
+    ): Hash {
+        return previousBlock
+            ? previousBlock.stateSnapshotHash
+            : peer.stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                  forkId
+              )?.hash || ethers.ZeroHash;
+    }
+
     async postJunkCalldataOnChain(
         peerIndex: number,
         options: {
@@ -822,13 +861,12 @@ export class PeerTestHarness<T extends AStateMachine> {
 
         const previousBlock =
             peer.stateManager.storage.blocks.getLatestBlock(forkId);
-
-        const previousBlockHash: Hash =
-            previousBlock?.hash ||
-            peer.stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                forkId
-            )?.hash ||
-            ethers.ZeroHash;
+        const previousBlockHash = this.getPreviousBlockHash(peer, forkId);
+        const stateSnapshotHash = this.getStateSnapshotHash(
+            peer,
+            forkId,
+            previousBlock
+        );
 
         const encodedData: Bytes =
             options.encodedData ||
@@ -843,17 +881,10 @@ export class PeerTestHarness<T extends AStateMachine> {
                 timestamp: BigInt(Clock.getTimeInSeconds())
             },
             body: {
-                // Use the provided encoded data or generic junk data
                 encodedData: encodedData,
                 data: encodedData
             }
         };
-
-        const stateSnapshotHash: Hash = previousBlock
-            ? previousBlock.stateSnapshotHash
-            : peer.stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                  forkId
-              )?.hash || ethers.ZeroHash;
 
         const blockStruct: BlockStruct = {
             transaction: transaction,
@@ -861,10 +892,10 @@ export class PeerTestHarness<T extends AStateMachine> {
             previousBlockHash: previousBlockHash
         };
 
+        // Create invalid signature by corrupting the hash
         const encodedBlock = Codec.encode(blockStruct, Type.Block);
         const blockHash = hash(encodedBlock);
         const corruptedBlockHash = hash(blockHash);
-
         const invalidSignature = await peer.signer.signMessage(
             ethers.getBytes(corruptedBlockHash)
         );
@@ -874,7 +905,6 @@ export class PeerTestHarness<T extends AStateMachine> {
             signature: invalidSignature
         };
 
-        // big maxTimestamp (use a large value to ensure it passes the time check)
         const maxTimestamp = Clock.getTimeInSeconds() + 1000;
 
         this.logger.debug(
@@ -911,8 +941,6 @@ export class PeerTestHarness<T extends AStateMachine> {
     ): Promise<{
         conflictingBlock: Block;
         originalBlock: Block;
-        signedBlock: SignedBlockStruct;
-        blockConfirmation: BlockConfirmationStruct;
     }> {
         const peer = this.getPeer(peerIndex);
         const forkId = options?.forkId || this.activeForkId!;
@@ -921,7 +949,6 @@ export class PeerTestHarness<T extends AStateMachine> {
             `Peer ${peerIndex} creating double-sign block for fork ${forkId}`
         );
 
-        // Get the latest block
         const originalBlock =
             peer.stateManager.storage.blocks.getLatestBlock(forkId);
         if (!originalBlock) {
@@ -959,26 +986,10 @@ export class PeerTestHarness<T extends AStateMachine> {
             previousBlockHash: originalBlock.previousBlockHash
         };
 
-        // Sign the conflicting block
-        const encodedBlock = Codec.encode(conflictingBlockStruct, Type.Block);
-        const blockHash = hash(encodedBlock);
-        const signature = await peer.signer.signMessage(
-            ethers.getBytes(blockHash)
+        const conflictingBlock = await Block.fromBlockStruct(
+            conflictingBlockStruct,
+            peer.signer
         );
-
-        const signedBlock: SignedBlockStruct = {
-            encodedBlock: encodedBlock,
-            signature: signature
-        };
-
-        // Create BlockConfirmationStruct
-        const blockConfirmation: BlockConfirmationStruct = {
-            signedBlock: signedBlock,
-            signatures: []
-        };
-
-        //  Create Block
-        const conflictingBlock = Block.fromBlockConfirmation(blockConfirmation);
 
         this.logger.info(
             `Peer ${peerIndex} broadcasting double-sign block: height=${conflictingBlock.height}, hash=${conflictingBlock.hash}`
@@ -986,17 +997,99 @@ export class PeerTestHarness<T extends AStateMachine> {
 
         // Broadcast
         peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
-            .onBlockConfirmation(blockConfirmation)
+            .onBlockConfirmation(conflictingBlock.blockConfirmationStruct)
             .broadcast();
 
         this.logger.info(`Double-sign block broadcasted by peer ${peerIndex}`);
 
         return {
             conflictingBlock,
-            originalBlock,
-            signedBlock,
-            blockConfirmation
+            originalBlock
         };
+    }
+
+    async submitInvalidStateTransitionBlock(
+        peerIndex: number,
+        options?: {
+            forkId?: ForkId;
+            transactionData?: Bytes;
+            wrongStateSnapshotHash?: Hash;
+        }
+    ): Promise<Block> {
+        const peer = this.getPeer(peerIndex);
+        const forkId = options?.forkId || this.activeForkId!;
+
+        this.logger.debug(
+            `Peer ${peerIndex} creating invalid state transition block for fork ${forkId}`
+        );
+
+        const latestBlock =
+            peer.stateManager.storage.blocks.getLatestBlock(forkId);
+        if (!latestBlock) {
+            throw new Error(`No block found for fork ${forkId}`);
+        }
+
+        const nextBlockHeight =
+            peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
+        const previousBlockHash = this.getPreviousBlockHash(
+            peer,
+            forkId,
+            nextBlockHeight
+        );
+
+        // Create a valid transaction
+        let transactionData: Bytes;
+        if (options?.transactionData) {
+            transactionData = options.transactionData;
+        } else {
+            const contractInterface = (peer.contractInstance as any).interface;
+            transactionData = contractInterface.encodeFunctionData("add", [
+                1
+            ]) as Bytes;
+        }
+
+        const transaction: TransactionStruct = {
+            header: {
+                channelId: peer.stateManager.getChannelId(),
+                participant: peer.address,
+                forkId: forkId,
+                transactionCnt: BigInt(nextBlockHeight),
+                timestamp: BigInt(latestBlock.timestamp) + 1n
+            },
+            body: {
+                encodedData: transactionData,
+                data: transactionData
+            }
+        };
+
+        const wrongStateSnapshotHash: Hash =
+            options?.wrongStateSnapshotHash || (ZeroHash as Hash);
+
+        const blockStruct: BlockStruct = {
+            transaction: transaction,
+            stateSnapshotHash: wrongStateSnapshotHash,
+            previousBlockHash: previousBlockHash
+        };
+
+        const invalidBlock = await Block.fromBlockStruct(
+            blockStruct,
+            peer.signer
+        );
+
+        this.logger.info(
+            `Peer ${peerIndex} creating invalid state transition block: height=${invalidBlock.height}, hash=${invalidBlock.hash}, wrongStateSnapshotHash=${wrongStateSnapshotHash}`
+        );
+
+        // Broadcast the invalid block from the specified peer
+        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
+            .onBlockConfirmation(invalidBlock.blockConfirmationStruct)
+            .broadcast();
+
+        this.logger.info(
+            `Invalid state transition block broadcasted by peer ${peerIndex}`
+        );
+
+        return invalidBlock;
     }
 }
 

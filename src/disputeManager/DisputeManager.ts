@@ -157,11 +157,10 @@ class DisputeManager {
         const latestBlockHeight =
             this.storage.blocks.getNextBlockHeight(forkId) - 1;
 
-        // StateProof, LatestStateSnapshot, LatestStateMachineState
+        // StateProof, LatestStateSnapshot
         const [
             stateProof,
             latestStateSnapshot,
-            latestStateMachineState,
             _onChainSlashes,
             _participants
         ] = await Promise.all([
@@ -170,7 +169,6 @@ class DisputeManager {
                 forkId,
                 height: latestBlockHeight
             }),
-            this.diamondStateMachine.getState(), //TODO - this should be from storage
             this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipantsUpToTimestamp(
                 this.channelId,
                 Clock.getTimeInSeconds() // this is safe as long as our local clock isn't in front of the DLT clock
@@ -183,9 +181,22 @@ class DisputeManager {
         const participants = new Set<Address>(_participants);
 
         //sanity check
-        if (!latestStateSnapshot || !latestStateMachineState) {
-            throw new Error("createDispute - missing state information");
+        if (!latestStateSnapshot) {
+            throw new Error("createDispute - missing state snapshot");
         }
+
+        const latestStateMachineState =
+            this.storage.stateMachineStates.getStateMachineState(
+                latestStateSnapshot.stateMachineStateHash
+            );
+
+        if (!latestStateMachineState) {
+            throw new Error(
+                "createDispute - missing state machine state in storage for hash: " +
+                    latestStateSnapshot.stateMachineStateHash
+            );
+        }
+
         // sanity/race condition check
         if (
             latestStateSnapshot.stateMachineStateHash !==
