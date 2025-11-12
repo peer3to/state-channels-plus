@@ -14,11 +14,11 @@ import { BytesLike } from "ethers";
 
 export enum FraudProofType {
     // Block related fraud proofs
-    BlockDoubleSign = 100,
-    BlockInvalidStateTransition,
-    WrongGenesis,
+    BlockDoubleSign = 0,
+    BlockInvalidStateTransition = 1,
+    WrongGenesis = 2,
     // Timeout related fraud proofs
-    InvalidTimestamp
+    InvalidTimestamp = 3
 }
 
 export enum DisputeFraudProofType {
