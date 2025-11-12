@@ -11,11 +11,7 @@ export class DebugProxy {
                                 prop
                             )} - ${args.toString().replace(/,/g, ",\n")}`
                         );
-                        return Reflect.apply(
-                            original as Function,
-                            target,
-                            args
-                        );
+                        return Reflect.apply(original, target, args);
                     };
                 }
                 return original;

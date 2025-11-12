@@ -308,11 +308,7 @@ export class PeerTestHarness<T extends AStateMachine> {
                         spy?.(...args);
 
                         // Then call the original method
-                        return Reflect.apply(
-                            originalMethod as Function,
-                            target,
-                            args
-                        );
+                        return Reflect.apply(originalMethod, target, args);
                     };
                 }
 
