@@ -131,7 +131,9 @@ export class PeerTestHarness<T extends AStateMachine> {
         });
         this.options = {
             timeConfig: options.timeConfig || {},
-            channelId: options.channelId || "test-channel-" + Date.now(),
+            channelId:
+                options.channelId ||
+                `test-channel-${Date.now()}-${process.pid}-${Math.floor(Math.random() * 1e9)}`,
             initialBalance: options.initialBalance || 500,
             gasLimit: options.gasLimit || 500000,
             autoConnect: options.autoConnect !== false,
@@ -418,9 +420,11 @@ export class PeerTestHarness<T extends AStateMachine> {
     async connectPeers(): Promise<void> {
         this.logger.debug("Connecting peers...");
         if (!this.discoveryServerStarted) {
-            LocalDiscoveryServer.tryStart();
-            this.discoveryServerStarted = true;
-            this.logger.verbose("Discovery server started");
+            const started = LocalDiscoveryServer.tryStart();
+            this.discoveryServerStarted = started;
+            if (started) {
+                this.logger.verbose("Discovery server started");
+            }
         }
         await this.waitForP2PConnections();
         this.logger.debug("All peers connected successfully");
@@ -542,7 +546,10 @@ export class PeerTestHarness<T extends AStateMachine> {
         this.peers = [];
 
         // Cleanup discovery server and peer servers
-        if (this.discoveryServerStarted) {
+        if (
+            this.discoveryServerStarted &&
+            process.env.SHARED_DISCOVERY !== "1"
+        ) {
             LocalDiscoveryServer.cleanup();
             this.discoveryServerStarted = false;
             this.logger.verbose("Discovery server cleaned up");
