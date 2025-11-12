@@ -373,10 +373,6 @@ export class PeerTestHarness<T extends AStateMachine> {
             )
         );
 
-        for (const peer of this.peers) {
-            peer.stateManager.setStatus(Status.PARTICIPATING);
-        }
-
         this.logger.debug(
             "Submitting channel open transaction to blockchain..."
         );
