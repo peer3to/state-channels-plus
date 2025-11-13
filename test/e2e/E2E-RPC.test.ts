@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { MathStateMachine } from "@typechain-types/index";
 import { dispute } from "@test/factory";
-import { ForkId } from "@/types/types";
+import { ForkId, ChannelId } from "@/types/types";
 
 describe("E2E: RPC Services", function () {
     let harness: PeerTestHarness<MathStateMachine> | null = null;
@@ -19,22 +19,28 @@ describe("E2E: RPC Services", function () {
     });
 
     describe("IsForkDisputed RPC", function () {
-        // Arrange: Setup channel with dispute window created on-chain
-        // Act: Dispute acknowledgment request is broadcast to all peers
-        // Assert: All peers acknowledge disputed fork and mark it as disputed
-        it("should broadcast dispute acknowledgment to all peers on dispute creation", async function () {
-            // Arrange
+        let channelId: ChannelId;
+        let currentForkId: ForkId;
+
+        beforeEach(async function () {
             await harness!.setup(3);
             const forkId = await harness!.openChannel();
             await harness!.connectPeers();
 
             await harness!.submitNextTransaction((contract) => contract.add(1));
-            await harness!.submitNextTransaction((contract) => contract.add(2));
 
             harness!.assertAllPeersInSync();
 
-            const channelId = harness!.peers[0].stateManager.channelId;
-            const currentForkId = harness!.activeForkId!;
+            channelId = harness!.peers[0].stateManager.channelId;
+            currentForkId = harness!.activeForkId!;
+        });
+
+        // Arrange: Setup channel with dispute window created on-chain
+        // Act: Dispute acknowledgment request is broadcast to all peers
+        // Assert: All peers acknowledge disputed fork and mark it as disputed
+        it("should broadcast dispute acknowledgment to all peers on dispute creation", async function () {
+            // Arrange
+            await harness!.submitNextTransaction((contract) => contract.add(2));
 
             await harness!.markForkAsDisputed(currentForkId);
 
@@ -88,17 +94,6 @@ describe("E2E: RPC Services", function () {
         // Assert: Peer is immediately disconnected for building on acknowledged disputed fork
         it("should disconnect peer building on acknowledged disputed fork", async function () {
             // Arrange
-            await harness!.setup(3);
-            const forkId = await harness!.openChannel();
-            await harness!.connectPeers();
-
-            await harness!.submitNextTransaction((contract) => contract.add(1));
-
-            harness!.assertAllPeersInSync();
-
-            const channelId = harness!.peers[0].stateManager.channelId;
-            const currentForkId = harness!.activeForkId!;
-
             await harness!.markForkAsDisputed(currentForkId);
 
             const requestingPeer = harness!.peers[0];
@@ -193,14 +188,6 @@ describe("E2E: RPC Services", function () {
         // Assert: Peer disconnects sender for requesting acknowledgment of non-disputed fork
         it("should disconnect peer requesting acknowledgment of non-disputed fork", async function () {
             // Arrange
-            await harness!.setup(3);
-            const forkId = await harness!.openChannel();
-            await harness!.connectPeers();
-
-            await harness!.submitNextTransaction((contract) => contract.add(1));
-
-            const channelId = harness!.peers[0].stateManager.channelId;
-            const currentForkId = harness!.activeForkId!;
             const fakeForkId = ("0x" + "1".repeat(64)) as ForkId;
 
             // Act: Request acknowledgment for non-disputed fork
@@ -250,17 +237,6 @@ describe("E2E: RPC Services", function () {
         // Assert: Subsequent requests are rejected and peer is disconnected
         it("should reject duplicate dispute acknowledgment requests", async function () {
             // Arrange
-            await harness!.setup(3);
-            const forkId = await harness!.openChannel();
-            await harness!.connectPeers();
-
-            await harness!.submitNextTransaction((contract) => contract.add(1));
-
-            harness!.assertAllPeersInSync();
-
-            const channelId = harness!.peers[0].stateManager.channelId;
-            const currentForkId = harness!.activeForkId!;
-
             await harness!.markForkAsDisputed(currentForkId);
 
             // Act: Request acknowledgment twice for same fork
@@ -290,17 +266,6 @@ describe("E2E: RPC Services", function () {
         // Assert: Duplicate responses are rejected and peer is disconnected
         it("should reject duplicate dispute acknowledgment responses", async function () {
             // Arrange
-            await harness!.setup(3);
-            const forkId = await harness!.openChannel();
-            await harness!.connectPeers();
-
-            await harness!.submitNextTransaction((contract) => contract.add(1));
-
-            harness!.assertAllPeersInSync();
-
-            const channelId = harness!.peers[0].stateManager.channelId;
-            const currentForkId = harness!.activeForkId!;
-
             await harness!.markForkAsDisputed(currentForkId);
 
             const requestingPeer = harness!.peers[0];
@@ -375,9 +340,10 @@ describe("E2E: RPC Services", function () {
         // Assert: Non-responding peers are disconnected, dispute mechanism continues
         it("should handle dispute acknowledgment request timeout", async function () {
             // Arrange
+            await harness!.cleanup();
             await harness!.setup(3, {
                 timeConfig: {
-                    agreementTime: 1 // Short timeout for testing
+                    agreementTime: 1
                 }
             });
             const forkId = await harness!.openChannel();
@@ -385,8 +351,8 @@ describe("E2E: RPC Services", function () {
 
             await harness!.submitNextTransaction((contract) => contract.add(1));
 
-            const channelId = harness!.peers[0].stateManager.channelId;
-            const currentForkId = harness!.activeForkId!;
+            channelId = harness!.peers[0].stateManager.channelId;
+            currentForkId = harness!.activeForkId!;
 
             const requestingPeer = harness!.peers[0];
             await harness!.markForkAsDisputed(currentForkId, [0]);
@@ -423,14 +389,7 @@ describe("E2E: RPC Services", function () {
         // Assert: All peers correctly acknowledge all disputed forks
         it("should handle multiple disputed forks acknowledgment", async function () {
             // Arrange
-            await harness!.setup(3);
-            const forkId = await harness!.openChannel();
-            await harness!.connectPeers();
-
-            await harness!.submitNextTransaction((contract) => contract.add(1));
-
-            const channelId = harness!.peers[0].stateManager.channelId;
-            const forkId1 = harness!.activeForkId!;
+            const forkId1 = currentForkId;
             const forkId2 = ("0x" + "2".repeat(64)) as ForkId;
             const forkId3 = ("0x" + "3".repeat(64)) as ForkId;
 
@@ -550,15 +509,6 @@ describe("E2E: RPC Services", function () {
         // Assert: Local diamond dispute status is checked first before on-chain check
         it("should check local diamond dispute status first", async function () {
             // Arrange
-            await harness!.setup(3);
-            const forkId = await harness!.openChannel();
-            await harness!.connectPeers();
-
-            await harness!.submitNextTransaction((contract) => contract.add(1));
-
-            const channelId = harness!.peers[0].stateManager.channelId;
-            const currentForkId = harness!.activeForkId!;
-
             const requestingPeer = harness!.peers[0];
             const receivingPeer = harness!.peers[1];
 
@@ -623,15 +573,6 @@ describe("E2E: RPC Services", function () {
         // Assert: On-chain state channel manager dispute status is checked after local diamond
         it("should check on-chain dispute status when local diamond is not disputed", async function () {
             // Arrange
-            await harness!.setup(3);
-            const forkId = await harness!.openChannel();
-            await harness!.connectPeers();
-
-            await harness!.submitNextTransaction((contract) => contract.add(1));
-
-            const channelId = harness!.peers[0].stateManager.channelId;
-            const currentForkId = harness!.activeForkId!;
-
             const requestingPeer = harness!.peers[0];
             const receivingPeer = harness!.peers[1];
 
