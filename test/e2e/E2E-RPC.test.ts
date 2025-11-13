@@ -334,9 +334,9 @@ describe("E2E: RPC Services", function () {
             }
         });
 
-        // Arrange: Setup channel with dispute acknowledgment timeout
-        // Act: Dispute acknowledgment request sent but no response within agreement time
-        // Assert: Non-responding peers are disconnected, dispute mechanism continues
+        // Arrange: Setup channel with fake forkId disputed only for peer 0, prevent other peers from disconnecting requester
+        // Act: Request acknowledgment for fake forkId, peers don't acknowledge because fork is not disputed for them, timeout triggers
+        // Assert: Non-responding peers are disconnected after timeout period
         it("should handle dispute acknowledgment request timeout", async function () {
             // Arrange
             await harness!.cleanup();
@@ -354,18 +354,46 @@ describe("E2E: RPC Services", function () {
             currentForkId = harness!.activeForkId!;
 
             const requestingPeer = harness!.peers[0];
-            await harness!.createDispute(0, currentForkId);
+            const fakeForkId = ("0x" + "f".repeat(64)) as ForkId;
+            await harness!.markForkAsDisputed(fakeForkId, [0]);
+
+            const disconnectSpies: Array<{ restore: () => void }> = [];
+            for (let i = 1; i < 3; i++) {
+                const peer = harness!.peers[i];
+                const originalDisconnect =
+                    peer.stateManager.p2pManager.disconnectAndBlacklistPeer.bind(
+                        peer.stateManager.p2pManager
+                    );
+                const spy = (transport: any) => {
+                    const profile =
+                        peer.stateManager.p2pManager.profileManager.getProfileByTransport(
+                            transport
+                        );
+                    if (profile?.evmAddress === requestingPeer.address) {
+                        return;
+                    }
+                    return originalDisconnect(transport);
+                };
+                peer.stateManager.p2pManager.disconnectAndBlacklistPeer =
+                    spy as any;
+                disconnectSpies.push({
+                    restore: () => {
+                        peer.stateManager.p2pManager.disconnectAndBlacklistPeer =
+                            originalDisconnect;
+                    }
+                });
+            }
 
             const connectionsBefore =
                 requestingPeer.stateManager.p2pManager.openConnections.length;
 
-            // Act: Request acknowledgment (peers won't respond because fork is not disputed for them)
+            // Act
             const requestingPeerService =
                 harness!.peers[0].stateManager.p2pManager.localRpc
                     .isForkDisputedService;
             requestingPeerService.requestDisputeAcknowledgment(
                 channelId,
-                currentForkId
+                fakeForkId
             );
 
             const timeoutMs =
@@ -377,7 +405,9 @@ describe("E2E: RPC Services", function () {
                 return connectionsAfter < connectionsBefore;
             }, timeoutMs + 1000);
 
-            // Assert: Non-responding peers should be disconnected
+            disconnectSpies.forEach((spy) => spy.restore());
+
+            // Assert
             const connectionsAfter =
                 requestingPeer.stateManager.p2pManager.openConnections.length;
             expect(connectionsAfter).to.be.lessThan(connectionsBefore);
