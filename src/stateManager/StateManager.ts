@@ -445,7 +445,11 @@ class StateManager {
         // Update the forkId to the new fork
         this.forkId = forkId;
 
-        this.setStatus(Status.PARTICIPATING);
+        const participants = await this.diamondStateMachine.getParticipants();
+        const isParticipant = participants.includes(this.signerAddress);
+        if (isParticipant) {
+            this.setStatus(Status.PARTICIPATING);
+        }
 
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();
         this.p2pEventHooks.onTurn?.(nextToWrite);
