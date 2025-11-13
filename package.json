@@ -66,7 +66,8 @@
     "yarn": ">=1.15"
   },
   "scripts": {
-    "compile": "yarn hardhat clean && yarn hardhat compile --force && yarn hardhat typechain",
+    "compile": "yarn hardhat clean && yarn hardhat compile --force && yarn hardhat typechain && yarn generate-enums",
+    "generate-enums": "ts-node scripts/generate-enums.ts",
     "generate-artifacts": "node scripts/generate-artifacts.js",
     "test": "yarn hardhat test --no-compile --grep '^(?!.*[Ee]2[Ee])'",
     "test:debug": "yarn hardhat test --no-compile",

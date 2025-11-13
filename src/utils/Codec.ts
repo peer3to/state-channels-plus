@@ -35,13 +35,15 @@ import {
     BlockInvalidStateTransitionProofEthersType,
     InvalidTimestampProofEthersType,
     WrongGenesisProofEthersType,
-    FraudProofType,
     DisputeAuditingDataEthersType
 } from "@/types";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    DisputeStruct,
+    DisputeAuditingDataStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Bytes, Timestamp } from "@/types/types";
+import { FraudProofType } from "@/types/sol-enums";
 import { ExecResult } from "@ethereumjs/evm";
-import { DisputeAuditingDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 export type FraudStruct =
     | BlockDoubleSignProofStruct

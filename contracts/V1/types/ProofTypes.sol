@@ -31,7 +31,8 @@ enum FraudProofType {
     // Block related fraud proofs
     BlockDoubleSign,
     BlockInvalidStateTransition,
-    WrongGenesis
+    WrongGenesis,
+    InvalidTimestamp
 }
 
 struct DisputeFraudProof {

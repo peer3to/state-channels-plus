@@ -11,7 +11,7 @@ import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes
 import { ZeroHash } from "ethers";
 import { Address, Hash } from "@/types/types";
 import { Codec, FraudStruct } from "@/utils/Codec";
-import { FraudProofType } from "@/types";
+import { FraudProofType } from "@/types/sol-enums";
 
 // ────────────────────── FRAUD PROOF SERVICE ─────────────────────
 

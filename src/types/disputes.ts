@@ -12,22 +12,6 @@ import {
 } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 import { BytesLike } from "ethers";
 
-export enum FraudProofType {
-    // Block related fraud proofs
-    BlockDoubleSign = 0,
-    BlockInvalidStateTransition = 1,
-    WrongGenesis = 2,
-    // Timeout related fraud proofs
-    InvalidTimestamp = 3
-}
-
-export enum DisputeFraudProofType {
-    DoubleSign,
-    IncorrectData,
-    NewerState,
-    BlockTooFarInFuture
-}
-
 export const MilestoneProofEthersType = `tuple(
     ${BlockConfirmationEthersType}[] blockConfirmations
 )`;
@@ -107,20 +91,6 @@ export const NewerStateProofEthersType = `tuple(
 export const BlockTooFarInFutureProofEthersType = `tuple(
     ${SignedBlockEthersType} block1
     )`;
-
-const DISPUTE_PROOF_ETHERS_TYPES: Record<DisputeFraudProofType, string> = {
-    [DisputeFraudProofType.DoubleSign]: BlockDoubleSignProofEthersType,
-    [DisputeFraudProofType.IncorrectData]: IncorrectDataProofEthersType,
-    [DisputeFraudProofType.NewerState]: NewerStateProofEthersType,
-    [DisputeFraudProofType.BlockTooFarInFuture]:
-        BlockTooFarInFutureProofEthersType
-};
-
-export const getEthersTypeForDisputeProof = (
-    proofType: DisputeFraudProofType
-): string => {
-    return DISPUTE_PROOF_ETHERS_TYPES[proofType];
-};
 
 export type ReduceData = {
     forkId: ForkId;
