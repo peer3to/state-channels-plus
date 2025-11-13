@@ -1,7 +1,6 @@
 import { expect } from "chai";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { MathStateMachine } from "@typechain-types/index";
-import { dispute } from "@test/factory";
 import { ForkId, ChannelId } from "@/types/types";
 
 describe("E2E: RPC Services", function () {
@@ -24,7 +23,7 @@ describe("E2E: RPC Services", function () {
 
         beforeEach(async function () {
             await harness!.setup(3);
-            const forkId = await harness!.openChannel();
+            await harness!.openChannel();
             await harness!.connectPeers();
 
             await harness!.submitNextTransaction((contract) => contract.add(1));
@@ -42,7 +41,7 @@ describe("E2E: RPC Services", function () {
             // Arrange
             await harness!.submitNextTransaction((contract) => contract.add(2));
 
-            await harness!.markForkAsDisputed(currentForkId);
+            await harness!.createDispute(0, currentForkId);
 
             // Act: Trigger dispute acknowledgment request (simulating onDisputeCommitted)
             const requestingPeer = harness!.peers[0];
@@ -94,7 +93,7 @@ describe("E2E: RPC Services", function () {
         // Assert: Peer is immediately disconnected for building on acknowledged disputed fork
         it("should disconnect peer building on acknowledged disputed fork", async function () {
             // Arrange
-            await harness!.markForkAsDisputed(currentForkId);
+            await harness!.createDispute(0, currentForkId);
 
             const requestingPeer = harness!.peers[0];
             const requestingPeerService =
@@ -237,7 +236,7 @@ describe("E2E: RPC Services", function () {
         // Assert: Subsequent requests are rejected and peer is disconnected
         it("should reject duplicate dispute acknowledgment requests", async function () {
             // Arrange
-            await harness!.markForkAsDisputed(currentForkId);
+            await harness!.createDispute(0, currentForkId);
 
             // Act: Request acknowledgment twice for same fork
             const requestingPeer = harness!.peers[0];
@@ -266,7 +265,7 @@ describe("E2E: RPC Services", function () {
         // Assert: Duplicate responses are rejected and peer is disconnected
         it("should reject duplicate dispute acknowledgment responses", async function () {
             // Arrange
-            await harness!.markForkAsDisputed(currentForkId);
+            await harness!.createDispute(0, currentForkId);
 
             const requestingPeer = harness!.peers[0];
             const respondingPeer = harness!.peers[1];
@@ -355,7 +354,7 @@ describe("E2E: RPC Services", function () {
             currentForkId = harness!.activeForkId!;
 
             const requestingPeer = harness!.peers[0];
-            await harness!.markForkAsDisputed(currentForkId, [0]);
+            await harness!.createDispute(0, currentForkId);
 
             const connectionsBefore =
                 requestingPeer.stateManager.p2pManager.openConnections.length;
@@ -393,7 +392,7 @@ describe("E2E: RPC Services", function () {
             const forkId2 = ("0x" + "2".repeat(64)) as ForkId;
             const forkId3 = ("0x" + "3".repeat(64)) as ForkId;
 
-            await harness!.markForkAsDisputed(forkId1);
+            await harness!.createDispute(0, forkId1);
             await harness!.markForkAsDisputed(forkId2);
             await harness!.markForkAsDisputed(forkId3);
 
@@ -512,7 +511,7 @@ describe("E2E: RPC Services", function () {
             const requestingPeer = harness!.peers[0];
             const receivingPeer = harness!.peers[1];
 
-            await harness!.markForkAsDisputed(currentForkId, [1]);
+            await harness!.createDispute(0, currentForkId);
 
             const isDisputedLocal =
                 await receivingPeer.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
@@ -578,31 +577,7 @@ describe("E2E: RPC Services", function () {
 
             harness!.resetEventSpies();
 
-            const disputeStruct = dispute({
-                input: {
-                    channelId,
-                    genesisSnapshotDataHash: currentForkId,
-                    disputeAuditingDataHash: currentForkId,
-                    disputer: requestingPeer.address as any
-                }
-            });
-
-            await harness!.markForkAsDisputed(
-                currentForkId,
-                [0],
-                requestingPeer.address
-            );
-
-            try {
-                await requestingPeer.stateManager.disputeManager.dispute(
-                    currentForkId
-                );
-            } catch (error) {
-                console.warn(
-                    "disputeManager.dispute() failed, cannot fully test on-chain check:",
-                    error
-                );
-            }
+            await harness!.createDispute(0, currentForkId);
 
             await harness!.waitForCondition(async () => {
                 const isDisputedOnChain =
@@ -622,12 +597,6 @@ describe("E2E: RPC Services", function () {
             if (!isDisputedOnChain) {
                 return;
             }
-
-            const isDisputedLocalReceiving =
-                await receivingPeer.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
-                    channelId,
-                    currentForkId
-                );
 
             // Act: Send acknowledgment request to receiving peer
             const requestingPeerTransport =

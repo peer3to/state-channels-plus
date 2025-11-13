@@ -883,6 +883,38 @@ export class PeerTestHarness<T extends AStateMachine> {
     }
 
     /**
+     * Creates a real dispute on-chain by having a peer call disputeManager.dispute()
+     * and waits for it to be synced to all peers' local diamonds
+     */
+    async createDispute(peerIndex: number, forkId: ForkId): Promise<void> {
+        const disputingPeer = this.getPeer(peerIndex);
+        const channelId = this.peers[0].stateManager.channelId;
+        try {
+            await disputingPeer.stateManager.disputeManager.dispute(forkId);
+            await this.waitForEventProcessing(1000);
+            await this.waitForCondition(async () => {
+                const isDisputedOnChain =
+                    await disputingPeer.stateManager.stateChannelManagerContract.isForkDisputed(
+                        channelId,
+                        forkId
+                    );
+                if (!isDisputedOnChain) return false;
+                for (const peer of this.peers) {
+                    const isDisputedLocal =
+                        await peer.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
+                            channelId,
+                            forkId
+                        );
+                    if (!isDisputedLocal) return false;
+                }
+                return true;
+            }, 10000);
+        } catch (error) {
+            throw new Error(`Failed to create dispute: ${error}`);
+        }
+    }
+
+    /**
      * Marks a fork as disputed for specified peers
      */
     async markForkAsDisputed(
