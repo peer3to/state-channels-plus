@@ -67,19 +67,19 @@ type StructType =
 
 // Enum for better autocomplete and type safety
 export enum Type {
-    Block,
-    BlockCommitment,
-    JoinChannel,
-    OpenChannel,
-    BlockConfirmation,
-    Transaction,
-    Dispute,
-    StateSnapshot,
-    SnapshotData,
-    JoinChannelBlock,
-    ExitChannelBlock,
-    ExitChannel,
-    DisputeAuditingData
+    Block = "Block",
+    BlockCommitment = "BlockCommitment",
+    JoinChannel = "JoinChannel",
+    OpenChannel = "OpenChannel",
+    BlockConfirmation = "BlockConfirmation",
+    Transaction = "Transaction",
+    Dispute = "Dispute",
+    StateSnapshot = "StateSnapshot",
+    SnapshotData = "SnapshotData",
+    JoinChannelBlock = "JoinChannelBlock",
+    ExitChannelBlock = "ExitChannelBlock",
+    ExitChannel = "ExitChannel",
+    DisputeAuditingData = "DisputeAuditingData"
 }
 
 export class Codec {
