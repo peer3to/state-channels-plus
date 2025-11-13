@@ -7,6 +7,7 @@ import {
     DisputeAuditingDataStruct,
     DisputeInputStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import {
     DebugProxy,
     hash,
@@ -31,7 +32,6 @@ import {
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
 import { DEBUG_DISPUTE_HANDLER } from "@/utils/config";
-import { FraudProofStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/FraudProofFacet";
 
 class DisputeManager {
     signer: ethers.Signer;
@@ -112,19 +112,19 @@ class DisputeManager {
                     fraudProofCalldata,
                     uploadDisputeCalldata
                 ]);
-            }
-
-            // no multicall
-            if (pendingParticipants.length > 0) {
-                // TODO - do the actual check (_isAuditingCalldataRequired) when we have early finalization implemented
-                await this.stateChannelManagerContract.uploadDisputeWithCalldata(
-                    disputeConfirmation,
-                    auditingData
-                );
             } else {
-                await this.stateChannelManagerContract.uploadDispute(
-                    disputeConfirmation
-                );
+                // no multicall - upload dispute separately
+                if (pendingParticipants.length > 0) {
+                    // TODO - do the actual check (_isAuditingCalldataRequired) when we have early finalization implemented
+                    await this.stateChannelManagerContract.uploadDisputeWithCalldata(
+                        disputeConfirmation,
+                        auditingData
+                    );
+                } else {
+                    await this.stateChannelManagerContract.uploadDispute(
+                        disputeConfirmation
+                    );
+                }
             }
 
             this.storage.disputes.storeDisputedFork(forkId, true);
@@ -157,11 +157,10 @@ class DisputeManager {
         const latestBlockHeight =
             this.storage.blocks.getNextBlockHeight(forkId) - 1;
 
-        // StateProof, LatestStateSnapshot, LatestStateMachineState
+        // StateProof, LatestStateSnapshot
         const [
             stateProof,
             latestStateSnapshot,
-            latestStateMachineState,
             _onChainSlashes,
             _participants
         ] = await Promise.all([
@@ -170,7 +169,6 @@ class DisputeManager {
                 forkId,
                 height: latestBlockHeight
             }),
-            this.diamondStateMachine.getState(), //TODO - this should be from storage
             this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipantsUpToTimestamp(
                 this.channelId,
                 Clock.getTimeInSeconds() // this is safe as long as our local clock isn't in front of the DLT clock
@@ -183,9 +181,22 @@ class DisputeManager {
         const participants = new Set<Address>(_participants);
 
         //sanity check
-        if (!latestStateSnapshot || !latestStateMachineState) {
-            throw new Error("createDispute - missing state information");
+        if (!latestStateSnapshot) {
+            throw new Error("createDispute - missing state snapshot");
         }
+
+        const latestStateMachineState =
+            this.storage.stateMachineStates.getStateMachineState(
+                latestStateSnapshot.stateMachineStateHash
+            );
+
+        if (!latestStateMachineState) {
+            throw new Error(
+                "createDispute - missing state machine state in storage for hash: " +
+                    latestStateSnapshot.stateMachineStateHash
+            );
+        }
+
         // sanity/race condition check
         if (
             latestStateSnapshot.stateMachineStateHash !==

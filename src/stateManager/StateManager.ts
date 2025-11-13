@@ -445,6 +445,13 @@ class StateManager {
         await this.diamondStateMachine.setState(encodedState);
         // Update the forkId to the new fork
         this.forkId = forkId;
+
+        const participants = await this.diamondStateMachine.getParticipants();
+        const isParticipant = participants.includes(this.signerAddress);
+        if (isParticipant) {
+            this.setStatus(Status.PARTICIPATING);
+        }
+
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();
         this.p2pEventHooks.onTurn?.(nextToWrite);
         const nextTransactionCnt =
@@ -979,17 +986,6 @@ class StateManager {
                 return undefined; // No fork update needed
             }
 
-            // Get the genesis snapshot
-            const genesisSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                    currentForkId
-                );
-            if (!genesisSnapshot) {
-                throw new Error(
-                    `No genesis snapshot found for fork ${currentForkId}`
-                );
-            }
-
             while (isDisputed) {
                 // If reduced result already exists on-chain, traverse to it
                 const existingReducedResult =
@@ -1083,6 +1079,17 @@ class StateManager {
                         this.channelId,
                         currentForkId
                     );
+            }
+
+            // Get the genesis snapshot for the final resolved fork
+            const genesisSnapshot =
+                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                    currentForkId
+                );
+            if (!genesisSnapshot) {
+                throw new Error(
+                    `No genesis snapshot found for fork ${currentForkId}`
+                );
             }
 
             // Build exit blocks

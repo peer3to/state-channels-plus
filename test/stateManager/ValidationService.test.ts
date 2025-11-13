@@ -626,9 +626,6 @@ describe("ValidationService - Progressive Validation Tests", () => {
 
                 expect(result).to.be.false;
             });
-
-            // Note: These tests were removed as they were trying to stub non-existent methods
-            // The actual behavior is tested through the mockStateManager.fetchUpdatedOnChainBlock
         });
 
         describe("getParticipants", () => {
@@ -721,9 +718,6 @@ describe("ValidationService - Progressive Validation Tests", () => {
                     .withArgs("0xfork123", 0)
                     .returns(prevBlock);
 
-                // Note: fetchOnChainTimestamp doesn't exist on ValidationService
-                // The actual behavior is tested through mockStateManager.fetchUpdatedOnChainBlock
-
                 const blockWithInvalidTime = BlockBuilder.create(mockSetup)
                     .failWith(ValidationFailure.OBJECTIVE_TIMESTAMP_INVALID)
                     .build();
@@ -737,8 +731,6 @@ describe("ValidationService - Progressive Validation Tests", () => {
 
                 // The validation should still result in DISPUTE
                 expect(result).to.equal(BlockValidationResult.DISPUTE);
-                // Note: fetchOnChainTimestamp doesn't exist on ValidationService
-                // The actual behavior is tested through mockStateManager.fetchUpdatedOnChainBlock
             });
 
             it("should handle on-chain timestamp fetch returning null", async () => {
@@ -757,9 +749,6 @@ describe("ValidationService - Progressive Validation Tests", () => {
                 mockSetup.mockStorage.blocks.getBlock
                     .withArgs("0xfork123", 0)
                     .returns(prevBlock);
-
-                // Note: fetchOnChainTimestamp doesn't exist on ValidationService
-                // The actual behavior is tested through mockStateManager.fetchUpdatedOnChainBlock
 
                 const blockWithInvalidTime = BlockBuilder.create(mockSetup)
                     .failWith(ValidationFailure.OBJECTIVE_TIMESTAMP_INVALID)
@@ -795,9 +784,6 @@ describe("ValidationService - Progressive Validation Tests", () => {
                 mockSetup.mockStorage.blocks.getBlock
                     .withArgs("0xfork123", 0)
                     .returns(prevBlock);
-
-                // Note: fetchOnChainTimestamp doesn't exist on ValidationService
-                // The actual behavior is tested through mockStateManager.fetchUpdatedOnChainBlock
 
                 const blockWithInvalidTime = BlockBuilder.create(mockSetup)
                     .failWith(ValidationFailure.OBJECTIVE_TIMESTAMP_INVALID)

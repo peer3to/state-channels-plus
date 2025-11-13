@@ -16,7 +16,7 @@ import {
     Bytes
 } from "@/types/types";
 
-import { union, isSubset } from "@/utils";
+import { union, isSubset, SignatureUtils } from "@/utils";
 
 export type BlockCoordinates = {
     forkId: ForkId;
@@ -65,6 +65,22 @@ export default class Block {
             new Set(),
             onChainTimestamp
         );
+    }
+
+    static async fromBlockStruct(
+        blockStruct: BlockStruct,
+        signer: Signer,
+        onChainTimestamp?: Timestamp
+    ): Promise<Block> {
+        const encodedBlock = Codec.encode(blockStruct, Type.Block);
+        const signature = await SignatureUtils.signMsg(encodedBlock, signer);
+
+        const signedBlock: SignedBlockStruct = {
+            encodedBlock: encodedBlock,
+            signature: signature as Bytes
+        };
+
+        return Block.fromSignedBlock(signedBlock, onChainTimestamp);
     }
 
     get blockStruct(): BlockStruct {

@@ -571,10 +571,11 @@ export class EventHandler {
                 );
             if (!latestStateSnapshot) {
                 // TODO reduce localy
+                return;
             }
             const genesisStateMachineState =
                 this.storage.stateMachineStates.getStateMachineState(
-                    latestStateSnapshot!.stateMachineStateHash
+                    latestStateSnapshot.stateMachineStateHash
                 );
 
             if (!genesisStateMachineState) {
