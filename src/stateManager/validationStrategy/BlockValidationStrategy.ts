@@ -6,6 +6,7 @@ import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
 import P2PManager from "@/P2PManager";
 import DisputeManager from "@/disputeManager";
+import ATransport from "@/transport/ATransport";
 
 export default class BlockValidationStrategy extends AValidationStrategy {
     readonly fraudProofService: FraudProofService;
@@ -113,16 +114,40 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISCONNECT;
     }
     public async blockForkIsDisputed(
-        block: Block
+        block: Block,
+        senderTransport?: ATransport
     ): Promise<BlockValidationResult> {
-        // not ready
+        // Check if peer has already acknowledged this disputed fork
+        if (
+            senderTransport &&
+            this.p2pManager.localRpc.isForkDisputedService.didPeerAcknowledgeDisputedFork(
+                senderTransport,
+                block.forkId
+            )
+        ) {
+            console.log(
+                `Peer is building on acknowledged disputed fork ${block.forkId}, disconnecting`
+            );
+            this.p2pManager.disconnectAndBlacklistPeer(senderTransport);
+            return BlockValidationResult.DISCONNECT;
+        }
+
+        // Queue the block - will process normally
         this.storage.queues.queueBlock(block);
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotNextAndIsInTheFuture(
-        block: Block
+        block: Block,
+        senderTransport?: ATransport
     ): Promise<BlockValidationResult> {
         // not ready
+        if (senderTransport)
+            this.p2pManager.localRpc.spectateService.sync(
+                senderTransport,
+                block.channelId,
+                block.forkId,
+                block.height
+            );
         this.storage.queues.queueBlock(block);
         return BlockValidationResult.NOT_READY;
     }

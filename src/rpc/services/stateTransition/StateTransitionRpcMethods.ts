@@ -13,13 +13,16 @@ class StateTransitionRpcMethods extends ARpcMethods {
     public async onBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct
     ) {
+        const senderTransport = this.senderTransport;
         const keepConnection =
             await this.p2pManager.stateManager.onBlockConfirmation(
-                blockConfirmation
+                blockConfirmation,
+                {
+                    senderTransport
+                }
             );
         if (!keepConnection) {
             // Disconnect from peer and blacklist them
-            const senderTransport = this.senderTransport;
             if (senderTransport) {
                 this.p2pManager.disconnectAndBlacklistPeer(senderTransport);
             }

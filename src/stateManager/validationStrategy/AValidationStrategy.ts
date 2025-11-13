@@ -1,6 +1,7 @@
 import { Block } from "@/models";
 import { BlockValidationResult } from "@/types";
 import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+import ATransport from "@/transport/ATransport";
 
 export default abstract class AValidationStrategy {
     public abstract interpretFinalValidationResult(
@@ -51,11 +52,13 @@ export default abstract class AValidationStrategy {
     ): Promise<BlockValidationResult>;
 
     public abstract blockForkIsDisputed(
-        block: Block
+        block: Block,
+        senderTransport?: ATransport
     ): Promise<BlockValidationResult>;
 
     public abstract blockIsNotNextAndIsInTheFuture(
-        block: Block
+        block: Block,
+        senderTransport?: ATransport
     ): Promise<BlockValidationResult>;
 
     public abstract blockIsNotLinkedAndIsNotFirstBlock(
