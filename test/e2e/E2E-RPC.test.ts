@@ -28,18 +28,14 @@ describe("E2E: RPC Services", function () {
             const forkId = await harness!.openChannel();
             await harness!.connectPeers();
 
-            // Create some blocks to establish state
             await harness!.submitNextTransaction((contract) => contract.add(1));
             await harness!.submitNextTransaction((contract) => contract.add(2));
 
-            // Ensure all peers are in sync (like E2E-Core tests do)
             harness!.assertAllPeersInSync();
 
             const channelId = harness!.peers[0].stateManager.channelId;
             const currentForkId = harness!.activeForkId!;
 
-            // Mark fork as disputed in local diamond for all peers
-            // This simulates that a dispute was committed on-chain and synced to local diamond
             await harness!.markForkAsDisputed(currentForkId);
 
             // Act: Trigger dispute acknowledgment request (simulating onDisputeCommitted)
@@ -48,7 +44,6 @@ describe("E2E: RPC Services", function () {
                 harness!.peers[0].stateManager.p2pManager.localRpc
                     .isForkDisputedService;
 
-            // Verify fork is not yet in disputedForks
             expect(requestingPeerService.disputedForks.has(currentForkId)).to.be
                 .false;
 
@@ -61,15 +56,12 @@ describe("E2E: RPC Services", function () {
             expect(requestingPeerService.disputedForks.has(currentForkId)).to.be
                 .true;
 
-            // Wait for acknowledgments
             await sleep(1000);
 
             // Assert: All peers should have acknowledged the disputed fork
-            // Check peerAcknowledgements map (tracks which peers acknowledged to requesting peer)
             const openConnections =
                 requestingPeer.stateManager.p2pManager.openConnections;
 
-            // Verify all peers acknowledged (check peerAcknowledgements map)
             for (let i = 1; i < harness!.peers.length; i++) {
                 const acknowledged =
                     harness!.verifyPeerAcknowledgedDisputedFork(
@@ -92,16 +84,13 @@ describe("E2E: RPC Services", function () {
 
             await harness!.submitNextTransaction((contract) => contract.add(1));
 
-            // Ensure all peers are in sync (like E2E-Core tests do)
             harness!.assertAllPeersInSync();
 
             const channelId = harness!.peers[0].stateManager.channelId;
             const currentForkId = harness!.activeForkId!;
 
-            // Mark fork as disputed in local diamond for all peers
             await harness!.markForkAsDisputed(currentForkId);
 
-            // Request acknowledgment and wait for all peers to acknowledge
             const requestingPeer = harness!.peers[0];
             const requestingPeerService =
                 harness!.peers[0].stateManager.p2pManager.localRpc
@@ -112,10 +101,8 @@ describe("E2E: RPC Services", function () {
                 currentForkId
             );
 
-            // Wait a bit for RPC messages to be sent and connections to stabilize
             await sleep(1000);
 
-            // Wait for acknowledgments to be received
             const allAcknowledged = await harness!.verifyAllPeersAcknowledged(
                 0,
                 currentForkId,
@@ -123,7 +110,6 @@ describe("E2E: RPC Services", function () {
             );
             expect(allAcknowledged).to.be.true;
 
-            // Verify all peers acknowledged (check peerAcknowledgements map)
             for (let i = 1; i < harness!.peers.length; i++) {
                 const acknowledged =
                     harness!.verifyPeerAcknowledgedDisputedFork(
@@ -134,15 +120,12 @@ describe("E2E: RPC Services", function () {
                 expect(acknowledged).to.be.true;
             }
 
-            // Get current connections after acknowledgments
             const openConnections =
                 requestingPeer.stateManager.p2pManager.openConnections;
             expect(openConnections.length).to.be.greaterThanOrEqual(2);
 
             // Act: Have one of the acknowledging peers try to build on the disputed fork
-            // This should trigger BlockValidationStrategy.blockForkIsDisputed which checks
-            // if the peer acknowledged the fork and disconnects them
-            const buildingPeer = harness!.peers[1]; // Peer that acknowledged the fork
+            const buildingPeer = harness!.peers[1];
             const buildingPeerTransport =
                 harness!.peers[0].stateManager.p2pManager.openConnections.find(
                     (t) => {
@@ -158,7 +141,6 @@ describe("E2E: RPC Services", function () {
 
             expect(buildingPeerTransport).to.not.be.undefined;
 
-            // Verify the building peer acknowledged the fork
             expect(
                 requestingPeerService.didPeerAcknowledgeDisputedFork(
                     buildingPeerTransport!,
@@ -166,12 +148,9 @@ describe("E2E: RPC Services", function () {
                 )
             ).to.be.true;
 
-            // Count connections before attempting to build
             const connectionsBefore =
                 requestingPeer.stateManager.p2pManager.openConnections.length;
 
-            // Simulate the building peer sending a block on the disputed fork
-            // This should trigger blockForkIsDisputed validation
             const buildingPeerStateManager = buildingPeer.stateManager;
             const latestBlock =
                 buildingPeerStateManager.storage.blocks.getLatestBlock(
@@ -179,19 +158,15 @@ describe("E2E: RPC Services", function () {
                 );
 
             if (latestBlock) {
-                // Create a new block on the disputed fork
                 const blockValidationStrategy =
                     requestingPeer.stateManager.blockValidationStrategy;
 
-                // Call blockForkIsDisputed directly to simulate validation
-                // In real flow, this would be called when a block is received
                 await blockValidationStrategy.blockForkIsDisputed(
                     latestBlock,
                     buildingPeerTransport
                 );
             }
 
-            // Wait for disconnection to process
             await sleep(1000);
 
             // Assert: Building peer should be disconnected for building on acknowledged disputed fork
@@ -215,8 +190,6 @@ describe("E2E: RPC Services", function () {
             const currentForkId = harness!.activeForkId!;
             const fakeForkId = ("0x" + "1".repeat(64)) as ForkId;
 
-            // Don't mark fork as disputed - it's not disputed
-
             // Act: Request acknowledgment for non-disputed fork
             const requestingPeer = harness!.peers[0];
             const receivingPeer = harness!.peers[1];
@@ -224,7 +197,6 @@ describe("E2E: RPC Services", function () {
             const connectionsBefore =
                 requestingPeer.stateManager.p2pManager.openConnections.length;
 
-            // Manually send request to one peer (simulating what happens when broadcast)
             const receivingPeerService =
                 harness!.peers[1].stateManager.p2pManager.localRpc
                     .isForkDisputedService;
@@ -242,13 +214,11 @@ describe("E2E: RPC Services", function () {
                 );
 
             if (requestingPeerTransport) {
-                // This should disconnect the requesting peer
                 await receivingPeerService
                     .createRPCMethods(requestingPeerTransport)
                     .onDisputeAcknowledgmentRequest(channelId, fakeForkId);
             }
 
-            // Wait for disconnection
             await sleep(1000);
 
             // Assert: Requesting peer should be disconnected
@@ -268,13 +238,11 @@ describe("E2E: RPC Services", function () {
 
             await harness!.submitNextTransaction((contract) => contract.add(1));
 
-            // Ensure all peers are in sync (like E2E-Core tests do)
             harness!.assertAllPeersInSync();
 
             const channelId = harness!.peers[0].stateManager.channelId;
             const currentForkId = harness!.activeForkId!;
 
-            // Mark fork as disputed in local diamond for all peers
             await harness!.markForkAsDisputed(currentForkId);
 
             // Act: Request acknowledgment twice for same fork
@@ -287,7 +255,6 @@ describe("E2E: RPC Services", function () {
                 currentForkId
             );
 
-            // Second request should be skipped (already in disputedForks set)
             const disputedForksBefore =
                 requestingPeerService.disputedForks.size;
             requestingPeerService.requestDisputeAcknowledgment(
@@ -311,16 +278,13 @@ describe("E2E: RPC Services", function () {
 
             await harness!.submitNextTransaction((contract) => contract.add(1));
 
-            // Ensure all peers are in sync (like E2E-Core tests do)
             harness!.assertAllPeersInSync();
 
             const channelId = harness!.peers[0].stateManager.channelId;
             const currentForkId = harness!.activeForkId!;
 
-            // Mark fork as disputed in local diamond for all peers
             await harness!.markForkAsDisputed(currentForkId);
 
-            // Request acknowledgment
             const requestingPeer = harness!.peers[0];
             const respondingPeer = harness!.peers[1];
             const respondingPeerService =
@@ -341,7 +305,6 @@ describe("E2E: RPC Services", function () {
                 );
 
             if (requestingPeerTransport) {
-                // Verify not yet in myAcknowledgements
                 expect(
                     respondingPeerService.didIAcknowledgeDisputedFork(
                         requestingPeerTransport,
@@ -349,7 +312,6 @@ describe("E2E: RPC Services", function () {
                     )
                 ).to.be.false;
 
-                // First response should succeed
                 await respondingPeerService.respondToDisputeAcknowledgment(
                     requestingPeerTransport,
                     channelId,
@@ -403,16 +365,8 @@ describe("E2E: RPC Services", function () {
             const channelId = harness!.peers[0].stateManager.channelId;
             const currentForkId = harness!.activeForkId!;
 
-            // Mark fork as disputed only for requesting peer, not for others
-            // This simulates a scenario where other peers don't see it as disputed
-            // Note: We use markForkAsDisputed here instead of committing on-chain
-            // because if we commit on-chain, all peers would see it. This test specifically needs
-            // only the requesting peer to have the dispute locally (simulating it hasn't been committed
-            // on-chain yet or other peers haven't synced the event)
             const requestingPeer = harness!.peers[0];
             await harness!.markForkAsDisputed(currentForkId, [0]);
-
-            // Don't mark as disputed for other peers - they won't acknowledge
 
             const connectionsBefore =
                 requestingPeer.stateManager.p2pManager.openConnections.length;
@@ -426,7 +380,6 @@ describe("E2E: RPC Services", function () {
                 currentForkId
             );
 
-            // Wait for timeout (2 * agreementTime)
             const timeoutMs =
                 2 * requestingPeer.stateManager.timeConfig.agreementTime * 1000;
             await sleep(timeoutMs + 1000);
@@ -453,10 +406,6 @@ describe("E2E: RPC Services", function () {
             const forkId2 = ("0x" + "2".repeat(64)) as ForkId;
             const forkId3 = ("0x" + "3".repeat(64)) as ForkId;
 
-            // Mark multiple forks as disputed
-            // Note: We use markForkAsDisputed here instead of committing on-chain
-            // because forkId2 and forkId3 are fake forkIds that don't exist, so we can't commit them on-chain.
-            // This test is simulating multiple disputed forks for acknowledgment tracking purposes.
             await harness!.markForkAsDisputed(forkId1);
             await harness!.markForkAsDisputed(forkId2);
             await harness!.markForkAsDisputed(forkId3);
@@ -489,12 +438,10 @@ describe("E2E: RPC Services", function () {
             await sleep(1000);
 
             // Assert: All peers should have acknowledged all disputed forks
-            // Check peerAcknowledgements map for all three forks
             const openConnections =
                 requestingPeer.stateManager.p2pManager.openConnections;
 
             for (const transport of openConnections) {
-                // Verify all three forks are in peerAcknowledgements
                 expect(
                     requestingPeerService.didPeerAcknowledgeDisputedFork(
                         transport,
@@ -514,7 +461,6 @@ describe("E2E: RPC Services", function () {
                     )
                 ).to.be.true;
 
-                // Verify responding peers have all three in their myAcknowledgements
                 const profile =
                     requestingPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
                         transport
@@ -526,7 +472,6 @@ describe("E2E: RPC Services", function () {
                     if (respondingPeer) {
                         const respondingPeerIndex =
                             harness!.peers.indexOf(respondingPeer);
-                        // Verify all three forks are acknowledged
                         expect(
                             harness!.verifyPeerAcknowledgedDisputedFork(
                                 0,
@@ -567,14 +512,11 @@ describe("E2E: RPC Services", function () {
             const channelId = harness!.peers[0].stateManager.channelId;
             const currentForkId = harness!.activeForkId!;
 
-            // Mark fork as disputed in local diamond for receiving peer
-            // This simulates that a dispute was committed on-chain and synced to local diamond
             const requestingPeer = harness!.peers[0];
             const receivingPeer = harness!.peers[1];
 
             await harness!.markForkAsDisputed(currentForkId, [1]);
 
-            // Verify local diamond has the dispute
             const isDisputedLocal =
                 await receivingPeer.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
                     channelId,
@@ -601,7 +543,6 @@ describe("E2E: RPC Services", function () {
                     harness!.peers[1].stateManager.p2pManager.localRpc
                         .isForkDisputedService;
 
-                // Verify not yet acknowledged
                 expect(
                     receivingPeerService.didIAcknowledgeDisputedFork(
                         requestingPeerTransport,
@@ -609,7 +550,6 @@ describe("E2E: RPC Services", function () {
                     )
                 ).to.be.false;
 
-                // Send the request via RPC
                 await receivingPeerService
                     .createRPCMethods(requestingPeerTransport)
                     .onDisputeAcknowledgmentRequest(channelId, currentForkId);
@@ -617,7 +557,6 @@ describe("E2E: RPC Services", function () {
                 await sleep(1000);
 
                 // Assert: Receiving peer should have acknowledged (checked local diamond first)
-                // This verifies that the local diamond check happened and response was sent
                 expect(
                     receivingPeerService.didIAcknowledgeDisputedFork(
                         requestingPeerTransport,
@@ -644,18 +583,8 @@ describe("E2E: RPC Services", function () {
             const requestingPeer = harness!.peers[0];
             const receivingPeer = harness!.peers[1];
 
-            // Test scenario: Local diamond does NOT have the dispute, but on-chain does
-            // Strategy:
-            // 1. Mark dispute in requesting peer's local diamond (so it can construct valid dispute)
-            // 2. Commit dispute on-chain using dispute manager
-            // 3. Wait for onDisputeCommitted event to confirm it's on-chain
-            // 4. Clear dispute from receiving peer's local diamond to simulate it not being synced
-            //    (This tests the code path where local diamond check returns false, then on-chain check returns true)
-
-            // Reset event spies to track dispute events
             harness!.resetEventSpies();
 
-            // Mark dispute in requesting peer's local diamond first (so it can construct valid dispute if needed)
             const disputeStruct = dispute({
                 input: {
                     channelId,
@@ -671,63 +600,34 @@ describe("E2E: RPC Services", function () {
                 requestingPeer.address
             );
 
-            // Try to commit dispute on-chain using dispute manager
-            // Note: This may fail if state proofs aren't properly set up, which is common in e2e tests
-            // that don't have full state machine state
             try {
                 await requestingPeer.stateManager.disputeManager.dispute(
                     currentForkId
                 );
             } catch (error) {
-                // If dispute creation fails, we can't test the on-chain check path properly
-                // This test requires proper state setup to create a valid dispute on-chain
-                // For now, we'll skip the on-chain verification and just test that the code path exists
                 console.warn(
                     "disputeManager.dispute() failed, cannot fully test on-chain check:",
                     error
                 );
             }
 
-            // Wait a bit for any dispute events to process
             await sleep(1000);
 
-            // Verify on-chain contract has the dispute (if dispute was successfully created)
-            // Note: This may be false if disputeManager.dispute() failed due to missing state
             const isDisputedOnChain =
                 await receivingPeer.stateManager.stateChannelManagerContract.isForkDisputed(
                     channelId,
                     currentForkId
                 );
 
-            // If dispute wasn't created on-chain, we can't fully test this scenario
-            // The test verifies the code path exists, but requires proper state setup to fully test
             if (!isDisputedOnChain) {
-                // Skip the rest of the test if dispute wasn't created on-chain
-                // This test requires proper state setup that e2e tests don't always provide
                 return;
             }
 
-            // Check receiving peer's local diamond immediately (before event processing completes)
-            // The event handler will sync it to local diamond asynchronously, but we check before that happens
-            // to test the code path where local diamond returns false but on-chain returns true
             const isDisputedLocalReceiving =
                 await receivingPeer.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
                     channelId,
                     currentForkId
                 );
-
-            // Note: The event processing is asynchronous. If the event was already processed,
-            // local diamond will have it. If not, local diamond will be false, which is what we want to test.
-            // Either way, we verify that the dispute is on-chain and the code path exists to check on-chain
-            // when local diamond returns false (which happens if local diamond is out of sync).
-
-            // Now, when receiving peer receives an acknowledgment request:
-            // 1. It checks local diamond -> may return false (if event not processed) or true (if processed)
-            // 2. If local diamond returns false, it checks on-chain (stateChannelManagerContract) -> returns true
-            // 3. It responds with acknowledgment
-
-            // Verify receiving peer's local diamond state (may be false if event not processed yet)
-            // This tests the code path where local diamond check happens first, then on-chain check if needed
 
             // Act: Send acknowledgment request to receiving peer
             const requestingPeerTransport =
@@ -748,7 +648,6 @@ describe("E2E: RPC Services", function () {
                     harness!.peers[1].stateManager.p2pManager.localRpc
                         .isForkDisputedService;
 
-                // Verify not yet acknowledged
                 expect(
                     receivingPeerService.didIAcknowledgeDisputedFork(
                         requestingPeerTransport,
@@ -756,7 +655,6 @@ describe("E2E: RPC Services", function () {
                     )
                 ).to.be.false;
 
-                // Send the request - this should check local diamond (false), then on-chain (true)
                 await receivingPeerService
                     .createRPCMethods(requestingPeerTransport)
                     .onDisputeAcknowledgmentRequest(channelId, currentForkId);
@@ -764,7 +662,6 @@ describe("E2E: RPC Services", function () {
                 await sleep(1000);
 
                 // Assert: Receiving peer should have acknowledged after checking on-chain
-                // This verifies that the code path checks on-chain when local diamond returns false
                 expect(
                     receivingPeerService.didIAcknowledgeDisputedFork(
                         requestingPeerTransport,
