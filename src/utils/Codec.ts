@@ -42,7 +42,7 @@ import {
     DisputeAuditingDataStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Bytes, Timestamp } from "@/types/types";
-import { FraudProofType } from "@/types/sol-enums";
+import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
 import { ExecResult } from "@ethereumjs/evm";
 
 export type FraudStruct =
@@ -69,24 +69,24 @@ type StructType =
 
 // Enum for better autocomplete and type safety
 export enum Type {
-    Block = "Block",
-    BlockCommitment = "BlockCommitment",
-    JoinChannel = "JoinChannel",
-    OpenChannel = "OpenChannel",
-    BlockConfirmation = "BlockConfirmation",
-    Transaction = "Transaction",
-    Dispute = "Dispute",
-    StateSnapshot = "StateSnapshot",
-    SnapshotData = "SnapshotData",
-    JoinChannelBlock = "JoinChannelBlock",
-    ExitChannelBlock = "ExitChannelBlock",
-    ExitChannel = "ExitChannel",
-    DisputeAuditingData = "DisputeAuditingData"
+    Block,
+    BlockCommitment,
+    JoinChannel,
+    OpenChannel,
+    BlockConfirmation,
+    Transaction,
+    Dispute,
+    StateSnapshot,
+    SnapshotData,
+    JoinChannelBlock,
+    ExitChannelBlock,
+    ExitChannel,
+    DisputeAuditingData
 }
 
 export class Codec {
     private static readonly structToEthersType = new Map<
-        Type | FraudProofType,
+        Type | FraudProofType | DisputeFraudProofType,
         string
     >([
         [Type.Block, BlockEthersType],
