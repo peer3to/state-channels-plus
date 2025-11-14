@@ -127,14 +127,13 @@ export class EventHandler {
             signedBlock,
             signatures: []
         };
-        await this.stateManager.onBlockConfirmation(
-            blockConfirmation,
-            timestamp,
-            new CalldataCommittedStrategy(
+        await this.stateManager.onBlockConfirmation(blockConfirmation, {
+            onChainTimestamp: timestamp,
+            validationStrategy: new CalldataCommittedStrategy(
                 this.stateManager.disputeManager,
                 this.stateManager.blockValidationStrategy
             )
-        );
+        });
     }
 
     async onDisputeCommitted(
@@ -167,6 +166,12 @@ export class EventHandler {
         if (!isRelevant) {
             return;
         }
+
+        this.stateManager.p2pManager.localRpc.isForkDisputedService.requestDisputeAcknowledgment(
+            channelId,
+            dispute.input.genesisSnapshotDataHash
+        );
+
         if (isFinal) {
             if (!disputeAuditingData) {
                 const { isPartial, auditingData } =

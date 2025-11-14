@@ -12,6 +12,7 @@ import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 import FraudProofService from "./utils/FraudProofService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
 import StateManager from "@/stateManager";
+import ATransport from "@/transport/ATransport";
 
 export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
@@ -27,7 +28,8 @@ export default class ValidationService {
 
     async validateBlockConfirmation(
         block: Block,
-        strategy: AValidationStrategy
+        strategy: AValidationStrategy,
+        senderTransport?: ATransport
     ): Promise<BlockValidationResult> {
         const forkId = block.forkId;
         const channelId = block.channelId;
@@ -76,7 +78,7 @@ export default class ValidationService {
         }
 
         if (await this.isDisputedFork(block.forkId, channelId)) {
-            return await strategy.blockForkIsDisputed(block);
+            return await strategy.blockForkIsDisputed(block, senderTransport);
         }
 
         // isNext

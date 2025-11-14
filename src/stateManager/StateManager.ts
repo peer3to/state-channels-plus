@@ -77,6 +77,7 @@ import BlockValidationStrategy from "./validationStrategy/BlockValidationStrateg
 import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidationStrategy";
 
 import { DEBUG_STATE_MANAGER } from "@/utils/config";
+import ATransport from "@/transport/ATransport";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 
 const NULL = "0x00";
@@ -107,7 +108,7 @@ class StateManager {
     reductionTriggerMap: Map<ForkId, ReductionTimeoutHandle> = new Map();
     status: Status = Status.SPECTATING;
     timeoutManager: TimeoutManager;
-    private logger: Logger;
+    logger: Logger;
 
     constructor(
         signer: ethers.Signer,
@@ -128,6 +129,7 @@ class StateManager {
         this.storage = storage;
 
         this.logger = logger.child({ component: "StateManager" });
+        this.timeoutManager = new TimeoutManager(logger);
 
         this.eventHandler = new EventHandler(
             this.storage,
@@ -141,7 +143,7 @@ class StateManager {
             this.eventHandler,
             this.diamondStateMachine.localDiamondContract
         );
-        this.agreementManager = new AgreementManager(this.storage);
+        this.agreementManager = new AgreementManager(this.storage, this.logger);
         this.disputeManager = new DisputeManager(
             this.channelId,
             signer,
@@ -179,7 +181,6 @@ class StateManager {
             this.storage,
             this.p2pManager
         );
-        this.timeoutManager = new TimeoutManager(logger);
     }
     //Mark resources for garbage collection
     public async dispose() {
@@ -489,13 +490,17 @@ class StateManager {
     // returns false -> the calling context should disconnect from the peer
     public async onBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct,
-        onChainTimestamp?: Timestamp,
-        validationStrategy?: AValidationStrategy
+        options?: {
+            onChainTimestamp?: Timestamp;
+            validationStrategy?: AValidationStrategy;
+            senderTransport?: ATransport;
+        }
     ): Promise<boolean> {
         // the try/catch is to ensure that the mutex is unlocked in case of an error
         // no error is actually expected to happen, and the catch block just re-throws the error
         const strategy =
-            validationStrategy || this.getStrategyByStatus(this.status);
+            options?.validationStrategy ||
+            this.getStrategyByStatus(this.status);
         try {
             await this.mutex.lock();
             let validationResult: BlockValidationResult =
@@ -515,13 +520,14 @@ class StateManager {
 
             const block = Block.fromBlockConfirmation(
                 blockConfirmation,
-                onChainTimestamp
+                options?.onChainTimestamp
             );
 
             validationResult =
                 await this.validationService.validateBlockConfirmation(
                     block,
-                    strategy
+                    strategy,
+                    options?.senderTransport
                 );
 
             if (validationResult !== BlockValidationResult.SUCCESS) {
@@ -922,41 +928,15 @@ class StateManager {
                 );
             }
 
-            const exitChannelBlocks: ExitChannelBlockStruct[] = [];
-
-            // Get the current on-chain snapshot's latest exit channel block hash
             const currentOnChainExitBlockHash =
                 currentOnChainSnapshot.snapshotData.latestExitChannelBlockHash;
-
-            // Get the latest local exit channel block hash from the latest state snapshot
-            if (!latestSnapshot) {
-                throw new Error(
-                    "Latest snapshot is undefined - this should not happen"
-                );
-            }
             const latestLocalExitBlockHash =
                 latestSnapshot.snapshotData.latestExitChannelBlockHash;
-
-            // Build the chain of exit blocks from current on-chain to latest local
-            let currentHash = latestLocalExitBlockHash;
-            const exitBlockChain: ExitChannelBlockStruct[] = [];
-
-            // Walk backwards through the chain until we reach the on-chain hash
-            while (currentHash !== currentOnChainExitBlockHash) {
-                const exitBlock =
-                    this.storage.exitChannelBlocks.getExitChannelBlock(
-                        currentHash
-                    );
-                if (!exitBlock) {
-                    throw new Error(
-                        `Exit channel block not found for hash: ${currentHash}`
-                    );
-                }
-                exitBlockChain.unshift(exitBlock);
-                currentHash = exitBlock.previousBlockHash;
-            }
-
-            exitChannelBlocks.push(...exitBlockChain);
+            const exitChannelBlocks =
+                this.storage.exitChannelBlocks.getBlocksInRange(
+                    latestLocalExitBlockHash,
+                    currentOnChainExitBlockHash
+                );
 
             return {
                 milestoneProofs,
@@ -1113,27 +1093,14 @@ class StateManager {
             }
 
             // Build exit blocks
-            let latestExitBlockHash =
+            const latestExitBlockHash =
                 genesisSnapshot.snapshotData.latestExitChannelBlockHash;
             const currentOnChainExitBlockHash =
                 currentOnChainSnapshot.snapshotData.latestExitChannelBlockHash;
-            const exitBlocks: ExitChannelBlockStruct[] = [];
-            let currentExitBlock =
-                this.storage.exitChannelBlocks.getExitChannelBlockEntry(
-                    latestExitBlockHash
-                );
-
-            while (
-                currentExitBlock &&
-                latestExitBlockHash !== currentOnChainExitBlockHash
-            ) {
-                exitBlocks.unshift(currentExitBlock.block);
-                latestExitBlockHash = currentExitBlock.block.previousBlockHash;
-                currentExitBlock =
-                    this.storage.exitChannelBlocks.getExitChannelBlockEntry(
-                        currentExitBlock.block.previousBlockHash
-                    );
-            }
+            const exitBlocks = this.storage.exitChannelBlocks.getBlocksInRange(
+                latestExitBlockHash,
+                currentOnChainExitBlockHash
+            );
 
             return {
                 genesisSnapshot,
@@ -1626,14 +1593,6 @@ class StateManager {
         // rest is left as TODO for now
         // https://trello.com/c/qwpYPLj8
         throw new Error("Not implemented");
-    }
-
-    // ----- Event handlers -----
-    public async onDisputeCommitted(
-        dispute: DisputeStruct,
-        timestamp: Timestamp
-    ) {
-        throw new Error("TODO - Not implemented");
     }
 
     private getStrategyByStatus(status: Status): AValidationStrategy {

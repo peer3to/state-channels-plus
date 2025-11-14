@@ -13,6 +13,9 @@ export { default as StateTransitionRpcMethods } from "./stateTransition/StateTra
 export { default as SpectateService } from "./spectate/SpectateService";
 export { default as SpectateRpcMethods } from "./spectate/SpectateRpcMethods";
 
+export { default as IsForkDisputedService } from "./isForkDisputedService/IsForkDisputedService";
+export { default as IsForkDisputedRpcMethods } from "./isForkDisputedService/IsForkDisputedRpcMethods";
+
 export { default as JoinChannelService } from "./joinChannel/JoinChannelService";
 export { default as JoinChannelRpcMethods } from "./joinChannel/JoinChannelRpcMethods";
 

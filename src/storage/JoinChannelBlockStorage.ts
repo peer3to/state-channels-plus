@@ -75,20 +75,28 @@ export class JoinChannelBlockStorage {
         let currentHash = fromBlockHash;
         while (currentHash != ethers.ZeroHash) {
             if (toBlockHash && currentHash === toBlockHash) break;
-            const entry = this.blockMap.get(currentHash);
-            if (!entry) return;
+            const entry = this.getJoinChannelBlockEntry(currentHash);
+            if (!entry)
+                throw new Error(
+                    `Block hash ${currentHash} not found in storage`
+                );
             yield entry;
             currentHash = entry.block.previousBlockHash;
         }
     }
-
+    /**
+     * Get all join channel blocks in the range [fromBlockHash, toBlockHash)
+     * @param fromBlockHash - Iterate the blockchain backwards from this block (including this block)
+     * @param toBlockHash - Stop iterating at this block (excluding this block)
+     * @returns An array of join channel blocks in ascending order [Block N, Block N+1 ...]
+     */
     getBlocksInRange(
         fromBlockHash: Hash,
         toBlockHash: Hash
     ): JoinChannelBlockStruct[] {
         const blocks: JoinChannelBlockStruct[] = [];
         for (const entry of this.getIterator(fromBlockHash, toBlockHash)) {
-            blocks.push(entry.block);
+            blocks.unshift(entry.block);
         }
         return blocks;
     }

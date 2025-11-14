@@ -10,7 +10,12 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
     connectionMap: Map<string, RTCPeerConnection> = new Map();
 
     constructor(p2pManager: P2PManager) {
-        super(p2pManager);
+        super(
+            p2pManager,
+            p2pManager.stateManager.logger.child({
+                module: "WebRTCSetupService"
+            })
+        );
     }
 
     public createRPCMethods(transport: ATransport): WebRTCSetupRpcMethods {
@@ -21,7 +26,7 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
     public async initiateWebRTC(transport: ATransport) {
         //TODO! - require seccusfull init handshake (also on other methods)
         try {
-            console.log("initiateWebRTC");
+            this.logger.debug("initiateWebRTC");
             const connection = new RTCPeerConnection();
             const channel = connection.createDataChannel("webRTC-DataChannel");
             const webRTCTransport = new WebRTCTransport(
@@ -45,14 +50,15 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
                 this.p2pManager.profileManager.getProfileByTransport(
                     transport
                 )?.evmAddress;
-            if (!adr) return console.log("initiateWebRTC - no EVM address");
+            if (!adr)
+                return this.logger.debug("initiateWebRTC - no EVM address");
             this.connectionMap.set(adr.toString(), connection);
             const serializedOffer = JSON.stringify(offer);
             this.remoteRpc.webRTCSetupService
                 .onOfferWebRTC(serializedOffer)
                 .sendOne(transport);
         } catch (e) {
-            console.log("initiateWebRTC - error", e);
+            this.logger.debug("initiateWebRTC - error", e);
         }
     }
 }
