@@ -9,6 +9,7 @@ struct MathState {
     uint256 number;
     address[] participants;
     uint256[] balances;
+    uint256 currentTurnIndex;
 }
 
 contract MathStateMachine is AStateMachine {
@@ -25,6 +26,7 @@ contract MathStateMachine is AStateMachine {
         require(_tx.header.participant == getNextToWrite(), "MathStateMachine: add only next player can write");
         emit Addition(state.number, _number, state.number + _number);
         state.number += _number;
+        state.currentTurnIndex++;
         emit NextToPlay(getNextToWrite());
         return state.number;
     }
@@ -59,7 +61,7 @@ contract MathStateMachine is AStateMachine {
         if (state.participants.length == 0) {
             return _tx.header.participant;
         }
-        return state.participants[state.number % state.participants.length];
+        return state.participants[state.currentTurnIndex % state.participants.length];
     }
 
     function _slashParticipant(address adr) internal virtual override returns (bool, ExitChannel memory) {
