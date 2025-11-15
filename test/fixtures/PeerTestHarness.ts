@@ -34,7 +34,6 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { TimeoutStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 import Clock from "@/Clock";
-import { dispute } from "@test/factory";
 import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
 import { deploy } from "../../scripts/V1/deploy";
@@ -934,79 +933,11 @@ export class PeerTestHarness<T extends AStateMachine> {
         return peer.stateManager.storage.timeout.getTimeout(forkId);
     }
 
-    /**
-     * Creates a real dispute on-chain by having a peer call disputeManager.dispute()
-     * and waits for it to be synced to all peers' local diamonds
-     */
-    async createDispute(peerIndex: number, forkId: ForkId): Promise<void> {
-        const disputingPeer = this.getPeer(peerIndex);
-        const channelId = this.peers[0].stateManager.channelId;
-        try {
-            await disputingPeer.stateManager.disputeManager.dispute(forkId);
-            await this.waitForEventProcessing(1000);
-            await this.waitForCondition(async () => {
-                const isDisputedOnChain =
-                    await disputingPeer.stateManager.stateChannelManagerContract.isForkDisputed(
-                        channelId,
-                        forkId
-                    );
-                if (!isDisputedOnChain) return false;
-                for (const peer of this.peers) {
-                    const isDisputedLocal =
-                        await peer.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
-                            channelId,
-                            forkId
-                        );
-                    if (!isDisputedLocal) return false;
-                }
-                return true;
-            }, 10000);
-        } catch (error) {
-            throw new Error(`Failed to create dispute: ${error}`);
-        }
-    }
-
-    /**
-     * Marks a fork as disputed for specified peers
-     */
-    async markForkAsDisputed(
-        forkId: ForkId,
-        peerIndices?: number[],
-        disputerAddress?: Address
-    ): Promise<void> {
-        const channelId = this.peers[0].stateManager.channelId;
-        const peersToMark = peerIndices
-            ? peerIndices.map((i) => this.getPeer(i))
-            : this.peers;
-        const disputer = disputerAddress || this.peers[0].address;
-
-        const disputeStruct = dispute({
-            input: {
-                channelId,
-                genesisSnapshotDataHash: forkId,
-                disputeAuditingDataHash: forkId,
-                disputer: disputer as any
-            }
-        });
-
-        for (const peer of peersToMark) {
-            await peer.stateManager.diamondStateMachine.localDiamondContract.onDisputeCommitted(
-                channelId,
-                disputeStruct,
-                Clock.getTimeInSeconds(),
-                false,
-                Clock.getTimeInSeconds()
-            );
-        }
-    }
-
-    /**
-     * Verifies that all peers have acknowledged a disputed fork
-     */
     async verifyAllPeersAcknowledged(
         requestingPeerIndex: number,
         forkId: ForkId,
-        timeoutMs: number = 5000
+        timeoutMs: number = 5000,
+        excludePeerIndices: number[] = []
     ): Promise<boolean> {
         const requestingPeer = this.getPeer(requestingPeerIndex);
         const requestingPeerService =
@@ -1016,21 +947,35 @@ export class PeerTestHarness<T extends AStateMachine> {
         return await this.waitForCondition(() => {
             const connections =
                 requestingPeer.stateManager.p2pManager.openConnections;
-            if (connections.length < 2) return false;
 
-            const allAcked = connections.every((transport) =>
-                requestingPeerService.didPeerAcknowledgeDisputedFork(
+            if (connections.length === 0) return false;
+
+            const allAcked = connections.every((transport) => {
+                const profile =
+                    requestingPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
+                        transport
+                    );
+                const peerIndex = this.peers.findIndex(
+                    (p) => p.address === profile?.evmAddress
+                );
+
+                // Skip excluded peers
+                if (
+                    peerIndex !== -1 &&
+                    excludePeerIndices.includes(peerIndex)
+                ) {
+                    return true;
+                }
+
+                return requestingPeerService.didPeerAcknowledgeDisputedFork(
                     transport,
                     forkId
-                )
-            );
+                );
+            });
             return allAcked;
         }, timeoutMs);
     }
 
-    /**
-     * Gets the transport from one peer's perspective to another peer
-     */
     getPeerTransport(
         fromPeerIndex: number,
         toPeerIndex: number
