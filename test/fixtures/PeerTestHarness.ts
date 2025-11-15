@@ -40,6 +40,7 @@ import testConfig from "../peer3.test.config";
 import { deploy } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import { ZeroHash } from "ethers";
+import { ATransport } from "@/transport";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;
@@ -1028,55 +1029,22 @@ export class PeerTestHarness<T extends AStateMachine> {
     }
 
     /**
-     * Verifies that a peer has acknowledged a disputed fork
+     * Gets the transport from one peer's perspective to another peer
      */
-    verifyPeerAcknowledgedDisputedFork(
-        requestingPeerIndex: number,
-        respondingPeerIndex: number,
-        forkId: ForkId
-    ): boolean {
-        const requestingPeer = this.getPeer(requestingPeerIndex);
-        const respondingPeer = this.getPeer(respondingPeerIndex);
-        const requestingPeerService =
-            requestingPeer.stateManager.p2pManager.localRpc
-                .isForkDisputedService;
-        const respondingPeerService =
-            respondingPeer.stateManager.p2pManager.localRpc
-                .isForkDisputedService;
+    getPeerTransport(
+        fromPeerIndex: number,
+        toPeerIndex: number
+    ): ATransport | undefined {
+        const fromPeer = this.getPeer(fromPeerIndex);
+        const toPeer = this.getPeer(toPeerIndex);
 
-        const transport =
-            requestingPeer.stateManager.p2pManager.openConnections.find((t) => {
-                const profile =
-                    requestingPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
-                        t
-                    );
-                return profile?.evmAddress === respondingPeer.address;
-            });
-        if (!transport) return false;
-
-        const peerAcknowledged =
-            requestingPeerService.didPeerAcknowledgeDisputedFork(
-                transport,
-                forkId
-            );
-        if (!peerAcknowledged) return false;
-
-        const responseTransport =
-            respondingPeer.stateManager.p2pManager.openConnections.find((t) => {
-                const profile =
-                    respondingPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
-                        t
-                    );
-                return profile?.evmAddress === requestingPeer.address;
-            });
-        if (!responseTransport) return false;
-
-        const iAcknowledged = respondingPeerService.didIAcknowledgeDisputedFork(
-            responseTransport,
-            forkId
-        );
-
-        return iAcknowledged;
+        return fromPeer.stateManager.p2pManager.openConnections.find((t) => {
+            const profile =
+                fromPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
+                    t
+                );
+            return profile?.evmAddress === toPeer.address;
+        });
     }
 
     async submitDoubleSignBlock(
