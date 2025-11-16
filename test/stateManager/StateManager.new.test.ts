@@ -255,7 +255,7 @@ describe("StateManager - Refactored", () => {
             // Act & Assert
             await expect(
                 stateManager.prepareUpdateSnapshotSameFork(defaults.forkId)
-            ).to.be.rejectedWith("not found in storage");
+            ).to.be.rejectedWith(/Block hash .* not found in storage/);
         });
     });
 
