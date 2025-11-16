@@ -23,7 +23,8 @@ import {
     SignatureUtils,
     Codec,
     Type,
-    hash
+    hash,
+    pollUntil
 } from "@/utils";
 import Block from "@/models/Block";
 import {
@@ -111,7 +112,6 @@ export class PeerTestHarness<T extends AStateMachine> {
     private sharedDeployTx!: any;
     public channelId!: ChannelId;
     private options!: Required<HarnessOptions>;
-    private discoveryServerStarted = false;
     public activeForkId?: ForkId;
     private harnessConfig!: Config;
     private logger: Logger;
@@ -384,33 +384,90 @@ export class PeerTestHarness<T extends AStateMachine> {
 
         await Promise.all([tx.wait(), sleep(100)]);
 
-        // Get fork ID from the first peer that has it set
-        let forkId: ForkId | undefined;
-        for (const peer of this.peers) {
-            const peerForkId = peer.stateManager.forkId;
-            if (peerForkId && peerForkId !== "0x00" && peerForkId !== "0x0") {
-                forkId = peerForkId;
-                break;
-            }
-        }
+        const isValidForkId = (forkId: ForkId | undefined): boolean =>
+            !!forkId && forkId !== "0x00" && forkId !== "0x0";
 
-        if (!forkId) {
-            // If no peer has a valid fork ID, wait a bit more and try again
-            await sleep(50);
-            for (const peer of this.peers) {
-                const peerForkId = peer.stateManager.forkId;
-                if (
-                    peerForkId &&
-                    peerForkId !== "0x00" &&
-                    peerForkId !== "0x0"
-                ) {
-                    forkId = peerForkId;
-                    break;
+        const getPeerForkIds = () =>
+            this.peers.map((peer) => peer.stateManager.forkId);
+
+        this.logger.debug("Waiting for fork ID to be set on all peers...");
+
+        await pollUntil(
+            () => {
+                const peerForkIds = getPeerForkIds();
+                const allValidAndSame =
+                    peerForkIds.every(isValidForkId) &&
+                    peerForkIds.every((id) => id === peerForkIds[0]);
+
+                if (allValidAndSame) {
+                    this.activeForkId = peerForkIds[0] as ForkId;
+                    return true;
                 }
+                return false;
+            },
+            {
+                timeoutMs: 2000,
+                pollIntervalMs: 50,
+                timeoutMessage:
+                    "Failed to get fork ID on all peers after waiting 2000ms. Channel opening may have failed."
             }
+        );
+
+        // Wait for state machine to be properly initialized with participants on ALL peers
+        this.logger.debug(
+            "Waiting for state machine initialization on all peers..."
+        );
+
+        const allPeersInitialized = await pollUntil(
+            async () => {
+                try {
+                    // Check if ALL peers have participants initialized
+                    let initializedCount = 0;
+                    let expectedParticipantCount = 0;
+
+                    for (const peer of this.peers) {
+                        const participants =
+                            await peer.stateManager.diamondStateMachine.getParticipants();
+                        if (participants && participants.length > 0) {
+                            initializedCount++;
+                            expectedParticipantCount = participants.length;
+                        }
+                    }
+
+                    // All peers must have participants initialized
+                    if (initializedCount === this.peers.length) {
+                        this.logger.debug(
+                            `State initialized on all ${this.peers.length} peers with ${expectedParticipantCount} participants each`
+                        );
+                        return true;
+                    } else {
+                        this.logger.debug(
+                            `State initialization: ${initializedCount}/${this.peers.length} peers ready`
+                        );
+                        return false;
+                    }
+                } catch (error) {
+                    // If we can't get participants yet, keep waiting
+                    return false;
+                }
+            },
+            {
+                timeoutMs: 2000,
+                pollIntervalMs: 50,
+                throwOnTimeout: false
+            }
+        );
+
+        if (!allPeersInitialized) {
+            this.logger.warn(
+                "State machine not fully initialized on all peers after 2000ms, continuing anyway..."
+            );
         }
 
-        this.activeForkId = forkId as ForkId;
+        if (!this.activeForkId) {
+            throw new Error("Fork ID was not set after polling completed");
+        }
+
         this.logger.info(
             `Channel opened successfully with fork ID: ${this.activeForkId}`
         );
@@ -419,12 +476,9 @@ export class PeerTestHarness<T extends AStateMachine> {
 
     async connectPeers(): Promise<void> {
         this.logger.debug("Connecting peers...");
-        if (!this.discoveryServerStarted) {
-            const started = LocalDiscoveryServer.tryStart();
-            this.discoveryServerStarted = started;
-            if (started) {
-                this.logger.verbose("Discovery server started");
-            }
+        const started = LocalDiscoveryServer.tryStart();
+        if (started) {
+            this.logger.verbose("Discovery server started");
         }
         await this.waitForP2PConnections();
         this.logger.debug("All peers connected successfully");
@@ -546,14 +600,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         this.peers = [];
 
         // Cleanup discovery server and peer servers
-        if (
-            this.discoveryServerStarted &&
-            process.env.SHARED_DISCOVERY !== "1"
-        ) {
-            LocalDiscoveryServer.cleanup();
-            this.discoveryServerStarted = false;
-            this.logger.verbose("Discovery server cleaned up");
-        }
+        LocalDiscoveryServer.cleanup();
     }
 
     assertAllPeersInSync(options: AssertAllPeersInSyncOptions = {}): void {
@@ -762,11 +809,30 @@ export class PeerTestHarness<T extends AStateMachine> {
             );
             if (!nextPeer) {
                 // Enhanced error reporting
-
                 const stateHash = await this.getStateMachineStateHash(0);
                 const peerAddresses = this.peers.map((p) => p.address);
+
+                const latestBlock =
+                    this.peers[0].stateManager.storage.blocks.getLatestBlock(
+                        this.activeForkId!
+                    );
+                const forkId = this.peers[0].stateManager.forkId;
+
+                // Check participants on all peers for diagnostics
+                const participantStates = await Promise.all(
+                    this.peers.map(async (peer, i) => {
+                        try {
+                            const participants =
+                                await peer.stateManager.diamondStateMachine.getParticipants();
+                            return `Peer ${i}: ${participants.length} participants`;
+                        } catch (err) {
+                            return `Peer ${i}: error getting participants`;
+                        }
+                    })
+                );
+
                 throw new Error(
-                    `No peer found with address ${nextAddress}. Available peers: ${peerAddresses.join(", ")}. ForkId: ${this.forkId}, StateHash: ${stateHash}`
+                    `No peer found with address ${nextAddress}. Available peers: ${peerAddresses.join(", ")}. ForkId: ${forkId}, StateHash: ${stateHash}, LatestBlockHeight: ${latestBlock?.height ?? "none"}. Participant states: ${participantStates.join(", ")}`
                 );
             }
 
