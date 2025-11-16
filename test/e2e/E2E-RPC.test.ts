@@ -1,76 +1,48 @@
 import { expect } from "chai";
 import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
-import { MathStateMachine } from "@typechain-types/index";
+import { AStateMachine, MathStateMachine } from "@typechain-types/index";
 import { ForkId } from "@/types/types";
+import { hash } from "../factory";
+import { ATransport } from "@/transport";
 
 describe("E2E: RPC Services", function () {
-    let harness: PeerTestHarness<MathStateMachine> | null = null;
+    let harness: PeerTestHarness<MathStateMachine>;
 
     beforeEach(async function () {
         harness = new PeerTestHarness<MathStateMachine>();
+        await harness.setup(3);
+        await harness.openChannel();
     });
 
     afterEach(async function () {
         if (harness) {
             await harness.cleanup();
-            harness = null;
         }
     });
 
     describe("IsForkDisputed RPC", function () {
-        let authorPeer: TestPeer<MathStateMachine>;
+        let byzantinePeer: TestPeer<MathStateMachine>;
+        let nonByzantinePeers: TestPeer<MathStateMachine>[];
 
         beforeEach(async function () {
-            harness = new PeerTestHarness<MathStateMachine>();
-            await harness.setup(3);
-            await harness.openChannel();
-
             await harness.submitNextTransaction((contract) => contract.add(1));
-
             harness.assertAllPeersInSync();
             harness.resetEventSpies();
 
-            const targetForkId = harness.activeForkId!;
-            const latestBlock =
-                harness.peers[0].stateManager.storage.blocks.getLatestBlock(
-                    targetForkId
-                );
-            if (!latestBlock) {
-                throw new Error("No latest block found");
-            }
-            const foundAuthorPeer = harness.peers.find(
-                (p) => p.address === latestBlock.author
-            );
-            if (!foundAuthorPeer) {
-                throw new Error(
-                    `No peer found for author ${latestBlock.author}`
-                );
-            }
-            authorPeer = foundAuthorPeer;
+            byzantinePeer = harness.peers[0];
 
-            const authorPeerLatestBlock =
-                authorPeer.stateManager.storage.blocks.getLatestBlock(
-                    targetForkId
-                );
-            if (
-                !authorPeerLatestBlock ||
-                authorPeerLatestBlock.height !== latestBlock.height
-            ) {
-                throw new Error(
-                    `Author peer ${authorPeer.index} doesn't have the latest block`
-                );
-            }
+            // Create double-sign scenario to trigger dispute
+            await harness.submitDoubleSignBlock(byzantinePeer.index);
 
-            await harness.submitDoubleSignBlock(authorPeer.index, {
-                forkId: targetForkId
-            });
+            nonByzantinePeers = [harness.peers[1], harness.peers[2]];
 
-            const otherPeers = [0, 1, 2].filter((i) => i !== authorPeer.index);
+            // Wait for honest peers to detect fraud and initiate dispute
             const fraudDetected = await harness.waitForEventCounts(
                 "onInitiatingDispute",
                 [
-                    { peerId: otherPeers[0], expectedCount: 1 },
-                    { peerId: authorPeer.index, expectedCount: 0 }
+                    { peerId: nonByzantinePeers[0].index, expectedCount: 1 },
+                    { peerId: nonByzantinePeers[1].index, expectedCount: 1 },
+                    { peerId: byzantinePeer.index, expectedCount: 0 }
                 ],
                 10000
             );
@@ -78,295 +50,302 @@ describe("E2E: RPC Services", function () {
                 throw new Error("Fraud was not detected");
             }
 
-            const disputeCommitted = await harness.waitForCondition(() => {
-                for (let i = 0; i < 3; i++) {
-                    const count = harness!.getEventCallCount(
-                        i,
-                        "onDisputeCommitted"
-                    );
-                    if (count < 1) {
-                        return false;
-                    }
-                }
-                return true;
-            }, 10000);
+            // Wait for dispute to be committed on-chain
+            const disputeCommitted = await harness!.waitForEventCounts(
+                "onDisputeCommitted",
+                [
+                    { peerId: 0, expectedCount: 2 },
+                    { peerId: 1, expectedCount: 2 },
+                    { peerId: 2, expectedCount: 2 }
+                ],
+                10000
+            );
             if (!disputeCommitted) {
                 throw new Error("Dispute was not committed");
             }
         });
 
-        // Arrange: Setup channel with dispute window created on-chain
-        // Act: Dispute acknowledgment request is broadcast to all peers
-        // Assert: All peers acknowledge disputed fork and mark it as disputed
-        it("should broadcast dispute acknowledgment to all peers on dispute creation", async function () {
-            // Arrange
-            const nonMaliciousPeers = [0, 1, 2].filter(
-                (i) => i !== authorPeer.index
-            );
-            const requestingPeerIndex = nonMaliciousPeers[0];
-            const requestingPeer = harness!.peers[requestingPeerIndex];
-            const requestingPeerService =
-                requestingPeer.stateManager.p2pManager.localRpc
-                    .isForkDisputedService;
+        // =================================================================
+        // Helper Functions
+        // =================================================================
 
-            const alreadyRequested = requestingPeerService.disputedForks.has(
-                harness!.activeForkId!
+        const requestAcknowledgment = (
+            peer: TestPeer<MathStateMachine>,
+            forkId: ForkId
+        ) => {
+            const service =
+                peer.stateManager.p2pManager.localRpc.isForkDisputedService;
+            service.requestDisputeAcknowledgment(
+                peer.stateManager.channelId,
+                forkId
             );
+            return service;
+        };
+
+        const getConnectionCount = (peer: TestPeer<AStateMachine>) =>
+            peer.stateManager.p2pManager.openConnections.length;
+
+        const getIsForkDisputedService = (peer: TestPeer<AStateMachine>) =>
+            peer.stateManager.p2pManager.localRpc.isForkDisputedService;
+
+        // Arrange: Setup channel with dispute committed on-chain
+        // Act: One peer broadcasts acknowledgment request to all connected peers
+        // Assert: All non-malicious peers acknowledge the disputed fork within timeout
+        it("should broadcast acknowledgment request and receive responses from all peers", async function () {
+            // Arrange
+            const requestingPeer = nonByzantinePeers[0];
+            const requestingPeerService =
+                getIsForkDisputedService(requestingPeer);
 
             // Act
-            if (!alreadyRequested) {
-                requestingPeerService.requestDisputeAcknowledgment(
-                    requestingPeer.stateManager.channelId,
-                    harness!.activeForkId!
-                );
-            }
+
+            requestAcknowledgment(requestingPeer, harness.activeForkId!);
+
+            // Wait for the disputed fork to be registered
+            const forkRegistered = await harness.waitForCondition(
+                () =>
+                    requestingPeerService.disputedForks.has(
+                        harness.activeForkId!
+                    ),
+                5000
+            );
+            expect(forkRegistered).to.be.true;
 
             // Assert
-            expect(
-                requestingPeerService.disputedForks.has(harness!.activeForkId!)
-            ).to.be.true;
 
-            await new Promise((resolve) => setTimeout(resolve, 200));
-
-            const allAcknowledged = await harness!.verifyAllPeersAcknowledged(
-                requestingPeerIndex,
-                harness!.activeForkId!,
+            const allAcknowledged = await harness.verifyAllPeersAcknowledged(
+                requestingPeer.index,
+                harness.activeForkId!,
                 5000,
-                [authorPeer.index]
+                [byzantinePeer.index]
             );
             expect(allAcknowledged).to.be.true;
         });
 
-        // Arrange: Setup channel with disputed fork, request acknowledgment and verify all peers acknowledged
-        // Act: Check if peer is building on acknowledged disputed fork
-        // Assert: Peer is immediately disconnected for building on acknowledged disputed fork
+        // Arrange: Setup channel with disputed fork, all peers acknowledge dispute
+        // Act: Peer attempts to produce block on acknowledged disputed fork
+        // Assert: Block validation triggers immediate disconnection of the offending peer
         it("should disconnect peer building on acknowledged disputed fork", async function () {
             // Arrange
-            const nonMaliciousPeers = [0, 1, 2].filter(
-                (i) => i !== authorPeer.index
-            );
-            const requestingPeerIndex = nonMaliciousPeers[0];
-            const requestingPeer = harness!.peers[requestingPeerIndex];
+            const requestingPeer = nonByzantinePeers[0];
             const requestingPeerService =
-                requestingPeer.stateManager.p2pManager.localRpc
-                    .isForkDisputedService;
+                getIsForkDisputedService(requestingPeer);
+            requestAcknowledgment(requestingPeer, harness.activeForkId!);
 
-            requestingPeerService.requestDisputeAcknowledgment(
-                requestingPeer.stateManager.channelId,
-                harness!.activeForkId!
-            );
-
-            const allAcknowledged = await harness!.verifyAllPeersAcknowledged(
-                requestingPeerIndex,
-                harness!.activeForkId!,
+            const allAcknowledged = await harness.verifyAllPeersAcknowledged(
+                requestingPeer.index,
+                harness.activeForkId!,
                 5000,
-                [authorPeer.index]
+                [byzantinePeer.index]
             );
             expect(allAcknowledged).to.be.true;
 
-            // Act
-            const buildingPeerIndex = nonMaliciousPeers[1];
-            const buildingPeer = harness!.peers[buildingPeerIndex];
-            const buildingPeerTransport = harness!.getPeerTransport(
-                requestingPeerIndex,
-                buildingPeerIndex
+            const buildingPeer = nonByzantinePeers[1];
+            const buildingPeerTransport = harness.getPeerTransport(
+                requestingPeer.index,
+                buildingPeer.index
             );
-
             expect(buildingPeerTransport).to.not.be.undefined;
 
             expect(
                 requestingPeerService.didPeerAcknowledgeDisputedFork(
                     buildingPeerTransport!,
-                    harness!.activeForkId!
+                    harness.activeForkId!
                 )
             ).to.be.true;
 
-            const connectionsBefore =
-                requestingPeer.stateManager.p2pManager.openConnections.length;
+            // Act
+            const connectionsBefore = getConnectionCount(requestingPeer);
 
-            const buildingPeerStateManager = buildingPeer.stateManager;
             const buildingLatestBlock =
-                buildingPeerStateManager.storage.blocks.getLatestBlock(
-                    harness!.activeForkId!
+                buildingPeer.stateManager.storage.blocks.getLatestBlock(
+                    harness.activeForkId!
                 );
 
-            if (buildingLatestBlock) {
-                const blockValidationStrategy =
-                    requestingPeer.stateManager.blockValidationStrategy;
+            await requestingPeer.stateManager.blockValidationStrategy.blockForkIsDisputed(
+                buildingLatestBlock!,
+                buildingPeerTransport
+            );
+            // Assert - 1 connection should be dropped
+            const assertion = await harness.waitForCondition(
+                () =>
+                    connectionsBefore - getConnectionCount(requestingPeer) ===
+                    1,
+                5000
+            );
 
-                await blockValidationStrategy.blockForkIsDisputed(
-                    buildingLatestBlock,
-                    buildingPeerTransport
-                );
-            }
-
-            await harness!.waitForCondition(() => {
-                const connectionsAfter =
-                    requestingPeer.stateManager.p2pManager.openConnections
-                        .length;
-                return connectionsAfter < connectionsBefore;
-            }, 5000);
-
-            // Assert
-            const connectionsAfter =
-                requestingPeer.stateManager.p2pManager.openConnections.length;
-            expect(connectionsAfter).to.be.lessThan(connectionsBefore);
+            expect(assertion).to.be.true;
         });
 
-        // Arrange: Setup channel with fork that is not disputed locally or on-chain
-        // Act: Dispute acknowledgment request is sent for non-disputed fork
-        // Assert: Peer disconnects sender for requesting acknowledgment of non-disputed fork
+        // Arrange: Setup channel with fork that is not disputed
+        // Act: Malicious peer requests acknowledgment for non-disputed fork
+        // Assert: Receiving peer detects fraud and disconnects the malicious requester
         it("should disconnect peer requesting acknowledgment of non-disputed fork", async function () {
-            // Arrange
-            const fakeForkId = ("0x" + "1".repeat(64)) as ForkId;
+            // Arrange - Use two honest peers, one will simulate malicious behavior
+            const requestingPeer = nonByzantinePeers[0]; // Will request acknowledgment of a non-disputed fork
+            const receivingPeer = nonByzantinePeers[1];
+            const fakeForkId = hash() as ForkId;
+            const connectionsBefore = getConnectionCount(receivingPeer);
 
             // Act
-            const requestingPeer = harness!.peers[0];
-            const receivingPeer = harness!.peers[1];
-
-            const connectionsBefore =
-                requestingPeer.stateManager.p2pManager.openConnections.length;
-
             const receivingPeerService =
-                harness!.peers[1].stateManager.p2pManager.localRpc
-                    .isForkDisputedService;
-            const requestingPeerTransport = harness!.getPeerTransport(1, 0);
+                getIsForkDisputedService(receivingPeer);
+            const transport = harness.getPeerTransport(
+                receivingPeer.index,
+                requestingPeer.index
+            );
 
-            if (requestingPeerTransport) {
-                await receivingPeerService
-                    .createRPCMethods(requestingPeerTransport)
-                    .onDisputeAcknowledgmentRequest(
-                        harness!.peers[0].stateManager.channelId,
-                        fakeForkId
-                    );
-            }
+            await receivingPeerService
+                .createRPCMethods(transport!)
+                .onDisputeAcknowledgmentRequest(
+                    requestingPeer.stateManager.channelId,
+                    fakeForkId
+                );
 
-            await harness!.waitForCondition(() => {
-                const connectionsAfter =
-                    receivingPeer.stateManager.p2pManager.openConnections
-                        .length;
-                return connectionsAfter < connectionsBefore;
-            }, 5000);
+            // Assert
+            const assertion = await harness.waitForCondition(
+                () =>
+                    connectionsBefore - getConnectionCount(receivingPeer) === 1,
+                5000
+            );
 
-            // Assert: Requesting peer should be disconnected
-            const connectionsAfter =
-                receivingPeer.stateManager.p2pManager.openConnections.length;
-            expect(connectionsAfter).to.be.lessThan(connectionsBefore);
+            expect(assertion).to.be.true;
         });
 
         // Arrange: Setup channel with disputed fork
         // Act: Peer sends multiple acknowledgment requests for same fork ID
-        // Assert: Subsequent requests are rejected
-        it("should reject duplicate dispute acknowledgment requests", async function () {
-            // Act
-            const requestingPeer = harness!.peers[0];
+        // Assert: Service ignores duplicate requests, maintains idempotency and doesn't send duplicate broadcasts
+        it("should ignore duplicate dispute acknowledgment requests", async function () {
+            // Arrange
+            const requestingPeer = nonByzantinePeers[0];
+            const receivingPeer = nonByzantinePeers[1];
             const requestingPeerService =
-                harness!.peers[0].stateManager.p2pManager.localRpc
-                    .isForkDisputedService;
-            requestingPeerService.requestDisputeAcknowledgment(
-                harness!.peers[0].stateManager.channelId,
-                harness!.activeForkId!
-            );
+                getIsForkDisputedService(requestingPeer);
 
-            const disputedForksBefore =
+            // Get transport from requesting peer's perspective
+            const requestingTransport = harness.getPeerTransport(
+                requestingPeer.index,
+                receivingPeer.index
+            )!;
+
+            const initiallyAcknowledged =
+                requestingPeerService.didPeerAcknowledgeDisputedFork(
+                    requestingTransport,
+                    harness.activeForkId!
+                );
+            expect(initiallyAcknowledged).to.be.false;
+
+            // Act - First request
+            requestAcknowledgment(requestingPeer, harness.activeForkId!);
+            const disputedForksAfterFirst =
                 requestingPeerService.disputedForks.size;
-            requestingPeerService.requestDisputeAcknowledgment(
-                harness!.peers[0].stateManager.channelId,
-                harness!.activeForkId!
-            );
-            const disputedForksAfter = requestingPeerService.disputedForks.size;
 
-            // Assert
-            expect(disputedForksAfter).to.equal(disputedForksBefore);
+            // Wait for receiving peer to acknowledge back
+            await harness.waitForCondition(() => {
+                return requestingPeerService.didPeerAcknowledgeDisputedFork(
+                    requestingTransport,
+                    harness.activeForkId!
+                );
+            }, 5000);
+
+            // Act - Second request (should be ignored, no duplicate broadcast)
+            requestAcknowledgment(requestingPeer, harness.activeForkId!);
+            const disputedForksAfterSecond =
+                requestingPeerService.disputedForks.size;
+
+            // Assert - Service maintains idempotency
+            expect(disputedForksAfterSecond).to.equal(disputedForksAfterFirst);
+            expect(disputedForksAfterSecond).to.equal(1);
+
+            // Assert - Receiving peer still acknowledges (no duplicate processing issues)
+            expect(
+                requestingPeerService.didPeerAcknowledgeDisputedFork(
+                    requestingTransport,
+                    harness.activeForkId!
+                )
+            ).to.be.true;
         });
 
-        // Arrange: Setup channel with disputed fork, get transport between peers
-        // Act: Peer sends multiple responses to same dispute acknowledgment request
-        // Assert: Duplicate responses are rejected and peer is disconnected
-        it("should reject duplicate dispute acknowledgment responses", async function () {
-            // Arrange
-            const requestingPeer = harness!.peers[0];
-            const respondingPeer = harness!.peers[1];
+        // Arrange: Setup channel with disputed fork, establish peer connection
+        // Act: Peer sends acknowledgment response twice for same fork
+        // Assert: Second response triggers disconnection as malicious behavior
+        it("should disconnect peer sending duplicate acknowledgment responses", async function () {
+            // Arrange - Use two honest peers
+            const respondingPeer = nonByzantinePeers[0];
+            const requestingPeer = nonByzantinePeers[1];
             const respondingPeerService =
-                harness!.peers[1].stateManager.p2pManager.localRpc
-                    .isForkDisputedService;
+                getIsForkDisputedService(respondingPeer);
 
-            const requestingPeerTransport = harness!.getPeerTransport(1, 0);
+            const transport = harness.getPeerTransport(
+                respondingPeer.index,
+                requestingPeer.index
+            )!;
 
-            if (requestingPeerTransport) {
-                expect(
-                    respondingPeerService.didIAcknowledgeDisputedFork(
-                        requestingPeerTransport,
-                        harness!.activeForkId!
-                    )
-                ).to.be.false;
+            expect(
+                respondingPeerService.didIAcknowledgeDisputedFork(
+                    transport,
+                    harness.activeForkId!
+                )
+            ).to.be.false;
 
-                // Act
-                await respondingPeerService.respondToDisputeAcknowledgment(
-                    requestingPeerTransport,
-                    harness!.peers[0].stateManager.channelId,
-                    harness!.activeForkId!
-                );
+            // Act - First response
+            await respondingPeerService.respondToDisputeAcknowledgment(
+                transport,
+                requestingPeer.stateManager.channelId,
+                harness.activeForkId!
+            );
 
-                expect(
-                    respondingPeerService.didIAcknowledgeDisputedFork(
-                        requestingPeerTransport,
-                        harness!.activeForkId!
-                    )
-                ).to.be.true;
+            expect(
+                respondingPeerService.didIAcknowledgeDisputedFork(
+                    transport,
+                    harness.activeForkId!
+                )
+            ).to.be.true;
 
-                const connectionsBefore =
-                    respondingPeer.stateManager.p2pManager.openConnections
-                        .length;
+            const connectionsBefore = getConnectionCount(respondingPeer);
 
-                await respondingPeerService.respondToDisputeAcknowledgment(
-                    requestingPeerTransport,
-                    harness!.peers[0].stateManager.channelId,
-                    harness!.activeForkId!
-                );
+            // Act - Second response (duplicate, should trigger disconnection)
+            await respondingPeerService.respondToDisputeAcknowledgment(
+                transport,
+                requestingPeer.stateManager.channelId,
+                harness.activeForkId!
+            );
 
-                await harness!.waitForCondition(() => {
-                    const connectionsAfter =
-                        respondingPeer.stateManager.p2pManager.openConnections
-                            .length;
-                    return connectionsAfter < connectionsBefore;
-                }, 5000);
-
-                // Assert
-                const connectionsAfter =
-                    respondingPeer.stateManager.p2pManager.openConnections
-                        .length;
-                expect(connectionsAfter).to.be.lessThan(connectionsBefore);
-            }
+            // Assert - Responding peer should disconnect requesting peer
+            const assertion = await harness.waitForCondition(
+                () =>
+                    connectionsBefore - getConnectionCount(respondingPeer) ===
+                    1,
+                5000
+            );
+            expect(assertion).to.be.true;
         });
 
-        // Arrange: Setup channel with non-disputed forkId, prevent peers from disconnecting requester
-        // Act: Request acknowledgment for non-disputed forkId, peers don't acknowledge because fork is not disputed, timeout triggers
-        // Assert: Non-responding peers are disconnected after timeout period
-        it("should handle dispute acknowledgment request timeout", async function () {
-            // Arrange
-            await harness!.cleanup();
-            await harness!.setup(3, {
+        // Arrange: Setup channel, use spy to prevent peers from disconnecting requester for fake dispute
+        // Act: Request acknowledgment for non-existent disputed fork, peers don't respond
+        // Assert: Non-responding peers are disconnected after timeout (2x agreementTime)
+        it("should disconnect non-responding peers after acknowledgment timeout", async function () {
+            // Arrange - Re-setup harness with short agreementTime for faster test
+            await harness.cleanup();
+            await harness.setup(3, {
                 timeConfig: {
                     agreementTime: 1
                 }
             });
-            const forkId = await harness!.openChannel();
-            await harness!.connectPeers();
+            await harness.openChannel();
 
-            await harness!.submitNextTransaction((contract) => contract.add(1));
+            const nonDisputedForkId = hash() as ForkId;
+            const requestingPeer = harness.peers[0];
 
-            const requestingPeer = harness!.peers[0];
-            const nonDisputedForkId = ("0x" + "f".repeat(64)) as ForkId;
-
+            // Spy to prevent peers from disconnecting the requester when they receive invalid request
             const disconnectSpies: Array<{ restore: () => void }> = [];
             for (let i = 1; i < 3; i++) {
-                const peer = harness!.peers[i];
+                const peer = harness.peers[i];
                 const originalDisconnect =
                     peer.stateManager.p2pManager.disconnectAndBlacklistPeer.bind(
                         peer.stateManager.p2pManager
                     );
-                const spy = (transport: any) => {
+                const spy = (transport: ATransport) => {
                     const profile =
                         peer.stateManager.p2pManager.profileManager.getProfileByTransport(
                             transport
@@ -376,8 +355,7 @@ describe("E2E: RPC Services", function () {
                     }
                     return originalDisconnect(transport);
                 };
-                peer.stateManager.p2pManager.disconnectAndBlacklistPeer =
-                    spy as any;
+                peer.stateManager.p2pManager.disconnectAndBlacklistPeer = spy;
                 disconnectSpies.push({
                     restore: () => {
                         peer.stateManager.p2pManager.disconnectAndBlacklistPeer =
@@ -386,188 +364,167 @@ describe("E2E: RPC Services", function () {
                 });
             }
 
-            const connectionsBefore =
-                requestingPeer.stateManager.p2pManager.openConnections.length;
+            const connectionsBefore = getConnectionCount(requestingPeer);
 
             // Act
-            const requestingPeerService =
-                harness!.peers[0].stateManager.p2pManager.localRpc
-                    .isForkDisputedService;
-            requestingPeerService.requestDisputeAcknowledgment(
-                harness!.peers[0].stateManager.channelId,
-                nonDisputedForkId
-            );
+            requestAcknowledgment(requestingPeer, nonDisputedForkId);
 
+            // Timeout is 2 * agreementTime (1 second) = 2 seconds
             const timeoutMs =
                 2 * requestingPeer.stateManager.timeConfig.agreementTime * 1000;
-            await harness!.waitForCondition(() => {
-                const connectionsAfter =
-                    requestingPeer.stateManager.p2pManager.openConnections
-                        .length;
-                return connectionsAfter < connectionsBefore;
+            await harness.waitForCondition(() => {
+                return getConnectionCount(requestingPeer) < connectionsBefore;
             }, timeoutMs + 1000);
 
             disconnectSpies.forEach((spy) => spy.restore());
 
             // Assert
-            const connectionsAfter =
-                requestingPeer.stateManager.p2pManager.openConnections.length;
+            const connectionsAfter = getConnectionCount(requestingPeer);
             expect(connectionsAfter).to.be.lessThan(connectionsBefore);
         });
 
-        // Arrange: Setup channel with disputed fork
-        // Act: Dispute acknowledgment request sent for disputed fork
-        // Assert: All peers correctly acknowledge the disputed fork
-        it("should handle disputed fork acknowledgment", async function () {
+        // Arrange: Setup channel with disputed fork committed on-chain
+        // Act: Request acknowledgment for the genuinely disputed fork
+        // Assert: All peers verify dispute status and acknowledge successfully
+        it("should successfully acknowledge genuinely disputed fork", async function () {
             // Arrange
-            const forkId1 = harness!.activeForkId!;
+            const requestingPeer = nonByzantinePeers[0];
+            const forkId = harness.activeForkId!;
 
             // Act
-            const nonMaliciousPeers = [0, 1, 2].filter(
-                (i) => i !== authorPeer.index
-            );
-            const requestingPeerIndex = nonMaliciousPeers[0];
-            const requestingPeer = harness!.peers[requestingPeerIndex];
-            const requestingPeerService =
-                requestingPeer.stateManager.p2pManager.localRpc
-                    .isForkDisputedService;
-
-            requestingPeerService.requestDisputeAcknowledgment(
-                requestingPeer.stateManager.channelId,
-                forkId1
-            );
+            requestAcknowledgment(requestingPeer, forkId);
 
             // Assert
-            expect(requestingPeerService.disputedForks.has(forkId1)).to.be.true;
+            const requestingPeerService =
+                getIsForkDisputedService(requestingPeer);
+            expect(requestingPeerService.disputedForks.has(forkId)).to.be.true;
             expect(requestingPeerService.disputedForks.size).to.equal(1);
 
-            const allAcknowledged1 = await harness!.verifyAllPeersAcknowledged(
-                requestingPeerIndex,
-                forkId1,
+            const allAcknowledged = await harness.verifyAllPeersAcknowledged(
+                requestingPeer.index,
+                forkId,
                 5000,
-                [authorPeer.index]
+                [byzantinePeer.index]
             );
-            expect(allAcknowledged1).to.be.true;
+            expect(allAcknowledged).to.be.true;
         });
 
-        // Arrange: Setup channel with disputed fork, verify local diamond shows fork as disputed
-        // Act: Dispute acknowledgment request received
-        // Assert: Peer acknowledges disputed fork after receiving request
-        it("should acknowledge disputed fork when local diamond shows fork as disputed", async function () {
-            // Arrange
-            const requestingPeer = harness!.peers[0];
-            const receivingPeer = harness!.peers[1];
+        // Arrange: Setup channel with disputed fork, verify local diamond contract shows disputed status
+        // Act: Receiving peer gets acknowledgment request and checks local diamond state
+        // Assert: Peer successfully acknowledges after verifying local dispute status
+        it("should acknowledge when local diamond contract confirms dispute", async function () {
+            // Arrange - Use two honest peers (1 and 2)
+            const requestingPeer = nonByzantinePeers[1];
+            const receivingPeer = nonByzantinePeers[0];
 
             const isDisputedLocal =
                 await receivingPeer.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
-                    harness!.peers[0].stateManager.channelId,
-                    harness!.activeForkId!
+                    requestingPeer.stateManager.channelId,
+                    harness.activeForkId!
                 );
             expect(isDisputedLocal).to.be.true;
 
+            const transport = harness.getPeerTransport(
+                requestingPeer.index,
+                receivingPeer.index
+            )!;
+
+            const receivingPeerService =
+                getIsForkDisputedService(receivingPeer);
+
+            expect(
+                receivingPeerService.didIAcknowledgeDisputedFork(
+                    transport,
+                    harness.activeForkId!
+                )
+            ).to.be.false;
+
             // Act
-            const requestingPeerTransport = harness!.getPeerTransport(1, 0);
+            await receivingPeerService
+                .createRPCMethods(transport)
+                .onDisputeAcknowledgmentRequest(
+                    requestingPeer.stateManager.channelId,
+                    harness.activeForkId!
+                );
 
-            if (requestingPeerTransport) {
-                const receivingPeerService =
-                    harness!.peers[1].stateManager.p2pManager.localRpc
-                        .isForkDisputedService;
+            await harness.waitForCondition(() => {
+                return receivingPeerService.didIAcknowledgeDisputedFork(
+                    transport,
+                    harness.activeForkId!
+                );
+            }, 5000);
 
-                expect(
-                    receivingPeerService.didIAcknowledgeDisputedFork(
-                        requestingPeerTransport,
-                        harness!.activeForkId!
-                    )
-                ).to.be.false;
-
-                await receivingPeerService
-                    .createRPCMethods(requestingPeerTransport)
-                    .onDisputeAcknowledgmentRequest(
-                        harness!.peers[0].stateManager.channelId,
-                        harness!.activeForkId!
-                    );
-
-                await harness!.waitForCondition(() => {
-                    return receivingPeerService.didIAcknowledgeDisputedFork(
-                        requestingPeerTransport,
-                        harness!.activeForkId!
-                    );
-                }, 5000);
-
-                // Assert
-                expect(
-                    receivingPeerService.didIAcknowledgeDisputedFork(
-                        requestingPeerTransport,
-                        harness!.activeForkId!
-                    )
-                ).to.be.true;
-            }
+            // Assert
+            expect(
+                receivingPeerService.didIAcknowledgeDisputedFork(
+                    transport,
+                    harness.activeForkId!
+                )
+            ).to.be.true;
         });
 
-        // Arrange: Setup channel with disputed fork, wait for dispute to be committed on-chain
-        // Act: Dispute acknowledgment request received
-        // Assert: Peer acknowledges disputed fork after receiving request
-        it("should acknowledge disputed fork when dispute is committed on-chain", async function () {
-            // Arrange
-            const requestingPeer = harness!.peers[0];
-            const receivingPeer = harness!.peers[1];
+        // Arrange: Setup channel with disputed fork, wait for on-chain dispute commitment
+        // Act: Receiving peer gets acknowledgment request and checks on-chain state
+        // Assert: Peer successfully acknowledges after verifying on-chain dispute status
+        it("should acknowledge when on-chain contract confirms dispute", async function () {
+            // Arrange - Use two honest peers (1 and 2)
+            const requestingPeer = nonByzantinePeers[1];
+            const receivingPeer = nonByzantinePeers[0];
 
-            await harness!.waitForCondition(async () => {
+            await harness.waitForCondition(async () => {
                 const isDisputedOnChain =
                     await receivingPeer.stateManager.stateChannelManagerContract.isForkDisputed(
-                        harness!.peers[0].stateManager.channelId,
-                        harness!.activeForkId!
+                        requestingPeer.stateManager.channelId,
+                        harness.activeForkId!
                     );
                 return isDisputedOnChain;
             }, 5000);
 
             const isDisputedOnChain =
                 await receivingPeer.stateManager.stateChannelManagerContract.isForkDisputed(
-                    harness!.peers[0].stateManager.channelId,
-                    harness!.activeForkId!
+                    requestingPeer.stateManager.channelId,
+                    harness.activeForkId!
                 );
 
-            if (!isDisputedOnChain) {
-                return;
-            }
+            expect(isDisputedOnChain).to.be.true;
+
+            const transport = harness.getPeerTransport(
+                requestingPeer.index,
+                receivingPeer.index
+            )!;
+
+            const receivingPeerService =
+                getIsForkDisputedService(receivingPeer);
+
+            expect(
+                receivingPeerService.didIAcknowledgeDisputedFork(
+                    transport,
+                    harness.activeForkId!
+                )
+            ).to.be.false;
 
             // Act
-            const requestingPeerTransport = harness!.getPeerTransport(1, 0);
+            await receivingPeerService
+                .createRPCMethods(transport)
+                .onDisputeAcknowledgmentRequest(
+                    requestingPeer.stateManager.channelId,
+                    harness.activeForkId!
+                );
 
-            if (requestingPeerTransport) {
-                const receivingPeerService =
-                    harness!.peers[1].stateManager.p2pManager.localRpc
-                        .isForkDisputedService;
+            await harness.waitForCondition(() => {
+                return receivingPeerService.didIAcknowledgeDisputedFork(
+                    transport,
+                    harness.activeForkId!
+                );
+            }, 5000);
 
-                expect(
-                    receivingPeerService.didIAcknowledgeDisputedFork(
-                        requestingPeerTransport,
-                        harness!.activeForkId!
-                    )
-                ).to.be.false;
-
-                await receivingPeerService
-                    .createRPCMethods(requestingPeerTransport)
-                    .onDisputeAcknowledgmentRequest(
-                        harness!.peers[0].stateManager.channelId,
-                        harness!.activeForkId!
-                    );
-
-                await harness!.waitForCondition(() => {
-                    return receivingPeerService.didIAcknowledgeDisputedFork(
-                        requestingPeerTransport,
-                        harness!.activeForkId!
-                    );
-                }, 5000);
-
-                // Assert
-                expect(
-                    receivingPeerService.didIAcknowledgeDisputedFork(
-                        requestingPeerTransport,
-                        harness!.activeForkId!
-                    )
-                ).to.be.true;
-            }
+            // Assert
+            expect(
+                receivingPeerService.didIAcknowledgeDisputedFork(
+                    transport,
+                    harness.activeForkId!
+                )
+            ).to.be.true;
         });
     });
 
