@@ -25,9 +25,10 @@ export class LocalDiscoveryServer {
             const wss = new WebSocketServer({ port: DISCOVERY_PORT });
             this.discoveryServer = wss;
         } catch (err: any) {
-            // If another process already owns the discovery server, reuse it
             if (err?.code === "EADDRINUSE") {
-                return false;
+                throw new Error(
+                    `Discovery server port ${DISCOVERY_PORT} is already in use. Each test process must use a unique DISCOVERY_PORT.`
+                );
             }
             throw err;
         }
@@ -52,9 +53,7 @@ export class LocalDiscoveryServer {
                 connections = connections.filter((conn) => conn !== ws);
             });
         });
-        this.discoveryServer.on("error", (err) => {
-            // console.log("Discovery WSS ERROR: ", err);
-        });
+        this.discoveryServer.on("error", (_err) => {});
         return true;
     }
 
