@@ -127,7 +127,6 @@ contract LocalDiamond is StateChannelManagerProxy {
         disputeWindow.evidence.hasPosted.push(dispute.input.disputer);
 
         bytes32 commitment = keccak256(abi.encode(dispute));
-        disputeWindow.evidence.disputeCommitments.push(commitment);
 
         // Handle reduced result if this is a final/threshold dispute
         if (isFinal) {
@@ -135,12 +134,14 @@ contract LocalDiamond is StateChannelManagerProxy {
             disputeWindow.reducedResult.timestamp = disputeCreationTimestamp;
             disputeWindow.reducedResult.reducer = dispute.input.disputer;
 
-            // Clear dispute commitments (matches on-chain behavior)
+            // When final, clear all previous commitments then add the final one
             delete disputeData[channelId]
                 .disputeWindowMap[forkId]
                 .evidence
                 .disputeCommitments;
         }
+
+        disputeWindow.evidence.disputeCommitments.push(commitment);
     }
 
     // Simple event handlers
