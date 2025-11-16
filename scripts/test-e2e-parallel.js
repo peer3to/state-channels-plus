@@ -74,12 +74,29 @@ function escapeRegex(text) {
 
 async function runTask(cmd, args, env, label) {
     return new Promise((resolve) => {
+        let stdout = "";
+        let stderr = "";
         const child = spawn(cmd, args, {
-            stdio: "inherit",
+            stdio: ["inherit", "pipe", "pipe"],
             env: { ...process.env, ...env }
         });
+
+        child.stdout.on("data", (data) => {
+            // Write raw buffer to preserve colors
+            process.stdout.write(data);
+            // Also capture as string for parsing
+            stdout += data.toString();
+        });
+
+        child.stderr.on("data", (data) => {
+            // Write raw buffer to preserve colors
+            process.stderr.write(data);
+            // Also capture as string for parsing
+            stderr += data.toString();
+        });
+
         child.on("exit", (code) => {
-            resolve({ code, label });
+            resolve({ code, label, stdout, stderr });
         });
     });
 }
@@ -116,14 +133,34 @@ async function main() {
     );
 
     const env = {
+        ...process.env,
         LOG_LEVEL: process.env.LOG_LEVEL || "error",
-        SHARED_DISCOVERY: process.env.SHARED_DISCOVERY || "1",
-        DISCOVERY_PORT: process.env.DISCOVERY_PORT || "2001"
+        DISCOVERY_PORT: process.env.DISCOVERY_PORT || "2001",
+        // Force color output even when piped
+        FORCE_COLOR: "1",
+        TERM: process.env.TERM || "xterm-256color"
     };
 
+    const startTime = Date.now();
     let idx = 0;
     let active = 0;
     let failed = [];
+    let totalPassing = 0;
+    let totalFailing = 0;
+    let totalPending = 0;
+
+    // Parse Mocha output to extract test counts
+    function parseTestOutput(output) {
+        const passingMatch = output.match(/(\d+)\s+passing/);
+        const failingMatch = output.match(/(\d+)\s+failing/);
+        const pendingMatch = output.match(/(\d+)\s+pending/);
+
+        return {
+            passing: passingMatch ? parseInt(passingMatch[1], 10) : 0,
+            failing: failingMatch ? parseInt(failingMatch[1], 10) : 0,
+            pending: pendingMatch ? parseInt(pendingMatch[1], 10) : 0
+        };
+    }
 
     await new Promise((resolve) => {
         const maybeStartNext = () => {
@@ -139,8 +176,14 @@ async function main() {
                     ["--silent", ...task.args],
                     env,
                     task.label
-                ).then(({ code, label }) => {
+                ).then(({ code, label, stdout, stderr }) => {
                     active--;
+                    const output = stdout + stderr;
+                    const counts = parseTestOutput(output);
+                    totalPassing += counts.passing;
+                    totalFailing += counts.failing;
+                    totalPending += counts.pending;
+
                     if (code !== 0) {
                         failed.push(label);
                     }
@@ -150,6 +193,20 @@ async function main() {
         };
         maybeStartNext();
     });
+
+    const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+
+    // Print final summary
+    console.log("\n");
+    if (totalPassing > 0) {
+        console.log(`\x1b[32m  ${totalPassing} passing (${totalTime}s)\x1b[0m`);
+    }
+    if (totalFailing > 0) {
+        console.log(`\x1b[31m  ${totalFailing} failing\x1b[0m`);
+    }
+    if (totalPending > 0) {
+        console.log(`  ${totalPending} pending`);
+    }
 
     if (failed.length > 0) {
         console.error(`\nFailed tasks:\n- ${failed.join("\n- ")}\n`);
