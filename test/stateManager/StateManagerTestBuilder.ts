@@ -6,7 +6,7 @@ import { TestDiamondStateMachine } from "./implementations/TestDiamondStateMachi
 import { TestStateChannelManagerContract } from "./implementations/TestStateChannelManagerContract";
 import { Address, ChannelId, ForkId, Hash } from "@/types/types";
 import { TimeConfig } from "@/types/time";
-import { createLogger, Codec, Type } from "@/utils";
+import { createLogger, Codec, Type, Logger } from "@/utils";
 import { Block, StateSnapshot } from "@/models";
 import {
     BlockStruct,
@@ -57,12 +57,17 @@ export class StateManagerTestBuilder {
     };
     private testContract: TestStateChannelManagerContract;
     private mockP2pEventHooks: any;
+    private logger: Logger;
 
     constructor() {
         // Initialize test implementations for external dependencies
+        this.logger = createLogger({ component: "StateManagerTestBuilder" });
         this.testContract = new TestStateChannelManagerContract();
         this.mockP2pEventHooks = { onTurn: () => {} };
-        this.agreementManager = new TestAgreementManager(this.storage);
+        this.agreementManager = new TestAgreementManager(
+            this.storage,
+            this.logger
+        );
     }
 
     getTestContract(): TestStateChannelManagerContract {
