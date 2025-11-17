@@ -39,6 +39,7 @@ import testConfig from "../peer3.test.config";
 import { deploy } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import { ZeroHash } from "ethers";
+import { ATransport } from "@/transport";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;
@@ -930,6 +931,65 @@ export class PeerTestHarness<T extends AStateMachine> {
     ): TimeoutStruct | undefined {
         const peer = this.getPeer(peerIndex);
         return peer.stateManager.storage.timeout.getTimeout(forkId);
+    }
+
+    async verifyAllPeersAcknowledged(
+        requestingPeerIndex: number,
+        forkId: ForkId,
+        timeoutMs: number = 5000,
+        excludePeerIndices: number[] = []
+    ): Promise<boolean> {
+        const requestingPeer = this.getPeer(requestingPeerIndex);
+        const requestingPeerService =
+            requestingPeer.stateManager.p2pManager.localRpc
+                .isForkDisputedService;
+
+        return await this.waitForCondition(() => {
+            const connections =
+                requestingPeer.stateManager.p2pManager.openConnections;
+
+            if (connections.length === 0) return false;
+
+            const allAcked = connections.every((transport) => {
+                const profile =
+                    requestingPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
+                        transport
+                    );
+                const peerIndex = this.peers.findIndex(
+                    (p) => p.address === profile?.evmAddress
+                );
+
+                // Skip excluded peers
+                if (
+                    peerIndex !== -1 &&
+                    excludePeerIndices.includes(peerIndex)
+                ) {
+                    return true;
+                }
+
+                return requestingPeerService.didPeerAcknowledgeDisputedFork(
+                    transport,
+                    forkId
+                );
+            });
+            return allAcked;
+        }, timeoutMs);
+    }
+
+    getPeerTransport(
+        fromPeerIndex: number,
+        toPeerIndex: number
+    ): ATransport | undefined {
+        const fromPeer = this.getPeer(fromPeerIndex);
+        const toPeer = this.getPeer(toPeerIndex);
+
+        return fromPeer.stateManager.p2pManager.openConnections.find((t) => {
+            const profile =
+                fromPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
+                    t
+                );
+            return profile?.evmAddress === toPeer.address;
+        });
     }
 
     async submitDoubleSignBlock(

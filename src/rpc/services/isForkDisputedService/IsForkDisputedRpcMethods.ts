@@ -19,10 +19,6 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
         channelId: ChannelId,
         forkId: ForkId
     ) {
-        console.log(
-            `Received dispute acknowledgment request for fork ${forkId}`
-        );
-
         // Check if fork is disputed locally
         let isDisputed =
             await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
