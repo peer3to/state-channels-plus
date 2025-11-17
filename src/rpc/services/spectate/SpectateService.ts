@@ -461,7 +461,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
     }
 
     public abort(transport: ATransport) {
-        if (this.p2pManager.stateManager.status == Status.SPECTATING) {
+        if (this.p2pManager.stateManager.getStatus() == Status.SPECTATING) {
             this.p2pManager.disconnectAll();
             return;
         }

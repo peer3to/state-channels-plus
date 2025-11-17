@@ -24,6 +24,7 @@ import { Codec, hash, Logger, Type } from "@/utils";
 import { isEqual } from "lodash";
 import { ZeroHash } from "ethers";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
+import { Status } from "@/types";
 
 export class EventHandler {
     private logger: Logger;
@@ -414,6 +415,14 @@ export class EventHandler {
         channelId: ChannelId,
         incomingSnapshot: StateSnapshotStruct
     ): Promise<boolean> {
+        // For spectators with no local state, allow the first snapshot
+        if (
+            this.stateManager.getStatus() === Status.SPECTATING &&
+            !this.storage.blocks.getLatestBlock(this.stateManager.latestForkId)
+        ) {
+            return true;
+        }
+
         const previousOnChainSnapshot =
             await this.diamondStateMachine.localDiamondContract.getStateSnapshot(
                 channelId
