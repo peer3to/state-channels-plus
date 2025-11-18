@@ -16,6 +16,7 @@ import {
 } from "@/types/types";
 import { TimeConfig } from "@/types/time";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
+import { pollUntil } from "@test/test_utils/pollUntil";
 import {
     createLogger,
     LocalDiscoveryServer,
@@ -23,8 +24,7 @@ import {
     SignatureUtils,
     Codec,
     Type,
-    hash,
-    pollUntil
+    hash
 } from "@/utils";
 import Block from "@/models/Block";
 import {
@@ -33,7 +33,7 @@ import {
     TransactionStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { TimeoutStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+import { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "@/Clock";
 import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";

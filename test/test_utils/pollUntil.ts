@@ -25,7 +25,7 @@ export async function pollUntil(
                 return true;
             }
         } catch (error) {
-            // Continue polling even if condition throws
+            console.error(error);
         }
 
         // Wait for the next poll

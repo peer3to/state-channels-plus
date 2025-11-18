@@ -6,7 +6,6 @@ export * from "./LocalDiscoveryServer";
 export * from "./Mutex";
 export * from "./retry";
 export * from "./scheduler";
-export * from "./pollUntil";
 export * from "./set";
 export * from "./SignatureCollectionMap";
 export * from "./Codec";
