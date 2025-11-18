@@ -19,19 +19,3 @@ export class DebugProxy {
         });
     }
 }
-
-class A {
-    a = 2;
-    public someFunction(firstArg: string, secondArg: number) {
-        firstArg + "1";
-        secondArg + 1;
-    }
-}
-const main = () => {
-    const original = new A();
-    const proxy = DebugProxy.createProxy(original);
-    proxy.someFunction("a", 1);
-    console.log(proxy.a);
-};
-
-main();
