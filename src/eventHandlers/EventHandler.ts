@@ -24,7 +24,6 @@ import { Codec, hash, Logger, Type } from "@/utils";
 import { isEqual } from "lodash";
 import { ZeroHash } from "ethers";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
-import { Status } from "@/types";
 
 export class EventHandler {
     private logger: Logger;
@@ -67,13 +66,7 @@ export class EventHandler {
         channelId: ChannelId,
         stateSnapshot: StateSnapshotStruct
     ): Promise<void> {
-        if (!(await this.isSnapshotInPast(channelId, stateSnapshot))) {
-            throw new Error(
-                "StateSnapshotUpdated: Rejected snapshot for channel " +
-                    channelId +
-                    " - not in past"
-            );
-        }
+        //TODO - make sure snapshots are in ascending order if events can be collected in random order - e.g we have the latest one always
 
         await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
             channelId,
@@ -408,37 +401,6 @@ export class EventHandler {
             joinChannelBlock,
             timestamp,
             totalDeposits
-        );
-    }
-
-    private async isSnapshotInPast(
-        channelId: ChannelId,
-        incomingSnapshot: StateSnapshotStruct
-    ): Promise<boolean> {
-        // For spectators with no local state, allow the first snapshot
-        if (
-            this.stateManager.getStatus() === Status.SPECTATING &&
-            !this.storage.blocks.getLatestBlock(this.stateManager.latestForkId)
-        ) {
-            return true;
-        }
-
-        const previousOnChainSnapshot =
-            await this.diamondStateMachine.localDiamondContract.getStateSnapshot(
-                channelId
-            );
-
-        if (previousOnChainSnapshot.forkId === incomingSnapshot.forkId) {
-            return (
-                Number(incomingSnapshot.blockHeight) <
-                Number(previousOnChainSnapshot.blockHeight)
-            );
-        }
-
-        // Different fork
-        return this.isIncomingSnapshotInForkChain(
-            previousOnChainSnapshot.forkId,
-            incomingSnapshot.forkId
         );
     }
 
