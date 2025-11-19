@@ -15,7 +15,7 @@ contract FraudProofFacet is StateChannelCommon {
         FraudProof[] memory proofs = fraudProofs;
         for (uint256 i = 0; i < proofs.length; i++) {
             if (!isParticipantSlashedOnChain(fraudProofVerificationContext.channelId, proofs[i].participant)) {
-                address slashedParticipant = _getHandle(proofs[i].proofType)(proofs[i], fraudProofVerificationContext);
+                address slashedParticipant = runFraudProof(proofs[i], fraudProofVerificationContext);
                 if (slashedParticipant == address(0) || slashedParticipant != proofs[i].participant) {
                     // slash the disputer
                     slashedParticipant = msg.sender;
@@ -26,6 +26,13 @@ contract FraudProofFacet is StateChannelCommon {
                 }
             }
         }
+    }
+
+    function runFraudProof(
+        FraudProof memory fraudProof,
+        FraudProofVerificationContext memory fraudProofVerificationContext
+    ) public returns (address) {
+        return _getHandle(fraudProof.proofType)(fraudProof, fraudProofVerificationContext);
     }
 
     function _getHandle(FraudProofType proofType)

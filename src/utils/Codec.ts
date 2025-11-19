@@ -35,7 +35,21 @@ import {
     BlockInvalidStateTransitionProofEthersType,
     InvalidTimestampProofEthersType,
     WrongGenesisProofEthersType,
-    DisputeAuditingDataEthersType
+    DisputeAuditingDataEthersType,
+    DisputeNotLatestStateProofEthersType,
+    DisputeInvalidOutputStateProofEthersType,
+    DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedProofEthersType,
+    DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedProofEthersType,
+    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocksProofEthersType,
+    DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedProofEthersType,
+    DisputeInvalidBalanceInvariantProofEthersType,
+    DisputeOnChainSlashesNotSubsetProofEthersType,
+    TimeoutThresholdProofEthersType,
+    TimeoutCalldataPostedProofEthersType,
+    TimeoutNotLinkedToLatestStateProofEthersType,
+    TimeoutParticipantNotNextProofEthersType,
+    TimeoutTooEarlyProofEthersType,
+    DisputeInvalidBlockInStateProofApplyFraudProofEthersType
 } from "@/types";
 import {
     DisputeStruct,
@@ -44,6 +58,22 @@ import {
 import { Bytes, Timestamp } from "@/types/types";
 import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
 import { ExecResult } from "@ethereumjs/evm";
+import {
+    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocksStruct,
+    DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedStruct,
+    DisputeInvalidBalanceInvariantStruct,
+    DisputeOnChainSlashesNotSubsetStruct,
+    DisputeInvalidBlockInStateProofApplyFraudProofStruct,
+    DisputeInvalidOutputStateStruct,
+    DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedStruct,
+    DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedStruct,
+    DisputeNotLatestStateStruct,
+    TimeoutCalldataPostedStruct,
+    TimeoutNotLinkedToLatestStateStruct,
+    TimeoutParticipantNotNextStruct,
+    TimeoutThresholdStruct,
+    TimeoutTooEarlyStruct
+} from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 
 export type FraudStruct =
     | BlockDoubleSignProofStruct
@@ -51,8 +81,25 @@ export type FraudStruct =
     | InvalidTimestampProofStruct
     | WrongGenesisProofStruct;
 
+export type DisputeFraudStruct =
+    | DisputeNotLatestStateStruct
+    | DisputeInvalidOutputStateStruct
+    | DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedStruct
+    | DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedStruct
+    | DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocksStruct
+    | DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedStruct
+    | DisputeInvalidBalanceInvariantStruct
+    | DisputeOnChainSlashesNotSubsetStruct
+    | TimeoutThresholdStruct
+    | TimeoutCalldataPostedStruct
+    | TimeoutNotLinkedToLatestStateStruct
+    | TimeoutParticipantNotNextStruct
+    | TimeoutTooEarlyStruct
+    | DisputeInvalidBlockInStateProofApplyFraudProofStruct;
+
 type StructType =
     | FraudStruct
+    | DisputeFraudStruct
     | BlockStruct
     | { signedBlock: SignedBlockStruct; timestamp: Timestamp }
     | BlockConfirmationStruct
@@ -102,18 +149,73 @@ export class Codec {
         [Type.ExitChannelBlock, ExitChannelBlockEthersType],
         [Type.ExitChannel, ExitChannelEthersType],
         [Type.DisputeAuditingData, DisputeAuditingDataEthersType],
+        // Fraud proofs
         [FraudProofType.BlockDoubleSign, BlockDoubleSignProofEthersType],
         [
             FraudProofType.BlockInvalidStateTransition,
             BlockInvalidStateTransitionProofEthersType
         ],
         [FraudProofType.InvalidTimestamp, InvalidTimestampProofEthersType],
-        [FraudProofType.WrongGenesis, WrongGenesisProofEthersType]
+        [FraudProofType.WrongGenesis, WrongGenesisProofEthersType],
+        // Dispute fraud proofs
+        [
+            DisputeFraudProofType.DisputeNotLatestState,
+            DisputeNotLatestStateProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeInvalidOutputState,
+            DisputeInvalidOutputStateProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified,
+            DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeInvalidStateProofWithAuditingDataIntegrityVerified,
+            DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks,
+            DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocksProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified,
+            DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeInvalidBalanceInvariant,
+            DisputeInvalidBalanceInvariantProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeOnChainSlashesNotSubset,
+            DisputeOnChainSlashesNotSubsetProofEthersType
+        ],
+        [
+            DisputeFraudProofType.TimeoutThreshold,
+            TimeoutThresholdProofEthersType
+        ],
+        [
+            DisputeFraudProofType.TimeoutCalldataPosted,
+            TimeoutCalldataPostedProofEthersType
+        ],
+        [
+            DisputeFraudProofType.TimeoutNotLinkedToLatestState,
+            TimeoutNotLinkedToLatestStateProofEthersType
+        ],
+        [
+            DisputeFraudProofType.TimeoutParticipantNotNext,
+            TimeoutParticipantNotNextProofEthersType
+        ],
+        [DisputeFraudProofType.TimeoutTooEarly, TimeoutTooEarlyProofEthersType],
+        [
+            DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
+            DisputeInvalidBlockInStateProofApplyFraudProofEthersType
+        ]
     ]);
 
     public static encode(
         struct: StructType,
-        type: Type | FraudProofType
+        type: Type | FraudProofType | DisputeFraudProofType
     ): Bytes {
         const ethersType = this.structToEthersType.get(type);
         if (!ethersType) {

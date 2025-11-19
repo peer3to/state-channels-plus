@@ -147,7 +147,34 @@ class DisputeManager {
             this.mutex.unlock();
         }
     }
-
+    public async killDispute(dispute: DisputeStruct): Promise<void> {
+        try {
+            // a mutex is not needed since we observe and validate a dispute only once and create only 1 disputeFraudProof for it
+            const disputeFraudProof =
+                this.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                    dispute
+                );
+            if (!disputeFraudProof) {
+                throw new Error("No dispute fraud proof found for dispute");
+            }
+            await this.stateChannelManagerContract.applyDisputeFraudProofs([
+                disputeFraudProof
+            ]);
+        } catch (error) {
+            if (isCustomEvmError(error)) {
+                this.logger.error("Error killing dispute", {
+                    forkId: dispute.input.genesisSnapshotDataHash,
+                    errorDescription: error.errorDescription
+                });
+            } else {
+                this.logger.error("Error killing dispute", {
+                    forkId: dispute.input.genesisSnapshotDataHash,
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                });
+            }
+        }
+    }
     public async constructDispute(forkId: ForkId): Promise<{
         dispute: DisputeStruct;
         disputeConfirmation: DisputeConfirmationStruct;

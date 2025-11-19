@@ -341,7 +341,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return previousJoinChannelBlockHash == latestJoinChannelBlockHash;
     }
 
-    function _verifyDisputeExitChannelBlocks(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+    function _verifyDisputeExitChannelBlocks(DisputeAuditingData memory disputeAuditingData)
         internal
         view
         returns (bool)
@@ -530,7 +530,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         ) return false;
 
         // Check exitChannelBlocks
-        if (!_verifyDisputeExitChannelBlocks(dispute, disputeAuditingData)) return false;
+        if (!_verifyDisputeExitChannelBlocks(disputeAuditingData)) return false;
 
         return true;
     }

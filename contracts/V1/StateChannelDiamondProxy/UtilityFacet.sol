@@ -375,6 +375,9 @@ contract UtilityFacet {
             if (!isValid || adr != currentBlock.transaction.header.participant) {
                 return (false, bytes32(0));
             }
+            bool isParticipant = isAddressInArray(expectedParticipants, adr);
+            if (!isParticipant) return (false, bytes32(0));
+
             thresholdCount = tryInsertAddressInThresholdSet(adr, thresholdSet, thresholdCount, expectedParticipants);
             for (uint256 j = 0; j < currentBlockConfirmation.signatures.length; j++) {
                 (adr, isValid) = retrieveSignerAddress(
@@ -383,6 +386,8 @@ contract UtilityFacet {
                 if (!isValid) {
                     return (false, bytes32(0));
                 }
+                isParticipant = isAddressInArray(expectedParticipants, adr);
+                if (!isParticipant) return (false, bytes32(0));
                 thresholdCount = tryInsertAddressInThresholdSet(adr, thresholdSet, thresholdCount, expectedParticipants);
             }
             previousEncodedBlock = currentBlockConfirmation.signedBlock.encodedBlock;
@@ -448,6 +453,8 @@ contract UtilityFacet {
             if (signer != currentBlock.transaction.header.participant) {
                 return false;
             }
+
+            // This doesn't check if the signer is a participant -> if it's a dishonest block it will fail on the STF and the dispute will be slahed
         }
         return true;
     }

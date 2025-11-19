@@ -11,11 +11,13 @@ contract DisputeFraudProofTypes {
         DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks memory e,
         DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified memory f,
         DisputeInvalidBalanceInvariant memory g,
-        TimeoutThreshold memory h,
-        TimeoutCalldataPosted memory i,
-        TimeoutNotLinkedToLatestState memory j,
-        TimeoutParticipantNotNext memory k,
-        TimeoutTooEarly memory l
+        DisputeOnChainSlashesNotSubset memory h,
+        TimeoutThreshold memory i,
+        TimeoutCalldataPosted memory j,
+        TimeoutNotLinkedToLatestState memory k,
+        TimeoutParticipantNotNext memory l,
+        TimeoutTooEarly memory m,
+        DisputeInvalidBlockInStateProofApplyFraudProof memory n
     ) {}
 }
 
@@ -78,5 +80,14 @@ struct TimeoutTooEarly {
 }
 
 struct TimeoutCalldataPosted {
-    Block postedBlock;
+    DisputeAuditingData auditingData;
+    SignedBlock postedBlock;
+    uint256 onChainTimestamp;
+    uint256 previousBlockOnChainTimestamp;
+    SignedBlock previousBlockcalldata;
+}
+
+struct DisputeInvalidBlockInStateProofApplyFraudProof {
+    FraudProof fraudProof;
+    uint256 blockIndexInUnfinalizedPartOfStateProof;
 }

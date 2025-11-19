@@ -435,27 +435,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             );
         }
     }
-    public getUnfinalizedBlockConfirmationsFromStateProof(
-        stateProof: StateProofStruct
-    ): BlockConfirmationStruct[] {
-        const blocks: BlockConfirmationStruct[] = [];
-        // last milestone
-        if (stateProof.milestones.length > 0) {
-            const lastMilestone = stateProof.milestones.at(-1)!;
-            // skip first block - the first block is finalized
-            for (let i = 1; i < lastMilestone.blockConfirmations.length; i++)
-                blocks.push(lastMilestone.blockConfirmations[i]);
-            return blocks;
-        }
-        // no milestone -> signedBlocks
-        if (stateProof.signedBlocks.length > 0) {
-            // take all signed blocks
-            for (const sb of stateProof.signedBlocks) {
-                blocks.push(Block.fromSignedBlock(sb).blockConfirmationStruct);
-            }
-        }
-        return blocks;
-    }
+
     public didRespond(transport: ATransport): boolean {
         return !this.requestMap.has(transport);
     }

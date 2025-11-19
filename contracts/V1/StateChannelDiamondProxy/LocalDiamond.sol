@@ -324,4 +324,12 @@ contract LocalDiamond is StateChannelManagerProxy {
     function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot) public view returns (bool) {
         return UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(snapshot);
     }
+
+    function getUnfinalizedBlockConfirmationsFromStateProof(StateProof memory stateProof)
+        public
+        pure
+        returns (BlockConfirmation[] memory)
+    {
+        return _getUnfinalizedBlockConfirmationsFromStateProof(stateProof);
+    }
 }

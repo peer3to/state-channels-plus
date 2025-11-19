@@ -114,7 +114,10 @@ export class EventHandler {
             sender,
             blockHeight: signedBlock.encodedBlock
         });
-
+        this.storage.blockCalldata.storeBlockCalldata({
+            signedBlock,
+            onChainTimestamp: timestamp
+        });
         await this.diamondStateMachine.localDiamondContract.onBlockCalldataPosted(
             channelId,
             commitmentHash,
@@ -200,11 +203,15 @@ export class EventHandler {
                 dispute,
                 disputeAuditingData
             );
-
-        if (isValid) {
+        if (!isValid) {
+            // TODO - do a multicall here
+            await this.stateManager.disputeManager.killDispute(dispute);
+            await this.stateManager.disputeManager.dispute(forkId);
+            return;
+        } else {
             // this is like success - TODO - consider moving this to DisputeStrategy.success
             if (await this.canConstructMoreEvidence(dispute)) {
-                this.stateManager.disputeManager.dispute(forkId);
+                await this.stateManager.disputeManager.dispute(forkId);
                 return;
             }
             const [_, potentialGenesisTimestamp] =

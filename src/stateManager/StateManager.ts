@@ -164,14 +164,7 @@ class StateManager {
             this.timeConfig,
             this.self
         );
-        this.disputeValidationService = new DisputeValidationService(
-            this.storage,
-            this.diamondStateMachine,
-            this.stateChannelManagerContract,
-            this.timeConfig,
-            this.disputeManager,
-            this.agreementManager
-        );
+        this.disputeValidationService = new DisputeValidationService(this.self);
         this.blockValidationStrategy = new BlockValidationStrategy(
             this.storage,
             this.p2pManager,
@@ -1319,7 +1312,7 @@ class StateManager {
         await this.disputeManager.dispute(forkId);
     }
 
-    private getTimeoutWaitTimeSeconds() {
+    public getTimeoutWaitTimeSeconds() {
         return (
             this.timeConfig.p2pTime +
             this.timeConfig.agreementTime +
