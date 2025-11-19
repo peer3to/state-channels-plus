@@ -457,4 +457,17 @@ export default class DisputeValidationService {
         // if we're here - it's all good
         return true;
     }
+
+    private async isTimeoutTooEarly(
+        dispute: DisputeStruct,
+        disputeAuditingData: DisputeAuditingDataStruct
+    ): Promise<boolean> {
+        const [hasBlock, latestBlock] =
+            await this.diamondStateMachine.localDiamondContract.getLatestBlockFromStateProof(
+                dispute.input.stateProof
+            );
+        const previousTimestamp = 0;
+
+        return true;
+    }
 }
