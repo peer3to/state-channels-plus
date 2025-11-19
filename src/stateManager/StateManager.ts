@@ -205,6 +205,9 @@ class StateManager {
         });
         this.status = status;
     }
+    public getStatus(): Status {
+        return this.status;
+    }
     public setChannelId(channelId: ChannelId) {
         this.logger.verbose("Setting channel ID", { channelId });
         this.channelId = channelId;

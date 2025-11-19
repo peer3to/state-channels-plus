@@ -66,13 +66,7 @@ export class EventHandler {
         channelId: ChannelId,
         stateSnapshot: StateSnapshotStruct
     ): Promise<void> {
-        if (!(await this.isSnapshotInPast(channelId, stateSnapshot))) {
-            throw new Error(
-                "StateSnapshotUpdated: Rejected snapshot for channel " +
-                    channelId +
-                    " - not in past"
-            );
-        }
+        //TODO - make sure snapshots are in ascending order if events can be collected in random order - e.g we have the latest one always
 
         await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
             channelId,
@@ -407,29 +401,6 @@ export class EventHandler {
             joinChannelBlock,
             timestamp,
             totalDeposits
-        );
-    }
-
-    private async isSnapshotInPast(
-        channelId: ChannelId,
-        incomingSnapshot: StateSnapshotStruct
-    ): Promise<boolean> {
-        const previousOnChainSnapshot =
-            await this.diamondStateMachine.localDiamondContract.getStateSnapshot(
-                channelId
-            );
-
-        if (previousOnChainSnapshot.forkId === incomingSnapshot.forkId) {
-            return (
-                Number(incomingSnapshot.blockHeight) <
-                Number(previousOnChainSnapshot.blockHeight)
-            );
-        }
-
-        // Different fork
-        return this.isIncomingSnapshotInForkChain(
-            previousOnChainSnapshot.forkId,
-            incomingSnapshot.forkId
         );
     }
 
