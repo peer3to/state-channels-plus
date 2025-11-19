@@ -14,6 +14,8 @@ import { ForkId, Bytes, BlockOrSnapshot } from "@/types/types";
 import { Address } from "@/types/types";
 import { TimeoutStorage } from "./TimeoutStorage";
 import { ForceExitStorage } from "./ForceExitStorage";
+import { DisputeFraudProofStorage } from "./DisputeFraudProofStorage";
+import { BlockCalldataStorage } from "./BlockCalldataStorage";
 
 export class Storage {
     public readonly blocks: BlockStorage;
@@ -25,8 +27,10 @@ export class Storage {
     public readonly queues: QueueStorage;
     public readonly disputes: DisputeStorage;
     public readonly fraudProofs: FraudProofStorage;
+    public readonly disputeFraudProofs: DisputeFraudProofStorage;
     public readonly timeout: TimeoutStorage;
     public readonly forceExit: ForceExitStorage;
+    public readonly blockCalldata: BlockCalldataStorage;
 
     constructor() {
         this.blocks = deepCopyProxy(new BlockStorage());
@@ -38,8 +42,10 @@ export class Storage {
         this.queues = deepCopyProxy(new QueueStorage());
         this.disputes = deepCopyProxy(new DisputeStorage());
         this.fraudProofs = deepCopyProxy(new FraudProofStorage());
+        this.disputeFraudProofs = deepCopyProxy(new DisputeFraudProofStorage());
         this.timeout = deepCopyProxy(new TimeoutStorage());
         this.forceExit = deepCopyProxy(new ForceExitStorage());
+        this.blockCalldata = deepCopyProxy(new BlockCalldataStorage());
         return deepCopyProxy(this);
     }
 

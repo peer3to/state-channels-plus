@@ -55,5 +55,6 @@ enum DisputeFraudProofType {
     TimeoutCalldataPosted,
     TimeoutNotLinkedToLatestState,
     TimeoutParticipantNotNext,
-    TimeoutTooEarly
+    TimeoutTooEarly,
+    DisputeInvalidBlockInStateProofApplyFraudProof
 }

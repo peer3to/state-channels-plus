@@ -285,7 +285,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             // 5) set some syncFlag to true that will start executing the onBlockConfirmation pipeline with `SpectateStrategy` from unfinalized blocks
             // Not sure if we need to set the flag - the default one is 'SPECTATING' - think that's enough, but maybe we need 1 more flag
             const blockConfirmations =
-                this.service.getUnfinalizedBlockConfirmationsFromStateProof(
+                await diamondStateMachine.localDiamondContract.getUnfinalizedBlockConfirmationsFromStateProof(
                     syncPayload.stateProof
                 );
             for (const bc of blockConfirmations) {

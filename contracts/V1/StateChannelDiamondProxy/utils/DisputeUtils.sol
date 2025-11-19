@@ -59,6 +59,29 @@ function _getMilestoneBlocks(StateProof memory stateProof) pure returns (Block[]
     return milestoneBlocks;
 }
 
+function _getUnfinalizedBlockConfirmationsFromStateProof(StateProof memory stateProof)
+    pure
+    returns (BlockConfirmation[] memory)
+{
+    BlockConfirmation[] memory blockConfirmations = new BlockConfirmation[](0);
+    if (stateProof.milestones.length > 0) {
+        MilestoneProof memory lastMilestone = stateProof.milestones[stateProof.milestones.length - 1];
+        // skip first block - the first block is finalized
+        blockConfirmations = new BlockConfirmation[](lastMilestone.blockConfirmations.length - 1);
+        for (uint256 i = 1; i < lastMilestone.blockConfirmations.length; i++) {
+            blockConfirmations[i - 1] = lastMilestone.blockConfirmations[i];
+        }
+        return blockConfirmations;
+    }
+    // no milestone -> signedBlocks
+    blockConfirmations = new BlockConfirmation[](stateProof.signedBlocks.length);
+    for (uint256 i = 0; i < stateProof.signedBlocks.length; i++) {
+        blockConfirmations[i] = BlockConfirmation({signedBlock: stateProof.signedBlocks[i], signatures: new bytes[](0)});
+    }
+
+    return blockConfirmations;
+}
+
 //not used anywhere right now
 function _isEvidencePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime) view returns (bool) {
     return block.timestamp >= disputeWindow.evidence.creationTimestamp + evidenceTime

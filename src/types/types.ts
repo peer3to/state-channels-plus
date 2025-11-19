@@ -29,3 +29,8 @@ export type UpdatedBlockWithCalldata = {
     timestamp: Timestamp;
     updatedBlock?: Block;
 };
+
+export type BlockCalldata = {
+    signedBlock: SignedBlockStruct;
+    onChainTimestamp: Timestamp;
+};

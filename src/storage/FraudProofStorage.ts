@@ -47,4 +47,8 @@ export class FraudProofStorage {
         const firstId = proofIds.values().next().value;
         return this.fraudProofs.get(firstId!);
     }
+
+    getFraudProofByHash(proofHash: Hash): FraudProofStruct | undefined {
+        return this.fraudProofs.get(proofHash);
+    }
 }
