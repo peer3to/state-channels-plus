@@ -3,9 +3,10 @@ import P2PManager from "@/P2PManager";
 import { LocalTransport } from "@/transport";
 
 const PORT = 2001;
-const MIN_PORT = 2000;
-const MAX_PORT = 2999;
-const MAX_PORT_RETRIES = 10;
+const DISCOVERY_PORT = Number(process.env.DISCOVERY_PORT || PORT);
+const MIN_PORT = 20000;
+const MAX_PORT = 39999;
+const MAX_PORT_RETRIES = 100;
 
 type DiscoveryInfo = [number, string];
 //This is used just for express testing
@@ -16,15 +17,24 @@ export class LocalDiscoveryServer {
         new Map();
     private constructor() {}
 
-    public static tryStart() {
+    public static tryStart(): boolean {
         if (this.discoveryServer) {
-            return; // Already started
+            return false; // Already started
         }
-        const wss = new WebSocketServer({ port: PORT });
-        this.discoveryServer = wss;
+        try {
+            const wss = new WebSocketServer({ port: DISCOVERY_PORT });
+            this.discoveryServer = wss;
+        } catch (err: any) {
+            if (err?.code === "EADDRINUSE") {
+                throw new Error(
+                    `Discovery server port ${DISCOVERY_PORT} is already in use. Each test process must use a unique DISCOVERY_PORT.`
+                );
+            }
+            throw err;
+        }
         let connections: WebSocket[] = [];
         const discoveryInfo: DiscoveryInfo[] = [];
-        wss.on("connection", (ws) => {
+        this.discoveryServer.on("connection", (ws) => {
             connections.push(ws);
             ws.on("message", (message) => {
                 const [peerPort, channelId] = JSON.parse(message.toString());
@@ -43,9 +53,8 @@ export class LocalDiscoveryServer {
                 connections = connections.filter((conn) => conn !== ws);
             });
         });
-        wss.on("error", (err) => {
-            // console.log("Discovery WSS ERROR: ", err);
-        });
+        this.discoveryServer.on("error", (_err) => {});
+        return true;
     }
 
     /**
@@ -135,7 +144,7 @@ export class LocalDiscoveryServer {
             });
         });
 
-        const ws = new WebSocket(`ws://localhost:${PORT}`);
+        const ws = new WebSocket(`ws://localhost:${DISCOVERY_PORT}`);
 
         const connectToPeer = (peerPort: number) => {
             const retryCount = connectionRetries.get(peerPort) || 0;

@@ -3,7 +3,7 @@ import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes
 import { StateSnapshot } from "@/models";
 import AgreementManager from "@/agreementManager/AgreementManager";
 import Storage from "@/storage";
-import { createLogger } from "@/utils";
+import { Logger, createLogger } from "@/utils";
 
 /**
  * test mock of AgreementManager
@@ -13,8 +13,11 @@ export class TestAgreementManager extends AgreementManager {
     private proofs: Map<string, StateProofStruct> = new Map();
     private milestoneSnapshot: StateSnapshot | undefined = undefined;
 
-    constructor(storage: Storage) {
-        super(storage, createLogger({ module: "TestAgreementManager" }));
+    constructor(storage: Storage, logger?: Logger) {
+        super(
+            storage,
+            logger || createLogger({ component: "TestAgreementManager" })
+        );
     }
 
     // Override getStateProof to return configured test proofs
