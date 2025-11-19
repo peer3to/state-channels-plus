@@ -14,6 +14,7 @@ contract FraudProofTypes {
 // ========================== Block related fraud proofs ==========================
 
 struct BlockEmptyProof {
+    // TODO - remove this and make sure that a valid stateTranistion actually tansitions the state
     SignedBlock emptyBlock;
     SignedBlock previousBlock;
 }

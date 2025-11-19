@@ -120,7 +120,10 @@ export class EventHandler {
             sender,
             blockHeight: signedBlock.encodedBlock
         });
-
+        this.storage.blockCalldata.storeBlockCalldata({
+            signedBlock,
+            onChainTimestamp: timestamp
+        });
         await this.diamondStateMachine.localDiamondContract.onBlockCalldataPosted(
             channelId,
             commitmentHash,
@@ -213,35 +216,29 @@ export class EventHandler {
                 dispute,
                 disputeAuditingData
             );
-
-        if (isValid) {
-            this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
-            // this is like success - TODO - consider moving this to DisputeStrategy.success
-            if (await this.canConstructMoreEvidence(dispute)) {
-                this.logger.warn(
-                    "TRIGGERING DISPUTE from onDisputeCommitted - can construct more evidence",
-                    {
-                        channelId,
-                        forkId,
-                        disputeConfirmation,
-                        isFinal
-                    }
-                );
-                this.stateManager.disputeManager.dispute(forkId);
-                return;
-            }
-            const [_, potentialGenesisTimestamp] =
-                await this.diamondStateMachine.localDiamondContract.getGenesisTimestamp(
-                    channelId,
-                    forkId, // originForkId is this forkId
-                    ZeroHash // resulting forkId is not relevant here
-                );
-
-            this.stateManager.setReductionTimeout(
-                forkId,
-                Number(potentialGenesisTimestamp)
-            );
+        if (!isValid) {
+            // TODO - do a multicall here
+            await this.stateManager.disputeManager.killDispute(dispute);
+            await this.stateManager.disputeManager.dispute(forkId);
+            return;
         }
+        this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
+        // this is like success - TODO - consider moving this to DisputeStrategy.success
+        if (await this.canConstructMoreEvidence(dispute)) {
+            this.stateManager.disputeManager.dispute(forkId);
+            return;
+        }
+        const [_, potentialGenesisTimestamp] =
+            await this.diamondStateMachine.localDiamondContract.getGenesisTimestamp(
+                channelId,
+                forkId, // originForkId is this forkId
+                ZeroHash // resulting forkId is not relevant here
+            );
+
+        this.stateManager.setReductionTimeout(
+            forkId,
+            Number(potentialGenesisTimestamp)
+        );
     }
 
     private async canConstructMoreEvidence(
