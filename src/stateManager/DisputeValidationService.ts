@@ -280,6 +280,7 @@ export default class DisputeValidationService {
                 disputeAuditingData
             );
             this.logger.debug(`Balance invariant failed on local diamond`);
+
             return false;
         }
 
