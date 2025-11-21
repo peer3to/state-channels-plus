@@ -21,7 +21,6 @@ import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofT
 // TypeChain types - Dispute types
 import {
     DisputeStruct,
-    ReduceOutputStruct,
     TimeoutStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
@@ -53,8 +52,10 @@ import {
     Type,
     hash,
     isCustomEvmError,
+    decodeTransactionError,
     difference,
-    Logger
+    Logger,
+    createStaticCallProxy
 } from "@/utils";
 // Types
 import { BlockValidationResult, Status, TimeConfig } from "@/types";
@@ -125,7 +126,9 @@ class StateManager {
         this.diamondStateMachine = diamondStateMachine;
         this.p2pEventHooks = p2pEventHooks;
         this.timeConfig = timeConfig;
-        this.stateChannelManagerContract = stateChannelManagerContract;
+        this.stateChannelManagerContract = createStaticCallProxy(
+            stateChannelManagerContract
+        ) as StateChannelManagerProxy;
         this.storage = storage;
 
         this.logger = logger.child({ component: "StateManager" });
@@ -170,7 +173,8 @@ class StateManager {
             this.stateChannelManagerContract,
             this.timeConfig,
             this.disputeManager,
-            this.agreementManager
+            this.agreementManager,
+            logger
         );
         this.blockValidationStrategy = new BlockValidationStrategy(
             this.storage,
@@ -217,116 +221,118 @@ class StateManager {
     public getChannelId(): ChannelId {
         return this.channelId;
     }
-    public setReductionTimeout(forkId: ForkId, triggerTimestamp: number) {
-        const reductionHandle = this.reductionTriggerMap.get(forkId);
+    public setReductionTimeout(forkId: ForkId, delayInSeconds: number) {
+        if (this.forkId !== forkId) return;
+
+        const existingHandle = this.reductionTriggerMap.get(forkId);
+        const currentTime = Clock.getTimeInSeconds();
+        const newTriggerTime = currentTime + delayInSeconds;
+
+        // Only update if we already have a future timeout that would trigger earlier
         if (
-            this.forkId == forkId &&
-            (!reductionHandle ||
-                reductionHandle.triggerTimestamp < triggerTimestamp)
+            existingHandle &&
+            existingHandle.triggerTimestamp > currentTime &&
+            existingHandle.triggerTimestamp <= newTriggerTime
         ) {
-            if (reductionHandle) clearTimeout(reductionHandle.handle);
-            const delayInMilliseconds =
-                (triggerTimestamp - Clock.getTimeInSeconds()) * 1000;
-            const newHandle = setTimeout(async () => {
-                this.tryReduce(forkId, triggerTimestamp);
-            }, delayInMilliseconds);
-            this.reductionTriggerMap.set(forkId, {
-                handle: newHandle,
-                triggerTimestamp: triggerTimestamp
-            });
+            this.logger.debug(
+                `Existing timeout at ${existingHandle.triggerTimestamp} is earlier than new ${newTriggerTime}, keeping it`
+            );
+            return;
         }
+
+        // Cancel existing timeout if present
+        if (existingHandle) {
+            this.timeoutManager.cancelTask(existingHandle.handle);
+        }
+
+        // Schedule new reduction attempt
+        const handle = this.timeoutManager.scheduleTask(
+            () => {
+                this.reductionTriggerMap.delete(forkId); // Clear entry when timeout fires
+                this.tryReduce(forkId);
+            },
+            Math.max(0, delayInSeconds * 1000),
+            `reduction-${forkId}`
+        );
+
+        this.reductionTriggerMap.set(forkId, {
+            handle,
+            triggerTimestamp: newTriggerTime
+        });
+
+        this.logger.debug(
+            `Scheduled reduction timeout for fork ${forkId} at ${newTriggerTime} (in ${delayInSeconds}s)`
+        );
     }
-    private async tryReduce(forkId: ForkId, genesisTimestamp: number) {
-        if (this.forkId != forkId) return; // we're not on this fork anymore
-        // check locally can we reduce
-        let [canReduce, _timeRemainig] =
+    private async tryReduce(forkId: ForkId) {
+        // Ensure we're still on this fork
+        if (this.forkId !== forkId) {
+            this.logger.debug(
+                `Skipping reduction - no longer on fork ${forkId}`
+            );
+            return;
+        }
+
+        // Step 1: Check locally if kill period expired (fast, no RPC call)
+        const [canReduceLocally, localTimeRemaining] =
             await this.diamondStateMachine.localDiamondContract.isKillPeriodExpired(
                 this.channelId,
                 forkId
             );
-        let timeRemainig = Number(_timeRemainig);
-        let checkedOnRpcNode = false;
-        if (!canReduce) {
-            // come back later - new evidence was submitted
-            if (timeRemainig > 0)
-                return this.setReductionTimeout(
-                    forkId,
-                    Clock.getTimeInSeconds() + timeRemainig
-                );
-            // timeRemainig is 0, but not expired -> means window locally is not opened (not synced) -> check on-chain
-            [canReduce, _timeRemainig] =
-                await this.stateChannelManagerContract.isKillPeriodExpired(
-                    this.channelId,
-                    forkId
-                );
-            checkedOnRpcNode = true;
-            timeRemainig = Number(_timeRemainig);
-            // now check with updated data
-            if (!canReduce) {
-                if (timeRemainig > 0)
-                    return this.setReductionTimeout(
-                        forkId,
-                        Clock.getTimeInSeconds() + timeRemainig
-                    );
-                // on-chain timeRemainig is 0, but not expired -> not opened -> we shouldn't be here
-                throw new Error(
-                    "StateManager - setReductionTimeout - time to reduce, but window not opened on-chain"
-                );
-            }
-        }
-        // ^ the above code is an optimization to try to save compute on the RPC node
 
-        // double check on-chain can we reduce
-        if (!checkedOnRpcNode) {
-            [canReduce, _timeRemainig] =
-                await this.stateChannelManagerContract.isKillPeriodExpired(
-                    this.channelId,
-                    forkId
-                );
-            checkedOnRpcNode = true;
-            timeRemainig = Number(_timeRemainig);
-            if (!canReduce) {
-                if (timeRemainig > 0)
-                    return this.setReductionTimeout(
-                        forkId,
-                        Clock.getTimeInSeconds() + timeRemainig
-                    );
-                // on-chain timeRemainig is 0, but not expired -> not opened -> we shouldn't be here
-                throw new Error(
-                    "StateManager - setReductionTimeout - time to reduce, but window not opened on-chain"
-                );
-            }
-        }
-        // reduce on-chain
-        const disputeConfirmations =
-            await this.agreementManager.getForkDisputeConfirmations(
-                this.channelId,
-                forkId,
-                this.stateChannelManagerContract
-            );
-        const disputes = disputeConfirmations.map(
-            (dc) =>
-                Codec.decode(
-                    dc.signedDispute.encodedDispute,
-                    Type.Dispute
-                ) as DisputeStruct
+        const timeRemaining = Number(localTimeRemaining);
+        this.logger.debug(
+            `Reduction check for fork ${forkId}: canReduce=${canReduceLocally}, timeRemaining=${timeRemaining}s`
         );
-        let reducedOutput: ReduceOutputStruct;
-        try {
-            reducedOutput =
-                await this.stateChannelManagerContract.reduce.staticCall(
-                    disputes
+
+        // Step 2: If local state says not ready, reschedule check
+        if (!canReduceLocally) {
+            if (timeRemaining > 0) {
+                this.logger.debug(
+                    `Rescheduling reduction check in ${timeRemaining}s`
                 );
-        } catch (error) {
-            // this should never be the case since:
-            // 1) disputeWindows is expired - double checked on-chain
-            // 2) dispute commitments - collected on-chain -> we for sure have the correct data
-            // 3) even if someone else reduces on-chain -> they would have to reduce to the same output, so race condition is not a problem
-            this.logger.error("tryReduce failed", {
-                error: error instanceof Error ? error.message : String(error)
-            });
-            throw error;
+                return this.setReductionTimeout(forkId, timeRemaining);
+            }
+            // timeRemaining is 0 but can't reduce -> local state not synced, fall through to on-chain check
+            this.logger.debug(
+                `Local state not synced, checking on-chain state`
+            );
         }
+
+        // Step 3: Verify on-chain before committing to reduction
+        const [canReduceOnChain, onChainTimeRemaining] =
+            await this.stateChannelManagerContract.isKillPeriodExpired(
+                this.channelId,
+                forkId
+            );
+
+        if (!canReduceOnChain) {
+            const remaining = Number(onChainTimeRemaining);
+            if (remaining > 0) {
+                this.logger.debug(
+                    `On-chain check: rescheduling in ${remaining}s`
+                );
+                return this.setReductionTimeout(forkId, remaining);
+            }
+            throw new Error(
+                `Cannot reduce fork ${forkId}: kill period not expired on-chain (timeRemaining=${remaining})`
+            );
+        }
+
+        // Step 4: Perform reduction
+        await this.performReduction(forkId);
+    }
+
+    private async performReduction(forkId: ForkId) {
+        const disputes = await this.agreementManager.getForkDisputes(
+            this.channelId,
+            forkId,
+            this.stateChannelManagerContract
+        );
+
+        const reducedOutput =
+            await this.stateChannelManagerContract.reduce.staticCall(disputes);
+
         const reduceData = await this.agreementManager.getReduceData(
             forkId,
             reducedOutput
@@ -340,15 +346,33 @@ class StateManager {
             )
             .then((tx) => tx.wait())
             .catch((error) => {
-                // this has to run async so everyone starts building imediately after successful simulation -> so they don't waste time
-                // if this errors here - in the honest case it should never - even under race condition it should success fracefully
-                // TODO interpret the error and panic
-                throw new Error("reduceAndFinalize error " + error);
+                const decodedError = isCustomEvmError(error)
+                    ? error
+                    : decodeTransactionError(error);
+
+                // Handle expected race conditions
+                if (
+                    decodedError &&
+                    (decodedError.errorDescription.name ===
+                        "ErrorDisputeAlreadyReduced" ||
+                        decodedError.errorDescription.name ===
+                            "ErrorCantParticipateInDispute")
+                ) {
+                    this.logger.debug(
+                        `Reduction already completed by another peer: ${decodedError.errorDescription.name}`
+                    );
+                    return;
+                }
+
+                // Log unexpected errors
+                this.logger.error("Reduction transaction failed", {
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                    errorName: decodedError?.errorDescription.name || "unknown"
+                });
             });
 
-        // if we're here - the fork SHOULD BECOME succesfuly finalized on-chain and we can start building on top of it
-
-        // locally compute what will be finalized on-chain
+        // Compute local state after reduction (optimistic - assume tx will succeed)
         const [snapshotData, encodedStateMachineState, exitChannelBlock] =
             await this.diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
                 forkId,
@@ -357,15 +381,20 @@ class StateManager {
                 reduceData.encodedStateMachineState,
                 reduceData.joinChannelBlocks
             );
+
         const reducedForkId = ethers.keccak256(
             Codec.encode(snapshotData, Type.SnapshotData)
         );
 
+        // Update local state to the reduced fork
+        this.logger.debug(
+            `Reduction complete: transitioning to fork ${reducedForkId}`
+        );
         this.setGenesisState(
             snapshotData,
             encodedStateMachineState,
             reducedForkId,
-            genesisTimestamp,
+            Clock.getTimeInSeconds(),
             exitChannelBlock
         );
     }
@@ -1019,23 +1048,18 @@ class StateManager {
                 }
 
                 // Build disputes from local storage confirmations
-                const disputes: DisputeStruct[] = [];
-                for (const commitment of disputeCommitments) {
-                    const confirmation =
-                        this.storage.disputes.getDisputeConfirmation(
-                            commitment
-                        );
-                    if (!confirmation) {
-                        throw new Error(
-                            `Missing Data Availability for dispute commitment ${commitment}`
-                        );
+                const disputes: DisputeStruct[] = disputeCommitments.map(
+                    (commitment) => {
+                        const dispute =
+                            this.storage.disputes.getDispute(commitment);
+                        if (!dispute) {
+                            throw new Error(
+                                `Missing Data Availability for dispute commitment ${commitment}`
+                            );
+                        }
+                        return dispute;
                     }
-                    const dispute = Codec.decode(
-                        confirmation.signedDispute.encodedDispute,
-                        Type.Dispute
-                    ) as DisputeStruct;
-                    disputes.push(dispute);
-                }
+                );
 
                 // Use proxy view to compute reduced output cheaply (no tx)
                 const reducedOutput =
