@@ -73,8 +73,12 @@ class DisputeManager {
         try {
             await this.mutex.lock();
             if (this.storage.disputes.didIDispute(forkId)) return;
-            const { disputeConfirmation, auditingData, fraudProofsToApply } =
-                await this.constructDispute(forkId);
+            const {
+                dispute,
+                disputeConfirmation,
+                auditingData,
+                fraudProofsToApply
+            } = await this.constructDispute(forkId);
 
             const pendingParticipants =
                 await this.stateChannelManagerContract.getPendingParticipants(
@@ -127,6 +131,7 @@ class DisputeManager {
                 }
             }
 
+            this.storage.disputes.storeDispute(dispute);
             this.storage.disputes.storeDisputedFork(forkId, true);
             this.p2pEventHooks.onInitiatingDispute?.();
         } catch (error) {
