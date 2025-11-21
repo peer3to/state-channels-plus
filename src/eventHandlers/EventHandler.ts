@@ -5,8 +5,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeAuditingDataStruct,
-    DisputeStruct,
-    DisputeConfirmationStruct
+    DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
@@ -138,7 +137,7 @@ export class EventHandler {
         windowCreationTimestamp: Timestamp,
         disputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<void> {
-        const forkId = dispute.input.disputeAuditingDataHash;
+        const forkId = dispute.input.genesisSnapshotDataHash;
         this.logger.debug("Dispute committed", {
             channelId,
             forkId,
@@ -196,6 +195,7 @@ export class EventHandler {
             );
 
         if (isValid) {
+            this.storage.disputes.storeDispute(dispute);
             // this is like success - TODO - consider moving this to DisputeStrategy.success
             if (await this.canConstructMoreEvidence(dispute)) {
                 this.stateManager.disputeManager.dispute(forkId);
@@ -207,10 +207,11 @@ export class EventHandler {
                     forkId, // originForkId is this forkId
                     ZeroHash // resulting forkId is not relevant here
                 );
-            this.stateManager.setReductionTimeout(
-                forkId,
-                Number(potentialGenesisTimestamp)
+            const delayInSeconds = Number(potentialGenesisTimestamp);
+            this.logger.debug(
+                `Setting reduction timeout for fork ${forkId} in ${delayInSeconds} seconds`
             );
+            this.stateManager.setReductionTimeout(forkId, delayInSeconds);
         }
     }
 
@@ -226,17 +227,22 @@ export class EventHandler {
         );
 
         // Compare reduced disputes to see if we have more evidence
-        const ourReducedDispute =
+        const singleDisputeReduction =
             await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
                 [dispute]
             );
 
-        const combinedReducedDispute =
+        const combinedDisputeReduction =
             await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
                 [ourDispute, dispute]
             );
 
-        return !isEqual(ourReducedDispute, ourDisputeConfirmation);
+        const hasMoreEvidence = !isEqual(
+            singleDisputeReduction,
+            combinedDisputeReduction
+        );
+        this.logger.debug(`hasMoreEvidence=${hasMoreEvidence}`);
+        return hasMoreEvidence;
     }
 
     async onChainSlashed(
@@ -404,48 +410,6 @@ export class EventHandler {
         );
     }
 
-    private isIncomingSnapshotInForkChain(
-        previousOnChainForkId: ForkId,
-        incomingSnapshotForkId: ForkId
-    ): boolean {
-        const latestBlock = this.storage.blocks.getLatestBlock(
-            this.stateManager.latestForkId
-        );
-        if (!latestBlock) {
-            // No blocks in storage for this fork, can't determine if incoming is in past
-            return false;
-        }
-
-        let currentSnapshot = this.storage.getStateSnapshot(
-            latestBlock.coordinates
-        );
-        if (!currentSnapshot) {
-            return false;
-        }
-
-        while (currentSnapshot) {
-            if (currentSnapshot.forkId === incomingSnapshotForkId) {
-                return true; // the incoming snapshot belongs to a past fork
-            }
-
-            if (currentSnapshot.forkId === previousOnChainForkId) {
-                return false;
-            }
-
-            const originForkId = currentSnapshot.snapshotData.originForkId;
-
-            if (originForkId === "0x00") {
-                return false;
-            }
-
-            currentSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                    originForkId
-                );
-        }
-        return false;
-    }
-
     private async validateDisputeReductionAndChallenge(
         channelId: ChannelId,
         forkId: ForkId,
@@ -458,20 +422,17 @@ export class EventHandler {
                 [forkId]
             )
         )[0];
-        const dispteuConfirmations: DisputeConfirmationStruct[] = [];
-        for (const commitment of disputeWindow.evidence.disputeCommitments) {
-            const dc = this.storage.disputes.getDisputeConfirmation(commitment);
-            if (!dc) {
-                //TODO - querry longs
-                throw new Error(
-                    `Dispute not available for commitment: ${commitment}`
-                );
+        const disputes = disputeWindow.evidence.disputeCommitments.map(
+            (commitment) => {
+                const dispute = this.storage.disputes.getDispute(commitment);
+                if (!dispute) {
+                    //TODO - querry longs
+                    throw new Error(
+                        `Dispute not available for commitment: ${commitment}`
+                    );
+                }
+                return dispute;
             }
-            dispteuConfirmations.push(dc);
-        }
-
-        const disputes = dispteuConfirmations.map((dc) =>
-            Codec.decode(dc.signedDispute.encodedDispute, Type.Dispute)
         );
 
         const reduceOutput =
