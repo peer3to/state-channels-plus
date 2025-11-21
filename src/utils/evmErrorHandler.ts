@@ -26,6 +26,41 @@ function decodeCustomError(errorData: Bytes): ErrorDescription | null {
     return errorInterface.parseError(errorData);
 }
 
+//  decode custom errors from transaction receipt errors (like tx.wait() failures)
+export function decodeTransactionError(error: any): CustomEvmError | null {
+    const errorData =
+        error?.data ||
+        error?.error?.data ||
+        error?.receipt?.data ||
+        error?.transaction?.data ||
+        null;
+
+    if (errorData) {
+        const customError = decodeCustomError(errorData);
+        if (customError) {
+            return new CustomEvmError(customError, error);
+        }
+    }
+
+    if (error?.message) {
+        const match = error.message.match(/custom error '(\w+)\(\)'/);
+        if (match) {
+            const errorName = match[1];
+            // Create a mock ErrorDescription for known errors
+            const mockErrorDescription: ErrorDescription = {
+                name: errorName,
+                args: [] as any,
+                signature: `${errorName}()`,
+                selector: "0x00000000", // placeholder
+                fragment: null as any // placeholder
+            };
+            return new CustomEvmError(mockErrorDescription, error);
+        }
+    }
+
+    return null;
+}
+
 export function isCustomEvmError(error: any): error is CustomEvmError {
     return !!error && error.isCustomError === true;
 }
