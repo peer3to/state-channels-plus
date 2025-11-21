@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { MathStateMachine } from "@typechain-types/index";
+import { ZeroHash } from "ethers";
 
 describe("E2E: Advanced Security", function () {
     let harness: PeerTestHarness<MathStateMachine> | null = null;
@@ -190,6 +191,56 @@ describe("E2E: Advanced Security", function () {
     });
 
     describe("Dispute Flow", function () {
+        it("should reduce honest invalid state transition disputes and create new fork", async function () {
+            // Arrange - Setup with 4 participants
+            await harness!.setup(4);
+            const originalForkId = await harness!.openChannel();
+
+            await harness!.submitNextTransaction((contract) => contract.add(1));
+            await harness!.submitNextTransaction((contract) => contract.add(2));
+
+            harness!.assertAllPeersInSync();
+
+            // Reset spies
+            harness!.resetEventSpies();
+
+            // Act - Create an invalid state transition dispute (honest dispute, happy path)
+            // Get the next peer to write and have them submit an invalid state transition block
+            const nextPeer = await harness!.getNextPeerToWrite();
+            await harness!.submitInvalidStateTransitionBlock(nextPeer.index, {
+                forkId: originalForkId
+            });
+
+            // Wait for disputes to be observed on all peers
+            const disputeCommitedObserved = await harness!.waitForEventCounts(
+                "onDisputeCommitted",
+                [
+                    { peerId: 0, expectedCount: 3 },
+                    { peerId: 1, expectedCount: 3 },
+                    { peerId: 2, expectedCount: 3 },
+                    { peerId: 3, expectedCount: 3 }
+                ],
+                5000
+            );
+            expect(disputeCommitedObserved).to.be.true;
+
+            // Fast-forward blockchain time past the kill period
+            await harness!.advanceTime(30);
+
+            const forkChanged = await harness!.waitForCondition(() => {
+                const peerForks = harness!.peers
+                    .map((p) => p.stateManager.forkId)
+                    .filter(
+                        (forkId) =>
+                            forkId !== ZeroHash && forkId !== originalForkId
+                    );
+                // All 3 honest  peers should have the new fork after successful reduction
+                return peerForks.length == 3 && new Set(peerForks).size === 1;
+            }, 10000); // Wait up to 10 seconds for reduction processing
+
+            // Assert - Reduction should have occurred (fork IDs changed)
+            expect(forkChanged).to.be.true;
+        });
         // Arrange: Setup dispute that requires participant signatures for submission
         // Act: Collect signatures from honest participants on dispute
         // Assert: Sufficient signatures are gathered for dispute submission
