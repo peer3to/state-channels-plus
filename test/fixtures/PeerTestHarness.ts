@@ -2,6 +2,7 @@ import { BytesLike, Signer, ethers } from "ethers";
 import { expect } from "chai";
 import * as sinon from "sinon";
 import hre from "hardhat";
+import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { EvmStateMachine, P2pInstance } from "@/evm";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
@@ -117,6 +118,8 @@ export class PeerTestHarness<T extends AStateMachine> {
     private harnessConfig!: Config;
     private logger: Logger;
     private syncCoordinator!: SyncCoordinator;
+    private autoTimeAdvanceInterval?: NodeJS.Timeout;
+    private isAdvancingTime: boolean = false;
 
     constructor() {
         this.logger = createLogger({ component: "TestHarness" });
@@ -149,6 +152,9 @@ export class PeerTestHarness<T extends AStateMachine> {
         for (let i = 0; i < numPeers; i++) {
             await this.createPeer(i, signers[i]);
         }
+
+        // Start automatic blockchain time advancement
+        this.startAutoTimeAdvance();
 
         this.logger.info("Test harness setup completed");
     }
@@ -561,8 +567,82 @@ export class PeerTestHarness<T extends AStateMachine> {
         await sleep(timeout);
     }
 
+    /**
+     * Starts automatic blockchain time advancement to simulate natural time passing.
+     * Advances chain time by 1 second every second.
+     */
+    startAutoTimeAdvance(intervalMs: number = 1000): void {
+        if (this.autoTimeAdvanceInterval) {
+            this.logger.debug("Auto time advance already running");
+            return;
+        }
+
+        this.logger.debug(
+            `Starting auto blockchain time advance (every ${intervalMs}ms)`
+        );
+
+        this.autoTimeAdvanceInterval = setInterval(async () => {
+            // Skip if a manual time advance is in progress
+            if (this.isAdvancingTime) {
+                return;
+            }
+
+            this.isAdvancingTime = true;
+            try {
+                await time.increase(1);
+            } catch (error) {
+            } finally {
+                this.isAdvancingTime = false;
+            }
+        }, intervalMs);
+    }
+
+    stopAutoTimeAdvance(): void {
+        if (this.autoTimeAdvanceInterval) {
+            clearInterval(this.autoTimeAdvanceInterval);
+            this.autoTimeAdvanceInterval = undefined;
+            this.logger.debug("Stopped auto blockchain time advance");
+        }
+    }
+
+    async advanceTime(seconds: number): Promise<void> {
+        this.logger.debug(
+            `Manually advancing blockchain time by ${seconds} seconds`
+        );
+
+        // Wait if an auto-advance is currently in progress
+        while (this.isAdvancingTime) {
+            await sleep(10);
+        }
+
+        // Pause auto-advance to prevent race conditions
+        const wasAutoAdvancing = !!this.autoTimeAdvanceInterval;
+        if (wasAutoAdvancing) {
+            this.logger.debug("Pausing auto time advance for manual time jump");
+            this.stopAutoTimeAdvance();
+        }
+
+        this.isAdvancingTime = true;
+        try {
+            // Perform the time jump
+            await time.increase(seconds);
+        } finally {
+            this.isAdvancingTime = false;
+
+            // Resume auto-advance if it was running
+            if (wasAutoAdvancing) {
+                this.logger.debug("Resuming auto time advance");
+                this.startAutoTimeAdvance();
+            }
+        }
+    }
+
     async cleanup(): Promise<void> {
         this.logger.debug("Starting cleanup...");
+
+        // Stop auto time advancement
+        this.stopAutoTimeAdvance();
+        this.isAdvancingTime = false;
 
         // Cleanup peers
         for (const peer of this.peers) {
