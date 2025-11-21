@@ -16,7 +16,8 @@ import {
     decodeErrorProxy,
     Codec,
     createLogger,
-    Logger
+    Logger,
+    createStaticCallProxy
 } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
@@ -326,12 +327,15 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             localDiamondSigner
         ) as unknown as LocalDiamond;
 
+        // Wrap with staticCall proxy to auto-convert Result objects
+        const proxiedLocalDiamond = createStaticCallProxy(localDiamondContract);
+
         return {
             evmDiamondStateMachine: new EvmDiamondStateMachine(
                 new ContractExecuter(evm, stateMachineAddress),
                 contractInterface,
                 diamondExecuter,
-                localDiamondContract
+                proxiedLocalDiamond
             ),
             deploymentResult: diamondResult
         };
