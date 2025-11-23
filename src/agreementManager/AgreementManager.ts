@@ -1,6 +1,5 @@
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
-    DisputeConfirmationStruct,
     DisputeStruct,
     ReduceOutputStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -17,7 +16,7 @@ import {
     Signature
 } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
-import { Codec, Logger, Type } from "@/utils";
+import { Logger } from "@/utils";
 import { ZeroHash } from "ethers";
 import { StateChannelManagerProxy } from "@typechain-types/index";
 import { ReduceData } from "@/types";
@@ -324,49 +323,29 @@ class AgreementManager {
         return undefined;
     }
 
-    public async getForkDisputeConfirmations(
+    public async getForkDisputes(
         channelId: ChannelId,
         forkId: ForkId,
         ethersContract: StateChannelManagerProxy
-    ): Promise<DisputeConfirmationStruct[]> {
+    ): Promise<DisputeStruct[]> {
         // Collect disputes for this dispute window
         const disputeCommitments = await ethersContract.getWindowCommitments(
             channelId,
             forkId
         );
         // Collect all disputes for this dispute window
-        const currentWindowDisputes: DisputeConfirmationStruct[] = [];
+        const currentWindowDisputes: DisputeStruct[] = [];
         for (const commitment of disputeCommitments) {
-            const disputeConfirmation =
-                this.storage.disputes.getDisputeConfirmation(commitment);
-            if (!disputeConfirmation) {
+            const dispute = this.storage.disputes.getDispute(commitment);
+            if (!dispute) {
                 throw new Error(
                     `Missing Data Availability for dispute commitment ${commitment}`
                 );
             }
 
-            currentWindowDisputes.push(disputeConfirmation);
+            currentWindowDisputes.push(dispute);
         }
         return currentWindowDisputes;
-    }
-
-    public async getForkDisputes(
-        channelId: ChannelId,
-        forkId: ForkId,
-        ethersContract: StateChannelManagerProxy
-    ): Promise<DisputeStruct[]> {
-        return (
-            await this.getForkDisputeConfirmations(
-                channelId,
-                forkId,
-                ethersContract
-            )
-        ).map((disputeConfirmation) =>
-            Codec.decode(
-                disputeConfirmation.signedDispute.encodedDispute,
-                Type.Dispute
-            )
-        );
     }
 
     public async getReduceData(
