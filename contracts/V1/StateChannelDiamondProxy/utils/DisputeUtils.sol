@@ -68,11 +68,7 @@ function _isEvidencePeriodExpired(DisputeWindow storage disputeWindow, uint256 e
 function _isKillPeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime) view returns (bool, uint256) {
     uint256 killPeriodEnd = disputeWindow.evidence.creationTimestamp + evidenceTime;
     bool isExpired = block.timestamp >= killPeriodEnd && _isDisputeWidnowCreated(disputeWindow);
-    uint256 timeRemaining;
-    if (!isExpired) {
-        timeRemaining = killPeriodEnd > block.timestamp ? killPeriodEnd - block.timestamp : 0;
-    }
-    return (isExpired, timeRemaining);
+    return (isExpired, killPeriodEnd);
 }
 
 function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime)
