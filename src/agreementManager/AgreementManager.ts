@@ -1,5 +1,6 @@
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
+    DisputeConfirmationStruct,
     DisputeStruct,
     ReduceOutputStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -16,7 +17,7 @@ import {
     Signature
 } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
-import { Logger } from "@/utils";
+import { Codec, Logger, Type } from "@/utils";
 import { ZeroHash } from "ethers";
 import { StateChannelManagerProxy } from "@typechain-types/index";
 import { ReduceData } from "@/types";
@@ -323,27 +324,49 @@ class AgreementManager {
         return undefined;
     }
 
+    public async getForkDisputeConfirmations(
+        channelId: ChannelId,
+        forkId: ForkId,
+        ethersContract: StateChannelManagerProxy
+    ): Promise<DisputeConfirmationStruct[]> {
+        // Collect disputes for this dispute window
+        const disputeCommitments = await ethersContract.getWindowCommitments(
+            channelId,
+            forkId
+        );
+        // Collect all disputes for this dispute window
+        const currentWindowDisputes: DisputeConfirmationStruct[] = [];
+        for (const commitment of disputeCommitments) {
+            const disputeConfirmation =
+                this.storage.disputes.getDisputeConfirmation(commitment);
+            if (!disputeConfirmation) {
+                throw new Error(
+                    `Missing Data Availability for dispute commitment ${commitment}`
+                );
+            }
+
+            currentWindowDisputes.push(disputeConfirmation);
+        }
+        return currentWindowDisputes;
+    }
+
     public async getForkDisputes(
         channelId: ChannelId,
         forkId: ForkId,
         ethersContract: StateChannelManagerProxy
     ): Promise<DisputeStruct[]> {
-        const disputeCommitments = await ethersContract.getWindowCommitments(
-            channelId,
-            forkId
+        return (
+            await this.getForkDisputeConfirmations(
+                channelId,
+                forkId,
+                ethersContract
+            )
+        ).map((disputeConfirmation) =>
+            Codec.decode(
+                disputeConfirmation.signedDispute.encodedDispute,
+                Type.Dispute
+            )
         );
-
-        const currentWindowDisputes: DisputeStruct[] = [];
-        for (const commitment of disputeCommitments) {
-            const dispute = this.storage.disputes.getDispute(commitment);
-            if (!dispute) {
-                throw new Error(
-                    `Missing Data Availability for dispute commitment ${commitment}`
-                );
-            }
-            currentWindowDisputes.push(dispute);
-        }
-        return currentWindowDisputes;
     }
 
     public async getReduceData(
