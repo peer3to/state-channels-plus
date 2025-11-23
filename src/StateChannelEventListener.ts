@@ -115,9 +115,7 @@ class StateChannelEventListener {
 
                 this.eventHandler.onDisputeCommitted(
                     channelId,
-                    (disputeConfirmation as Result).toObject(
-                        true
-                    ) as DisputeConfirmationStruct,
+                    Codec.convertEthersResultToObject(disputeConfirmation),
                     disputeCreationTimestamp,
                     isFinal,
                     windowCreationTimestamp
