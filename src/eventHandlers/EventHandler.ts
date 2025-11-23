@@ -212,11 +212,11 @@ export class EventHandler {
                     forkId, // originForkId is this forkId
                     ZeroHash // resulting forkId is not relevant here
                 );
-            const delayInSeconds = Number(potentialGenesisTimestamp);
-            this.logger.debug(
-                `Setting reduction timeout for fork ${forkId} in ${delayInSeconds} seconds`
+
+            this.stateManager.setReductionTimeout(
+                forkId,
+                Number(potentialGenesisTimestamp)
             );
-            this.stateManager.setReductionTimeout(forkId, delayInSeconds);
         }
     }
 

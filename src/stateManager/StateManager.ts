@@ -221,24 +221,11 @@ class StateManager {
     public getChannelId(): ChannelId {
         return this.channelId;
     }
-    public setReductionTimeout(forkId: ForkId, delayInSeconds: number) {
+    public setReductionTimeout(forkId: ForkId, triggerTimestamp: Timestamp) {
         if (this.forkId !== forkId) return;
 
         const existingHandle = this.reductionTriggerMap.get(forkId);
-        const currentTime = Clock.getTimeInSeconds();
-        const newTriggerTime = currentTime + delayInSeconds;
-
-        // Only update if we already have a future timeout that would trigger earlier
-        if (
-            existingHandle &&
-            existingHandle.triggerTimestamp > currentTime &&
-            existingHandle.triggerTimestamp <= newTriggerTime
-        ) {
-            this.logger.debug(
-                `Existing timeout at ${existingHandle.triggerTimestamp} is earlier than new ${newTriggerTime}, keeping it`
-            );
-            return;
-        }
+        const now = Clock.getTimeInSeconds();
 
         // Cancel existing timeout if present
         if (existingHandle) {
@@ -249,22 +236,22 @@ class StateManager {
         const handle = this.timeoutManager.scheduleTask(
             () => {
                 this.reductionTriggerMap.delete(forkId); // Clear entry when timeout fires
-                this.tryReduce(forkId);
+                this.tryReduce(forkId, triggerTimestamp);
             },
-            Math.max(0, delayInSeconds * 1000),
+            Math.max(0, (triggerTimestamp - now) * 1000),
             `reduction-${forkId}`
         );
 
         this.reductionTriggerMap.set(forkId, {
             handle,
-            triggerTimestamp: newTriggerTime
+            triggerTimestamp
         });
 
         this.logger.debug(
-            `Scheduled reduction timeout for fork ${forkId} at ${newTriggerTime} (in ${delayInSeconds}s)`
+            `Scheduled reduction timeout for fork ${forkId} at ${triggerTimestamp} (in ${triggerTimestamp - now}s)`
         );
     }
-    private async tryReduce(forkId: ForkId) {
+    private async tryReduce(forkId: ForkId, genesisTimestamp: Timestamp) {
         // Ensure we're still on this fork
         if (this.forkId !== forkId) {
             this.logger.debug(
@@ -320,10 +307,13 @@ class StateManager {
         }
 
         // Step 4: Perform reduction
-        await this.performReduction(forkId);
+        await this.performReduction(forkId, genesisTimestamp);
     }
 
-    private async performReduction(forkId: ForkId) {
+    private async performReduction(
+        forkId: ForkId,
+        genesisTimestamp: Timestamp
+    ) {
         const disputes = await this.agreementManager.getForkDisputes(
             this.channelId,
             forkId,
@@ -394,7 +384,7 @@ class StateManager {
             snapshotData,
             encodedStateMachineState,
             reducedForkId,
-            Clock.getTimeInSeconds(),
+            genesisTimestamp,
             exitChannelBlock
         );
     }

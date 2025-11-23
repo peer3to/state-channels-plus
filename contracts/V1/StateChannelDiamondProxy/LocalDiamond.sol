@@ -124,6 +124,11 @@ contract LocalDiamond is StateChannelManagerProxy {
         DisputeWindow storage disputeWindow = disputeData[channelId].disputeWindowMap[forkId];
         disputeWindow.forkId = forkId;
         disputeWindow.evidence.creationTimestamp = windowCreationTimestamp;
+        // Set lastEvidenceSubmissionTimestamp based on whether this is a threshold final dispute
+        // If final: windowCreationTimestamp (which equals block.timestamp - getEvidenceTime())
+        // If not final: disputeCreationTimestamp (which equals block.timestamp)
+        disputeWindow.evidence.lastEvidenceSubmissionTimestamp =
+            isFinal ? windowCreationTimestamp : disputeCreationTimestamp;
         disputeWindow.evidence.hasPosted.push(dispute.input.disputer);
 
         bytes32 commitment = keccak256(abi.encode(dispute));
