@@ -293,7 +293,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     public static async createStandalone(
         deployStateMachineTx: ContractDeployTransaction,
         contractInterface: ethers.Interface,
-        signer: Signer
+        signer: Signer,
+        timeConfig: TimeConfig
     ): Promise<{
         evmDiamondStateMachine: EvmDiamondStateMachine;
         deploymentResult: DeploymentResult;
@@ -308,7 +309,9 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         const diamondResult = await deployLocalDiamond(
             deployStateMachineTx,
-            evm
+            evm,
+            signer,
+            timeConfig
         );
 
         const diamondExecuter = new ContractExecuter(
@@ -357,7 +360,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         deployedStateChannelContractInstance: StateChannelManagerProxy,
         stateMachineContractInstance: T,
         p2pEventHooks?: P2pEventHooks,
-        timeConfigOverride?: Partial<TimeConfig>,
         peerId?: number,
         peerLogger?: Logger
     ): Promise<P2pInstance<T>> {
@@ -379,31 +381,25 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             );
         }
 
-        // Create the EvmStateMachine instance (which extends AStateMachine)
-        const { evmDiamondStateMachine } =
-            await EvmDiamondStateMachine.createStandalone(
-                deployStateMachineTx,
-                stateMachineContractInstance.interface,
-                signer
-            );
-
-        // Get time configuration
+        // Get time configuration from SCM proxy
         const configTimes =
             await deployedStateChannelContractInstance.getAllTimes();
-        let timeConfig: TimeConfig = {
+        const timeConfig: TimeConfig = {
             p2pTime: Number(configTimes[0]),
             agreementTime: Number(configTimes[1]),
             chainFallbackTime: Number(configTimes[2]),
             evidenceTime: Number(configTimes[3])
         };
 
-        // Apply time configuration override if provided (for testing)
-        if (timeConfigOverride) {
-            timeConfig = {
-                ...timeConfig,
-                ...timeConfigOverride
-            };
-        }
+        // Create the EvmStateMachine instance (which extends AStateMachine)
+        // Pass the SCM contract so local diamond can sync its time config
+        const { evmDiamondStateMachine } =
+            await EvmDiamondStateMachine.createStandalone(
+                deployStateMachineTx,
+                stateMachineContractInstance.interface,
+                signer,
+                timeConfig
+            );
 
         const signerAddress = await signer.getAddress();
         const storage = new Storage();

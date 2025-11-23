@@ -21,7 +21,11 @@ contract LocalDiamond is StateChannelManagerProxy {
         address _disputeFraudProofFacet,
         address _stateSnapshotFacet,
         address _joinChannelFacet,
-        address _utilityFacet
+        address _utilityFacet,
+        uint256 _p2pTime,
+        uint256 _agreementTime,
+        uint256 _chainFallbackTime,
+        uint256 _evidenceTime
     )
         StateChannelManagerProxy(
             _stateMachineImplementation,
@@ -32,14 +36,13 @@ contract LocalDiamond is StateChannelManagerProxy {
             _stateSnapshotFacet,
             _joinChannelFacet,
             _utilityFacet,
-            address(0) // Use 0x00 for consumer facet in local environment
+            address(0), // Use 0x00 for consumer facet in local environment
+            _p2pTime,
+            _agreementTime,
+            _chainFallbackTime,
+            _evidenceTime
         )
-    {
-        p2pTime = 5;
-        agreementTime = 5;
-        chainFallbackTime = 5;
-        evidenceTime = 5;
-    }
+    {}
 
     // ========== Direct event handlers for existing events ==========
 

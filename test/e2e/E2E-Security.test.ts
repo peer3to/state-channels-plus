@@ -193,7 +193,14 @@ describe("E2E: Advanced Security", function () {
     describe("Dispute Flow", function () {
         it("should reduce honest invalid state transition disputes and create new fork", async function () {
             // Arrange - Setup with 4 participants
-            await harness!.setup(4);
+            await harness!.setup(4, {
+                timeConfig: {
+                    p2pTime: 3,
+                    agreementTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 3
+                }
+            });
             const originalForkId = await harness!.openChannel();
 
             await harness!.submitNextTransaction((contract) => contract.add(1));
@@ -223,9 +230,6 @@ describe("E2E: Advanced Security", function () {
                 5000
             );
             expect(disputeCommitedObserved).to.be.true;
-
-            // Fast-forward blockchain time past the kill period
-            await harness!.advanceTime(30);
 
             const forkChanged = await harness!.waitForCondition(() => {
                 const peerForks = harness!.peers
