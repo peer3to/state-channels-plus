@@ -1,5 +1,9 @@
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    DisputeConfirmationStruct,
+    DisputeStruct,
+    ReduceOutputStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import {
     MilestoneProofStruct,
     StateProofStruct
@@ -13,12 +17,8 @@ import {
     Signature
 } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
-import { Codec, Logger, Type } from "@/utils";
-import { ethers, ZeroHash } from "ethers";
-import {
-    DisputeConfirmationStruct,
-    ReduceOutputStruct
-} from "@typechain-types/contracts/V1/StateChannelManagerInterface";
+import { Logger } from "@/utils";
+import { ZeroHash } from "ethers";
 import { StateChannelManagerProxy } from "@typechain-types/index";
 import { ReduceData } from "@/types";
 
@@ -324,49 +324,16 @@ class AgreementManager {
         return undefined;
     }
 
-    /**
-     * Check if a participant has signed a dispute
-     */
-    public hasParticipantSignedDispute(
-        dispute: DisputeStruct,
-        participant: Address
-    ): boolean {
-        const disputeHash = ethers.keccak256(
-            Codec.encode(dispute, Type.Dispute)
-        );
-        const disputeConfirmation =
-            this.storage.disputes.getDisputeConfirmation(disputeHash);
-
-        if (!disputeConfirmation) return false;
-
-        // Check if participant is the disputer
-        if (dispute.input.disputer === participant) return true;
-
-        // Check confirmation signatures
-        for (const sig of disputeConfirmation.signatures) {
-            const signer = ethers.verifyMessage(
-                ethers.getBytes(disputeHash),
-                sig as Signature
-            );
-            if (signer === participant) return true;
-        }
-
-        return false;
-    }
-
     public async getForkDisputeConfirmations(
         channelId: ChannelId,
         forkId: ForkId,
         ethersContract: StateChannelManagerProxy
     ): Promise<DisputeConfirmationStruct[]> {
-        // Collect disputes for this dispute window
         const disputeCommitments = await ethersContract.getWindowCommitments(
             channelId,
             forkId
         );
-        // Collect all disputes for this dispute window
-        const currentWindowDisputes: DisputeConfirmationStruct[] = [];
-        for (const commitment of disputeCommitments) {
+        return disputeCommitments.map((commitment) => {
             const disputeConfirmation =
                 this.storage.disputes.getDisputeConfirmation(commitment);
             if (!disputeConfirmation) {
@@ -374,8 +341,31 @@ class AgreementManager {
                     `Missing Data Availability for dispute commitment ${commitment}`
                 );
             }
+            return disputeConfirmation;
+        });
+    }
 
-            currentWindowDisputes.push(disputeConfirmation);
+    public async getForkDisputes(
+        channelId: ChannelId,
+        forkId: ForkId,
+        ethersContract: StateChannelManagerProxy
+    ): Promise<DisputeStruct[]> {
+        // Collect disputes for this dispute window
+        const disputeCommitments = await ethersContract.getWindowCommitments(
+            channelId,
+            forkId
+        );
+        // Collect all disputes for this dispute window
+        const currentWindowDisputes: DisputeStruct[] = [];
+        for (const commitment of disputeCommitments) {
+            const dispute = this.storage.disputes.getDispute(commitment);
+            if (!dispute) {
+                throw new Error(
+                    `Missing Data Availability for dispute commitment ${commitment}`
+                );
+            }
+
+            currentWindowDisputes.push(dispute);
         }
         return currentWindowDisputes;
     }

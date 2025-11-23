@@ -32,7 +32,7 @@ struct DisputeInput {
     bytes32 channelId;
     /// @notice Hash of genesis state (previous dispute output or latest on-chain state)
     /// @dev Used for state verification and fork creation
-    bytes32 genesisSnapshotDataHash;
+    bytes32 forkId;
     /// @notice encoded latest state (latest on-chain state)
     bytes32 latestStateSnapshotHash;
     /// @notice State proof for the dispute

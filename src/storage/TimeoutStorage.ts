@@ -1,6 +1,6 @@
 import { ForkId } from "@/types/types";
 
-import { TimeoutStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+import { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 export class TimeoutStorage {
     // ====================================

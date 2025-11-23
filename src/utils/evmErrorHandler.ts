@@ -20,7 +20,7 @@ export class CustomEvmError extends Error {
     }
 }
 
-function decodeCustomError(errorData: Bytes): ErrorDescription | null {
+export function decodeCustomError(errorData: Bytes): ErrorDescription | null {
     if (!errorData || errorData.length < 10) return null;
 
     return errorInterface.parseError(errorData);

@@ -73,8 +73,12 @@ class DisputeManager {
         try {
             await this.mutex.lock();
             if (this.storage.disputes.didIDispute(forkId)) return;
-            const { disputeConfirmation, auditingData, fraudProofsToApply } =
-                await this.constructDispute(forkId);
+            const {
+                dispute,
+                disputeConfirmation,
+                auditingData,
+                fraudProofsToApply
+            } = await this.constructDispute(forkId);
 
             const pendingParticipants =
                 await this.stateChannelManagerContract.getPendingParticipants(
@@ -251,7 +255,7 @@ class DisputeManager {
 
         const disputeInput: DisputeInputStruct = {
             channelId: this.channelId,
-            genesisSnapshotDataHash: forkId,
+            forkId: forkId,
             latestStateSnapshotHash: latestStateSnapshot.hash,
             stateProof: stateProof,
             onChainSlashes: Array.from(onChainSlashes),

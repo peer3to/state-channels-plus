@@ -142,7 +142,11 @@ export async function deployMathChannelProxyFixture(
     );
     const mathStateChannelContactInstance = await mathSmcFactory.deploy(
         await mathContactInstance.getAddress(),
-        ...facetAddresses
+        ...facetAddresses,
+        0,
+        0,
+        0,
+        0
     );
 
     return {

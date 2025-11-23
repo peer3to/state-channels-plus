@@ -9,6 +9,11 @@ import "./MathConsumerFacet.sol";
 // import "hardhat/console.sol";
 
 contract MathStateChannelManagerProxy is StateChannelManagerProxy {
+    uint256 private constant DEFAULT_P2P_TIME = 15;
+    uint256 private constant DEFAULT_AGREEMENT_TIME = 5;
+    uint256 private constant DEFAULT_CHAIN_FALLBACK_TIME = 30;
+    uint256 private constant DEFAULT_EVIDENCE_TIME = 30;
+
     constructor(
         address aStateMachineAddress,
         address disputeManagerFacet,
@@ -18,7 +23,11 @@ contract MathStateChannelManagerProxy is StateChannelManagerProxy {
         address stateSnapshotFacet,
         address joinChannelFacet,
         address utilityFacet,
-        address mathConsumerFacet
+        address mathConsumerFacet,
+        uint256 _p2pTime,
+        uint256 _agreementTime,
+        uint256 _chainFallbackTime,
+        uint256 _evidenceTime
     )
         StateChannelManagerProxy(
             aStateMachineAddress,
@@ -29,12 +38,11 @@ contract MathStateChannelManagerProxy is StateChannelManagerProxy {
             stateSnapshotFacet,
             joinChannelFacet,
             utilityFacet,
-            mathConsumerFacet
+            mathConsumerFacet,
+            _p2pTime == 0 ? DEFAULT_P2P_TIME : _p2pTime,
+            _agreementTime == 0 ? DEFAULT_AGREEMENT_TIME : _agreementTime,
+            _chainFallbackTime == 0 ? DEFAULT_CHAIN_FALLBACK_TIME : _chainFallbackTime,
+            _evidenceTime == 0 ? DEFAULT_EVIDENCE_TIME : _evidenceTime
         )
-    {
-        p2pTime = 5;
-        agreementTime = 5;
-        chainFallbackTime = 5;
-        evidenceTime = 5;
-    }
+    {}
 }

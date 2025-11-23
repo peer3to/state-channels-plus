@@ -18,13 +18,19 @@ contract MathConsumerFacet is AConsumerFacet {
     {
         // AStateMachine genesis state
         MathState memory genesisState;
-        genesisState.number = 0;
         genesisState.participants = new address[](successfulJoinChannels.length);
         genesisState.balances = new uint256[](successfulJoinChannels.length);
+
+        // Initialize state.number to sum of all balances to satisfy balance invariant:
+        // totalDeposits == totalWithdrawals + getTotalStateBalance()
+        uint256 totalBalance = 0;
         for (uint256 i = 0; i < successfulJoinChannels.length; i++) {
             genesisState.participants[i] = successfulJoinChannels[i].participant;
             genesisState.balances[i] = successfulJoinChannels[i].balance.amount;
+            totalBalance += successfulJoinChannels[i].balance.amount;
         }
+        genesisState.number = totalBalance;
+
         bytes memory genesisStateEncoded = abi.encode(genesisState);
         return (genesisStateEncoded, genesisState.participants);
     }
