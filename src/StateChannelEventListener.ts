@@ -4,6 +4,8 @@ import { ChannelId } from "@/types/types";
 
 import { EventHandler } from "@/eventHandlers/EventHandler";
 import { Codec } from "@/utils";
+import { Result } from "ethers";
+import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 //TODO - made a PR to ethers.js to fix Deferred Topic Filter
 
@@ -105,7 +107,7 @@ class StateChannelEventListener {
             handler: (logObj: any) => {
                 const {
                     channelId,
-                    dispute,
+                    disputeConfirmation,
                     disputeCreationTimestamp,
                     isFinal,
                     windowCreationTimestamp
@@ -113,7 +115,9 @@ class StateChannelEventListener {
 
                 this.eventHandler.onDisputeCommitted(
                     channelId,
-                    Codec.convertEthersResultToObject(dispute),
+                    (disputeConfirmation as Result).toObject(
+                        true
+                    ) as DisputeConfirmationStruct,
                     disputeCreationTimestamp,
                     isFinal,
                     windowCreationTimestamp

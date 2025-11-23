@@ -5,6 +5,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeAuditingDataStruct,
+    DisputeConfirmationStruct,
     DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import StateManager from "@/stateManager";
@@ -131,12 +132,16 @@ export class EventHandler {
 
     async onDisputeCommitted(
         channelId: ChannelId,
-        dispute: DisputeStruct,
+        disputeConfirmation: DisputeConfirmationStruct,
         disputeCreationTimestamp: Timestamp,
         isFinal: boolean,
         windowCreationTimestamp: Timestamp,
         disputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<void> {
+        const dispute = Codec.decode(
+            disputeConfirmation.signedDispute.encodedDispute,
+            Type.Dispute
+        );
         const forkId = dispute.input.genesisSnapshotDataHash;
         this.logger.debug("Dispute committed", {
             channelId,
@@ -195,7 +200,7 @@ export class EventHandler {
             );
 
         if (isValid) {
-            this.storage.disputes.storeDispute(dispute);
+            this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
             // this is like success - TODO - consider moving this to DisputeStrategy.success
             if (await this.canConstructMoreEvidence(dispute)) {
                 this.stateManager.disputeManager.dispute(forkId);

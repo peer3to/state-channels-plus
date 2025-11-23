@@ -21,7 +21,12 @@ contract DisputeManagerFacet is StateChannelCommon {
         (bool isFinal, uint256 creationTimestamp) = _uploadDispute(disputeConfirmation, true);
 
         emit DisputeCommittedWithAuditingData(
-            dispute.input.channelId, dispute, block.timestamp, isFinal, creationTimestamp, disputeAuditingData
+            dispute.input.channelId,
+            disputeConfirmation,
+            block.timestamp,
+            isFinal,
+            creationTimestamp,
+            disputeAuditingData
         );
     }
 
@@ -90,7 +95,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         if (!isAuditingCalldataProvided) {
             emit DisputeCommitted(
                 dispute.input.channelId,
-                dispute,
+                disputeConfirmation,
                 block.timestamp,
                 isThresholdFinal,
                 disputeWindow.evidence.creationTimestamp

@@ -131,7 +131,6 @@ class DisputeManager {
                 }
             }
 
-            this.storage.disputes.storeDispute(dispute);
             this.storage.disputes.storeDisputedFork(forkId, true);
             this.p2pEventHooks.onInitiatingDispute?.();
         } catch (error) {
