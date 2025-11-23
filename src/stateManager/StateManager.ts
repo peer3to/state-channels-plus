@@ -37,6 +37,7 @@ import StateChannelEventListener from "@/StateChannelEventListener";
 import ValidationService from "./ValidationService";
 import Storage from "@/storage";
 import { EventHandler } from "@/eventHandlers/EventHandler";
+import { decodeCustomError } from "@/utils/evmErrorHandler";
 
 // Event handlers and processors
 import P2pEventHooks from "@/P2pEventHooks";
@@ -52,7 +53,6 @@ import {
     Type,
     hash,
     isCustomEvmError,
-    decodeTransactionError,
     difference,
     Logger,
     createStaticCallProxy
@@ -336,30 +336,32 @@ class StateManager {
             )
             .then((tx) => tx.wait())
             .catch((error) => {
-                const decodedError = isCustomEvmError(error)
-                    ? error
-                    : decodeTransactionError(error);
+                try {
+                    const decodedError = decodeCustomError(error.data)!;
 
-                // Handle expected race conditions
-                if (
-                    decodedError &&
-                    (decodedError.errorDescription.name ===
-                        "ErrorDisputeAlreadyReduced" ||
-                        decodedError.errorDescription.name ===
-                            "ErrorCantParticipateInDispute")
-                ) {
-                    this.logger.debug(
-                        `Reduction already completed by another peer: ${decodedError.errorDescription.name}`
-                    );
-                    return;
+                    if (decodedError.name === "ErrorDisputeAlreadyReduced") {
+                        this.logger.debug(
+                            `Reduction already completed by another peer: ${decodedError.name}`
+                        );
+                        return;
+                    }
+                    if (decodedError.name === "ErrorCantParticipateInDispute") {
+                        this.logger.debug(
+                            `Cannot participate in dispute: ${decodedError.name} (slashed on chain)`
+                        );
+                        return;
+                    } else {
+                        throw error;
+                    }
+                } catch (error) {
+                    this.logger.error("Error decoding custom error", {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error)
+                    });
+                    throw error;
                 }
-
-                // Log unexpected errors
-                this.logger.error("Reduction transaction failed", {
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                    errorName: decodedError?.errorDescription.name || "unknown"
-                });
             });
 
         // Compute local state after reduction (optimistic - assume tx will succeed)
