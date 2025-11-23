@@ -1,5 +1,6 @@
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
+    DisputeConfirmationStruct,
     DisputeStruct,
     ReduceOutputStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -321,6 +322,27 @@ class AgreementManager {
         }
 
         return undefined;
+    }
+
+    public async getForkDisputeConfirmations(
+        channelId: ChannelId,
+        forkId: ForkId,
+        ethersContract: StateChannelManagerProxy
+    ): Promise<DisputeConfirmationStruct[]> {
+        const disputeCommitments = await ethersContract.getWindowCommitments(
+            channelId,
+            forkId
+        );
+        return disputeCommitments.map((commitment) => {
+            const disputeConfirmation =
+                this.storage.disputes.getDisputeConfirmation(commitment);
+            if (!disputeConfirmation) {
+                throw new Error(
+                    `Missing Data Availability for dispute commitment ${commitment}`
+                );
+            }
+            return disputeConfirmation;
+        });
     }
 
     public async getForkDisputes(

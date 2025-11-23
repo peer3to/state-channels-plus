@@ -157,7 +157,7 @@ export function dispute(
     const defaultDispute: DisputeStruct = {
         input: {
             channelId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
-            genesisSnapshotDataHash: ethers.hexlify(ethers.randomBytes(32)),
+            forkId: ethers.hexlify(ethers.randomBytes(32)),
             latestStateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
             stateProof: {
                 milestones: [],

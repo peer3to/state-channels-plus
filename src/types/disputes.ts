@@ -29,7 +29,7 @@ export const FraudProofEthersType = `tuple(
 
 export const DisputeInputEthersType = `tuple(
     bytes32 channelId,
-    bytes32 genesisSnapshotDataHash,
+    bytes32 forkId,
     bytes32 latestStateSnapshotHash,
     ${StateProofEthersType} stateProof,
     address[] onChainSlashes,

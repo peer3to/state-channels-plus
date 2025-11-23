@@ -55,7 +55,7 @@ export default class DisputeValidationService {
         }
         // onChainDisputeAuditingData not available
         const { isPartial, auditingData } = this.disputeManager.getAuditingData(
-            dispute.input.genesisSnapshotDataHash,
+            dispute.input.forkId,
             dispute.input.stateProof
         );
         if (isPartial) {
@@ -224,7 +224,7 @@ export default class DisputeValidationService {
         const disputeCreationTimestamp =
             await this.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
                 dispute.input.channelId,
-                dispute.input.genesisSnapshotDataHash
+                dispute.input.forkId
             );
         if (Number(disputeCreationTimestamp) === 0) {
             return false;

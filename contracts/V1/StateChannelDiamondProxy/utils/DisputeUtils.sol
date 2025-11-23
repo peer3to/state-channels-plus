@@ -8,7 +8,7 @@ function _getDisputeChannel(Dispute memory dispute) pure returns (bytes32) {
 }
 
 function _getDisputeFork(Dispute memory dispute) pure returns (bytes32) {
-    return dispute.input.genesisSnapshotDataHash;
+    return dispute.input.forkId;
 }
 
 function _areDisputeAndBlockSameFork(Dispute memory dispute, Block memory _block) pure returns (bool) {

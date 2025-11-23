@@ -120,7 +120,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 windowCreationTimestamp
     ) external {
         // Update dispute data based on the dispute commitment
-        bytes32 forkId = dispute.input.genesisSnapshotDataHash;
+        bytes32 forkId = dispute.input.forkId;
         DisputeWindow storage disputeWindow = disputeData[channelId].disputeWindowMap[forkId];
         disputeWindow.forkId = forkId;
         disputeWindow.evidence.creationTimestamp = windowCreationTimestamp;

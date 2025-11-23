@@ -142,7 +142,7 @@ export class EventHandler {
             disputeConfirmation.signedDispute.encodedDispute,
             Type.Dispute
         );
-        const forkId = dispute.input.genesisSnapshotDataHash;
+        const forkId = dispute.input.forkId;
         this.logger.debug("Dispute committed", {
             channelId,
             forkId,
@@ -167,7 +167,7 @@ export class EventHandler {
 
         this.stateManager.p2pManager.localRpc.isForkDisputedService.requestDisputeAcknowledgment(
             channelId,
-            dispute.input.genesisSnapshotDataHash
+            forkId
         );
 
         if (isFinal) {

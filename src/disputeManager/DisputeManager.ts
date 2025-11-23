@@ -255,7 +255,7 @@ class DisputeManager {
 
         const disputeInput: DisputeInputStruct = {
             channelId: this.channelId,
-            genesisSnapshotDataHash: forkId,
+            forkId: forkId,
             latestStateSnapshotHash: latestStateSnapshot.hash,
             stateProof: stateProof,
             onChainSlashes: Array.from(onChainSlashes),
