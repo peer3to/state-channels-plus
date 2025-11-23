@@ -25,7 +25,8 @@ import {
     SignatureUtils,
     Codec,
     Type,
-    hash
+    hash,
+    retry
 } from "@/utils";
 import Block from "@/models/Block";
 import {
@@ -581,7 +582,12 @@ export class PeerTestHarness<T extends AStateMachine> {
         );
 
         this.autoTimeAdvanceInterval = setInterval(
-            () => time.increase(1),
+            () =>
+                retry(() => time.increase(1), {
+                    maxRetries: 30,
+                    delayMs: 5,
+                    useExponentialBackoff: false
+                }),
             intervalMs
         );
     }
