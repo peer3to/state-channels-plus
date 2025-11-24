@@ -228,7 +228,7 @@ describe("E2E: Core Functionality", function () {
             // Arrange - Setup with 3 participants and short timeout for fast testing
             await harness!.setup(3, {
                 timeConfig: {
-                    p2pTime: 1,
+                    p2pTime: 2,
                     agreementTime: 1,
                     chainFallbackTime: 3
                 }
@@ -351,7 +351,7 @@ describe("E2E: Core Functionality", function () {
             // Arrange
             await harness!.setup(3, {
                 timeConfig: {
-                    p2pTime: 1,
+                    p2pTime: 2,
                     agreementTime: 1,
                     chainFallbackTime: 2
                 }
