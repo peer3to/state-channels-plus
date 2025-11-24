@@ -1,5 +1,9 @@
 import { expect } from "chai";
-import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
+import {
+    PeerTestHarness,
+    TestPeer,
+    sleep
+} from "@test/fixtures/PeerTestHarness";
 import { AStateMachine, MathStateMachine } from "@typechain-types/index";
 import { ForkId } from "@/types/types";
 import { hash } from "../factory";
@@ -9,12 +13,6 @@ import Clock from "@/Clock";
 
 describe("E2E: RPC Services", function () {
     let harness: PeerTestHarness<MathStateMachine>;
-
-    beforeEach(async function () {
-        harness = new PeerTestHarness<MathStateMachine>();
-        await harness.setup(3);
-        await harness.openChannel();
-    });
 
     afterEach(async function () {
         if (harness) {
@@ -27,6 +25,9 @@ describe("E2E: RPC Services", function () {
         let nonByzantinePeers: TestPeer<MathStateMachine>[];
 
         beforeEach(async function () {
+            harness = new PeerTestHarness<MathStateMachine>();
+            await harness.setup(3);
+            await harness.openChannel();
             await harness.submitNextTransaction((contract) => contract.add(1));
             harness.assertAllPeersInSync();
             harness.resetEventSpies();
@@ -545,6 +546,21 @@ describe("E2E: RPC Services", function () {
     });
 
     describe("InitHandshake RPC", function () {
+        let LocalDiscoveryServer: (typeof import("@/utils/LocalDiscoveryServer"))["LocalDiscoveryServer"];
+
+        beforeEach(async function () {
+            harness = new PeerTestHarness<MathStateMachine>();
+            LocalDiscoveryServer = (
+                await import("@/utils/LocalDiscoveryServer")
+            ).LocalDiscoveryServer;
+            await harness.setup(3, { autoConnect: false });
+            await harness.openChannel();
+        });
+
+        afterEach(async function () {
+            await sleep(100);
+        });
+
         // =================================================================
         // Helper Functions
         // =================================================================
@@ -560,60 +576,99 @@ describe("E2E: RPC Services", function () {
             return profile?.getIsHandshakeCompleted() ?? false;
         };
 
-        // Arrange: Setup channel, disconnect peers to test initial handshake
-        // Act: Peer connects and initiates handshake with another peer
+        // Arrange: Setup 3 peers but connect only the first 2
+        // Act: New peer connects and completes handshake
         // Assert: Handshake completes successfully, profile is created
         it("should complete handshake successfully and create peer profile", async function () {
             // Arrange
-            await harness.cleanup();
-            await harness.setup(2, { autoConnect: false });
-            await harness.openChannel();
-
             const initiatingPeer = harness.peers[0];
-            const receivingPeer = harness.peers[1];
+            const peer1 = harness.peers[1];
+            LocalDiscoveryServer.connectToPeers(
+                initiatingPeer.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+            LocalDiscoveryServer.connectToPeers(
+                peer1.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+            await harness.waitForP2PConnections();
 
-            // Act
-            await harness.connectPeers();
+            expect(isHandshakeCompleted(initiatingPeer, peer1.address)).to.be
+                .true;
+
+            const newPeer = harness.peers[2];
+            LocalDiscoveryServer.connectToPeers(
+                newPeer.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
 
             await harness.waitForCondition(() => {
-                return isHandshakeCompleted(
-                    initiatingPeer,
-                    receivingPeer.address
+                return (
+                    harness.getPeerTransport(
+                        initiatingPeer.index,
+                        newPeer.index
+                    ) !== undefined
                 );
+            }, 5000);
+
+            await harness.waitForCondition(() => {
+                return isHandshakeCompleted(initiatingPeer, newPeer.address);
             }, 5000);
 
             // Assert
             const profileAfter = harness.getProfile(
                 initiatingPeer.index,
-                receivingPeer.address
+                newPeer.address
             );
             expect(profileAfter).to.not.be.undefined;
             expect(profileAfter?.getEvmAddress().toString()).to.equal(
-                receivingPeer.address
+                newPeer.address
             );
-            expect(isHandshakeCompleted(initiatingPeer, receivingPeer.address))
-                .to.be.true;
+            expect(isHandshakeCompleted(initiatingPeer, newPeer.address)).to.be
+                .true;
         });
 
-        // Arrange: Setup channel, connect peers
-        // Act: Peer sends handshake request with time difference exceeding agreementTime
+        // Arrange: Setup 3 peers but connect only the first 2
+        // Act: New peer sends handshake request with time difference exceeding agreementTime
         // Assert: Receiving peer disconnects the requesting peer
         it("should disconnect peer when handshake request time difference exceeds agreementTime", async function () {
             // Arrange
-            await harness.cleanup();
-            await harness.setup(2, { autoConnect: false });
-            await harness.openChannel();
-            await harness.connectPeers();
+            const peer0 = harness.peers[0];
+            const peer1 = harness.peers[1];
+            const receivingPeer = peer1;
+            LocalDiscoveryServer.connectToPeers(
+                peer0.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+            LocalDiscoveryServer.connectToPeers(
+                peer1.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+            await harness.waitForP2PConnections();
 
-            const initiatingPeer = harness.peers[0];
-            const receivingPeer = harness.peers[1];
-            const transportFromReceiver = harness.getPeerTransport(
-                receivingPeer.index,
-                initiatingPeer.index
-            )!;
             const connectionsBefore = harness.getConnectionCount(
                 receivingPeer.index
             );
+
+            const newPeer = harness.peers[2];
+            LocalDiscoveryServer.connectToPeers(
+                newPeer.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+
+            await harness.waitForCondition(() => {
+                return (
+                    harness.getPeerTransport(
+                        receivingPeer.index,
+                        newPeer.index
+                    ) !== undefined
+                );
+            }, 5000);
+
+            const transportFromReceiver = harness.getPeerTransport(
+                receivingPeer.index,
+                newPeer.index
+            )!;
 
             const agreementTime =
                 receivingPeer.stateManager.timeConfig.agreementTime;
@@ -638,21 +693,45 @@ describe("E2E: RPC Services", function () {
             ).to.be.true;
         });
 
-        // Arrange: Setup channel, connect peers, initiate handshake
-        // Act: Peer sends handshake response with RTT exceeding agreementTime
+        // Arrange: Setup 3 peers, connect first 2
+        // Act: New peer sends handshake response with RTT exceeding agreementTime
         // Assert: Initiating peer disconnects the responding peer
         it("should disconnect peer when handshake response RTT exceeds agreementTime", async function () {
             // Arrange
-            await harness.cleanup();
-            await harness.setup(2, { autoConnect: false });
-            await harness.openChannel();
-            await harness.connectPeers();
-
             const initiatingPeer = harness.peers[0];
-            const respondingPeer = harness.peers[1];
+            const peer1 = harness.peers[1];
+            LocalDiscoveryServer.connectToPeers(
+                initiatingPeer.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+            LocalDiscoveryServer.connectToPeers(
+                peer1.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+            await harness.waitForP2PConnections();
+
+            const connectionsBefore = harness.getConnectionCount(
+                initiatingPeer.index
+            );
+
+            const newPeer = harness.peers[2];
+            LocalDiscoveryServer.connectToPeers(
+                newPeer.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+
+            await harness.waitForCondition(() => {
+                return (
+                    harness.getPeerTransport(
+                        initiatingPeer.index,
+                        newPeer.index
+                    ) !== undefined
+                );
+            }, 5000);
+
             const transport = harness.getPeerTransport(
                 initiatingPeer.index,
-                respondingPeer.index
+                newPeer.index
             )!;
 
             const initHandshakeService =
@@ -666,9 +745,8 @@ describe("E2E: RPC Services", function () {
             }, 1000);
 
             const challenge = initHandshakeService.getChallenge(transport)!;
-            const connectionsBefore = harness.getConnectionCount(
-                initiatingPeer.index
-            );
+            expect(initHandshakeService.getChallenge(transport)!).to.not.be
+                .undefined;
 
             const agreementTime =
                 initiatingPeer.stateManager.timeConfig.agreementTime;
@@ -678,7 +756,7 @@ describe("E2E: RPC Services", function () {
                 challenge.randomChallengeHash
             );
             const signature =
-                await respondingPeer.stateManager.p2pManager.p2pSigner.signMessage(
+                await newPeer.stateManager.p2pManager.p2pSigner.signMessage(
                     challengeHashBytes
                 );
 
@@ -688,7 +766,7 @@ describe("E2E: RPC Services", function () {
                 .onInitHandshakeResponse(
                     signature,
                     slowResponseTime,
-                    respondingPeer.stateManager.p2pManager.preferredTransport
+                    newPeer.stateManager.p2pManager.preferredTransport
                 );
 
             // Assert
@@ -708,11 +786,6 @@ describe("E2E: RPC Services", function () {
         // Assert: Initiating peer disconnects the responding peer
         it("should disconnect peer when handshake response time doesn't match init time", async function () {
             // Arrange
-            await harness.cleanup();
-            await harness.setup(2, { autoConnect: false });
-            await harness.openChannel();
-            await harness.connectPeers();
-
             const initiatingPeer = harness.peers[0];
             const respondingPeer = harness.peers[1];
             const transport = harness.getPeerTransport(
@@ -722,14 +795,17 @@ describe("E2E: RPC Services", function () {
 
             const initHandshakeService =
                 getInitHandshakeService(initiatingPeer);
+            initHandshakeService.mapTransportToChallenge.delete(transport);
             initHandshakeService.initHandshake(transport);
 
-            await harness.waitForCondition(() => {
-                return (
-                    initHandshakeService.getChallenge(transport) !== undefined
-                );
-            }, 1000);
-
+            expect(
+                await harness.waitForCondition(() => {
+                    return (
+                        initHandshakeService.getChallenge(transport) !==
+                        undefined
+                    );
+                }, 5000)
+            ).to.be.true;
             const challenge = initHandshakeService.getChallenge(transport)!;
             const connectionsBefore = harness.getConnectionCount(
                 initiatingPeer.index
@@ -774,11 +850,6 @@ describe("E2E: RPC Services", function () {
         // Assert: Handshake fails or peer is disconnected
         it("should disconnect peer when handshake response has invalid signature", async function () {
             // Arrange
-            await harness.cleanup();
-            await harness.setup(2, { autoConnect: false });
-            await harness.openChannel();
-            await harness.connectPeers();
-
             const initiatingPeer = harness.peers[0];
             const respondingPeer = harness.peers[1];
             const transport = harness.getPeerTransport(
@@ -788,15 +859,18 @@ describe("E2E: RPC Services", function () {
 
             const initHandshakeService =
                 getInitHandshakeService(initiatingPeer);
+            initHandshakeService.mapTransportToChallenge.delete(transport);
             initHandshakeService.initHandshake(transport);
 
-            await harness.waitForCondition(() => {
-                return (
-                    initHandshakeService.getChallenge(transport) !== undefined
-                );
-            }, 1000);
+            expect(
+                await harness.waitForCondition(() => {
+                    return (
+                        initHandshakeService.getChallenge(transport) !==
+                        undefined
+                    );
+                }, 5000)
+            ).to.be.true;
 
-            const challenge = initHandshakeService.getChallenge(transport)!;
             const connectionsBefore = harness.getConnectionCount(
                 initiatingPeer.index
             );
@@ -840,16 +914,11 @@ describe("E2E: RPC Services", function () {
                 .to.be.true;
         });
 
-        // Arrange: Setup channel, connect peers, add a new peer
+        // Arrange: Setup channel, connect 2 peers, add a new peer
         // Act: New peer sends unsolicited handshake response (no prior handshake request)
         // Assert: Initiating peer disconnects the new peer (no challenge exists)
         it("should disconnect peer sending unsolicited handshake response", async function () {
             // Arrange
-            await harness.cleanup();
-            await harness.setup(3, { autoConnect: false });
-            await harness.openChannel();
-            await harness.connectPeers();
-
             const initiatingPeer = harness.peers[0];
             const newPeer = harness.peers[2];
 
@@ -897,11 +966,6 @@ describe("E2E: RPC Services", function () {
         // Assert: Initiating peer rejects handshake and disconnects blacklisted peer
         it("should reject handshake from blacklisted peer", async function () {
             // Arrange
-            await harness.cleanup();
-            await harness.setup(2, { autoConnect: false });
-            await harness.openChannel();
-            await harness.connectPeers();
-
             const initiatingPeer = harness.peers[0];
             const respondingPeer = harness.peers[1];
             const transport = harness.getPeerTransport(
@@ -925,14 +989,17 @@ describe("E2E: RPC Services", function () {
 
             const initHandshakeService =
                 getInitHandshakeService(initiatingPeer);
+            initHandshakeService.mapTransportToChallenge.delete(transport);
             initHandshakeService.initHandshake(transport);
 
-            await harness.waitForCondition(() => {
-                return (
-                    initHandshakeService.getChallenge(transport) !== undefined
-                );
-            }, 1000);
-
+            expect(
+                await harness.waitForCondition(() => {
+                    return (
+                        initHandshakeService.getChallenge(transport) !==
+                        undefined
+                    );
+                }, 5000)
+            ).to.be.true;
             const challenge = initHandshakeService.getChallenge(transport)!;
             const connectionsBefore = harness.getConnectionCount(
                 initiatingPeer.index
@@ -973,14 +1040,13 @@ describe("E2E: RPC Services", function () {
         it("should disconnect peer that doesn't respond within agreementTime", async function () {
             // Arrange
             await harness.cleanup();
-            await harness.setup(2, {
+            await harness.setup(3, {
                 autoConnect: false,
                 timeConfig: {
                     agreementTime: 1
                 }
             });
             await harness.openChannel();
-            await harness.connectPeers();
 
             const initiatingPeer = harness.peers[0];
             const respondingPeer = harness.peers[1];
@@ -988,6 +1054,12 @@ describe("E2E: RPC Services", function () {
                 initiatingPeer.index,
                 respondingPeer.index
             )!;
+            initiatingPeer.stateManager.p2pManager.disconnectConnection(
+                transport
+            );
+            initiatingPeer.stateManager.p2pManager.openConnections.push(
+                transport
+            );
 
             const connectionsBefore = harness.getConnectionCount(
                 initiatingPeer.index
@@ -1023,13 +1095,17 @@ describe("E2E: RPC Services", function () {
         // Assert: Profile transport is updated, handshake completes successfully
         it("should update existing profile transport on successful handshake", async function () {
             // Arrange
-            await harness.cleanup();
-            await harness.setup(2, { autoConnect: false });
-            await harness.openChannel();
-            await harness.connectPeers();
-
             const initiatingPeer = harness.peers[0];
             const respondingPeer = harness.peers[1];
+            LocalDiscoveryServer.connectToPeers(
+                initiatingPeer.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+            LocalDiscoveryServer.connectToPeers(
+                respondingPeer.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+            await harness.waitForP2PConnections();
 
             await harness.waitForCondition(() => {
                 return isHandshakeCompleted(
