@@ -43,6 +43,7 @@ import { deploy } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import { ZeroHash } from "ethers";
 import { ATransport } from "@/transport";
+import PeerProfile from "@/PeerProfile";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;
@@ -122,6 +123,12 @@ export class PeerTestHarness<T extends AStateMachine> {
     private autoTimeAdvanceInterval?: NodeJS.Timeout;
 
     constructor() {
+        // toJSON can't serialize BigInts, so we need to override it
+        if (typeof (BigInt.prototype as any).toJSON !== "function") {
+            (BigInt.prototype as any).toJSON = function () {
+                return Number(this);
+            };
+        }
         this.logger = createLogger({ component: "TestHarness" });
     }
 
@@ -1121,6 +1128,21 @@ export class PeerTestHarness<T extends AStateMachine> {
                 );
             return profile?.evmAddress === toPeer.address;
         });
+    }
+
+    getConnectionCount(peerIndex: number): number {
+        const peer = this.getPeer(peerIndex);
+        return peer.stateManager.p2pManager.openConnections.length;
+    }
+
+    getProfile(
+        peerIndex: number,
+        evmAddress: Address
+    ): PeerProfile | undefined {
+        const peer = this.getPeer(peerIndex);
+        return peer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
+            evmAddress
+        );
     }
 
     async submitDoubleSignBlock(
