@@ -327,7 +327,10 @@ export default class DisputeValidationService {
             const expectedTimeoutHeight = hasBlock
                 ? Number(latestBlock.transaction.header.transactionCnt) + 1
                 : 0;
-            if (expectedTimeoutHeight !== dispute.input.timeout.blockHeight) {
+            if (
+                expectedTimeoutHeight !==
+                Number(dispute.input.timeout.blockHeight)
+            ) {
                 this.disputeFraudProofService.createTimeoutNotLinkedToLatestState(
                     dispute
                 );
@@ -401,8 +404,14 @@ export default class DisputeValidationService {
                 return false;
             }
 
-            // [check] N/N Threshold
-            if (block && block.didEveryoneSign(participants)) {
+            // [check] N/N Threshold - only for normal timeouts
+            // For forced timeouts: skip this check
+            //   the participant just posted junk calldata, so we timeout them anyway.
+            if (
+                !dispute.input.timeout.isForced &&
+                block &&
+                block.didEveryoneSign(participants)
+            ) {
                 this.disputeFraudProofService.createTimeoutThreshold(
                     dispute,
                     disputeAuditingData,
@@ -450,19 +459,6 @@ export default class DisputeValidationService {
         }
 
         // if we're here - it's all good
-        return true;
-    }
-
-    private async isTimeoutTooEarly(
-        dispute: DisputeStruct,
-        disputeAuditingData: DisputeAuditingDataStruct
-    ): Promise<boolean> {
-        const [hasBlock, latestBlock] =
-            await this.diamondStateMachine.localDiamondContract.getLatestBlockFromStateProof(
-                dispute.input.stateProof
-            );
-        const previousTimestamp = 0;
-
         return true;
     }
 }
