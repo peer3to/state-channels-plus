@@ -1,6 +1,6 @@
 import { Block } from "@/models";
 import { BlockValidationResult } from "@/types";
-import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import ATransport from "@/transport/ATransport";
 
 export default abstract class AValidationStrategy {

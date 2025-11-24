@@ -2,8 +2,10 @@ import { ForkId, Hash } from "@/types/types";
 import { ethers } from "ethers";
 import {
     DisputeConfirmationStruct,
+    DisputeStruct,
     SignedDisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { Codec, Type } from "@/utils";
 
 type StoreOptions = {
     hash?: Hash;
@@ -67,6 +69,16 @@ export class DisputeStorage {
         disputeHash: Hash
     ): DisputeConfirmationStruct | undefined {
         return this.disputes.get(disputeHash);
+    }
+
+    getDispute(disputeHash: Hash): DisputeStruct | undefined {
+        const disputeConfirmation = this.getDisputeConfirmation(disputeHash);
+        return disputeConfirmation
+            ? Codec.decode(
+                  disputeConfirmation.signedDispute.encodedDispute,
+                  Type.Dispute
+              )
+            : undefined;
     }
 
     didIDispute(forkId: ForkId): DidIDispute {

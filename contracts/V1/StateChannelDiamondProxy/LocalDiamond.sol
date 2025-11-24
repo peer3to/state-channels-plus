@@ -21,7 +21,11 @@ contract LocalDiamond is StateChannelManagerProxy {
         address _disputeFraudProofFacet,
         address _stateSnapshotFacet,
         address _joinChannelFacet,
-        address _utilityFacet
+        address _utilityFacet,
+        uint256 _p2pTime,
+        uint256 _agreementTime,
+        uint256 _chainFallbackTime,
+        uint256 _evidenceTime
     )
         StateChannelManagerProxy(
             _stateMachineImplementation,
@@ -32,14 +36,13 @@ contract LocalDiamond is StateChannelManagerProxy {
             _stateSnapshotFacet,
             _joinChannelFacet,
             _utilityFacet,
-            address(0) // Use 0x00 for consumer facet in local environment
+            address(0), // Use 0x00 for consumer facet in local environment
+            _p2pTime,
+            _agreementTime,
+            _chainFallbackTime,
+            _evidenceTime
         )
-    {
-        p2pTime = 5;
-        agreementTime = 5;
-        chainFallbackTime = 5;
-        evidenceTime = 5;
-    }
+    {}
 
     // ========== Direct event handlers for existing events ==========
 
@@ -120,10 +123,15 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 windowCreationTimestamp
     ) external {
         // Update dispute data based on the dispute commitment
-        bytes32 forkId = dispute.input.genesisSnapshotDataHash;
+        bytes32 forkId = dispute.input.forkId;
         DisputeWindow storage disputeWindow = disputeData[channelId].disputeWindowMap[forkId];
         disputeWindow.forkId = forkId;
         disputeWindow.evidence.creationTimestamp = windowCreationTimestamp;
+        // Set lastEvidenceSubmissionTimestamp based on whether this is a threshold final dispute
+        // If final: windowCreationTimestamp (which equals block.timestamp - getEvidenceTime())
+        // If not final: disputeCreationTimestamp (which equals block.timestamp)
+        disputeWindow.evidence.lastEvidenceSubmissionTimestamp =
+            isFinal ? windowCreationTimestamp : disputeCreationTimestamp;
         disputeWindow.evidence.hasPosted.push(dispute.input.disputer);
 
         bytes32 commitment = keccak256(abi.encode(dispute));

@@ -3,7 +3,7 @@ import { ethers } from "ethers";
 
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Storage from "@/storage";
-import { isSubset } from "@/utils";
+import { isSubset, Logger } from "@/utils";
 import { Address, BlockCalldata, Signature } from "@/types/types";
 
 import DisputeFraudProofService from "./utils/DisputeFraudProofService";
@@ -23,7 +23,7 @@ export default class DisputeValidationService {
     private readonly stateChannelManagerContract: StateChannelManagerProxy;
     private readonly disputeManager: DisputeManager;
     private readonly agreementManager: AgreementManager;
-
+    private readonly logger: Logger;
     constructor(private readonly stateManager: StateManager) {
         this.storage = stateManager.storage;
         this.diamondStateMachine = stateManager.diamondStateMachine;
@@ -34,6 +34,9 @@ export default class DisputeValidationService {
         this.disputeFraudProofService = new DisputeFraudProofService(
             this.storage
         );
+        this.logger = stateManager.logger.child({
+            component: "DisputeValidationService"
+        });
     }
 
     async validateDispute(
@@ -58,7 +61,7 @@ export default class DisputeValidationService {
         }
         // onChainDisputeAuditingData not available
         const { isPartial, auditingData } = this.disputeManager.getAuditingData(
-            dispute.input.disputeAuditingDataHash,
+            dispute.input.forkId,
             dispute.input.stateProof
         );
         if (isPartial) {
@@ -232,7 +235,7 @@ export default class DisputeValidationService {
         const disputeCreationTimestamp =
             await this.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
                 dispute.input.channelId,
-                dispute.input.genesisSnapshotDataHash
+                dispute.input.forkId
             );
         // This should always be synced since this was triggered by the on-chain event
         if (Number(disputeCreationTimestamp) === 0) {
@@ -264,19 +267,21 @@ export default class DisputeValidationService {
             }
         }
 
-        // (STATEFUL) verify balance invariant
-        if (
-            // TODO - this will most likely fail in our localEVM since something won't be synced - should do it on the RPC node for now
-            !(await this.stateChannelManagerContract.verifyBalanceInvariantCheckSnapshot.staticCall(
+        // (STATEFUL - compiler trick) verify balance invariant
+        const balanceInvariantValid =
+            await this.stateChannelManagerContract.verifyBalanceInvariantCheckSnapshot.staticCall(
                 dispute.input.channelId,
                 disputeAuditingData.latestStateSnapshot.snapshotData,
                 disputeAuditingData.latestStateStateMachineState
-            ))
-        ) {
+            );
+        if (!balanceInvariantValid) {
+            this.logger.debug(`Balance invariant failed on local diamond`);
+
             this.disputeFraudProofService.createDisputeInvalidBalanceInvariant(
                 dispute,
                 disputeAuditingData
             );
+
             return false;
         }
 
@@ -344,7 +349,7 @@ export default class DisputeValidationService {
             const timeoutTimestamp =
                 await this.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
                     dispute.input.channelId,
-                    dispute.input.genesisSnapshotDataHash
+                    dispute.input.forkId
                 );
             if (!timeoutTimestamp)
                 throw new Error(

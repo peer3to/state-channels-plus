@@ -18,7 +18,7 @@ interface StateChannelManagerEvents {
 
     event DisputeCommitted(
         bytes32 indexed channelId,
-        Dispute dispute,
+        DisputeConfirmation disputeConfirmation,
         uint256 disputeCreationTimestamp,
         bool isFinal,
         uint256 windowCreationTimestamp
@@ -26,7 +26,7 @@ interface StateChannelManagerEvents {
 
     event DisputeCommittedWithAuditingData(
         bytes32 indexed channelId,
-        Dispute dispute,
+        DisputeConfirmation disputeConfirmation,
         uint256 disputeCreationTimestamp,
         bool isFinal,
         uint256 windowCreationTimestamp,

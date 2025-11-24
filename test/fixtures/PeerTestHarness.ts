@@ -2,6 +2,7 @@ import { BytesLike, Signer, ethers } from "ethers";
 import { expect } from "chai";
 import * as sinon from "sinon";
 import hre from "hardhat";
+import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { EvmStateMachine, P2pInstance } from "@/evm";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
@@ -24,7 +25,8 @@ import {
     SignatureUtils,
     Codec,
     Type,
-    hash
+    hash,
+    retry
 } from "@/utils";
 import Block from "@/models/Block";
 import {
@@ -117,6 +119,7 @@ export class PeerTestHarness<T extends AStateMachine> {
     private harnessConfig!: Config;
     private logger: Logger;
     private syncCoordinator!: SyncCoordinator;
+    private autoTimeAdvanceInterval?: NodeJS.Timeout;
 
     constructor() {
         this.logger = createLogger({ component: "TestHarness" });
@@ -150,6 +153,9 @@ export class PeerTestHarness<T extends AStateMachine> {
             await this.createPeer(i, signers[i]);
         }
 
+        // Start automatic blockchain time advancement
+        this.startAutoTimeAdvance();
+
         this.logger.info("Test harness setup completed");
     }
 
@@ -180,7 +186,8 @@ export class PeerTestHarness<T extends AStateMachine> {
         const deployment = await deploy(
             stateMachineAddress,
             consumerFacetAddress,
-            hardhatSigner
+            hardhatSigner,
+            this.options.timeConfig
         );
 
         this.channelManager = deployment.contract;
@@ -280,7 +287,6 @@ export class PeerTestHarness<T extends AStateMachine> {
             this.channelManager,
             mathInstance,
             hooks,
-            this.options.timeConfig, // Pass timeConfig override for testing
             index, // Pass peer index for logging
             PeerLogger
         );
@@ -561,8 +567,36 @@ export class PeerTestHarness<T extends AStateMachine> {
         await sleep(timeout);
     }
 
+    /**
+     * Starts automatic blockchain time advancement to simulate natural time passing.
+     * Advances chain time by 1 second every second.
+     */
+    startAutoTimeAdvance(intervalMs: number = 1000): void {
+        if (this.autoTimeAdvanceInterval) {
+            this.logger.debug("Auto time advance already running");
+            return;
+        }
+
+        this.logger.debug(
+            `Starting auto blockchain time advance (every ${intervalMs}ms)`
+        );
+
+        this.autoTimeAdvanceInterval = setInterval(
+            () =>
+                retry(() => time.increase(1), {
+                    maxRetries: 30,
+                    delayMs: 5,
+                    useExponentialBackoff: false
+                }),
+            intervalMs
+        );
+    }
+
     async cleanup(): Promise<void> {
         this.logger.debug("Starting cleanup...");
+
+        // Stop auto time advancement
+        clearInterval(this.autoTimeAdvanceInterval);
 
         // Cleanup peers
         for (const peer of this.peers) {

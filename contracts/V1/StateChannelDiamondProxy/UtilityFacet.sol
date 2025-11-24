@@ -256,14 +256,12 @@ contract UtilityFacet {
         bool auditingDataIntegrityVerified
     ) public pure returns (bool) {
         if (auditingDataIntegrityVerified) {
-            if (
-                dispute.input.genesisSnapshotDataHash
-                    != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData))
-            ) return false;
+            if (dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData))) {
+                return false;
+            }
         } else {
             require(
-                dispute.input.genesisSnapshotDataHash
-                    == keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData)),
+                dispute.input.forkId == keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData)),
                 ErrorDisputeGenesisInvalid()
             );
         }
@@ -290,23 +288,21 @@ contract UtilityFacet {
                 // no blocks at all => genesis == latest
                 if (auditingDataIntegrityVerified) {
                     if (
-                        dispute.input.genesisSnapshotDataHash != latestSnapshotDataHash
+                        dispute.input.forkId != latestSnapshotDataHash
                             || dispute.input.latestStateSnapshotHash != latestSnapshotHash
                     ) return false;
                 } else {
                     require(
-                        dispute.input.genesisSnapshotDataHash == latestSnapshotDataHash
+                        dispute.input.forkId == latestSnapshotDataHash
                             && dispute.input.latestStateSnapshotHash == latestSnapshotHash,
                         ErrorIncorrectSnapshotProvided()
                     );
                 }
             } else {
                 //check if signedBlocks are linked, signed and built on genesis
-                if (
-                    !_areSignedBlocksLinkedAndVerified(
-                        dispute.input.stateProof.signedBlocks, dispute.input.genesisSnapshotDataHash
-                    )
-                ) return false;
+                if (!_areSignedBlocksLinkedAndVerified(dispute.input.stateProof.signedBlocks, dispute.input.forkId)) {
+                    return false;
+                }
 
                 Block memory lastBlock = abi.decode(
                     dispute.input.stateProof.signedBlocks[dispute.input.stateProof.signedBlocks.length - 1].encodedBlock,

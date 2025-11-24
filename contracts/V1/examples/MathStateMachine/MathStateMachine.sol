@@ -142,7 +142,12 @@ contract MathStateMachine is AStateMachine {
     }
 
     function getTotalStateBalance() public view override returns (Balance memory totalBalance) {
-        totalBalance.amount = state.number;
+        // Calculate the sum of all participant balances
+        uint256 sum = 0;
+        for (uint256 i = 0; i < state.balances.length; i++) {
+            sum += state.balances[i];
+        }
+        totalBalance.amount = sum;
         return totalBalance;
     }
 

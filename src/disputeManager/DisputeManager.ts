@@ -73,8 +73,12 @@ class DisputeManager {
         try {
             await this.mutex.lock();
             if (this.storage.disputes.didIDispute(forkId)) return;
-            const { disputeConfirmation, auditingData, fraudProofsToApply } =
-                await this.constructDispute(forkId);
+            const {
+                dispute,
+                disputeConfirmation,
+                auditingData,
+                fraudProofsToApply
+            } = await this.constructDispute(forkId);
 
             const pendingParticipants =
                 await this.stateChannelManagerContract.getPendingParticipants(
@@ -163,12 +167,12 @@ class DisputeManager {
         } catch (error) {
             if (isCustomEvmError(error)) {
                 this.logger.error("Error killing dispute", {
-                    forkId: dispute.input.genesisSnapshotDataHash,
+                    forkId: dispute.input.forkId,
                     errorDescription: error.errorDescription
                 });
             } else {
                 this.logger.error("Error killing dispute", {
-                    forkId: dispute.input.genesisSnapshotDataHash,
+                    forkId: dispute.input.forkId,
                     error:
                         error instanceof Error ? error.message : String(error)
                 });
@@ -278,7 +282,7 @@ class DisputeManager {
 
         const disputeInput: DisputeInputStruct = {
             channelId: this.channelId,
-            genesisSnapshotDataHash: forkId,
+            forkId: forkId,
             latestStateSnapshotHash: latestStateSnapshot.hash,
             stateProof: stateProof,
             onChainSlashes: Array.from(onChainSlashes),

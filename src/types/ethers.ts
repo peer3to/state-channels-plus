@@ -78,9 +78,7 @@ ${JoinChannelEthersType}[] joinChannels
 
 export const ExitChannelEthersType = `tuple(
 address participant,
-bool isPartialExit,
-uint amount,
-bytes data
+${BalanceEthersType} balance,
 )`;
 
 export const ExitChannelBlockEthersType = `tuple(

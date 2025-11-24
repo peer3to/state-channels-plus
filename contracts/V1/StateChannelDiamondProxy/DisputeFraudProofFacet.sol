@@ -227,7 +227,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
 
         uint256 timestamp = StateChannelManagerProxy(address(this)).getDisputeWindowCreationTimestamp(
-            dispute.input.channelId, dispute.input.genesisSnapshotDataHash
+            dispute.input.channelId, dispute.input.forkId
         );
 
         address[] memory onChainSlashes = getOnChainSlashedParticipantsUpToTimestamp(dispute.input.channelId, timestamp);
@@ -333,12 +333,12 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (dispute.input.timeout.participant == address(0)) return address(0); // the calling context may decide to slash the caller
 
         uint256 timeoutTimestamp = StateChannelManagerProxy(address(this)).getDisputeWindowCreationTimestamp(
-            dispute.input.channelId, dispute.input.genesisSnapshotDataHash
+            dispute.input.channelId, dispute.input.forkId
         );
         uint256 previousTimestamp;
         (bool hasBlock, SignedBlock memory latestSignedBlock) = _getLatestSignedBlock(dispute.input.stateProof);
         bytes32 channelId = dispute.input.channelId;
-        bytes32 forkId = dispute.input.genesisSnapshotDataHash;
+        bytes32 forkId = dispute.input.forkId;
         bytes32 originForkId = proof.auditingData.genesisStateSnapshotData.originForkId;
         if (!hasBlock) {
             // genesis
@@ -422,7 +422,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             // genesis
             bytes32 originForkId = timeoutCalldataPostedProof.auditingData.genesisStateSnapshotData.originForkId;
             (bool hasGenesis, uint256 genesisTimestamp) =
-                getGenesisTimestamp(dispute.input.channelId, originForkId, dispute.input.genesisSnapshotDataHash);
+                getGenesisTimestamp(dispute.input.channelId, originForkId, dispute.input.forkId);
             require(hasGenesis, ErrorGenesisTimestampNotAvailable());
             previousTimestamp = genesisTimestamp;
         } else {

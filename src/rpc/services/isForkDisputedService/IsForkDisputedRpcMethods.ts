@@ -27,7 +27,7 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
             );
 
         if (!isDisputed) {
-            this.service.logger.debug(
+            this.service.logger.verbose(
                 `Fork ${forkId} is NOT disputed on local diamond, responding`
             );
             // check on-chain
@@ -38,7 +38,7 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
                 );
         }
         if (isDisputed) {
-            this.service.logger.debug(
+            this.service.logger.verbose(
                 `Fork ${forkId} is disputed on-chain, responding`
             );
             return this.service.respondToDisputeAcknowledgment(
@@ -62,7 +62,7 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
         channelId: ChannelId,
         forkId: ForkId
     ) {
-        this.service.logger.debug(
+        this.service.logger.verbose(
             `Received dispute acknowledgment response for fork ${forkId}`
         );
 

@@ -135,7 +135,8 @@ async function main() {
     const env = {
         ...process.env,
         LOG_LEVEL: process.env.LOG_LEVEL || "error",
-        DISCOVERY_PORT: process.env.DISCOVERY_PORT || "2001",
+        // Assign unique discovery port based on worker index or PID
+        DISCOVERY_PORT: (2001 + (idx % 1000)).toString(), // 2001-3000 range
         // Force color output even when piped
         FORCE_COLOR: "1",
         TERM: process.env.TERM || "xterm-256color"

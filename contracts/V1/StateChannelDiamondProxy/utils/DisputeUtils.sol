@@ -8,7 +8,7 @@ function _getDisputeChannel(Dispute memory dispute) pure returns (bytes32) {
 }
 
 function _getDisputeFork(Dispute memory dispute) pure returns (bytes32) {
-    return dispute.input.genesisSnapshotDataHash;
+    return dispute.input.forkId;
 }
 
 function _areDisputeAndBlockSameFork(Dispute memory dispute, Block memory _block) pure returns (bool) {
@@ -91,11 +91,7 @@ function _isEvidencePeriodExpired(DisputeWindow storage disputeWindow, uint256 e
 function _isKillPeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime) view returns (bool, uint256) {
     uint256 killPeriodEnd = disputeWindow.evidence.creationTimestamp + evidenceTime;
     bool isExpired = block.timestamp >= killPeriodEnd && _isDisputeWidnowCreated(disputeWindow);
-    uint256 timeRemaining;
-    if (!isExpired) {
-        timeRemaining = killPeriodEnd > block.timestamp ? killPeriodEnd - block.timestamp : 0;
-    }
-    return (isExpired, timeRemaining);
+    return (isExpired, killPeriodEnd);
 }
 
 function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime)

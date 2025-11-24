@@ -50,7 +50,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         address[] memory selfRemovalParticipants = new address[](disputes.length);
         require(disputes.length > 0, ErrorNoDisputesProvided());
         DisputeData storage disputeData = disputeData[disputes[0].input.channelId];
-        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.genesisSnapshotDataHash];
+        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.forkId];
         uint256 disputeWindowExpirationTimestamp =
             disputeWindow.evidence.lastEvidenceSubmissionTimestamp + getEvidenceTime();
         SnapshotData storage snapshotData = stateSnapshots[disputes[0].input.channelId].snapshotData;
@@ -145,10 +145,10 @@ contract DisputeVerificationFacet is StateChannelCommon {
     ) public {
         require(disputes.length > 0, ErrorNoDisputesProvided());
         bytes32 channelId = disputes[0].input.channelId;
-        bytes32 forkId = disputes[0].input.genesisSnapshotDataHash;
+        bytes32 forkId = disputes[0].input.forkId;
         require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
         DisputeData storage disputeData = disputeData[channelId];
-        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.genesisSnapshotDataHash];
+        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.forkId];
         //require all disputes are part of commitment
         require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
         //require reduce challenge period is not expired - this also assures it's committed
@@ -186,11 +186,11 @@ contract DisputeVerificationFacet is StateChannelCommon {
     ) public {
         require(disputes.length > 0, ErrorNoDisputesProvided());
         bytes32 channelId = disputes[0].input.channelId;
-        bytes32 forkId = disputes[0].input.genesisSnapshotDataHash;
+        bytes32 forkId = disputes[0].input.forkId;
         require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
 
         DisputeData storage _disputeData = disputeData[channelId];
-        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[disputes[0].input.genesisSnapshotDataHash];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[disputes[0].input.forkId];
         // require that provided disputes correspond to committed set
         require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
 
@@ -489,9 +489,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         // Doesn't check data integrity (disputeAuditingDataHash == hash(disputeAuditingData))
 
         // Check dispute commits to genesisStateSnapshot
-        if (
-            dispute.input.genesisSnapshotDataHash != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData))
-        ) return false;
+        if (dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData))) return false;
 
         // Check latestStateSnapshot
         (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
@@ -506,8 +504,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         }
         if (
             !hasBlock
-                && dispute.input.genesisSnapshotDataHash
-                    != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData))
+                && dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData))
         ) {
             return false;
         }

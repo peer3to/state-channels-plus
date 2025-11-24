@@ -105,18 +105,43 @@ async function deployFacetsLocal(
     );
 }
 
+export type TimeConfig = {
+    p2pTime?: number;
+    agreementTime?: number;
+    chainFallbackTime?: number;
+    evidenceTime?: number;
+};
+
+export function getTimeConfig(overrides?: TimeConfig): TimeConfig {
+    return {
+        p2pTime: overrides?.p2pTime ?? 0,
+        agreementTime: overrides?.agreementTime ?? 0,
+        chainFallbackTime: overrides?.chainFallbackTime ?? 0,
+        evidenceTime: overrides?.evidenceTime ?? 0
+    };
+}
+
 export async function deploy(
     stateMachineAddress: string,
     consumerFacetAddress: string,
-    signer: Signer
+    signer: Signer,
+    timeConfigOverrides?: TimeConfig
 ): Promise<{ address: string; contract: StateChannelManagerProxy }> {
     const facetAddresses = await deployFacets(signer);
-
+    const timeConfig = getTimeConfig(timeConfigOverrides);
     return deployArtifact<StateChannelManagerProxy>(
         StateChannelManagerProxyArtifact,
         signer,
         {
-            args: [stateMachineAddress, ...facetAddresses, consumerFacetAddress]
+            args: [
+                stateMachineAddress,
+                ...facetAddresses,
+                consumerFacetAddress,
+                timeConfig.p2pTime,
+                timeConfig.agreementTime,
+                timeConfig.chainFallbackTime,
+                timeConfig.evidenceTime
+            ]
         }
     );
 }
@@ -124,7 +149,8 @@ export async function deploy(
 export async function deployLocalDiamond(
     stateMachineTx: ContractDeployTransaction,
     evm: EVM,
-    signer?: Signer
+    signer?: Signer,
+    timeConfigOverrides?: TimeConfig
 ): Promise<DeploymentResult> {
     const usedSigner = signer || Wallet.createRandom();
 
@@ -134,12 +160,21 @@ export async function deployLocalDiamond(
         await deployLocalFromTx(stateMachineTx, evm)
     ).toString();
 
+    const timeConfig = getTimeConfig(timeConfigOverrides);
+
     const diamondAddress = await deployArtifactLocal(
         LocalDiamondArtifact,
         evm,
         usedSigner,
         {
-            args: [stateMachineAddress, ...facetAddresses]
+            args: [
+                stateMachineAddress,
+                ...facetAddresses,
+                timeConfig.p2pTime,
+                timeConfig.agreementTime,
+                timeConfig.chainFallbackTime,
+                timeConfig.evidenceTime
+            ]
         }
     );
 
