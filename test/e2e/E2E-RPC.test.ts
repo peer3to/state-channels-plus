@@ -10,6 +10,7 @@ import { hash } from "../factory";
 import { ATransport } from "@/transport";
 import { ethers } from "ethers";
 import Clock from "@/Clock";
+import { LocalDiscoveryServer } from "@/utils/LocalDiscoveryServer";
 
 describe("E2E: RPC Services", function () {
     let harness: PeerTestHarness<MathStateMachine>;
@@ -546,13 +547,8 @@ describe("E2E: RPC Services", function () {
     });
 
     describe("InitHandshake RPC", function () {
-        let LocalDiscoveryServer: (typeof import("@/utils/LocalDiscoveryServer"))["LocalDiscoveryServer"];
-
         beforeEach(async function () {
             harness = new PeerTestHarness<MathStateMachine>();
-            LocalDiscoveryServer = (
-                await import("@/utils/LocalDiscoveryServer")
-            ).LocalDiscoveryServer;
             await harness.setup(3, { autoConnect: false });
             await harness.openChannel();
         });
