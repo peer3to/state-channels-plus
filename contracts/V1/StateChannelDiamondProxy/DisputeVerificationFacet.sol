@@ -46,6 +46,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         uint256 maxSlashCount;
         uint256 slashCount;
         uint256 selfRemovalCount;
+        bool latestBlockInitialized;
         address[] memory slashParticipants;
         address[] memory selfRemovalParticipants = new address[](disputes.length);
         require(disputes.length > 0, ErrorNoDisputesProvided());
@@ -83,12 +84,22 @@ contract DisputeVerificationFacet is StateChannelCommon {
             (bool hasBlock, Block memory disputeLatestBlock) = _getLatestBlock(stateProof);
 
             // Take the latest block possible
-            if (
-                hasBlock
-                    && disputeLatestBlock.transaction.header.transactionCnt
-                        >= reducedOutput.latestBlock.transaction.header.transactionCnt
-            ) {
-                reducedOutput.latestBlock = disputeLatestBlock;
+            if (hasBlock) {
+                uint256 candidateTxCount = disputeLatestBlock.transaction.header.transactionCnt;
+                if (!latestBlockInitialized) {
+                    reducedOutput.latestBlock = disputeLatestBlock;
+                    latestBlockInitialized = true;
+                } else {
+                    uint256 currentTxCount = reducedOutput.latestBlock.transaction.header.transactionCnt;
+                    if (candidateTxCount > currentTxCount) {
+                        reducedOutput.latestBlock = disputeLatestBlock;
+                    } else if (
+                        candidateTxCount == currentTxCount
+                            && _getBlockHash(disputeLatestBlock) < _getBlockHash(reducedOutput.latestBlock)
+                    ) {
+                        reducedOutput.latestBlock = disputeLatestBlock;
+                    }
+                }
             }
             // Note: If no disputes have blocks (genesis case), latestBlock remains uninitialized.
             // This is handled properly in reduceOutputToSnapshotData() and getReduceData() functions.
