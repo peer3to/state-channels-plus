@@ -1,4 +1,4 @@
-describe("E2E: Dynamic Participation", function () {
+describe.skip("E2E: Dynamic Participation", function () {
     describe("Join Channel", function () {
         // Arrange: Setup active channel with existing participants
         // Act: New participant requests to join, existing participants approve

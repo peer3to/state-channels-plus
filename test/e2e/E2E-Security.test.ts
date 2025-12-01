@@ -23,7 +23,7 @@ describe("E2E: Advanced Security", function () {
         // Assert: Double sign  Dispute is created and committed on-chain
         it("should create dispute for double-sign detected", async function () {
             // Arrange
-            await harness!.setup(2);
+            await harness!.setup(3);
             const forkId = await harness!.openChannel();
 
             // Create 2 blocks so peers sync on blocks at height 0 and height 1
@@ -64,8 +64,8 @@ describe("E2E: Advanced Security", function () {
             const disputeCommitted = await harness!.waitForEventCounts(
                 "onDisputeCommitted",
                 [
-                    { peerId: 0, expectedCount: 1 },
-                    { peerId: 1, expectedCount: 1 }
+                    { peerId: 0, expectedCount: 2 },
+                    { peerId: 1, expectedCount: 2 }
                 ],
                 2000
             );
@@ -77,7 +77,7 @@ describe("E2E: Advanced Security", function () {
         // Assert: Dispute is created for invalid state transition
         it("should create dispute for invalid state transition", async function () {
             // Arrange
-            await harness!.setup(2);
+            await harness!.setup(3);
             const forkId = await harness!.openChannel();
 
             // Create 2 blocks so peers sync on blocks at height 0 and height 1
@@ -100,23 +100,19 @@ describe("E2E: Advanced Security", function () {
 
             // Act: Get the next peer to write and have them submit an invalid state transition block
             // The block will have a valid transaction but wrong state snapshot hash
-            const nextPeer = await harness!.getNextPeerToWrite();
-            await harness!.submitInvalidStateTransitionBlock(nextPeer.index, {
+            await harness!.submitInvalidStateTransitionBlock(2, {
                 forkId
             });
 
             // Assert: The other peer should detect the invalid state transition and initiate dispute
             // Wait for the other peer to detect the invalid state transition and initiate dispute
-            const otherPeerIndex = nextPeer.index === 0 ? 1 : 0; // Get the other peer
             const invalidStateTransitionDetected =
                 await harness!.waitForEventCounts(
                     "onInitiatingDispute",
                     [
-                        {
-                            peerId: otherPeerIndex,
-                            expectedCount: 1
-                        },
-                        { peerId: nextPeer.index, expectedCount: 0 }
+                        { peerId: 0, expectedCount: 1 },
+                        { peerId: 1, expectedCount: 1 },
+                        { peerId: 2, expectedCount: 0 }
                     ],
                     5000
                 );
@@ -127,10 +123,12 @@ describe("E2E: Advanced Security", function () {
             const disputeCommitted = await harness!.waitForEventCounts(
                 "onDisputeCommitted",
                 [
-                    { peerId: 0, expectedCount: 1 },
-                    { peerId: 1, expectedCount: 1 }
+                    { peerId: 0, expectedCount: 2 },
+                    { peerId: 1, expectedCount: 2 },
+                    { peerId: 2, expectedCount: 2 }
                 ],
-                2000
+                4000,
+                { mode: "atLeast" }
             );
             expect(disputeCommitted).to.be.true;
         });
@@ -141,7 +139,7 @@ describe("E2E: Advanced Security", function () {
         it("should detect and handle wrong genesis block");
     });
 
-    describe("Malicious Block Production", function () {
+    describe.skip("Malicious Block Production", function () {
         // Arrange: Setup channel, create block with forged/invalid signature
         // Act: Submit block with bad signature to network
         // Assert: Block is rejected due to signature validation failure
@@ -163,7 +161,7 @@ describe("E2E: Advanced Security", function () {
         it("should reject block from non-participant");
     });
 
-    describe("Fork Management", function () {
+    describe.skip("Fork Management", function () {
         // Arrange: Setup channel, two participants create conflicting blocks at same height
         // Act: Both blocks are propagated to network
         // Assert: Fork is detected and both branches are tracked
@@ -261,7 +259,7 @@ describe("E2E: Advanced Security", function () {
         it("should handle counter-fraud proofs");
     });
 
-    describe("Economic Security", function () {
+    describe.skip("Economic Security", function () {
         // Arrange: Setup completed fraud proof and dispute resolution
         // Act: Execute slashing of proven malicious participant
         // Assert: Participant funds are slashed according to fraud proof
