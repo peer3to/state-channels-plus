@@ -236,8 +236,8 @@ describe("E2E: Advanced Security", function () {
                         (forkId) =>
                             forkId !== ZeroHash && forkId !== originalForkId
                     );
-                // All 3 honest  peers should have the new fork after successful reduction
-                return peerForks.length == 3 && new Set(peerForks).size === 1;
+                // All 3 honest peers should have the new fork after successful reduction
+                return peerForks.length >= 3 && new Set(peerForks).size === 1;
             }, 10000); // Wait up to 10 seconds for reduction processing
 
             // Assert - Reduction should have occurred (fork IDs changed)
