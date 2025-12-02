@@ -187,10 +187,11 @@ class StateManager {
         }
         this.reductionTriggerMap.clear();
 
-        await this.timeoutManager.dispose();
-
-        this.stateChannelEventListener.dispose();
-        await this.p2pManager.dispose();
+        await Promise.all([
+            this.timeoutManager.dispose(),
+            this.stateChannelEventListener.dispose(),
+            this.p2pManager.dispose()
+        ]);
     }
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
         this.p2pEventHooks = p2pEventHooks;
