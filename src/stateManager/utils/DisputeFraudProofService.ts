@@ -53,7 +53,7 @@ export default class DisputeFraudProofService {
         };
 
         return this.storeFraudProof(dispute, {
-            type: DisputeFraudProofType.DisputeInvalidOutputState,
+            type: DisputeFraudProofType.DisputeNotLatestState,
             struct: proof
         });
     }
