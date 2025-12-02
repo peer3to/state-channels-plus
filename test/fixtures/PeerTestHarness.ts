@@ -380,7 +380,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
 
         if (this.options.autoConnect) {
-            await this.connectPeers();
+            await this.connectAllPeers();
         }
 
         const signatures = await Promise.all(
@@ -495,7 +495,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         return this.activeForkId;
     }
 
-    async connectPeers(): Promise<void> {
+    async connectAllPeers(): Promise<void> {
         this.logger.debug("Connecting peers...");
         const started = await LocalDiscoveryServer.tryStart();
         if (started) {
@@ -503,6 +503,25 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
         await this.waitForP2PConnections();
         this.logger.debug("All peers connected successfully");
+    }
+
+    async connectPeers(peerIndices: number[]): Promise<void> {
+        const started = await LocalDiscoveryServer.tryStart();
+        if (started) {
+            this.logger.verbose("Discovery server started");
+        }
+
+        // Connect each peer in the subset
+        await Promise.all(
+            peerIndices.map((index) =>
+                LocalDiscoveryServer.connectToPeers(
+                    this.peers[index].stateManager.p2pManager,
+                    this.channelId?.toString()
+                )
+            )
+        );
+
+        await this.waitForP2PConnections();
     }
 
     async waitForP2PConnections(timeoutMs?: number): Promise<void> {
