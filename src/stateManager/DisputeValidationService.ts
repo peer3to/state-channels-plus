@@ -308,9 +308,7 @@ export default class DisputeValidationService {
             // timedout block cooridantes
             const cooridnates = {
                 forkId: disputeAuditingData.latestStateSnapshot.forkId,
-                height: Number(
-                    disputeAuditingData.latestStateSnapshot.blockHeight
-                )
+                height: Number(dispute.input.timeout.blockHeight)
             };
             // participant set at timedout block
             const participants = this.storage.getParticipants(cooridnates);
@@ -393,8 +391,8 @@ export default class DisputeValidationService {
             // TODO - think if it's <= or <
             if (
                 timeoutTimestamp <
-                previousTimestamp +
-                    this.stateManager.getTimeoutWaitTimeSeconds()
+                BigInt(previousTimestamp) +
+                    BigInt(this.stateManager.getTimeoutWaitTimeSeconds())
             ) {
                 this.disputeFraudProofService.createTimeoutTooEarly(
                     dispute,
