@@ -16,4 +16,3 @@ export * from "./hash";
 export * from "./evmErrorHandler";
 export * from "./PeerLogger";
 export * from "./StaticCallProxy";
-export * from "./bigInt";
