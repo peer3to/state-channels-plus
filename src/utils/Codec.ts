@@ -260,7 +260,10 @@ export class Codec {
         type: Type.ExitChannelBlock
     ): ExitChannelBlockStruct;
 
-    public static decode<T extends StructType>(encoded: Bytes, type: Type): T {
+    public static decode<T extends StructType>(
+        encoded: Bytes,
+        type: Type | FraudProofType | DisputeFraudProofType
+    ): T {
         const ethersType = this.structToEthersType.get(type);
         if (!ethersType) {
             throw new Error(`No ethers type mapping found for ${type}`);
