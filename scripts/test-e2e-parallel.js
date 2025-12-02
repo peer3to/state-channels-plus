@@ -135,7 +135,6 @@ async function main() {
     const env = {
         ...process.env,
         LOG_LEVEL: process.env.LOG_LEVEL || "error",
-        // Assign unique discovery port based on worker index or PID
         DISCOVERY_PORT: process.env.DISCOVERY_PORT || "2001",
         // Force color output even when piped
         FORCE_COLOR: "1",
