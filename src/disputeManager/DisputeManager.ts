@@ -172,12 +172,12 @@ class DisputeManager {
         } catch (error) {
             if (isCustomEvmError(error)) {
                 this.logger.error("Error killing dispute", {
-                    forkId: dispute.input.genesisSnapshotDataHash,
+                    forkId: dispute.input.forkId,
                     errorDescription: error.errorDescription
                 });
             } else {
                 this.logger.error("Error killing dispute", {
-                    forkId: dispute.input.genesisSnapshotDataHash,
+                    forkId: dispute.input.forkId,
                     error:
                         error instanceof Error ? error.message : String(error)
                 });
