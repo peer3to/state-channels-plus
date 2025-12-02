@@ -1,9 +1,5 @@
 import { expect } from "chai";
-import {
-    PeerTestHarness,
-    TestPeer,
-    sleep
-} from "@test/fixtures/PeerTestHarness";
+import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
 import { AStateMachine, MathStateMachine } from "@typechain-types/index";
 import { ForkId } from "@/types/types";
 import { hash } from "../factory";
@@ -553,10 +549,6 @@ describe("E2E: RPC Services", function () {
             await harness.openChannel();
         });
 
-        afterEach(async function () {
-            await sleep(100);
-        });
-
         // =================================================================
         // Helper Functions
         // =================================================================
@@ -579,11 +571,11 @@ describe("E2E: RPC Services", function () {
             // Arrange
             const initiatingPeer = harness.peers[0];
             const peer1 = harness.peers[1];
-            LocalDiscoveryServer.connectToPeers(
+            await LocalDiscoveryServer.connectToPeers(
                 initiatingPeer.stateManager.p2pManager,
                 harness.channelId?.toString()
             );
-            LocalDiscoveryServer.connectToPeers(
+            await LocalDiscoveryServer.connectToPeers(
                 peer1.stateManager.p2pManager,
                 harness.channelId?.toString()
             );
