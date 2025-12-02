@@ -4,8 +4,6 @@ import { ChannelId } from "@/types/types";
 
 import { EventHandler } from "@/eventHandlers/EventHandler";
 import { Codec } from "@/utils";
-import { Result } from "ethers";
-import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 //TODO - made a PR to ethers.js to fix Deferred Topic Filter
 
@@ -28,7 +26,7 @@ class StateChannelEventListener {
     private async setListener(
         key: string,
         filterFactory: () => any,
-        handler: (logObj: any) => Promise<void> | void
+        handler: (logObj: any) => Promise<void>
     ) {
         if (this.filters[key]) {
             await this.stateChannelManagerContract.off(this.filters[key]);
@@ -81,7 +79,7 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.BlockCalldataPosted(
                     channelId
                 ),
-            handler: (logObj: any) => {
+            handler: async (logObj: any) => {
                 const {
                     channelId,
                     commitmentHash,
@@ -89,7 +87,7 @@ class StateChannelEventListener {
                     signedBlock,
                     timestamp
                 } = logObj.args;
-                this.eventHandler.onBlockCalldataPosted(
+                await this.eventHandler.onBlockCalldataPosted(
                     channelId,
                     commitmentHash,
                     sender,
@@ -104,7 +102,7 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.DisputeCommitted(
                     channelId
                 ),
-            handler: (logObj: any) => {
+            handler: async (logObj: any) => {
                 const {
                     channelId,
                     disputeConfirmation,
@@ -113,7 +111,7 @@ class StateChannelEventListener {
                     windowCreationTimestamp
                 } = logObj.args;
 
-                this.eventHandler.onDisputeCommitted(
+                await this.eventHandler.onDisputeCommitted(
                     channelId,
                     Codec.convertEthersResultToObject(disputeConfirmation),
                     disputeCreationTimestamp,
@@ -127,9 +125,9 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.ChainSlashed(
                     channelId
                 ),
-            handler: (logObj: any) => {
+            handler: async (logObj: any) => {
                 const { channelId, participant, timestamp } = logObj.args;
-                this.eventHandler.onChainSlashed(
+                await this.eventHandler.onChainSlashed(
                     channelId,
                     participant,
                     timestamp
@@ -141,7 +139,7 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.DisputeReducedResultCommitted(
                     channelId
                 ),
-            handler: (logObj: any) => {
+            handler: async (logObj: any) => {
                 const {
                     forkId,
                     channelId,
@@ -149,7 +147,7 @@ class StateChannelEventListener {
                     reductionTimestamp,
                     reducer
                 } = logObj.args;
-                this.eventHandler.onDisputeReducedResultCommitted(
+                await this.eventHandler.onDisputeReducedResultCommitted(
                     channelId,
                     forkId,
                     reducedForkId,
@@ -163,7 +161,7 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.DisputeCommittedWithAuditingData(
                     channelId
                 ),
-            handler: (logObj: any) => {
+            handler: async (logObj: any) => {
                 const {
                     channelId,
                     dispute,
@@ -172,7 +170,7 @@ class StateChannelEventListener {
                     windowCreationTimestamp,
                     disputeAuditingData
                 } = logObj.args;
-                this.eventHandler.onDisputeCommitted(
+                await this.eventHandler.onDisputeCommitted(
                     channelId,
                     dispute,
                     disputeCreationTimestamp,
@@ -187,9 +185,9 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.WithdrawalsUpdated(
                     channelId
                 ),
-            handler: (logObj: any) => {
+            handler: async (logObj: any) => {
                 const { channelId, totalWithdrawals } = logObj.args;
-                this.eventHandler.onWithdrawalsUpdated(
+                await this.eventHandler.onWithdrawalsUpdated(
                     channelId,
                     totalWithdrawals
                 );
@@ -200,9 +198,9 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.ChannelStorageCleared(
                     channelId
                 ),
-            handler: (logObj: any) => {
+            handler: async (logObj: any) => {
                 const { channelId, latestJoinChannelBlockHash } = logObj.args;
-                this.eventHandler.onChannelStorageCleared(
+                await this.eventHandler.onChannelStorageCleared(
                     channelId,
                     latestJoinChannelBlockHash
                 );
@@ -213,9 +211,13 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.DisputeKilled(
                     channelId
                 ),
-            handler: (logObj: any) => {
+            handler: async (logObj: any) => {
                 const { channelId, forkId, disputer } = logObj.args;
-                this.eventHandler.onDisputeKilled(channelId, forkId, disputer);
+                await this.eventHandler.onDisputeKilled(
+                    channelId,
+                    forkId,
+                    disputer
+                );
             }
         },
 
@@ -224,14 +226,14 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.JoinChannelProcessed(
                     channelId
                 ),
-            handler: (logObj: any) => {
+            handler: async (logObj: any) => {
                 const {
                     channelId,
                     joinChannelBlock,
                     timestamp,
                     totalDeposits
                 } = logObj.args;
-                this.eventHandler.onJoinChannelProcessed(
+                await this.eventHandler.onJoinChannelProcessed(
                     channelId,
                     joinChannelBlock,
                     timestamp,
