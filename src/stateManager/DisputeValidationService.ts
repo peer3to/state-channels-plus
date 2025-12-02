@@ -25,6 +25,9 @@ export default class DisputeValidationService {
     private readonly agreementManager: AgreementManager;
     private readonly logger: Logger;
     constructor(private readonly stateManager: StateManager) {
+        this.logger = stateManager.logger.child({
+            component: "DisputeValidationService"
+        });
         this.storage = stateManager.storage;
         this.diamondStateMachine = stateManager.diamondStateMachine;
         this.stateChannelManagerContract =
@@ -32,11 +35,9 @@ export default class DisputeValidationService {
         this.disputeManager = stateManager.disputeManager;
         this.agreementManager = stateManager.agreementManager;
         this.disputeFraudProofService = new DisputeFraudProofService(
-            this.storage
+            this.storage,
+            this.logger
         );
-        this.logger = stateManager.logger.child({
-            component: "DisputeValidationService"
-        });
     }
 
     async validateDispute(
@@ -121,7 +122,7 @@ export default class DisputeValidationService {
             )
         ) {
             // stateProof is correct -> dispute.auditingDataHash is junk
-            this.disputeFraudProofService.createDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks(
+            this.disputeFraudProofService.createDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks(
                 dispute,
                 disputeAuditingData
             );
@@ -405,14 +406,8 @@ export default class DisputeValidationService {
                 return false;
             }
 
-            // [check] N/N Threshold - only for normal timeouts
-            // For forced timeouts: skip this check
-            //   the participant just posted junk calldata, so we timeout them anyway.
-            if (
-                !dispute.input.timeout.isForced &&
-                block &&
-                block.didEveryoneSign(participants)
-            ) {
+            // [check] N/N Threshold
+            if (block && block.didEveryoneSign(participants)) {
                 this.disputeFraudProofService.createTimeoutThreshold(
                     dispute,
                     disputeAuditingData,

@@ -49,8 +49,11 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         }
         if (
             proofType
-                == DisputeFraudProofType.DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks
-        ) return _handleDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks;
+                == DisputeFraudProofType
+                    .DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks
+        ) {
+            return _handleDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks;
+        }
         if (proofType == DisputeFraudProofType.DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified) {
             return _handleDisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified;
         }
@@ -151,12 +154,12 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return address(0); // all good - the calling context may decide to slash the caller
     }
 
-    function _handleDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks(
+    function _handleDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks(
         bytes memory encodedFraudProof,
         Dispute memory dispute
     ) internal returns (address) {
-        DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks memory proof = abi.decode(
-            encodedFraudProof, (DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks)
+        DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks memory proof = abi.decode(
+            encodedFraudProof, (DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks)
         );
         // Expect commitment to be invalid/junk
         if (_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return address(0); // the calling context may decide to slash the caller
@@ -385,6 +388,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         TimeoutCalldataPosted memory timeoutCalldataPostedProof = abi.decode(encodedFraudProof, (TimeoutCalldataPosted));
         SignedBlock memory postedBlock = timeoutCalldataPostedProof.postedBlock;
         Block memory _block = abi.decode(postedBlock.encodedBlock, (Block));
+        StateSnapshot memory latestStateSnapshot = timeoutCalldataPostedProof.auditingData.latestStateSnapshot;
 
         // Requires correct auditing data
         require(
@@ -468,13 +472,59 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             return address(0); // the calling context may decide to slash the caller
         }
         // make sure we can do the STF - it's a valid block
-        (bool isSuccess, bytes memory encodedModifiedState) = StateChannelManagerProxy(address(this))
+        bool isSuccess;
+        bytes memory encodedModifiedState;
+        Message[] memory outboundMessages;
+        (isSuccess, encodedModifiedState, outboundMessages) = StateChannelManagerProxy(address(this))
             .executeStateTransition(
             dispute.input.channelId,
             timeoutCalldataPostedProof.auditingData.latestStateStateMachineState,
             _block.transaction
         );
         if (!isSuccess) {
+            return address(0); // the calling context may decide to slash the caller
+        }
+
+        Balance memory updatedTotalWithdrawals = latestStateSnapshot.snapshotData.totalWithdrawals;
+        bytes32 nextOutboundMessageBlockHash = latestStateSnapshot.snapshotData.latestOutboundMessageBlockHash;
+        uint256 outboundHeight = latestStateSnapshot.snapshotData.latestOutboundMessageBlockHeight;
+        if (outboundMessages.length > 0) {
+            for (uint256 i = 0; i < outboundMessages.length; i++) {
+                updatedTotalWithdrawals =
+                    stateMachineImplementation.addBalance(updatedTotalWithdrawals, outboundMessages[i].balance);
+            }
+
+            outboundHeight += 1;
+
+            MessageBlock memory outboundMessageBlock;
+            outboundMessageBlock.previousBlockHash = nextOutboundMessageBlockHash;
+            outboundMessageBlock.blockHeight = outboundHeight;
+            outboundMessageBlock.messages = outboundMessages;
+            outboundMessageBlock.totalBalance = updatedTotalWithdrawals;
+            outboundMessageBlock.timestamp = _block.transaction.header.timestamp;
+            nextOutboundMessageBlockHash = keccak256(abi.encode(outboundMessageBlock));
+        }
+
+        SnapshotData memory newSnapshotData = SnapshotData({
+            originForkId: latestStateSnapshot.forkId,
+            stateMachineStateHash: keccak256(encodedModifiedState),
+            participants: getStateMachineParticipants(encodedModifiedState),
+            latestInboundMessageBlockHash: latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
+            latestInboundMessageBlockHeight: latestStateSnapshot.snapshotData.latestInboundMessageBlockHeight,
+            latestOutboundMessageBlockHash: nextOutboundMessageBlockHash,
+            latestOutboundMessageBlockHeight: outboundHeight,
+            totalDeposits: latestStateSnapshot.snapshotData.totalDeposits,
+            totalWithdrawals: updatedTotalWithdrawals
+        });
+
+        StateSnapshot memory recomputedSnapshot = StateSnapshot({
+            snapshotData: newSnapshotData,
+            forkId: latestStateSnapshot.forkId,
+            blockHeight: latestStateSnapshot.blockHeight + 1,
+            timestamp: _block.transaction.header.timestamp
+        });
+
+        if (_block.stateSnapshotHash != keccak256(abi.encode(recomputedSnapshot))) {
             return address(0); // the calling context may decide to slash the caller
         }
         return dispute.input.disputer;

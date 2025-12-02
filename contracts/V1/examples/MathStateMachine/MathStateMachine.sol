@@ -105,7 +105,14 @@ contract MathStateMachine is AStateMachine {
         return success;
     }
 
-    function _joinChannel(JoinChannel memory joinChannel) internal virtual override returns (bool) {}
+    function _joinChannel(JoinChannel memory joinChannel) internal virtual override returns (bool) {
+        state.participants.push(joinChannel.participant);
+        state.balances.push(joinChannel.balance.amount);
+        if (state.participants.length == 1) {
+            state.currentTurnIndex = 0;
+        }
+        return true;
+    }
 
     function addBalance(Balance memory balance1, Balance memory balance2)
         public

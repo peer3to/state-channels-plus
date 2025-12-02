@@ -8,7 +8,7 @@ contract DisputeFraudProofTypes {
         DisputeInvalidOutputState memory b,
         DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified memory c,
         DisputeInvalidStateProofWithAuditingDataIntegrityVerified memory d,
-        DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks memory e,
+        DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks memory e,
         DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified memory f,
         DisputeInvalidBalanceInvariant memory g,
         DisputeOnChainSlashesNotSubset memory h,
@@ -42,7 +42,7 @@ struct DisputeInvalidStateProofWithAuditingDataIntegrityVerified {
     DisputeAuditingData auditingData;
 }
 
-struct DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks {
+struct DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks {
     DisputeAuditingData auditingData;
 }
 

@@ -22,8 +22,9 @@ import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Codec, hash, Logger, Type } from "@/utils";
 import { isEqual } from "lodash";
-import { ZeroHash } from "ethers";
+import { ZeroHash, ethers } from "ethers";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
+import { MessageBlockStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 export class EventHandler {
     private logger: Logger;
@@ -186,13 +187,13 @@ export class EventHandler {
                     );
                 disputeAuditingData = auditingData;
             }
-            // TODO - after implementing setTimeout -> reduce - come back here
-            throw new Error("Not implemented yet - final dispute");
-            // return this.stateManager.setGenesisState(
-            //     disputeAuditingData.latestStateStateMachineState,
-            //     dispute.outputSnapshotDataHash,
-            //     disputeCreationTimestamp
-            // );
+            await this.stateManager.setGenesisState(
+                disputeAuditingData.latestStateSnapshot.snapshotData,
+                disputeAuditingData.latestStateStateMachineState,
+                dispute.outputSnapshotDataHash as ForkId,
+                disputeCreationTimestamp
+            );
+            return;
         }
 
         // not final - validate dispute and challenge if invalid
@@ -216,7 +217,7 @@ export class EventHandler {
             await this.stateManager.disputeManager.dispute(forkId);
             return;
         }
-        const [_, potentialGenesisTimestamp] =
+        const { timestamp: potentialGenesisTimestamp } =
             await this.diamondStateMachine.localDiamondContract.getGenesisTimestamp(
                 channelId,
                 forkId, // originForkId is this forkId
@@ -364,11 +365,11 @@ export class EventHandler {
 
     async onChannelStorageCleared(
         channelId: ChannelId,
-        latestJoinChannelBlockHash: Hash
+        latestInboundMessageBlockHash: Hash
     ): Promise<void> {
         await this.diamondStateMachine.localDiamondContract.onChannelStorageCleared(
             channelId,
-            latestJoinChannelBlockHash
+            latestInboundMessageBlockHash
         );
     }
 
@@ -405,23 +406,23 @@ export class EventHandler {
         await this.stateManager.disputeManager.dispute(forkId);
     }
 
-    async onJoinChannelProcessed(
+    async onInboundMessagesProcessed(
         channelId: ChannelId,
-        joinChannelBlock: any,
-        timestamp: Timestamp,
-        totalDeposits: any
+        messageBlock: MessageBlockStruct
     ): Promise<void> {
-        await this.diamondStateMachine.localDiamondContract.onJoinChannelProcessed(
+        const messageBlockHash = ethers.keccak256(
+            Codec.encode(messageBlock, Type.MessageBlock)
+        ) as Hash;
+        await this.stateManager.onInboundMessage(
+            messageBlock,
+            messageBlockHash
+        );
+        await this.diamondStateMachine.localDiamondContract.onInboundMessagesProcessed(
             channelId,
-            joinChannelBlock,
-            timestamp,
-            totalDeposits
+            messageBlock
         );
-        await this.stateManager.onJoinChannel(
-            joinChannelBlock,
-            timestamp,
-            totalDeposits
-        );
+
+        // Additional join-channel-specific handling can be placed here if required
     }
 
     private async validateDisputeReductionAndChallenge(
@@ -474,17 +475,18 @@ export class EventHandler {
             throw new Error(
                 `GenesisSnapshot not available for forkId: ${forkId}`
             );
-        const jcbs = this.storage.joinChannelBlocks.getBlocksInRange(
-            genesisSnapshot.snapshotData.latestJoinChannelBlockHash,
-            latestSnapshot.snapshotData.latestJoinChannelBlockHash
-        );
+        const inboundMessageBlocks =
+            this.storage.inboundMessages.getMessageBlocksInRange(
+                genesisSnapshot.snapshotData.latestInboundMessageBlockHash,
+                latestSnapshot.snapshotData.latestInboundMessageBlockHash
+            );
         const [snapshotData] =
             await this.stateManager.stateChannelManagerContract.reduceOutputToSnapshotData.staticCall(
                 forkId,
                 reduceOutput,
                 latestSnapshot,
                 state,
-                jcbs
+                inboundMessageBlocks
             );
 
         const isValid =
@@ -496,7 +498,7 @@ export class EventHandler {
                 disputes,
                 latestSnapshot,
                 state,
-                jcbs
+                inboundMessageBlocks
             );
             return false;
         }

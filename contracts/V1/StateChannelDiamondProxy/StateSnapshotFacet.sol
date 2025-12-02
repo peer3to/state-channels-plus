@@ -11,7 +11,7 @@ contract StateSnapshotFacet is StateChannelCommon {
     function updateStateSnapshotFork(
         bytes32 channelId,
         StateSnapshot memory newStateSnapshot,
-        ExitChannelBlock[] memory exitChannelBlocks
+        MessageBlock[] memory outboundMessageBlocks
     ) external onlySelf {
         StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
         DisputeData storage disputeData = disputeData[channelId];
@@ -32,7 +32,7 @@ contract StateSnapshotFacet is StateChannelCommon {
                 && _isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime())
         ) {
             if (disputeWindow.reducedResult.forkId == targetForkId) {
-                _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, exitChannelBlocks);
+                _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks);
                 updated = true;
                 break;
             }
@@ -45,7 +45,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         bytes32 channelId,
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
-        ExitChannelBlock[] memory exitChannelBlocks
+        MessageBlock[] memory outboundMessageBlocks
     ) external onlySelf {
         require(milestoneSnapshots.length > 0, ErrorSnapshotsNotProvided());
 
@@ -59,20 +59,22 @@ contract StateSnapshotFacet is StateChannelCommon {
             ErrorInvalidStateProof()
         );
 
-        _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, exitChannelBlocks);
+        _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks);
     }
 
     function _updateStateSnapshot(
         bytes32 channelId,
         StateSnapshot memory currentOnChainSnapshot,
         StateSnapshot memory newSnapshot,
-        ExitChannelBlock[] memory exitChannelBlocks
+        MessageBlock[] memory outboundMessageBlocks
     ) internal {
         require(
-            _verifyExitChannelBlocks(exitChannelBlocks, currentOnChainSnapshot.snapshotData, newSnapshot.snapshotData),
-            ErrorExitChannelBlocksInvalid()
+            _verifyOutboundMessageBlocks(
+                outboundMessageBlocks, currentOnChainSnapshot.snapshotData, newSnapshot.snapshotData
+            ),
+            ErrorOutboundMessageBlocksInvalid()
         );
-        _applyExitChannelBlocks(channelId, exitChannelBlocks, newSnapshot.snapshotData.latestJoinChannelBlockHash);
+        _applyOutboundMessageBlocks(channelId, outboundMessageBlocks, newSnapshot.snapshotData);
 
         // Update the state snapshot
         stateSnapshots[channelId] = newSnapshot;
@@ -80,7 +82,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         // Check if channel should be closed (0 participants remaining)
         if (newSnapshot.snapshotData.participants.length == 0) {
             // Clear storage when channel is closed (0 participants)
-            _clearStorage(channelId, newSnapshot.snapshotData.latestJoinChannelBlockHash);
+            _clearStorage(channelId, newSnapshot.snapshotData.latestInboundMessageBlockHash);
             // Clear the state snapshot
             delete stateSnapshots[channelId];
             // TODO! send all remaining funds to the treasury
@@ -88,7 +90,7 @@ contract StateSnapshotFacet is StateChannelCommon {
 
         //check if last fork -> clearStorage
         if (disputeData[channelId].disputeWindowMap[newSnapshot.forkId].evidence.creationTimestamp == 0) {
-            _clearStorage(channelId, newSnapshot.snapshotData.latestJoinChannelBlockHash);
+            _clearStorage(channelId, newSnapshot.snapshotData.latestInboundMessageBlockHash);
         }
         emit StateSnapshotUpdated(channelId, newSnapshot);
     }
@@ -103,38 +105,39 @@ contract StateSnapshotFacet is StateChannelCommon {
         return isValid;
     }
 
-    function _applyExitChannelBlocks(
+    function _applyOutboundMessageBlocks(
         bytes32 channelId,
-        ExitChannelBlock[] memory exitChannelBlocks,
-        bytes32 joinChannelBlockHash
+        MessageBlock[] memory outboundMessageBlocks,
+        SnapshotData memory newSnapshotData
     ) internal {
         ChannelBalance storage cb = channelBalances[channelId];
-        Balance memory totalDeposits = cb.onChainJoinChannelMap[joinChannelBlockHash].totalDeposits;
-        Balance memory totalWithdrawals = cb.totalOnChainWithdrawals;
-        for (uint256 i = 0; i < exitChannelBlocks.length; i++) {
-            for (uint256 j = 0; j < exitChannelBlocks[i].exitChannels.length; j++) {
-                bool success = StateChannelManagerProxy(address(this)).withdrawAssetsComposable(
-                    exitChannelBlocks[i].exitChannels[j]
-                );
+        Balance memory totalDeposits = _resolveTotalDeposits(channelId, newSnapshotData.latestInboundMessageBlockHash);
+        Balance memory totalWithdrawals = cb.totalWithdrawals;
+        for (uint256 i = 0; i < outboundMessageBlocks.length; i++) {
+            for (uint256 j = 0; j < outboundMessageBlocks[i].messages.length; j++) {
+                bool success = _processOutboundMessage(outboundMessageBlocks[i].messages[j]);
                 require(success, ErrorWithdrawalFailed());
 
                 totalWithdrawals = stateMachineImplementation.addBalance(
-                    totalWithdrawals, exitChannelBlocks[i].exitChannels[j].balance
+                    totalWithdrawals, outboundMessageBlocks[i].messages[j].balance
                 );
                 //require withdrawals <= deposits
                 bool isLessThan = stateMachineImplementation.isBalanceLesserThan(totalWithdrawals, totalDeposits);
                 bool isEqual = stateMachineImplementation.areBalancesEqual(totalWithdrawals, totalDeposits);
                 require(isLessThan || isEqual, CantWithdrawMoreThanDeposits());
             }
+            // TODO - this event is not used
+            emit OutboundMessagesProcessed(channelId, outboundMessageBlocks[i], block.timestamp, totalWithdrawals);
         }
-        cb.totalOnChainWithdrawals = totalWithdrawals;
+        cb.totalWithdrawals = totalWithdrawals;
+        cb.latestOutboundMessageBlockHeight = newSnapshotData.latestOutboundMessageBlockHeight;
         emit WithdrawalsUpdated(channelId, totalWithdrawals);
     }
 
-    function _clearStorage(bytes32 channelId, bytes32 snapshotLatestJoinChannelBlockHash) internal {
+    function _clearStorage(bytes32 channelId, bytes32 snapshotLatestInboundMessageBlockHash) internal {
         _clearDisputeData(channelId);
-        _clearOldJoinChannels(channelId, snapshotLatestJoinChannelBlockHash);
-        emit ChannelStorageCleared(channelId, snapshotLatestJoinChannelBlockHash);
+        _clearOldInboundMessageBlocks(channelId, snapshotLatestInboundMessageBlockHash);
+        emit ChannelStorageCleared(channelId, snapshotLatestInboundMessageBlockHash);
     }
 
     function _clearDisputeData(bytes32 channelId) internal {
@@ -148,15 +151,30 @@ contract StateSnapshotFacet is StateChannelCommon {
         delete disputeData.disputedForks;
     }
 
-    function _clearOldJoinChannels(bytes32 channelId, bytes32 snapshotLatestJoinChannelBlockHash) internal {
-        ChannelBalance storage cb = channelBalances[channelId];
-        //start from the previous block hash (keep the current blockHash in storage for easy access even though it's in the snapshot)
-        bytes32 keyToDelete = cb.onChainJoinChannelMap[snapshotLatestJoinChannelBlockHash].previousJoinChannelBlockHash;
+    function _clearOldInboundMessageBlocks(bytes32 channelId, bytes32 snapshotLatestInboundMessageBlockHash) internal {
+        // start from the previous block hash (keep the snapshot head for reference)
+        bytes32 keyToDelete = inboundMessageBlockMap[channelId][snapshotLatestInboundMessageBlockHash].previousBlockHash;
         bytes32 prev;
         while (keyToDelete != bytes32(0)) {
-            prev = cb.onChainJoinChannelMap[keyToDelete].previousJoinChannelBlockHash;
-            delete cb.onChainJoinChannelMap[keyToDelete];
+            prev = inboundMessageBlockMap[channelId][keyToDelete].previousBlockHash;
+            delete inboundMessageBlockMap[channelId][keyToDelete];
             keyToDelete = prev;
         }
+    }
+
+    function _resolveTotalDeposits(bytes32 channelId, bytes32 blockHash) internal view returns (Balance memory) {
+        Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
+        if (blockHash == bytes32(0)) {
+            return zeroBalance;
+        }
+        MessageBlock storage inboundBlock = inboundMessageBlockMap[channelId][blockHash];
+        if (inboundBlock.timestamp == 0) {
+            StateSnapshot storage snapshot = stateSnapshots[channelId];
+            if (snapshot.snapshotData.latestInboundMessageBlockHash == blockHash) {
+                return snapshot.snapshotData.totalDeposits;
+            }
+            return zeroBalance;
+        }
+        return inboundBlock.totalBalance;
     }
 }

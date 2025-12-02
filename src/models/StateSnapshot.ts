@@ -36,12 +36,25 @@ export default class StateSnapshot {
         return ethers.keccak256(this.encode()) as Hash;
     }
 
-    get latestJoinBlockHash(): Hash {
-        return this.snapshot.snapshotData.latestJoinChannelBlockHash as Hash;
+    get latestInboundMessageBlockHash(): Hash {
+        return this.snapshot.snapshotData.latestInboundMessageBlockHash as Hash;
     }
 
-    get latestExitBlockHash(): Hash {
-        return this.snapshot.snapshotData.latestExitChannelBlockHash as Hash;
+    get latestInboundMessageBlockHeight(): BlockHeight {
+        return Number(
+            this.snapshot.snapshotData.latestInboundMessageBlockHeight ?? 0n
+        );
+    }
+
+    get latestOutboundMessageBlockHash(): Hash {
+        return this.snapshot.snapshotData
+            .latestOutboundMessageBlockHash as Hash;
+    }
+
+    get latestOutboundMessageBlockHeight(): BlockHeight {
+        return Number(
+            this.snapshot.snapshotData.latestOutboundMessageBlockHeight ?? 0n
+        );
     }
 
     get forkId(): ForkId {

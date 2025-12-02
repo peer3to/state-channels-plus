@@ -2,7 +2,6 @@ import { expect } from "chai";
 import sinon from "sinon";
 import {
     hexString,
-    joinChannelBlock,
     snapshotData,
     milestoneProof,
     snapshotWithExitChannelBlock,
@@ -15,10 +14,14 @@ import { ForkId, Timestamp, Address, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { ethers } from "ethers";
 import StateManager from "@/stateManager";
+import { MessageBlockStruct } from "@/index";
 
-const exitChannelBlock = {
-    exitChannels: [],
-    previousBlockHash: defaults.emptyBlockHash // Points to on-chain hash
+const outboundMessageBlock: MessageBlockStruct = {
+    previousBlockHash: defaults.emptyBlockHash,
+    blockHeight: 1n,
+    messages: [],
+    totalBalance: { amount: 0n, data: "0x" },
+    timestamp: 0n
 };
 
 function createDefaultBuilder() {
@@ -95,7 +98,7 @@ describe("StateManager - Refactored", () => {
 
             const builder = createDefaultBuilder()
                 .withDummyBlock() // So getNextBlockHeight returns 1, making latestBlockHeight = 0
-                .withExitChannelBlock(exitBlockHash, exitChannelBlock);
+                .withExitChannelBlock(exitBlockHash, outboundMessageBlock);
 
             builder
                 .getAgreementManager()
@@ -113,9 +116,9 @@ describe("StateManager - Refactored", () => {
             expect(result).to.not.be.undefined;
             expect(result!.milestoneProofs).to.have.length(1);
             expect(result!.milestoneSnapshots).to.have.length(1);
-            expect(result!.exitChannelBlocks).to.be.an("array");
-            expect(result!.exitChannelBlocks[0]).to.deep.equal(
-                exitChannelBlock
+            expect(result!.outboundMessageBlocks).to.be.an("array");
+            expect(result!.outboundMessageBlocks[0]).to.deep.equal(
+                outboundMessageBlock
             );
         });
 
@@ -228,7 +231,7 @@ describe("StateManager - Refactored", () => {
 
             // Assert - Should collect the exit channel block chain (excluding genesis)
             expect(result).to.not.be.undefined;
-            expect(result!.exitChannelBlocks).to.have.length(2);
+            expect(result!.outboundMessageBlocks).to.have.length(2);
         });
 
         // Arrange: Setup milestone snapshot pointing to non-existent exit channel block hash
@@ -290,16 +293,19 @@ describe("StateManager - Refactored", () => {
             const reducedFork = hexString(32);
 
             // Store a real exit channel block and use its hash in the genesis snapshot
-            const genesisExitBlock = {
-                exitChannels: [],
-                previousBlockHash: defaults.emptyBlockHash
+            const genesisExitBlock: MessageBlockStruct = {
+                previousBlockHash: defaults.emptyBlockHash,
+                blockHeight: 0n,
+                messages: [],
+                totalBalance: { amount: 0n, data: "0x" },
+                timestamp: 0n
             };
             const genesisExitBlockHash =
                 builder.storeExitChannelBlock(genesisExitBlock);
 
             // Configure genesis snapshot for the reduced fork (final resolved fork after dispute resolution)
             builder.withGenesisSnapshot(reducedFork, {
-                latestExitChannelBlockHash: genesisExitBlockHash
+                latestOutboundMessageBlockHash: genesisExitBlockHash
             });
 
             stateManager = builder.build();
@@ -328,7 +334,7 @@ describe("StateManager - Refactored", () => {
             // Assert
             expect(result).to.not.be.undefined;
             expect(result!.genesisSnapshot).to.exist;
-            expect(result!.exitBlocks).to.be.an("array");
+            expect(result!.outboundMessageBlocks).to.be.an("array");
         });
 
         // Arrange: Setup disputed fork on-chain but no genesis snapshot exists for the resolved fork
@@ -442,7 +448,7 @@ describe("StateManager - Refactored", () => {
 
             // Store genesis snapshot for the reduced fork (final resolved fork after dispute resolution)
             builder.withGenesisSnapshot(reducedFork, {
-                latestExitChannelBlockHash: defaults.emptyBlockHash
+                latestOutboundMessageBlockHash: defaults.emptyBlockHash
             });
 
             // Add dummy block so getNextBlockHeight works correctly
@@ -518,7 +524,7 @@ describe("StateManager - Refactored", () => {
             sinon.stub(stateManager, "prepareUpdateSnapshotSameFork").resolves({
                 milestoneProofs: [],
                 milestoneSnapshots: [],
-                exitChannelBlocks: []
+                outboundMessageBlocks: []
             });
 
             // Mock contract to throw error
@@ -541,40 +547,40 @@ describe("StateManager - Refactored", () => {
             // Arrange
             stateManager = createDefaultBuilder().build();
             const participant = hexString(20) as Address;
-            const joinChannelBlockData = joinChannelBlock({
-                previousBlockHash: defaults.emptyBlockHash,
-                joinChannels: [
-                    {
-                        channelId: defaults.channelId,
-                        participant,
-                        deadlineTimestamp: BigInt(
-                            defaults.defaultTimestamp + 1000
-                        ),
-                        balance: { amount: 100n, data: "0x" }
-                    }
-                ]
-            });
+            const joinChannel = {
+                channelId: defaults.channelId,
+                participant,
+                deadlineTimestamp: BigInt(defaults.defaultTimestamp + 1000),
+                balance: { amount: 100n, data: "0x" }
+            };
             const timestamp = defaults.defaultTimestamp as Timestamp;
             const totalDeposits: BalanceStruct = { amount: 100n, data: "0x" };
+            const messageBlock: MessageBlockStruct = {
+                previousBlockHash: defaults.emptyBlockHash,
+                blockHeight: 0n,
+                messages: [
+                    {
+                        messageType: ethers.ZeroHash,
+                        participant,
+                        balance: joinChannel.balance,
+                        data: Codec.encode(joinChannel, Type.JoinChannel)
+                    }
+                ],
+                totalBalance: totalDeposits,
+                timestamp: BigInt(timestamp)
+            };
+            const messageBlockHash = ethers.keccak256(
+                Codec.encode(messageBlock, Type.MessageBlock)
+            ) as Hash;
 
             // Act
-            await stateManager.onJoinChannel(
-                joinChannelBlockData,
-                timestamp,
-                totalDeposits
-            );
+            await stateManager.onInboundMessage(messageBlock, messageBlockHash);
 
             // Assert
-            const blockHash = ethers.keccak256(
-                Codec.encode(joinChannelBlockData, Type.JoinChannelBlock)
-            );
             const storedEntry =
-                stateManager.storage.joinChannelBlocks.getJoinChannelBlockEntry(
-                    blockHash
-                );
+                stateManager.storage.inboundMessages.getEntry(messageBlockHash);
             expect(storedEntry).to.not.be.undefined;
-            expect(storedEntry!.block).to.deep.equal(joinChannelBlockData);
-            expect(storedEntry!.totalDeposits).to.deep.equal(totalDeposits);
+            expect(storedEntry!.messageBlock).to.deep.equal(messageBlock);
         });
     });
 

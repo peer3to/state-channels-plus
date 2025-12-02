@@ -12,7 +12,7 @@ export enum DisputeFraudProofType {
     DisputeInvalidOutputState,
     DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified,
     DisputeInvalidStateProofWithAuditingDataIntegrityVerified,
-    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks,
+    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks,
     DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified,
     DisputeInvalidBalanceInvariant,
     DisputeOnChainSlashesNotSubset,

@@ -1,10 +1,12 @@
-import { ExitChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Address, Bytes } from "./types/types";
-import { BalanceStruct } from "@typechain-types/contracts/V1/AStateMachine";
+import {
+    BalanceStruct,
+    MessageStruct
+} from "@typechain-types/contracts/V1/AStateMachine";
 import { LocalDiamond } from "@typechain-types/index";
 type TransitionResponse = {
     success: boolean;
-    exitChannels: ExitChannelStruct[];
+    outboundMessages: MessageStruct[];
     successCallback: () => void;
 };
 abstract class ADiamondStateMachine {
@@ -21,7 +23,6 @@ abstract class ADiamondStateMachine {
     public abstract peekNextToWrite(serializedState: Bytes): Promise<Address>;
     public abstract setState(serializedState: Bytes): Promise<any>;
     public abstract getState(): Promise<Bytes>;
-    public abstract getExitChannels(): Promise<ExitChannelStruct[]>;
     public abstract addBalance(
         balance1: BalanceStruct,
         balance2: BalanceStruct

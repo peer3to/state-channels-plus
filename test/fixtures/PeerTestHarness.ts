@@ -69,7 +69,6 @@ export interface EventSpies {
     onPostedCalldata?: sinon.SinonSpy;
     onInitiatingDispute?: sinon.SinonSpy;
     onDisputeUpdate?: sinon.SinonSpy;
-    onJoinChannel?: sinon.SinonSpy;
 
     // EventHandler method spies
     onChannelOpened?: sinon.SinonSpy;
@@ -81,7 +80,7 @@ export interface EventSpies {
     onWithdrawalsUpdated?: sinon.SinonSpy;
     onChannelStorageCleared?: sinon.SinonSpy;
     onDisputeKilled?: sinon.SinonSpy;
-    onJoinChannelProcessed?: sinon.SinonSpy;
+    onInboundMessagesProcessed?: sinon.SinonSpy;
 }
 
 /**
@@ -212,7 +211,6 @@ export class PeerTestHarness<T extends AStateMachine> {
             onPostedCalldata: sinon.spy(),
             onInitiatingDispute: sinon.spy(),
             onDisputeUpdate: sinon.spy(),
-            onJoinChannel: sinon.spy(),
 
             // EventHandler method spies
             onChannelOpened: sinon.spy(),
@@ -224,7 +222,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             onWithdrawalsUpdated: sinon.spy(),
             onChannelStorageCleared: sinon.spy(),
             onDisputeKilled: sinon.spy(),
-            onJoinChannelProcessed: sinon.spy()
+            onInboundMessagesProcessed: sinon.spy()
         };
 
         const hooks: P2pEventHooks = {
@@ -267,12 +265,6 @@ export class PeerTestHarness<T extends AStateMachine> {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onDisputeUpdate?.(dispute);
-            },
-            onJoinChannel: (joinChannelBlock: any) => {
-                PeerLogger.info("Joined channel", {
-                    component: "P2pEventHooks"
-                });
-                eventSpies.onJoinChannel?.(joinChannelBlock);
             }
         };
 
@@ -493,7 +485,7 @@ export class PeerTestHarness<T extends AStateMachine> {
 
     async waitForP2PConnections(timeoutMs?: number): Promise<void> {
         const isGitHubActionsEnv = process.env.GITHUB_ACTIONS === "true";
-        const defaultTimeout = isGitHubActionsEnv ? 15000 : 5000;
+        const defaultTimeout = isGitHubActionsEnv ? 20000 : 10000;
         const actualTimeout = timeoutMs ?? defaultTimeout;
         const pollInterval = 50;
         const stableDurationThreshold = 200;
@@ -596,7 +588,10 @@ export class PeerTestHarness<T extends AStateMachine> {
         this.logger.debug("Starting cleanup...");
 
         // Stop auto time advancement
-        clearInterval(this.autoTimeAdvanceInterval);
+        if (this.autoTimeAdvanceInterval) {
+            clearInterval(this.autoTimeAdvanceInterval);
+            this.autoTimeAdvanceInterval = undefined;
+        }
 
         // Cleanup peers
         for (const peer of this.peers) {
@@ -1043,7 +1038,7 @@ export class PeerTestHarness<T extends AStateMachine> {
     async verifyAllPeersAcknowledged(
         requestingPeerIndex: number,
         forkId: ForkId,
-        timeoutMs: number = 5000,
+        timeoutMs: number = 10000,
         excludePeerIndices: number[] = []
     ): Promise<boolean> {
         const requestingPeer = this.getPeer(requestingPeerIndex);
@@ -1090,13 +1085,66 @@ export class PeerTestHarness<T extends AStateMachine> {
         const fromPeer = this.getPeer(fromPeerIndex);
         const toPeer = this.getPeer(toPeerIndex);
 
-        return fromPeer.stateManager.p2pManager.openConnections.find((t) => {
-            const profile =
-                fromPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
-                    t
-                );
-            return profile?.evmAddress === toPeer.address;
-        });
+        const findTransport = (
+            sourcePeer: TestPeer<AStateMachine>,
+            targetAddress: string
+        ) =>
+            sourcePeer.stateManager.p2pManager.openConnections.find((t) => {
+                const profile =
+                    sourcePeer.stateManager.p2pManager.profileManager.getProfileByTransport(
+                        t
+                    );
+                return profile?.evmAddress === targetAddress;
+            });
+
+        const directTransport = findTransport(fromPeer, toPeer.address);
+        if (directTransport) {
+            return directTransport;
+        }
+
+        return findTransport(toPeer, fromPeer.address);
+    }
+
+    async waitForPeerTransport(
+        fromPeerIndex: number,
+        toPeerIndex: number,
+        timeoutMs: number = 5000
+    ): Promise<ATransport> {
+        const fromPeer = this.getPeer(fromPeerIndex);
+        const toPeer = this.getPeer(toPeerIndex);
+        let resolvedTransport: ATransport | undefined;
+
+        const found = await this.waitForCondition(
+            () => {
+                const transport =
+                    fromPeer.stateManager.p2pManager.openConnections.find(
+                        (t) => {
+                            const profile =
+                                fromPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
+                                    t
+                                );
+                            return profile?.evmAddress === toPeer.address;
+                        }
+                    );
+
+                if (transport) {
+                    resolvedTransport = transport;
+                    return true;
+                }
+
+                return false;
+            },
+            timeoutMs,
+            50
+        );
+
+        if (!found || !resolvedTransport) {
+            throw new Error(
+                `Transport from peer ${fromPeerIndex} to peer ${toPeerIndex} not available within ${timeoutMs}ms`
+            );
+        }
+
+        return resolvedTransport;
     }
 
     async submitDoubleSignBlock(

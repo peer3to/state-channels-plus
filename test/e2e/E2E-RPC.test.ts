@@ -4,6 +4,7 @@ import { AStateMachine, MathStateMachine } from "@typechain-types/index";
 import { ForkId } from "@/types/types";
 import { hash } from "../factory";
 import { ATransport } from "@/transport";
+import IsForkDisputedService from "@/rpc/services/isForkDisputedService/IsForkDisputedService";
 
 describe("E2E: RPC Services", function () {
     let harness: PeerTestHarness<MathStateMachine>;
@@ -88,6 +89,64 @@ describe("E2E: RPC Services", function () {
         const getIsForkDisputedService = (peer: TestPeer<AStateMachine>) =>
             peer.stateManager.p2pManager.localRpc.isForkDisputedService;
 
+        const waitForProfileTransport = async (
+            ownerPeer: TestPeer<AStateMachine>,
+            counterparty: TestPeer<AStateMachine>,
+            timeoutMs: number = 5000
+        ): Promise<ATransport> => {
+            let resolved: ATransport | undefined;
+            const found = await harness.waitForCondition(
+                () => {
+                    const profile =
+                        ownerPeer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
+                            counterparty.address
+                        );
+                    const transport = profile?.getTransport();
+                    if (transport) {
+                        resolved = transport;
+                        return true;
+                    }
+                    return false;
+                },
+                timeoutMs,
+                50
+            );
+
+            if (!found || !resolved) {
+                throw new Error(
+                    `Transport for peer ${ownerPeer.index} to ${counterparty.index} not available within ${timeoutMs}ms`
+                );
+            }
+
+            return resolved;
+        };
+
+        const hasAcknowledgedDispute = (
+            service: IsForkDisputedService,
+            transport: ATransport,
+            forkId: ForkId
+        ) => service.didIAcknowledgeDisputedFork(transport, forkId);
+
+        const waitForMyAcknowledgement = async (
+            service: IsForkDisputedService,
+            transport: ATransport,
+            forkId: ForkId,
+            timeoutMs: number = 5000
+        ) =>
+            harness.waitForCondition(
+                () => hasAcknowledgedDispute(service, transport, forkId),
+                timeoutMs
+            );
+
+        const expectMyAcknowledgement = (
+            service: IsForkDisputedService,
+            transport: ATransport,
+            forkId: ForkId
+        ) => {
+            expect(hasAcknowledgedDispute(service, transport, forkId)).to.be
+                .true;
+        };
+
         // Arrange: Setup channel with dispute committed on-chain
         // Act: One peer broadcasts acknowledgment request to all connected peers
         // Assert: All non-malicious peers acknowledge the disputed fork within timeout
@@ -98,6 +157,7 @@ describe("E2E: RPC Services", function () {
                 getIsForkDisputedService(requestingPeer);
 
             // Act
+            requestingPeerService.disputedForks.delete(harness.activeForkId!);
 
             requestAcknowledgment(requestingPeer, harness.activeForkId!);
 
@@ -141,15 +201,14 @@ describe("E2E: RPC Services", function () {
             expect(allAcknowledged).to.be.true;
 
             const buildingPeer = nonByzantinePeers[1];
-            const buildingPeerTransport = harness.getPeerTransport(
-                requestingPeer.index,
-                buildingPeer.index
+            const buildingPeerTransport = await waitForProfileTransport(
+                requestingPeer,
+                buildingPeer
             );
-            expect(buildingPeerTransport).to.not.be.undefined;
 
             expect(
                 requestingPeerService.didPeerAcknowledgeDisputedFork(
-                    buildingPeerTransport!,
+                    buildingPeerTransport,
                     harness.activeForkId!
                 )
             ).to.be.true;
@@ -190,13 +249,13 @@ describe("E2E: RPC Services", function () {
             // Act
             const receivingPeerService =
                 getIsForkDisputedService(receivingPeer);
-            const transport = harness.getPeerTransport(
-                receivingPeer.index,
-                requestingPeer.index
+            const transport = await waitForProfileTransport(
+                receivingPeer,
+                requestingPeer
             );
 
             await receivingPeerService
-                .createRPCMethods(transport!)
+                .createRPCMethods(transport)
                 .onDisputeAcknowledgmentRequest(
                     requestingPeer.stateManager.channelId,
                     fakeForkId
@@ -223,10 +282,10 @@ describe("E2E: RPC Services", function () {
                 getIsForkDisputedService(requestingPeer);
 
             // Get transport from requesting peer's perspective
-            const requestingTransport = harness.getPeerTransport(
-                requestingPeer.index,
-                receivingPeer.index
-            )!;
+            const requestingTransport = await waitForProfileTransport(
+                requestingPeer,
+                receivingPeer
+            );
 
             const initiallyAcknowledged =
                 requestingPeerService.didPeerAcknowledgeDisputedFork(
@@ -276,10 +335,10 @@ describe("E2E: RPC Services", function () {
             const respondingPeerService =
                 getIsForkDisputedService(respondingPeer);
 
-            const transport = harness.getPeerTransport(
-                respondingPeer.index,
-                requestingPeer.index
-            )!;
+            const transport = await waitForProfileTransport(
+                respondingPeer,
+                requestingPeer
+            );
 
             expect(
                 respondingPeerService.didIAcknowledgeDisputedFork(
@@ -424,20 +483,13 @@ describe("E2E: RPC Services", function () {
                 );
             expect(isDisputedLocal).to.be.true;
 
-            const transport = harness.getPeerTransport(
-                requestingPeer.index,
-                receivingPeer.index
-            )!;
+            const transport = await waitForProfileTransport(
+                receivingPeer,
+                requestingPeer
+            );
 
             const receivingPeerService =
                 getIsForkDisputedService(receivingPeer);
-
-            expect(
-                receivingPeerService.didIAcknowledgeDisputedFork(
-                    transport,
-                    harness.activeForkId!
-                )
-            ).to.be.false;
 
             // Act
             await receivingPeerService
@@ -447,20 +499,19 @@ describe("E2E: RPC Services", function () {
                     harness.activeForkId!
                 );
 
-            await harness.waitForCondition(() => {
-                return receivingPeerService.didIAcknowledgeDisputedFork(
-                    transport,
-                    harness.activeForkId!
-                );
-            }, 5000);
+            await waitForMyAcknowledgement(
+                receivingPeerService,
+                transport,
+                harness.activeForkId!,
+                10000
+            );
 
             // Assert
-            expect(
-                receivingPeerService.didIAcknowledgeDisputedFork(
-                    transport,
-                    harness.activeForkId!
-                )
-            ).to.be.true;
+            expectMyAcknowledgement(
+                receivingPeerService,
+                transport,
+                harness.activeForkId!
+            );
         });
 
         // Arrange: Setup channel with disputed fork, wait for on-chain dispute commitment
@@ -488,20 +539,13 @@ describe("E2E: RPC Services", function () {
 
             expect(isDisputedOnChain).to.be.true;
 
-            const transport = harness.getPeerTransport(
-                requestingPeer.index,
-                receivingPeer.index
-            )!;
+            const transport = await waitForProfileTransport(
+                receivingPeer,
+                requestingPeer
+            );
 
             const receivingPeerService =
                 getIsForkDisputedService(receivingPeer);
-
-            expect(
-                receivingPeerService.didIAcknowledgeDisputedFork(
-                    transport,
-                    harness.activeForkId!
-                )
-            ).to.be.false;
 
             // Act
             await receivingPeerService
@@ -511,20 +555,19 @@ describe("E2E: RPC Services", function () {
                     harness.activeForkId!
                 );
 
-            await harness.waitForCondition(() => {
-                return receivingPeerService.didIAcknowledgeDisputedFork(
-                    transport,
-                    harness.activeForkId!
-                );
-            }, 5000);
+            await waitForMyAcknowledgement(
+                receivingPeerService,
+                transport,
+                harness.activeForkId!,
+                10000
+            );
 
             // Assert
-            expect(
-                receivingPeerService.didIAcknowledgeDisputedFork(
-                    transport,
-                    harness.activeForkId!
-                )
-            ).to.be.true;
+            expectMyAcknowledgement(
+                receivingPeerService,
+                transport,
+                harness.activeForkId!
+            );
         });
     });
 

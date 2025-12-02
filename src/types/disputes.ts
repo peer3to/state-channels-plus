@@ -8,7 +8,7 @@ import {
 } from "./ethers";
 import { ForkId } from "./types";
 import {
-    JoinChannelBlockStruct,
+    MessageBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 import { BytesLike } from "ethers";
@@ -32,6 +32,8 @@ export const DisputeInputEthersType = `tuple(
     bytes32 channelId,
     bytes32 forkId,
     bytes32 latestStateSnapshotHash,
+    bytes32 latestInboundMessageBlockHash,
+    uint256 lastInboundMessageBlockHeight,
     ${StateProofEthersType} stateProof,
     address[] onChainSlashes,
     bytes32 disputeAuditingDataHash,
@@ -98,7 +100,7 @@ export type ReduceData = {
     reducedOutput: ReduceOutputStruct;
     latestStateSnapshot: StateSnapshotStruct;
     encodedStateMachineState: BytesLike;
-    joinChannelBlocks: JoinChannelBlockStruct[];
+    inboundMessageBlocks: MessageBlockStruct[];
 };
 
 // DisputeFraudProofs etheres types
@@ -117,7 +119,7 @@ export const DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedProofEther
     ${DisputeAuditingDataEthersType} auditingData
 )`;
 
-export const DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocksProofEthersType = `tuple(
+export const DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksProofEthersType = `tuple(
     ${DisputeAuditingDataEthersType} auditingData
 )`;
 

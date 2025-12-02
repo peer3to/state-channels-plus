@@ -3,6 +3,7 @@ pragma solidity ^0.8.8;
 import "./StateChannelManagerProxy.sol";
 import "../types/DataTypes.sol";
 import "../types/DisputeTypes.sol";
+import "../types/MessageTypeHashes.sol";
 import "../StateChannelManagerEvents.sol";
 import "./utils/DisputeUtils.sol";
 
@@ -58,18 +59,21 @@ contract LocalDiamond is StateChannelManagerProxy {
         Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
         ChannelBalance storage channelBalance = channelBalances[channelId];
 
-        // Set initial zero balance for on-chain deposits/withdrawals
-        channelBalance.onChainJoinChannelMap[channelBalance.latestJoinChannelBlockHash].totalDeposits = zeroBalance;
-        channelBalance.totalOnChainWithdrawals = zeroBalance;
+        channelBalance.totalDeposits = zeroBalance;
+        channelBalance.totalWithdrawals = zeroBalance;
 
-        // Update with the actual join channel block data from the state snapshot
-        bytes32 joinChannelBlockHash = stateSnapshot.snapshotData.latestJoinChannelBlockHash;
-        channelBalance.onChainJoinChannelMap[joinChannelBlockHash] = OnChainJoinChannel({
-            previousJoinChannelBlockHash: channelBalance.latestJoinChannelBlockHash,
-            timestamp: stateSnapshot.timestamp,
-            totalDeposits: stateSnapshot.snapshotData.totalDeposits
-        });
-        channelBalance.latestJoinChannelBlockHash = joinChannelBlockHash;
+        bytes32 inboundMessageBlockHash = stateSnapshot.snapshotData.latestInboundMessageBlockHash;
+        channelBalance.latestInboundMessageBlockHash = inboundMessageBlockHash;
+        channelBalance.latestInboundMessageBlockHeight = stateSnapshot.snapshotData.latestInboundMessageBlockHeight;
+        channelBalance.latestOutboundMessageBlockHeight = stateSnapshot.snapshotData.latestOutboundMessageBlockHeight;
+        if (inboundMessageBlockHash != bytes32(0)) {
+            MessageBlock memory snapshotInboundBlock;
+            snapshotInboundBlock.previousBlockHash = bytes32(0);
+            snapshotInboundBlock.blockHeight = stateSnapshot.snapshotData.latestInboundMessageBlockHeight;
+            snapshotInboundBlock.totalBalance = stateSnapshot.snapshotData.totalDeposits;
+            snapshotInboundBlock.timestamp = stateSnapshot.timestamp;
+            _persistInboundMessageBlock(channelId, inboundMessageBlockHash, snapshotInboundBlock);
+        }
     }
 
     // Called by StateSnapshotUpdated event
@@ -77,25 +81,21 @@ contract LocalDiamond is StateChannelManagerProxy {
         stateSnapshots[channelId] = stateSnapshot;
     }
 
-    // Called by JoinChannelProcessed event
-    function onJoinChannelProcessed(
-        bytes32 channelId,
-        JoinChannelBlock calldata joinChannelBlock,
-        uint256 timestamp,
-        Balance calldata totalDeposits
-    ) external {
-        // Extract the join channel data and update storage
-        bytes32 blockHash = keccak256(abi.encode(joinChannelBlock));
-        channelBalances[channelId].onChainJoinChannelMap[blockHash] = OnChainJoinChannel({
-            previousJoinChannelBlockHash: channelBalances[channelId].latestJoinChannelBlockHash,
-            timestamp: timestamp,
-            totalDeposits: totalDeposits
-        });
-        channelBalances[channelId].latestJoinChannelBlockHash = blockHash;
+    // Called by InboundMessagesProcessed event
+    function onInboundMessagesProcessed(bytes32 channelId, MessageBlock calldata messageBlock) external {
+        bytes32 blockHash = keccak256(abi.encode(messageBlock));
+        ChannelBalance storage channelBalance = channelBalances[channelId];
+        _persistInboundMessageBlock(channelId, blockHash, messageBlock);
+        channelBalance.latestInboundMessageBlockHash = blockHash;
+        channelBalance.latestInboundMessageBlockHeight = messageBlock.blockHeight;
+        channelBalance.totalDeposits = messageBlock.totalBalance;
 
-        // Add participants to pending participants
-        for (uint256 i = 0; i < joinChannelBlock.joinChannels.length; i++) {
-            disputeData[channelId].pendingParticipants.push(joinChannelBlock.joinChannels[i].participant);
+        // Track pending participants for join messages
+        for (uint256 i = 0; i < messageBlock.messages.length; i++) {
+            if (messageBlock.messages[i].messageType == MESSAGE_TYPE_JOIN) {
+                JoinChannel memory joinChannel = abi.decode(messageBlock.messages[i].data, (JoinChannel));
+                disputeData[channelId].pendingParticipants.push(joinChannel.participant);
+            }
         }
     }
 
@@ -186,10 +186,10 @@ contract LocalDiamond is StateChannelManagerProxy {
     }
 
     function onWithdrawalsUpdated(bytes32 channelId, Balance calldata totalWithdrawals) external {
-        channelBalances[channelId].totalOnChainWithdrawals = totalWithdrawals;
+        channelBalances[channelId].totalWithdrawals = totalWithdrawals;
     }
 
-    function onChannelStorageCleared(bytes32 channelId, bytes32 latestJoinChannelBlockHash) external {
+    function onChannelStorageCleared(bytes32 channelId, bytes32 latestInboundMessageBlockHash) external {
         // Clear dispute data
         DisputeData storage disputeData = disputeData[channelId];
         delete disputeData.onChainSlashes;
@@ -200,12 +200,11 @@ contract LocalDiamond is StateChannelManagerProxy {
         }
         delete disputeData.disputedForks;
 
-        // Clear old join channels
-        ChannelBalance storage cb = channelBalances[channelId];
-        bytes32 keyToDelete = cb.onChainJoinChannelMap[latestJoinChannelBlockHash].previousJoinChannelBlockHash;
+        // Clear old inbound message blocks (keep head referenced by snapshot)
+        bytes32 keyToDelete = inboundMessageBlockMap[channelId][latestInboundMessageBlockHash].previousBlockHash;
         while (keyToDelete != bytes32(0)) {
-            bytes32 nextKeyToDelete = cb.onChainJoinChannelMap[keyToDelete].previousJoinChannelBlockHash;
-            delete cb.onChainJoinChannelMap[keyToDelete];
+            bytes32 nextKeyToDelete = inboundMessageBlockMap[channelId][keyToDelete].previousBlockHash;
+            delete inboundMessageBlockMap[channelId][keyToDelete];
             keyToDelete = nextKeyToDelete;
         }
     }
@@ -231,24 +230,23 @@ contract LocalDiamond is StateChannelManagerProxy {
     }
 
     function getLatestJoinChannelBlockHash(bytes32 channelId) public view returns (bytes32) {
-        return channelBalances[channelId].latestJoinChannelBlockHash;
+        return channelBalances[channelId].latestInboundMessageBlockHash;
     }
 
     function getTotalDeposits(bytes32 channelId) public view returns (Balance memory) {
-        bytes32 latestJoinChannelBlockHash = channelBalances[channelId].latestJoinChannelBlockHash;
-        return channelBalances[channelId].onChainJoinChannelMap[latestJoinChannelBlockHash].totalDeposits;
+        return channelBalances[channelId].totalDeposits;
     }
 
     function computeDisputeOutputSnapshotData(
         DisputeInput memory disputeInput,
         StateSnapshot memory latestStateSnapshot,
         bytes memory latestStateMachineState,
-        bytes32 latestJoinChannelBlockHash
+        MessageBlock[] memory inboundMessageBlocks
     ) public returns (SnapshotData memory outputSnapshotData) {
         // Encode the function selector and arguments
         bytes memory data = abi.encodeCall(
             DisputeVerificationFacet.computeDisputeOutputSnapshotData,
-            (disputeInput, latestStateSnapshot, latestStateMachineState, latestJoinChannelBlockHash)
+            (disputeInput, latestStateSnapshot, latestStateMachineState, inboundMessageBlocks)
         );
 
         // Perform the low-level call with a gas limit

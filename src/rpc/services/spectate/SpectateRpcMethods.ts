@@ -103,10 +103,10 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             //      2.4) ** If more than 1  has to be reduced -> abort **
             //      2.5) verify that they reduce to the correct forks as given in the SyncPayload -> abort otherwise
             //      2.6) verify final genesisSnapshot is correct -> abort otherwise
-            //      2.7) verify exitChannelBlocks from onChainSnapshot to final genesisSnapshot | TODO - think do we need to verify joinChannelBlocks
+            //      2.7) verify outboundMessageBlocks from onChainSnapshot to final genesisSnapshot | TODO - think do we need to verify joinChannelBlocks
             //      2.8) verify that genesisSnapshot.forkId is not disputed on-chain -> abort otherwise
             //      2.9) verify stateProof proves latest state -> abort otherwise
-            //      2.10) verify exitChannelBlocks from final genesisSnapshot to latestFinalizedSnapshot
+            //      2.10) verify outboundMessageBlocks from final genesisSnapshot to latestFinalizedSnapshot
             //      2.11) verify balance invariant of the latestFinalizedState -> abort otherwise
             // 3) Finally - On the RPC node as a staticcall `eth_call`(multicall(reduceAll,updateStateSnapshotFork,updateStateSnapshotSameFork)) to deduct failure/success -> on failure abort
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
@@ -162,7 +162,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                         ),
                         dw.latestStateSnapshot,
                         dw.latestEncodedStateMachineState,
-                        dw.joinChannelBlocksAppliedInReduce
+                        dw.inboundMessageBlocksAppliedInReduce
                     );
                     // 2.4) ** If more than 1  has to be reduced -> abort **
                     if (++notReducedCount > 1)
@@ -204,10 +204,10 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                     syncPayload.latestForkGenesisSnapshot.timestamp;
             if (!isCorrectGenesis) return this.service.abort(senderTransport);
 
-            // 2.7) verify exitChannelBlocks from onChainSnapshot to final genesisSnapshot
+            // 2.7) verify outboundMessageBlocks from onChainSnapshot to final genesisSnapshot
             let areValidExitBlocks =
-                await diamondStateMachine.localDiamondContract.verifyExitChannelBlocks(
-                    syncPayload.exitChannelBlocksUpToLatestGenesis,
+                await diamondStateMachine.localDiamondContract.verifyOutboundMessageBlocks(
+                    syncPayload.outboundMessageBlocksUpToLatestGenesis,
                     onChainSnapshot.snapshotData,
                     syncPayload.latestForkGenesisSnapshot.snapshotData
                 );
@@ -251,10 +251,10 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             )
                 return this.service.abort(senderTransport);
 
-            // 2.10) verify exitChannelBlocks from final genesisSnapshot to latestFinalizedSnapshot
+            // 2.10) verify outboundMessageBlocks from final genesisSnapshot to latestFinalizedSnapshot
             areValidExitBlocks =
-                await diamondStateMachine.localDiamondContract.verifyExitChannelBlocks(
-                    syncPayload.exitChannelBlocksUpToLatestGenesis,
+                await diamondStateMachine.localDiamondContract.verifyOutboundMessageBlocks(
+                    syncPayload.outboundMessageBlocksOfTheLatestFork,
                     syncPayload.latestForkGenesisSnapshot.snapshotData,
                     latestFinalizedSnapshot.snapshotData
                 );

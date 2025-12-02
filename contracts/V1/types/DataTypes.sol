@@ -20,9 +20,8 @@ contract DataTypes {
         ExitChannelBlock memory m,
         StateSnapshot memory n,
         SnapshotData memory o,
-        OnChainJoinChannel memory p,
-        OpenChannel memory q,
-        OpenChannelConfirmation memory r
+        OpenChannel memory p,
+        OpenChannelConfirmation memory q
     ) {}
 }
 
@@ -80,6 +79,21 @@ struct OpenChannelConfirmation {
     bytes[] signatures;
 }
 
+struct Message {
+    bytes32 messageType;
+    address participant;
+    Balance balance;
+    bytes data;
+}
+
+struct MessageBlock {
+    bytes32 previousBlockHash;
+    uint256 blockHeight; // only relevant for reduce() for inbound blocks
+    Message[] messages;
+    Balance totalBalance;
+    uint256 timestamp;
+}
+
 struct JoinChannel {
     bytes32 channelId;
     address participant;
@@ -109,9 +123,7 @@ struct ExitChannel {
 }
 
 struct ExitChannelBlock {
-    /// @dev no signature requirement for the exitChannel blocks
     ExitChannel[] exitChannels;
-    /// @dev Hash of the previous exitChannelBlock
     bytes32 previousBlockHash;
 }
 
@@ -131,24 +143,24 @@ struct SnapshotData {
     bytes32 stateMachineStateHash;
     /// @dev the participants of the channel
     address[] participants;
-    /// @dev the hash of the lastBlock in the JoinChannel blockchain
-    bytes32 latestJoinChannelBlockHash;
-    /// @dev the hash of the lastBlock in the ExitChannel blockchain
-    bytes32 latestExitChannelBlockHash;
-    /// @dev sum of all the amounts in the joinChannel blockchain
+    /// @dev the head of the inbound (L1 -> L2) message blockchain
+    bytes32 latestInboundMessageBlockHash;
+    /// @dev height of the latest inbound message block
+    uint256 latestInboundMessageBlockHeight;
+    /// @dev the head of the outbound (L2 -> L1) message blockchain
+    bytes32 latestOutboundMessageBlockHash;
+    /// @dev height of the latest outbound message block
+    uint256 latestOutboundMessageBlockHeight;
+    /// @dev sum of all inbound message balances processed on-chain
     Balance totalDeposits;
-    /// @dev sum of all the amounts in the exitChannel blockchain
+    /// @dev sum of all outbound message balances processed on-chain
     Balance totalWithdrawals;
 }
 
-struct OnChainJoinChannel {
-    bytes32 previousJoinChannelBlockHash;
-    Balance totalDeposits;
-    uint256 timestamp;
-}
-
 struct ChannelBalance {
-    mapping(bytes32 joinChannelBlockHash => OnChainJoinChannel) onChainJoinChannelMap;
-    bytes32 latestJoinChannelBlockHash;
-    Balance totalOnChainWithdrawals;
+    bytes32 latestInboundMessageBlockHash;
+    uint256 latestInboundMessageBlockHeight;
+    uint256 latestOutboundMessageBlockHeight;
+    Balance totalDeposits;
+    Balance totalWithdrawals;
 }

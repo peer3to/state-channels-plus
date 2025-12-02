@@ -32,6 +32,7 @@ import {
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
 import { DEBUG_DISPUTE_HANDLER } from "@/utils/config";
+import { MessageBlockStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 class DisputeManager {
     signer: ethers.Signer;
@@ -308,7 +309,12 @@ class DisputeManager {
             disputeAuditingDataHash: disputeAuditingDataHash,
             disputer: disputer,
             timeout: timeoutStruct,
-            selfRemoval: selfRemoval
+            selfRemoval: selfRemoval,
+            latestInboundMessageBlockHash:
+                this.storage.inboundMessages.getLatestBlockHash() ||
+                ethers.ZeroHash,
+            lastInboundMessageBlockHeight:
+                this.storage.inboundMessages.getLatestBlockHeight() || 0
         };
 
         const outputSnapshotData =
@@ -316,7 +322,7 @@ class DisputeManager {
                 disputeInput,
                 latestStateSnapshot.toStruct(),
                 latestStateMachineState,
-                auditingData.genesisStateSnapshotData.latestJoinChannelBlockHash
+                auditingData.inboundMessageBlocks || []
             );
 
         const outputSnapshotDataHash = hash(
@@ -402,13 +408,18 @@ class DisputeManager {
                 "getDisputeAuditingData - latestStateStateMachineState not found"
             );
 
-        // exitChannelBlocks
-        const fromBlockHash = latestStateSnapshot.latestExitBlockHash;
-        const toBlockHash = genesisStateSnapshot.latestExitBlockHash;
-        const exitChannelBlocks =
-            this.storage.exitChannelBlocks.getBlocksInRange(
-                fromBlockHash,
-                toBlockHash
+        // inbound message blocks
+        const inboundMessageBlocks =
+            this.storage.inboundMessages.getMessageBlocksInRange(
+                latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
+                genesisStateSnapshot.snapshotData.latestInboundMessageBlockHash
+            );
+
+        // outbound message blocks
+        const outboundMessageBlocks =
+            this.storage.outboundMessages.getMessageBlocksInRange(
+                latestStateSnapshot.snapshotData.latestOutboundMessageBlockHash,
+                genesisStateSnapshot.snapshotData.latestOutboundMessageBlockHash
             );
 
         return {
@@ -420,7 +431,10 @@ class DisputeManager {
                 milestoneSnapshots: milestoneSnapshots.map((snapshot) =>
                     snapshot.toStruct()
                 ),
-                exitChannelBlocks: exitChannelBlocks
+                inboundMessageBlocks:
+                    inboundMessageBlocks as MessageBlockStruct[],
+                outboundMessageBlocks:
+                    outboundMessageBlocks as MessageBlockStruct[]
             }
         };
     }

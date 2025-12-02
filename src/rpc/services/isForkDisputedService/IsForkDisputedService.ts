@@ -1,5 +1,5 @@
 import { ARpcService } from "@/rpc";
-import { ChannelId, ForkId, Timestamp } from "@/types/types";
+import { Address, ChannelId, ForkId } from "@/types/types";
 import ATransport from "@/transport/ATransport";
 import P2PManager from "@/P2PManager";
 import IsForkDisputedRpcMethods from "./IsForkDisputedRpcMethods";
@@ -7,8 +7,8 @@ import { TimeoutManager } from "@/utils/TimeoutManager";
 
 class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
     // Track acknowledged disputed forks
-    peerAcknowledgements: WeakMap<ATransport, Set<ForkId>> = new WeakMap();
-    myAcknowledgements: WeakMap<ATransport, Set<ForkId>> = new WeakMap();
+    peerAcknowledgementsByAddress: Map<string, Set<ForkId>> = new Map();
+    myAcknowledgementsByAddress: Map<string, Set<ForkId>> = new Map();
     disputedForks: Set<ForkId> = new Set();
     timeoutManager: TimeoutManager;
 
@@ -86,6 +86,9 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
         channelId: ChannelId,
         forkId: ForkId
     ): Promise<void> | void {
+        this.logger.debug(
+            `respondToDisputeAcknowledgment transport=${transport} type=${typeof transport} constructor=${transport?.constructor?.name}`
+        );
         if (this.didIAcknowledgeDisputedFork(transport, forkId)) {
             this.logger.debug(
                 `Already responded for fork ${forkId}, disconnecting`
@@ -108,8 +111,16 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
         transport: ATransport,
         forkId: ForkId
     ): boolean {
-        const acknowledgedForks = this.peerAcknowledgements.get(transport);
-        return acknowledgedForks ? acknowledgedForks.has(forkId) : false;
+        const peerAddress = this.getPeerAddress(transport);
+        if (!peerAddress) {
+            return false;
+        }
+
+        return this.hasAddressAcknowledged(
+            this.peerAcknowledgementsByAddress,
+            peerAddress,
+            forkId
+        );
     }
 
     /**
@@ -119,8 +130,16 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
         transport: ATransport,
         forkId: ForkId
     ): boolean {
-        const acknowledgedForks = this.myAcknowledgements.get(transport);
-        return acknowledgedForks ? acknowledgedForks.has(forkId) : false;
+        const peerAddress = this.getPeerAddress(transport);
+        if (!peerAddress) {
+            return false;
+        }
+
+        return this.hasAddressAcknowledged(
+            this.myAcknowledgementsByAddress,
+            peerAddress,
+            forkId
+        );
     }
 
     /**
@@ -131,12 +150,11 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
             this.p2pManager.disconnectAndBlacklistPeer(transport);
             return;
         }
-        let acknowledgedForks = this.peerAcknowledgements.get(transport);
-        if (!acknowledgedForks) {
-            acknowledgedForks = new Set();
-            this.peerAcknowledgements.set(transport, acknowledgedForks);
-        }
-        acknowledgedForks.add(forkId);
+        this.recordAcknowledgement(
+            this.peerAcknowledgementsByAddress,
+            transport,
+            forkId
+        );
     }
 
     /**
@@ -147,12 +165,61 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
             this.p2pManager.disconnectAndBlacklistPeer(transport);
             return;
         }
-        let acknowledgedForks = this.myAcknowledgements.get(transport);
-        if (!acknowledgedForks) {
-            acknowledgedForks = new Set();
-            this.myAcknowledgements.set(transport, acknowledgedForks);
+        this.recordAcknowledgement(
+            this.myAcknowledgementsByAddress,
+            transport,
+            forkId
+        );
+    }
+
+    private recordAcknowledgement(
+        mapByAddress: Map<string, Set<ForkId>>,
+        transport: ATransport,
+        forkId: ForkId
+    ) {
+        const peerAddress = this.getPeerAddress(transport);
+        if (!peerAddress) {
+            this.logger.warn(
+                `Unable to record acknowledgement for fork ${forkId} - missing peer address`
+            );
+            return;
         }
-        acknowledgedForks.add(forkId);
+
+        const ackSet = mapByAddress.get(peerAddress);
+        if (ackSet) {
+            ackSet.add(forkId);
+            return;
+        }
+
+        mapByAddress.set(peerAddress, new Set([forkId]));
+    }
+
+    private getPeerAddress(transport: ATransport): string | undefined {
+        if (transport.peerAddress) {
+            return transport.peerAddress.toLowerCase();
+        }
+
+        const profile =
+            this.p2pManager.profileManager.getProfileByTransport(transport);
+        const address = profile?.evmAddress;
+        if (!address) {
+            return undefined;
+        }
+
+        const addressString =
+            typeof address === "string" ? address : address.toString();
+        return addressString.toLowerCase();
+    }
+
+    private hasAddressAcknowledged(
+        mapByAddress: Map<string, Set<ForkId>>,
+        address: string,
+        forkId: ForkId
+    ): boolean {
+        const acknowledgedByAddress = mapByAddress.get(address);
+        return acknowledgedByAddress
+            ? acknowledgedByAddress.has(forkId)
+            : false;
     }
 }
 

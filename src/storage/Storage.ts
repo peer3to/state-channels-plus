@@ -1,6 +1,5 @@
 import { BlockStorage } from "./BlockStorage";
-import { JoinChannelBlockStorage } from "./JoinChannelBlockStorage";
-import { ExitChannelBlockStorage } from "./ExitChannelBlockStorage";
+import { MessageBlockStorage } from "./MessageBlockStorage";
 import { StateSnapshotStorage } from "./StateSnapshotStorage";
 import { StateMachineStateStorage } from "./StateMachineStateStorage";
 import { ExitPointsStorage } from "./ExitPointsStorage";
@@ -19,8 +18,8 @@ import { BlockCalldataStorage } from "./BlockCalldataStorage";
 
 export class Storage {
     public readonly blocks: BlockStorage;
-    public readonly joinChannelBlocks: JoinChannelBlockStorage;
-    public readonly exitChannelBlocks: ExitChannelBlockStorage;
+    public readonly inboundMessages: MessageBlockStorage;
+    public readonly outboundMessages: MessageBlockStorage;
     public readonly stateSnapshots: StateSnapshotStorage;
     public readonly stateMachineStates: StateMachineStateStorage;
     public readonly exitPoints: ExitPointsStorage;
@@ -34,8 +33,8 @@ export class Storage {
 
     constructor() {
         this.blocks = deepCopyProxy(new BlockStorage());
-        this.joinChannelBlocks = deepCopyProxy(new JoinChannelBlockStorage());
-        this.exitChannelBlocks = deepCopyProxy(new ExitChannelBlockStorage());
+        this.inboundMessages = deepCopyProxy(new MessageBlockStorage());
+        this.outboundMessages = deepCopyProxy(new MessageBlockStorage());
         this.stateSnapshots = deepCopyProxy(new StateSnapshotStorage());
         this.stateMachineStates = deepCopyProxy(new StateMachineStateStorage());
         this.exitPoints = deepCopyProxy(new ExitPointsStorage());

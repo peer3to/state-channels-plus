@@ -35,6 +35,10 @@ struct DisputeInput {
     bytes32 forkId;
     /// @notice encoded latest state (latest on-chain state)
     bytes32 latestStateSnapshotHash;
+    /// @notice latest inbound message block hash committed on-chain
+    bytes32 latestInboundMessageBlockHash;
+    /// @notice block height for the latest inbound message block hash
+    uint256 lastInboundMessageBlockHeight;
     /// @notice State proof for the dispute
     StateProof stateProof;
     /// @notice participants that were slashed on chain
@@ -99,7 +103,8 @@ struct DisputeWindowReducedResult {
 struct ReduceOutput {
     Block latestBlock;
     address[] slashedParticipants;
-    bytes32 latestJoinChannelBlockHash;
+    bytes32 latestInboundMessageBlockHash;
+    uint256 latestInboundMessageBlockHeight;
     Timeout timeout;
     address[] selfRemovals;
 }
@@ -116,9 +121,10 @@ struct DisputeAuditingData {
     StateSnapshot latestStateSnapshot;
     StateSnapshot[] milestoneSnapshots; //for K milestones there will be K-1 snapshots, since the first milestone is the genesisSnapshot
     bytes latestStateStateMachineState;
-    /// @notice Stores all exits since genesis
-    /// @dev the time range of the exit is from genesis to the challenge deadline (new fork)
-    ExitChannelBlock[] exitChannelBlocks;
+    MessageBlock[] inboundMessageBlocks;
+    /// @notice Stores all outbound message blocks since genesis
+    /// @dev Covers the outbound message chain segment proven up to the challenge deadline (new fork)
+    MessageBlock[] outboundMessageBlocks;
 }
 
 struct DisputeData {
@@ -135,7 +141,7 @@ struct FraudProofVerificationContext {
 
 struct DisputeOutputState {
     bytes encodedModifiedState;
-    ExitChannelBlock exitBlock;
+    MessageBlock outboundMessageBlock;
     Balance totalDeposits;
     Balance totalWithdrawals;
 }

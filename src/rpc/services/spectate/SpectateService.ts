@@ -7,9 +7,7 @@ import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes
 import { Codec, hash, Type } from "@/utils";
 import { ethers } from "ethers";
 import {
-    JoinChannelBlockStruct,
     BlockConfirmationStruct,
-    ExitChannelBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
@@ -18,13 +16,14 @@ import SpectateServiceRpcMethods from "./SpectateRpcMethods";
 import P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { Status } from "@/types";
+import { MessageBlockStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 export interface DisputeWindowVerification {
     disputeConfirmations: DisputeConfirmationStruct[];
     forkId: Hash; // can deduct from disputes - don't need to include here
     latestStateSnapshot: StateSnapshotStruct;
     latestEncodedStateMachineState: Bytes;
-    joinChannelBlocksAppliedInReduce: JoinChannelBlockStruct[];
+    inboundMessageBlocksAppliedInReduce: MessageBlockStruct[];
     reducedForkId: Hash; // this is a hint, a soft commitment, so the verifier knows which dispute window to fetch on-chain, before running reduce and verifying
 }
 export interface SyncPayload {
@@ -33,8 +32,8 @@ export interface SyncPayload {
     stateProof: StateProofStruct;
     milestoneSnapshots: StateSnapshotStruct[];
     latestFinalizedEncodedState: Bytes;
-    exitChannelBlocksUpToLatestGenesis: ExitChannelBlockStruct[];
-    exitChannelBlocksOfTheLatestFork: ExitChannelBlockStruct[];
+    outboundMessageBlocksUpToLatestGenesis: MessageBlockStruct[];
+    outboundMessageBlocksOfTheLatestFork: MessageBlockStruct[];
 }
 export interface SyncRequest {
     channelId: ChannelId;
@@ -163,7 +162,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     reducedOutput,
                     reduceData.latestStateSnapshot,
                     reduceData.encodedStateMachineState,
-                    reduceData.joinChannelBlocks
+                    reduceData.inboundMessageBlocks
                 );
             const reducedForkId = ethers.keccak256(
                 Codec.encode(snapshotData, Type.SnapshotData)
@@ -174,7 +173,8 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 latestStateSnapshot: reduceData.latestStateSnapshot,
                 latestEncodedStateMachineState:
                     reduceData.encodedStateMachineState,
-                joinChannelBlocksAppliedInReduce: reduceData.joinChannelBlocks,
+                inboundMessageBlocksAppliedInReduce:
+                    reduceData.inboundMessageBlocks,
                 reducedForkId
             });
             currentForkId = reducedForkId;
@@ -199,10 +199,10 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             throw new Error(`No genesis snapshot found for fork ${forkId}`);
         }
 
-        const exitChannelBlocksUpToLatestGenesis =
-            stateManager.storage.exitChannelBlocks.getBlocksInRange(
-                latestForkGenesisSnapshot.latestExitBlockHash,
-                currentOnChainSnapshot.latestExitBlockHash
+        const outboundMessageBlocksUpToLatestGenesis =
+            stateManager.storage.outboundMessages.getMessageBlocksInRange(
+                latestForkGenesisSnapshot.latestOutboundMessageBlockHash,
+                currentOnChainSnapshot.latestOutboundMessageBlockHash
             );
 
         const latestBlockHeight =
@@ -250,10 +250,10 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             );
         }
 
-        const exitChannelBlocksOfTheLatestFork =
-            stateManager.storage.exitChannelBlocks.getBlocksInRange(
-                latestFinalizedMilestoneSnapshot.latestExitBlockHash,
-                latestForkGenesisSnapshot.latestExitBlockHash
+        const outboundMessageBlocksOfTheLatestFork =
+            stateManager.storage.outboundMessages.getMessageBlocksInRange(
+                latestFinalizedMilestoneSnapshot.latestOutboundMessageBlockHash,
+                latestForkGenesisSnapshot.latestOutboundMessageBlockHash
             );
         // Return payload with all available data
         return {
@@ -262,8 +262,8 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             stateProof: latestStateProof,
             milestoneSnapshots,
             latestFinalizedEncodedState,
-            exitChannelBlocksUpToLatestGenesis,
-            exitChannelBlocksOfTheLatestFork
+            outboundMessageBlocksUpToLatestGenesis,
+            outboundMessageBlocksOfTheLatestFork
         };
     }
 
@@ -318,25 +318,25 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const stateManager = this.p2pManager.stateManager;
         const stateChannelManagerContract =
             stateManager.stateChannelManagerContract;
+        const contractInterface =
+            stateChannelManagerContract.interface as ethers.Interface;
         // Encode data for multicall
         const calldata: string[] = [];
         for (const dw of disputeWindowsThatNeedToBeReducedOnChain) {
-            const reduceCalldata =
-                stateChannelManagerContract.interface.encodeFunctionData(
-                    "reduceAndFinalize",
-                    [
-                        dw.disputeConfirmations.map((disputeConfirmation) =>
-                            Codec.decode(
-                                disputeConfirmation.signedDispute
-                                    .encodedDispute,
-                                Type.Dispute
-                            )
-                        ),
-                        dw.latestStateSnapshot,
-                        dw.latestEncodedStateMachineState,
-                        dw.joinChannelBlocksAppliedInReduce
-                    ]
-                );
+            const reduceCalldata = contractInterface.encodeFunctionData(
+                "reduceAndFinalize",
+                [
+                    dw.disputeConfirmations.map((disputeConfirmation) =>
+                        Codec.decode(
+                            disputeConfirmation.signedDispute.encodedDispute,
+                            Type.Dispute
+                        )
+                    ),
+                    dw.latestStateSnapshot,
+                    dw.latestEncodedStateMachineState,
+                    dw.inboundMessageBlocksAppliedInReduce
+                ]
+            );
             calldata.push(reduceCalldata);
         }
         // check if we need to update the genesis snapshot first
@@ -344,30 +344,28 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             onChainSnapshot.forkId !=
             syncPayload.latestForkGenesisSnapshot.forkId
         ) {
-            const snapshotCalldata =
-                stateChannelManagerContract.interface.encodeFunctionData(
-                    "updateStateSnapshotFork",
-                    [
-                        channelId,
-                        syncPayload.latestForkGenesisSnapshot,
-                        syncPayload.exitChannelBlocksUpToLatestGenesis
-                    ]
-                );
+            const snapshotCalldata = contractInterface.encodeFunctionData(
+                "updateStateSnapshotFork",
+                [
+                    channelId,
+                    syncPayload.latestForkGenesisSnapshot,
+                    syncPayload.outboundMessageBlocksUpToLatestGenesis
+                ]
+            );
             calldata.push(snapshotCalldata);
         }
 
         // check if we need to update the snapshot on the same fork
         if (syncPayload.milestoneSnapshots.length > 0) {
-            const snapshotCalldata =
-                stateChannelManagerContract.interface.encodeFunctionData(
-                    "updateStateSnapshotSameFork",
-                    [
-                        channelId,
-                        syncPayload.stateProof.milestones,
-                        syncPayload.milestoneSnapshots,
-                        syncPayload.exitChannelBlocksOfTheLatestFork
-                    ]
-                );
+            const snapshotCalldata = contractInterface.encodeFunctionData(
+                "updateStateSnapshotSameFork",
+                [
+                    channelId,
+                    syncPayload.stateProof.milestones,
+                    syncPayload.milestoneSnapshots,
+                    syncPayload.outboundMessageBlocksOfTheLatestFork
+                ]
+            );
             calldata.push(snapshotCalldata);
         }
         if (calldata.length > 0) {
@@ -396,8 +394,8 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             storage.stateMachineStates.storeStateMachineState(
                 dw.latestEncodedStateMachineState
             );
-            for (const jcb of dw.joinChannelBlocksAppliedInReduce) {
-                storage.joinChannelBlocks.storeJoinChannelBlock(jcb);
+            for (const inboundBlock of dw.inboundMessageBlocksAppliedInReduce) {
+                storage.inboundMessages.store(inboundBlock);
             }
         }
         storage.stateSnapshots.storeStateSnapshot(
@@ -411,10 +409,10 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         storage.stateMachineStates.storeStateMachineState(
             syncPayload.latestFinalizedEncodedState
         );
-        for (const ecb of syncPayload.exitChannelBlocksUpToLatestGenesis)
-            storage.exitChannelBlocks.storeExitChannelBlock(ecb);
-        for (const ecb of syncPayload.exitChannelBlocksOfTheLatestFork)
-            storage.exitChannelBlocks.storeExitChannelBlock(ecb);
+        for (const ecb of syncPayload.outboundMessageBlocksUpToLatestGenesis)
+            storage.outboundMessages.store(ecb);
+        for (const ecb of syncPayload.outboundMessageBlocksOfTheLatestFork)
+            storage.outboundMessages.store(ecb);
     }
     public persistFinalizedPartsOfStateProof(stateProof: StateProofStruct) {
         const storage = this.p2pManager.stateManager.storage;
