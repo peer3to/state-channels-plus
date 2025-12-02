@@ -73,31 +73,8 @@ class DisputeManager {
         try {
             await this.mutex.lock();
             if (this.storage.disputes.didIDispute(forkId)) return;
-            const {
-                dispute,
-                disputeConfirmation,
-                auditingData,
-                fraudProofsToApply
-            } = await this.constructDispute(forkId);
-
-            // Check if there's anything meaningful to dispute
-            const hasTimeout =
-                dispute.input.timeout.participant !== ethers.ZeroAddress;
-            const hasFraudProofs = fraudProofsToApply.length > 0;
-            const hasSelfRemoval = dispute.input.selfRemoval;
-
-            if (!hasTimeout && !hasFraudProofs && !hasSelfRemoval) {
-                this.logger.verbose(
-                    "No timeout, fraud proofs, or self-removal to submit - skipping dispute",
-                    {
-                        forkId,
-                        hasTimeout,
-                        hasFraudProofs,
-                        hasSelfRemoval
-                    }
-                );
-                return;
-            }
+            const { disputeConfirmation, auditingData, fraudProofsToApply } =
+                await this.constructDispute(forkId);
 
             const pendingParticipants =
                 await this.stateChannelManagerContract.getPendingParticipants(
