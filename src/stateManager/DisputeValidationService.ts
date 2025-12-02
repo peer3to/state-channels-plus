@@ -280,6 +280,7 @@ export default class DisputeValidationService {
                 disputeAuditingData
             );
             this.logger.debug(`Balance invariant failed on local diamond`);
+
             return false;
         }
 
@@ -326,7 +327,10 @@ export default class DisputeValidationService {
             const expectedTimeoutHeight = hasBlock
                 ? Number(latestBlock.transaction.header.transactionCnt) + 1
                 : 0;
-            if (expectedTimeoutHeight !== dispute.input.timeout.blockHeight) {
+            if (
+                expectedTimeoutHeight !==
+                Number(dispute.input.timeout.blockHeight)
+            ) {
                 this.disputeFraudProofService.createTimeoutNotLinkedToLatestState(
                     dispute
                 );
@@ -449,19 +453,6 @@ export default class DisputeValidationService {
         }
 
         // if we're here - it's all good
-        return true;
-    }
-
-    private async isTimeoutTooEarly(
-        dispute: DisputeStruct,
-        disputeAuditingData: DisputeAuditingDataStruct
-    ): Promise<boolean> {
-        const [hasBlock, latestBlock] =
-            await this.diamondStateMachine.localDiamondContract.getLatestBlockFromStateProof(
-                dispute.input.stateProof
-            );
-        const previousTimestamp = 0;
-
         return true;
     }
 }
