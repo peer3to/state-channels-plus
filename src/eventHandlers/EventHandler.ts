@@ -225,7 +225,7 @@ export class EventHandler {
         this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
         // this is like success - TODO - consider moving this to DisputeStrategy.success
         if (await this.canConstructMoreEvidence(dispute)) {
-            this.stateManager.disputeManager.dispute(forkId);
+            await this.stateManager.disputeManager.dispute(forkId);
             return;
         }
         const [_, potentialGenesisTimestamp] =
