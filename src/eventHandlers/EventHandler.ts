@@ -43,9 +43,6 @@ export class EventHandler {
         stateSnapshot: StateSnapshotStruct,
         encodedState: Bytes
     ): Promise<void> {
-        if (this.stateManager.isDisposed) {
-            return;
-        }
         this.logger.debug("Channel opened", {
             channelId,
             forkId: stateSnapshot.forkId
@@ -69,9 +66,6 @@ export class EventHandler {
         channelId: ChannelId,
         stateSnapshot: StateSnapshotStruct
     ): Promise<void> {
-        if (this.stateManager.isDisposed) {
-            return;
-        }
         //TODO - make sure snapshots are in ascending order if events can be collected in random order - e.g we have the latest one always
 
         await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
@@ -92,9 +86,6 @@ export class EventHandler {
     }
 
     private async handleChannelClose(channelId: ChannelId): Promise<void> {
-        if (this.stateManager.isDisposed) {
-            return;
-        }
         this.logger.info("Handling channel close", { channelId });
 
         // Disconnect from all peers in this channel
@@ -111,9 +102,6 @@ export class EventHandler {
         signedBlock: SignedBlockStruct,
         timestamp: Timestamp
     ): Promise<void> {
-        if (this.stateManager.isDisposed) {
-            return;
-        }
         this.logger.verbose("Block calldata posted on-chain", {
             channelId,
             commitmentHash,
@@ -153,9 +141,6 @@ export class EventHandler {
         windowCreationTimestamp: Timestamp,
         disputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<void> {
-        if (this.stateManager.isDisposed) {
-            return;
-        }
         const dispute = Codec.decode(
             disputeConfirmation.signedDispute.encodedDispute,
             Type.Dispute
@@ -244,9 +229,6 @@ export class EventHandler {
     private async canConstructMoreEvidence(
         dispute: DisputeStruct
     ): Promise<boolean> {
-        if (this.stateManager.isDisposed) {
-            return false;
-        }
         // Create our own dispute
         const {
             dispute: ourDispute,
@@ -279,9 +261,6 @@ export class EventHandler {
         participant: Address,
         timestamp: Timestamp
     ): Promise<void> {
-        if (this.stateManager.isDisposed) {
-            return;
-        }
         await this.diamondStateMachine.localDiamondContract.onOnChainSlashAdded(
             channelId,
             participant,
@@ -315,9 +294,6 @@ export class EventHandler {
         reductionTimestamp: Timestamp,
         reducer: Address
     ): Promise<void> {
-        if (this.stateManager.isDisposed) {
-            return;
-        }
         // sync LocalDiamond state
         await this.diamondStateMachine.localDiamondContract.onDisputeReducedResultCommitted(
             channelId,
@@ -377,9 +353,6 @@ export class EventHandler {
         channelId: ChannelId,
         totalWithdrawals: any
     ): Promise<void> {
-        if (this.stateManager.isDisposed) {
-            return;
-        }
         await this.diamondStateMachine.localDiamondContract.onWithdrawalsUpdated(
             channelId,
             totalWithdrawals
@@ -390,9 +363,6 @@ export class EventHandler {
         channelId: ChannelId,
         latestJoinChannelBlockHash: Hash
     ): Promise<void> {
-        if (this.stateManager.isDisposed) {
-            return;
-        }
         await this.diamondStateMachine.localDiamondContract.onChannelStorageCleared(
             channelId,
             latestJoinChannelBlockHash
@@ -404,9 +374,6 @@ export class EventHandler {
         forkId: ForkId,
         disputer: Address
     ): Promise<void> {
-        if (this.stateManager.isDisposed) {
-            return;
-        }
         await this.diamondStateMachine.localDiamondContract.onDisputeKilled(
             channelId,
             forkId,
@@ -441,9 +408,6 @@ export class EventHandler {
         timestamp: Timestamp,
         totalDeposits: any
     ): Promise<void> {
-        if (this.stateManager.isDisposed) {
-            return;
-        }
         await this.diamondStateMachine.localDiamondContract.onJoinChannelProcessed(
             channelId,
             joinChannelBlock,
