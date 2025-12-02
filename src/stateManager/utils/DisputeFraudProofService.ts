@@ -1,23 +1,20 @@
-import { Block } from "@/models";
 import Storage from "@/storage";
 import {
     DisputeFraudProofType,
-    toSolidityDisputeFraudProofType,
-    toSolidityFraudProofType
+    toSolidityDisputeFraudProofType
 } from "@/types/sol-enums";
 import { Hash, Signature } from "@/types/types";
-import { Codec, DisputeFraudStruct, FraudStruct } from "@/utils";
+import { Codec, DisputeFraudStruct } from "@/utils";
 import { FraudProofStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/FraudProofFacet";
 import {
     BlockConfirmationStruct,
-    DisputeAuditingDataStruct,
-    DisputeStruct,
     SignedBlockStruct
-} from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import {
-    BlockStruct,
-    DisputeFraudProofStruct
-} from "@typechain-types/contracts/V1/StateChannelManagerInterface";
+    DisputeAuditingDataStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import {
     DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocksStruct,
     DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedStruct,
