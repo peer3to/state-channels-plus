@@ -218,14 +218,11 @@ export class EventHandler {
             );
         if (!isValid) {
             // TODO - do a multicall here
-            await Promise.all([
-                this.stateManager.disputeManager.killDispute(dispute),
-                this.stateManager.disputeManager.dispute(forkId)
-            ]);
+            await this.stateManager.disputeManager.killDispute(dispute);
+            await this.stateManager.disputeManager.dispute(forkId);
             return;
         }
         this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
-
         // this is like success - TODO - consider moving this to DisputeStrategy.success
         if (await this.canConstructMoreEvidence(dispute)) {
             await this.stateManager.disputeManager.dispute(forkId);

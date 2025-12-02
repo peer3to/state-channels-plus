@@ -275,12 +275,11 @@ export default class DisputeValidationService {
                 disputeAuditingData.latestStateStateMachineState
             );
         if (!balanceInvariantValid) {
-            this.logger.debug(`Balance invariant failed on local diamond`);
-
             this.disputeFraudProofService.createDisputeInvalidBalanceInvariant(
                 dispute,
                 disputeAuditingData
             );
+            this.logger.debug(`Balance invariant failed on local diamond`);
 
             return false;
         }
