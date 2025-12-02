@@ -73,12 +73,8 @@ class DisputeManager {
         try {
             await this.mutex.lock();
             if (this.storage.disputes.didIDispute(forkId)) return;
-            const {
-                dispute,
-                disputeConfirmation,
-                auditingData,
-                fraudProofsToApply
-            } = await this.constructDispute(forkId);
+            const { disputeConfirmation, auditingData, fraudProofsToApply } =
+                await this.constructDispute(forkId);
 
             // Check if there's anything meaningful to dispute
             const hasTimeout =
@@ -156,11 +152,16 @@ class DisputeManager {
             if (isCustomEvmError(error)) {
                 this.logger.error("Error uploading dispute", {
                     forkId,
-                    errorDescription: error.errorDescription
+                    channelId: this.channelId,
+                    signerAddress: this.signerAddress,
+                    errorDescription: error.errorDescription,
+                    errorName: error.name
                 });
             } else {
                 this.logger.error("Error uploading dispute", {
                     forkId,
+                    channelId: this.channelId,
+                    signerAddress: this.signerAddress,
                     error:
                         error instanceof Error ? error.message : String(error)
                 });

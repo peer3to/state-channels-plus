@@ -405,14 +405,8 @@ export default class DisputeValidationService {
                 return false;
             }
 
-            // [check] N/N Threshold - only for normal timeouts
-            // For forced timeouts: skip this check
-            //   the participant just posted junk calldata, so we timeout them anyway.
-            if (
-                !dispute.input.timeout.isForced &&
-                block &&
-                block.didEveryoneSign(participants)
-            ) {
+            // [check] N/N Threshold
+            if (block && block.didEveryoneSign(participants)) {
                 this.disputeFraudProofService.createTimeoutThreshold(
                     dispute,
                     disputeAuditingData,

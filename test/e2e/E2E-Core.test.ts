@@ -27,7 +27,12 @@ describe("E2E: Core Functionality", function () {
 
             // Act
             for (let i = 0; i < 10; i++) {
-                await harness!.submitNextTransaction((contract) =>
+                const nextPeer = await harness!.getNextPeerToWrite();
+
+                // Wait for the peer to be ready for their turn
+                await harness!.waitForTurn(nextPeer.index);
+
+                await harness!.submitTransaction(nextPeer, (contract) =>
                     contract.add(1)
                 );
             }
@@ -95,7 +100,12 @@ describe("E2E: Core Functionality", function () {
 
             // Act
             for (let i = 0; i < 10; i++) {
-                await harness!.submitNextTransaction((contract) =>
+                const nextPeer = await harness!.getNextPeerToWrite();
+
+                // Wait for the peer to be ready for their turn
+                await harness!.waitForTurn(nextPeer.index);
+
+                await harness!.submitTransaction(nextPeer, (contract) =>
                     contract.add(1)
                 );
             }
@@ -578,7 +588,7 @@ describe("E2E: Core Functionality", function () {
         });
     });
 
-    describe("Channel Lifecycle", function () {
+    describe.skip("Channel Lifecycle", function () {
         // Arrange: Setup 2+ participants with initial balances and deadline
         // Act: All participants sign OpenChannelConfirmation, submit on-chain
         // Assert: Channel opens successfully, participants list updated, balances set
@@ -600,7 +610,7 @@ describe("E2E: Core Functionality", function () {
         it("should open channel with custom deadline timestamp");
     });
 
-    describe("Economic Scenarios", function () {
+    describe.skip("Economic Scenarios", function () {
         // Arrange: Setup channel, execute transactions that should maintain total balance
         // Act: Execute blocks with transfers between participants
         // Assert: Total balance in system remains constant (no money creation/destruction)
@@ -617,7 +627,7 @@ describe("E2E: Core Functionality", function () {
         it("should handle withdrawal framework correctly");
     });
 
-    describe("Timing and Synchronization", function () {
+    describe.skip("Timing and Synchronization", function () {
         // Arrange: Setup participants with clocks offset by small amounts (1-2 seconds)
         // Act: Execute block production with timestamp validation
         // Assert: System handles small clock differences gracefully
@@ -630,7 +640,7 @@ describe("E2E: Core Functionality", function () {
         it("should detect timestamp violations");
     });
 
-    describe("State Machine Execution", function () {
+    describe.skip("State Machine Execution", function () {
         // Arrange: Setup channel with state machine, prepare valid transaction
         // Act: Execute transaction that calls state machine methods
         // Assert: Transaction executes successfully, state is updated correctly
@@ -642,7 +652,7 @@ describe("E2E: Core Functionality", function () {
         it("should handle state machine reverts correctly");
     });
 
-    describe("Synchronization and Recovery", function () {
+    describe.skip("Synchronization and Recovery", function () {
         // Arrange: Setup channel with on-chain state snapshots available
         // Act: Participant rebuilds entire state from on-chain data (no P2P sync)
         // Assert: State is completely rebuilt and matches other participants
