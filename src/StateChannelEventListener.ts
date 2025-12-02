@@ -10,7 +10,10 @@ class StateChannelEventListener {
     stateChannelManagerContract: StateChannelManagerProxy;
     eventHandler: EventHandler;
     localDiamondContract: LocalDiamond;
-    filters: Record<string, any> = {};
+    filters: Record<
+        string,
+        { filter: any; listener: (logObj: any) => Promise<void> }
+    > = {};
 
     constructor(
         stateChannelManagerContract: StateChannelManagerProxy,
@@ -28,19 +31,23 @@ class StateChannelEventListener {
         handler: (logObj: any) => Promise<void> | void
     ) {
         if (this.filters[key]) {
-            await this.stateChannelManagerContract.off(this.filters[key]);
+            await this.stateChannelManagerContract.off(
+                this.filters[key].filter,
+                this.filters[key].listener
+            );
         }
-        this.filters[key] = filterFactory();
-        await this.stateChannelManagerContract.on(this.filters[key], handler);
+        const filter = filterFactory();
+        await this.stateChannelManagerContract.on(filter, handler);
+        this.filters[key] = { filter, listener: handler };
     }
 
     //Mark resources for garbage collection
-    public dispose() {
-        Object.values(this.filters).forEach((filter) => {
-            if (filter) {
-                this.stateChannelManagerContract.off(filter);
-            }
-        });
+    public async dispose() {
+        const unsubscribePromises = Object.values(this.filters).map(
+            ({ filter, listener }) =>
+                this.stateChannelManagerContract.off(filter, listener)
+        );
+        await Promise.all(unsubscribePromises);
         this.filters = {};
     }
 
