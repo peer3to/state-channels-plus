@@ -43,6 +43,7 @@ import { deploy } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import { ZeroHash } from "ethers";
 import { ATransport } from "@/transport";
+import PeerProfile from "@/PeerProfile";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;
@@ -121,6 +122,12 @@ export class PeerTestHarness<T extends AStateMachine> {
     private autoTimeAdvanceInterval?: NodeJS.Timeout;
 
     constructor() {
+        // toJSON can't serialize BigInts, so we need to override it
+        if (typeof (BigInt.prototype as any).toJSON !== "function") {
+            (BigInt.prototype as any).toJSON = function () {
+                return Number(this);
+            };
+        }
         this.logger = createLogger({ component: "TestHarness" });
     }
 
@@ -145,8 +152,6 @@ export class PeerTestHarness<T extends AStateMachine> {
         this.syncCoordinator = new SyncCoordinator(this.logger);
 
         await this.deployContracts();
-        this.channelId = this.options.channelId;
-
         const signers = await hre.ethers.getSigners();
         for (let i = 0; i < numPeers; i++) {
             await this.createPeer(i, signers[i]);
@@ -160,6 +165,12 @@ export class PeerTestHarness<T extends AStateMachine> {
 
     private get forkId(): ForkId {
         return this.activeForkId || this.peers[0].stateManager.forkId;
+    }
+    public async waitForTurn(peerIndex: number, timeoutMs = 3000) {
+        return this.waitForCondition(
+            () => this.peers[peerIndex].stateManager.isMyTurn?.() ?? false,
+            timeoutMs
+        );
     }
 
     private async deployContracts(): Promise<void> {
@@ -343,12 +354,15 @@ export class PeerTestHarness<T extends AStateMachine> {
                 initialBalance: this.options.initialBalance
             }
         );
+        this.channelId = openChannel.channelId;
 
         this.logger.debug(`Channel created with ID: ${openChannel.channelId}`);
 
         // Connect peers to the channel
         for (const peer of this.peers) {
-            peer.p2pInstance.p2pSigner.connectToChannel(openChannel.channelId);
+            await peer.p2pInstance.p2pSigner.connectToChannel(
+                openChannel.channelId
+            );
             peer.logger.verbose(
                 `Connected to channel ${openChannel.channelId}`,
                 {
@@ -358,7 +372,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
 
         if (this.options.autoConnect) {
-            await this.connectPeers();
+            await this.connectAllPeers();
         }
 
         const signatures = await Promise.all(
@@ -473,14 +487,33 @@ export class PeerTestHarness<T extends AStateMachine> {
         return this.activeForkId;
     }
 
-    async connectPeers(): Promise<void> {
+    async connectAllPeers(): Promise<void> {
         this.logger.debug("Connecting peers...");
-        const started = LocalDiscoveryServer.tryStart();
+        const started = await LocalDiscoveryServer.tryStart();
         if (started) {
             this.logger.verbose("Discovery server started");
         }
         await this.waitForP2PConnections();
         this.logger.debug("All peers connected successfully");
+    }
+
+    async connectPeers(peerIndices: number[]): Promise<void> {
+        const started = await LocalDiscoveryServer.tryStart();
+        if (started) {
+            this.logger.verbose("Discovery server started");
+        }
+
+        // Connect each peer in the subset
+        await Promise.all(
+            peerIndices.map((index) =>
+                LocalDiscoveryServer.connectToPeers(
+                    this.peers[index].stateManager.p2pManager,
+                    this.channelId?.toString()
+                )
+            )
+        );
+
+        await this.waitForP2PConnections();
     }
 
     async waitForP2PConnections(timeoutMs?: number): Promise<void> {
@@ -583,7 +616,6 @@ export class PeerTestHarness<T extends AStateMachine> {
             intervalMs
         );
     }
-
     async cleanup(): Promise<void> {
         this.logger.debug("Starting cleanup...");
 
@@ -593,7 +625,12 @@ export class PeerTestHarness<T extends AStateMachine> {
             this.autoTimeAdvanceInterval = undefined;
         }
 
-        // Cleanup peers
+        if (this.channelManager) {
+            this.channelManager.removeAllListeners();
+        }
+
+        const disposePromises: Promise<any>[] = [];
+
         for (const peer of this.peers) {
             try {
                 peer.logger.verbose("Cleaning up peer", {
@@ -614,7 +651,8 @@ export class PeerTestHarness<T extends AStateMachine> {
                 }
                 peer.p2pInstance.p2pSigner.p2pManager.openConnections = [];
 
-                await peer.p2pInstance.dispose();
+                disposePromises.push(peer.p2pInstance.dispose());
+
                 Object.values(peer.eventSpies).forEach((spy) =>
                     spy?.resetHistory()
                 );
@@ -627,10 +665,15 @@ export class PeerTestHarness<T extends AStateMachine> {
                 });
             }
         }
+
+        await Promise.allSettled(disposePromises);
+
+        await new Promise((resolve) => setImmediate(resolve));
+
         this.peers = [];
 
         // Cleanup discovery server and peer servers
-        LocalDiscoveryServer.cleanup();
+        await LocalDiscoveryServer.cleanup();
     }
 
     assertAllPeersInSync(options: AssertAllPeersInSyncOptions = {}): void {
@@ -712,12 +755,16 @@ export class PeerTestHarness<T extends AStateMachine> {
     async waitForEventCounts(
         eventName: keyof EventSpies,
         expectedCounts: Array<{ peerId: number; expectedCount: number }>,
-        timeoutMs: number = 10000
+        timeoutMs: number = 10000,
+        { mode = "exact" }: { mode?: "exact" | "atLeast" } = { mode: "exact" }
     ): Promise<boolean> {
         return this.waitForCondition(() => {
             for (const { peerId, expectedCount } of expectedCounts) {
                 const actualCount = this.getEventCallCount(peerId, eventName);
-                if (actualCount !== expectedCount) {
+                if (
+                    (mode === "exact" && actualCount !== expectedCount) ||
+                    (mode === "atLeast" && actualCount < expectedCount)
+                ) {
                     return false;
                 }
             }
@@ -1145,6 +1192,21 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
 
         return resolvedTransport;
+    }
+
+    getConnectionCount(peerIndex: number): number {
+        const peer = this.getPeer(peerIndex);
+        return peer.stateManager.p2pManager.openConnections.length;
+    }
+
+    getProfile(
+        peerIndex: number,
+        evmAddress: Address
+    ): PeerProfile | undefined {
+        const peer = this.getPeer(peerIndex);
+        return peer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
+            evmAddress
+        );
     }
 
     async submitDoubleSignBlock(
