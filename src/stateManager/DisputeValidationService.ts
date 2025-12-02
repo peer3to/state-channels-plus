@@ -3,7 +3,7 @@ import { ethers } from "ethers";
 
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Storage from "@/storage";
-import { isSubset, Logger } from "@/utils";
+import { isSubset, Logger, lt } from "@/utils";
 import { Address, BlockCalldata, Signature } from "@/types/types";
 
 import DisputeFraudProofService from "./utils/DisputeFraudProofService";
@@ -390,9 +390,11 @@ export default class DisputeValidationService {
             // previousTimestamp is now correctly set
             // TODO - think if it's <= or <
             if (
-                timeoutTimestamp <
-                BigInt(previousTimestamp) +
-                    BigInt(this.stateManager.getTimeoutWaitTimeSeconds())
+                lt(
+                    timeoutTimestamp,
+                    previousTimestamp +
+                        this.stateManager.getTimeoutWaitTimeSeconds()
+                )
             ) {
                 this.disputeFraudProofService.createTimeoutTooEarly(
                     dispute,
