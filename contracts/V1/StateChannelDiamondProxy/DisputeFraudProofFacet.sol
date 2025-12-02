@@ -422,7 +422,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             // genesis
             bytes32 originForkId = timeoutCalldataPostedProof.auditingData.genesisStateSnapshotData.originForkId;
             (bool hasGenesis, uint256 genesisTimestamp) =
-                getGenesisTimestamp(dispute.input.channelId, originForkId, dispute.input.genesisSnapshotDataHash);
+                getGenesisTimestamp(dispute.input.channelId, originForkId, dispute.input.forkId);
             require(hasGenesis, ErrorGenesisTimestampNotAvailable());
             previousTimestamp = genesisTimestamp;
         } else {

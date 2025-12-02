@@ -347,7 +347,7 @@ export default class DisputeValidationService {
             const timeoutTimestamp =
                 await this.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
                     dispute.input.channelId,
-                    dispute.input.genesisSnapshotDataHash
+                    dispute.input.forkId
                 );
             if (!timeoutTimestamp)
                 throw new Error(
