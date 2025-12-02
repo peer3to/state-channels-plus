@@ -189,13 +189,14 @@ class StateManager {
     //Mark resources for garbage collection
     public async dispose() {
         this.isDisposed = true;
-        // Cancel all scheduled tasks
-        await this.timeoutManager.dispose();
         // Clear reduction timeouts
         for (const [_, reductionHandle] of this.reductionTriggerMap) {
-            clearTimeout(reductionHandle.handle);
+            this.timeoutManager.cancelTask(reductionHandle.handle);
         }
         this.reductionTriggerMap.clear();
+
+        await this.timeoutManager.dispose();
+
         this.stateChannelEventListener.dispose();
         await this.p2pManager.dispose();
     }
@@ -610,7 +611,7 @@ class StateManager {
 
             // TODO - apply strategy here too
             // All validations passed - proceed with success action
-            this.success(
+            await this.success(
                 block,
                 stateSnapshot,
                 encodedState,
@@ -1358,7 +1359,7 @@ class StateManager {
         );
     }
 
-    private async isMyTurn(): Promise<boolean> {
+    public async isMyTurn(): Promise<boolean> {
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();
         return this.signerAddress === nextToWrite;
     }

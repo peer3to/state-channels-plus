@@ -137,11 +137,16 @@ class DisputeManager {
             if (isCustomEvmError(error)) {
                 this.logger.error("Error uploading dispute", {
                     forkId,
-                    errorDescription: error.errorDescription
+                    channelId: this.channelId,
+                    signerAddress: this.signerAddress,
+                    errorDescription: error.errorDescription,
+                    errorName: error.name
                 });
             } else {
                 this.logger.error("Error uploading dispute", {
                     forkId,
+                    channelId: this.channelId,
+                    signerAddress: this.signerAddress,
                     error:
                         error instanceof Error ? error.message : String(error)
                 });
