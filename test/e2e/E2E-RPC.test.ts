@@ -28,15 +28,8 @@ describe("E2E: RPC Services", function () {
             byzantinePeer = harness.peers[1];
             nonByzantinePeers = [harness.peers[0], harness.peers[2]];
 
-            // Wait for the peer to be ready for their turn
-            await harness!.waitForTurn(0);
-            await harness!.submitTransaction(harness.peers[0], (contract) =>
-                contract.add(1)
-            );
-            await harness!.waitForTurn(byzantinePeer.index);
-            await harness!.submitTransaction(byzantinePeer, (contract) =>
-                contract.add(1)
-            );
+            await harness!.submitNextTransaction((contract) => contract.add(1));
+            await harness!.submitNextTransaction((contract) => contract.add(1));
 
             harness.assertAllPeersInSync();
             harness.resetEventSpies();
