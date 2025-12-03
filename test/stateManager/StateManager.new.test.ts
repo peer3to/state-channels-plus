@@ -624,10 +624,14 @@ describe("StateManager - Refactored", () => {
 
             // Assert
             expect(stateManager.forkId).to.equal(snapshotDataHash);
-            const storedSnapshot = stateManager.storage.getStateSnapshot({
-                forkId: snapshotDataHash,
-                height: 0
-            });
+            const storedSnapshot =
+                stateManager.storage.getStateSnapshot({
+                    forkId: snapshotDataHash,
+                    height: -1
+                }) ??
+                stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                    snapshotDataHash
+                );
             expect(storedSnapshot).to.not.be.undefined;
             expect(storedSnapshot!.snapshotData).to.deep.equal(snapshotDataObj);
             expect(onTurnCalled).to.be.true;

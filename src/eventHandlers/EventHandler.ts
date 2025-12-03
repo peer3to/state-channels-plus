@@ -162,9 +162,13 @@ export class EventHandler {
             Type.Dispute
         );
         const forkId = dispute.input.forkId;
+        const disputeHash = hash(
+            disputeConfirmation.signedDispute.encodedDispute
+        );
         this.logger.debug("Dispute committed", {
             channelId,
             forkId,
+            disputeHash,
             isFinal,
             disputeCreationTimestamp,
             isForced: dispute.input.timeout?.isForced

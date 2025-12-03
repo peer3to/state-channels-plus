@@ -58,7 +58,7 @@ export class Storage {
     getStateSnapshot(coordinates: BlockCoordinates): StateSnapshot | undefined {
         const { forkId, height } = coordinates;
 
-        if (height <= 0) {
+        if (height < 0) {
             return this.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
         }
 

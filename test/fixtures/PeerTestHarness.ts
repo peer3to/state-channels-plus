@@ -44,6 +44,7 @@ import SyncCoordinator from "@test/utils/SyncCoordinator";
 import { ZeroHash } from "ethers";
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
+import { DisputeStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;
@@ -265,11 +266,17 @@ export class PeerTestHarness<T extends AStateMachine> {
                 });
                 eventSpies.onPostedCalldata?.();
             },
-            onInitiatingDispute: () => {
-                PeerLogger.info("Initiating dispute", {
-                    component: "P2pEventHooks"
-                });
-                eventSpies.onInitiatingDispute?.();
+            onInitiatingDispute: (
+                disputeHash: Hash,
+                dispute: DisputeStruct
+            ) => {
+                PeerLogger.info(
+                    `Initiating dispute - DisputeHash:${disputeHash}`,
+                    {
+                        component: "P2pEventHooks"
+                    }
+                );
+                eventSpies.onInitiatingDispute?.(disputeHash, dispute);
             },
             onDisputeUpdate: (dispute: any) => {
                 PeerLogger.info("Dispute updated", {

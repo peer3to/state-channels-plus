@@ -152,7 +152,10 @@ class DisputeManager {
             }
 
             this.storage.disputes.storeDisputedFork(forkId, true);
-            this.p2pEventHooks.onInitiatingDispute?.();
+            this.p2pEventHooks.onInitiatingDispute?.(
+                hash(Codec.encode(dispute, Type.Dispute)),
+                dispute
+            );
         } catch (error) {
             if (isCustomEvmError(error)) {
                 this.logger.error("Error uploading dispute", {
@@ -186,12 +189,19 @@ class DisputeManager {
             if (!disputeFraudProof) {
                 throw new Error("No dispute fraud proof found for dispute");
             }
-            await this.stateChannelManagerContract.applyDisputeFraudProofs([
-                disputeFraudProof
-            ]);
+            const txRespone =
+                await this.stateChannelManagerContract.applyDisputeFraudProofs([
+                    disputeFraudProof
+                ]);
+            txRespone.wait().then(() => {
+                this.logger.info("Dispute killed successfully", {
+                    forkId: dispute.input.forkId,
+                    channelId: this.channelId
+                });
+            });
         } catch (error) {
             if (isCustomEvmError(error)) {
-                this.logger.error("Error killing dispute", {
+                this.logger.error("CustomError killing dispute", {
                     forkId: dispute.input.forkId,
                     errorDescription: error.errorDescription
                 });
@@ -325,8 +335,8 @@ class DisputeManager {
         const outputSnapshotData =
             await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
                 disputeInput,
-                latestStateSnapshot.toStruct(),
-                latestStateMachineState,
+                auditingData.latestStateSnapshot,
+                auditingData.latestStateStateMachineState,
                 auditingData.inboundMessageBlocks || []
             );
 

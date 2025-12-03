@@ -355,7 +355,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         }
         outboundMessageBlock.messages = outboundMessages;
         outboundMessageBlock.totalBalance = outputState.totalWithdrawals;
-        outboundMessageBlock.timestamp = block.timestamp;
+        outboundMessageBlock.timestamp = 0; // timestamp is not relevant, but more importantly this needs to be deterministic
         outputState.outboundMessageBlock = outboundMessageBlock;
 
         return outputState;
