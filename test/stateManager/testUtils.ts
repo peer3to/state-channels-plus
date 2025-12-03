@@ -425,10 +425,9 @@ export class MockSetup {
                 store: sinon.stub()
             },
             inboundMessages: {
-                getEntriesInRange: sinon.stub().returns([]),
                 getMessageBlocksInRange: sinon.stub().returns([]),
                 store: sinon.stub(),
-                getEntry: sinon.stub().returns(undefined)
+                getMessageBlock: sinon.stub().returns(undefined)
             },
             exitPoints: {
                 getExitPointsInRange: sinon.stub().returns([1, 3, 5, 7]),

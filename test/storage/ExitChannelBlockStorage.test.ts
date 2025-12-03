@@ -52,15 +52,15 @@ describe("MessageBlockStorage - outbound behavior", () => {
 
         it("returns undefined for unknown hashes", () => {
             const randomHash = ethers.hexlify(ethers.randomBytes(32)) as Hash;
-            expect(storage.getEntry(randomHash)).to.be.undefined;
+            expect(storage.getMessageBlock(randomHash)).to.be.undefined;
         });
 
-        it("retrieves entry by hash", () => {
-            const entry = storage.getEntry(mockBlockHash);
-            expect(entry?.messageBlock).to.equal(mockExitBlock);
+        it("retrieves block by hash", () => {
+            const block = storage.getMessageBlock(mockBlockHash);
+            expect(block).to.equal(mockExitBlock);
         });
 
-        it("returns ordered entries when iterating by range", () => {
+        it("returns ordered message blocks when iterating by range", () => {
             const nextBlock = {
                 ...mockExitBlock,
                 previousBlockHash: mockBlockHash,
@@ -68,17 +68,17 @@ describe("MessageBlockStorage - outbound behavior", () => {
             };
             const nextHash = storage.store(nextBlock);
 
-            const entries = storage.getEntriesInRange(
+            const blocks = storage.getMessageBlocksInRange(
                 nextHash,
                 mockExitBlock.previousBlockHash as Hash
             );
-            expect(entries).to.have.length(2);
-            expect(entries[1].messageBlock).to.deep.equal(nextBlock);
+            expect(blocks).to.have.length(2);
+            expect(blocks[1]).to.deep.equal(nextBlock);
         });
     });
 
     describe("latest block helpers", () => {
-        it("returns the most recent entry", () => {
+        it("returns the most recent block", () => {
             const baseHash = storage.store(mockExitBlock);
 
             const newerBlock = {
@@ -88,15 +88,15 @@ describe("MessageBlockStorage - outbound behavior", () => {
             };
             storage.store(newerBlock);
 
-            const latestEntry = storage.getLatestEntry();
-            expect(latestEntry?.messageBlock).to.deep.equal(newerBlock);
+            const latestBlock = storage.getLatestMessageBlock();
+            expect(latestBlock).to.deep.equal(newerBlock);
 
-            const latestEntries = storage.getLatestEntries(1);
-            expect(latestEntries).to.have.length(1);
-            expect(latestEntries[0].messageBlock).to.deep.equal(newerBlock);
+            const latestBlocks = storage.getLatestMessageBlocks(1);
+            expect(latestBlocks).to.have.length(1);
+            expect(latestBlocks[0]).to.deep.equal(newerBlock);
         });
 
-        it("returns entries sorted from newest to oldest when no limit is provided", () => {
+        it("returns blocks sorted from newest to oldest when no limit is provided", () => {
             storage.store(mockExitBlock);
             const followingBlock = {
                 ...mockExitBlock,
@@ -106,8 +106,8 @@ describe("MessageBlockStorage - outbound behavior", () => {
             storage.store(followingBlock);
 
             const heights = storage
-                .getLatestEntries()
-                .map((entry) => entry.messageBlock.blockHeight);
+                .getLatestMessageBlocks()
+                .map((block) => block.blockHeight);
             expect(heights).to.deep.equal([1n, 0n]);
         });
     });

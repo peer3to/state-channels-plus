@@ -33,8 +33,8 @@ describe("MessageBlockStorage - inbound blocks", () => {
             const hash = storage.store(mockMessageBlock);
             expect(hash).to.equal(mockBlockHash);
 
-            const entry = storage.getEntry(hash);
-            expect(entry?.messageBlock).to.equal(mockMessageBlock);
+            const storedBlock = storage.getMessageBlock(hash);
+            expect(storedBlock).to.equal(mockMessageBlock);
         });
 
         it("respects provided hash override", () => {
@@ -63,7 +63,6 @@ describe("MessageBlockStorage - inbound blocks", () => {
 
         it("returns undefined for unknown hashes", () => {
             const randomHash = ethers.hexlify(ethers.randomBytes(32)) as Hash;
-            expect(storage.getEntry(randomHash)).to.be.undefined;
             expect(storage.getMessageBlock(randomHash)).to.be.undefined;
         });
 
@@ -75,13 +74,13 @@ describe("MessageBlockStorage - inbound blocks", () => {
             };
             const secondHash = storage.store(secondBlock);
 
-            const entries = storage.getEntriesInRange(
+            const blocks = storage.getMessageBlocksInRange(
                 secondHash,
                 mockMessageBlock.previousBlockHash as Hash
             );
-            expect(entries).to.have.length(2);
-            expect(entries[0].messageBlock).to.deep.equal(mockMessageBlock);
-            expect(entries[1].messageBlock).to.deep.equal(secondBlock);
+            expect(blocks).to.have.length(2);
+            expect(blocks[0]).to.deep.equal(mockMessageBlock);
+            expect(blocks[1]).to.deep.equal(secondBlock);
         });
     });
 
@@ -90,7 +89,6 @@ describe("MessageBlockStorage - inbound blocks", () => {
             expect(storage.getLatestMessageBlock()).to.be.undefined;
             expect(storage.getLatestMessageBlocks()).to.deep.equal([]);
             expect(storage.getLatestBlockHeight()).to.be.undefined;
-            expect(storage.getLatestEntries()).to.deep.equal([]);
         });
 
         it("tracks the highest block height even when stored out of order", () => {

@@ -2,16 +2,13 @@ import { ethers } from "ethers";
 import { MessageBlockStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/LocalDiamond";
 import { BlockHeight, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
-export interface MessageBlockEntry {
-    messageBlock: MessageBlockStruct;
-}
 
 type StoreOptions = {
     hash?: Hash;
 };
 
 export class MessageBlockStorage {
-    private blockMap: Map<Hash, MessageBlockEntry>;
+    private blockMap: Map<Hash, MessageBlockStruct>;
     private latestBlockHash?: Hash;
     private latestBlockHeight?: BlockHeight;
 
@@ -31,7 +28,7 @@ export class MessageBlockStorage {
         const blockHeight = this.normalizeBlockHeight(messageBlock.blockHeight);
 
         if (!this.blockMap.has(hash)) {
-            this.blockMap.set(hash, { messageBlock });
+            this.blockMap.set(hash, messageBlock);
         }
 
         if (
@@ -49,10 +46,6 @@ export class MessageBlockStorage {
     // ====================================
 
     getMessageBlock(blockHash: Hash): MessageBlockStruct | undefined {
-        return this.blockMap.get(blockHash)?.messageBlock;
-    }
-
-    getEntry(blockHash: Hash): MessageBlockEntry | undefined {
         return this.blockMap.get(blockHash);
     }
 
@@ -60,18 +53,18 @@ export class MessageBlockStorage {
     *getIterator(
         fromBlockHash: Hash,
         toBlockHash?: Hash
-    ): Generator<MessageBlockEntry, void, unknown> {
+    ): Generator<MessageBlockStruct, void, unknown> {
         if (fromBlockHash == ethers.ZeroHash) return;
         let currentHash = fromBlockHash;
         while (currentHash != ethers.ZeroHash) {
             if (toBlockHash && currentHash === toBlockHash) break;
-            const entry = this.blockMap.get(currentHash);
-            if (!entry)
+            const messageBlock = this.blockMap.get(currentHash);
+            if (!messageBlock)
                 throw new Error(
                     `Block hash ${currentHash} not found in storage`
                 );
-            yield entry;
-            currentHash = entry.messageBlock.previousBlockHash as Hash;
+            yield messageBlock;
+            currentHash = messageBlock.previousBlockHash as Hash;
         }
     }
 
@@ -80,30 +73,18 @@ export class MessageBlockStorage {
         toBlockHash: Hash
     ): MessageBlockStruct[] {
         const blocks: MessageBlockStruct[] = [];
-        for (const entry of this.getIterator(fromBlockHash, toBlockHash)) {
-            blocks.unshift(entry.messageBlock);
+        for (const messageBlock of this.getIterator(
+            fromBlockHash,
+            toBlockHash
+        )) {
+            blocks.unshift(messageBlock);
         }
         return blocks;
     }
 
-    getEntriesInRange(
-        fromBlockHash: Hash,
-        toBlockHash: Hash
-    ): MessageBlockEntry[] {
-        const entries: MessageBlockEntry[] = [];
-        for (const entry of this.getIterator(fromBlockHash, toBlockHash)) {
-            entries.unshift(entry);
-        }
-        return entries;
-    }
-
-    getLatestEntry(): MessageBlockEntry | undefined {
+    getLatestMessageBlock(): MessageBlockStruct | undefined {
         if (!this.latestBlockHash) return undefined;
         return this.blockMap.get(this.latestBlockHash);
-    }
-
-    getLatestMessageBlock(): MessageBlockStruct | undefined {
-        return this.getLatestEntry()?.messageBlock;
     }
 
     getLatestBlockHash(): Hash | undefined {
@@ -114,25 +95,22 @@ export class MessageBlockStorage {
         return this.latestBlockHeight;
     }
 
-    getLatestEntries(limit?: number): MessageBlockEntry[] {
+    getLatestMessageBlocks(limit?: number): MessageBlockStruct[] {
         if (!this.latestBlockHash) return [];
 
-        const entries: MessageBlockEntry[] = [];
-        for (const entry of this.getIterator(this.latestBlockHash)) {
-            entries.push(entry);
-            if (limit !== undefined && entries.length >= limit) break;
+        const blocks: MessageBlockStruct[] = [];
+        for (const messageBlock of this.getIterator(this.latestBlockHash)) {
+            blocks.push(messageBlock);
+            if (limit !== undefined && blocks.length >= limit) break;
         }
-        return entries;
-    }
-
-    getLatestMessageBlocks(limit?: number): MessageBlockStruct[] {
-        return this.getLatestEntries(limit).map((entry) => entry.messageBlock);
+        return blocks;
     }
 
     private normalizeBlockHeight(
         height: MessageBlockStruct["blockHeight"]
     ): BlockHeight {
-        if (height === undefined || height === null) return 0;
+        if (height === undefined || height === null)
+            throw new Error("MessageBlockStorage - Block height is undefined");
         return Number(height);
     }
 }

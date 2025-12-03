@@ -22,7 +22,11 @@ export class BlockCalldataStorage {
             blockCalldata.signedBlock,
             blockCalldata.onChainTimestamp
         );
-        const coordinateKey = `${block.forkId}:${block.height}:${block.author}`;
+        const coordinateKey = this.buildCoordinateKey(
+            block.forkId,
+            block.height,
+            block.author
+        );
         this.coordinatesToBlockMap.set(coordinateKey, blockCalldata);
         return coordinateKey;
     }
@@ -36,7 +40,19 @@ export class BlockCalldataStorage {
         height: BlockHeight,
         blockAuthor: Address
     ): BlockCalldata | undefined {
-        const coordinateKey = `${forkId}:${height}:${blockAuthor}`;
+        const coordinateKey = this.buildCoordinateKey(
+            forkId,
+            height,
+            blockAuthor
+        );
         return this.coordinatesToBlockMap.get(coordinateKey);
+    }
+
+    private buildCoordinateKey(
+        forkId: ForkId,
+        height: BlockHeight,
+        blockAuthor: Address
+    ): CalldataCoordinateKey {
+        return `${forkId}:${height}:${blockAuthor}`;
     }
 }

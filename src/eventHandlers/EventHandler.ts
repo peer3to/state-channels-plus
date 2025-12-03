@@ -22,7 +22,7 @@ import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Codec, hash, Logger, Type } from "@/utils";
 import { isEqual } from "lodash";
-import { ZeroHash, ethers } from "ethers";
+import { ZeroHash } from "ethers";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 import { MessageBlockStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
@@ -455,9 +455,9 @@ export class EventHandler {
         channelId: ChannelId,
         messageBlock: MessageBlockStruct
     ): Promise<void> {
-        const messageBlockHash = ethers.keccak256(
+        const messageBlockHash = hash(
             Codec.encode(messageBlock, Type.MessageBlock)
-        ) as Hash;
+        );
         await this.stateManager.onInboundMessage(
             messageBlock,
             messageBlockHash
@@ -522,8 +522,8 @@ export class EventHandler {
             );
         const inboundMessageBlocks =
             this.storage.inboundMessages.getMessageBlocksInRange(
-                genesisSnapshot.snapshotData.latestInboundMessageBlockHash,
-                latestSnapshot.snapshotData.latestInboundMessageBlockHash
+                latestSnapshot.snapshotData.latestInboundMessageBlockHash,
+                genesisSnapshot.snapshotData.latestInboundMessageBlockHash
             );
         const [snapshotData] =
             await this.stateManager.stateChannelManagerContract.reduceOutputToSnapshotData.staticCall(

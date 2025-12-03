@@ -81,25 +81,6 @@ class DisputeManager {
                 fraudProofsToApply
             } = await this.constructDispute(forkId);
 
-            // Check if there's anything meaningful to dispute
-            const hasTimeout =
-                dispute.input.timeout.participant !== ethers.ZeroAddress;
-            const hasFraudProofs = fraudProofsToApply.length > 0;
-            const hasSelfRemoval = dispute.input.selfRemoval;
-
-            if (!hasTimeout && !hasFraudProofs && !hasSelfRemoval) {
-                this.logger.verbose(
-                    "No timeout, fraud proofs, or self-removal to submit - skipping dispute",
-                    {
-                        forkId,
-                        hasTimeout,
-                        hasFraudProofs,
-                        hasSelfRemoval
-                    }
-                );
-                return;
-            }
-
             const pendingParticipants =
                 await this.stateChannelManagerContract.getPendingParticipants(
                     this.channelId
@@ -194,7 +175,7 @@ class DisputeManager {
                     disputeFraudProof
                 ]);
             txRespone.wait().then(() => {
-                this.logger.info("Dispute killed successfully", {
+                this.logger.debug("Dispute killed successfully", {
                     forkId: dispute.input.forkId,
                     channelId: this.channelId
                 });
@@ -337,7 +318,7 @@ class DisputeManager {
                 disputeInput,
                 auditingData.latestStateSnapshot,
                 auditingData.latestStateStateMachineState,
-                auditingData.inboundMessageBlocks || []
+                auditingData.inboundMessageBlocks
             );
 
         const outputSnapshotDataHash = hash(

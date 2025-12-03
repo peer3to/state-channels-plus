@@ -577,10 +577,12 @@ describe("StateManager - Refactored", () => {
             await stateManager.onInboundMessage(messageBlock, messageBlockHash);
 
             // Assert
-            const storedEntry =
-                stateManager.storage.inboundMessages.getEntry(messageBlockHash);
-            expect(storedEntry).to.not.be.undefined;
-            expect(storedEntry!.messageBlock).to.deep.equal(messageBlock);
+            const storedBlock =
+                stateManager.storage.inboundMessages.getMessageBlock(
+                    messageBlockHash
+                );
+            expect(storedBlock).to.not.be.undefined;
+            expect(storedBlock).to.deep.equal(messageBlock);
         });
     });
 
