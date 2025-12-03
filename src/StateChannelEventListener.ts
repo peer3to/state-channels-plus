@@ -51,9 +51,9 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.ChannelOpened(
                     channelId
                 ),
-            handler: async (logObj: any) => {
+            handler: (logObj: any) => {
                 const { channelId, stateSnapshot, encodedState } = logObj.args;
-                await this.eventHandler.onChannelOpened(
+                return this.eventHandler.onChannelOpened(
                     channelId,
                     Codec.convertEthersResultToObject(stateSnapshot),
                     encodedState
@@ -65,9 +65,9 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.StateSnapshotUpdated(
                     channelId
                 ),
-            handler: async (logObj: any) => {
+            handler: (logObj: any) => {
                 const { channelId, stateSnapshot } = logObj.args;
-                await this.eventHandler.onStateSnapshotUpdated(
+                return this.eventHandler.onStateSnapshotUpdated(
                     channelId,
                     stateSnapshot
                 );
@@ -79,7 +79,7 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.BlockCalldataPosted(
                     channelId
                 ),
-            handler: async (logObj: any) => {
+            handler: (logObj: any) => {
                 const {
                     channelId,
                     commitmentHash,
@@ -87,7 +87,7 @@ class StateChannelEventListener {
                     signedBlock,
                     timestamp
                 } = logObj.args;
-                await this.eventHandler.onBlockCalldataPosted(
+                return this.eventHandler.onBlockCalldataPosted(
                     channelId,
                     commitmentHash,
                     sender,
@@ -102,7 +102,7 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.DisputeCommitted(
                     channelId
                 ),
-            handler: async (logObj: any) => {
+            handler: (logObj: any) => {
                 const {
                     channelId,
                     disputeConfirmation,
@@ -111,7 +111,7 @@ class StateChannelEventListener {
                     windowCreationTimestamp
                 } = logObj.args;
 
-                await this.eventHandler.onDisputeCommitted(
+                return this.eventHandler.onDisputeCommitted(
                     channelId,
                     Codec.convertEthersResultToObject(disputeConfirmation),
                     disputeCreationTimestamp,
@@ -125,9 +125,9 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.ChainSlashed(
                     channelId
                 ),
-            handler: async (logObj: any) => {
+            handler: (logObj: any) => {
                 const { channelId, participant, timestamp } = logObj.args;
-                await this.eventHandler.onChainSlashed(
+                return this.eventHandler.onChainSlashed(
                     channelId,
                     participant,
                     timestamp
@@ -139,7 +139,7 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.DisputeReducedResultCommitted(
                     channelId
                 ),
-            handler: async (logObj: any) => {
+            handler: (logObj: any) => {
                 const {
                     forkId,
                     channelId,
@@ -147,7 +147,7 @@ class StateChannelEventListener {
                     reductionTimestamp,
                     reducer
                 } = logObj.args;
-                await this.eventHandler.onDisputeReducedResultCommitted(
+                return this.eventHandler.onDisputeReducedResultCommitted(
                     channelId,
                     forkId,
                     reducedForkId,
@@ -161,7 +161,7 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.DisputeCommittedWithAuditingData(
                     channelId
                 ),
-            handler: async (logObj: any) => {
+            handler: (logObj: any) => {
                 const {
                     channelId,
                     dispute,
@@ -170,7 +170,7 @@ class StateChannelEventListener {
                     windowCreationTimestamp,
                     disputeAuditingData
                 } = logObj.args;
-                await this.eventHandler.onDisputeCommitted(
+                return this.eventHandler.onDisputeCommitted(
                     channelId,
                     dispute,
                     disputeCreationTimestamp,
@@ -185,9 +185,9 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.WithdrawalsUpdated(
                     channelId
                 ),
-            handler: async (logObj: any) => {
+            handler: (logObj: any) => {
                 const { channelId, totalWithdrawals } = logObj.args;
-                await this.eventHandler.onWithdrawalsUpdated(
+                return this.eventHandler.onWithdrawalsUpdated(
                     channelId,
                     totalWithdrawals
                 );
@@ -198,9 +198,9 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.ChannelStorageCleared(
                     channelId
                 ),
-            handler: async (logObj: any) => {
+            handler: (logObj: any) => {
                 const { channelId, latestJoinChannelBlockHash } = logObj.args;
-                await this.eventHandler.onChannelStorageCleared(
+                return this.eventHandler.onChannelStorageCleared(
                     channelId,
                     latestJoinChannelBlockHash
                 );
@@ -211,9 +211,9 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.DisputeKilled(
                     channelId
                 ),
-            handler: async (logObj: any) => {
+            handler: (logObj: any) => {
                 const { channelId, forkId, disputer } = logObj.args;
-                await this.eventHandler.onDisputeKilled(
+                return this.eventHandler.onDisputeKilled(
                     channelId,
                     forkId,
                     disputer
@@ -226,14 +226,14 @@ class StateChannelEventListener {
                 this.stateChannelManagerContract.filters.JoinChannelProcessed(
                     channelId
                 ),
-            handler: async (logObj: any) => {
+            handler: (logObj: any) => {
                 const {
                     channelId,
                     joinChannelBlock,
                     timestamp,
                     totalDeposits
                 } = logObj.args;
-                await this.eventHandler.onJoinChannelProcessed(
+                return this.eventHandler.onJoinChannelProcessed(
                     channelId,
                     joinChannelBlock,
                     timestamp,
