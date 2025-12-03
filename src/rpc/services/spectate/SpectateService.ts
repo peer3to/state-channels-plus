@@ -281,7 +281,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             )
         );
         // sync our local EVM to it
-        this.p2pManager.stateManager.eventHandler.onStateSnapshotUpdated(
+        await this.p2pManager.stateManager.eventHandler.onStateSnapshotUpdated(
             channelId,
             currentOnChainSnapshot
         );
