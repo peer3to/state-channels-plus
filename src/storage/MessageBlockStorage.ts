@@ -1,7 +1,7 @@
-import { ethers } from "ethers";
-import { MessageBlockStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/LocalDiamond";
+import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { BlockHeight, Hash } from "@/types/types";
-import { Codec, Type } from "@/utils";
+import { Codec, hash, Type } from "@/utils";
+import { ZeroHash } from "ethers";
 
 type StoreOptions = {
     hash?: Hash;
@@ -21,14 +21,14 @@ export class MessageBlockStorage {
     // ====================================
 
     store(messageBlock: MessageBlockStruct, options?: StoreOptions): Hash {
-        const hash =
+        const blockHash =
             options?.hash ??
-            ethers.keccak256(Codec.encode(messageBlock, Type.MessageBlock));
+            hash(Codec.encode(messageBlock, Type.MessageBlock));
 
         const blockHeight = this.normalizeBlockHeight(messageBlock.blockHeight);
 
-        if (!this.blockMap.has(hash)) {
-            this.blockMap.set(hash, messageBlock);
+        if (!this.blockMap.has(blockHash)) {
+            this.blockMap.set(blockHash, messageBlock);
         }
 
         if (
@@ -36,9 +36,9 @@ export class MessageBlockStorage {
             blockHeight >= this.latestBlockHeight
         ) {
             this.latestBlockHeight = blockHeight;
-            this.latestBlockHash = hash;
+            this.latestBlockHash = blockHash;
         }
-        return hash;
+        return blockHash;
     }
 
     // ====================================
@@ -54,9 +54,9 @@ export class MessageBlockStorage {
         fromBlockHash: Hash,
         toBlockHash?: Hash
     ): Generator<MessageBlockStruct, void, unknown> {
-        if (fromBlockHash == ethers.ZeroHash) return;
+        if (fromBlockHash == ZeroHash) return;
         let currentHash = fromBlockHash;
-        while (currentHash != ethers.ZeroHash) {
+        while (currentHash != ZeroHash) {
             if (toBlockHash && currentHash === toBlockHash) break;
             const messageBlock = this.blockMap.get(currentHash);
             if (!messageBlock)
