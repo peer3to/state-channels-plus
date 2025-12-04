@@ -216,7 +216,9 @@ export default class DisputeValidationService {
                     await txResponse.wait();
                 } catch (e) {
                     //TODO - interpret custom error
-                    console.error("Error applying dispute fraud proof:", e);
+                    this.logger.error("Error applying dispute fraud proof:", {
+                        error: e
+                    });
                 }
                 return false;
             }
