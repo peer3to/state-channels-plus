@@ -1,4 +1,4 @@
-import { ReduceOutputStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
+import { ReduceOutputStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import {
     BlockConfirmationEthersType,
     SignedBlockEthersType,
@@ -6,12 +6,12 @@ import {
     StateSnapshotEthersType,
     DisputeAuditingDataEthersType
 } from "./ethers";
-import { ForkId } from "./types";
+import { Bytes, ForkId } from "./types";
+
 import {
     MessageBlockStruct,
     StateSnapshotStruct
-} from "@typechain-types/contracts/V1/StateChannelManagerEvents";
-import { BytesLike } from "ethers";
+} from "@typechain-types/contracts/V1/types/DataTypes";
 
 export const MilestoneProofEthersType = `tuple(
     ${BlockConfirmationEthersType}[] blockConfirmations
@@ -99,7 +99,7 @@ export type ReduceData = {
     forkId: ForkId;
     reducedOutput: ReduceOutputStruct;
     latestStateSnapshot: StateSnapshotStruct;
-    encodedStateMachineState: BytesLike;
+    encodedStateMachineState: Bytes;
     inboundMessageBlocks: MessageBlockStruct[];
 };
 
