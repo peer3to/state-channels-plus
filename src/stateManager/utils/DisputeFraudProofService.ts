@@ -5,7 +5,6 @@ import {
 } from "@/types/sol-enums";
 import { Hash, Signature } from "@/types/types";
 import { Codec, DisputeFraudStruct, Logger } from "@/utils";
-import { FraudProofStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/FraudProofFacet";
 import {
     BlockConfirmationStruct,
     SignedBlockStruct
@@ -14,7 +13,10 @@ import {
     DisputeAuditingDataStruct,
     DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import {
+    DisputeFraudProofStruct,
+    FraudProofStruct
+} from "@typechain-types/contracts/V1/types/ProofTypes";
 import {
     DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksStruct,
     DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedStruct,
