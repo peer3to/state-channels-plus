@@ -32,7 +32,6 @@ import {
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
 import { DEBUG_DISPUTE_HANDLER } from "@/utils/config";
-import { MessageBlockStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 class DisputeManager {
     signer: ethers.Signer;
@@ -427,10 +426,8 @@ class DisputeManager {
                 milestoneSnapshots: milestoneSnapshots.map((snapshot) =>
                     snapshot.toStruct()
                 ),
-                inboundMessageBlocks:
-                    inboundMessageBlocks as MessageBlockStruct[],
-                outboundMessageBlocks:
-                    outboundMessageBlocks as MessageBlockStruct[]
+                inboundMessageBlocks: inboundMessageBlocks,
+                outboundMessageBlocks: outboundMessageBlocks
             }
         };
     }
