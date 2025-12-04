@@ -138,7 +138,7 @@ export class EventHandler {
             signatures: []
         };
         await this.stateManager.onBlockConfirmation(blockConfirmation, {
-            onChainTimestamp: timestamp,
+            onChainTimestamp: Number(timestamp),
             validationStrategy: new CalldataCommittedStrategy(
                 this.stateManager.disputeManager,
                 this.stateManager.blockValidationStrategy
