@@ -4,7 +4,7 @@ import { ethers } from "ethers";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Storage from "@/storage";
 import { isSubset, Logger } from "@/utils";
-import { Address, BlockCalldata, Signature } from "@/types/types";
+import { Address, Signature } from "@/types/types";
 
 import DisputeFraudProofService from "./utils/DisputeFraudProofService";
 import {
@@ -419,15 +419,13 @@ export default class DisputeValidationService {
             // [check] isPostedOnChain
             if (block?.onChainTimestamp) {
                 // TODO - race condtion
-                let previousBlockCalldata: BlockCalldata | undefined;
-                if (previousBlockOrSnapshot?.block) {
-                    previousBlockCalldata =
-                        this.storage.blockCalldata.getBlockCalldata(
-                            previousBlockOrSnapshot.block.forkId,
-                            previousBlockOrSnapshot.block.height,
-                            previousBlockOrSnapshot.block.author
-                        );
-                }
+                const previousBlockCalldata = previousBlockOrSnapshot?.block
+                    ? this.storage.blockCalldata.getBlockCalldata(
+                          previousBlockOrSnapshot.block.forkId,
+                          previousBlockOrSnapshot.block.height,
+                          previousBlockOrSnapshot.block.author
+                      )
+                    : undefined;
                 this.disputeFraudProofService.createTimeoutCalldataPosted(
                     dispute,
                     disputeAuditingData,
