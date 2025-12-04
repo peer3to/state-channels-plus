@@ -1,8 +1,9 @@
-import { Address, Bytes } from "./types/types";
 import {
     BalanceStruct,
     MessageStruct
-} from "@typechain-types/contracts/V1/AStateMachine";
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import { Address, Bytes } from "./types/types";
+
 import { LocalDiamond } from "@typechain-types/index";
 type TransitionResponse = {
     success: boolean;

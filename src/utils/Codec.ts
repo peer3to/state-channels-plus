@@ -10,7 +10,8 @@ import {
     ExitChannelStruct,
     JoinChannelBlockStruct,
     SnapshotDataStruct,
-    SignedBlockStruct
+    SignedBlockStruct,
+    MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     BlockDoubleSignProofStruct,
@@ -75,7 +76,6 @@ import {
     TimeoutThresholdStruct,
     TimeoutTooEarlyStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
-import { MessageBlockStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 export type FraudStruct =
     | BlockDoubleSignProofStruct
