@@ -5,8 +5,7 @@ import { MessageBlockStorage } from "@/storage/MessageBlockStorage";
 import { Hash } from "@/types/types";
 import * as factory from "../factory";
 import { Codec, Type } from "@/utils";
-import { MessageBlockStruct } from "@/index";
-
+import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 describe("MessageBlockStorage - outbound behavior", () => {
     let storage: MessageBlockStorage;
     let mockExitBlock: MessageBlockStruct;
@@ -33,7 +32,7 @@ describe("MessageBlockStorage - outbound behavior", () => {
         });
 
         it("accepts provided hash", () => {
-            const customHash = ethers.hexlify(ethers.randomBytes(32));
+            const customHash = factory.hash();
             const hash = storage.store(mockExitBlock, { hash: customHash });
             expect(hash).to.equal(customHash);
         });
@@ -51,7 +50,7 @@ describe("MessageBlockStorage - outbound behavior", () => {
         });
 
         it("returns undefined for unknown hashes", () => {
-            const randomHash = ethers.hexlify(ethers.randomBytes(32)) as Hash;
+            const randomHash = factory.hash();
             expect(storage.getMessageBlock(randomHash)).to.be.undefined;
         });
 

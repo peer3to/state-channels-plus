@@ -11,11 +11,11 @@ import { Block, StateSnapshot } from "@/models";
 import {
     BlockStruct,
     SignedBlockStruct,
-    SnapshotDataStruct
+    SnapshotDataStruct,
+    MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import { zeroHex, hexString } from "@test/factory";
-import { MessageBlockStruct } from "@/index";
 
 /**
  * Minimal test builder for StateManager

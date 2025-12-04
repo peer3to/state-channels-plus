@@ -526,7 +526,7 @@ export class PeerTestHarness<T extends AStateMachine> {
 
     async waitForP2PConnections(timeoutMs?: number): Promise<void> {
         const isGitHubActionsEnv = process.env.GITHUB_ACTIONS === "true";
-        const defaultTimeout = isGitHubActionsEnv ? 20000 : 10000;
+        const defaultTimeout = isGitHubActionsEnv ? 15000 : 5000;
         const actualTimeout = timeoutMs ?? defaultTimeout;
         const pollInterval = 50;
         const stableDurationThreshold = 200;
@@ -1093,7 +1093,7 @@ export class PeerTestHarness<T extends AStateMachine> {
     async verifyAllPeersAcknowledged(
         requestingPeerIndex: number,
         forkId: ForkId,
-        timeoutMs: number = 10000,
+        timeoutMs: number = 5000,
         excludePeerIndices: number[] = []
     ): Promise<boolean> {
         const requestingPeer = this.getPeer(requestingPeerIndex);

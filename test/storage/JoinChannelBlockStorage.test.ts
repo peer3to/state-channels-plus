@@ -1,11 +1,11 @@
 import { expect } from "chai";
 import { describe, it, beforeEach } from "mocha";
 import { ethers } from "hardhat";
+import * as factory from "../factory";
 import { MessageBlockStorage } from "@/storage/MessageBlockStorage";
 import { Hash } from "@/types/types";
-import { Codec, Type } from "@/utils";
-import { MessageBlockStruct } from "@/index";
-
+import { Codec, hash, Type } from "@/utils";
+import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 describe("MessageBlockStorage - inbound blocks", () => {
     let storage: MessageBlockStorage;
     let mockMessageBlock: MessageBlockStruct;
@@ -38,7 +38,7 @@ describe("MessageBlockStorage - inbound blocks", () => {
         });
 
         it("respects provided hash override", () => {
-            const customHash = ethers.hexlify(ethers.randomBytes(32));
+            const customHash = factory.hash();
             const hash = storage.store(mockMessageBlock, {
                 hash: customHash
             });
@@ -62,7 +62,7 @@ describe("MessageBlockStorage - inbound blocks", () => {
         });
 
         it("returns undefined for unknown hashes", () => {
-            const randomHash = ethers.hexlify(ethers.randomBytes(32)) as Hash;
+            const randomHash = factory.hash();
             expect(storage.getMessageBlock(randomHash)).to.be.undefined;
         });
 
@@ -100,7 +100,7 @@ describe("MessageBlockStorage - inbound blocks", () => {
                 blockHeight: 3n,
                 timestamp: 5n
             };
-            const middleHash = ethers.keccak256(
+            const middleHash = hash(
                 Codec.encode(middleBlock, Type.MessageBlock)
             );
 

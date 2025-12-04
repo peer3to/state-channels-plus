@@ -9,7 +9,9 @@ import {
     BlockConfirmationStruct,
     JoinChannelBlockStruct,
     StateSnapshotStruct,
-    SnapshotDataStruct
+    SnapshotDataStruct,
+    MessageBlockStruct,
+    MessageStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeStruct,
@@ -29,8 +31,6 @@ import {
     Timestamp
 } from "@/types/types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { MessageBlockStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
-import { MessageStruct } from "@typechain-types/contracts/V1/AStateMachine";
 
 export const hash = () => ethers.hexlify(ethers.randomBytes(32));
 
@@ -160,9 +160,7 @@ export function dispute(
             channelId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
             forkId: ethers.hexlify(ethers.randomBytes(32)),
             latestStateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
-            latestInboundMessageBlockHash: ethers.hexlify(
-                ethers.randomBytes(32)
-            ),
+            latestInboundMessageBlockHash: hash(),
             lastInboundMessageBlockHeight: 0,
             stateProof: {
                 milestones: [],
@@ -285,16 +283,12 @@ export function snapshotData(
     overrides: Partial<SnapshotDataStruct> = {}
 ): SnapshotDataStruct {
     return {
-        originForkId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
-        stateMachineStateHash: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
+        originForkId: zeroHex(),
+        stateMachineStateHash: zeroHex(),
         participants: [],
-        latestInboundMessageBlockHash: ethers.hexlify(
-            ethers.zeroPadBytes("0x00", 32)
-        ),
+        latestInboundMessageBlockHash: zeroHex(),
         latestInboundMessageBlockHeight: 0n,
-        latestOutboundMessageBlockHash: ethers.hexlify(
-            ethers.zeroPadBytes("0x00", 32)
-        ),
+        latestOutboundMessageBlockHash: zeroHex(),
         latestOutboundMessageBlockHeight: 0n,
         totalDeposits: {
             amount: 0n,
@@ -324,13 +318,9 @@ export function stateSnapshot(
                 ethers.Wallet.createRandom().address,
                 ethers.Wallet.createRandom().address
             ],
-            latestInboundMessageBlockHash: ethers.hexlify(
-                ethers.randomBytes(32)
-            ),
+            latestInboundMessageBlockHash: hash(),
             latestInboundMessageBlockHeight: 0n,
-            latestOutboundMessageBlockHash: ethers.hexlify(
-                ethers.randomBytes(32)
-            ),
+            latestOutboundMessageBlockHash: hash(),
             latestOutboundMessageBlockHeight: 0n,
             totalDeposits: {
                 amount: BigInt(randomInt(1, 1000)),
@@ -423,7 +413,7 @@ export function exitChannelBlockChain(
             blockHeight: BigInt(i + 1),
             messages: [
                 {
-                    messageType: ethers.hexlify(ethers.randomBytes(4)),
+                    messageType: hexString(4),
                     participant: hexString(20) as Address,
                     balance: {
                         amount: BigInt((i + 1) * 10),

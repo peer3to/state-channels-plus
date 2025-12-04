@@ -9,12 +9,14 @@ import {
     stateSnapshot
 } from "../factory";
 import { StateManagerTestBuilder, defaults } from "./StateManagerTestBuilder";
-import { BalanceStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    BalanceStruct,
+    MessageBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import { ForkId, Timestamp, Address, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { ethers } from "ethers";
 import StateManager from "@/stateManager";
-import { MessageBlockStruct } from "@/index";
 
 const outboundMessageBlock: MessageBlockStruct = {
     previousBlockHash: defaults.emptyBlockHash,
