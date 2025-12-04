@@ -27,12 +27,7 @@ describe("E2E: Core Functionality", function () {
 
             // Act
             for (let i = 0; i < 10; i++) {
-                const nextPeer = await harness!.getNextPeerToWrite();
-
-                // Wait for the peer to be ready for their turn
-                await harness!.waitForTurn(nextPeer.index);
-
-                await harness!.submitTransaction(nextPeer, (contract) =>
+                await harness!.submitNextTransaction((contract) =>
                     contract.add(1)
                 );
             }
@@ -100,12 +95,7 @@ describe("E2E: Core Functionality", function () {
 
             // Act
             for (let i = 0; i < 10; i++) {
-                const nextPeer = await harness!.getNextPeerToWrite();
-
-                // Wait for the peer to be ready for their turn
-                await harness!.waitForTurn(nextPeer.index);
-
-                await harness!.submitTransaction(nextPeer, (contract) =>
+                await harness!.submitNextTransaction((contract) =>
                     contract.add(1)
                 );
             }

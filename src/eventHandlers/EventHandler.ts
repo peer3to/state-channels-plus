@@ -408,14 +408,6 @@ export class EventHandler {
         if (!isRelevant) return;
 
         // create new dispute
-        this.logger.warn("TRIGGERING NEW DISPUTE from onDisputeKilled", {
-            channelId,
-            forkId,
-            disputer,
-            currentForkId: this.stateManager.forkId,
-            isRelevant,
-            isWindowDeleted
-        });
         await this.stateManager.disputeManager.dispute(forkId);
     }
 

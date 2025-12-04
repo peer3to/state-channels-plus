@@ -293,7 +293,10 @@ export class Codec {
         type: Type.MessageBlock
     ): MessageBlockStruct;
 
-    public static decode<T extends StructType>(encoded: Bytes, type: Type): T {
+    public static decode<T extends StructType>(
+        encoded: Bytes,
+        type: Type | FraudProofType | DisputeFraudProofType
+    ): T {
         const ethersType = this.structToEthersType.get(type);
         if (!ethersType) {
             throw new Error(`No ethers type mapping found for ${type}`);

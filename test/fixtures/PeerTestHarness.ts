@@ -103,6 +103,10 @@ export type SubmitTransactionOptions = {
     waitForPeers?: number[];
 };
 
+export type SubmitNextTransactionOptions = SubmitTransactionOptions & {
+    waitForTurn?: boolean;
+};
+
 export type AssertAllPeersInSyncOptions = {
     expectedState?: Bytes;
     peerIndices?: number[];
@@ -168,9 +172,9 @@ export class PeerTestHarness<T extends AStateMachine> {
     private get forkId(): ForkId {
         return this.activeForkId || this.peers[0].stateManager.forkId;
     }
-    public async waitForTurn(peerIndex: number, timeoutMs = 3000) {
+    public async waitForTurn(peer: TestPeer<T>, timeoutMs = 3000) {
         return this.waitForCondition(
-            () => this.peers[peerIndex].stateManager.isMyTurn?.() ?? false,
+            () => peer.stateManager.isMyTurn?.() ?? false,
             timeoutMs
         );
     }
@@ -584,10 +588,19 @@ export class PeerTestHarness<T extends AStateMachine> {
         return result;
     }
     async submitNextTransaction(
-        txFn: (contract: T) => Promise<any>
+        txFn: (contract: T) => Promise<any>,
+        options: SubmitNextTransactionOptions = { waitForTurn: true }
     ): Promise<void> {
         const nextPeer = await this.getNextPeerToWrite();
-        await this.submitTransaction(nextPeer, txFn);
+
+        if (options.waitForTurn) {
+            await this.waitForTurn(nextPeer);
+        }
+
+        await this.submitTransaction(nextPeer, txFn, {
+            waitForSync: options.waitForSync ?? true,
+            waitForPeers: options.waitForPeers
+        });
     }
 
     async waitForSync(timeout?: number): Promise<void> {

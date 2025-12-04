@@ -26,16 +26,17 @@ describe("E2E: RPC Services", function () {
             harness = new PeerTestHarness<MathStateMachine>();
             await harness.setup(3);
             await harness.openChannel();
-            await harness.submitNextTransaction((contract) => contract.add(1));
+            byzantinePeer = harness.peers[1];
+            nonByzantinePeers = [harness.peers[0], harness.peers[2]];
+
+            await harness!.submitNextTransaction((contract) => contract.add(1));
+            await harness!.submitNextTransaction((contract) => contract.add(1));
+
             harness.assertAllPeersInSync();
             harness.resetEventSpies();
 
-            byzantinePeer = harness.peers[0];
-
             // Create double-sign scenario to trigger dispute
             await harness.submitDoubleSignBlock(byzantinePeer.index);
-
-            nonByzantinePeers = [harness.peers[1], harness.peers[2]];
 
             // Wait for honest peers to detect fraud and initiate dispute
             const fraudDetected = await harness.waitForEventCounts(
@@ -536,22 +537,19 @@ describe("E2E: RPC Services", function () {
             const requestingPeer = nonByzantinePeers[1];
             const receivingPeer = nonByzantinePeers[0];
 
-            await harness.waitForCondition(async () => {
-                const isDisputedOnChain =
-                    await receivingPeer.stateManager.stateChannelManagerContract.isForkDisputed(
-                        requestingPeer.stateManager.channelId,
+            const isDisputedOnChain = await harness.waitForCondition(
+                () =>
+                    receivingPeer.stateManager.stateChannelManagerContract.isForkDisputed(
+                        harness.channelId,
                         harness.activeForkId!
-                    );
-                return isDisputedOnChain;
-            }, 5000);
+                    ),
+                5000
+            );
 
-            const isDisputedOnChain =
-                await receivingPeer.stateManager.stateChannelManagerContract.isForkDisputed(
-                    requestingPeer.stateManager.channelId,
-                    harness.activeForkId!
-                );
-
-            expect(isDisputedOnChain).to.be.true;
+            expect(
+                isDisputedOnChain,
+                "timed out waiting for fork to be disputed on-chain"
+            ).to.be.true;
 
             const transport = await waitForProfileTransport(
                 receivingPeer,
