@@ -3,6 +3,7 @@ import { expect } from "chai";
 import * as sinon from "sinon";
 import hre from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
+import { setImmediate } from "node:timers";
 import { EvmStateMachine, P2pInstance } from "@/evm";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";

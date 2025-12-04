@@ -1,6 +1,12 @@
 import { ethers } from "ethers";
 import { Codec } from "./Codec";
 
+type Listener = (...args: any[]) => unknown;
+
+function isListener(value: unknown): value is Listener {
+    return typeof value === "function";
+}
+
 function isEthersResult(value: unknown): value is ethers.Result {
     return (
         value instanceof ethers.Result &&
@@ -95,9 +101,9 @@ function wrapContractMethod(original: any, target: any) {
 }
 
 export function createEthersResultProxy<T>(contract: T): T {
-    const listenerMap = new WeakMap<Function, Function>();
+    const listenerMap = new WeakMap<Listener, Listener>();
 
-    const getWrappedListener = (listener: Function) => {
+    const getWrappedListener = (listener: Listener) => {
         if (listenerMap.has(listener)) {
             return listenerMap.get(listener)!;
         }
@@ -141,7 +147,7 @@ export function createEthersResultProxy<T>(contract: T): T {
                     if (args.length > 0) {
                         const handlerIndex = args.length - 1;
                         const listener = args[handlerIndex];
-                        if (typeof listener === "function") {
+                        if (isListener(listener)) {
                             args[handlerIndex] = getWrappedListener(listener);
                         }
                     }
@@ -157,7 +163,7 @@ export function createEthersResultProxy<T>(contract: T): T {
                     if (args.length > 0) {
                         const handlerIndex = args.length - 1;
                         const listener = args[handlerIndex];
-                        if (typeof listener === "function") {
+                        if (isListener(listener)) {
                             const wrapped = listenerMap.get(listener);
                             if (wrapped) {
                                 args[handlerIndex] = wrapped;
