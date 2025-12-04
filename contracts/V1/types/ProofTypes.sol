@@ -47,7 +47,7 @@ enum DisputeFraudProofType {
     DisputeInvalidOutputState,
     DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified,
     DisputeInvalidStateProofWithAuditingDataIntegrityVerified,
-    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks,
+    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks,
     DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified,
     DisputeInvalidBalanceInvariant,
     DisputeOnChainSlashesNotSubset,
@@ -55,5 +55,6 @@ enum DisputeFraudProofType {
     TimeoutCalldataPosted,
     TimeoutNotLinkedToLatestState,
     TimeoutParticipantNotNext,
-    TimeoutTooEarly
+    TimeoutTooEarly,
+    DisputeInvalidBlockInStateProofApplyFraudProof
 }

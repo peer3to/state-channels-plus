@@ -15,7 +15,7 @@ contract FraudProofFacet is StateChannelCommon {
         FraudProof[] memory proofs = fraudProofs;
         for (uint256 i = 0; i < proofs.length; i++) {
             if (!isParticipantSlashedOnChain(fraudProofVerificationContext.channelId, proofs[i].participant)) {
-                address slashedParticipant = _getHandle(proofs[i].proofType)(proofs[i], fraudProofVerificationContext);
+                address slashedParticipant = runFraudProof(proofs[i], fraudProofVerificationContext);
                 if (slashedParticipant == address(0) || slashedParticipant != proofs[i].participant) {
                     // slash the disputer
                     slashedParticipant = msg.sender;
@@ -26,6 +26,13 @@ contract FraudProofFacet is StateChannelCommon {
                 }
             }
         }
+    }
+
+    function runFraudProof(
+        FraudProof memory fraudProof,
+        FraudProofVerificationContext memory fraudProofVerificationContext
+    ) public returns (address) {
+        return _getHandle(fraudProof.proofType)(fraudProof, fraudProofVerificationContext);
     }
 
     function _getHandle(FraudProofType proofType)
@@ -95,6 +102,9 @@ contract FraudProofFacet is StateChannelCommon {
             blockInvalidSTProof.invalidBlock.encodedBlock, blockInvalidSTProof.invalidBlock.signature
         );
 
+        bool isSuccess;
+        bytes memory encodedModifiedState;
+        Message[] memory outboundMessages;
         if (fraudProofVerificationContext.channelId != fraudBlock.transaction.header.channelId) {
             revert ErrorNotSameChannelId();
         }
@@ -117,21 +127,44 @@ contract FraudProofFacet is StateChannelCommon {
             );
         }
 
-        (bool isSuccess, bytes memory encodedModifiedState) = StateChannelManagerProxy(address(this))
+        (isSuccess, encodedModifiedState, outboundMessages) = StateChannelManagerProxy(address(this))
             .executeStateTransition(
             fraudProofVerificationContext.channelId, previousStateStateMachineState, fraudBlock.transaction
         );
         if (!isSuccess) {
             return signer;
         }
+
+        Balance memory updatedTotalWithdrawals = previousStateSnapshot.snapshotData.totalWithdrawals;
+        bytes32 nextOutboundMessageBlockHash = previousStateSnapshot.snapshotData.latestOutboundMessageBlockHash;
+        uint256 outboundHeight = previousStateSnapshot.snapshotData.latestOutboundMessageBlockHeight;
+        if (outboundMessages.length > 0) {
+            for (uint256 i = 0; i < outboundMessages.length; i++) {
+                updatedTotalWithdrawals =
+                    stateMachineImplementation.addBalance(updatedTotalWithdrawals, outboundMessages[i].balance);
+            }
+
+            outboundHeight += 1;
+
+            MessageBlock memory outboundMessageBlock;
+            outboundMessageBlock.previousBlockHash = nextOutboundMessageBlockHash;
+            outboundMessageBlock.blockHeight = outboundHeight;
+            outboundMessageBlock.messages = outboundMessages;
+            outboundMessageBlock.totalBalance = updatedTotalWithdrawals;
+            outboundMessageBlock.timestamp = fraudBlock.transaction.header.timestamp;
+            nextOutboundMessageBlockHash = keccak256(abi.encode(outboundMessageBlock));
+        }
+
         SnapshotData memory newSnapshotData = SnapshotData({
             originForkId: previousStateSnapshot.forkId,
             stateMachineStateHash: keccak256(encodedModifiedState),
             participants: getStateMachineParticipants(encodedModifiedState),
-            latestJoinChannelBlockHash: previousStateSnapshot.snapshotData.latestJoinChannelBlockHash,
-            latestExitChannelBlockHash: previousStateSnapshot.snapshotData.latestExitChannelBlockHash,
+            latestInboundMessageBlockHash: previousStateSnapshot.snapshotData.latestInboundMessageBlockHash,
+            latestInboundMessageBlockHeight: previousStateSnapshot.snapshotData.latestInboundMessageBlockHeight,
+            latestOutboundMessageBlockHash: nextOutboundMessageBlockHash,
+            latestOutboundMessageBlockHeight: outboundHeight,
             totalDeposits: previousStateSnapshot.snapshotData.totalDeposits,
-            totalWithdrawals: previousStateSnapshot.snapshotData.totalWithdrawals
+            totalWithdrawals: updatedTotalWithdrawals
         });
 
         StateSnapshot memory newStateSnapshot = StateSnapshot({

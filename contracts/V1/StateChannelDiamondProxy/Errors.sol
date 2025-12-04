@@ -13,8 +13,10 @@ error ErrorBlockCalldataMsgSenderNotBlockAuthor();
 //StateSnapshot errors
 error ErrorStateSnapshotNotValid();
 error ErrorInvalidStateProof();
-error ErrorExitChannelBlocksInvalid();
-error ErrorExitChannelBlocksNotLinked();
+error ErrorOutboundMessageBlocksInvalid();
+error ErrorOutboundMessageBlocksNotLinked();
+error ErrorOutboundMessageBalanceMismatch();
+error ErrorInboundMessageBlockAlreadyPersisted();
 error ErrorLastSnapshotInvalid();
 error ErrorLastSnapshotDoesNotMatchGenesis();
 error ErrorSnapshotsNotProvided();
@@ -22,6 +24,8 @@ error ErrorSnapshotForkMismatch();
 error ErrorBlockHeightTooOld();
 error ErrorIncorrectSnapshotProvided();
 error ErrorNotGenesisSnapshot();
+error ErrorInboundMessageTypeUnsupported(bytes32 messageType);
+error ErrorOutboundMessageTypeUnsupported(bytes32 messageType);
 
 //Join channel
 error ErrorInvalidChannelId();
@@ -61,9 +65,10 @@ error ErrorDisputeStateProofInvalid();
 error ErrorDisputeStateMachineJoiningFailed();
 error ErrorDisputeStateMachineSlashingFailed();
 error ErrorDisputeStateMachineRemovingFailed();
+error ErrorDisputeStateMachineInboundProcessingFailed();
 error ErrorDisputeOutputStateSnapshotInvalid();
-error ErrorDisputeJoinChannelBlocksInvalid();
-error ErrorDisputeExitChannelBlocksInvalid();
+error ErrorDisputeInboundMessageBlocksInvalid();
+error ErrorDisputeOutboundMessageBlocksInvalid();
 error ErrorDisputeBalanceInvariantInvalid();
 error ErrorInvalidLatestState();
 

@@ -8,10 +8,14 @@ import {
     WrongGenesisProofStruct
 } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { ZeroHash } from "ethers";
 import { Address, Hash } from "@/types/types";
 import { Codec, FraudStruct } from "@/utils/Codec";
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
+
+const createEmptySignedBlock = (): SignedBlockStruct => ({
+    encodedBlock: "0x",
+    signature: "0x"
+});
 
 // ────────────────────── FRAUD PROOF SERVICE ─────────────────────
 
@@ -40,7 +44,7 @@ export default class FraudProofService {
                 )!;
         } else {
             // Height === 0 case - we have genesis state snapshot
-            prevSignedBlock = ZeroHash as unknown as SignedBlockStruct;
+            prevSignedBlock = createEmptySignedBlock();
             prevStateSnapshot = previousBlockOrSnapshot.stateSnapshot!;
         }
 
@@ -80,7 +84,7 @@ export default class FraudProofService {
                 )!;
         } else {
             // Height === 0 case - we have genesis state snapshot
-            prevSignedBlock = ZeroHash as unknown as SignedBlockStruct;
+            prevSignedBlock = createEmptySignedBlock();
             prevStateSnapshot = previousBlockOrSnapshot.stateSnapshot!;
         }
 

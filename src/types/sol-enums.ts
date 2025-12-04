@@ -12,7 +12,7 @@ export enum DisputeFraudProofType {
     DisputeInvalidOutputState,
     DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified,
     DisputeInvalidStateProofWithAuditingDataIntegrityVerified,
-    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks,
+    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks,
     DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified,
     DisputeInvalidBalanceInvariant,
     DisputeOnChainSlashesNotSubset,
@@ -20,7 +20,8 @@ export enum DisputeFraudProofType {
     TimeoutCalldataPosted,
     TimeoutNotLinkedToLatestState,
     TimeoutParticipantNotNext,
-    TimeoutTooEarly
+    TimeoutTooEarly,
+    DisputeInvalidBlockInStateProofApplyFraudProof
 }
 
 export const toSolidityFraudProofType = (value: FraudProofType) => value % 100;

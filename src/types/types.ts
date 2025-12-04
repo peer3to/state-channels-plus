@@ -1,5 +1,5 @@
 import { Block, StateSnapshot } from "@/models";
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { SignatureLike, BytesLike, AddressLike, BigNumberish } from "ethers";
 
 export type Hash = BytesLike;
@@ -28,4 +28,9 @@ export type UpdatedBlockWithCalldata = {
     signedBlock: SignedBlockStruct;
     timestamp: Timestamp;
     updatedBlock?: Block;
+};
+
+export type BlockCalldata = {
+    signedBlock: SignedBlockStruct;
+    onChainTimestamp: Timestamp;
 };

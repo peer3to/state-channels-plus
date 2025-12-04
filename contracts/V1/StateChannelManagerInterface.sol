@@ -20,10 +20,12 @@ abstract contract StateChannelManagerInterface {
 
     function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256);
 
+    function withdrawAssetsComposable(ExitChannel memory exitChannel) public virtual returns (bool);
+
     function executeStateTransition(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
         public
         virtual
-        returns (bool, bytes memory);
+        returns (bool, bytes memory, Message[] memory);
 
     function postBlockCalldata(SignedBlock memory signedBlock, uint256 maxTimestamp) public virtual;
 
@@ -44,7 +46,7 @@ abstract contract StateChannelManagerInterface {
         Dispute[] memory disputes,
         StateSnapshot memory latestStateSnapshot,
         bytes memory encodedStateMachineState,
-        JoinChannelBlock[] memory joinChannelBlocks
+        MessageBlock[] memory inboundMessageBlocks
     ) public virtual;
 
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public virtual;
@@ -52,14 +54,14 @@ abstract contract StateChannelManagerInterface {
     function updateStateSnapshotFork(
         bytes32 channelId,
         StateSnapshot memory newStateSnapshot,
-        ExitChannelBlock[] memory exitChannelBlocks
+        MessageBlock[] memory outboundMessageBlocks
     ) public virtual;
 
     function updateStateSnapshotSameFork(
         bytes32 channelId,
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
-        ExitChannelBlock[] memory exitChannelBlocks
+        MessageBlock[] memory outboundMessageBlocks
     ) public virtual;
 
     function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations) public virtual;
@@ -75,13 +77,13 @@ abstract contract StateChannelManagerInterface {
         ReduceOutput memory reducedOutput,
         StateSnapshot memory latestStateSnapshot,
         bytes memory encodedStateMachineState,
-        JoinChannelBlock[] memory joinChannelBlocks
-    ) public virtual returns (SnapshotData memory, bytes memory, ExitChannelBlock memory);
+        MessageBlock[] memory inboundMessageBlocks
+    ) public virtual returns (SnapshotData memory, bytes memory, MessageBlock memory);
 
     function reduceAndFinalize(
         Dispute[] memory disputes,
         StateSnapshot memory stateSnapshot,
         bytes memory encodedStateMachineState,
-        JoinChannelBlock[] memory joinChannelBlocks
+        MessageBlock[] memory inboundMessageBlocks
     ) public virtual;
 }

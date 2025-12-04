@@ -148,8 +148,8 @@ describe("Storage", () => {
             expect(snapshot1).to.deep.equal(blockSnapshot);
 
             // Modify the retrieved snapshot's snapshotData
-            snapshot1!.snapshotData.latestJoinChannelBlockHash = "0x11";
-            snapshot1!.snapshotData.latestExitChannelBlockHash = "0x22";
+            snapshot1!.snapshotData.latestInboundMessageBlockHash = "0x11";
+            snapshot1!.snapshotData.latestOutboundMessageBlockHash = "0x22";
 
             // Get snapshot second time
             const snapshot2 = storage.getStateSnapshot(coordinates);

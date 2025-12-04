@@ -3,6 +3,7 @@ import { TransportType } from "./TransportType";
 abstract class ATransport {
     abstract transportType: TransportType;
     isClosed: boolean = false;
+    peerAddress?: string;
 
     abstract send(serializedRPC: string): void;
     abstract onMessage(data: any): void;

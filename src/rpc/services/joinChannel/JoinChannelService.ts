@@ -148,7 +148,7 @@ class JoinChannelService extends ARpcService<JoinChannelRpcMethods> {
             // We have milestone snapshots, use the latest one
             const latestSnapshot =
                 milestoneSnapshots[milestoneSnapshots.length - 1];
-            return latestSnapshot.latestJoinBlockHash;
+            return latestSnapshot.latestInboundMessageBlockHash;
         } else {
             // Read from chain
             const scmContract =
@@ -157,7 +157,7 @@ class JoinChannelService extends ARpcService<JoinChannelRpcMethods> {
                 await scmContract.getStateSnapshot(channelId)
             );
 
-            return stateSnapshot.latestJoinBlockHash;
+            return stateSnapshot.latestInboundMessageBlockHash;
         }
     }
 

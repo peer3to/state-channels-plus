@@ -132,7 +132,10 @@ class DisputeManager {
             }
 
             this.storage.disputes.storeDisputedFork(forkId, true);
-            this.p2pEventHooks.onInitiatingDispute?.();
+            this.p2pEventHooks.onInitiatingDispute?.(
+                hash(Codec.encode(dispute, Type.Dispute)),
+                dispute
+            );
         } catch (error) {
             if (isCustomEvmError(error)) {
                 this.logger.error("Error uploading dispute", {
@@ -156,7 +159,41 @@ class DisputeManager {
             this.mutex.unlock();
         }
     }
-
+    public async killDispute(dispute: DisputeStruct): Promise<void> {
+        try {
+            // a mutex is not needed since we observe and validate a dispute only once and create only 1 disputeFraudProof for it
+            const disputeFraudProof =
+                this.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                    dispute
+                );
+            if (!disputeFraudProof) {
+                throw new Error("No dispute fraud proof found for dispute");
+            }
+            const txRespone =
+                await this.stateChannelManagerContract.applyDisputeFraudProofs([
+                    disputeFraudProof
+                ]);
+            txRespone.wait().then(() => {
+                this.logger.debug("Dispute killed successfully", {
+                    forkId: dispute.input.forkId,
+                    channelId: this.channelId
+                });
+            });
+        } catch (error) {
+            if (isCustomEvmError(error)) {
+                this.logger.error("CustomError killing dispute", {
+                    forkId: dispute.input.forkId,
+                    errorDescription: error.errorDescription
+                });
+            } else {
+                this.logger.error("Error killing dispute", {
+                    forkId: dispute.input.forkId,
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                });
+            }
+        }
+    }
     public async constructDispute(forkId: ForkId): Promise<{
         dispute: DisputeStruct;
         disputeConfirmation: DisputeConfirmationStruct;
@@ -267,15 +304,20 @@ class DisputeManager {
             disputeAuditingDataHash: disputeAuditingDataHash,
             disputer: disputer,
             timeout: timeoutStruct,
-            selfRemoval: selfRemoval
+            selfRemoval: selfRemoval,
+            latestInboundMessageBlockHash:
+                this.storage.inboundMessages.getLatestBlockHash() ||
+                ethers.ZeroHash,
+            lastInboundMessageBlockHeight:
+                this.storage.inboundMessages.getLatestBlockHeight() || 0
         };
 
         const outputSnapshotData =
             await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
                 disputeInput,
-                latestStateSnapshot.toStruct(),
-                latestStateMachineState,
-                auditingData.genesisStateSnapshotData.latestJoinChannelBlockHash
+                auditingData.latestStateSnapshot,
+                auditingData.latestStateStateMachineState,
+                auditingData.inboundMessageBlocks
             );
 
         const outputSnapshotDataHash = hash(
@@ -361,13 +403,18 @@ class DisputeManager {
                 "getDisputeAuditingData - latestStateStateMachineState not found"
             );
 
-        // exitChannelBlocks
-        const fromBlockHash = latestStateSnapshot.latestExitBlockHash;
-        const toBlockHash = genesisStateSnapshot.latestExitBlockHash;
-        const exitChannelBlocks =
-            this.storage.exitChannelBlocks.getBlocksInRange(
-                fromBlockHash,
-                toBlockHash
+        // inbound message blocks
+        const inboundMessageBlocks =
+            this.storage.inboundMessages.getMessageBlocksInRange(
+                latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
+                genesisStateSnapshot.snapshotData.latestInboundMessageBlockHash
+            );
+
+        // outbound message blocks
+        const outboundMessageBlocks =
+            this.storage.outboundMessages.getMessageBlocksInRange(
+                latestStateSnapshot.snapshotData.latestOutboundMessageBlockHash,
+                genesisStateSnapshot.snapshotData.latestOutboundMessageBlockHash
             );
 
         return {
@@ -379,7 +426,8 @@ class DisputeManager {
                 milestoneSnapshots: milestoneSnapshots.map((snapshot) =>
                     snapshot.toStruct()
                 ),
-                exitChannelBlocks: exitChannelBlocks
+                inboundMessageBlocks: inboundMessageBlocks,
+                outboundMessageBlocks: outboundMessageBlocks
             }
         };
     }

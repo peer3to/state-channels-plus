@@ -10,7 +10,8 @@ import {
     ExitChannelStruct,
     JoinChannelBlockStruct,
     SnapshotDataStruct,
-    SignedBlockStruct
+    SignedBlockStruct,
+    MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     BlockDoubleSignProofStruct,
@@ -35,7 +36,22 @@ import {
     BlockInvalidStateTransitionProofEthersType,
     InvalidTimestampProofEthersType,
     WrongGenesisProofEthersType,
-    DisputeAuditingDataEthersType
+    DisputeAuditingDataEthersType,
+    DisputeNotLatestStateProofEthersType,
+    DisputeInvalidOutputStateProofEthersType,
+    DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedProofEthersType,
+    DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedProofEthersType,
+    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksProofEthersType,
+    DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedProofEthersType,
+    DisputeInvalidBalanceInvariantProofEthersType,
+    DisputeOnChainSlashesNotSubsetProofEthersType,
+    TimeoutThresholdProofEthersType,
+    TimeoutCalldataPostedProofEthersType,
+    TimeoutNotLinkedToLatestStateProofEthersType,
+    TimeoutParticipantNotNextProofEthersType,
+    TimeoutTooEarlyProofEthersType,
+    DisputeInvalidBlockInStateProofApplyFraudProofEthersType,
+    MessageBlockEthersType
 } from "@/types";
 import {
     DisputeStruct,
@@ -44,6 +60,22 @@ import {
 import { Bytes, Timestamp } from "@/types/types";
 import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
 import { ExecResult } from "@ethereumjs/evm";
+import {
+    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksStruct,
+    DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedStruct,
+    DisputeInvalidBalanceInvariantStruct,
+    DisputeOnChainSlashesNotSubsetStruct,
+    DisputeInvalidBlockInStateProofApplyFraudProofStruct,
+    DisputeInvalidOutputStateStruct,
+    DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedStruct,
+    DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedStruct,
+    DisputeNotLatestStateStruct,
+    TimeoutCalldataPostedStruct,
+    TimeoutNotLinkedToLatestStateStruct,
+    TimeoutParticipantNotNextStruct,
+    TimeoutThresholdStruct,
+    TimeoutTooEarlyStruct
+} from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 
 export type FraudStruct =
     | BlockDoubleSignProofStruct
@@ -51,8 +83,25 @@ export type FraudStruct =
     | InvalidTimestampProofStruct
     | WrongGenesisProofStruct;
 
+export type DisputeFraudStruct =
+    | DisputeNotLatestStateStruct
+    | DisputeInvalidOutputStateStruct
+    | DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedStruct
+    | DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedStruct
+    | DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksStruct
+    | DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedStruct
+    | DisputeInvalidBalanceInvariantStruct
+    | DisputeOnChainSlashesNotSubsetStruct
+    | TimeoutThresholdStruct
+    | TimeoutCalldataPostedStruct
+    | TimeoutNotLinkedToLatestStateStruct
+    | TimeoutParticipantNotNextStruct
+    | TimeoutTooEarlyStruct
+    | DisputeInvalidBlockInStateProofApplyFraudProofStruct;
+
 type StructType =
     | FraudStruct
+    | DisputeFraudStruct
     | BlockStruct
     | { signedBlock: SignedBlockStruct; timestamp: Timestamp }
     | BlockConfirmationStruct
@@ -65,7 +114,8 @@ type StructType =
     | JoinChannelBlockStruct
     | ExitChannelBlockStruct
     | ExitChannelStruct
-    | DisputeAuditingDataStruct;
+    | DisputeAuditingDataStruct
+    | MessageBlockStruct;
 
 // Enum for better autocomplete and type safety
 export enum Type {
@@ -81,7 +131,8 @@ export enum Type {
     JoinChannelBlock,
     ExitChannelBlock,
     ExitChannel,
-    DisputeAuditingData
+    DisputeAuditingData,
+    MessageBlock
 }
 
 export class Codec {
@@ -102,24 +153,104 @@ export class Codec {
         [Type.ExitChannelBlock, ExitChannelBlockEthersType],
         [Type.ExitChannel, ExitChannelEthersType],
         [Type.DisputeAuditingData, DisputeAuditingDataEthersType],
+        [Type.MessageBlock, MessageBlockEthersType],
+        // Fraud proofs
         [FraudProofType.BlockDoubleSign, BlockDoubleSignProofEthersType],
         [
             FraudProofType.BlockInvalidStateTransition,
             BlockInvalidStateTransitionProofEthersType
         ],
         [FraudProofType.InvalidTimestamp, InvalidTimestampProofEthersType],
-        [FraudProofType.WrongGenesis, WrongGenesisProofEthersType]
+        [FraudProofType.WrongGenesis, WrongGenesisProofEthersType],
+        // Dispute fraud proofs
+        [
+            DisputeFraudProofType.DisputeNotLatestState,
+            DisputeNotLatestStateProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeInvalidOutputState,
+            DisputeInvalidOutputStateProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified,
+            DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeInvalidStateProofWithAuditingDataIntegrityVerified,
+            DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks,
+            DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified,
+            DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeInvalidBalanceInvariant,
+            DisputeInvalidBalanceInvariantProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeOnChainSlashesNotSubset,
+            DisputeOnChainSlashesNotSubsetProofEthersType
+        ],
+        [
+            DisputeFraudProofType.TimeoutThreshold,
+            TimeoutThresholdProofEthersType
+        ],
+        [
+            DisputeFraudProofType.TimeoutCalldataPosted,
+            TimeoutCalldataPostedProofEthersType
+        ],
+        [
+            DisputeFraudProofType.TimeoutNotLinkedToLatestState,
+            TimeoutNotLinkedToLatestStateProofEthersType
+        ],
+        [
+            DisputeFraudProofType.TimeoutParticipantNotNext,
+            TimeoutParticipantNotNextProofEthersType
+        ],
+        [DisputeFraudProofType.TimeoutTooEarly, TimeoutTooEarlyProofEthersType],
+        [
+            DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
+            DisputeInvalidBlockInStateProofApplyFraudProofEthersType
+        ]
     ]);
 
     public static encode(
         struct: StructType,
-        type: Type | FraudProofType
+        type: Type | FraudProofType | DisputeFraudProofType
     ): Bytes {
         const ethersType = this.structToEthersType.get(type);
         if (!ethersType) {
             throw new Error(`No ethers type mapping found for ${type}`);
         }
-        return ethers.AbiCoder.defaultAbiCoder().encode([ethersType], [struct]);
+        try {
+            return ethers.AbiCoder.defaultAbiCoder().encode(
+                [ethersType],
+                [struct]
+            );
+        } catch (error) {
+            const preview =
+                typeof struct === "object"
+                    ? JSON.stringify(
+                          struct,
+                          (_key, value) =>
+                              typeof value === "bigint"
+                                  ? value.toString()
+                                  : value,
+                          2
+                      )
+                    : String(struct);
+            const typeName =
+                typeof type === "number" && Type[type]
+                    ? `Type.${Type[type]}`
+                    : String(type);
+            throw new Error(
+                `Codec.encode failed for ${typeName}: ${(error as Error).message}. value=${preview}`
+            );
+        }
     }
 
     // Function overloads for type safety
@@ -157,6 +288,10 @@ export class Codec {
         encoded: Bytes,
         type: Type.ExitChannelBlock
     ): ExitChannelBlockStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.MessageBlock
+    ): MessageBlockStruct;
 
     public static decode<T extends StructType>(encoded: Bytes, type: Type): T {
         const ethersType = this.structToEthersType.get(type);
@@ -209,11 +344,17 @@ export class Codec {
             execResult.returnValue
         );
 
-        if (options.useObjectConversion) {
-            return Codec.ethersResultToObjectRecursive(decoded[0]) as T;
+        const value = decoded[0];
+        const shouldConvert =
+            options.useObjectConversion ||
+            (value instanceof ethers.Result &&
+                Object.getPrototypeOf(value) === ethers.Result.prototype);
+
+        if (shouldConvert) {
+            return Codec.ethersResultToObjectRecursive(value) as T;
         }
 
-        return decoded[0] as T;
+        return value as T;
     }
 
     public static convertEthersResultToObject<T>(result: ethers.Result): T {

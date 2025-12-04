@@ -420,38 +420,14 @@ export class MockSetup {
                 getStateSnapshotByHash: sinon.stub().returns(stateSnapshot()),
                 storeStateSnapshot: sinon.stub()
             },
-            exitChannelBlocks: {
-                getExitChannelBlock: sinon.stub().returns({
-                    exitChannels: [],
-                    previousBlockHash: "0x0000000000000000"
-                }),
-                getExitChannelBlockEntry: sinon.stub().returns({
-                    block: {
-                        exitChannels: [],
-                        previousBlockHash: "0x0000000000000000"
-                    }
-                }),
-                getLatestExitChannelBlockHash: sinon
-                    .stub()
-                    .returns("0x0000000000000000"),
-                getTotalWithdrawals: sinon
-                    .stub()
-                    .returns({ amount: 0n, data: "0x" }),
-                storeExitChannelBlock: sinon.stub()
+            outboundMessages: {
+                getMessageBlocksInRange: sinon.stub().returns([]),
+                store: sinon.stub()
             },
-            joinChannelBlocks: {
-                getJoinChannelBlockEntry: sinon.stub().returns({
-                    block: {
-                        previousBlockHash: "0x0000000000000000"
-                    }
-                }),
-                getLatestJoinChannelBlockHash: sinon
-                    .stub()
-                    .returns("0x0000000000000000"),
-                getTotalDeposits: sinon
-                    .stub()
-                    .returns({ amount: 0n, data: "0x" }),
-                storeJoinChannelBlock: sinon.stub()
+            inboundMessages: {
+                getMessageBlocksInRange: sinon.stub().returns([]),
+                store: sinon.stub(),
+                getMessageBlock: sinon.stub().returns(undefined)
             },
             exitPoints: {
                 getExitPointsInRange: sinon.stub().returns([1, 3, 5, 7]),
@@ -484,7 +460,7 @@ export class MockSetup {
             stateTransition: sinon.stub().resolves({
                 success: true,
                 successCallback: () => {},
-                exitChannels: []
+                outboundMessages: []
             }),
             getZeroBalance: sinon.stub().resolves({ amount: 0n, data: "0x" }),
             addBalance: sinon.stub().resolves({ amount: 100n, data: "0x" }),
@@ -513,7 +489,7 @@ export class MockSetup {
                 WithdrawalsUpdated: sinon.stub().returns("filter"),
                 ChannelStorageCleared: sinon.stub().returns("filter"),
                 DisputeKilled: sinon.stub().returns("filter"),
-                JoinChannelProcessed: sinon.stub().returns("filter")
+                InboundMessagesProcessed: sinon.stub().returns("filter")
             },
             getStateSnapshot: sinon.stub().resolves({
                 forkId: "0x1234567890abcdef",
@@ -525,8 +501,8 @@ export class MockSetup {
                     participants: [
                         "0x1234567890123456789012345678901234567890"
                     ],
-                    latestJoinChannelBlockHash: "0x0000000000000000",
-                    latestExitChannelBlockHash: "0x0000000000000000",
+                    latestInboundMessageBlockHash: "0x0000000000000000",
+                    latestOutboundMessageBlockHash: "0x0000000000000000",
                     totalDeposits: { amount: 0n, data: "0x" },
                     totalWithdrawals: { amount: 0n, data: "0x" }
                 }
@@ -546,7 +522,7 @@ export class MockSetup {
             reduce: {
                 staticCall: sinon.stub().resolves({
                     latestBlock: { stateSnapshotHash: "0xlatestsnaphash" },
-                    latestJoinChannelBlockHash: "0xlatestjoinblockhash"
+                    latestInboundMessageBlockHash: "0xlatestinboundblockhash"
                 })
             },
             reduceAndFinalize: sinon.stub().resolves({
@@ -586,8 +562,8 @@ export class MockSetup {
             originForkId: "0x1234567890abcdef",
             stateMachineStateHash: "0xabcdef1234567890",
             participants: ["0x1234567890123456789012345678901234567890"],
-            latestJoinChannelBlockHash: "0x0000000000000000",
-            latestExitChannelBlockHash: "0x0000000000000000",
+            latestInboundMessageBlockHash: "0x0000000000000000",
+            latestOutboundMessageBlockHash: "0x0000000000000000",
             totalDeposits: { amount: 0n, data: "0x" },
             totalWithdrawals: { amount: 0n, data: "0x" }
         } as SnapshotDataStruct;
