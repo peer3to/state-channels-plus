@@ -1,3 +1,4 @@
+import { Block } from "@/models";
 import Storage from "@/storage";
 import {
     DisputeFraudProofType,
