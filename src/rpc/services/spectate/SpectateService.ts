@@ -1,14 +1,14 @@
-import { ARpcService, MainRpcService } from "@/rpc";
+import { ARpcService } from "@/rpc";
 import { ChannelId, Timestamp, Bytes, Hash, ForkId } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { Codec, hash, Type } from "@/utils";
+import { Codec, Type } from "@/utils";
 import { ethers } from "ethers";
 import {
-    BlockConfirmationStruct,
-    StateSnapshotStruct
+    StateSnapshotStruct,
+    MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -16,7 +16,6 @@ import SpectateServiceRpcMethods from "./SpectateRpcMethods";
 import P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { Status } from "@/types";
-import { MessageBlockStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 export interface DisputeWindowVerification {
     disputeConfirmations: DisputeConfirmationStruct[];
@@ -433,7 +432,6 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             );
         }
     }
-
     public didRespond(transport: ATransport): boolean {
         return !this.requestMap.has(transport);
     }
