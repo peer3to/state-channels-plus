@@ -1,13 +1,9 @@
-import WebSocket, { WebSocketServer } from "ws";
+import WebSocket, { WebSocketServer, AddressInfo } from "ws";
 import P2PManager from "@/P2PManager";
 import { LocalTransport } from "@/transport";
 import { ChannelId } from "@/types/types";
 
-const PORT = 2001;
-const DISCOVERY_PORT = Number(process.env.DISCOVERY_PORT || PORT);
-const MIN_PORT = 20000;
-const MAX_PORT = 39999;
-const MAX_PORT_RETRIES = 100;
+const MAX_PORT_RETRIES = 20;
 
 type Port = number;
 
@@ -21,7 +17,7 @@ type DiscoveryInfo = {
  *
  * ROLES:
  * 1. REGISTRY (One per process):
- *    - Listens on DISCOVERY_PORT.
+ *    - Listens on a random available local port.
  *    - Stores list of active peers.
  *    - Broadcasts new peers to everyone.
  *
@@ -102,27 +98,26 @@ export class LocalDiscoveryServer {
      * Wraps createServer with retry logic.
      * Retries port binding on EADDRINUSE.
      */
-    private static async createServerWithRetry(options: {
-        minPort?: number;
-        maxPort?: number;
-        attempts?: number;
-        startPort?: number;
-        onConnection?: (ws: WebSocket) => void;
-        onError?: (err: Error) => void;
-    }): Promise<{
+    private static async createServerWithRetry(
+        options: {
+            port?: number;
+            onConnection?: (ws: WebSocket) => void;
+            onError?: (err: Error) => void;
+        } = {}
+    ): Promise<{
         server: WebSocketServer;
         connections: Set<WebSocket>;
         port: number;
     }> {
-        const minPort = options.minPort ?? MIN_PORT;
-        const maxPort = options.maxPort ?? MAX_PORT;
-        const attempts = options.attempts ?? MAX_PORT_RETRIES;
+        const attempts = MAX_PORT_RETRIES;
 
         let lastError: Error | null = null;
 
         for (let attempt = 0; attempt < attempts; attempt++) {
             const port =
-                Math.floor(Math.random() * (maxPort - minPort + 1)) + minPort;
+                typeof options.port === "number" && attempt === 0
+                    ? options.port
+                    : 0;
 
             let serverReady = false;
             let result: {
@@ -144,7 +139,8 @@ export class LocalDiscoveryServer {
                 await this.waitForServerReady(result.server);
                 serverReady = true;
 
-                return { ...result, port };
+                const resolvedPort = this.getServerPort(result.server);
+                return { ...result, port: resolvedPort };
             } catch (error: any) {
                 lastError = error;
 
@@ -177,6 +173,14 @@ export class LocalDiscoveryServer {
                 (errorMessage.includes("address already in use") ||
                     errorMessage.includes("EADDRINUSE")))
         );
+    }
+
+    private static getServerPort(server: WebSocketServer): number {
+        const address = server.address();
+        if (typeof address === "object" && address) {
+            return (address as AddressInfo).port;
+        }
+        throw new Error("Unable to determine server port");
     }
 
     /**
@@ -231,9 +235,6 @@ export class LocalDiscoveryServer {
 
         try {
             const { server, port } = await this.createServerWithRetry({
-                minPort: MIN_PORT,
-                maxPort: MAX_PORT,
-                attempts: maxRetries,
                 onConnection: (ws: WebSocket) => {
                     this.handleIncomingRegistration(ws);
                 },
@@ -329,9 +330,13 @@ export class LocalDiscoveryServer {
         this._peerDiscoveryState.set(server, new Set<number>());
 
         // 2. Connect to Registry
-        const actualDiscoveryPort = this.discoveryPort ?? DISCOVERY_PORT;
+        if (!this.discoveryPort) {
+            throw new Error(
+                "Discovery server not started. Call tryStart() before connectToPeers()."
+            );
+        }
         const discoveryWs = new WebSocket(
-            `ws://localhost:${actualDiscoveryPort}`
+            `ws://localhost:${this.discoveryPort}`
         );
         this.activeDiscoveryConnections.add(discoveryWs);
 
