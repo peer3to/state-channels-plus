@@ -1,7 +1,7 @@
 import { Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
+import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 type DisputeHash = Hash;
 

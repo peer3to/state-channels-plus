@@ -1,14 +1,13 @@
 import { Block } from "@/models";
 import { BlockValidationResult } from "@/types";
-import {
-    BlockConfirmationStruct,
-    DisputeStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+
 import AValidationStrategy from "./AValidationStrategy";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
 import ATransport from "@/transport/ATransport";
 import DisputeFraudProofService from "../utils/DisputeFraudProofService";
+import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export default class DisputeValidationStrategy extends AValidationStrategy {
     readonly fraudProofService: FraudProofService;
