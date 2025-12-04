@@ -1,5 +1,6 @@
 import {
     BlockConfirmationStruct,
+    MessageBlockStruct,
     SignedBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -24,7 +25,6 @@ import { Codec, hash, Logger, Type } from "@/utils";
 import { isEqual } from "lodash";
 import { ZeroHash } from "ethers";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
-import { MessageBlockStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
 
 export class EventHandler {
     private logger: Logger;

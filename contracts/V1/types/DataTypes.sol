@@ -21,7 +21,9 @@ contract DataTypes {
         StateSnapshot memory n,
         SnapshotData memory o,
         OpenChannel memory p,
-        OpenChannelConfirmation memory q
+        OpenChannelConfirmation memory q,
+        Message memory r,
+        MessageBlock memory s
     ) {}
 }
 
