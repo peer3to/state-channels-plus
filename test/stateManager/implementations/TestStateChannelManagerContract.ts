@@ -114,7 +114,7 @@ export class TestStateChannelManagerContract {
         WithdrawalsUpdated: sinon.stub(),
         ChannelStorageCleared: sinon.stub(),
         DisputeKilled: sinon.stub(),
-        JoinChannelProcessed: sinon.stub()
+        InboundMessagesProcessed: sinon.stub()
     };
 
     // Query filter

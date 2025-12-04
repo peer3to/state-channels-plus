@@ -31,8 +31,10 @@ export const SnapshotDataEthersType = `tuple(
 bytes32 originForkId,
 bytes32 stateMachineStateHash,
 address[] participants,
-bytes32 latestJoinChannelBlockHash,
-bytes32 latestExitChannelBlockHash,
+bytes32 latestInboundMessageBlockHash,
+uint256 latestInboundMessageBlockHeight,
+bytes32 latestOutboundMessageBlockHash,
+uint256 latestOutboundMessageBlockHeight,
 ${BalanceEthersType} totalDeposits,
 ${BalanceEthersType} totalWithdrawals
 )`;
@@ -86,6 +88,21 @@ bytes32 previousBlockHash,
 ${ExitChannelEthersType}[] exitChannels
 )`;
 
+export const MessageEthersType = `tuple(
+bytes32 messageType,
+address participant,
+${BalanceEthersType} balance,
+bytes data
+)`;
+
+export const MessageBlockEthersType = `tuple(
+bytes32 previousBlockHash,
+uint256 blockHeight,
+${MessageEthersType}[] messages,
+${BalanceEthersType} totalBalance,
+uint256 timestamp
+)`;
+
 export const TimeoutEthersType = `tuple(
 address participant,
 uint256 blockHeight,
@@ -101,5 +118,6 @@ ${SnapshotDataEthersType} genesisStateSnapshotData,
 ${StateSnapshotEthersType} latestStateSnapshot,
 ${StateSnapshotEthersType}[] milestoneSnapshots,
 bytes latestStateStateMachineState,
-${ExitChannelBlockEthersType}[] exitChannelBlocks
+${MessageBlockEthersType}[] inboundMessageBlocks,
+${MessageBlockEthersType}[] outboundMessageBlocks
 )`;

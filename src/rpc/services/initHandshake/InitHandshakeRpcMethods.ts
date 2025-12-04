@@ -83,6 +83,9 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             return;
         }
 
+        const normalizedAddress = signerAddress.toLowerCase();
+        this.senderTransport.peerAddress = normalizedAddress;
+
         let profile =
             this.p2pManager.profileManager.getProfileByEvmAddress(
                 signerAddress

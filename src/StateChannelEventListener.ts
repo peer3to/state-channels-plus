@@ -3,7 +3,6 @@ import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
 import { ChannelId } from "@/types/types";
 
 import { EventHandler } from "@/eventHandlers/EventHandler";
-import { Codec } from "@/utils";
 
 //TODO - made a PR to ethers.js to fix Deferred Topic Filter
 
@@ -55,7 +54,7 @@ class StateChannelEventListener {
                 const { channelId, stateSnapshot, encodedState } = logObj.args;
                 return this.eventHandler.onChannelOpened(
                     channelId,
-                    Codec.convertEthersResultToObject(stateSnapshot),
+                    stateSnapshot,
                     encodedState
                 );
             }
@@ -91,8 +90,7 @@ class StateChannelEventListener {
                     channelId,
                     commitmentHash,
                     sender,
-                    // important: the ethers type is readonly, this converts it to a mutable object
-                    Codec.convertEthersResultToObject(signedBlock),
+                    signedBlock,
                     timestamp
                 );
             }
@@ -113,10 +111,10 @@ class StateChannelEventListener {
 
                 return this.eventHandler.onDisputeCommitted(
                     channelId,
-                    Codec.convertEthersResultToObject(disputeConfirmation),
-                    disputeCreationTimestamp,
+                    disputeConfirmation,
+                    Number(disputeCreationTimestamp),
                     isFinal,
-                    windowCreationTimestamp
+                    Number(windowCreationTimestamp)
                 );
             }
         },
@@ -173,9 +171,9 @@ class StateChannelEventListener {
                 return this.eventHandler.onDisputeCommitted(
                     channelId,
                     dispute,
-                    disputeCreationTimestamp,
+                    Number(disputeCreationTimestamp),
                     isFinal,
-                    windowCreationTimestamp,
+                    Number(windowCreationTimestamp),
                     disputeAuditingData
                 );
             }
@@ -199,10 +197,11 @@ class StateChannelEventListener {
                     channelId
                 ),
             handler: (logObj: any) => {
-                const { channelId, latestJoinChannelBlockHash } = logObj.args;
+                const { channelId, latestInboundMessageBlockHash } =
+                    logObj.args;
                 return this.eventHandler.onChannelStorageCleared(
                     channelId,
-                    latestJoinChannelBlockHash
+                    latestInboundMessageBlockHash
                 );
             }
         },
@@ -221,23 +220,16 @@ class StateChannelEventListener {
             }
         },
 
-        JoinChannelProcessed: {
+        InboundMessagesProcessed: {
             filterFactory: (channelId: ChannelId) =>
-                this.stateChannelManagerContract.filters.JoinChannelProcessed(
+                this.stateChannelManagerContract.filters.InboundMessagesProcessed(
                     channelId
                 ),
             handler: (logObj: any) => {
-                const {
+                const { channelId, messageBlock } = logObj.args;
+                return this.eventHandler.onInboundMessagesProcessed(
                     channelId,
-                    joinChannelBlock,
-                    timestamp,
-                    totalDeposits
-                } = logObj.args;
-                return this.eventHandler.onJoinChannelProcessed(
-                    channelId,
-                    joinChannelBlock,
-                    timestamp,
-                    totalDeposits
+                    messageBlock
                 );
             }
         }

@@ -10,22 +10,22 @@ import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes
 import StateManager from "../stateManager/StateManager";
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
-import { ExitChannelEthersType, BalanceEthersType } from "@/types/ethers";
+import { BalanceEthersType, MessageEthersType } from "@/types/ethers";
 import {
     DebugProxy,
     decodeErrorProxy,
     Codec,
     createLogger,
     Logger,
-    createStaticCallProxy
+    createEthersResultProxy
 } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
 import { Address, Bytes } from "@/types/types";
 import {
-    ExitChannelStruct,
-    BalanceStruct
+    BalanceStruct,
+    MessageStruct
 } from "@typechain-types/contracts/V1/AStateMachine";
 import Storage from "@/storage";
 import {
@@ -122,23 +122,23 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                 await this.stateMachineContractExecuter.executeCall(
                     encodedData
                 );
-            // Decode the return values: (bool success, ExitChannel[] exitChannels)
+            // Decode the return values: (bool success, Message[] outboundMessages)
             const hexResult = hexlify(result.returnValue);
-            const [success, exitChannels] =
+            const [success, outboundMessages] =
                 ethers.AbiCoder.defaultAbiCoder().decode(
-                    ["bool", `${ExitChannelEthersType}[]`],
+                    ["bool", `${MessageEthersType}[]`],
                     hexResult
                 );
             return {
                 success: true,
                 successCallback: () => this.processLogs(result.logs),
-                exitChannels: exitChannels
+                outboundMessages: outboundMessages as MessageStruct[]
             };
         } catch (error) {
             return {
                 success: false,
                 successCallback: () => {},
-                exitChannels: []
+                outboundMessages: []
             };
         }
     }
@@ -162,15 +162,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             "address[]"
         );
         return addresses;
-    }
-
-    async getExitChannels(): Promise<ExitChannelStruct[]> {
-        const callData = this.getEncodedCalldata("getExitChannels");
-
-        return Codec.decodeEvmResult<ExitChannelStruct[]>(
-            await this.stateMachineContractExecuter.executeCall(callData),
-            `${ExitChannelEthersType}[]`
-        );
     }
 
     async getNextToWrite(): Promise<Address> {
@@ -331,7 +322,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         ) as unknown as LocalDiamond;
 
         // Wrap with staticCall proxy to auto-convert Result objects
-        const proxiedLocalDiamond = createStaticCallProxy(localDiamondContract);
+        const proxiedLocalDiamond =
+            createEthersResultProxy(localDiamondContract);
 
         return {
             evmDiamondStateMachine: new EvmDiamondStateMachine(

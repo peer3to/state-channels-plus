@@ -1,13 +1,14 @@
 pragma solidity ^0.8.8;
 
 import "./types/DataTypes.sol";
+import "./types/MessageTypeHashes.sol";
 
 abstract contract AStateMachine {
     Transaction _tx; // This should be used instead of msg.sender at least for now
     address _stateChannelManager;
     bool _nonreentrant;
     uint256 gasLimit;
-    ExitChannel[] private _exitChannels;
+    Message[] private _outboundMessages;
 
     constructor(uint256 _gasLimit) {
         gasLimit = _gasLimit;
@@ -31,8 +32,8 @@ abstract contract AStateMachine {
     function getNextToWrite() public view virtual returns (address);
 
     // return the current exit channels
-    function getExitChannels() public view returns (ExitChannel[] memory) {
-        return _exitChannels;
+    function getOutboundMessages() public view returns (Message[] memory) {
+        return _outboundMessages;
     }
 
     // return the balance1 + balance2
@@ -60,6 +61,23 @@ abstract contract AStateMachine {
 
     function getZeroBalance() public pure virtual returns (Balance memory zeroBalance);
 
+    function processInboundMessage(Message calldata message) external _nonReentrant returns (bool) {
+        return _processInboundMessage(message);
+    }
+
+    function _processInboundMessage(Message calldata message) internal virtual returns (bool) {
+        if (message.messageType == MESSAGE_TYPE_JOIN) {
+            JoinChannel memory joinChannel = abi.decode(message.data, (JoinChannel));
+            return _joinChannel(joinChannel);
+        }
+        return _processCustomInboundMessage(message);
+    }
+
+    function _processCustomInboundMessage(Message calldata message) internal virtual returns (bool) {
+        message;
+        return false;
+    }
+
     // modifies the state to add a new participant to the channel
     function _joinChannel(JoinChannel memory joinChannel) internal virtual returns (bool);
 
@@ -69,12 +87,21 @@ abstract contract AStateMachine {
     // similar to _slashParticipant, but doesn't have to punish the player - just removes them from the state channel
     function _removeParticipant(address adr) internal virtual returns (bool, ExitChannel memory exitChannel);
 
-    function _addExitChannel(ExitChannel memory exitChannel) internal {
-        _exitChannels.push(exitChannel);
+    function _addOutboundMessage(Message memory message) internal {
+        _outboundMessages.push(message);
     }
 
-    function _clearExitChannels() internal {
-        delete _exitChannels;
+    function _addExitChannel(ExitChannel memory exitChannel) internal {
+        Message memory outboundMessage;
+        outboundMessage.messageType = MESSAGE_TYPE_EXIT;
+        outboundMessage.participant = exitChannel.participant;
+        outboundMessage.balance = exitChannel.balance;
+        outboundMessage.data = abi.encode(exitChannel);
+        _addOutboundMessage(outboundMessage);
+    }
+
+    function _clearOutboundMessages() internal {
+        delete _outboundMessages;
     }
 
     function setState(bytes memory encodedState) external _nonReentrant {
@@ -106,9 +133,9 @@ abstract contract AStateMachine {
     function stateTransition(Transaction calldata transaction)
         external
         _nonReentrant
-        returns (bool, ExitChannel[] memory)
+        returns (bool, Message[] memory)
     {
-        _clearExitChannels();
+        _clearOutboundMessages();
         _tx = transaction;
         (bool success, bytes memory result) = address(this).call{gas: gasLimit}(transaction.body.data);
         // emit TxExecutedA(success, getState());
@@ -121,7 +148,11 @@ abstract contract AStateMachine {
                 revert(add(32, result), returndata_size)
             }
         }
-        return (success, _exitChannels);
+        Message[] memory recordedMessages = new Message[](_outboundMessages.length);
+        for (uint256 i = 0; i < _outboundMessages.length; i++) {
+            recordedMessages[i] = _outboundMessages[i];
+        }
+        return (success, recordedMessages);
     }
 
     modifier _nonReentrant() {

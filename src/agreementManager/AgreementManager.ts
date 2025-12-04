@@ -412,18 +412,17 @@ class AgreementManager {
                 "Missing latestEncodedState for reducedOutput in storage for syncing"
             );
 
-        // Get joinChannelBlocks that were applied during reduce
-        const joinChannelBlocksAppliedInReduce =
-            this.storage.joinChannelBlocks.getBlocksInRange(
-                reducedOutput.latestJoinChannelBlockHash,
-                reducedLatestStateSnapshot.latestJoinBlockHash
+        const inboundMessageBlocksAppliedInReduce =
+            this.storage.inboundMessages.getMessageBlocksInRange(
+                reducedOutput.latestInboundMessageBlockHash,
+                reducedLatestStateSnapshot.latestInboundMessageBlockHash
             );
         return {
             forkId: forkId,
             reducedOutput: reducedOutput,
             latestStateSnapshot: reducedLatestStateSnapshot.toStruct(),
             encodedStateMachineState: reducedLatestEncodedStateMachineState,
-            joinChannelBlocks: joinChannelBlocksAppliedInReduce
+            inboundMessageBlocks: inboundMessageBlocksAppliedInReduce
         };
     }
 }

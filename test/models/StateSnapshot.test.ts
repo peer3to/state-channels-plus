@@ -87,10 +87,20 @@ describe("StateSnapshot Model", () => {
             );
         });
 
-        it("should return correct latestJoinBlockHash", () => {
+        it("should return correct latestInboundMessageBlockHash", () => {
             const expected =
-                stateSnapshotStruct.snapshotData.latestJoinChannelBlockHash;
-            expect(stateSnapshot.latestJoinBlockHash).to.equal(expected);
+                stateSnapshotStruct.snapshotData.latestInboundMessageBlockHash;
+            expect(stateSnapshot.latestInboundMessageBlockHash).to.equal(
+                expected
+            );
+        });
+
+        it("should return correct latestOutboundMessageBlockHash", () => {
+            const expected =
+                stateSnapshotStruct.snapshotData.latestOutboundMessageBlockHash;
+            expect(stateSnapshot.latestOutboundMessageBlockHash).to.equal(
+                expected
+            );
         });
     });
 

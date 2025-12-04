@@ -5,10 +5,7 @@ import { Address } from "./types/types";
 class ProfileManager {
     private mapTransportToProfile: WeakMap<ATransport, PeerProfile> =
         new WeakMap<ATransport, PeerProfile>();
-    private mapEvmAddressToProfile: Map<Address, PeerProfile> = new Map<
-        Address,
-        PeerProfile
-    >();
+    private mapEvmAddressToProfile: Map<string, PeerProfile> = new Map();
     private mapHpAddressToProfile: Map<Address, PeerProfile> = new Map<
         Address,
         PeerProfile
@@ -18,7 +15,11 @@ class ProfileManager {
         const transport = profile.getTransport();
         if (transport) this.mapTransportToProfile.set(transport, profile);
         const evmAddress = profile.getEvmAddress();
-        if (evmAddress) this.mapEvmAddressToProfile.set(evmAddress, profile);
+        if (evmAddress)
+            this.mapEvmAddressToProfile.set(
+                this.normalizeAddress(evmAddress),
+                profile
+            );
         const hpAddress = profile.getHpAddress();
         if (hpAddress) {
             this.mapHpAddressToProfile.set(hpAddress, profile);
@@ -29,12 +30,16 @@ class ProfileManager {
         if (transport) this.mapTransportToProfile.delete(transport);
         const evmAddress = profile.getEvmAddress();
         if (evmAddress)
-            this.mapEvmAddressToProfile.delete(evmAddress.toString());
+            this.mapEvmAddressToProfile.delete(
+                this.normalizeAddress(evmAddress)
+            );
         const hpAddress = profile.getHpAddress();
         if (hpAddress) this.mapHpAddressToProfile.delete(hpAddress);
     }
     public updateTransport(profileAddress: string, newTransport: ATransport) {
-        const profile = this.mapEvmAddressToProfile.get(profileAddress);
+        const profile = this.mapEvmAddressToProfile.get(
+            this.normalizeAddress(profileAddress)
+        );
         if (!profile) return;
         const oldTransport = profile.getTransport();
         if (oldTransport) this.removeTransport(oldTransport);
@@ -50,15 +55,34 @@ class ProfileManager {
     public getProfileByTransport(
         transport: ATransport
     ): PeerProfile | undefined {
-        return this.mapTransportToProfile.get(transport);
+        const existingProfile = this.mapTransportToProfile.get(transport);
+        if (existingProfile) {
+            return existingProfile;
+        }
+
+        for (const profile of this.mapEvmAddressToProfile.values()) {
+            if (profile.getTransport() === transport) {
+                this.mapTransportToProfile.set(transport, profile);
+                return profile;
+            }
+        }
+
+        return undefined;
     }
     public getProfileByEvmAddress(
         evmAddress: Address
     ): PeerProfile | undefined {
-        return this.mapEvmAddressToProfile.get(evmAddress);
+        return this.mapEvmAddressToProfile.get(
+            this.normalizeAddress(evmAddress)
+        );
     }
     public getProfileByHpAddress(hpAddress: Address): PeerProfile | undefined {
         return this.mapHpAddressToProfile.get(hpAddress);
+    }
+    private normalizeAddress(address: Address): string {
+        const addressString =
+            typeof address === "string" ? address : address.toString();
+        return addressString.toLowerCase();
     }
 }
 

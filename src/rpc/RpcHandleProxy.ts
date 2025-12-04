@@ -14,7 +14,9 @@ type RpcHandleMethod<T> = T extends (...args: infer A) => any
  * Transforms all function/method return types into RpcHandlers
  */
 export type RpcHandleMethods<T extends ARpcMethods> = {
-    [K in keyof T as T[K] extends Function ? K : never]: RpcHandleMethod<T[K]>;
+    [K in keyof T as T[K] extends (...args: any[]) => unknown
+        ? K
+        : never]: RpcHandleMethod<T[K]>;
 };
 
 /**

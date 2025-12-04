@@ -5,14 +5,13 @@ import { ethers } from "ethers";
 import {
     TransactionStruct,
     SignedBlockStruct,
-    ExitChannelBlockStruct,
-    ExitChannelStruct,
-    JoinChannelBlockStruct,
     BalanceStruct,
     StateSnapshotStruct,
     BlockConfirmationStruct,
     BlockStruct,
-    SnapshotDataStruct
+    SnapshotDataStruct,
+    MessageStruct,
+    MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // TypeChain types - Proof types
@@ -55,7 +54,7 @@ import {
     isCustomEvmError,
     difference,
     Logger,
-    createStaticCallProxy
+    createEthersResultProxy
 } from "@/utils";
 // Types
 import { BlockValidationResult, Status, TimeConfig } from "@/types";
@@ -126,7 +125,7 @@ class StateManager {
         this.diamondStateMachine = diamondStateMachine;
         this.p2pEventHooks = p2pEventHooks;
         this.timeConfig = timeConfig;
-        this.stateChannelManagerContract = createStaticCallProxy(
+        this.stateChannelManagerContract = createEthersResultProxy(
             stateChannelManagerContract
         ) as StateChannelManagerProxy;
         this.storage = storage;
@@ -337,7 +336,7 @@ class StateManager {
                 disputes,
                 reduceData.latestStateSnapshot,
                 reduceData.encodedStateMachineState,
-                reduceData.joinChannelBlocks
+                reduceData.inboundMessageBlocks
             )
             .then((tx) => tx.wait())
             .catch((error) => {
@@ -370,13 +369,13 @@ class StateManager {
             });
 
         // Compute local state after reduction (optimistic - assume tx will succeed)
-        const [snapshotData, encodedStateMachineState, exitChannelBlock] =
+        const [snapshotData, encodedStateMachineState, outboundMessageBlock] =
             await this.diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
                 forkId,
                 reducedOutput,
                 reduceData.latestStateSnapshot,
                 reduceData.encodedStateMachineState,
-                reduceData.joinChannelBlocks
+                reduceData.inboundMessageBlocks
             );
 
         const reducedForkId = ethers.keccak256(
@@ -392,7 +391,7 @@ class StateManager {
             encodedStateMachineState,
             reducedForkId,
             genesisTimestamp,
-            exitChannelBlock
+            outboundMessageBlock
         );
     }
     public getSignerAddress(): Address {
@@ -410,15 +409,13 @@ class StateManager {
     }
 
     //Triggered by the On-chain Event Listener when a joinChannelEvent is emitted on-chain
-    public async onJoinChannel(
-        joinChannelBlock: JoinChannelBlockStruct,
-        _timestamp: Timestamp,
-        totalDeposits: BalanceStruct
+    public async onInboundMessage(
+        messageBlock: MessageBlockStruct,
+        messageBlockHash: Hash
     ) {
-        this.storage.joinChannelBlocks.storeJoinChannelBlock(
-            joinChannelBlock,
-            totalDeposits
-        );
+        this.storage.inboundMessages.store(messageBlock, {
+            hash: messageBlockHash
+        });
     }
 
     private async tryExecuteFromQueue() {
@@ -443,11 +440,12 @@ class StateManager {
         encodedState: Bytes,
         forkId: ForkId,
         genesisTimestamp: Timestamp,
-        exitChannelBlock?: ExitChannelBlockStruct
+        outboundMessageBlock?: MessageBlockStruct
     ): Promise<void> {
+        const normalizedGenesisTimestamp = Number(genesisTimestamp);
         this.logger.verbose("Setting genesis state", {
             forkId,
-            genesisTimestamp,
+            genesisTimestamp: normalizedGenesisTimestamp,
             participantCount: snapshotData.participants.length
         });
 
@@ -455,7 +453,7 @@ class StateManager {
         const _genesisSnapshot: StateSnapshotStruct = {
             forkId,
             blockHeight: 0,
-            timestamp: genesisTimestamp,
+            timestamp: normalizedGenesisTimestamp,
             snapshotData: snapshotData
         };
         const genesisSnapshot = StateSnapshot.from(_genesisSnapshot);
@@ -463,10 +461,8 @@ class StateManager {
 
         // store exit channel block
         // TODO - check if exists
-        if (exitChannelBlock)
-            this.storage.exitChannelBlocks.storeExitChannelBlock(
-                exitChannelBlock
-            );
+        if (outboundMessageBlock)
+            this.storage.outboundMessages.store(outboundMessageBlock);
 
         // store genesis state
         this.storage.stateMachineStates.storeStateMachineState(encodedState);
@@ -485,7 +481,7 @@ class StateManager {
         this.p2pEventHooks.onTurn?.(nextToWrite);
         const nextTransactionCnt =
             this.storage.blocks.getNextBlockHeight(forkId);
-        let timeLost = Clock.getTimeInSeconds() - genesisTimestamp;
+        let timeLost = Clock.getTimeInSeconds() - normalizedGenesisTimestamp;
         timeLost = timeLost < 0 ? 0 : timeLost; // if genesisTimestamp is in the future - no time is lost
 
         this.timeoutManager.scheduleTask(
@@ -572,7 +568,7 @@ class StateManager {
                 success,
                 encodedState,
                 successCallback,
-                exitChannels,
+                outboundMessages,
                 leftParticipants
             } = await this.applyTransaction(block.transaction);
 
@@ -584,13 +580,12 @@ class StateManager {
                 );
             }
 
-            // Validate state snapshot hash
-            const { stateSnapshot, exitChannelBlock, totalWithdrawals } =
+            const { stateSnapshot, outboundMessageBlock, totalWithdrawals } =
                 await this.createStateSnapshot(
                     hash(encodedState),
                     block.coordinates,
                     block.timestamp,
-                    exitChannels
+                    outboundMessages
                 );
 
             if (stateSnapshot.hash !== block.stateSnapshotHash) {
@@ -610,7 +605,7 @@ class StateManager {
                 successCallback,
                 totalWithdrawals,
                 leftParticipants,
-                exitChannelBlock
+                outboundMessageBlock
             );
 
             // success - no disconnect
@@ -625,12 +620,12 @@ class StateManager {
         success: boolean;
         encodedState: Bytes;
         successCallback: () => void;
-        exitChannels: ExitChannelStruct[];
+        outboundMessages: MessageStruct[];
         leftParticipants: Set<Address>;
     }> {
         const previousParticipants =
             await this.diamondStateMachine.getParticipants();
-        const { success, successCallback, exitChannels } =
+        const { success, successCallback, outboundMessages } =
             await this.diamondStateMachine.stateTransition(transaction);
         const encodedState = await this.diamondStateMachine.getState();
         const currentParticipants =
@@ -645,7 +640,7 @@ class StateManager {
             success,
             encodedState,
             successCallback,
-            exitChannels,
+            outboundMessages,
             leftParticipants
         };
     }
@@ -671,7 +666,7 @@ class StateManager {
                 success,
                 encodedState,
                 successCallback,
-                exitChannels,
+                outboundMessages,
                 leftParticipants
             } = await this.applyTransaction(tx);
 
@@ -681,7 +676,7 @@ class StateManager {
                 );
             }
 
-            const { stateSnapshot, exitChannelBlock, totalWithdrawals } =
+            const { stateSnapshot, outboundMessageBlock, totalWithdrawals } =
                 await this.createStateSnapshot(
                     hash(encodedState),
                     {
@@ -689,7 +684,7 @@ class StateManager {
                         height: Number(tx.header.transactionCnt)
                     },
                     Number(tx.header.timestamp),
-                    exitChannels
+                    outboundMessages
                 );
 
             const blockStruct = await this.createBlock(tx, stateSnapshot.hash);
@@ -712,7 +707,7 @@ class StateManager {
                 successCallback,
                 totalWithdrawals,
                 leftParticipants,
-                exitChannelBlock
+                outboundMessageBlock
             );
 
             return block.blockConfirmationStruct;
@@ -787,7 +782,7 @@ class StateManager {
                             sameForkData.milestoneSnapshots.map((snapshot) =>
                                 snapshot.toStruct()
                             ),
-                            sameForkData.exitChannelBlocks
+                            sameForkData.outboundMessageBlocks
                         );
                     await txResponse.wait();
                 } catch (error) {
@@ -826,7 +821,7 @@ class StateManager {
                         [
                             this.channelId,
                             forkData.genesisSnapshot.toStruct(),
-                            forkData.exitBlocks
+                            forkData.outboundMessageBlocks
                         ]
                     );
                 callData.push(forkCalldata);
@@ -847,7 +842,7 @@ class StateManager {
                         sameForkData.milestoneSnapshots.map((snapshot) =>
                             snapshot.toStruct()
                         ),
-                        sameForkData.exitChannelBlocks
+                        sameForkData.outboundMessageBlocks
                     ]
                 );
             callData.push(sameForkCalldata);
@@ -886,7 +881,7 @@ class StateManager {
         | {
               milestoneProofs: MilestoneProofStruct[];
               milestoneSnapshots: StateSnapshot[];
-              exitChannelBlocks: ExitChannelBlockStruct[];
+              outboundMessageBlocks: MessageBlockStruct[];
           }
         | undefined
     > {
@@ -958,11 +953,12 @@ class StateManager {
             }
 
             const currentOnChainExitBlockHash =
-                currentOnChainSnapshot.snapshotData.latestExitChannelBlockHash;
+                currentOnChainSnapshot.snapshotData
+                    .latestOutboundMessageBlockHash;
             const latestLocalExitBlockHash =
-                latestSnapshot.snapshotData.latestExitChannelBlockHash;
-            const exitChannelBlocks =
-                this.storage.exitChannelBlocks.getBlocksInRange(
+                latestSnapshot.snapshotData.latestOutboundMessageBlockHash;
+            const outboundMessageBlocks =
+                this.storage.outboundMessages.getMessageBlocksInRange(
                     latestLocalExitBlockHash,
                     currentOnChainExitBlockHash
                 );
@@ -970,7 +966,7 @@ class StateManager {
             return {
                 milestoneProofs,
                 milestoneSnapshots,
-                exitChannelBlocks
+                outboundMessageBlocks
             };
         } catch (error) {
             this.logger.error(
@@ -990,7 +986,7 @@ class StateManager {
     public async prepareUpdateStateSnapshotFork(): Promise<
         | {
               genesisSnapshot: StateSnapshot;
-              exitBlocks: ExitChannelBlockStruct[];
+              outboundMessageBlocks: MessageBlockStruct[];
           }
         | undefined
     > {
@@ -1063,7 +1059,6 @@ class StateManager {
                     await this.stateChannelManagerContract.reduce.staticCall(
                         disputes
                     );
-
                 const reduceData = await this.agreementManager.getReduceData(
                     currentForkId,
                     reducedOutput
@@ -1076,7 +1071,7 @@ class StateManager {
                             disputes,
                             reduceData.latestStateSnapshot,
                             reduceData.encodedStateMachineState,
-                            reduceData.joinChannelBlocks
+                            reduceData.inboundMessageBlocks
                         );
                     await txResponse.wait();
                 } catch (error) {
@@ -1117,18 +1112,20 @@ class StateManager {
             }
 
             // Build exit blocks
-            const latestExitBlockHash =
-                genesisSnapshot.snapshotData.latestExitChannelBlockHash;
-            const currentOnChainExitBlockHash =
-                currentOnChainSnapshot.snapshotData.latestExitChannelBlockHash;
-            const exitBlocks = this.storage.exitChannelBlocks.getBlocksInRange(
-                latestExitBlockHash,
-                currentOnChainExitBlockHash
-            );
+            const latestOutboundBlockHash =
+                genesisSnapshot.snapshotData.latestOutboundMessageBlockHash;
+            const currentOnChainOutboundBlockHash =
+                currentOnChainSnapshot.snapshotData
+                    .latestOutboundMessageBlockHash;
+            const outboundMessageBlocks =
+                this.storage.outboundMessages.getMessageBlocksInRange(
+                    latestOutboundBlockHash,
+                    currentOnChainOutboundBlockHash
+                );
 
             return {
                 genesisSnapshot,
-                exitBlocks
+                outboundMessageBlocks
             };
         } catch (error) {
             this.logger.error("Error preparing update state snapshot fork", {
@@ -1384,10 +1381,10 @@ class StateManager {
         stateMachineStateHash: Hash,
         coordinates: BlockCoordinates,
         timestamp: Timestamp,
-        exitChannels?: ExitChannelStruct[]
+        outboundMessages: MessageStruct[]
     ): Promise<{
         stateSnapshot: StateSnapshot;
-        exitChannelBlock?: ExitChannelBlockStruct;
+        outboundMessageBlock?: MessageBlockStruct;
         totalWithdrawals: BalanceStruct;
     }> {
         const previousStateSnapshot =
@@ -1397,29 +1394,43 @@ class StateManager {
                 "createStateSnapshot for block - previousStateSnapshot undefined"
             );
 
-        const latestJoinChannelBlockHash =
-            previousStateSnapshot.snapshotData.latestJoinChannelBlockHash;
-        const totalDeposits = previousStateSnapshot.snapshotData.totalDeposits;
+        const previousSnapshotData = previousStateSnapshot.snapshotData;
+        const latestInboundMessageBlockHash =
+            previousSnapshotData.latestInboundMessageBlockHash;
+        const totalDeposits = previousSnapshotData.totalDeposits;
+        const originForkId = previousSnapshotData.originForkId;
 
-        let { latestExitChannelBlockHash, totalWithdrawals, participants } =
-            previousStateSnapshot.snapshotData;
+        let { latestOutboundMessageBlockHash, totalWithdrawals } =
+            previousSnapshotData;
+        let latestOutboundMessageBlockHeight = BigInt(
+            previousSnapshotData.latestOutboundMessageBlockHeight ?? 0n
+        );
+        const latestInboundMessageBlockHeight = BigInt(
+            previousSnapshotData.latestInboundMessageBlockHeight ?? 0n
+        );
+        const participants = await this.diamondStateMachine.getParticipants();
 
-        let exitChannelBlock: ExitChannelBlockStruct | undefined;
+        let outboundMessageBlock: MessageBlockStruct | undefined;
 
-        if (exitChannels && exitChannels.length > 0) {
-            participants = await this.diamondStateMachine.getParticipants();
-            exitChannelBlock = {
-                exitChannels,
-                previousBlockHash: latestExitChannelBlockHash
-            };
-
-            latestExitChannelBlockHash = hash(
-                Codec.encode(exitChannelBlock, Type.ExitChannelBlock)
+        if (outboundMessages.length > 0) {
+            totalWithdrawals = await this.calculateTotalBalance(
+                outboundMessages,
+                totalWithdrawals
             );
 
-            totalWithdrawals = await this.calculateTotalBalance(
-                exitChannels,
-                totalWithdrawals
+            latestOutboundMessageBlockHeight =
+                latestOutboundMessageBlockHeight + 1n;
+
+            outboundMessageBlock = {
+                previousBlockHash: latestOutboundMessageBlockHash,
+                blockHeight: latestOutboundMessageBlockHeight,
+                messages: outboundMessages,
+                totalBalance: totalWithdrawals,
+                timestamp: BigInt(timestamp)
+            };
+
+            latestOutboundMessageBlockHash = hash(
+                Codec.encode(outboundMessageBlock, Type.MessageBlock)
             );
         }
 
@@ -1428,11 +1439,13 @@ class StateManager {
             blockHeight: BigInt(coordinates.height),
             timestamp: timestamp,
             snapshotData: {
-                originForkId: previousStateSnapshot.snapshotData.originForkId,
+                originForkId,
                 stateMachineStateHash: stateMachineStateHash,
                 participants,
-                latestJoinChannelBlockHash,
-                latestExitChannelBlockHash,
+                latestInboundMessageBlockHash,
+                latestInboundMessageBlockHeight,
+                latestOutboundMessageBlockHash,
+                latestOutboundMessageBlockHeight,
                 totalDeposits,
                 totalWithdrawals
             }
@@ -1440,7 +1453,7 @@ class StateManager {
 
         return {
             stateSnapshot: StateSnapshot.from(stateSnapshot),
-            exitChannelBlock,
+            outboundMessageBlock,
             totalWithdrawals
         };
     }
@@ -1484,7 +1497,7 @@ class StateManager {
         successCallback: () => void,
         totalWithdrawals: BalanceStruct,
         leftParticipants: Set<Address>,
-        exitChannelBlock?: ExitChannelBlockStruct
+        outboundMessageBlock?: MessageBlockStruct
     ): Promise<void> {
         // step 1 - Confirm and Gossip
         if (await this.shouldSignBlock(block)) {
@@ -1509,12 +1522,9 @@ class StateManager {
             { hash: stateSnapshot.stateMachineStateHash }
         );
 
-        // step 5 - persist the exit channel blocks if any
-        if (exitChannelBlock) {
-            this.storage.exitChannelBlocks.storeExitChannelBlock(
-                exitChannelBlock,
-                totalWithdrawals
-            );
+        // step 5 - persist the outbound message blocks if any
+        if (outboundMessageBlock) {
+            this.storage.outboundMessages.store(outboundMessageBlock);
         }
 
         // step 6 - persist exit points
@@ -1527,7 +1537,7 @@ class StateManager {
             block,
             stateSnapshot,
             leftParticipants,
-            exitChannelBlock
+            outboundMessageBlock
         );
 
         // step 8 - success callback
@@ -1585,7 +1595,7 @@ class StateManager {
         block: Block,
         _stateSnapshot: StateSnapshot,
         leftParticipants: Set<Address>,
-        _exitChannelBlock?: ExitChannelBlockStruct
+        _outboundMessageBlock?: MessageBlockStruct
     ): Promise<void> {
         if (!leftParticipants.has(this.signerAddress)) {
             // I didn't exit, nothing to do

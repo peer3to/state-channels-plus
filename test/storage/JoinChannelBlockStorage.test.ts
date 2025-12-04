@@ -1,111 +1,126 @@
 import { expect } from "chai";
 import { describe, it, beforeEach } from "mocha";
 import { ethers } from "hardhat";
-import { JoinChannelBlockStorage } from "@/storage/JoinChannelBlockStorage";
-import {
-    JoinChannelBlockStruct,
-    BalanceStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
-import { Hash } from "@/types/types";
 import * as factory from "../factory";
-import { Codec, Type } from "@/utils";
-
-describe("JoinChannelBlockStorage", () => {
-    let storage: JoinChannelBlockStorage;
-    let mockJoinBlock: JoinChannelBlockStruct;
-    let mockTotalDeposits: BalanceStruct;
+import { MessageBlockStorage } from "@/storage/MessageBlockStorage";
+import { Hash } from "@/types/types";
+import { Codec, hash, Type } from "@/utils";
+import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+describe("MessageBlockStorage - inbound blocks", () => {
+    let storage: MessageBlockStorage;
+    let mockMessageBlock: MessageBlockStruct;
     let mockBlockHash: Hash;
 
     beforeEach(() => {
-        storage = new JoinChannelBlockStorage();
-        mockJoinBlock = factory.joinChannelBlock();
-        mockTotalDeposits = {
-            amount: BigInt(1000),
-            data: "0x1234"
+        storage = new MessageBlockStorage();
+        mockMessageBlock = {
+            previousBlockHash: ethers.ZeroHash,
+            blockHeight: 0n,
+            messages: [],
+            totalBalance: {
+                amount: 0n,
+                data: "0x"
+            },
+            timestamp: 0n
         };
         mockBlockHash = ethers.keccak256(
-            Codec.encode(mockJoinBlock, Type.JoinChannelBlock)
+            Codec.encode(mockMessageBlock, Type.MessageBlock)
         );
     });
 
-    describe("CREATE - storeJoinChannelBlock()", () => {
-        it("should store block with auto-computed hash", () => {
-            const hash = storage.storeJoinChannelBlock(
-                mockJoinBlock,
-                mockTotalDeposits
-            );
+    describe("store()", () => {
+        it("stores block with computed hash", () => {
+            const hash = storage.store(mockMessageBlock);
             expect(hash).to.equal(mockBlockHash);
 
-            const stored = storage.getJoinChannelBlock(hash);
-            expect(stored).to.equal(mockJoinBlock);
-
-            const storedDeposits = storage.getTotalDeposits(hash);
-            expect(storedDeposits).to.deep.equal(mockTotalDeposits);
+            const storedBlock = storage.getMessageBlock(hash);
+            expect(storedBlock).to.equal(mockMessageBlock);
         });
 
-        it("should store block with provided hash", () => {
-            const customHash = ethers.hexlify(ethers.randomBytes(32));
-            const hash = storage.storeJoinChannelBlock(
-                mockJoinBlock,
-                mockTotalDeposits,
-                { hash: customHash }
-            );
+        it("respects provided hash override", () => {
+            const customHash = factory.hash();
+            const hash = storage.store(mockMessageBlock, {
+                hash: customHash
+            });
+
             expect(hash).to.equal(customHash);
-
-            const stored = storage.getJoinChannelBlock(customHash);
-            expect(stored).to.equal(mockJoinBlock);
-
-            const storedDeposits = storage.getTotalDeposits(customHash);
-            expect(storedDeposits).to.deep.equal(mockTotalDeposits);
+            expect(storage.getMessageBlock(customHash)).to.equal(
+                mockMessageBlock
+            );
         });
 
-        it("should return same hash on duplicate store", () => {
-            // First store succeeds
-            const hash1 = storage.storeJoinChannelBlock(
-                mockJoinBlock,
-                mockTotalDeposits
-            );
-            expect(hash1).to.equal(mockBlockHash);
-
-            // Second store with same hash should return same hash
-            const hash2 = storage.storeJoinChannelBlock(
-                mockJoinBlock,
-                mockTotalDeposits
-            );
-            expect(hash2).to.equal(mockBlockHash);
+        it("ignores metadata on duplicate store", () => {
+            const hash1 = storage.store(mockMessageBlock);
+            const hash2 = storage.store(mockMessageBlock);
             expect(hash1).to.equal(hash2);
         });
     });
 
-    describe("READ operations", () => {
+    describe("read operations", () => {
         beforeEach(() => {
-            storage.storeJoinChannelBlock(mockJoinBlock, mockTotalDeposits);
+            storage.store(mockMessageBlock);
         });
 
-        it("should get block by hash", () => {
-            const result = storage.getJoinChannelBlock(mockBlockHash);
-            expect(result).to.equal(mockJoinBlock);
+        it("returns undefined for unknown hashes", () => {
+            const randomHash = factory.hash();
+            expect(storage.getMessageBlock(randomHash)).to.be.undefined;
         });
 
-        it("should get total deposits by hash", () => {
-            const result = storage.getTotalDeposits(mockBlockHash);
-            expect(result).to.deep.equal(mockTotalDeposits);
+        it("retrieves ordered entries in range", () => {
+            const secondBlock = {
+                ...mockMessageBlock,
+                previousBlockHash: mockBlockHash,
+                blockHeight: 1n
+            };
+            const secondHash = storage.store(secondBlock);
+
+            const blocks = storage.getMessageBlocksInRange(
+                secondHash,
+                mockMessageBlock.previousBlockHash as Hash
+            );
+            expect(blocks).to.have.length(2);
+            expect(blocks[0]).to.deep.equal(mockMessageBlock);
+            expect(blocks[1]).to.deep.equal(secondBlock);
+        });
+    });
+
+    describe("latest block helpers", () => {
+        it("returns undefined when storage is empty", () => {
+            expect(storage.getLatestMessageBlock()).to.be.undefined;
+            expect(storage.getLatestMessageBlocks()).to.deep.equal([]);
+            expect(storage.getLatestBlockHeight()).to.be.undefined;
         });
 
-        it("should get complete block entry by hash", () => {
-            const result = storage.getJoinChannelBlockEntry(mockBlockHash);
-            expect(result).to.exist;
-            expect(result?.block).to.equal(mockJoinBlock);
-            expect(result?.totalDeposits).to.deep.equal(mockTotalDeposits);
-        });
+        it("tracks the highest block height even when stored out of order", () => {
+            const genesisHash = storage.store(mockMessageBlock);
 
-        it("should return undefined for non-existent block", () => {
-            const nonExistentHash = ethers.hexlify(ethers.randomBytes(32));
-            expect(storage.getJoinChannelBlock(nonExistentHash)).to.be
-                .undefined;
-            expect(storage.getTotalDeposits(nonExistentHash)).to.be.undefined;
-            expect(storage.getJoinChannelBlockEntry(nonExistentHash)).to.be
-                .undefined;
+            const middleBlock = {
+                ...mockMessageBlock,
+                previousBlockHash: genesisHash,
+                blockHeight: 3n,
+                timestamp: 5n
+            };
+            const middleHash = hash(
+                Codec.encode(middleBlock, Type.MessageBlock)
+            );
+
+            const highestBlock = {
+                ...mockMessageBlock,
+                previousBlockHash: middleHash,
+                blockHeight: 5n,
+                timestamp: 10n
+            };
+            const highestHash = storage.store(highestBlock);
+
+            storage.store(middleBlock);
+
+            const latest = storage.getLatestMessageBlock();
+            expect(latest).to.deep.equal(highestBlock);
+            expect(storage.getLatestBlockHash()).to.equal(highestHash);
+            expect(storage.getLatestBlockHeight()).to.equal(5);
+
+            const latestTwo = storage.getLatestMessageBlocks(2);
+            expect(latestTwo).to.deep.equal([highestBlock, middleBlock]);
         });
     });
 });

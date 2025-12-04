@@ -29,6 +29,9 @@ contract StateChannelManagerStorage {
     /// @dev Channel balance tracker
     mapping(bytes32 channelId => ChannelBalance) channelBalances;
 
+    /// @dev Inbound message blockchain per channel (hash -> MessageBlock)
+    mapping(bytes32 channelId => mapping(bytes32 blockHash => MessageBlock)) inboundMessageBlockMap;
+
     /// @dev stateSnapshot Data
     mapping(bytes32 channelId => StateSnapshot) stateSnapshots;
 

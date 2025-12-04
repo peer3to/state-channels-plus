@@ -3,6 +3,7 @@ import { expect } from "chai";
 import * as sinon from "sinon";
 import hre from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
+import { setImmediate } from "node:timers";
 import { EvmStateMachine, P2pInstance } from "@/evm";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
@@ -43,6 +44,8 @@ import { deploy } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import { ZeroHash } from "ethers";
 import { ATransport } from "@/transport";
+import PeerProfile from "@/PeerProfile";
+import { DisputeStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;
@@ -69,7 +72,6 @@ export interface EventSpies {
     onPostedCalldata?: sinon.SinonSpy;
     onInitiatingDispute?: sinon.SinonSpy;
     onDisputeUpdate?: sinon.SinonSpy;
-    onJoinChannel?: sinon.SinonSpy;
 
     // EventHandler method spies
     onChannelOpened?: sinon.SinonSpy;
@@ -81,7 +83,7 @@ export interface EventSpies {
     onWithdrawalsUpdated?: sinon.SinonSpy;
     onChannelStorageCleared?: sinon.SinonSpy;
     onDisputeKilled?: sinon.SinonSpy;
-    onJoinChannelProcessed?: sinon.SinonSpy;
+    onInboundMessagesProcessed?: sinon.SinonSpy;
 }
 
 /**
@@ -126,6 +128,12 @@ export class PeerTestHarness<T extends AStateMachine> {
     private autoTimeAdvanceInterval?: NodeJS.Timeout;
 
     constructor() {
+        // toJSON can't serialize BigInts, so we need to override it
+        if (typeof (BigInt.prototype as any).toJSON !== "function") {
+            (BigInt.prototype as any).toJSON = function () {
+                return Number(this);
+            };
+        }
         this.logger = createLogger({ component: "TestHarness" });
     }
 
@@ -220,7 +228,6 @@ export class PeerTestHarness<T extends AStateMachine> {
             onPostedCalldata: sinon.spy(),
             onInitiatingDispute: sinon.spy(),
             onDisputeUpdate: sinon.spy(),
-            onJoinChannel: sinon.spy(),
 
             // EventHandler method spies
             onChannelOpened: sinon.spy(),
@@ -232,7 +239,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             onWithdrawalsUpdated: sinon.spy(),
             onChannelStorageCleared: sinon.spy(),
             onDisputeKilled: sinon.spy(),
-            onJoinChannelProcessed: sinon.spy()
+            onInboundMessagesProcessed: sinon.spy()
         };
 
         const hooks: P2pEventHooks = {
@@ -264,23 +271,23 @@ export class PeerTestHarness<T extends AStateMachine> {
                 });
                 eventSpies.onPostedCalldata?.();
             },
-            onInitiatingDispute: () => {
-                PeerLogger.info("Initiating dispute", {
-                    component: "P2pEventHooks"
-                });
-                eventSpies.onInitiatingDispute?.();
+            onInitiatingDispute: (
+                disputeHash: Hash,
+                dispute: DisputeStruct
+            ) => {
+                PeerLogger.info(
+                    `Initiating dispute - DisputeHash:${disputeHash}`,
+                    {
+                        component: "P2pEventHooks"
+                    }
+                );
+                eventSpies.onInitiatingDispute?.(disputeHash, dispute);
             },
             onDisputeUpdate: (dispute: any) => {
                 PeerLogger.info("Dispute updated", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onDisputeUpdate?.(dispute);
-            },
-            onJoinChannel: (joinChannelBlock: any) => {
-                PeerLogger.info("Joined channel", {
-                    component: "P2pEventHooks"
-                });
-                eventSpies.onJoinChannel?.(joinChannelBlock);
             }
         };
 
@@ -377,7 +384,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
 
         if (this.options.autoConnect) {
-            await this.connectPeers();
+            await this.connectAllPeers();
         }
 
         const signatures = await Promise.all(
@@ -492,7 +499,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         return this.activeForkId;
     }
 
-    async connectPeers(): Promise<void> {
+    async connectAllPeers(): Promise<void> {
         this.logger.debug("Connecting peers...");
         const started = await LocalDiscoveryServer.tryStart();
         if (started) {
@@ -500,6 +507,25 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
         await this.waitForP2PConnections();
         this.logger.debug("All peers connected successfully");
+    }
+
+    async connectPeers(peerIndices: number[]): Promise<void> {
+        const started = await LocalDiscoveryServer.tryStart();
+        if (started) {
+            this.logger.verbose("Discovery server started");
+        }
+
+        // Connect each peer in the subset
+        await Promise.all(
+            peerIndices.map((index) =>
+                LocalDiscoveryServer.connectToPeers(
+                    this.peers[index].stateManager.p2pManager,
+                    this.channelId?.toString()
+                )
+            )
+        );
+
+        await this.waitForP2PConnections();
     }
 
     async waitForP2PConnections(timeoutMs?: number): Promise<void> {
@@ -617,7 +643,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         // Stop auto time advancement
         if (this.autoTimeAdvanceInterval) {
             clearInterval(this.autoTimeAdvanceInterval);
-            this.autoTimeAdvanceInterval = undefined; // Clear the reference
+            this.autoTimeAdvanceInterval = undefined;
         }
 
         if (this.channelManager) {
@@ -1127,13 +1153,81 @@ export class PeerTestHarness<T extends AStateMachine> {
         const fromPeer = this.getPeer(fromPeerIndex);
         const toPeer = this.getPeer(toPeerIndex);
 
-        return fromPeer.stateManager.p2pManager.openConnections.find((t) => {
-            const profile =
-                fromPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
-                    t
-                );
-            return profile?.evmAddress === toPeer.address;
-        });
+        const findTransport = (
+            sourcePeer: TestPeer<AStateMachine>,
+            targetAddress: string
+        ) =>
+            sourcePeer.stateManager.p2pManager.openConnections.find((t) => {
+                const profile =
+                    sourcePeer.stateManager.p2pManager.profileManager.getProfileByTransport(
+                        t
+                    );
+                return profile?.evmAddress === targetAddress;
+            });
+
+        const directTransport = findTransport(fromPeer, toPeer.address);
+        if (directTransport) {
+            return directTransport;
+        }
+
+        return findTransport(toPeer, fromPeer.address);
+    }
+
+    async waitForPeerTransport(
+        fromPeerIndex: number,
+        toPeerIndex: number,
+        timeoutMs: number = 5000
+    ): Promise<ATransport> {
+        const fromPeer = this.getPeer(fromPeerIndex);
+        const toPeer = this.getPeer(toPeerIndex);
+        let resolvedTransport: ATransport | undefined;
+
+        const found = await this.waitForCondition(
+            () => {
+                const transport =
+                    fromPeer.stateManager.p2pManager.openConnections.find(
+                        (t) => {
+                            const profile =
+                                fromPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
+                                    t
+                                );
+                            return profile?.evmAddress === toPeer.address;
+                        }
+                    );
+
+                if (transport) {
+                    resolvedTransport = transport;
+                    return true;
+                }
+
+                return false;
+            },
+            timeoutMs,
+            50
+        );
+
+        if (!found || !resolvedTransport) {
+            throw new Error(
+                `Transport from peer ${fromPeerIndex} to peer ${toPeerIndex} not available within ${timeoutMs}ms`
+            );
+        }
+
+        return resolvedTransport;
+    }
+
+    getConnectionCount(peerIndex: number): number {
+        const peer = this.getPeer(peerIndex);
+        return peer.stateManager.p2pManager.openConnections.length;
+    }
+
+    getProfile(
+        peerIndex: number,
+        evmAddress: Address
+    ): PeerProfile | undefined {
+        const peer = this.getPeer(peerIndex);
+        return peer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
+            evmAddress
+        );
     }
 
     async submitDoubleSignBlock(

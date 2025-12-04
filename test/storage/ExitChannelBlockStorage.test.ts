@@ -1,114 +1,113 @@
 import { expect } from "chai";
 import { describe, it, beforeEach } from "mocha";
 import { ethers } from "hardhat";
-import { ExitChannelBlockStorage } from "@/storage/ExitChannelBlockStorage";
-import {
-    ExitChannelBlockStruct,
-    BalanceStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { MessageBlockStorage } from "@/storage/MessageBlockStorage";
 import { Hash } from "@/types/types";
 import * as factory from "../factory";
 import { Codec, Type } from "@/utils";
-
-describe("ExitChannelBlockStorage", () => {
-    let storage: ExitChannelBlockStorage;
-    let mockExitBlock: ExitChannelBlockStruct;
-    let mockTotalWithdrawals: BalanceStruct;
+import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+describe("MessageBlockStorage - outbound behavior", () => {
+    let storage: MessageBlockStorage;
+    let mockExitBlock: MessageBlockStruct;
     let mockBlockHash: Hash;
 
     beforeEach(() => {
-        storage = new ExitChannelBlockStorage();
-        mockExitBlock = factory.exitChannelBlock();
-        mockTotalWithdrawals = {
-            amount: BigInt(500),
-            data: "0x5678"
+        storage = new MessageBlockStorage();
+        const baseBlock = factory.exitChannelBlock();
+        mockExitBlock = {
+            ...baseBlock,
+            previousBlockHash: ethers.ZeroHash,
+            blockHeight: 0n
         };
         mockBlockHash = ethers.keccak256(
-            Codec.encode(mockExitBlock, Type.ExitChannelBlock)
+            Codec.encode(mockExitBlock, Type.MessageBlock)
         );
     });
 
-    describe("CREATE - storeExitChannelBlock()", () => {
-        it("should store block with auto-computed hash", () => {
-            const hash = storage.storeExitChannelBlock(
-                mockExitBlock,
-                mockTotalWithdrawals
-            );
+    describe("store()", () => {
+        it("stores block with computed hash", () => {
+            const hash = storage.store(mockExitBlock);
             expect(hash).to.equal(mockBlockHash);
-
-            const stored = storage.getExitChannelBlock(hash);
-            expect(stored).to.equal(mockExitBlock);
-
-            const storedWithdrawals = storage.getTotalWithdrawals(hash);
-            expect(storedWithdrawals).to.deep.equal(mockTotalWithdrawals);
+            expect(storage.getMessageBlock(hash)).to.equal(mockExitBlock);
         });
 
-        it("should store block with provided hash", () => {
-            const customHash = ethers.hexlify(ethers.randomBytes(32));
-            const hash = storage.storeExitChannelBlock(
-                mockExitBlock,
-                mockTotalWithdrawals,
-                { hash: customHash }
-            );
+        it("accepts provided hash", () => {
+            const customHash = factory.hash();
+            const hash = storage.store(mockExitBlock, { hash: customHash });
             expect(hash).to.equal(customHash);
-
-            const stored = storage.getExitChannelBlock(customHash);
-            expect(stored).to.equal(mockExitBlock);
-
-            const storedWithdrawals = storage.getTotalWithdrawals(customHash);
-            expect(storedWithdrawals).to.deep.equal(mockTotalWithdrawals);
         });
 
-        it("should return same hash on duplicate store", () => {
-            // First store succeeds
-            const hash1 = storage.storeExitChannelBlock(
-                mockExitBlock,
-                mockTotalWithdrawals
-            );
-            expect(hash1).to.equal(mockBlockHash);
-
-            // Second store with same hash should return same hash
-            const hash2 = storage.storeExitChannelBlock(
-                mockExitBlock,
-                mockTotalWithdrawals
-            );
-            expect(hash2).to.equal(mockBlockHash);
+        it("ignores duplicate stores", () => {
+            const hash1 = storage.store(mockExitBlock);
+            const hash2 = storage.store(mockExitBlock);
             expect(hash1).to.equal(hash2);
         });
     });
 
-    describe("READ operations", () => {
+    describe("read operations", () => {
         beforeEach(() => {
-            storage.storeExitChannelBlock(mockExitBlock, mockTotalWithdrawals);
+            storage.store(mockExitBlock);
         });
 
-        it("should get block by hash", () => {
-            const result = storage.getExitChannelBlock(mockBlockHash);
-            expect(result).to.equal(mockExitBlock);
+        it("returns undefined for unknown hashes", () => {
+            const randomHash = factory.hash();
+            expect(storage.getMessageBlock(randomHash)).to.be.undefined;
         });
 
-        it("should get total withdrawals by hash", () => {
-            const result = storage.getTotalWithdrawals(mockBlockHash);
-            expect(result).to.deep.equal(mockTotalWithdrawals);
+        it("retrieves block by hash", () => {
+            const block = storage.getMessageBlock(mockBlockHash);
+            expect(block).to.equal(mockExitBlock);
         });
 
-        it("should get complete block entry by hash", () => {
-            const result = storage.getExitChannelBlockEntry(mockBlockHash);
-            expect(result).to.exist;
-            expect(result?.block).to.equal(mockExitBlock);
-            expect(result?.totalWithdrawals).to.deep.equal(
-                mockTotalWithdrawals
+        it("returns ordered message blocks when iterating by range", () => {
+            const nextBlock = {
+                ...mockExitBlock,
+                previousBlockHash: mockBlockHash,
+                blockHeight: 1n
+            };
+            const nextHash = storage.store(nextBlock);
+
+            const blocks = storage.getMessageBlocksInRange(
+                nextHash,
+                mockExitBlock.previousBlockHash as Hash
             );
+            expect(blocks).to.have.length(2);
+            expect(blocks[1]).to.deep.equal(nextBlock);
+        });
+    });
+
+    describe("latest block helpers", () => {
+        it("returns the most recent block", () => {
+            const baseHash = storage.store(mockExitBlock);
+
+            const newerBlock = {
+                ...mockExitBlock,
+                previousBlockHash: baseHash,
+                blockHeight: 2n
+            };
+            storage.store(newerBlock);
+
+            const latestBlock = storage.getLatestMessageBlock();
+            expect(latestBlock).to.deep.equal(newerBlock);
+
+            const latestBlocks = storage.getLatestMessageBlocks(1);
+            expect(latestBlocks).to.have.length(1);
+            expect(latestBlocks[0]).to.deep.equal(newerBlock);
         });
 
-        it("should return undefined for non-existent block", () => {
-            const nonExistentHash = ethers.hexlify(ethers.randomBytes(32));
-            expect(storage.getExitChannelBlock(nonExistentHash)).to.be
-                .undefined;
-            expect(storage.getTotalWithdrawals(nonExistentHash)).to.be
-                .undefined;
-            expect(storage.getExitChannelBlockEntry(nonExistentHash)).to.be
-                .undefined;
+        it("returns blocks sorted from newest to oldest when no limit is provided", () => {
+            storage.store(mockExitBlock);
+            const followingBlock = {
+                ...mockExitBlock,
+                previousBlockHash: mockBlockHash,
+                blockHeight: 1n
+            };
+            storage.store(followingBlock);
+
+            const heights = storage
+                .getLatestMessageBlocks()
+                .map((block) => block.blockHeight);
+            expect(heights).to.deep.equal([1n, 0n]);
         });
     });
 });

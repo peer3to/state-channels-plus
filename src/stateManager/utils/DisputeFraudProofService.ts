@@ -1,12 +1,10 @@
-import { Block } from "@/models";
 import Storage from "@/storage";
 import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
 } from "@/types/sol-enums";
 import { Hash, Signature } from "@/types/types";
-import { Codec, DisputeFraudStruct } from "@/utils";
-import { FraudProofStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/FraudProofFacet";
+import { Codec, DisputeFraudStruct, Logger } from "@/utils";
 import {
     BlockConfirmationStruct,
     SignedBlockStruct
@@ -15,9 +13,12 @@ import {
     DisputeAuditingDataStruct,
     DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import {
-    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocksStruct,
+    DisputeFraudProofStruct,
+    FraudProofStruct
+} from "@typechain-types/contracts/V1/types/ProofTypes";
+import {
+    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksStruct,
     DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedStruct,
     DisputeInvalidBalanceInvariantStruct,
     DisputeInvalidBlockInStateProofApplyFraudProofStruct,
@@ -40,7 +41,10 @@ import { BigNumberish, BytesLike } from "ethers";
  * Service class for handling fraud proof creation and validation
  */
 export default class DisputeFraudProofService {
-    constructor(private readonly storage: Storage) {}
+    constructor(
+        private readonly storage: Storage,
+        private readonly logger?: Logger
+    ) {}
 
     createDisputeNotLatestState(
         dispute: DisputeStruct,
@@ -101,17 +105,17 @@ export default class DisputeFraudProofService {
         });
     }
 
-    createDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks(
+    createDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks(
         dispute: DisputeStruct,
         auditingData: DisputeAuditingDataStruct
     ): Hash {
-        const proof: DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocksStruct =
+        const proof: DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksStruct =
             {
                 auditingData
             };
 
         return this.storeFraudProof(dispute, {
-            type: DisputeFraudProofType.DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks,
+            type: DisputeFraudProofType.DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks,
             struct: proof
         });
     }
@@ -258,8 +262,14 @@ export default class DisputeFraudProofService {
             encodedProof: Codec.encode(proof.struct, proof.type)
         };
 
-        return this.storage.disputeFraudProofs.storeFraudProof(
-            disputeFraudProof
-        );
+        const proofHash =
+            this.storage.disputeFraudProofs.storeFraudProof(disputeFraudProof);
+
+        this.logger?.debug("Stored dispute fraud proof", {
+            forkId: dispute.input.forkId,
+            type: DisputeFraudProofType[proof.type]
+        });
+
+        return proofHash;
     }
 }

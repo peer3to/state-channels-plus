@@ -19,6 +19,10 @@ function _getBlockAuthor(Block memory _block) pure returns (address) {
     return _block.transaction.header.participant;
 }
 
+function _getBlockHash(Block memory blockData) pure returns (bytes32) {
+    return keccak256(abi.encode(blockData));
+}
+
 function _areBlocksSameFork(Block memory _block1, Block memory _block2) pure returns (bool) {
     return _getBlockFork(_block1) == _getBlockFork(_block2);
 }
@@ -29,11 +33,4 @@ function _areBlocksSameChannel(Block memory _block1, Block memory _block2) pure 
 
 function _doesBlockCommitToSnapshot(Block memory _block, StateSnapshot memory snapshot) pure returns (bool) {
     return _block.stateSnapshotHash == keccak256(abi.encode(snapshot));
-}
-
-function _formExitChannelBlock(bytes32 previousBlockHash, ExitChannel[] memory exitChannels)
-    pure
-    returns (ExitChannelBlock memory _block)
-{
-    return ExitChannelBlock({exitChannels: exitChannels, previousBlockHash: previousBlockHash});
 }
