@@ -206,13 +206,12 @@ export class EventHandler {
                     );
                 disputeAuditingData = auditingData;
             }
-            await this.stateManager.setGenesisState(
+            return this.stateManager.setGenesisState(
                 disputeAuditingData.latestStateSnapshot.snapshotData,
                 disputeAuditingData.latestStateStateMachineState,
                 dispute.outputSnapshotDataHash as ForkId,
                 disputeCreationTimestamp
             );
-            return;
         }
 
         // not final - validate dispute and challenge if invalid
@@ -232,10 +231,12 @@ export class EventHandler {
         this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
 
         // this is like success - TODO - consider moving this to DisputeStrategy.success
-        if (await this.canConstructMoreEvidence(dispute)) {
-            await this.stateManager.disputeManager.dispute(forkId);
-            return;
+        const canConstructMoreEvidence =
+            await this.canConstructMoreEvidence(dispute);
+        if (canConstructMoreEvidence) {
+            return this.stateManager.disputeManager.dispute(forkId);
         }
+
         const { timestamp: potentialGenesisTimestamp } =
             await this.diamondStateMachine.localDiamondContract.getGenesisTimestamp(
                 channelId,
