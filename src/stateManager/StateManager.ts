@@ -9,7 +9,9 @@ import {
     StateSnapshotStruct,
     BlockConfirmationStruct,
     BlockStruct,
-    SnapshotDataStruct
+    SnapshotDataStruct,
+    MessageStruct,
+    MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // TypeChain types - Proof types
@@ -77,8 +79,6 @@ import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidat
 import { DEBUG_STATE_MANAGER } from "@/utils/config";
 import ATransport from "@/transport/ATransport";
 import { TimeoutManager } from "@/utils/TimeoutManager";
-import { MessageBlockStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
-import { MessageStruct } from "@typechain-types/contracts/V1/AStateMachine";
 
 const NULL = "0x00";
 const LOG_TAG = "[STATE MANAGER]";
@@ -1381,7 +1381,7 @@ class StateManager {
         stateMachineStateHash: Hash,
         coordinates: BlockCoordinates,
         timestamp: Timestamp,
-        outboundMessages?: MessageStruct[]
+        outboundMessages: MessageStruct[]
     ): Promise<{
         stateSnapshot: StateSnapshot;
         outboundMessageBlock?: MessageBlockStruct;
@@ -1412,7 +1412,7 @@ class StateManager {
 
         let outboundMessageBlock: MessageBlockStruct | undefined;
 
-        if (outboundMessages && outboundMessages.length > 0) {
+        if (outboundMessages.length > 0) {
             totalWithdrawals = await this.calculateTotalBalance(
                 outboundMessages,
                 totalWithdrawals
