@@ -41,11 +41,13 @@ interface StateChannelManagerEvents {
 
     event WithdrawalsUpdated(bytes32 indexed channelId, Balance totalWithdrawals);
 
-    event ChannelStorageCleared(bytes32 indexed channelId, bytes32 latestJoinChannelBlockHash);
+    event ChannelStorageCleared(bytes32 indexed channelId, bytes32 latestInboundMessageBlockHash);
 
     event DisputeKilled(bytes32 indexed channelId, bytes32 forkId, address disputer);
 
-    event JoinChannelProcessed(
-        bytes32 indexed channelId, JoinChannelBlock joinChannelBlock, uint256 timestamp, Balance totalDeposits
+    event InboundMessagesProcessed(bytes32 indexed channelId, MessageBlock messageBlock);
+
+    event OutboundMessagesProcessed(
+        bytes32 indexed channelId, MessageBlock messageBlock, uint256 timestamp, Balance totalWithdrawals
     );
 }

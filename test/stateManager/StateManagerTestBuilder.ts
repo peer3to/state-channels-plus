@@ -10,9 +10,9 @@ import { createLogger, Codec, Type, Logger } from "@/utils";
 import { Block, StateSnapshot } from "@/models";
 import {
     BlockStruct,
-    ExitChannelBlockStruct,
     SignedBlockStruct,
-    SnapshotDataStruct
+    SnapshotDataStruct,
+    MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import { zeroHex, hexString } from "@test/factory";
@@ -97,8 +97,8 @@ export class StateManagerTestBuilder {
     /**
      * Set an exit channel block for testing
      */
-    withExitChannelBlock(hash: Hash, block: ExitChannelBlockStruct): this {
-        this.storage.exitChannelBlocks.storeExitChannelBlock(block, undefined, {
+    withExitChannelBlock(hash: Hash, block: MessageBlockStruct): this {
+        this.storage.outboundMessages.store(block, {
             hash
         });
         return this;
@@ -107,20 +107,22 @@ export class StateManagerTestBuilder {
     /**
      * Store an exit channel block and return its hash
      */
-    storeExitChannelBlock(block: ExitChannelBlockStruct): Hash {
-        return this.storage.exitChannelBlocks.storeExitChannelBlock(block);
+    storeExitChannelBlock(block: MessageBlockStruct): Hash {
+        return this.storage.outboundMessages.store(block);
     }
 
     withGenesisSnapshot(
         forkId: ForkId,
         snapshotData: Partial<SnapshotDataStruct>
     ): this {
-        const fullSnapshotData = {
+        const fullSnapshotData: SnapshotDataStruct = {
             originForkId: forkId,
             stateMachineStateHash: defaults.emptyBlockHash,
             participants: [],
-            latestJoinChannelBlockHash: defaults.emptyBlockHash,
-            latestExitChannelBlockHash: defaults.emptyBlockHash,
+            latestInboundMessageBlockHash: defaults.emptyBlockHash,
+            latestInboundMessageBlockHeight: 0n,
+            latestOutboundMessageBlockHash: defaults.emptyBlockHash,
+            latestOutboundMessageBlockHeight: 0n,
             totalDeposits: { amount: 0n, data: "0x" },
             totalWithdrawals: { amount: 0n, data: "0x" },
             ...snapshotData // Override with provided data
@@ -227,8 +229,8 @@ export class StateManagerTestBuilder {
                 originForkId: this.forkId,
                 stateMachineStateHash: "0x",
                 participants: [],
-                latestJoinChannelBlockHash: defaults.emptyBlockHash,
-                latestExitChannelBlockHash: defaults.emptyBlockHash,
+                latestInboundMessageBlockHash: defaults.emptyBlockHash,
+                latestOutboundMessageBlockHash: defaults.emptyBlockHash,
                 totalDeposits: { amount: 0n, data: "0x" },
                 totalWithdrawals: { amount: 0n, data: "0x" }
             }

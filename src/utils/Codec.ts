@@ -10,7 +10,8 @@ import {
     ExitChannelStruct,
     JoinChannelBlockStruct,
     SnapshotDataStruct,
-    SignedBlockStruct
+    SignedBlockStruct,
+    MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     BlockDoubleSignProofStruct,
@@ -40,7 +41,7 @@ import {
     DisputeInvalidOutputStateProofEthersType,
     DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedProofEthersType,
     DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedProofEthersType,
-    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocksProofEthersType,
+    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksProofEthersType,
     DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedProofEthersType,
     DisputeInvalidBalanceInvariantProofEthersType,
     DisputeOnChainSlashesNotSubsetProofEthersType,
@@ -49,7 +50,8 @@ import {
     TimeoutNotLinkedToLatestStateProofEthersType,
     TimeoutParticipantNotNextProofEthersType,
     TimeoutTooEarlyProofEthersType,
-    DisputeInvalidBlockInStateProofApplyFraudProofEthersType
+    DisputeInvalidBlockInStateProofApplyFraudProofEthersType,
+    MessageBlockEthersType
 } from "@/types";
 import {
     DisputeStruct,
@@ -59,7 +61,7 @@ import { Bytes, Timestamp } from "@/types/types";
 import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
 import { ExecResult } from "@ethereumjs/evm";
 import {
-    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocksStruct,
+    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksStruct,
     DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedStruct,
     DisputeInvalidBalanceInvariantStruct,
     DisputeOnChainSlashesNotSubsetStruct,
@@ -86,7 +88,7 @@ export type DisputeFraudStruct =
     | DisputeInvalidOutputStateStruct
     | DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedStruct
     | DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedStruct
-    | DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocksStruct
+    | DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksStruct
     | DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedStruct
     | DisputeInvalidBalanceInvariantStruct
     | DisputeOnChainSlashesNotSubsetStruct
@@ -112,7 +114,8 @@ type StructType =
     | JoinChannelBlockStruct
     | ExitChannelBlockStruct
     | ExitChannelStruct
-    | DisputeAuditingDataStruct;
+    | DisputeAuditingDataStruct
+    | MessageBlockStruct;
 
 // Enum for better autocomplete and type safety
 export enum Type {
@@ -128,7 +131,8 @@ export enum Type {
     JoinChannelBlock,
     ExitChannelBlock,
     ExitChannel,
-    DisputeAuditingData
+    DisputeAuditingData,
+    MessageBlock
 }
 
 export class Codec {
@@ -149,6 +153,7 @@ export class Codec {
         [Type.ExitChannelBlock, ExitChannelBlockEthersType],
         [Type.ExitChannel, ExitChannelEthersType],
         [Type.DisputeAuditingData, DisputeAuditingDataEthersType],
+        [Type.MessageBlock, MessageBlockEthersType],
         // Fraud proofs
         [FraudProofType.BlockDoubleSign, BlockDoubleSignProofEthersType],
         [
@@ -175,8 +180,8 @@ export class Codec {
             DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedProofEthersType
         ],
         [
-            DisputeFraudProofType.DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks,
-            DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocksProofEthersType
+            DisputeFraudProofType.DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks,
+            DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksProofEthersType
         ],
         [
             DisputeFraudProofType.DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified,
@@ -221,7 +226,31 @@ export class Codec {
         if (!ethersType) {
             throw new Error(`No ethers type mapping found for ${type}`);
         }
-        return ethers.AbiCoder.defaultAbiCoder().encode([ethersType], [struct]);
+        try {
+            return ethers.AbiCoder.defaultAbiCoder().encode(
+                [ethersType],
+                [struct]
+            );
+        } catch (error) {
+            const preview =
+                typeof struct === "object"
+                    ? JSON.stringify(
+                          struct,
+                          (_key, value) =>
+                              typeof value === "bigint"
+                                  ? value.toString()
+                                  : value,
+                          2
+                      )
+                    : String(struct);
+            const typeName =
+                typeof type === "number" && Type[type]
+                    ? `Type.${Type[type]}`
+                    : String(type);
+            throw new Error(
+                `Codec.encode failed for ${typeName}: ${(error as Error).message}. value=${preview}`
+            );
+        }
     }
 
     // Function overloads for type safety
@@ -259,6 +288,10 @@ export class Codec {
         encoded: Bytes,
         type: Type.ExitChannelBlock
     ): ExitChannelBlockStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.MessageBlock
+    ): MessageBlockStruct;
 
     public static decode<T extends StructType>(encoded: Bytes, type: Type): T {
         const ethersType = this.structToEthersType.get(type);
@@ -311,11 +344,17 @@ export class Codec {
             execResult.returnValue
         );
 
-        if (options.useObjectConversion) {
-            return Codec.ethersResultToObjectRecursive(decoded[0]) as T;
+        const value = decoded[0];
+        const shouldConvert =
+            options.useObjectConversion ||
+            (value instanceof ethers.Result &&
+                Object.getPrototypeOf(value) === ethers.Result.prototype);
+
+        if (shouldConvert) {
+            return Codec.ethersResultToObjectRecursive(value) as T;
         }
 
-        return decoded[0] as T;
+        return value as T;
     }
 
     public static convertEthersResultToObject<T>(result: ethers.Result): T {

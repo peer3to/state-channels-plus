@@ -7,10 +7,11 @@ import {
     JoinChannelStruct,
     SignedBlockStruct,
     BlockConfirmationStruct,
-    ExitChannelBlockStruct,
     JoinChannelBlockStruct,
     StateSnapshotStruct,
-    SnapshotDataStruct
+    SnapshotDataStruct,
+    MessageBlockStruct,
+    MessageStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeStruct,
@@ -159,6 +160,8 @@ export function dispute(
             channelId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
             forkId: ethers.hexlify(ethers.randomBytes(32)),
             latestStateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
+            latestInboundMessageBlockHash: hash(),
+            lastInboundMessageBlockHeight: 0,
             stateProof: {
                 milestones: [],
                 signedBlocks: []
@@ -256,29 +259,37 @@ export function blockConfirmation(
 }
 
 export function exitChannelBlock(
-    overrides: Partial<ExitChannelBlockStruct> = {}
-): ExitChannelBlockStruct {
-    const defaultExitChannelBlock: ExitChannelBlockStruct = {
-        exitChannels: [],
-        previousBlockHash: ethers.hexlify(ethers.randomBytes(32))
+    overrides: Partial<MessageBlockStruct> = {}
+): MessageBlockStruct {
+    const defaultExitChannelBlock: MessageBlockStruct = {
+        previousBlockHash: ethers.hexlify(ethers.randomBytes(32)),
+        blockHeight: BigInt(randomInt(0, 1000)),
+        messages: [],
+        totalBalance: {
+            amount: 0n,
+            data: "0x"
+        },
+        timestamp: BigInt(Math.floor(Date.now() / 1000))
     };
 
-    return { ...defaultExitChannelBlock, ...overrides };
+    return {
+        ...defaultExitChannelBlock,
+        ...overrides,
+        messages: overrides.messages ?? defaultExitChannelBlock.messages
+    };
 }
 
 export function snapshotData(
     overrides: Partial<SnapshotDataStruct> = {}
 ): SnapshotDataStruct {
     return {
-        originForkId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
-        stateMachineStateHash: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
+        originForkId: zeroHex(),
+        stateMachineStateHash: zeroHex(),
         participants: [],
-        latestJoinChannelBlockHash: ethers.hexlify(
-            ethers.zeroPadBytes("0x00", 32)
-        ),
-        latestExitChannelBlockHash: ethers.hexlify(
-            ethers.zeroPadBytes("0x00", 32)
-        ),
+        latestInboundMessageBlockHash: zeroHex(),
+        latestInboundMessageBlockHeight: 0n,
+        latestOutboundMessageBlockHash: zeroHex(),
+        latestOutboundMessageBlockHeight: 0n,
         totalDeposits: {
             amount: 0n,
             data: "0x"
@@ -307,8 +318,10 @@ export function stateSnapshot(
                 ethers.Wallet.createRandom().address,
                 ethers.Wallet.createRandom().address
             ],
-            latestJoinChannelBlockHash: ethers.hexlify(ethers.randomBytes(32)),
-            latestExitChannelBlockHash: ethers.hexlify(ethers.randomBytes(32)),
+            latestInboundMessageBlockHash: hash(),
+            latestInboundMessageBlockHeight: 0n,
+            latestOutboundMessageBlockHash: hash(),
+            latestOutboundMessageBlockHeight: 0n,
             totalDeposits: {
                 amount: BigInt(randomInt(1, 1000)),
                 data: "0x"
@@ -376,7 +389,7 @@ export function snapshotWithExitChannelBlock(
         blockHeight,
         snapshotData: {
             ...stateSnapshot().snapshotData,
-            latestExitChannelBlockHash: exitBlockHash,
+            latestOutboundMessageBlockHash: exitBlockHash,
             ...overrides.snapshotData
         },
         ...(overrides.timestamp !== undefined && {
@@ -388,22 +401,33 @@ export function snapshotWithExitChannelBlock(
 export function exitChannelBlockChain(
     length: number,
     startHash?: Hash
-): Array<{ hash: Hash; block: ExitChannelBlockStruct }> {
-    const chain: Array<{ hash: Hash; block: ExitChannelBlockStruct }> = [];
+): Array<{ hash: Hash; block: MessageBlockStruct }> {
+    const chain: Array<{ hash: Hash; block: MessageBlockStruct }> = [];
     const emptyBlockHash = ethers.hexlify(ethers.zeroPadBytes("0x00", 32));
     let previousHash = startHash || emptyBlockHash;
 
     for (let i = 0; i < length; i++) {
         const hash = hexString(32);
-        const block: ExitChannelBlockStruct = {
-            exitChannels: [
+        const block: MessageBlockStruct = exitChannelBlock({
+            previousBlockHash: previousHash,
+            blockHeight: BigInt(i + 1),
+            messages: [
                 {
+                    messageType: hexString(4),
                     participant: hexString(20) as Address,
-                    balance: { amount: BigInt((i + 1) * 10), data: "0x" }
-                }
+                    balance: {
+                        amount: BigInt((i + 1) * 10),
+                        data: "0x"
+                    },
+                    data: "0x"
+                } as MessageStruct
             ],
-            previousBlockHash: previousHash
-        };
+            totalBalance: {
+                amount: BigInt((i + 1) * 10),
+                data: "0x"
+            },
+            timestamp: BigInt(1000 + i)
+        });
         chain.push({ hash, block });
         previousHash = hash;
     }

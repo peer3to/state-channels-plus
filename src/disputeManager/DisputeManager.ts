@@ -128,7 +128,10 @@ class DisputeManager {
             }
 
             this.storage.disputes.storeDisputedFork(forkId, true);
-            this.p2pEventHooks.onInitiatingDispute?.();
+            this.p2pEventHooks.onInitiatingDispute?.(
+                hash(Codec.encode(dispute, Type.Dispute)),
+                dispute
+            );
         } catch (error) {
             if (isCustomEvmError(error)) {
                 this.logger.error("Error uploading dispute", {
@@ -162,12 +165,19 @@ class DisputeManager {
             if (!disputeFraudProof) {
                 throw new Error("No dispute fraud proof found for dispute");
             }
-            await this.stateChannelManagerContract.applyDisputeFraudProofs([
-                disputeFraudProof
-            ]);
+            const txRespone =
+                await this.stateChannelManagerContract.applyDisputeFraudProofs([
+                    disputeFraudProof
+                ]);
+            txRespone.wait().then(() => {
+                this.logger.debug("Dispute killed successfully", {
+                    forkId: dispute.input.forkId,
+                    channelId: this.channelId
+                });
+            });
         } catch (error) {
             if (isCustomEvmError(error)) {
-                this.logger.error("Error killing dispute", {
+                this.logger.error("CustomError killing dispute", {
                     forkId: dispute.input.forkId,
                     errorDescription: error.errorDescription
                 });
@@ -290,15 +300,20 @@ class DisputeManager {
             disputeAuditingDataHash: disputeAuditingDataHash,
             disputer: disputer,
             timeout: timeoutStruct,
-            selfRemoval: selfRemoval
+            selfRemoval: selfRemoval,
+            latestInboundMessageBlockHash:
+                this.storage.inboundMessages.getLatestBlockHash() ||
+                ethers.ZeroHash,
+            lastInboundMessageBlockHeight:
+                this.storage.inboundMessages.getLatestBlockHeight() || 0
         };
 
         const outputSnapshotData =
             await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
                 disputeInput,
-                latestStateSnapshot.toStruct(),
-                latestStateMachineState,
-                auditingData.genesisStateSnapshotData.latestJoinChannelBlockHash
+                auditingData.latestStateSnapshot,
+                auditingData.latestStateStateMachineState,
+                auditingData.inboundMessageBlocks
             );
 
         const outputSnapshotDataHash = hash(
@@ -384,13 +399,18 @@ class DisputeManager {
                 "getDisputeAuditingData - latestStateStateMachineState not found"
             );
 
-        // exitChannelBlocks
-        const fromBlockHash = latestStateSnapshot.latestExitBlockHash;
-        const toBlockHash = genesisStateSnapshot.latestExitBlockHash;
-        const exitChannelBlocks =
-            this.storage.exitChannelBlocks.getBlocksInRange(
-                fromBlockHash,
-                toBlockHash
+        // inbound message blocks
+        const inboundMessageBlocks =
+            this.storage.inboundMessages.getMessageBlocksInRange(
+                latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
+                genesisStateSnapshot.snapshotData.latestInboundMessageBlockHash
+            );
+
+        // outbound message blocks
+        const outboundMessageBlocks =
+            this.storage.outboundMessages.getMessageBlocksInRange(
+                latestStateSnapshot.snapshotData.latestOutboundMessageBlockHash,
+                genesisStateSnapshot.snapshotData.latestOutboundMessageBlockHash
             );
 
         return {
@@ -402,7 +422,8 @@ class DisputeManager {
                 milestoneSnapshots: milestoneSnapshots.map((snapshot) =>
                     snapshot.toStruct()
                 ),
-                exitChannelBlocks: exitChannelBlocks
+                inboundMessageBlocks: inboundMessageBlocks,
+                outboundMessageBlocks: outboundMessageBlocks
             }
         };
     }

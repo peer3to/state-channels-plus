@@ -4,7 +4,7 @@ import { ethers } from "ethers";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Storage from "@/storage";
 import { isSubset, Logger } from "@/utils";
-import { Address, BlockCalldata, Signature } from "@/types/types";
+import { Address, Signature } from "@/types/types";
 
 import DisputeFraudProofService from "./utils/DisputeFraudProofService";
 import {
@@ -25,6 +25,9 @@ export default class DisputeValidationService {
     private readonly agreementManager: AgreementManager;
     private readonly logger: Logger;
     constructor(private readonly stateManager: StateManager) {
+        this.logger = stateManager.logger.child({
+            component: "DisputeValidationService"
+        });
         this.storage = stateManager.storage;
         this.diamondStateMachine = stateManager.diamondStateMachine;
         this.stateChannelManagerContract =
@@ -32,11 +35,9 @@ export default class DisputeValidationService {
         this.disputeManager = stateManager.disputeManager;
         this.agreementManager = stateManager.agreementManager;
         this.disputeFraudProofService = new DisputeFraudProofService(
-            this.storage
+            this.storage,
+            this.logger
         );
-        this.logger = stateManager.logger.child({
-            component: "DisputeValidationService"
-        });
     }
 
     async validateDispute(
@@ -121,7 +122,7 @@ export default class DisputeValidationService {
             )
         ) {
             // stateProof is correct -> dispute.auditingDataHash is junk
-            this.disputeFraudProofService.createDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidExitChannelBlocks(
+            this.disputeFraudProofService.createDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks(
                 dispute,
                 disputeAuditingData
             );
@@ -215,7 +216,9 @@ export default class DisputeValidationService {
                     await txResponse.wait();
                 } catch (e) {
                     //TODO - interpret custom error
-                    console.error("Error applying dispute fraud proof:", e);
+                    this.logger.error("Error applying dispute fraud proof:", {
+                        error: e
+                    });
                 }
                 return false;
             }
@@ -275,11 +278,12 @@ export default class DisputeValidationService {
                 disputeAuditingData.latestStateStateMachineState
             );
         if (!balanceInvariantValid) {
+            this.logger.debug(`Balance invariant failed on local diamond`);
+
             this.disputeFraudProofService.createDisputeInvalidBalanceInvariant(
                 dispute,
                 disputeAuditingData
             );
-            this.logger.debug(`Balance invariant failed on local diamond`);
 
             return false;
         }
@@ -308,9 +312,7 @@ export default class DisputeValidationService {
             // timedout block cooridantes
             const cooridnates = {
                 forkId: disputeAuditingData.latestStateSnapshot.forkId,
-                height: Number(
-                    disputeAuditingData.latestStateSnapshot.blockHeight
-                )
+                height: Number(dispute.input.timeout.blockHeight)
             };
             // participant set at timedout block
             const participants = this.storage.getParticipants(cooridnates);
@@ -348,11 +350,12 @@ export default class DisputeValidationService {
                 return false;
             }
             // [check] isTimedoutTooEarly
-            const timeoutTimestamp =
+            const timeoutTimestamp = Number(
                 await this.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
                     dispute.input.channelId,
                     dispute.input.forkId
-                );
+                )
+            );
             if (!timeoutTimestamp)
                 throw new Error(
                     "Timeout timestamp not found, dispute state not synced locally"
@@ -416,15 +419,13 @@ export default class DisputeValidationService {
             // [check] isPostedOnChain
             if (block?.onChainTimestamp) {
                 // TODO - race condtion
-                let previousBlockCalldata: BlockCalldata | undefined;
-                if (previousBlockOrSnapshot?.block) {
-                    previousBlockCalldata =
-                        this.storage.blockCalldata.getBlockCalldata(
-                            previousBlockOrSnapshot.block.forkId,
-                            previousBlockOrSnapshot.block.height,
-                            previousBlockOrSnapshot.block.author
-                        );
-                }
+                const previousBlockCalldata = previousBlockOrSnapshot?.block
+                    ? this.storage.blockCalldata.getBlockCalldata(
+                          previousBlockOrSnapshot.block.forkId,
+                          previousBlockOrSnapshot.block.height,
+                          previousBlockOrSnapshot.block.author
+                      )
+                    : undefined;
                 this.disputeFraudProofService.createTimeoutCalldataPosted(
                     dispute,
                     disputeAuditingData,
@@ -438,12 +439,13 @@ export default class DisputeValidationService {
         }
 
         // verify dispute output
-        if (
-            !(await this.diamondStateMachine.localDiamondContract.isDisputeOutputCorrect.staticCall(
+        const isCorrectDisputeOutput =
+            await this.diamondStateMachine.localDiamondContract.isDisputeOutputCorrect.staticCall(
                 dispute,
                 disputeAuditingData
-            ))
-        ) {
+            );
+
+        if (!isCorrectDisputeOutput) {
             // invalid dispute output
             this.disputeFraudProofService.createDisputeInvalidOutputState(
                 dispute,

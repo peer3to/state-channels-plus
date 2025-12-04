@@ -3,6 +3,8 @@ pragma solidity ^0.8.8;
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./StateChannelManagerStorage.sol";
 import "../StateChannelManagerEvents.sol";
+import "../StateChannelManagerInterface.sol";
+import "../types/MessageTypeHashes.sol";
 import "./Errors.sol";
 import "./utils/DisputeUtils.sol";
 import "./utils/BlockUtils.sol";
@@ -136,6 +138,23 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return (p2pTime, agreementTime, chainFallbackTime, evidenceTime);
     }
 
+    function _persistInboundMessageBlock(bytes32 channelId, bytes32 blockHash, MessageBlock memory messageBlock)
+        internal
+    {
+        MessageBlock storage storedBlock = inboundMessageBlockMap[channelId][blockHash];
+        if (storedBlock.timestamp != 0 || storedBlock.messages.length != 0) {
+            revert ErrorInboundMessageBlockAlreadyPersisted();
+        }
+        storedBlock.previousBlockHash = messageBlock.previousBlockHash;
+        storedBlock.blockHeight = messageBlock.blockHeight;
+        storedBlock.totalBalance = messageBlock.totalBalance;
+        storedBlock.timestamp = messageBlock.timestamp;
+
+        for (uint256 i = 0; i < messageBlock.messages.length; i++) {
+            storedBlock.messages.push(messageBlock.messages[i]);
+        }
+    }
+
     function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
         public
         view
@@ -168,58 +187,72 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return true;
     }
 
-    function _verifyExitChannelBlocks(
-        ExitChannelBlock[] memory exitChannelBlocks,
+    function _verifyOutboundMessageBlocks(
+        MessageBlock[] memory outboundMessageBlocks,
         SnapshotData memory fromSnapshot,
         SnapshotData memory toSnapshot
     ) public view returns (bool) {
-        bytes32 previousExitChannelBlockHash = fromSnapshot.latestExitChannelBlockHash;
-        Balance memory totalWithdrawals = fromSnapshot.totalWithdrawals;
+        bytes32 previousBlockHash = fromSnapshot.latestOutboundMessageBlockHash;
+        Balance memory totalOutbound = fromSnapshot.totalWithdrawals;
+        uint256 expectedHeight = fromSnapshot.latestOutboundMessageBlockHeight;
 
-        for (uint256 i = 0; i < exitChannelBlocks.length; i++) {
-            if (previousExitChannelBlockHash != exitChannelBlocks[i].previousBlockHash) {
+        for (uint256 i = 0; i < outboundMessageBlocks.length; i++) {
+            if (previousBlockHash != outboundMessageBlocks[i].previousBlockHash) {
                 return false;
             }
-            for (uint256 j = 0; j < exitChannelBlocks[i].exitChannels.length; j++) {
-                totalWithdrawals = stateMachineImplementation.addBalance(
-                    totalWithdrawals, exitChannelBlocks[i].exitChannels[j].balance
-                );
+            expectedHeight += 1;
+            if (outboundMessageBlocks[i].blockHeight != expectedHeight) {
+                return false;
             }
-            previousExitChannelBlockHash = keccak256(abi.encode(exitChannelBlocks[i]));
+            for (uint256 j = 0; j < outboundMessageBlocks[i].messages.length; j++) {
+                totalOutbound =
+                    stateMachineImplementation.addBalance(totalOutbound, outboundMessageBlocks[i].messages[j].balance);
+            }
+            previousBlockHash = keccak256(abi.encode(outboundMessageBlocks[i]));
         }
-        if (keccak256(abi.encode(totalWithdrawals)) != keccak256(abi.encode(toSnapshot.totalWithdrawals))) return false;
+        if (keccak256(abi.encode(totalOutbound)) != keccak256(abi.encode(toSnapshot.totalWithdrawals))) {
+            return false;
+        }
+        if (expectedHeight != toSnapshot.latestOutboundMessageBlockHeight) {
+            return false;
+        }
 
-        return previousExitChannelBlockHash == toSnapshot.latestExitChannelBlockHash;
+        return previousBlockHash == toSnapshot.latestOutboundMessageBlockHash;
     }
-    // !!!!
 
-    function _applyJoins(
+    function _applyInboundMessages(
         bytes memory encodedStateMachineState,
-        JoinChannelBlock[] memory joinChannelBlocks,
-        Balance memory totalDeposits
+        MessageBlock[] memory inboundMessageBlocks,
+        Balance memory currentInboundTotalDeposits
     ) internal returns (bytes memory encodedModifiedState, Balance memory newTotalDeposits) {
-        encodedModifiedState = encodedStateMachineState;
-        newTotalDeposits = totalDeposits;
-        for (uint256 i = 0; i < joinChannelBlocks.length; i++) {
-            JoinChannelBlock memory joinChannelBlock = joinChannelBlocks[i];
-            encodedModifiedState = applyJoinChannelToStateMachine(encodedModifiedState, joinChannelBlock.joinChannels);
-            for (uint256 j = 0; j < joinChannelBlock.joinChannels.length; j++) {
+        newTotalDeposits = currentInboundTotalDeposits;
+        stateMachineImplementation.setState(encodedStateMachineState);
+        for (uint256 i = 0; i < inboundMessageBlocks.length; i++) {
+            for (uint256 j = 0; j < inboundMessageBlocks[i].messages.length; j++) {
+                bool success = stateMachineImplementation.processInboundMessage(inboundMessageBlocks[i].messages[j]);
+                require(success, ErrorDisputeStateMachineInboundProcessingFailed());
                 newTotalDeposits =
-                    stateMachineImplementation.addBalance(newTotalDeposits, joinChannelBlock.joinChannels[j].balance);
+                    stateMachineImplementation.addBalance(newTotalDeposits, inboundMessageBlocks[i].messages[j].balance);
             }
         }
+        encodedModifiedState = stateMachineImplementation.getState();
     }
-    // !!!!!
 
-    function _calculateTotalWithdrawals(Balance memory totalWithdrawals, ExitChannel[] memory exitChannels)
-        internal
-        view
-        returns (Balance memory)
-    {
-        for (uint256 i = 0; i < exitChannels.length; i++) {
-            totalWithdrawals = stateMachineImplementation.addBalance(totalWithdrawals, exitChannels[i].balance);
+    function _processOutboundMessage(Message memory message) internal virtual returns (bool) {
+        if (message.messageType == MESSAGE_TYPE_EXIT) {
+            ExitChannel memory exitChannel = abi.decode(message.data, (ExitChannel));
+            require(
+                stateMachineImplementation.areBalancesEqual(message.balance, exitChannel.balance),
+                ErrorOutboundMessageBalanceMismatch()
+            );
+            bool success = StateChannelManagerInterface(address(this)).withdrawAssetsComposable(exitChannel);
+            return success;
         }
-        return totalWithdrawals;
+        return _processCustomOutboundMessage(message);
+    }
+
+    function _processCustomOutboundMessage(Message memory message) internal virtual returns (bool) {
+        revert ErrorOutboundMessageTypeUnsupported(message.messageType);
     }
     // !!!!!!!!!
     /// @dev Callable only by diamond facets - applies the join to the given state of the state machine and returns the modified state

@@ -34,10 +34,3 @@ function _areBlocksSameChannel(Block memory _block1, Block memory _block2) pure 
 function _doesBlockCommitToSnapshot(Block memory _block, StateSnapshot memory snapshot) pure returns (bool) {
     return _block.stateSnapshotHash == keccak256(abi.encode(snapshot));
 }
-
-function _formExitChannelBlock(bytes32 previousBlockHash, ExitChannel[] memory exitChannels)
-    pure
-    returns (ExitChannelBlock memory _block)
-{
-    return ExitChannelBlock({exitChannels: exitChannels, previousBlockHash: previousBlockHash});
-}

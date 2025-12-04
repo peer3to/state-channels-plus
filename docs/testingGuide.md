@@ -54,6 +54,12 @@ Use TypeChain to generate the TypeScript types that are used throughout the SDK:
 yarn hardhat typechain
 ```
 
+Whenever the Solidity contracts change their ABI (for example when new snapshot fields or events are added), regenerate the SDK-facing artifact bundle so the TypeScript services stay in sync:
+
+```shell
+yarn generate-artifacts
+```
+
 Run all tests:
 
 ```shell

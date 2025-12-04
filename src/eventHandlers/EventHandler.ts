@@ -1,5 +1,6 @@
 import {
     BlockConfirmationStruct,
+    MessageBlockStruct,
     SignedBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -137,7 +138,7 @@ export class EventHandler {
             signatures: []
         };
         await this.stateManager.onBlockConfirmation(blockConfirmation, {
-            onChainTimestamp: timestamp,
+            onChainTimestamp: Number(timestamp),
             validationStrategy: new CalldataCommittedStrategy(
                 this.stateManager.disputeManager,
                 this.stateManager.blockValidationStrategy
@@ -161,9 +162,13 @@ export class EventHandler {
             Type.Dispute
         );
         const forkId = dispute.input.forkId;
+        const disputeHash = hash(
+            disputeConfirmation.signedDispute.encodedDispute
+        );
         this.logger.debug("Dispute committed", {
             channelId,
             forkId,
+            disputeHash,
             isFinal,
             disputeCreationTimestamp,
             isForced: dispute.input.timeout?.isForced
@@ -201,13 +206,12 @@ export class EventHandler {
                     );
                 disputeAuditingData = auditingData;
             }
-            // TODO - after implementing setTimeout -> reduce - come back here
-            throw new Error("Not implemented yet - final dispute");
-            // return this.stateManager.setGenesisState(
-            //     disputeAuditingData.latestStateStateMachineState,
-            //     dispute.outputSnapshotDataHash,
-            //     disputeCreationTimestamp
-            // );
+            return this.stateManager.setGenesisState(
+                disputeAuditingData.latestStateSnapshot.snapshotData,
+                disputeAuditingData.latestStateStateMachineState,
+                dispute.outputSnapshotDataHash as ForkId,
+                disputeCreationTimestamp
+            );
         }
 
         // not final - validate dispute and challenge if invalid
@@ -218,17 +222,22 @@ export class EventHandler {
             );
         if (!isValid) {
             // TODO - do a multicall here
-            await this.stateManager.disputeManager.killDispute(dispute);
-            await this.stateManager.disputeManager.dispute(forkId);
+            await Promise.all([
+                this.stateManager.disputeManager.killDispute(dispute),
+                this.stateManager.disputeManager.dispute(forkId)
+            ]);
             return;
         }
         this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
+
         // this is like success - TODO - consider moving this to DisputeStrategy.success
-        if (await this.canConstructMoreEvidence(dispute)) {
-            await this.stateManager.disputeManager.dispute(forkId);
-            return;
+        const canConstructMoreEvidence =
+            await this.canConstructMoreEvidence(dispute);
+        if (canConstructMoreEvidence) {
+            return this.stateManager.disputeManager.dispute(forkId);
         }
-        const [_, potentialGenesisTimestamp] =
+
+        const { timestamp: potentialGenesisTimestamp } =
             await this.diamondStateMachine.localDiamondContract.getGenesisTimestamp(
                 channelId,
                 forkId, // originForkId is this forkId
@@ -388,14 +397,14 @@ export class EventHandler {
 
     async onChannelStorageCleared(
         channelId: ChannelId,
-        latestJoinChannelBlockHash: Hash
+        latestInboundMessageBlockHash: Hash
     ): Promise<void> {
         if (this.stateManager.isDisposed) {
             return;
         }
         await this.diamondStateMachine.localDiamondContract.onChannelStorageCleared(
             channelId,
-            latestJoinChannelBlockHash
+            latestInboundMessageBlockHash
         );
     }
 
@@ -443,26 +452,23 @@ export class EventHandler {
         await this.stateManager.disputeManager.dispute(forkId);
     }
 
-    async onJoinChannelProcessed(
+    async onInboundMessagesProcessed(
         channelId: ChannelId,
-        joinChannelBlock: any,
-        timestamp: Timestamp,
-        totalDeposits: any
+        messageBlock: MessageBlockStruct
     ): Promise<void> {
-        if (this.stateManager.isDisposed) {
-            return;
-        }
-        await this.diamondStateMachine.localDiamondContract.onJoinChannelProcessed(
+        const messageBlockHash = hash(
+            Codec.encode(messageBlock, Type.MessageBlock)
+        );
+        await this.stateManager.onInboundMessage(
+            messageBlock,
+            messageBlockHash
+        );
+        await this.diamondStateMachine.localDiamondContract.onInboundMessagesProcessed(
             channelId,
-            joinChannelBlock,
-            timestamp,
-            totalDeposits
+            messageBlock
         );
-        await this.stateManager.onJoinChannel(
-            joinChannelBlock,
-            timestamp,
-            totalDeposits
-        );
+
+        // Additional join-channel-specific handling can be placed here if required
     }
 
     private async validateDisputeReductionAndChallenge(
@@ -515,17 +521,18 @@ export class EventHandler {
             throw new Error(
                 `GenesisSnapshot not available for forkId: ${forkId}`
             );
-        const jcbs = this.storage.joinChannelBlocks.getBlocksInRange(
-            genesisSnapshot.snapshotData.latestJoinChannelBlockHash,
-            latestSnapshot.snapshotData.latestJoinChannelBlockHash
-        );
+        const inboundMessageBlocks =
+            this.storage.inboundMessages.getMessageBlocksInRange(
+                latestSnapshot.snapshotData.latestInboundMessageBlockHash,
+                genesisSnapshot.snapshotData.latestInboundMessageBlockHash
+            );
         const [snapshotData] =
             await this.stateManager.stateChannelManagerContract.reduceOutputToSnapshotData.staticCall(
                 forkId,
                 reduceOutput,
                 latestSnapshot,
                 state,
-                jcbs
+                inboundMessageBlocks
             );
 
         const isValid =
@@ -537,7 +544,7 @@ export class EventHandler {
                 disputes,
                 latestSnapshot,
                 state,
-                jcbs
+                inboundMessageBlocks
             );
             return false;
         }

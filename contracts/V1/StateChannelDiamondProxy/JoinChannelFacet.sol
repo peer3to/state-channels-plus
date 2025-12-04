@@ -37,8 +37,8 @@ contract JoinChannelFacet is StateChannelCommon {
         // Deposit funds
         JoinChannel[] memory jcs = new JoinChannel[](1);
         jcs[0] = jc;
-        (JoinChannelBlock memory jcb, Balance memory newTotalDeposits) =
+        (MessageBlock memory messageBlock, Balance memory newTotalDeposits,) =
             StateChannelManagerProxy(address(this)).depositAssetsComposable(jcs, true);
-        emit JoinChannelProcessed(channelId, jcb, block.timestamp, newTotalDeposits);
+        emit InboundMessagesProcessed(channelId, messageBlock);
     }
 }
