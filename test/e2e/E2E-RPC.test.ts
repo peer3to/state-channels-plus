@@ -23,6 +23,9 @@ describe("E2E: RPC Services", function () {
         let nonByzantinePeers: TestPeer<MathStateMachine>[];
 
         beforeEach(async function () {
+            harness = new PeerTestHarness<MathStateMachine>();
+            await harness.setup(3);
+            await harness.openChannel();
             byzantinePeer = harness.peers[1];
             nonByzantinePeers = [harness.peers[0], harness.peers[2]];
 
