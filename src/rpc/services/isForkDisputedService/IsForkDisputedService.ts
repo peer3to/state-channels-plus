@@ -1,5 +1,5 @@
 import { ARpcService } from "@/rpc";
-import { Address, ChannelId, ForkId } from "@/types/types";
+import { ChannelId, ForkId } from "@/types/types";
 import ATransport from "@/transport/ATransport";
 import P2PManager from "@/P2PManager";
 import IsForkDisputedRpcMethods from "./IsForkDisputedRpcMethods";
