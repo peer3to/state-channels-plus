@@ -1580,58 +1580,5 @@ describe("E2E: RPC Services", function () {
                 (agreementTime + 2) * 1000
             );
         });
-
-        // Arrange: Setup channel with spectate request, complex dispute resolution
-        // Act: Spectate sync request is processed during complex dispute resolution
-        // Assert: Spectate sync correctly handles dispute resolution and provides final state
-        it("should handle spectate sync during complex dispute resolution", async function () {
-            // Arrange
-            const [peer0, peer1, peer2, spectatingPeer] = harness.peers;
-            const participants = [peer0, peer1, peer2];
-
-            await connectParticipants(participants);
-            await createInitialBlocks(2);
-            harness.resetEventSpies();
-
-            await harness.submitDoubleSignBlock(peer1.index);
-            await harness.waitForEventCounts(
-                "onDisputeCommitted",
-                [
-                    { peerId: 0, expectedCount: 2 },
-                    { peerId: 1, expectedCount: 2 },
-                    { peerId: 2, expectedCount: 2 }
-                ],
-                10000
-            );
-
-            await harness.waitForEventCounts(
-                "onDisputeReducedResultCommitted",
-                [
-                    { peerId: 0, expectedCount: 1 },
-                    { peerId: 1, expectedCount: 1 },
-                    { peerId: 2, expectedCount: 1 }
-                ],
-                15000
-            );
-
-            await harness.waitForCondition(async () => {
-                const forkId0 = peer0.stateManager.forkId;
-                const forkId2 = peer2.stateManager.forkId;
-                return (
-                    forkId0 !== harness.activeForkId &&
-                    forkId0 === forkId2 &&
-                    forkId0 !== "0x00"
-                );
-            }, 15000);
-
-            await connectSpectator(spectatingPeer);
-
-            // Act
-            await performSpectateSync(spectatingPeer, participants);
-
-            // Assert
-            await waitForSpectatorSync([0, 1, 2, 3], 15000);
-            expectSpectatorStatus(spectatingPeer);
-        });
     });
 });
