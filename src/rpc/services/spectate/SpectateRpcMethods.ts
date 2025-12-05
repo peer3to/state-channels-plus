@@ -9,6 +9,7 @@ import { ChannelId, Timestamp } from "@/types/types";
 import Clock from "@/Clock";
 import { Codec, hash, Type } from "@/utils";
 import { Block } from "@/models";
+import { ethers } from "ethers";
 
 class SpectateServiceRpcMethods extends ARpcMethods {
     service: SpectateService;
@@ -190,6 +191,9 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                 (await diamondStateMachine.localDiamondContract.isGenesisSnapshotWithoutTimeCheck(
                     syncPayload.latestForkGenesisSnapshot
                 ));
+            const isNewChannel =
+                syncPayload.latestForkGenesisSnapshot.snapshotData
+                    .originForkId === ethers.ZeroHash;
             const [isAvailable, genesisTimestamp] =
                 await diamondStateMachine.localDiamondContract.getGenesisTimestamp(
                     channelId,
@@ -197,11 +201,20 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                         .originForkId,
                     finalForkId
                 );
-            isCorrectGenesis =
-                isCorrectGenesis &&
-                isAvailable &&
-                genesisTimestamp ==
-                    syncPayload.latestForkGenesisSnapshot.timestamp;
+
+            if (isNewChannel && !isAvailable) {
+                isCorrectGenesis =
+                    isCorrectGenesis &&
+                    onChainSnapshot.forkId === finalForkId &&
+                    onChainSnapshot.timestamp ===
+                        syncPayload.latestForkGenesisSnapshot.timestamp;
+            } else {
+                isCorrectGenesis =
+                    isCorrectGenesis &&
+                    isAvailable &&
+                    genesisTimestamp ===
+                        syncPayload.latestForkGenesisSnapshot.timestamp;
+            }
             if (!isCorrectGenesis) return this.service.abort(senderTransport);
 
             // 2.7) verify outboundMessageBlocks from onChainSnapshot to final genesisSnapshot

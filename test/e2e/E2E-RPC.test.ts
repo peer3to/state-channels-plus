@@ -1,13 +1,22 @@
 import { expect } from "chai";
-import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
+import {
+    PeerTestHarness,
+    TestPeer,
+    sleep
+} from "@test/fixtures/PeerTestHarness";
 import { AStateMachine, MathStateMachine } from "@typechain-types/index";
 import { ForkId } from "@/types/types";
 import { hash as fakeHash } from "../factory";
 import { ATransport } from "@/transport";
 import IsForkDisputedService from "@/rpc/services/isForkDisputedService/IsForkDisputedService";
-import { ethers } from "ethers";
+import { ethers, BytesLike } from "ethers";
 import Clock from "@/Clock";
 import { LocalDiscoveryServer } from "@/utils/LocalDiscoveryServer";
+import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
+import { SignatureUtils } from "@/utils";
+import { Codec, Type } from "@/utils/Codec";
+import { pollUntil } from "@test/test_utils/pollUntil";
+import { Status } from "@/types/flags";
 
 describe("E2E: RPC Services", function () {
     let harness: PeerTestHarness<MathStateMachine>;
@@ -1186,57 +1195,709 @@ describe("E2E: RPC Services", function () {
         });
     });
 
-    describe.skip("Spectate RPC", function () {
-        // Arrange: Setup channel with participants, new peer wants to spectate
-        // Act: Spectate sync request is sent to existing participants
-        // Assert: Spectate sync response is generated with latest canonical state
-        it(
-            "should generate spectate sync response with latest canonical state"
-        );
+    describe("Spectate RPC", function () {
+        beforeEach(async function () {
+            harness = new PeerTestHarness<MathStateMachine>();
+            await harness.setup(4, { autoConnect: false });
+
+            await Clock.init(harness.peers[0].signer.provider!);
+
+            const participants = harness.peers.slice(0, 3);
+            const openChannel = createOpenChannelTestObject(
+                participants.map((p) => p.address),
+                {
+                    channelId: harness.channelId?.toString(),
+                    initialBalance: 500
+                }
+            );
+
+            for (const peer of harness.peers) {
+                peer.p2pInstance.p2pSigner.connectToChannel(
+                    openChannel.channelId
+                );
+            }
+
+            const signatures = await Promise.all(
+                participants.map(
+                    async (peer) =>
+                        (
+                            await SignatureUtils.signOpenChannel(
+                                openChannel,
+                                peer.signer
+                            )
+                        ).signature as BytesLike
+                )
+            );
+
+            const tx = await harness.channelManager.open({
+                encodedOpenChannel: Codec.encode(openChannel, Type.OpenChannel),
+                signatures: signatures
+            });
+
+            await Promise.all([tx.wait(), sleep(100)]);
+
+            const isValidForkId = (forkId: ForkId | undefined): boolean =>
+                !!forkId && forkId !== "0x00" && forkId !== "0x0";
+
+            await pollUntil(
+                () => {
+                    const peerForkIds = participants.map(
+                        (peer) => peer.stateManager.forkId
+                    );
+                    const allValidAndSame =
+                        peerForkIds.every(isValidForkId) &&
+                        peerForkIds.every((id) => id === peerForkIds[0]);
+
+                    if (allValidAndSame) {
+                        harness.activeForkId = peerForkIds[0] as ForkId;
+                        return true;
+                    }
+                    return false;
+                },
+                {
+                    timeoutMs: 2000,
+                    pollIntervalMs: 50,
+                    timeoutMessage:
+                        "Failed to get fork ID on participating peers after waiting 2000ms."
+                }
+            );
+        });
+
+        // =================================================================
+        // Helper Functions
+        // =================================================================
+
+        const getSpectateService = (peer: TestPeer<MathStateMachine>) =>
+            peer.stateManager.p2pManager.localRpc.spectateService;
+
+        const waitForSpectatorTransport = async (
+            spectator: TestPeer<MathStateMachine>,
+            participants: TestPeer<MathStateMachine>[]
+        ): Promise<ATransport> => {
+            let transport: ATransport | undefined;
+            await harness.waitForCondition(() => {
+                transport = participants
+                    .map((peer) =>
+                        harness.getPeerTransport(spectator.index, peer.index)
+                    )
+                    .find(Boolean);
+                return !!transport;
+            }, 10000);
+            if (!transport) {
+                throw new Error("Transport not found");
+            }
+            return transport;
+        };
+
+        const waitForSpectatorSync = async (
+            peerIndices: number[],
+            timeoutMs: number = 10000
+        ): Promise<void> => {
+            await harness.waitForCondition(() => {
+                try {
+                    harness.assertAllPeersInSync({ peerIndices });
+                    return true;
+                } catch {
+                    return false;
+                }
+            }, timeoutMs);
+        };
+
+        // Arrange: Setup channel with 3 peers connected, 4th peer created but not connected
+        // Act: 4th peer connects and completes handshake
+        // Assert: 4th peer's status is SPECTATING and is not chosen by leader election
+        it("should sync a spectator peer and keep it in sync", async function () {
+            const [peer0, peer1, peer2, spectatingPeer] = harness.peers;
+            const participants = [peer0, peer1, peer2];
+
+            for (const peer of participants) {
+                LocalDiscoveryServer.connectToPeers(
+                    peer.stateManager.p2pManager,
+                    harness.channelId?.toString()
+                );
+            }
+            await harness.waitForP2PConnections();
+
+            await harness.submitNextTransaction((contract) => contract.add(1), {
+                waitForPeers: [0, 1, 2]
+            });
+            await harness.submitNextTransaction((contract) => contract.add(1), {
+                waitForPeers: [0, 1, 2]
+            });
+
+            harness.assertAllPeersInSync({ peerIndices: [0, 1, 2] });
+
+            participants.forEach((peer) =>
+                expect(peer.stateManager.getStatus()).to.equal(
+                    Status.PARTICIPATING
+                )
+            );
+            expect(spectatingPeer.stateManager.getStatus()).to.equal(
+                Status.SPECTATING
+            );
+
+            LocalDiscoveryServer.connectToPeers(
+                spectatingPeer.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+
+            harness.assertAllPeersInSync({ peerIndices: [0, 1, 2] });
+
+            const spectateTransport = await waitForSpectatorTransport(
+                spectatingPeer,
+                participants
+            );
+
+            const spectateService = getSpectateService(spectatingPeer);
+            spectateService.sync(
+                spectateTransport,
+                spectatingPeer.stateManager.channelId
+            );
+
+            await waitForSpectatorSync([0, 1, 2, 3]);
+
+            await harness.submitNextTransaction((contract) => contract.add(1), {
+                waitForPeers: [0, 1, 2]
+            });
+
+            await waitForSpectatorSync([0, 1, 2, 3]);
+
+            expect(spectatingPeer.stateManager.getStatus()).to.equal(
+                Status.SPECTATING
+            );
+
+            const onChainParticipants =
+                await peer0.stateManager.diamondStateMachine.getParticipants();
+            expect(onChainParticipants).to.have.lengthOf(3);
+            expect(onChainParticipants).to.not.include(spectatingPeer.address);
+
+            for (let i = 0; i < 5; i++) {
+                const next =
+                    await peer0.stateManager.diamondStateMachine.getNextToWrite();
+                expect(next).to.not.equal(spectatingPeer.address);
+                expect(participants.map((peer) => peer.address)).to.include(
+                    next
+                );
+            }
+        });
 
         // Arrange: Setup channel with fork situation, spectate request received
         // Act: Spectate sync request is processed during active fork scenario
         // Assert: Spectate sync correctly identifies and provides canonical fork state
-        it("should handle spectate sync during active fork scenario");
+        it("should handle spectate sync during active fork scenario", async function () {
+            // Arrange
+            const [peer0, peer1, peer2, spectatingPeer] = harness.peers;
+            const participants = [peer0, peer1, peer2];
+            const byzantinePeer = peer1;
+
+            for (const peer of participants) {
+                LocalDiscoveryServer.connectToPeers(
+                    peer.stateManager.p2pManager,
+                    harness.channelId?.toString()
+                );
+            }
+            await harness.waitForP2PConnections();
+
+            await harness.submitNextTransaction((contract) => contract.add(1), {
+                waitForPeers: [0, 1, 2]
+            });
+            await harness.submitNextTransaction((contract) => contract.add(1), {
+                waitForPeers: [0, 1, 2]
+            });
+
+            harness.assertAllPeersInSync({ peerIndices: [0, 1, 2] });
+            harness.resetEventSpies();
+
+            await harness.submitDoubleSignBlock(byzantinePeer.index);
+
+            const fraudDetected = await harness.waitForEventCounts(
+                "onInitiatingDispute",
+                [
+                    { peerId: 0, expectedCount: 1 },
+                    { peerId: 2, expectedCount: 1 },
+                    { peerId: 1, expectedCount: 0 }
+                ],
+                10000
+            );
+            if (!fraudDetected) {
+                throw new Error("Fraud was not detected");
+            }
+
+            const disputeCommitted = await harness.waitForEventCounts(
+                "onDisputeCommitted",
+                [
+                    { peerId: 0, expectedCount: 2 },
+                    { peerId: 1, expectedCount: 2 },
+                    { peerId: 2, expectedCount: 2 }
+                ],
+                10000
+            );
+            if (!disputeCommitted) {
+                throw new Error("Dispute was not committed");
+            }
+
+            LocalDiscoveryServer.connectToPeers(
+                spectatingPeer.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+
+            // Act
+            const spectateTransport = await waitForSpectatorTransport(
+                spectatingPeer,
+                [peer0, peer2]
+            );
+
+            const spectateService = getSpectateService(spectatingPeer);
+            spectateService.sync(
+                spectateTransport!,
+                spectatingPeer.stateManager.channelId
+            );
+
+            // Assert
+            await waitForSpectatorSync([0, 2, 3]);
+
+            expect(spectatingPeer.stateManager.getStatus()).to.equal(
+                Status.SPECTATING
+            );
+        });
 
         // Arrange: Setup channel with dispute windows, spectate request received
         // Act: Spectate sync request is processed with multiple dispute windows
         // Assert: Spectate sync correctly verifies all dispute windows and provides final state
-        it("should handle spectate sync with multiple dispute windows");
+        it("should handle spectate sync with multiple dispute windows", async function () {
+            // Arrange
+            const [peer0, peer1, peer2, spectatingPeer] = harness.peers;
+            const participants = [peer0, peer1, peer2];
+
+            for (const peer of participants) {
+                LocalDiscoveryServer.connectToPeers(
+                    peer.stateManager.p2pManager,
+                    harness.channelId?.toString()
+                );
+            }
+            await harness.waitForP2PConnections();
+
+            await harness.submitNextTransaction((contract) => contract.add(1), {
+                waitForPeers: [0, 1, 2]
+            });
+            await harness.submitNextTransaction((contract) => contract.add(1), {
+                waitForPeers: [0, 1, 2]
+            });
+
+            harness.assertAllPeersInSync({ peerIndices: [0, 1, 2] });
+            harness.resetEventSpies();
+
+            await harness.submitDoubleSignBlock(peer1.index);
+            await harness.waitForEventCounts(
+                "onDisputeCommitted",
+                [
+                    { peerId: 0, expectedCount: 2 },
+                    { peerId: 1, expectedCount: 2 },
+                    { peerId: 2, expectedCount: 2 }
+                ],
+                10000
+            );
+
+            await harness.waitForCondition(async () => {
+                const forkId0 = peer0.stateManager.forkId;
+                const forkId2 = peer2.stateManager.forkId;
+                return (
+                    forkId0 !== harness.activeForkId &&
+                    forkId0 === forkId2 &&
+                    forkId0 !== "0x00"
+                );
+            }, 15000);
+
+            await harness.submitDoubleSignBlock(peer0.index);
+            await harness.waitForEventCounts(
+                "onDisputeCommitted",
+                [
+                    { peerId: 0, expectedCount: 4 },
+                    { peerId: 1, expectedCount: 4 },
+                    { peerId: 2, expectedCount: 4 }
+                ],
+                10000
+            );
+
+            LocalDiscoveryServer.connectToPeers(
+                spectatingPeer.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+
+            // Act
+            const spectateTransport = await waitForSpectatorTransport(
+                spectatingPeer,
+                participants
+            );
+
+            const spectateService = getSpectateService(spectatingPeer);
+            spectateService.sync(
+                spectateTransport!,
+                spectatingPeer.stateManager.channelId
+            );
+
+            // Assert
+            await waitForSpectatorSync([0, 1, 2, 3], 15000);
+
+            expect(spectatingPeer.stateManager.getStatus()).to.equal(
+                Status.SPECTATING
+            );
+        });
 
         // Arrange: Setup channel with spectate request, invalid canonical fork
         // Act: Spectate sync request is processed but canonical fork verification fails
         // Assert: Spectate sync fails gracefully and peer is disconnected
-        it("should reject spectate sync with invalid canonical fork");
+        it("should reject spectate sync with invalid canonical fork", async function () {
+            // Arrange
+            const [peer0, peer1, peer2, spectatingPeer] = harness.peers;
+            const participants = [peer0, peer1, peer2];
+
+            for (const peer of participants) {
+                LocalDiscoveryServer.connectToPeers(
+                    peer.stateManager.p2pManager,
+                    harness.channelId?.toString()
+                );
+            }
+            await harness.waitForP2PConnections();
+
+            await harness.submitNextTransaction((contract) => contract.add(1), {
+                waitForPeers: [0, 1, 2]
+            });
+
+            harness.assertAllPeersInSync({ peerIndices: [0, 1, 2] });
+
+            LocalDiscoveryServer.connectToPeers(
+                spectatingPeer.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+
+            let spectateTransport: ATransport | undefined;
+            await harness.waitForCondition(() => {
+                spectateTransport = participants
+                    .map((peer) =>
+                        harness.getPeerTransport(
+                            spectatingPeer.index,
+                            peer.index
+                        )
+                    )
+                    .find(Boolean);
+                return !!spectateTransport;
+            }, 10000);
+
+            // Act
+            const spectateService = getSpectateService(spectatingPeer);
+            const invalidForkId = ethers.randomBytes(32);
+            const connectionsBefore = harness.getConnectionCount(
+                spectatingPeer.index
+            );
+
+            spectateService.sync(
+                spectateTransport!,
+                spectatingPeer.stateManager.channelId,
+                ethers.hexlify(invalidForkId) as ForkId
+            );
+
+            // Assert
+            await harness.waitForCondition(() => {
+                const connectionsAfter = harness.getConnectionCount(
+                    spectatingPeer.index
+                );
+                return connectionsAfter < connectionsBefore;
+            }, 10000);
+        });
 
         // Arrange: Setup channel with spectate request timeout
         // Act: Spectate sync request is sent but no response within agreement time
         // Assert: Spectate request times out and peer is disconnected
-        it("should handle spectate sync request timeout");
+        it("should handle spectate sync request timeout", async function () {
+            // Arrange
+            const [peer0, peer1, peer2, spectatingPeer] = harness.peers;
+            const participants = [peer0, peer1, peer2];
 
-        // Arrange: Setup channel with spectate request, peer has outdated state
-        // Act: Spectate sync request is processed with peer having stale state
-        // Assert: Spectate sync provides updated state and peer synchronizes
-        it("should handle spectate sync with outdated peer state");
+            for (const peer of participants) {
+                LocalDiscoveryServer.connectToPeers(
+                    peer.stateManager.p2pManager,
+                    harness.channelId?.toString()
+                );
+            }
+            await harness.waitForP2PConnections();
+
+            await harness.submitNextTransaction((contract) => contract.add(1), {
+                waitForPeers: [0, 1, 2]
+            });
+
+            harness.assertAllPeersInSync({ peerIndices: [0, 1, 2] });
+
+            LocalDiscoveryServer.connectToPeers(
+                spectatingPeer.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+
+            let spectateTransport: ATransport | undefined;
+            await harness.waitForCondition(() => {
+                spectateTransport = participants
+                    .map((peer) =>
+                        harness.getPeerTransport(
+                            spectatingPeer.index,
+                            peer.index
+                        )
+                    )
+                    .find(Boolean);
+                return !!spectateTransport;
+            }, 10000);
+
+            // Act
+            const participatingPeer = peer0;
+            await harness.simulatePeerTimeout(participatingPeer.index);
+
+            const spectateService = getSpectateService(spectatingPeer);
+            const connectionsBefore = harness.getConnectionCount(
+                spectatingPeer.index
+            );
+
+            spectateService.sync(
+                spectateTransport!,
+                spectatingPeer.stateManager.channelId
+            );
+
+            // Assert
+            const agreementTime =
+                spectatingPeer.stateManager.timeConfig.agreementTime;
+            await harness.waitForCondition(
+                () => {
+                    const connectionsAfter = harness.getConnectionCount(
+                        spectatingPeer.index
+                    );
+                    return connectionsAfter < connectionsBefore;
+                },
+                (agreementTime + 2) * 1000
+            );
+        });
 
         // Arrange: Setup channel with spectate request, complex dispute resolution
         // Act: Spectate sync request is processed during complex dispute resolution
         // Assert: Spectate sync correctly handles dispute resolution and provides final state
-        it("should handle spectate sync during complex dispute resolution");
+        it("should handle spectate sync during complex dispute resolution", async function () {
+            // Arrange
+            const [peer0, peer1, peer2, spectatingPeer] = harness.peers;
+            const participants = [peer0, peer1, peer2];
+
+            for (const peer of participants) {
+                LocalDiscoveryServer.connectToPeers(
+                    peer.stateManager.p2pManager,
+                    harness.channelId?.toString()
+                );
+            }
+            await harness.waitForP2PConnections();
+
+            await harness.submitNextTransaction((contract) => contract.add(1), {
+                waitForPeers: [0, 1, 2]
+            });
+            await harness.submitNextTransaction((contract) => contract.add(1), {
+                waitForPeers: [0, 1, 2]
+            });
+
+            harness.assertAllPeersInSync({ peerIndices: [0, 1, 2] });
+            harness.resetEventSpies();
+
+            await harness.submitDoubleSignBlock(peer1.index);
+            await harness.waitForEventCounts(
+                "onDisputeCommitted",
+                [
+                    { peerId: 0, expectedCount: 2 },
+                    { peerId: 1, expectedCount: 2 },
+                    { peerId: 2, expectedCount: 2 }
+                ],
+                10000
+            );
+
+            await harness.waitForEventCounts(
+                "onDisputeReducedResultCommitted",
+                [
+                    { peerId: 0, expectedCount: 1 },
+                    { peerId: 1, expectedCount: 1 },
+                    { peerId: 2, expectedCount: 1 }
+                ],
+                15000
+            );
+
+            await harness.waitForCondition(async () => {
+                const forkId0 = peer0.stateManager.forkId;
+                const forkId2 = peer2.stateManager.forkId;
+                return (
+                    forkId0 !== harness.activeForkId &&
+                    forkId0 === forkId2 &&
+                    forkId0 !== "0x00"
+                );
+            }, 15000);
+
+            LocalDiscoveryServer.connectToPeers(
+                spectatingPeer.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+
+            // Act
+            const spectateTransport = await waitForSpectatorTransport(
+                spectatingPeer,
+                participants
+            );
+
+            const spectateService = getSpectateService(spectatingPeer);
+            spectateService.sync(
+                spectateTransport!,
+                spectatingPeer.stateManager.channelId
+            );
+
+            // Assert
+            await waitForSpectatorSync([0, 1, 2, 3], 15000);
+
+            expect(spectatingPeer.stateManager.getStatus()).to.equal(
+                Status.SPECTATING
+            );
+        });
 
         // Arrange: Setup channel with spectate request, milestone verification
         // Act: Spectate sync request is processed with milestone verification
         // Assert: Spectate sync correctly verifies milestones and provides valid state
-        it("should verify milestones in spectate sync response");
+        it("should verify milestones in spectate sync response", async function () {
+            // Arrange
+            const [peer0, peer1, peer2, spectatingPeer] = harness.peers;
+            const participants = [peer0, peer1, peer2];
+
+            for (const peer of participants) {
+                LocalDiscoveryServer.connectToPeers(
+                    peer.stateManager.p2pManager,
+                    harness.channelId?.toString()
+                );
+            }
+            await harness.waitForP2PConnections();
+
+            for (let i = 0; i < 10; i++) {
+                await harness.submitNextTransaction(
+                    (contract) => contract.add(1),
+                    { waitForPeers: [0, 1, 2] }
+                );
+            }
+
+            harness.assertAllPeersInSync({ peerIndices: [0, 1, 2] });
+
+            LocalDiscoveryServer.connectToPeers(
+                spectatingPeer.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+
+            // Act
+            const spectateTransport = await waitForSpectatorTransport(
+                spectatingPeer,
+                participants
+            );
+
+            const spectateService = getSpectateService(spectatingPeer);
+            spectateService.sync(
+                spectateTransport!,
+                spectatingPeer.stateManager.channelId
+            );
+
+            // Assert
+            await waitForSpectatorSync([0, 1, 2, 3]);
+
+            expect(spectatingPeer.stateManager.getStatus()).to.equal(
+                Status.SPECTATING
+            );
+        });
 
         // Arrange: Setup channel with spectate request, genesis snapshot verification
         // Act: Spectate sync request is processed with genesis snapshot verification
         // Assert: Spectate sync correctly verifies genesis snapshot and provides valid state
-        it("should verify genesis snapshot in spectate sync response");
+        it("should verify genesis snapshot in spectate sync response", async function () {
+            // Arrange
+            const [peer0, peer1, peer2, spectatingPeer] = harness.peers;
+            const participants = [peer0, peer1, peer2];
+
+            for (const peer of participants) {
+                LocalDiscoveryServer.connectToPeers(
+                    peer.stateManager.p2pManager,
+                    harness.channelId?.toString()
+                );
+            }
+            await harness.waitForP2PConnections();
+
+            await harness.submitNextTransaction((contract) => contract.add(1), {
+                waitForPeers: [0, 1, 2]
+            });
+
+            harness.assertAllPeersInSync({ peerIndices: [0, 1, 2] });
+
+            LocalDiscoveryServer.connectToPeers(
+                spectatingPeer.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+
+            // Act
+            const spectateTransport = await waitForSpectatorTransport(
+                spectatingPeer,
+                participants
+            );
+
+            const spectateService = getSpectateService(spectatingPeer);
+            spectateService.sync(
+                spectateTransport!,
+                spectatingPeer.stateManager.channelId
+            );
+
+            // Assert
+            await waitForSpectatorSync([0, 1, 2, 3]);
+
+            expect(spectatingPeer.stateManager.getStatus()).to.equal(
+                Status.SPECTATING
+            );
+        });
 
         // Arrange: Setup channel with spectate request, fork dispute verification
         // Act: Spectate sync request is processed with fork dispute status verification
         // Assert: Spectate sync correctly verifies fork dispute status and provides canonical state
-        it("should verify fork dispute status in spectate sync response");
+        it("should verify fork dispute status in spectate sync response", async function () {
+            // Arrange
+            const [peer0, peer1, peer2, spectatingPeer] = harness.peers;
+            const participants = [peer0, peer1, peer2];
+
+            for (const peer of participants) {
+                LocalDiscoveryServer.connectToPeers(
+                    peer.stateManager.p2pManager,
+                    harness.channelId?.toString()
+                );
+            }
+            await harness.waitForP2PConnections();
+
+            await harness.submitNextTransaction((contract) => contract.add(1), {
+                waitForPeers: [0, 1, 2]
+            });
+
+            harness.assertAllPeersInSync({ peerIndices: [0, 1, 2] });
+
+            LocalDiscoveryServer.connectToPeers(
+                spectatingPeer.stateManager.p2pManager,
+                harness.channelId?.toString()
+            );
+
+            // Act
+            const spectateTransport = await waitForSpectatorTransport(
+                spectatingPeer,
+                participants
+            );
+
+            const spectateService = getSpectateService(spectatingPeer);
+            spectateService.sync(
+                spectateTransport!,
+                spectatingPeer.stateManager.channelId
+            );
+
+            // Assert
+            await waitForSpectatorSync([0, 1, 2, 3]);
+
+            expect(spectatingPeer.stateManager.getStatus()).to.equal(
+                Status.SPECTATING
+            );
+        });
     });
 });

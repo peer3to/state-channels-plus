@@ -22,8 +22,21 @@ class StateTransitionRpcMethods extends ARpcMethods {
                 }
             );
         if (!keepConnection) {
-            // Disconnect from peer and blacklist them
             if (senderTransport) {
+                const profile =
+                    this.p2pManager.profileManager.getProfileByTransport(
+                        senderTransport
+                    );
+                const senderAddress = profile?.evmAddress;
+                let isParticipant = false;
+                if (senderAddress) {
+                    const participants =
+                        await this.p2pManager.stateManager.getParticipantsCurrent();
+                    isParticipant = participants.includes(senderAddress);
+                }
+
+                if (!isParticipant) return;
+
                 this.p2pManager.disconnectAndBlacklistPeer(senderTransport);
             }
             return;

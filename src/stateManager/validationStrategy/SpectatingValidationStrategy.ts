@@ -46,10 +46,19 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     public async authenticateBlockFailed(
         _block: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
+        if (!this.isSynced()) {
+            return BlockValidationResult.NOT_READY;
+        }
+
         this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
-    public async wrongChannel(_block: Block): Promise<BlockValidationResult> {
+    public async wrongChannel(block: Block): Promise<BlockValidationResult> {
+        if (!this.isSynced()) {
+            this.storage.queues.queueBlock(block);
+            return BlockValidationResult.NOT_READY;
+        }
+
         this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
@@ -61,8 +70,13 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.NOT_READY;
     }
     public async notAllSingersAreParticipants(
-        _block: Block
+        block: Block
     ): Promise<BlockValidationResult> {
+        if (!this.isSynced()) {
+            this.storage.queues.queueBlock(block);
+            return BlockValidationResult.NOT_READY;
+        }
+
         this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
@@ -74,6 +88,11 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     public async goodNewSignaturesOnExistingBlock(
         block: Block
     ): Promise<BlockValidationResult> {
+        if (!this.isSynced()) {
+            this.storage.queues.queueBlock(block);
+            return BlockValidationResult.NOT_READY;
+        }
+
         // Store new signatures and broadcast
         this.storage.blocks.storeBlock(block);
         this.p2pManager.remoteRpc.stateTransitionService
@@ -82,33 +101,67 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.BROADCAST;
     }
     public async blockAuthorIsNotParticipant(
-        _block: Block
+        block: Block
     ): Promise<BlockValidationResult> {
+        if (!this.isSynced()) {
+            this.storage.queues.queueBlock(block);
+            return BlockValidationResult.NOT_READY;
+        }
+
         this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
     public async doubleSignDetected(
-        _conflictingBlock: Block,
-        _block: Block
+        conflictingBlock: Block,
+        block: Block
     ): Promise<BlockValidationResult> {
+        if (!this.isSynced()) {
+            this.storage.queues.queueBlock(conflictingBlock);
+            this.storage.queues.queueBlock(block);
+            return BlockValidationResult.NOT_READY;
+        }
+
         this.disconnect();
         return BlockValidationResult.DISPUTE;
     }
     public async invalidStateTransitionDetected(
-        _block: Block
+        block: Block
     ): Promise<BlockValidationResult> {
+        if (!this.isSynced()) {
+            this.storage.queues.queueBlock(block);
+            return BlockValidationResult.NOT_READY;
+        }
+
+        const nextBlockHeight = this.storage.blocks.getNextBlockHeight(
+            block.forkId
+        );
+        if (nextBlockHeight === 0) {
+            this.storage.queues.queueBlock(block);
+            return BlockValidationResult.NOT_READY;
+        }
+
         this.disconnect();
         return BlockValidationResult.DISPUTE;
     }
     public async wrongGenesisDetected(
-        _block: Block
+        block: Block
     ): Promise<BlockValidationResult> {
+        if (!this.isSynced()) {
+            this.storage.queues.queueBlock(block);
+            return BlockValidationResult.NOT_READY;
+        }
+
         this.disconnect();
         return BlockValidationResult.DISPUTE;
     }
     public async conflictingButNotLinkedBlockDetected(
-        _block: Block
+        block: Block
     ): Promise<BlockValidationResult> {
+        if (!this.isSynced()) {
+            this.storage.queues.queueBlock(block);
+            return BlockValidationResult.NOT_READY;
+        }
+
         this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
@@ -128,24 +181,48 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(
-        _block: Block
+        block: Block
     ): Promise<BlockValidationResult> {
+        const nextBlockHeight = this.storage.blocks.getNextBlockHeight(
+            block.forkId
+        );
+        if (nextBlockHeight === 0) {
+            this.storage.queues.queueBlock(block);
+            return BlockValidationResult.NOT_READY;
+        }
+
         this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
     public async objectiveInvalidTimestampDetected(
-        _block: Block
+        block: Block
     ): Promise<BlockValidationResult> {
+        if (!this.isSynced()) {
+            this.storage.queues.queueBlock(block);
+            return BlockValidationResult.NOT_READY;
+        }
+
         this.disconnect();
         return BlockValidationResult.DISPUTE;
     }
     public async subjectiveInvalidTimestampDetected(
-        _block: Block
+        block: Block
     ): Promise<BlockValidationResult> {
+        if (!this.isSynced()) {
+            this.storage.queues.queueBlock(block);
+            return BlockValidationResult.NOT_READY;
+        }
+
         return BlockValidationResult.NOT_ENOUGH_TIME;
     }
 
     private disconnect() {
         this.p2pManager.disconnectAll();
+    }
+
+    private isSynced(): boolean {
+        const forkId = this.p2pManager.stateManager.forkId;
+        if (!forkId) return false;
+        return this.storage.blocks.getNextBlockHeight(forkId) > 0;
     }
 }
