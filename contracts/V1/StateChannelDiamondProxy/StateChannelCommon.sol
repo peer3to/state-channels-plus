@@ -76,21 +76,27 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[originForkId];
+
+        // Check if dispute window exists first
+        if (disputeWindow.evidence.creationTimestamp == 0) {
+            // Dispute window doesn't exist - check on-chain snapshot for new channels
+            if (originForkId == bytes32(0)) {
+                StateSnapshot memory currentOnChainSnapshot = stateSnapshots[channelId];
+                // check if current on-chain snapshot.fork == forkId
+                if (
+                    currentOnChainSnapshot.forkId == forkId
+                        && UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
+                ) {
+                    return (true, currentOnChainSnapshot.timestamp);
+                }
+            }
+            return (false, 0);
+        }
+
+        // Dispute window exists - check if kill period expired
         timestamp = disputeWindow.evidence.lastEvidenceSubmissionTimestamp + getEvidenceTime();
         (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
         if (!isExpired) {
-            return (false, timestamp);
-        }
-        if (timestamp == 0) {
-            // Dispute window doesn't exist
-            StateSnapshot memory currentOnChainSnapshot = stateSnapshots[channelId];
-            // check if current on-chain snapshot.fork == forkId
-            if (
-                currentOnChainSnapshot.forkId == forkId
-                    && UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
-            ) {
-                return (true, currentOnChainSnapshot.timestamp);
-            }
             return (false, timestamp);
         }
         return (true, timestamp);

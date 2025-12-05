@@ -1404,6 +1404,8 @@ describe("E2E: RPC Services", function () {
                     next
                 );
             }
+
+            harness.assertAllPeersInSync({ peerIndices: [0, 1, 2, 3] });
         });
 
         // Arrange: Setup channel with fork situation, spectate request received
@@ -1455,6 +1457,7 @@ describe("E2E: RPC Services", function () {
             // Assert
             await waitForSpectatorSync([0, 2, 3]);
             expectSpectatorStatus(spectatingPeer);
+            harness.assertAllPeersInSync({ peerIndices: [0, 2, 3] });
         });
 
         // Arrange: Setup channel with dispute windows, spectate request received
@@ -1509,6 +1512,7 @@ describe("E2E: RPC Services", function () {
             // Assert
             await waitForSpectatorSync([0, 1, 2, 3], 15000);
             expectSpectatorStatus(spectatingPeer);
+            harness.assertAllPeersInSync({ peerIndices: [0, 1, 2, 3] });
         });
 
         // Arrange: Setup channel with spectate request, invalid canonical fork
