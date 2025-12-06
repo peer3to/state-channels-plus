@@ -10,7 +10,7 @@ import {
 } from "@test/test_utils/testHelpers";
 import { SignatureUtils } from "@/utils";
 import {
-    MathStateChannelManagerProxy,
+    StateChannelManagerProxy,
     MathStateMachine,
     MathConsumerFacet__factory
 } from "@typechain-types";
@@ -19,7 +19,7 @@ import { Bytes } from "@/types/types";
 import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 describe("StateChannelManagerProxy", function () {
-    let mathChannelManager: MathStateChannelManagerProxy;
+    let mathChannelManager: StateChannelManagerProxy;
     let mathInstance: MathStateMachine;
     let firstSigner: HardhatEthersSigner;
     let secondSigner: HardhatEthersSigner;

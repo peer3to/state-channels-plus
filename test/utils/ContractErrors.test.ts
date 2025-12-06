@@ -4,7 +4,7 @@ import { isCustomEvmError, decodeErrorProxy } from "@/utils/evmErrorHandler";
 import { ethers as hre } from "hardhat";
 import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
 import * as factory from "@test/factory";
-import { MathStateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerProxy } from "@typechain-types";
 import { artifacts, errorAbis } from "@/utils/GeneratedArtifacts";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
@@ -86,7 +86,7 @@ describe("ContractCaller and ContractErrors", () => {
     });
 
     describe("Real contract calls", () => {
-        let mathChannelManager: MathStateChannelManagerProxy;
+        let mathChannelManager: StateChannelManagerProxy;
         let testSigner: HardhatEthersSigner;
 
         beforeEach(async () => {
