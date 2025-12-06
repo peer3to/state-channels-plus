@@ -37,3 +37,8 @@ jobs:
       # ideally this shoud run in a merge queue, but we don't have that yet
       - name: Run e2e tests
         run: yarn test:e2e
+
+      - name: Run test 100 times
+        run: |
+          chmod +x run_test_100.sh
+          ./run_test_100.sh
