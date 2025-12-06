@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # Configuration
-TEST_COMMAND='yarn test:e2e:verbose --grep "should reduce honest invalid state transition disputes and create new fork"'
-TOTAL_RUNS=100
+TEST_COMMAND='yarn test:e2e:verbose'
+TOTAL_RUNS=20
 LOG_DIR="/tmp/test-failures-$(date +%Y%m%d-%H%M%S)"
-SUMMARY_FILE="/tmp/test-summary-$(date +%Y%m%d-%H%M%S).txt"
+SUMMARY_FILE="/tmp/test-summary-full-e2e-suite-$(date +%Y%m%d-%H%M%S).txt"
 
 # Create log directory
 mkdir -p "$LOG_DIR"
