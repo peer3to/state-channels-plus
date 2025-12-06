@@ -1,6 +1,9 @@
 import { Block } from "@/models";
 import { BlockValidationResult } from "@/types";
-import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    BlockConfirmationStruct,
+    MessageBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import AValidationStrategy from "./AValidationStrategy";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
@@ -105,6 +108,17 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         block: Block
     ): Promise<BlockValidationResult> {
         this.fraudProofService.createWrongGenesisProof(block);
+        await this.disputeManager.dispute(block.forkId);
+        return BlockValidationResult.DISPUTE;
+    }
+    public async forgedInboundMessageBlockDetected(
+        block: Block,
+        messageBlock: MessageBlockStruct
+    ): Promise<BlockValidationResult> {
+        this.fraudProofService.createForgedInboundMessageBlockProof(
+            block,
+            messageBlock
+        );
         await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }

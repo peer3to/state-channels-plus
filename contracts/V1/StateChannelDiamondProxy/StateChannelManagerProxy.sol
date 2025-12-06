@@ -53,6 +53,13 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         gasLimit = 3_000_000;
     }
 
+    fallback() external {
+        bytes memory result = _delegatecall(consumerFacetAddress, msg.data);
+        assembly ("memory-safe") {
+            return(add(result, 0x20), mload(result))
+        }
+    }
+
     // ********** public/external functions **********
 
     /**
@@ -272,27 +279,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
                 data: abi.encode(filteredJoinChannels[i])
             });
         }
-
-        ChannelBalance storage channelBalance = channelBalances[channelId];
-        messageBlock.previousBlockHash = channelBalance.latestInboundMessageBlockHash;
-        uint256 nextBlockHeight = channelBalance.latestInboundMessageBlockHeight + 1;
-        messageBlock.blockHeight = nextBlockHeight;
-        messageBlock.messages = messages;
-
-        // Update on-chain balance
-        newTotalDeposits = channelBalance.totalDeposits;
-        for (uint256 i = 0; i < filteredJoinChannels.length; i++) {
-            newTotalDeposits = stateMachineImplementation.addBalance(newTotalDeposits, filteredJoinChannels[i].balance);
-        }
-
-        messageBlock.totalBalance = newTotalDeposits;
-        messageBlock.timestamp = block.timestamp;
-        bytes32 blockHash = keccak256(abi.encode(messageBlock));
-
-        _persistInboundMessageBlock(channelId, blockHash, messageBlock);
-        channelBalance.latestInboundMessageBlockHash = blockHash;
-        channelBalance.latestInboundMessageBlockHeight = nextBlockHeight;
-        channelBalance.totalDeposits = newTotalDeposits;
+        (messageBlock, newTotalDeposits) = _appendInboundMessages(channelId, messages);
 
         return (messageBlock, newTotalDeposits, filteredJoinChannels);
     }
@@ -396,6 +383,15 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         returns (bool found, bytes32 blockCalldataCommitment)
     {
         return StateChannelCommon.getBlockCallDataCommitment(channelId, forkId, blockHeight, participant);
+    }
+
+    function hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash)
+        public
+        view
+        override(StateChannelCommon, StateChannelManagerInterface)
+        returns (bool)
+    {
+        return StateChannelCommon.hasInboundMessageBlock(channelId, messageBlockHash);
     }
 
     function isChannelOpen(bytes32 channelId) public view override returns (bool) {

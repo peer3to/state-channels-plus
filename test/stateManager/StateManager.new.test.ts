@@ -11,12 +11,14 @@ import {
 import { StateManagerTestBuilder, defaults } from "./StateManagerTestBuilder";
 import {
     BalanceStruct,
-    MessageBlockStruct
+    MessageBlockStruct,
+    TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { ForkId, Timestamp, Address, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { ethers } from "ethers";
 import StateManager from "@/stateManager";
+import Block from "@/models/Block";
 
 const outboundMessageBlock: MessageBlockStruct = {
     previousBlockHash: defaults.emptyBlockHash,
@@ -639,6 +641,116 @@ describe("StateManager - Refactored", () => {
             expect(storedSnapshot).to.not.be.undefined;
             expect(storedSnapshot!.snapshotData).to.deep.equal(snapshotDataObj);
             expect(onTurnCalled).to.be.true;
+        });
+    });
+
+    describe("playTransaction - inbound messages", () => {
+        it("applies pending inbound message blocks and records participant changes", async () => {
+            const joiner = hexString(20) as Address;
+            const builder = createDefaultBuilder().withGenesisSnapshot(
+                defaults.forkId,
+                {
+                    participants: [defaults.signerAddress],
+                    latestInboundMessageBlockHash: defaults.emptyBlockHash,
+                    latestInboundMessageBlockHeight: 0n,
+                    totalDeposits: { amount: 0n, data: "0x" }
+                }
+            );
+            stateManager = builder.build();
+
+            // Stub validation + scheduling side effects
+            sinon
+                .stub(stateManager.validationService, "isChannelOpen")
+                .returns(true);
+            sinon.stub(stateManager, "isMyTurn").resolves(true);
+            sinon.stub(stateManager, "shouldSignBlock").resolves(false);
+            stateManager.timeoutManager.scheduleTask = sinon.stub();
+            stateManager.p2pEventHooks.onTurn = sinon.stub();
+            stateManager.p2pManager = {
+                isBlacklisted: () => false,
+                remoteRpc: {
+                    stateTransitionService: {
+                        onBlockConfirmation: () => ({ broadcast: sinon.stub() })
+                    }
+                },
+                p2pSigner: {
+                    signMessage: sinon.stub().resolves("0xsignature")
+                },
+                dispose: sinon.stub().resolves()
+            } as any;
+
+            // Stub diamond state machine interactions
+            const getParticipantsStub = sinon
+                .stub()
+                .onCall(0)
+                .resolves([defaults.signerAddress])
+                .onCall(1)
+                .resolves([defaults.signerAddress, joiner]);
+            const processInboundMessageStub = sinon.stub().resolves(true);
+            const addBalanceStub = sinon
+                .stub()
+                .callsFake(
+                    async (total: BalanceStruct, delta: BalanceStruct) => ({
+                        amount:
+                            (total.amount as bigint) + (delta.amount as bigint),
+                        data: "0x"
+                    })
+                );
+            const encodedState = hexString(32);
+            stateManager.diamondStateMachine = {
+                stateTransition: sinon.stub().resolves({
+                    success: true,
+                    successCallback: () => {},
+                    outboundMessages: []
+                }),
+                getState: sinon.stub().resolves(encodedState),
+                getParticipants: getParticipantsStub,
+                processInboundMessage: processInboundMessageStub,
+                addBalance: addBalanceStub,
+                getNextToWrite: sinon.stub().resolves(defaults.signerAddress)
+            } as any;
+
+            const inboundBlock: MessageBlockStruct = {
+                previousBlockHash: defaults.emptyBlockHash,
+                blockHeight: 1n,
+                messages: [
+                    {
+                        messageType: ethers.ZeroHash,
+                        participant: joiner,
+                        balance: { amount: 5n, data: "0x" },
+                        data: "0x"
+                    }
+                ],
+                totalBalance: { amount: 5n, data: "0x" },
+                timestamp: 1n
+            };
+            stateManager.storage.inboundMessages.store(inboundBlock);
+
+            const tx: TransactionStruct = {
+                header: {
+                    channelId: defaults.channelId,
+                    forkId: defaults.forkId,
+                    transactionCnt: 0n,
+                    participant: defaults.signerAddress,
+                    timestamp: BigInt(defaults.defaultTimestamp)
+                },
+                body: { encodedData: "0x", data: "0x" }
+            };
+
+            const confirmation = await stateManager.playTransaction(tx);
+            const block = Block.fromBlockConfirmation(confirmation);
+
+            expect(processInboundMessageStub.calledOnce).to.be.true;
+            expect(block.messageBlocks).to.have.length(1);
+            expect(block.messageBlocks[0].messages).to.deep.equal(
+                inboundBlock.messages
+            );
+
+            const changePoints =
+                stateManager.storage.participantSetChanges.getChangePointsInRange(
+                    stateManager.forkId
+                );
+            expect(changePoints).to.deep.equal([0]);
         });
     });
 });

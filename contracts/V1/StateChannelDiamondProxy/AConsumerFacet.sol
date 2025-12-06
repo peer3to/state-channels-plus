@@ -2,8 +2,9 @@ pragma solidity ^0.8.8;
 
 import "../types/DataTypes.sol";
 import "../StateChannelManagerInterface.sol";
+import "./StateChannelManagerStorage.sol";
 
-abstract contract AConsumerFacet {
+abstract contract AConsumerFacet is StateChannelManagerStorage {
     function openChannelGenesis(JoinChannel[] memory successfulJoinChannels, bytes memory optionalOpeningData)
         external
         pure

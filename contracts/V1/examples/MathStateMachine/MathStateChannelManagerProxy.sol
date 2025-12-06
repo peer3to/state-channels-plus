@@ -2,8 +2,9 @@
 pragma solidity ^0.8.8;
 
 import "../../StateChannelDiamondProxy/StateChannelManagerProxy.sol";
+import "../../StateChannelDiamondProxy/utils/GeneralUtils.sol";
+import "../../types/DataTypes.sol";
 import "./MathStateMachine.sol";
-import "./MathConsumerFacet.sol";
 
 // Uncomment this line to use console.log
 // import "hardhat/console.sol";

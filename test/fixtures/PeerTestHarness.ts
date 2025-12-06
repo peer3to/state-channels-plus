@@ -34,7 +34,10 @@ import {
     JoinChannelStruct,
     BlockStruct,
     TransactionStruct,
-    SignedBlockStruct
+    SignedBlockStruct,
+    MessageBlockStruct,
+    MessageStruct,
+    BalanceStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "@/Clock";
@@ -1060,7 +1063,8 @@ export class PeerTestHarness<T extends AStateMachine> {
         const blockStruct: BlockStruct = {
             transaction: transaction,
             stateSnapshotHash: stateSnapshotHash,
-            previousBlockHash: previousBlockHash
+            previousBlockHash: previousBlockHash,
+            messageBlocks: []
         };
 
         // Create invalid signature by corrupting the hash
@@ -1230,6 +1234,122 @@ export class PeerTestHarness<T extends AStateMachine> {
         );
     }
 
+    async submitForgedInboundMessageBlock(
+        peerIndex: number,
+        options?: {
+            forkId?: ForkId;
+        }
+    ): Promise<Block> {
+        const peer = this.getPeer(peerIndex);
+        const forkId = options?.forkId || this.activeForkId!;
+
+        const nextBlockHeight =
+            peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
+        const previousBlock =
+            peer.stateManager.storage.blocks.getLatestBlock(forkId);
+        const previousBlockHash = this.getPreviousBlockHash(
+            peer,
+            forkId,
+            nextBlockHeight
+        );
+        const stateSnapshotHash = this.getStateSnapshotHash(
+            peer,
+            forkId,
+            previousBlock
+        );
+
+        const previousStateSnapshot =
+            peer.stateManager.storage.getPreviousStateSnapshot({
+                forkId,
+                height: nextBlockHeight
+            });
+        if (!previousStateSnapshot) {
+            throw new Error(
+                `Unable to compute previous snapshot for fork ${forkId}`
+            );
+        }
+
+        const latestInboundHash = (previousStateSnapshot.snapshotData
+            .latestInboundMessageBlockHash ?? ZeroHash) as Hash;
+        const latestInboundHeightValue =
+            previousStateSnapshot.snapshotData
+                .latestInboundMessageBlockHeight ?? 0n;
+        const latestInboundHeight =
+            typeof latestInboundHeightValue === "bigint"
+                ? latestInboundHeightValue
+                : BigInt(latestInboundHeightValue);
+        const forgedInboundHeight = latestInboundHeight + 1n;
+
+        const forgedMessage: MessageStruct = {
+            messageType: ethers.hexlify(ethers.randomBytes(32)) as Bytes,
+            participant: peer.address,
+            balance: {
+                amount: 1n,
+                data: "0x"
+            },
+            data: ethers.hexlify(ethers.randomBytes(32)) as Bytes
+        };
+
+        const totalBalance: BalanceStruct = {
+            amount: forgedMessage.balance.amount,
+            data: "0x"
+        };
+
+        const forgedMessageBlock: MessageBlockStruct = {
+            previousBlockHash: latestInboundHash || (ZeroHash as Hash),
+            blockHeight: forgedInboundHeight,
+            messages: [forgedMessage],
+            totalBalance,
+            timestamp: BigInt(Clock.getTimeInSeconds())
+        };
+
+        const contractInterface = (peer.contractInstance as any).interface;
+        const transactionData = contractInterface.encodeFunctionData("add", [
+            1
+        ]) as Bytes;
+
+        const blockTimestampBase = previousBlock
+            ? previousBlock.timestamp + 1
+            : Clock.getTimeInSeconds();
+
+        const transaction: TransactionStruct = {
+            header: {
+                channelId: peer.stateManager.getChannelId(),
+                participant: peer.address,
+                forkId,
+                transactionCnt: BigInt(nextBlockHeight),
+                timestamp: BigInt(blockTimestampBase)
+            },
+            body: {
+                encodedData: transactionData,
+                data: transactionData
+            }
+        };
+
+        const blockStruct: BlockStruct = {
+            transaction,
+            stateSnapshotHash,
+            previousBlockHash,
+            messageBlocks: [forgedMessageBlock]
+        };
+
+        const forgedBlock = await Block.fromBlockStruct(
+            blockStruct,
+            peer.signer
+        );
+
+        this.logger.info(
+            `Peer ${peerIndex} broadcasting forged inbound message block at height ${forgedBlock.height}`,
+            { forkId }
+        );
+
+        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
+            .onBlockConfirmation(forgedBlock.blockConfirmationStruct)
+            .broadcast();
+
+        return forgedBlock;
+    }
+
     async submitDoubleSignBlock(
         peerIndex: number,
         options?: {
@@ -1281,7 +1401,8 @@ export class PeerTestHarness<T extends AStateMachine> {
                 }
             },
             stateSnapshotHash: conflictingStateSnapshotHash,
-            previousBlockHash: originalBlock.previousBlockHash
+            previousBlockHash: originalBlock.previousBlockHash,
+            messageBlocks: []
         };
 
         const conflictingBlock = await Block.fromBlockStruct(
@@ -1366,7 +1487,8 @@ export class PeerTestHarness<T extends AStateMachine> {
         const blockStruct: BlockStruct = {
             transaction: transaction,
             stateSnapshotHash: wrongStateSnapshotHash,
-            previousBlockHash: previousBlockHash
+            previousBlockHash: previousBlockHash,
+            messageBlocks: []
         };
 
         const invalidBlock = await Block.fromBlockStruct(

@@ -4,7 +4,8 @@ import {
     SignedBlockEthersType,
     TimeoutEthersType,
     StateSnapshotEthersType,
-    DisputeAuditingDataEthersType
+    DisputeAuditingDataEthersType,
+    MessageBlockEthersType
 } from "./ethers";
 import { Bytes, ForkId } from "./types";
 
@@ -79,6 +80,11 @@ export const WrongGenesisProofEthersType = `tuple(
     ${SignedBlockEthersType} invalidBlock,
     ${StateSnapshotEthersType} genesisSnapshot
     )`;
+
+export const ForgedInboundMessageBlockProofEthersType = `tuple(
+    ${SignedBlockEthersType} invalidBlock,
+    ${MessageBlockEthersType} forgedInboundMessageBlock
+)`;
 
 export const IncorrectDataProofEthersType = `tuple(
     ${SignedBlockEthersType} block1,

@@ -31,6 +31,7 @@ struct Block {
     Transaction transaction;
     bytes32 stateSnapshotHash;
     bytes32 previousBlockHash;
+    MessageBlock[] messageBlocks;
 }
 
 struct SignedBlock {

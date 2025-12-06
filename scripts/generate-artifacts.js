@@ -16,6 +16,7 @@ const facets = [
     "AConsumerFacet",
     "DisputeManagerFacet",
     "DisputeFraudProofFacet",
+    "DisputeVerificationFacet",
     "FraudProofFacet",
     "JoinChannelFacet",
     "StateChannelCommon",

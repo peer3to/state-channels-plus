@@ -155,6 +155,49 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         }
     }
 
+    function appendInboundMessages(bytes32 channelId, Message[] memory messages)
+        public
+        onlySelf
+        returns (MessageBlock memory messageBlock, Balance memory newTotalDeposits)
+    {
+        return _appendInboundMessages(channelId, messages);
+    }
+
+    function _appendInboundMessages(bytes32 channelId, Message[] memory messages)
+        internal
+        returns (MessageBlock memory messageBlock, Balance memory newTotalDeposits)
+    {
+        if (messages.length == 0) revert ErrorNoInboundMessagesProvided();
+
+        ChannelBalance storage channelBalance = channelBalances[channelId];
+        messageBlock.previousBlockHash = channelBalance.latestInboundMessageBlockHash;
+        uint256 nextBlockHeight = channelBalance.latestInboundMessageBlockHeight + 1;
+        messageBlock.blockHeight = nextBlockHeight;
+        messageBlock.messages = messages;
+
+        newTotalDeposits = channelBalance.totalDeposits;
+        for (uint256 i = 0; i < messages.length; i++) {
+            newTotalDeposits = stateMachineImplementation.addBalance(newTotalDeposits, messages[i].balance);
+        }
+
+        messageBlock.totalBalance = newTotalDeposits;
+        messageBlock.timestamp = block.timestamp;
+
+        bytes32 blockHash = keccak256(abi.encode(messageBlock));
+
+        _persistInboundMessageBlock(channelId, blockHash, messageBlock);
+        channelBalance.latestInboundMessageBlockHash = blockHash;
+        channelBalance.latestInboundMessageBlockHeight = nextBlockHeight;
+        channelBalance.totalDeposits = newTotalDeposits;
+
+        emit InboundMessagesProcessed(channelId, messageBlock);
+    }
+
+    function hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash) public view virtual returns (bool) {
+        MessageBlock storage storedBlock = inboundMessageBlockMap[channelId][messageBlockHash];
+        return storedBlock.timestamp != 0 || storedBlock.messages.length != 0;
+    }
+
     function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
         public
         view

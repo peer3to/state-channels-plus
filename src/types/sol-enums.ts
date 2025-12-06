@@ -4,7 +4,8 @@ export enum FraudProofType {
     BlockDoubleSign = 100,
     BlockInvalidStateTransition,
     WrongGenesis,
-    InvalidTimestamp
+    InvalidTimestamp,
+    ForgedInboundMessageBlock
 }
 
 export enum DisputeFraudProofType {

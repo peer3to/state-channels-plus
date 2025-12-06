@@ -1,11 +1,15 @@
 import Storage from "@/storage";
 import { Block, StateSnapshot } from "@/models";
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    MessageBlockStruct,
+    SignedBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     BlockDoubleSignProofStruct,
     BlockInvalidStateTransitionProofStruct,
     InvalidTimestampProofStruct,
-    WrongGenesisProofStruct
+    WrongGenesisProofStruct,
+    ForgedInboundMessageBlockProofStruct
 } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Address, Hash } from "@/types/types";
@@ -122,6 +126,21 @@ export default class FraudProofService {
 
         return this.storeFraudProof(block.signerAddress, {
             type: FraudProofType.WrongGenesis,
+            struct: proof
+        });
+    }
+
+    createForgedInboundMessageBlockProof(
+        block: Block,
+        messageBlock: MessageBlockStruct
+    ): Hash {
+        const proof: ForgedInboundMessageBlockProofStruct = {
+            invalidBlock: block.signedBlock,
+            forgedInboundMessageBlock: messageBlock
+        };
+
+        return this.storeFraudProof(block.signerAddress, {
+            type: FraudProofType.ForgedInboundMessageBlock,
             struct: proof
         });
     }

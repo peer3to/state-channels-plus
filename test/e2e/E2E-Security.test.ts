@@ -137,6 +137,46 @@ describe("E2E: Advanced Security", function () {
         // Act: Malicious participant tries to use wrong genesis block
         // Assert: Wrong genesis is detected and participant is rejected/disputed
         it("should detect and handle wrong genesis block");
+
+        it("should dispute forged inbound message blocks", async function () {
+            await harness!.setup(3);
+            const forkId = await harness!.openChannel();
+
+            await harness!.submitNextTransaction((contract) => contract.add(1));
+            await harness!.submitNextTransaction((contract) => contract.add(2));
+
+            harness!.assertAllPeersInSync();
+            harness!.resetEventSpies();
+
+            const maliciousPeer = await harness!.getNextPeerToWrite();
+            await harness!.submitForgedInboundMessageBlock(
+                maliciousPeer.index,
+                { forkId }
+            );
+
+            const initiatingCounts = harness!.peers.map((peer) => ({
+                peerId: peer.index,
+                expectedCount: peer.index === maliciousPeer.index ? 0 : 1
+            }));
+
+            const forgedDetected = await harness!.waitForEventCounts(
+                "onInitiatingDispute",
+                initiatingCounts,
+                5000
+            );
+            expect(forgedDetected).to.be.true;
+
+            const disputeCommitted = await harness!.waitForEventCounts(
+                "onDisputeCommitted",
+                harness!.peers.map((peer) => ({
+                    peerId: peer.index,
+                    expectedCount: 2
+                })),
+                5000,
+                { mode: "atLeast" }
+            );
+            expect(disputeCommitted).to.be.true;
+        });
     });
 
     describe.skip("Malicious Block Production", function () {

@@ -1,6 +1,9 @@
 import { Block } from "@/models";
 import { BlockValidationResult } from "@/types";
-import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    BlockConfirmationStruct,
+    MessageBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import AValidationStrategy from "./AValidationStrategy";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
@@ -102,6 +105,13 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     }
     public async wrongGenesisDetected(
         _block: Block
+    ): Promise<BlockValidationResult> {
+        this.disconnect();
+        return BlockValidationResult.DISPUTE;
+    }
+    public async forgedInboundMessageBlockDetected(
+        _block: Block,
+        _messageBlock: MessageBlockStruct
     ): Promise<BlockValidationResult> {
         this.disconnect();
         return BlockValidationResult.DISPUTE;

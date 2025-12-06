@@ -2,15 +2,17 @@
 pragma solidity ^0.8.8;
 
 import "../../StateChannelDiamondProxy/AConsumerFacet.sol";
+import "../../StateChannelDiamondProxy/StateChannelManagerProxy.sol";
 import "./MathStateMachine.sol";
 import "../../types/DataTypes.sol";
+import "../../types/MessageTypeHashes.sol";
 
 /**
  * @title MathConsumerFacet
  * @dev Concrete implementation of ConsumerFacet for the Math state machine example
  */
 contract MathConsumerFacet is AConsumerFacet {
-    function openChannelGenesis(JoinChannel[] memory successfulJoinChannels, bytes memory optionalOpeningData)
+    function openChannelGenesis(JoinChannel[] memory successfulJoinChannels, bytes memory)
         external
         pure
         override
@@ -35,14 +37,42 @@ contract MathConsumerFacet is AConsumerFacet {
         return (genesisStateEncoded, genesisState.participants);
     }
 
-    function deposit(JoinChannel memory joinChannel) external override returns (bool) {
+    function deposit(JoinChannel memory) external pure override returns (bool) {
         // Implementation for depositing assets when a participant joins
 
         return true; // Placeholder implementation
     }
 
-    function withdraw(ExitChannel memory exitChannel) external override returns (bool) {
+    function withdraw(ExitChannel memory) external pure override returns (bool) {
         // Implementation for withdrawing assets when a participant exits
         return true; // Placeholder implementation
+    }
+
+    function forceInboundJoin(bytes32 channelId, address participant, uint256 amount)
+        external
+        returns (MessageBlock memory messageBlock, Balance memory newTotalDeposits)
+    {
+        require(channelId != bytes32(0), "MathConsumerFacet: channelId required");
+        require(participant != address(0), "MathConsumerFacet: participant required");
+        require(amount > 0, "MathConsumerFacet: amount required");
+
+        JoinChannel[] memory joinChannels = new JoinChannel[](1);
+        joinChannels[0] = JoinChannel({
+            channelId: channelId,
+            participant: participant,
+            deadlineTimestamp: block.timestamp + 1 hours,
+            balance: Balance({amount: amount, data: ""})
+        });
+
+        Message[] memory messages = new Message[](1);
+        messages[0] = Message({
+            messageType: MESSAGE_TYPE_JOIN,
+            participant: participant,
+            balance: joinChannels[0].balance,
+            data: abi.encode(joinChannels[0])
+        });
+
+        (messageBlock, newTotalDeposits) =
+            StateChannelManagerProxy(address(this)).appendInboundMessages(channelId, messages);
     }
 }

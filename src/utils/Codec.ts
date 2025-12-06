@@ -17,7 +17,8 @@ import {
     BlockDoubleSignProofStruct,
     BlockInvalidStateTransitionProofStruct,
     InvalidTimestampProofStruct,
-    WrongGenesisProofStruct
+    WrongGenesisProofStruct,
+    ForgedInboundMessageBlockProofStruct
 } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 import {
     BlockEthersType,
@@ -36,6 +37,7 @@ import {
     BlockInvalidStateTransitionProofEthersType,
     InvalidTimestampProofEthersType,
     WrongGenesisProofEthersType,
+    ForgedInboundMessageBlockProofEthersType,
     DisputeAuditingDataEthersType,
     DisputeNotLatestStateProofEthersType,
     DisputeInvalidOutputStateProofEthersType,
@@ -81,7 +83,8 @@ export type FraudStruct =
     | BlockDoubleSignProofStruct
     | BlockInvalidStateTransitionProofStruct
     | InvalidTimestampProofStruct
-    | WrongGenesisProofStruct;
+    | WrongGenesisProofStruct
+    | ForgedInboundMessageBlockProofStruct;
 
 export type DisputeFraudStruct =
     | DisputeNotLatestStateStruct
@@ -162,6 +165,10 @@ export class Codec {
         ],
         [FraudProofType.InvalidTimestamp, InvalidTimestampProofEthersType],
         [FraudProofType.WrongGenesis, WrongGenesisProofEthersType],
+        [
+            FraudProofType.ForgedInboundMessageBlock,
+            ForgedInboundMessageBlockProofEthersType
+        ],
         // Dispute fraud proofs
         [
             DisputeFraudProofType.DisputeNotLatestState,

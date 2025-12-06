@@ -35,6 +35,9 @@ error ErrorNoJoinChannelProvided();
 error ErrorNoSuccessfulJoinChannel();
 error ErrorJoinChannelAtomicFailure();
 
+//Inbound message
+error ErrorNoInboundMessagesProvided();
+
 //Exit channel
 error ErrorWithdrawalFailed();
 error CantWithdrawMoreThanDeposits();

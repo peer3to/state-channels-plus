@@ -67,7 +67,7 @@
     "yarn": ">=1.15"
   },
   "scripts": {
-    "compile": "yarn hardhat clean && yarn hardhat compile --force && yarn hardhat typechain && yarn generate-enums",
+    "compile": "yarn hardhat clean && yarn hardhat compile --force && yarn hardhat typechain && yarn generate-enums && yarn generate-artifacts",
     "generate-enums": "ts-node scripts/generate-enums.ts",
     "generate-artifacts": "node scripts/generate-artifacts.js",
     "test": "yarn hardhat test --no-compile --grep '^(?!.*[Ee]2[Ee])'",
@@ -79,7 +79,7 @@
     "test:e2e:verbose": "LOG_LEVEL=verbose yarn hardhat test test/e2e/*",
     "test:e2e:parallel": "node scripts/test-e2e-parallel.js",
     "test:coverage": "nyc --reporter=html yarn test",
-    "build": "yarn compile && yarn generate-artifacts && rimraf dist && mkdir -p dist && tsc && npm pack && node rename-pack.js",
+    "build": "yarn compile && rimraf dist && mkdir -p dist && tsc && npm pack && node rename-pack.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint:fix": "eslint src/**/*.ts test/**/*.ts --fix",
