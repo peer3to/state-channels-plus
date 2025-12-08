@@ -159,7 +159,7 @@ export default class Block {
     }
 
     get messageBlocks(): MessageBlockStruct[] {
-        return this.block.messageBlocks ?? [];
+        return this.block.messageBlocks;
     }
 
     get originalSignature(): Signature {

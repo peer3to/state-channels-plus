@@ -1,9 +1,6 @@
 import { ethers, ContractTransactionResponse, AddressLike } from "ethers";
 import { HardhatEthersHelpers } from "hardhat/types/runtime";
-import {
-    MathStateChannelManagerProxy,
-    MathStateMachine
-} from "@typechain-types";
+import { StateChannelManagerProxy, MathStateMachine } from "@typechain-types";
 
 import {
     JoinChannelStruct,
@@ -95,7 +92,7 @@ export const getCurrentTimeSeconds = (): number => {
 export async function deployMathChannelProxyFixture(
     _ethers: typeof ethers & HardhatEthersHelpers
 ): Promise<{
-    mathChannelManager: MathStateChannelManagerProxy & {
+    mathChannelManager: StateChannelManagerProxy & {
         deploymentTransaction(): ContractTransactionResponse;
     };
     mathInstance: MathStateMachine;
@@ -138,7 +135,7 @@ export async function deployMathChannelProxyFixture(
 
     //Deploy MathStateChannelManager with all facet addresses
     const mathSmcFactory = await _ethers.getContractFactory(
-        "MathStateChannelManagerProxy"
+        "StateChannelManagerProxy"
     );
     const mathStateChannelContactInstance = await mathSmcFactory.deploy(
         await mathContactInstance.getAddress(),
