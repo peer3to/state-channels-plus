@@ -1229,8 +1229,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         const blockStruct: BlockStruct = {
             transaction: transaction,
             stateSnapshotHash: stateSnapshotHash,
-            previousBlockHash: previousBlockHash,
-            messageBlocks: []
+            previousBlockHash: previousBlockHash
         };
 
         // Create invalid signature by corrupting the hash
@@ -1451,8 +1450,7 @@ export class PeerTestHarness<T extends AStateMachine> {
                 }
             },
             stateSnapshotHash: conflictingStateSnapshotHash,
-            previousBlockHash: originalBlock.previousBlockHash,
-            messageBlocks: []
+            previousBlockHash: originalBlock.previousBlockHash
         };
 
         const conflictingBlock = await Block.fromBlockStruct(
@@ -1537,8 +1535,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         const blockStruct: BlockStruct = {
             transaction: transaction,
             stateSnapshotHash: wrongStateSnapshotHash,
-            previousBlockHash: previousBlockHash,
-            messageBlocks: []
+            previousBlockHash: previousBlockHash
         };
 
         const invalidBlock = await Block.fromBlockStruct(
@@ -1560,6 +1557,45 @@ export class PeerTestHarness<T extends AStateMachine> {
         );
 
         return invalidBlock;
+    }
+
+    /**
+     * Build and post a tampered dispute from a peer (used to exercise DisputeValidationService rejection paths).
+     * Caller is responsible for providing the tamper function that mutates the dispute or confirmation.
+     */
+    async postTamperedDispute(
+        authorPeerIndex: number,
+        tamper: (dispute: any, confirmation: any) => void,
+        forkId?: ForkId
+    ): Promise<{ dispute: any; disputeConfirmation: any }> {
+        const peer = this.getPeer(authorPeerIndex);
+        const targetForkId = forkId || this.forkId;
+
+        const { dispute, disputeConfirmation } =
+            await peer.stateManager.disputeManager.constructDispute(
+                targetForkId
+            );
+
+        // Apply tampering (e.g., wrong auditingDataHash, bogus timeout participant, etc.)
+        tamper(dispute, disputeConfirmation);
+
+        // Re-sign the tampered dispute as the author (threshold is not enforced here; we only need author sig)
+        const tamperedSig = await SignatureUtils.signDispute(
+            dispute,
+            peer.signer
+        );
+        disputeConfirmation.signedDispute = {
+            encodedDispute: tamperedSig.encoded,
+            signature: tamperedSig.signature as BytesLike
+        };
+        disputeConfirmation.signatures = [];
+
+        const txResp = await this.channelManager
+            .connect(peer.signer)
+            .uploadDispute(disputeConfirmation);
+        await txResp.wait();
+
+        return { dispute, disputeConfirmation };
     }
 }
 

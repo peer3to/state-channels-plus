@@ -2,6 +2,8 @@ import { expect } from "chai";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { MathStateMachine } from "@typechain-types/index";
 import { ZeroHash } from "ethers";
+import { Codec, Type } from "@/utils";
+import { hash } from "../factory";
 
 describe("E2E: Advanced Security", function () {
     let harness: PeerTestHarness<MathStateMachine> | null = null;
@@ -344,6 +346,149 @@ describe("E2E: Advanced Security", function () {
                 maliciousIndex, // 2
                 "Removed peer should NOT receive next turn"
             );
+        });
+    });
+
+    describe("Dishonest disputes", function () {
+        // Arrange: peer submits dispute with tampered auditing data commitment
+        // Act: tampered dispute is posted on-chain
+        // Assert: validation rejects it, dispute is killed, fork stays unchanged
+        it("should reject dispute with incorrect auditing data commitment", async function () {
+            await harness!.setup(3);
+            const originalForkId = await harness!.openChannel();
+
+            await harness!.submitNextTransaction((contract) => contract.add(1));
+            await harness!.submitNextTransaction((contract) => contract.add(2));
+            harness!.assertAllPeersInSync();
+            harness!.resetEventSpies();
+
+            // Peer 1 crafts and posts a tampered dispute
+            const { dispute } = await harness!.postTamperedDispute(
+                1,
+                (dispute) => {
+                    dispute.input.disputeAuditingDataHash = hash();
+                },
+                originalForkId
+            );
+
+            const killed = await harness!.waitForEventCounts(
+                "onDisputeKilled",
+                [
+                    { peerId: 0, expectedCount: 1 },
+                    { peerId: 1, expectedCount: 1 },
+                    { peerId: 2, expectedCount: 1 }
+                ],
+                3000,
+                { mode: "atLeast" }
+            );
+            expect(killed).to.be.true;
+
+            // Wait for dispute fraud proof to be stored (validation rejection)
+            const fraudProofStored = await harness!.waitForCondition(() => {
+                return harness!.peers.every((peer) => {
+                    const proof =
+                        peer.stateManager.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                            dispute
+                        );
+                    return !!proof;
+                });
+            }, 2000);
+            expect(fraudProofStored).to.be.true;
+
+            const forkUnchanged = harness!.peers.every(
+                (p) => p.stateManager.forkId === originalForkId
+            );
+            expect(forkUnchanged).to.be.true;
+        });
+
+        // Arrange: peer submits timeout dispute accusing a participant who is not next to write
+        // Act: tampered timeout data is posted on-chain
+        // Assert: validation rejects it, dispute is killed, fork stays unchanged
+        it("should reject timeout dispute when accused participant is not next to write", async function () {
+            await harness!.setup(3);
+            const originalForkId = await harness!.openChannel();
+
+            await harness!.submitNextTransaction((contract) => contract.add(1));
+            await harness!.submitNextTransaction((contract) => contract.add(2));
+            harness!.assertAllPeersInSync();
+            harness!.resetEventSpies();
+
+            const notNextPeer = harness!.peers[1];
+
+            const { dispute: timeoutDispute } =
+                await harness!.postTamperedDispute(
+                    0,
+                    (dispute) => {
+                        dispute.input.timeout.participant = notNextPeer.address;
+                    },
+                    originalForkId
+                );
+
+            // Wait for dispute fraud proof to be stored (validation rejection)
+            const fraudProofStored = await harness!.waitForCondition(() => {
+                return harness!.peers.every((peer) => {
+                    const proof =
+                        peer.stateManager.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                            timeoutDispute
+                        );
+                    return !!proof;
+                });
+            }, 3000);
+            expect(fraudProofStored).to.be.true;
+
+            const forkUnchanged = harness!.peers.every(
+                (p) => p.stateManager.forkId === originalForkId
+            );
+            expect(forkUnchanged).to.be.true;
+        });
+
+        // Arrange: tamper stateProof milestone so auditing data reconstruction is partial
+        // Act: run validateDispute -> should enter isPartial path and reject with fraud proof
+        // Assert: validateDispute returns false and fraud proof is stored
+        it("should reject dispute when auditing data is partial and state proof invalid", async function () {
+            await harness!.setup(2);
+            const forkId = await harness!.openChannel();
+            await harness!.submitNextTransaction((c) => c.add(1));
+            await harness!.submitNextTransaction((c) => c.add(2));
+
+            const { dispute } =
+                await harness!.peers[0].stateManager.disputeManager.constructDispute(
+                    forkId
+                );
+
+            // Tamper the first milestone's first signed block to reference an unknown snapshot
+            const tamperedStateProof = { ...dispute.input.stateProof };
+            if (
+                tamperedStateProof.milestones.length === 0 ||
+                tamperedStateProof.milestones[0].blockConfirmations.length === 0
+            ) {
+                throw new Error("No milestones to tamper");
+            }
+            const firstBc =
+                tamperedStateProof.milestones[0].blockConfirmations[0];
+            const block = Codec.decode(
+                firstBc.signedBlock.encodedBlock,
+                Type.Block
+            );
+            block.stateSnapshotHash = hash(); // not stored
+            firstBc.signedBlock.encodedBlock = Codec.encode(block, Type.Block);
+
+            const tamperedDispute = {
+                ...dispute,
+                input: { ...dispute.input, stateProof: tamperedStateProof }
+            };
+
+            const isValid =
+                await harness!.peers[0].stateManager.disputeValidationService.validateDispute(
+                    tamperedDispute
+                );
+            expect(isValid).to.be.false;
+
+            const fraudProof =
+                harness!.peers[0].stateManager.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                    tamperedDispute
+                );
+            expect(fraudProof).to.not.be.undefined;
         });
     });
 
