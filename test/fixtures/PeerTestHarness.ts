@@ -1,3 +1,5 @@
+import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
+import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import { BytesLike, Signer, ethers } from "ethers";
 import { expect } from "chai";
 import * as sinon from "sinon";
@@ -39,16 +41,18 @@ import {
     MessageStruct,
     BalanceStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    TimeoutStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "@/Clock";
 import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
-import { deploy } from "../../scripts/V1/deploy";
+import { deployFullStack } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import { ZeroHash } from "ethers";
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
-import { DisputeStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;
@@ -187,27 +191,20 @@ export class PeerTestHarness<T extends AStateMachine> {
             await hre.ethers.getContractFactory("MathStateMachine");
         const mathInstance = await mathSMFactory.deploy(this.options.gasLimit);
         await mathInstance.waitForDeployment();
-        const stateMachineAddress = await mathInstance.getAddress();
 
         this.sharedDeployTx = await mathSMFactory.getDeployTransaction(
             this.options.gasLimit
         );
 
-        // Deploy MathConsumerFacet
-        const mathConsumerFactory =
-            await hre.ethers.getContractFactory("MathConsumerFacet");
-        const mathConsumerInstance = await mathConsumerFactory.deploy();
-        await mathConsumerInstance.waitForDeployment();
-        const consumerFacetAddress = await mathConsumerInstance.getAddress();
-
         const [hardhatSigner] = await hre.ethers.getSigners();
 
-        const deployment = await deploy(
-            stateMachineAddress,
-            consumerFacetAddress,
-            hardhatSigner,
-            this.options.timeConfig
-        );
+        const deployment = await deployFullStack(hardhatSigner, {
+            stateMachineArtifact: MathStateMachineArtifact,
+            consumerFacetArtifact: MathConsumerFacetArtifact,
+            stateMachineArgs: [this.options.gasLimit],
+            consumerFacetArgs: [],
+            timeConfig: this.options.timeConfig
+        });
 
         this.channelManager = deployment.contract;
     }
