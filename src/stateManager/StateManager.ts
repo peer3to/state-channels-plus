@@ -640,7 +640,7 @@ class StateManager {
                 );
             }
 
-            const { encodedState: stateAfterInbound, totalDeposits } =
+            const { encodedState: stateAfterInbound } =
                 await this.applyInboundMessageBlocksToState(
                     inboundMessageBlocks,
                     previousStateSnapshot.snapshotData.totalDeposits,
@@ -656,16 +656,12 @@ class StateManager {
 
             const { stateSnapshot, outboundMessageBlock, totalWithdrawals } =
                 await this.createStateSnapshot(
-                    previousStateSnapshot,
                     hash(stateAfterInbound),
                     coordinates,
                     block.timestamp,
                     outboundMessages,
-                    {
-                        inboundMessageBlocks,
-                        totalDepositsOverride: totalDeposits,
-                        participants: finalParticipants
-                    }
+                    inboundMessageBlocks,
+                    finalParticipants
                 );
 
             if (stateSnapshot.hash !== block.stateSnapshotHash) {
@@ -770,7 +766,7 @@ class StateManager {
                 );
             }
 
-            const { encodedState: stateAfterInbound, totalDeposits } =
+            const { encodedState: stateAfterInbound } =
                 await this.applyInboundMessageBlocksToState(
                     inboundMessageBlocks,
                     previousStateSnapshot.snapshotData.totalDeposits,
@@ -786,16 +782,12 @@ class StateManager {
 
             const { stateSnapshot, outboundMessageBlock, totalWithdrawals } =
                 await this.createStateSnapshot(
-                    previousStateSnapshot,
                     hash(stateAfterInbound),
                     coordinates,
                     Number(tx.header.timestamp),
                     outboundMessages,
-                    {
-                        inboundMessageBlocks,
-                        totalDepositsOverride: totalDeposits,
-                        participants: finalParticipants
-                    }
+                    inboundMessageBlocks,
+                    finalParticipants
                 );
 
             const blockStruct = await this.createBlock(
@@ -1493,26 +1485,23 @@ class StateManager {
     }
 
     private async createStateSnapshot(
-        previousStateSnapshot: StateSnapshot,
         stateMachineStateHash: Hash,
         coordinates: BlockCoordinates,
         timestamp: Timestamp,
         outboundMessages: MessageStruct[],
-        options: {
-            inboundMessageBlocks: MessageBlockStruct[];
-            totalDepositsOverride?: BalanceStruct;
-            participants: Address[];
-        }
+        inboundMessageBlocks: MessageBlockStruct[],
+        participants: Address[]
     ): Promise<{
         stateSnapshot: StateSnapshot;
         outboundMessageBlock?: MessageBlockStruct;
         totalWithdrawals: BalanceStruct;
     }> {
+        const previousStateSnapshot =
+            this.getPreviousStateSnapshotOrThrow(coordinates);
         const previousSnapshotData = previousStateSnapshot.snapshotData;
         let latestInboundMessageBlockHash =
             previousSnapshotData.latestInboundMessageBlockHash;
-        let totalDeposits =
-            options.totalDepositsOverride ?? previousSnapshotData.totalDeposits;
+        let totalDeposits = previousSnapshotData.totalDeposits;
         const originForkId = previousSnapshotData.originForkId;
 
         let { latestOutboundMessageBlockHash, totalWithdrawals } =
@@ -1523,21 +1512,16 @@ class StateManager {
         let latestInboundMessageBlockHeight = BigInt(
             previousSnapshotData.latestInboundMessageBlockHeight ?? 0n
         );
-        const participants = options.participants;
-
-        if (options.inboundMessageBlocks.length > 0) {
+        if (inboundMessageBlocks.length > 0) {
             const lastInboundBlock =
-                options.inboundMessageBlocks[
-                    options.inboundMessageBlocks.length - 1
-                ];
+                inboundMessageBlocks[inboundMessageBlocks.length - 1];
             latestInboundMessageBlockHash = hash(
                 Codec.encode(lastInboundBlock, Type.MessageBlock)
             );
             latestInboundMessageBlockHeight = BigInt(
                 lastInboundBlock.blockHeight ?? latestInboundMessageBlockHeight
             );
-            totalDeposits =
-                options.totalDepositsOverride ?? lastInboundBlock.totalBalance;
+            totalDeposits = lastInboundBlock.totalBalance;
         }
 
         let outboundMessageBlock: MessageBlockStruct | undefined;
@@ -1657,14 +1641,13 @@ class StateManager {
     private async applyInboundMessageBlocksToState(
         inboundMessageBlocks: MessageBlockStruct[],
         totalDeposits: BalanceStruct,
-        encodedState?: Bytes
+        encodedState: Bytes
     ): Promise<{ encodedState: Bytes; totalDeposits: BalanceStruct }> {
         let updatedTotalDeposits = totalDeposits;
 
         if (inboundMessageBlocks.length === 0) {
             return {
-                encodedState:
-                    encodedState ?? (await this.diamondStateMachine.getState()),
+                encodedState,
                 totalDeposits: updatedTotalDeposits
             };
         }

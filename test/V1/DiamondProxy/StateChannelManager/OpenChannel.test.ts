@@ -222,10 +222,9 @@ describe("StateChannelManagerProxy", function () {
                     }
                 })
                 .find((parsed) => parsed && parsed.name === "ChannelOpened");
-            if (!parsedOpenEvent) {
-                throw new Error("ChannelOpened event not found");
-            }
-            const genesisState = parsedOpenEvent.args.encodedState as string;
+            expect(parsedOpenEvent, "ChannelOpened event not found").to.exist;
+            const channelOpenedEvent = parsedOpenEvent!;
+            const genesisState = channelOpenedEvent.args.encodedState as string;
 
             const forcedAmount = 250n;
             const [messageBlock, newTotalDeposits] =

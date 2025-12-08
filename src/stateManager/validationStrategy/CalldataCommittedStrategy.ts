@@ -1,6 +1,9 @@
 import { Block } from "@/models";
 import { BlockValidationResult } from "@/types";
-import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    BlockConfirmationStruct,
+    MessageBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import AValidationStrategy from "./AValidationStrategy";
 import DisputeManager from "@/disputeManager";
 import BlockValidationStrategy from "./BlockValidationStrategy";
@@ -87,6 +90,15 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         block: Block
     ): Promise<BlockValidationResult> {
         return this.blockValidationStrategy.wrongGenesisDetected(block);
+    }
+    public async forgedInboundMessageBlockDetected(
+        block: Block,
+        messageBlock: MessageBlockStruct
+    ): Promise<BlockValidationResult> {
+        return this.blockValidationStrategy.forgedInboundMessageBlockDetected(
+            block,
+            messageBlock
+        );
     }
     public async conflictingButNotLinkedBlockDetected(
         _block: Block
