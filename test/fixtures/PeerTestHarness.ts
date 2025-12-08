@@ -17,7 +17,10 @@ import {
     Bytes
 } from "@/types/types";
 import { TimeConfig } from "@/types/time";
-import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
+import {
+    createOpenChannelTestObject,
+    createJoinChannelTestObject
+} from "@test/test_utils/testHelpers";
 import { pollUntil } from "@test/test_utils/pollUntil";
 import {
     createLogger,
@@ -34,7 +37,8 @@ import {
     JoinChannelStruct,
     BlockStruct,
     TransactionStruct,
-    SignedBlockStruct
+    SignedBlockStruct,
+    OpenChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "@/Clock";
@@ -110,6 +114,24 @@ export type SubmitNextTransactionOptions = SubmitTransactionOptions & {
 export type AssertAllPeersInSyncOptions = {
     expectedState?: Bytes;
     peerIndices?: number[];
+};
+
+type BuildOpenChannelArgs = {
+    participantAddresses?: string[];
+    initialBalance?: number;
+    channelId?: string;
+    deadlineTimestamp?: number;
+};
+
+type BuildOpenChannelRequestArgs = BuildOpenChannelArgs & {
+    signerIndices?: number[];
+};
+
+type BuildJoinChannelRequestArgs = {
+    participantSigner: Signer;
+    channelId?: string;
+    deadlineTimestamp?: number;
+    thresholdSignerIndices?: number[] | "all";
 };
 
 /**
@@ -355,17 +377,123 @@ export class PeerTestHarness<T extends AStateMachine> {
             eventHandlerProxy;
     }
 
-    async openChannel(): Promise<ForkId> {
-        this.logger.info("Opening channel...");
+    private buildOpenChannelStruct(
+        args: BuildOpenChannelArgs = {}
+    ): OpenChannelStruct {
+        const participantAddresses =
+            args.participantAddresses ?? this.peers.map((p) => p.address);
+
+        const openChannel = createOpenChannelTestObject(participantAddresses, {
+            channelId: args.channelId ?? this.options.channelId,
+            initialBalance: args.initialBalance ?? this.options.initialBalance
+        });
+
+        if (args.deadlineTimestamp) {
+            openChannel.deadlineTimestamp = args.deadlineTimestamp;
+        }
+
+        return openChannel;
+    }
+
+    private async signOpenChannelStruct(
+        openChannel: OpenChannelStruct,
+        signerIndices?: number[]
+    ): Promise<BytesLike[]> {
+        const indices = signerIndices ?? this.peers.map((peer) => peer.index);
+        const signatures = await Promise.all(
+            indices.map((i) =>
+                SignatureUtils.signOpenChannel(
+                    openChannel,
+                    this.peers[i].signer
+                ).then((s) => s.signature as BytesLike)
+            )
+        );
+        return signatures;
+    }
+
+    /**
+     * Build an encoded open-channel request plus signatures without submitting it.
+     * Useful for tests that need to assert on failure cases (e.g., missing signatures).
+     */
+    async buildOpenChannelRequest(
+        args: BuildOpenChannelRequestArgs = {}
+    ): Promise<{
+        openChannel: OpenChannelStruct;
+        encodedOpenChannel: BytesLike;
+        signatures: BytesLike[];
+    }> {
         await Clock.init(this.peers[0].signer.provider!);
 
-        const openChannel = createOpenChannelTestObject(
-            this.peers.map((p) => p.address),
-            {
-                channelId: this.options.channelId,
-                initialBalance: this.options.initialBalance
-            }
+        const openChannel = this.buildOpenChannelStruct(args);
+        const signatures = await this.signOpenChannelStruct(
+            openChannel,
+            args.signerIndices
         );
+
+        return {
+            openChannel,
+            encodedOpenChannel: Codec.encode(openChannel, Type.OpenChannel),
+            signatures
+        };
+    }
+
+    /**
+     * Build a join-channel confirmation and signatures without submitting it.
+     */
+    async buildJoinChannelRequest(args: BuildJoinChannelRequestArgs): Promise<{
+        joinChannel: JoinChannelStruct;
+        signedJoinChannel: { encodedJoinChannel: Bytes; signature: Bytes };
+        signatures: Bytes[];
+    }> {
+        const participantAddress = await args.participantSigner.getAddress();
+        const channelId =
+            args.channelId ||
+            this.channelId?.toString() ||
+            this.options.channelId;
+
+        const joinChannel = createJoinChannelTestObject(
+            participantAddress,
+            channelId
+        );
+
+        if (args.deadlineTimestamp) {
+            joinChannel.deadlineTimestamp = args.deadlineTimestamp;
+        }
+
+        const signedJoin = await SignatureUtils.signJoinChannel(
+            joinChannel,
+            args.participantSigner
+        );
+
+        const signerIndices =
+            args.thresholdSignerIndices === "all" ||
+            args.thresholdSignerIndices === undefined
+                ? this.peers.map((p) => p.index)
+                : args.thresholdSignerIndices;
+
+        const signatures = await Promise.all(
+            signerIndices.map((i) =>
+                SignatureUtils.signJoinChannel(
+                    joinChannel,
+                    this.peers[i].signer
+                ).then((s) => s.signature as Bytes)
+            )
+        );
+
+        return {
+            joinChannel,
+            signedJoinChannel: {
+                encodedJoinChannel: signedJoin.encoded as Bytes,
+                signature: signedJoin.signature as Bytes
+            },
+            signatures
+        };
+    }
+
+    private async submitOpenChannel(
+        openChannel: OpenChannelStruct,
+        signatures: BytesLike[]
+    ): Promise<ForkId> {
         this.channelId = openChannel.channelId;
 
         this.logger.debug(`Channel created with ID: ${openChannel.channelId}`);
@@ -387,24 +515,12 @@ export class PeerTestHarness<T extends AStateMachine> {
             await this.connectAllPeers();
         }
 
-        const signatures = await Promise.all(
-            this.peers.map(
-                async (peer) =>
-                    (
-                        await SignatureUtils.signOpenChannel(
-                            openChannel,
-                            peer.signer
-                        )
-                    ).signature as BytesLike
-            )
-        );
-
         this.logger.debug(
             "Submitting channel open transaction to blockchain..."
         );
         const tx = await this.channelManager.open({
             encodedOpenChannel: Codec.encode(openChannel, Type.OpenChannel),
-            signatures: signatures
+            signatures
         });
 
         await Promise.all([tx.wait(), sleep(100)]);
@@ -497,6 +613,40 @@ export class PeerTestHarness<T extends AStateMachine> {
             `Channel opened successfully with fork ID: ${this.activeForkId}`
         );
         return this.activeForkId;
+    }
+
+    async openChannel(): Promise<ForkId> {
+        this.logger.info("Opening channel...");
+        await Clock.init(this.peers[0].signer.provider!);
+        const openChannel = this.buildOpenChannelStruct();
+        const signatures = await this.signOpenChannelStruct(openChannel);
+        return this.submitOpenChannel(openChannel, signatures);
+    }
+
+    /**
+     * Open a channel using only a subset of peer signatures (useful for negative tests).
+     * This will submit the transaction and return the forkId on success; callers can
+     * expect reverts when signatures are insufficient.
+     */
+    async openChannelWithSigners(
+        args: BuildOpenChannelArgs = {},
+        signerIndices: number[] | "all" = "all"
+    ): Promise<ForkId> {
+        if (signerIndices === "all") {
+            signerIndices = this.peers.map((peer) => peer.index);
+        }
+        this.logger.info(
+            `Opening channel with signers [${signerIndices.join(", ")}]...`
+        );
+        await Clock.init(this.peers[0].signer.provider!);
+
+        const openChannel = this.buildOpenChannelStruct(args);
+        const signatures = await this.signOpenChannelStruct(
+            openChannel,
+            signerIndices
+        );
+
+        return this.submitOpenChannel(openChannel, signatures);
     }
 
     async connectAllPeers(): Promise<void> {
@@ -1060,7 +1210,8 @@ export class PeerTestHarness<T extends AStateMachine> {
         const blockStruct: BlockStruct = {
             transaction: transaction,
             stateSnapshotHash: stateSnapshotHash,
-            previousBlockHash: previousBlockHash
+            previousBlockHash: previousBlockHash,
+            messageBlocks: []
         };
 
         // Create invalid signature by corrupting the hash
@@ -1281,7 +1432,8 @@ export class PeerTestHarness<T extends AStateMachine> {
                 }
             },
             stateSnapshotHash: conflictingStateSnapshotHash,
-            previousBlockHash: originalBlock.previousBlockHash
+            previousBlockHash: originalBlock.previousBlockHash,
+            messageBlocks: []
         };
 
         const conflictingBlock = await Block.fromBlockStruct(
@@ -1366,7 +1518,8 @@ export class PeerTestHarness<T extends AStateMachine> {
         const blockStruct: BlockStruct = {
             transaction: transaction,
             stateSnapshotHash: wrongStateSnapshotHash,
-            previousBlockHash: previousBlockHash
+            previousBlockHash: previousBlockHash,
+            messageBlocks: []
         };
 
         const invalidBlock = await Block.fromBlockStruct(

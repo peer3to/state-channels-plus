@@ -1,6 +1,8 @@
 import { expect } from "chai";
 import { PeerTestHarness, sleep } from "@test/fixtures/PeerTestHarness";
 import { MathStateMachine } from "@typechain-types/index";
+import hre from "hardhat";
+import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 describe("E2E: Core Functionality", function () {
     let harness: PeerTestHarness<MathStateMachine> | null = null;
@@ -578,75 +580,89 @@ describe("E2E: Core Functionality", function () {
         });
     });
 
-    describe.skip("Channel Lifecycle", function () {
-        // Arrange: Setup 2+ participants with initial balances and deadline
-        // Act: All participants sign OpenChannelConfirmation, submit on-chain
-        // Assert: Channel opens successfully, participants list updated, balances set
-        it("should open channel with all participants signing");
-
+    describe("Open/Join Channel", function () {
         // Arrange: Setup 3 participants, remove one signature from OpenChannelConfirmation
         // Act: Attempt to submit incomplete OpenChannelConfirmation on-chain
         // Assert: Transaction reverts with signature validation error
-        it("should reject channel opening with missing signature");
+        it("should reject channel opening with missing signature", async function () {
+            await harness!.setup(3);
+
+            const { encodedOpenChannel, signatures } =
+                await harness!.buildOpenChannelRequest({
+                    signerIndices: [0, 1] // leave last peer unsigned
+                });
+
+            const txPromise = harness!.channelManager.open({
+                encodedOpenChannel,
+                signatures
+            });
+
+            await expect(txPromise).to.be.revertedWith(
+                "Cryptography: Not enough signatures provided"
+            );
+        });
 
         // Arrange: Setup participants with specific non-zero initial balances
         // Act: Submit OpenChannel with custom balance array
         // Assert: Channel opens with correct initial balances for each participant
-        it("should open channel with initial balances");
+        it("should open channel with initial balances", async function () {
+            const initialBalance = 123;
+            await harness!.setup(3, { initialBalance });
 
-        // Arrange: Setup OpenChannel with custom deadline timestamp (future time)
-        // Act: Submit channel opening before deadline
-        // Assert: Channel opens successfully and respects the custom deadline
-        it("should open channel with custom deadline timestamp");
-    });
+            await harness!.openChannel();
 
-    describe.skip("Economic Scenarios", function () {
-        // Arrange: Setup channel, execute transactions that should maintain total balance
-        // Act: Execute blocks with transfers between participants
-        // Assert: Total balance in system remains constant (no money creation/destruction)
-        it("should preserve balance invariants across blocks");
+            const math = harness!.peers[0].contractInstance as MathStateMachine;
+            const balances = await Promise.all(
+                harness!.peers.map((peer) => math.getBalance(peer.address))
+            );
 
-        // Arrange: Setup channel, prepare deposit transaction
-        // Act: Execute deposit through depositAssetsComposable framework
-        // Assert: Deposit is processed correctly, balances updated
-        it("should handle deposit framework correctly");
+            balances.forEach((balance) =>
+                expect(balance).to.equal(BigInt(initialBalance))
+            );
+        });
 
-        // Arrange: Setup channel with balances, prepare withdrawal transaction
-        // Act: Execute withdrawal through withdrawAssetsComposable framework
-        // Assert: Withdrawal is processed correctly, balances updated, invariants preserved
-        it("should handle withdrawal framework correctly");
-    });
+        // Arrange: Open channel with short deadline; wait past it
+        // Act: Attempt to join after deadline
+        // Assert: Join reverts with deadline error
+        it("should reject joins submitted after the deadline", async function () {
+            await harness!.setup(3);
 
-    describe.skip("Timing and Synchronization", function () {
-        // Arrange: Setup participants with clocks offset by small amounts (1-2 seconds)
-        // Act: Execute block production with timestamp validation
-        // Assert: System handles small clock differences gracefully
-        it("should handle participants with slightly different clocks");
+            const now = await time.latest();
+            const deadline = Number(now) + 5;
 
-        // Arrange: Setup channel, create block with timestamp > current time + tolerance
-        // Act: Submit block with invalid timestamp
-        // Assert: Block is rejected due to timestamp violation
-        // NOTE: This covers future timestamps and other timestamp violations
-        it("should detect timestamp violations");
-    });
+            const forkId = await harness!.openChannelWithSigners(
+                {
+                    deadlineTimestamp: deadline
+                },
+                "all"
+            );
+            expect(forkId).to.not.be.undefined;
 
-    describe.skip("State Machine Execution", function () {
-        // Arrange: Setup channel with state machine, prepare valid transaction
-        // Act: Execute transaction that calls state machine methods
-        // Assert: Transaction executes successfully, state is updated correctly
-        it("should execute smart contract calls");
+            const [, , , lateSigner] = await hre.ethers.getSigners();
 
-        // Arrange: Setup channel, prepare transaction that should revert
-        // Act: Execute transaction that triggers state machine revert
-        // Assert: Transaction fails gracefully, state remains unchanged, error is handled
-        it("should handle state machine reverts correctly");
-    });
+            await time.increaseTo(deadline + 1);
 
-    describe.skip("Synchronization and Recovery", function () {
-        // Arrange: Setup channel with on-chain state snapshots available
-        // Act: Participant rebuilds entire state from on-chain data (no P2P sync)
-        // Assert: State is completely rebuilt and matches other participants
-        // NOTE: This is the most comprehensive sync test - covers all sync scenarios
-        it("should handle complete state rebuild from on-chain data");
+            const { signedJoinChannel, signatures } =
+                await harness!.buildJoinChannelRequest({
+                    participantSigner: lateSigner,
+                    channelId: harness!.channelId.toString(),
+                    deadlineTimestamp: deadline,
+                    thresholdSignerIndices: "all"
+                });
+
+            const txPromise = harness!.channelManager.joinChannel({
+                signedJoinChannel,
+                signatures
+            });
+
+            await expect(txPromise).to.be.revertedWithCustomError(
+                {
+                    interface: new hre.ethers.Interface([
+                        "error ErrorJoinChannelExpired()"
+                    ])
+                },
+                "ErrorJoinChannelExpired"
+            );
+        });
     });
 });
