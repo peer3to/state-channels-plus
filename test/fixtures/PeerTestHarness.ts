@@ -105,9 +105,6 @@ export interface HarnessOptions {
 export type SubmitTransactionOptions = {
     waitForSync?: boolean;
     waitForPeers?: number[];
-};
-
-export type SubmitNextTransactionOptions = SubmitTransactionOptions & {
     waitForTurn?: boolean;
 };
 
@@ -192,7 +189,26 @@ export class PeerTestHarness<T extends AStateMachine> {
     }
 
     private get forkId(): ForkId {
-        return this.activeForkId || this.peers[0].stateManager.forkId;
+        // Always prefer the latest fork ID observed on the peers; keep
+        // activeForkId in sync so callers that access it directly remain valid.
+        const currentPeerForkId = this.peers[0]?.stateManager?.forkId;
+
+        if (currentPeerForkId && currentPeerForkId !== ZeroHash) {
+            if (this.activeForkId !== currentPeerForkId) {
+                this.logger.debug(`Updating active forkId`, {
+                    from: this.activeForkId,
+                    to: currentPeerForkId
+                });
+                this.activeForkId = currentPeerForkId;
+            }
+            return currentPeerForkId;
+        }
+
+        if (this.activeForkId && this.activeForkId !== ZeroHash) {
+            return this.activeForkId;
+        }
+
+        throw new Error("Fork ID unavailable");
     }
     public async waitForTurn(peer: TestPeer<T>, timeoutMs = 3000) {
         return this.waitForCondition(
@@ -722,6 +738,9 @@ export class PeerTestHarness<T extends AStateMachine> {
         txFn: (contract: T) => Promise<any>,
         options: SubmitTransactionOptions = { waitForSync: true }
     ): Promise<void> {
+        if (options.waitForTurn) {
+            await this.waitForTurn(peer);
+        }
         // Execute transaction
         const result = await txFn(peer.p2pInstance.p2pContractInstance);
 
@@ -739,7 +758,7 @@ export class PeerTestHarness<T extends AStateMachine> {
     }
     async submitNextTransaction(
         txFn: (contract: T) => Promise<any>,
-        options: SubmitNextTransactionOptions = { waitForTurn: true }
+        options: SubmitTransactionOptions = { waitForTurn: true }
     ): Promise<void> {
         const nextPeer = await this.getNextPeerToWrite();
 
@@ -1062,7 +1081,7 @@ export class PeerTestHarness<T extends AStateMachine> {
 
                 const latestBlock =
                     this.peers[0].stateManager.storage.blocks.getLatestBlock(
-                        this.activeForkId!
+                        this.forkId
                     );
                 const forkId = this.peers[0].stateManager.forkId;
 
@@ -1177,7 +1196,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
     ): Promise<BlockStruct> {
         const peer = this.getPeer(peerIndex);
-        const forkId = options.forkId || this.activeForkId!;
+        const forkId = options.forkId || this.forkId;
         const height = options.height;
 
         const previousBlock =
@@ -1392,7 +1411,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         originalBlock: Block;
     }> {
         const peer = this.getPeer(peerIndex);
-        const forkId = options?.forkId || this.activeForkId!;
+        const forkId = options?.forkId || this.forkId;
 
         this.logger.debug(
             `Peer ${peerIndex} creating double-sign block for fork ${forkId}`
@@ -1467,7 +1486,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
     ): Promise<Block> {
         const peer = this.getPeer(peerIndex);
-        const forkId = options?.forkId || this.activeForkId!;
+        const forkId = options?.forkId || this.forkId;
 
         this.logger.debug(
             `Peer ${peerIndex} creating invalid state transition block for fork ${forkId}`

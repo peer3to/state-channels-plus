@@ -243,20 +243,108 @@ describe("E2E: Advanced Security", function () {
             // Assert - Reduction should have occurred (fork IDs changed)
             expect(forkChanged).to.be.true;
         });
-        // Arrange: Setup dispute that requires participant signatures for submission
-        // Act: Collect signatures from honest participants on dispute
-        // Assert: Sufficient signatures are gathered for dispute submission
-        it("should collect dispute signatures from participants");
 
-        // Arrange: Dispute signatures collected, ready for submission
-        // Act: Submit dispute transaction on-chain
-        // Assert: Dispute is successfully submitted and recorded on-chain
-        it("should submit dispute on-chain");
+        it("should remove malicious participant after fork and keep liveness", async function () {
+            // Arrange - same timing as reduction happy path
+            await harness!.setup(4, {
+                timeConfig: {
+                    p2pTime: 3,
+                    agreementTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 3
+                }
+            });
+            const originalForkId = await harness!.openChannel();
 
-        // Arrange: Dispute submitted, accused participant provides counter-evidence
-        // Act: Counter-fraud proof is submitted by accused party
-        // Assert: Counter-proof is processed and evaluated correctly
-        it("should handle counter-fraud proofs");
+            // Establish baseline state
+            await harness!.submitNextTransaction((contract) => contract.add(1));
+            await harness!.submitNextTransaction((contract) => contract.add(2));
+            harness!.assertAllPeersInSync();
+
+            // Reset spies so we only count dispute-related activity
+            harness!.resetEventSpies();
+
+            // Act - have the next writer broadcast an invalid block
+            const maliciousPeer = harness!.peers[2];
+            const honestPeers = [
+                harness!.peers[0],
+                harness!.peers[1],
+                harness!.peers[3]
+            ];
+            const maliciousIndex = maliciousPeer.index;
+            const honestIndices = honestPeers.map((peer) => peer.index);
+
+            await harness!.submitInvalidStateTransitionBlock(maliciousIndex, {
+                forkId: originalForkId
+            });
+
+            // Wait for disputes to be committed across peers
+            const disputesCommitted = await harness!.waitForEventCounts(
+                "onDisputeCommitted",
+                harness!.peers.map((peer) => ({
+                    peerId: peer.index,
+                    expectedCount: 3
+                })),
+                8000,
+                { mode: "atLeast" }
+            );
+            expect(disputesCommitted).to.be.true;
+
+            // Wait for honest peers to agree on the new fork
+            const forkSettled = await harness!.waitForCondition(() => {
+                const forkIds = honestPeers.map(
+                    (peer) => peer.stateManager.forkId
+                );
+                const uniqueForks = new Set(forkIds);
+                const allMoved =
+                    forkIds.length > 0 &&
+                    forkIds.every(
+                        (forkId) =>
+                            forkId !== originalForkId && forkId !== ZeroHash
+                    );
+                return allMoved && uniqueForks.size === 1;
+            }, 10000);
+            expect(forkSettled).to.be.true;
+
+            // Assert - malicious participant removed from new fork
+            for (const peer of honestPeers) {
+                const participants =
+                    await peer.stateManager.diamondStateMachine.getParticipants();
+                expect(participants).to.have.lengthOf(honestPeers.length);
+
+                expect(participants).to.not.include(maliciousPeer.address);
+            }
+
+            // advance the state between honest peers
+            await harness!.submitTransaction(
+                honestPeers[2],
+                (contract) => contract.add(1),
+                { waitForTurn: true }
+            ); // peer 3 turn
+            await harness!.submitTransaction(
+                honestPeers[0],
+                (contract) => contract.add(2),
+                { waitForTurn: true }
+            ); // peer 0 turn
+            await harness!.submitTransaction(
+                honestPeers[1],
+                (contract) => contract.add(3),
+                {
+                    waitForTurn: true,
+                    waitForPeers: honestIndices,
+                    waitForSync: true
+                }
+            ); // peer 1 turn
+            // await sleep(500)
+            harness!.assertAllPeersInSync({ peerIndices: honestIndices });
+
+            // Assert - only honest peers continue authoring and syncing on new fork
+            const nextWriter = await harness!.getNextPeerToWrite();
+            expect(nextWriter.index).to.not.equal(
+                maliciousIndex, // 2
+                "Removed peer should NOT receive next turn"
+            );
+        });
     });
 
     describe.skip("Economic Security", function () {
