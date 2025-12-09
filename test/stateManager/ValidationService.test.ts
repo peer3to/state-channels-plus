@@ -2,6 +2,7 @@ import ValidationService from "../../src/stateManager/ValidationService";
 import { BlockValidationResult } from "../../src/types";
 import { expect } from "chai";
 import sinon from "sinon";
+import { createLogger } from "../../src/utils";
 
 import {
     BlockBuilder,
@@ -14,6 +15,7 @@ import {
 describe("ValidationService - Progressive Validation Tests", () => {
     let validationService: ValidationService;
     let mockSetup: MockSetup;
+    const testLogger = createLogger({ component: "ValidationService.test" });
 
     beforeEach(() => {
         sinon.restore();
@@ -24,7 +26,8 @@ describe("ValidationService - Progressive Validation Tests", () => {
             mockSetup.mockDiamondStateMachine,
             mockSetup.mockStateChannelManagerContract,
             mockSetup.mockTimeConfig,
-            mockSetup.mockStateManager
+            mockSetup.mockStateManager,
+            testLogger
         );
 
         // Make validationService available to MockSetup for internal stubs
