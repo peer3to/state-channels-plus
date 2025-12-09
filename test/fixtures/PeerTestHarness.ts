@@ -40,7 +40,10 @@ import {
     SignedBlockStruct,
     OpenChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    TimeoutStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "@/Clock";
 import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
@@ -49,7 +52,6 @@ import SyncCoordinator from "@test/utils/SyncCoordinator";
 import { ZeroHash } from "ethers";
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
-import { DisputeStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;

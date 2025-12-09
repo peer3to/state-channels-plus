@@ -419,7 +419,9 @@ describe("E2E: Advanced Security", function () {
                 await harness!.postTamperedDispute(
                     0,
                     (dispute) => {
+                        // Tamper: set timeout participant to someone who is NOT next to write
                         dispute.input.timeout.participant = notNextPeer.address;
+                        dispute.input.timeout.blockHeight = 2;
                     },
                     originalForkId
                 );

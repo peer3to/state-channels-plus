@@ -320,7 +320,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         address nextAuthor = stateMachineImplementation.getNextToWrite();
 
         // check is next author timed-out
-        if (dispute.input.timeout.participant != nextAuthor) return address(0); // the calling context may decide to slash the caller
+        if (dispute.input.timeout.participant == nextAuthor) return address(0);
         return dispute.input.disputer;
     }
 
