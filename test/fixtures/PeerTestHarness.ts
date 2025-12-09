@@ -1590,6 +1590,9 @@ export class PeerTestHarness<T extends AStateMachine> {
         };
         disputeConfirmation.signatures = [];
 
+        this.logger.debug(
+            `Peer ${authorPeerIndex} submitting tampered dispute for fork ${targetForkId}`
+        );
         const txResp = await this.channelManager
             .connect(peer.signer)
             .uploadDispute(disputeConfirmation);

@@ -158,23 +158,29 @@ class StateManager {
             logger
         );
         this.p2pManager = new P2PManager(this.self, signer);
-        this.fraudProofService = new FraudProofService(this.storage);
+        this.fraudProofService = new FraudProofService(
+            this.storage,
+            this.logger
+        );
         this.validationService = new ValidationService(
             this.storage,
             this.diamondStateMachine,
             this.stateChannelManagerContract,
             this.timeConfig,
-            this.self
+            this.self,
+            this.logger
         );
         this.disputeValidationService = new DisputeValidationService(this.self);
         this.blockValidationStrategy = new BlockValidationStrategy(
             this.storage,
             this.p2pManager,
-            this.disputeManager
+            this.disputeManager,
+            this.logger
         );
         this.spectatingValidationStrategy = new SpectatingValidationStrategy(
             this.storage,
-            this.p2pManager
+            this.p2pManager,
+            this.logger
         );
     }
     //Mark resources for garbage collection
