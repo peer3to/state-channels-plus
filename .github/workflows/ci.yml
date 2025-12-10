@@ -39,7 +39,7 @@ jobs:
         run: nyc  --silent --no-clean yarn test:e2e
 
       - name: Upload coverage artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: nyc-raw-output
           path: .nyc_output
@@ -59,7 +59,7 @@ jobs:
       - name: Install nyc
         run: yarn add nyc
       - name: Download coverage artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: nyc-raw-output
           path: .nyc_output
