@@ -33,16 +33,16 @@ jobs:
         run: yarn compile
 
       - name: Run tests
-        run: npx nyc  --silent  yarn test
+        run: npx nyc  --silent --temp-dir "./nyc_output"  yarn test
       # ideally this shoud run in a merge queue, but we don't have that yet
       - name: Run e2e tests
-        run: npx nyc  --silent --no-clean yarn test:e2e
+        run: npx nyc  --silent --no-clean --temp-dir "./nyc_output" yarn test:e2e
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
         with:
           name: nyc-raw-output
-          path: .nyc_output/
+          path: ./nyc_output/
   coverage-report:
     runs-on: ubuntu-latest
     needs: test
@@ -58,7 +58,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: nyc-raw-output
-          path: .nyc_output
+          path: ./nyc_output/
       - name: coverage summary
         run: npx nyc report --temp-dir=.nyc_output   --reporter=text-summary
       - name: coverage details
