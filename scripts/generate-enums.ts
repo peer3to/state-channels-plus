@@ -58,11 +58,13 @@ function extractEnumsFromFile(filePath: string): EnumDef[] {
 }
 
 function generateTSEnum(enumDef: EnumDef, enumIndex: number): string {
+    const numberOfValues = enumDef.values.length;
     const valueLines = enumDef.values.map((value, index) => {
+        const isLast = index === numberOfValues - 1;
         if (index === 0) {
-            return `  ${value} = ${enumOffset(enumIndex)},`;
+            return `    ${value} = ${enumOffset(enumIndex)}${isLast ? "" : ","}`;
         }
-        return `  ${value},`;
+        return `    ${value}${isLast ? "" : ","}`;
     });
 
     return `export enum ${enumDef.name} {\n${valueLines.join("\n")}\n}`;
