@@ -61,5 +61,21 @@ jobs:
           path: ./nyc_output/
       - name: coverage summary
         run: npx nyc report --temp-dir=nyc_output   --reporter=text-summary
-      - name: coverage details
-        run: npx nyc report --temp-dir=nyc_output --reporter=text
+      - name: Generate HTML coverage report
+        run: npx nyc report --temp-dir=nyc_output --reporter=html --report-dir=coverage_html
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: coverage_html
+  deploy-pages:
+    runs-on: ubuntu-latest
+    needs: coverage-report
+    permissions:
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
+        
+
