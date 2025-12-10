@@ -5,7 +5,7 @@ import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
 import Storage from "@/storage";
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
-import { difference, isSubset } from "@/utils";
+import { difference, isSubset, Logger } from "@/utils";
 import { BlockValidationResult, TimeConfig } from "@/types";
 import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 
@@ -21,9 +21,14 @@ export default class ValidationService {
         private readonly diamondStateMachine: ADiamondStateMachine,
         private readonly stateChannelManagerContract: StateChannelManagerProxy,
         private readonly timeConfig: TimeConfig,
-        private readonly stateManager: StateManager
+        private readonly stateManager: StateManager,
+        logger: Logger
     ) {
-        this.fraudProofService = new FraudProofService(this.storage);
+        const childLogger = logger.child({ component: "ValidationService" });
+        this.fraudProofService = new FraudProofService(
+            this.storage,
+            childLogger
+        );
     }
 
     async validateBlockConfirmation(

@@ -44,8 +44,10 @@ import { BigNumberish, BytesLike } from "ethers";
 export default class DisputeFraudProofService {
     constructor(
         private readonly storage: Storage,
-        private readonly logger?: Logger
-    ) {}
+        private readonly logger: Logger
+    ) {
+        this.logger = logger.child({ component: "DisputeFraudProofService" });
+    }
 
     createDisputeNotLatestState(
         dispute: DisputeStruct,
@@ -266,7 +268,7 @@ export default class DisputeFraudProofService {
         const proofHash =
             this.storage.disputeFraudProofs.storeFraudProof(disputeFraudProof);
 
-        this.logger?.debug("Stored dispute fraud proof", {
+        this.logger.debug("Stored dispute fraud proof", {
             forkId: dispute.input.forkId,
             type: DisputeFraudProofType[proof.type]
         });

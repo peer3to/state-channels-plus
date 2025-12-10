@@ -17,7 +17,10 @@ import {
     Bytes
 } from "@/types/types";
 import { TimeConfig } from "@/types/time";
-import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
+import {
+    createOpenChannelTestObject,
+    createJoinChannelTestObject
+} from "@test/test_utils/testHelpers";
 import { pollUntil } from "@test/test_utils/pollUntil";
 import {
     createLogger,
@@ -34,9 +37,13 @@ import {
     JoinChannelStruct,
     BlockStruct,
     TransactionStruct,
-    SignedBlockStruct
+    SignedBlockStruct,
+    OpenChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    TimeoutStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "@/Clock";
 import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
@@ -45,7 +52,6 @@ import SyncCoordinator from "@test/utils/SyncCoordinator";
 import { ZeroHash } from "ethers";
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
-import { DisputeStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;
@@ -101,15 +107,30 @@ export interface HarnessOptions {
 export type SubmitTransactionOptions = {
     waitForSync?: boolean;
     waitForPeers?: number[];
-};
-
-export type SubmitNextTransactionOptions = SubmitTransactionOptions & {
     waitForTurn?: boolean;
 };
 
 export type AssertAllPeersInSyncOptions = {
     expectedState?: Bytes;
     peerIndices?: number[];
+};
+
+type BuildOpenChannelArgs = {
+    participantAddresses?: string[];
+    initialBalance?: number;
+    channelId?: string;
+    deadlineTimestamp?: number;
+};
+
+type BuildOpenChannelRequestArgs = BuildOpenChannelArgs & {
+    signerIndices?: number[];
+};
+
+type BuildJoinChannelRequestArgs = {
+    participantSigner: Signer;
+    channelId?: string;
+    deadlineTimestamp?: number;
+    thresholdSignerIndices?: number[] | "all";
 };
 
 /**
@@ -170,7 +191,26 @@ export class PeerTestHarness<T extends AStateMachine> {
     }
 
     private get forkId(): ForkId {
-        return this.activeForkId || this.peers[0].stateManager.forkId;
+        // Always prefer the latest fork ID observed on the peers; keep
+        // activeForkId in sync so callers that access it directly remain valid.
+        const currentPeerForkId = this.peers[0]?.stateManager?.forkId;
+
+        if (currentPeerForkId && currentPeerForkId !== ZeroHash) {
+            if (this.activeForkId !== currentPeerForkId) {
+                this.logger.debug(`Updating active forkId`, {
+                    from: this.activeForkId,
+                    to: currentPeerForkId
+                });
+                this.activeForkId = currentPeerForkId;
+            }
+            return currentPeerForkId;
+        }
+
+        if (this.activeForkId && this.activeForkId !== ZeroHash) {
+            return this.activeForkId;
+        }
+
+        throw new Error("Fork ID unavailable");
     }
     public async waitForTurn(peer: TestPeer<T>, timeoutMs = 3000) {
         return this.waitForCondition(
@@ -355,17 +395,123 @@ export class PeerTestHarness<T extends AStateMachine> {
             eventHandlerProxy;
     }
 
-    async openChannel(): Promise<ForkId> {
-        this.logger.info("Opening channel...");
+    private buildOpenChannelStruct(
+        args: BuildOpenChannelArgs = {}
+    ): OpenChannelStruct {
+        const participantAddresses =
+            args.participantAddresses ?? this.peers.map((p) => p.address);
+
+        const openChannel = createOpenChannelTestObject(participantAddresses, {
+            channelId: args.channelId ?? this.options.channelId,
+            initialBalance: args.initialBalance ?? this.options.initialBalance
+        });
+
+        if (args.deadlineTimestamp) {
+            openChannel.deadlineTimestamp = args.deadlineTimestamp;
+        }
+
+        return openChannel;
+    }
+
+    private async signOpenChannelStruct(
+        openChannel: OpenChannelStruct,
+        signerIndices?: number[]
+    ): Promise<BytesLike[]> {
+        const indices = signerIndices ?? this.peers.map((peer) => peer.index);
+        const signatures = await Promise.all(
+            indices.map((i) =>
+                SignatureUtils.signOpenChannel(
+                    openChannel,
+                    this.peers[i].signer
+                ).then((s) => s.signature as BytesLike)
+            )
+        );
+        return signatures;
+    }
+
+    /**
+     * Build an encoded open-channel request plus signatures without submitting it.
+     * Useful for tests that need to assert on failure cases (e.g., missing signatures).
+     */
+    async buildOpenChannelRequest(
+        args: BuildOpenChannelRequestArgs = {}
+    ): Promise<{
+        openChannel: OpenChannelStruct;
+        encodedOpenChannel: BytesLike;
+        signatures: BytesLike[];
+    }> {
         await Clock.init(this.peers[0].signer.provider!);
 
-        const openChannel = createOpenChannelTestObject(
-            this.peers.map((p) => p.address),
-            {
-                channelId: this.options.channelId,
-                initialBalance: this.options.initialBalance
-            }
+        const openChannel = this.buildOpenChannelStruct(args);
+        const signatures = await this.signOpenChannelStruct(
+            openChannel,
+            args.signerIndices
         );
+
+        return {
+            openChannel,
+            encodedOpenChannel: Codec.encode(openChannel, Type.OpenChannel),
+            signatures
+        };
+    }
+
+    /**
+     * Build a join-channel confirmation and signatures without submitting it.
+     */
+    async buildJoinChannelRequest(args: BuildJoinChannelRequestArgs): Promise<{
+        joinChannel: JoinChannelStruct;
+        signedJoinChannel: { encodedJoinChannel: Bytes; signature: Bytes };
+        signatures: Bytes[];
+    }> {
+        const participantAddress = await args.participantSigner.getAddress();
+        const channelId =
+            args.channelId ||
+            this.channelId?.toString() ||
+            this.options.channelId;
+
+        const joinChannel = createJoinChannelTestObject(
+            participantAddress,
+            channelId
+        );
+
+        if (args.deadlineTimestamp) {
+            joinChannel.deadlineTimestamp = args.deadlineTimestamp;
+        }
+
+        const signedJoin = await SignatureUtils.signJoinChannel(
+            joinChannel,
+            args.participantSigner
+        );
+
+        const signerIndices =
+            args.thresholdSignerIndices === "all" ||
+            args.thresholdSignerIndices === undefined
+                ? this.peers.map((p) => p.index)
+                : args.thresholdSignerIndices;
+
+        const signatures = await Promise.all(
+            signerIndices.map((i) =>
+                SignatureUtils.signJoinChannel(
+                    joinChannel,
+                    this.peers[i].signer
+                ).then((s) => s.signature as Bytes)
+            )
+        );
+
+        return {
+            joinChannel,
+            signedJoinChannel: {
+                encodedJoinChannel: signedJoin.encoded as Bytes,
+                signature: signedJoin.signature as Bytes
+            },
+            signatures
+        };
+    }
+
+    private async submitOpenChannel(
+        openChannel: OpenChannelStruct,
+        signatures: BytesLike[]
+    ): Promise<ForkId> {
         this.channelId = openChannel.channelId;
 
         this.logger.debug(`Channel created with ID: ${openChannel.channelId}`);
@@ -387,24 +533,12 @@ export class PeerTestHarness<T extends AStateMachine> {
             await this.connectAllPeers();
         }
 
-        const signatures = await Promise.all(
-            this.peers.map(
-                async (peer) =>
-                    (
-                        await SignatureUtils.signOpenChannel(
-                            openChannel,
-                            peer.signer
-                        )
-                    ).signature as BytesLike
-            )
-        );
-
         this.logger.debug(
             "Submitting channel open transaction to blockchain..."
         );
         const tx = await this.channelManager.open({
             encodedOpenChannel: Codec.encode(openChannel, Type.OpenChannel),
-            signatures: signatures
+            signatures
         });
 
         await Promise.all([tx.wait(), sleep(100)]);
@@ -499,6 +633,40 @@ export class PeerTestHarness<T extends AStateMachine> {
         return this.activeForkId;
     }
 
+    async openChannel(): Promise<ForkId> {
+        this.logger.info("Opening channel...");
+        await Clock.init(this.peers[0].signer.provider!);
+        const openChannel = this.buildOpenChannelStruct();
+        const signatures = await this.signOpenChannelStruct(openChannel);
+        return this.submitOpenChannel(openChannel, signatures);
+    }
+
+    /**
+     * Open a channel using only a subset of peer signatures (useful for negative tests).
+     * This will submit the transaction and return the forkId on success; callers can
+     * expect reverts when signatures are insufficient.
+     */
+    async openChannelWithSigners(
+        args: BuildOpenChannelArgs = {},
+        signerIndices: number[] | "all" = "all"
+    ): Promise<ForkId> {
+        if (signerIndices === "all") {
+            signerIndices = this.peers.map((peer) => peer.index);
+        }
+        this.logger.info(
+            `Opening channel with signers [${signerIndices.join(", ")}]...`
+        );
+        await Clock.init(this.peers[0].signer.provider!);
+
+        const openChannel = this.buildOpenChannelStruct(args);
+        const signatures = await this.signOpenChannelStruct(
+            openChannel,
+            signerIndices
+        );
+
+        return this.submitOpenChannel(openChannel, signatures);
+    }
+
     async connectAllPeers(): Promise<void> {
         this.logger.debug("Connecting peers...");
         const started = await LocalDiscoveryServer.tryStart();
@@ -572,6 +740,9 @@ export class PeerTestHarness<T extends AStateMachine> {
         txFn: (contract: T) => Promise<any>,
         options: SubmitTransactionOptions = { waitForSync: true }
     ): Promise<void> {
+        if (options.waitForTurn) {
+            await this.waitForTurn(peer);
+        }
         // Execute transaction
         const result = await txFn(peer.p2pInstance.p2pContractInstance);
 
@@ -589,7 +760,7 @@ export class PeerTestHarness<T extends AStateMachine> {
     }
     async submitNextTransaction(
         txFn: (contract: T) => Promise<any>,
-        options: SubmitNextTransactionOptions = { waitForTurn: true }
+        options: SubmitTransactionOptions = { waitForTurn: true }
     ): Promise<void> {
         const nextPeer = await this.getNextPeerToWrite();
 
@@ -912,7 +1083,7 @@ export class PeerTestHarness<T extends AStateMachine> {
 
                 const latestBlock =
                     this.peers[0].stateManager.storage.blocks.getLatestBlock(
-                        this.activeForkId!
+                        this.forkId
                     );
                 const forkId = this.peers[0].stateManager.forkId;
 
@@ -1027,7 +1198,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
     ): Promise<BlockStruct> {
         const peer = this.getPeer(peerIndex);
-        const forkId = options.forkId || this.activeForkId!;
+        const forkId = options.forkId || this.forkId;
         const height = options.height;
 
         const previousBlock =
@@ -1241,7 +1412,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         originalBlock: Block;
     }> {
         const peer = this.getPeer(peerIndex);
-        const forkId = options?.forkId || this.activeForkId!;
+        const forkId = options?.forkId || this.forkId;
 
         this.logger.debug(
             `Peer ${peerIndex} creating double-sign block for fork ${forkId}`
@@ -1315,7 +1486,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
     ): Promise<Block> {
         const peer = this.getPeer(peerIndex);
-        const forkId = options?.forkId || this.activeForkId!;
+        const forkId = options?.forkId || this.forkId;
 
         this.logger.debug(
             `Peer ${peerIndex} creating invalid state transition block for fork ${forkId}`
@@ -1388,6 +1559,48 @@ export class PeerTestHarness<T extends AStateMachine> {
         );
 
         return invalidBlock;
+    }
+
+    /**
+     * Build and post a tampered dispute from a peer (used to exercise DisputeValidationService rejection paths).
+     * Caller is responsible for providing the tamper function that mutates the dispute or confirmation.
+     */
+    async postTamperedDispute(
+        authorPeerIndex: number,
+        tamper: (dispute: any, confirmation: any) => void,
+        forkId?: ForkId
+    ): Promise<{ dispute: any; disputeConfirmation: any }> {
+        const peer = this.getPeer(authorPeerIndex);
+        const targetForkId = forkId || this.forkId;
+
+        const { dispute, disputeConfirmation } =
+            await peer.stateManager.disputeManager.constructDispute(
+                targetForkId
+            );
+
+        // Apply tampering (e.g., wrong auditingDataHash, bogus timeout participant, etc.)
+        tamper(dispute, disputeConfirmation);
+
+        // Re-sign the tampered dispute as the author (threshold is not enforced here; we only need author sig)
+        const tamperedSig = await SignatureUtils.signDispute(
+            dispute,
+            peer.signer
+        );
+        disputeConfirmation.signedDispute = {
+            encodedDispute: tamperedSig.encoded,
+            signature: tamperedSig.signature as BytesLike
+        };
+        disputeConfirmation.signatures = [];
+
+        this.logger.debug(
+            `Peer ${authorPeerIndex} submitting tampered dispute for fork ${targetForkId}`
+        );
+        const txResp = await this.channelManager
+            .connect(peer.signer)
+            .uploadDispute(disputeConfirmation);
+        await txResp.wait();
+
+        return { dispute, disputeConfirmation };
     }
 }
 
