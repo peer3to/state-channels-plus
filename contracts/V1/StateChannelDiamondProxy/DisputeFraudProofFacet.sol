@@ -22,7 +22,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             address slashedParticipant =
                 _getHandle(disputeFraudProofs[i].proofType)(disputeFraudProofs[i].encodedProof, dispute);
             if (slashedParticipant == address(0) || slashedParticipant != disputeFraudProofs[i].participant) {
-                revert ErrorInvalidFraudProof();
+                revert ErrorInvalidFraudProof(slashedParticipant, disputeFraudProofs[i].participant);
             }
             maliciousDisputes[slashCount] = dispute;
             slashCount++;
@@ -300,7 +300,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         uint256 expectedTimeoutHeight = hasBlock ? latestBlock.transaction.header.transactionCnt + 1 : 0;
 
         // check timeout height
-        if (dispute.input.timeout.blockHeight != expectedTimeoutHeight) return address(0); // the calling context may decide to slash the caller
+        if (dispute.input.timeout.blockHeight == expectedTimeoutHeight) return address(0); // the calling context may decide to slash the caller
 
         return dispute.input.disputer;
     }
@@ -320,7 +320,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         address nextAuthor = stateMachineImplementation.getNextToWrite();
 
         // check is next author timed-out
-        if (dispute.input.timeout.participant != nextAuthor) return address(0); // the calling context may decide to slash the caller
+        if (dispute.input.timeout.participant == nextAuthor) return address(0);
         return dispute.input.disputer;
     }
 
@@ -573,7 +573,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             }
         } else {
             // FraudProofs like DoubleSign don't prove the stateProof is invalid or has double blocks, so it's a valid dispute, it just leaks information for the participant to be slashed regularly
-            revert ErrorInvalidFraudProof();
+            revert ErrorInvalidFraudProofType();
         }
 
         address adr = runFraudProof(fraudProof, dispute);

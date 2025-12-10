@@ -194,7 +194,8 @@ export default class DisputeValidationService {
             const disputeStrategy = new DisputeValidationStrategy(
                 this.storage,
                 dispute,
-                index
+                index,
+                this.logger
             );
             const isOk = await this.stateManager.onBlockConfirmation(bc, {
                 validationStrategy: disputeStrategy
@@ -253,7 +254,7 @@ export default class DisputeValidationService {
         const disputeOnChainSlashes = new Set<Address>(
             dispute.input.onChainSlashes
         );
-        if (!isSubset(onChainSlashes, disputeOnChainSlashes)) {
+        if (!isSubset(disputeOnChainSlashes, onChainSlashes)) {
             // double check with RPC node, maybe local state not synced
             onChainSlashes = new Set<Address>(
                 await this.stateChannelManagerContract.getOnChainSlashedParticipantsUpToTimestamp(
@@ -261,7 +262,10 @@ export default class DisputeValidationService {
                     disputeCreationTimestamp
                 )
             );
-            if (!isSubset(onChainSlashes, disputeOnChainSlashes)) {
+            if (!isSubset(disputeOnChainSlashes, onChainSlashes)) {
+                this.logger.debug(
+                    `dispute slashes ${[...disputeOnChainSlashes].map((a) => a.toString())} not subset of on-chain slashes ${[...onChainSlashes].map((a) => a.toString())}`
+                );
                 this.disputeFraudProofService.createDisputeOnChainSlashesNotSubset(
                     dispute,
                     disputeAuditingData

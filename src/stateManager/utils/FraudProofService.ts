@@ -13,6 +13,7 @@ import {
 } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Address, Hash } from "@/types/types";
+import { Logger } from "@/utils";
 import { Codec, FraudStruct } from "@/utils/Codec";
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 
@@ -27,7 +28,12 @@ const createEmptySignedBlock = (): SignedBlockStruct => ({
  * Service class for handling fraud proof creation and validation
  */
 export default class FraudProofService {
-    constructor(private readonly storage: Storage) {}
+    constructor(
+        private readonly storage: Storage,
+        private readonly logger: Logger
+    ) {
+        this.logger = logger.child({ component: "FraudProofService" });
+    }
 
     /**
      * Create invalid state transition proof
@@ -155,6 +161,13 @@ export default class FraudProofService {
             encodedProof: Codec.encode(proof.struct, proof.type)
         };
 
-        return this.storage.fraudProofs.storeFraudProof(fraudProof);
+        const proofHash = this.storage.fraudProofs.storeFraudProof(fraudProof);
+
+        this.logger.debug("Stored fraud proof", {
+            participant,
+            type: FraudProofType[proof.type]
+        });
+
+        return proofHash;
     }
 }

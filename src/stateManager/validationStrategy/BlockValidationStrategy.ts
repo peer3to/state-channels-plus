@@ -10,16 +10,23 @@ import Storage from "@/storage";
 import P2PManager from "@/P2PManager";
 import DisputeManager from "@/disputeManager";
 import ATransport from "@/transport/ATransport";
+import { Logger } from "@/utils";
 
 export default class BlockValidationStrategy extends AValidationStrategy {
     readonly fraudProofService: FraudProofService;
+    private readonly logger: Logger;
     constructor(
         private readonly storage: Storage,
         private readonly p2pManager: P2PManager,
-        private readonly disputeManager: DisputeManager
+        private readonly disputeManager: DisputeManager,
+        logger: Logger
     ) {
         super();
-        this.fraudProofService = new FraudProofService(this.storage);
+        this.logger = logger.child({ component: "BlockValidation" });
+        this.fraudProofService = new FraudProofService(
+            this.storage,
+            this.logger
+        );
     }
     public async interpretFinalValidationResult(
         blockValidationResult: BlockValidationResult

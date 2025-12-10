@@ -9,15 +9,22 @@ import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
 import P2PManager from "@/P2PManager";
 import { ATransport } from "@/transport";
+import { Logger } from "@/utils";
 
 export default class SpectatingValidationStrategy extends AValidationStrategy {
     private readonly fraudProofService: FraudProofService;
+    private readonly logger: Logger;
     constructor(
         private readonly storage: Storage,
-        private readonly p2pManager: P2PManager
+        private readonly p2pManager: P2PManager,
+        logger: Logger
     ) {
         super();
-        this.fraudProofService = new FraudProofService(this.storage);
+        this.logger = logger.child({ component: "SpectatingValidation" });
+        this.fraudProofService = new FraudProofService(
+            this.storage,
+            this.logger
+        );
     }
     public async interpretFinalValidationResult(
         blockValidationResult: BlockValidationResult

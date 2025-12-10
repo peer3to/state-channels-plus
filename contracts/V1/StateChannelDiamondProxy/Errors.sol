@@ -82,7 +82,7 @@ error ErrorDisputeTimeoutNotMinTimestamp();
 error ErrorUnexpectedBlockCalldataPosted();
 
 //FraudProofs
-error ErrorInvalidFraudProof();
+error ErrorInvalidFraudProof(address slashedParticipant, address expectedParticipant);
 error ErrorInvalidFraudProofType();
 
 //DisputeFraudProofs

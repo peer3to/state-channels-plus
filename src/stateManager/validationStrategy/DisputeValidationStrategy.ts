@@ -11,20 +11,29 @@ import {
     BlockConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import { Logger } from "@/utils";
+
 
 export default class DisputeValidationStrategy extends AValidationStrategy {
     readonly fraudProofService: FraudProofService;
     readonly disputeFraudProofService: DisputeFraudProofService;
+    private readonly logger: Logger;
 
     constructor(
         private readonly storage: Storage,
         private readonly dispute: DisputeStruct,
-        private readonly blockIndexInUnfinalizedPartOfStateProof: number
+        private readonly blockIndexInUnfinalizedPartOfStateProof: number,
+        logger: Logger
     ) {
         super();
-        this.fraudProofService = new FraudProofService(this.storage);
+        this.logger = logger.child({ component: "DisputeValidation" });
+        this.fraudProofService = new FraudProofService(
+            this.storage,
+            this.logger
+        );
         this.disputeFraudProofService = new DisputeFraudProofService(
-            this.storage
+            this.storage,
+            this.logger
         );
     }
     public async interpretFinalValidationResult(

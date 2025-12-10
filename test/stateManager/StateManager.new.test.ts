@@ -16,6 +16,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { ForkId, Timestamp, Address, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import Clock from "@/Clock";
 import { ethers } from "ethers";
 import StateManager from "@/stateManager";
 import Block from "@/models/Block";
@@ -598,11 +599,11 @@ describe("StateManager - Refactored", () => {
             // Arrange
             stateManager = createDefaultBuilder().build();
             const encodedState = hexString(32) as any;
-            const timestamp = defaults.defaultTimestamp as Timestamp;
+            const timestamp = Clock.getTimeInSeconds() as Timestamp;
             const participant = hexString(20) as Address;
             const snapshotDataObj = snapshotData({
                 originForkId: defaults.forkId,
-                stateMachineStateHash: hexString(32),
+                stateMachineStateHash: ethers.keccak256(encodedState),
                 participants: [participant],
                 totalDeposits: { amount: 100n, data: "0x" }
             });
