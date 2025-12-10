@@ -33,7 +33,35 @@ jobs:
         run: yarn compile
 
       - name: Run tests
-        run: yarn test
+        run: nyc  --silent  yarn test
       # ideally this shoud run in a merge queue, but we don't have that yet
       - name: Run e2e tests
-        run: yarn test:e2e
+        run: nyc  --silent --no-clean yarn test:e2e
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: nyc-raw-output
+          path: .nyc_output
+      - name: report coverage
+        run: nyc report --temp-dir=.nyc_output   --reporter=text-summary
+  coverage-report:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+      - name: Install nyc
+        run: yarn add nyc
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: nyc-raw-output
+          path: .nyc_output
+      - name: report coverage
+        run: nyc report --temp-dir=.nyc_output --reporter=text
