@@ -17,6 +17,21 @@ tuple(
 ) body
 )`;
 
+export const MessageEthersType = `tuple(
+bytes32 messageType,
+address participant,
+${BalanceEthersType} balance,
+bytes data
+)`;
+
+export const MessageBlockEthersType = `tuple(
+bytes32 previousBlockHash,
+uint256 blockHeight,
+${MessageEthersType}[] messages,
+${BalanceEthersType} totalBalance,
+uint256 timestamp
+)`;
+
 export const SignedBlockEthersType = `tuple(
 bytes encodedBlock,
 bytes signature
@@ -54,7 +69,8 @@ bytes[] signatures
 export const BlockEthersType = `tuple(
   ${TransactionEthersType} transaction,
   bytes32 stateSnapshotHash,
-  bytes32 previousBlockHash
+  bytes32 previousBlockHash,
+  ${MessageBlockEthersType}[] messageBlocks
 )`;
 
 export const JoinChannelEthersType = `tuple(
@@ -86,21 +102,6 @@ ${BalanceEthersType} balance,
 export const ExitChannelBlockEthersType = `tuple(
 bytes32 previousBlockHash,
 ${ExitChannelEthersType}[] exitChannels
-)`;
-
-export const MessageEthersType = `tuple(
-bytes32 messageType,
-address participant,
-${BalanceEthersType} balance,
-bytes data
-)`;
-
-export const MessageBlockEthersType = `tuple(
-bytes32 previousBlockHash,
-uint256 blockHeight,
-${MessageEthersType}[] messages,
-${BalanceEthersType} totalBalance,
-uint256 timestamp
 )`;
 
 export const TimeoutEthersType = `tuple(

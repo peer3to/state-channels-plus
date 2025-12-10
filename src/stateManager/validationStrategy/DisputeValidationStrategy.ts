@@ -7,8 +7,12 @@ import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
 import ATransport from "@/transport/ATransport";
 import DisputeFraudProofService from "../utils/DisputeFraudProofService";
-import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    BlockConfirmationStruct,
+    MessageBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import { Logger } from "@/utils";
+
 
 export default class DisputeValidationStrategy extends AValidationStrategy {
     readonly fraudProofService: FraudProofService;
@@ -148,6 +152,23 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
             this.blockIndexInUnfinalizedPartOfStateProof
         );
         // await this.disputeManager.dispute(block.forkId);
+        return BlockValidationResult.DISPUTE;
+    }
+    public async forgedInboundMessageBlockDetected(
+        block: Block,
+        messageBlock: MessageBlockStruct
+    ): Promise<BlockValidationResult> {
+        const hash =
+            this.fraudProofService.createForgedInboundMessageBlockProof(
+                block,
+                messageBlock
+            );
+        const fraudProof = this.storage.fraudProofs.getFraudProofByHash(hash)!;
+        this.disputeFraudProofService.createDisputeInvalidBlockInStateProofApplyFraudProof(
+            this.dispute,
+            fraudProof,
+            this.blockIndexInUnfinalizedPartOfStateProof
+        );
         return BlockValidationResult.DISPUTE;
     }
     public async conflictingButNotLinkedBlockDetected(

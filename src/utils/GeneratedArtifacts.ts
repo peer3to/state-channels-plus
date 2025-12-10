@@ -11754,6 +11754,6692 @@ export const artifacts: Artifact[] = [
     },
     {
         _format: "hh-sol-artifact-1",
+        contractName: "DisputeVerificationFacet",
+        sourceName:
+            "contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol",
+        abi: [
+            {
+                inputs: [],
+                name: "ErrorCantParticipateInDispute",
+                type: "error"
+            },
+            {
+                inputs: [],
+                name: "ErrorDisputeAlreadyReduced",
+                type: "error"
+            },
+            {
+                inputs: [],
+                name: "ErrorDisputeChallengePeriodExpired",
+                type: "error"
+            },
+            {
+                inputs: [],
+                name: "ErrorDisputeCommitmentNotAvailable",
+                type: "error"
+            },
+            {
+                inputs: [],
+                name: "ErrorDisputeExpired",
+                type: "error"
+            },
+            {
+                inputs: [],
+                name: "ErrorDisputeInboundMessageBlocksInvalid",
+                type: "error"
+            },
+            {
+                inputs: [],
+                name: "ErrorDisputeKillPeriodNotExpired",
+                type: "error"
+            },
+            {
+                inputs: [],
+                name: "ErrorDisputeStateMachineInboundProcessingFailed",
+                type: "error"
+            },
+            {
+                inputs: [],
+                name: "ErrorDisputeStateMachineJoiningFailed",
+                type: "error"
+            },
+            {
+                inputs: [],
+                name: "ErrorDisputeStateMachineRemovingFailed",
+                type: "error"
+            },
+            {
+                inputs: [],
+                name: "ErrorDisputeStateMachineSlashingFailed",
+                type: "error"
+            },
+            {
+                inputs: [],
+                name: "ErrorInvalidLatestState",
+                type: "error"
+            },
+            {
+                inputs: [],
+                name: "ErrorInvalidStateSnapshot",
+                type: "error"
+            },
+            {
+                inputs: [],
+                name: "ErrorNoDisputesProvided",
+                type: "error"
+            },
+            {
+                anonymous: false,
+                inputs: [
+                    {
+                        indexed: true,
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        indexed: true,
+                        internalType: "bytes32",
+                        name: "commitmentHash",
+                        type: "bytes32"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "address",
+                        name: "sender",
+                        type: "address"
+                    },
+                    {
+                        components: [
+                            {
+                                internalType: "bytes",
+                                name: "encodedBlock",
+                                type: "bytes"
+                            },
+                            {
+                                internalType: "bytes",
+                                name: "signature",
+                                type: "bytes"
+                            }
+                        ],
+                        indexed: false,
+                        internalType: "struct SignedBlock",
+                        name: "signedBlock",
+                        type: "tuple"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "uint256",
+                        name: "timestamp",
+                        type: "uint256"
+                    }
+                ],
+                name: "BlockCalldataPosted",
+                type: "event"
+            },
+            {
+                anonymous: false,
+                inputs: [
+                    {
+                        indexed: true,
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "address",
+                        name: "participant",
+                        type: "address"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "uint256",
+                        name: "timestamp",
+                        type: "uint256"
+                    }
+                ],
+                name: "ChainSlashed",
+                type: "event"
+            },
+            {
+                anonymous: false,
+                inputs: [
+                    {
+                        indexed: true,
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "originForkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "stateMachineStateHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "participants",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestOutboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestOutboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalDeposits",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalWithdrawals",
+                                        type: "tuple"
+                                    }
+                                ],
+                                internalType: "struct SnapshotData",
+                                name: "snapshotData",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "forkId",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        indexed: false,
+                        internalType: "struct StateSnapshot",
+                        name: "stateSnapshot",
+                        type: "tuple"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "bytes",
+                        name: "encodedState",
+                        type: "bytes"
+                    }
+                ],
+                name: "ChannelOpened",
+                type: "event"
+            },
+            {
+                anonymous: false,
+                inputs: [
+                    {
+                        indexed: true,
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "bytes32",
+                        name: "latestInboundMessageBlockHash",
+                        type: "bytes32"
+                    }
+                ],
+                name: "ChannelStorageCleared",
+                type: "event"
+            },
+            {
+                anonymous: false,
+                inputs: [
+                    {
+                        indexed: true,
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes",
+                                        name: "encodedDispute",
+                                        type: "bytes"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "signature",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct SignedDispute",
+                                name: "signedDispute",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes[]",
+                                name: "signatures",
+                                type: "bytes[]"
+                            }
+                        ],
+                        indexed: false,
+                        internalType: "struct DisputeConfirmation",
+                        name: "disputeConfirmation",
+                        type: "tuple"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "uint256",
+                        name: "disputeCreationTimestamp",
+                        type: "uint256"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "bool",
+                        name: "isFinal",
+                        type: "bool"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "uint256",
+                        name: "windowCreationTimestamp",
+                        type: "uint256"
+                    }
+                ],
+                name: "DisputeCommitted",
+                type: "event"
+            },
+            {
+                anonymous: false,
+                inputs: [
+                    {
+                        indexed: true,
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes",
+                                        name: "encodedDispute",
+                                        type: "bytes"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "signature",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct SignedDispute",
+                                name: "signedDispute",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes[]",
+                                name: "signatures",
+                                type: "bytes[]"
+                            }
+                        ],
+                        indexed: false,
+                        internalType: "struct DisputeConfirmation",
+                        name: "disputeConfirmation",
+                        type: "tuple"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "uint256",
+                        name: "disputeCreationTimestamp",
+                        type: "uint256"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "bool",
+                        name: "isFinal",
+                        type: "bool"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "uint256",
+                        name: "windowCreationTimestamp",
+                        type: "uint256"
+                    },
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "originForkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "stateMachineStateHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "participants",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestOutboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestOutboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalDeposits",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalWithdrawals",
+                                        type: "tuple"
+                                    }
+                                ],
+                                internalType: "struct SnapshotData",
+                                name: "genesisStateSnapshotData",
+                                type: "tuple"
+                            },
+                            {
+                                components: [
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "originForkId",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "stateMachineStateHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address[]",
+                                                name: "participants",
+                                                type: "address[]"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestInboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "latestInboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestOutboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "latestOutboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "totalDeposits",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "totalWithdrawals",
+                                                type: "tuple"
+                                            }
+                                        ],
+                                        internalType: "struct SnapshotData",
+                                        name: "snapshotData",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "forkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct StateSnapshot",
+                                name: "latestStateSnapshot",
+                                type: "tuple"
+                            },
+                            {
+                                components: [
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "originForkId",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "stateMachineStateHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address[]",
+                                                name: "participants",
+                                                type: "address[]"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestInboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "latestInboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestOutboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "latestOutboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "totalDeposits",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "totalWithdrawals",
+                                                type: "tuple"
+                                            }
+                                        ],
+                                        internalType: "struct SnapshotData",
+                                        name: "snapshotData",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "forkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct StateSnapshot[]",
+                                name: "milestoneSnapshots",
+                                type: "tuple[]"
+                            },
+                            {
+                                internalType: "bytes",
+                                name: "latestStateStateMachineState",
+                                type: "bytes"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "previousBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "messageType",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "participant",
+                                                type: "address"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "balance",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Message[]",
+                                        name: "messages",
+                                        type: "tuple[]"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalBalance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct MessageBlock[]",
+                                name: "inboundMessageBlocks",
+                                type: "tuple[]"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "previousBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "messageType",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "participant",
+                                                type: "address"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "balance",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Message[]",
+                                        name: "messages",
+                                        type: "tuple[]"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalBalance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct MessageBlock[]",
+                                name: "outboundMessageBlocks",
+                                type: "tuple[]"
+                            }
+                        ],
+                        indexed: false,
+                        internalType: "struct DisputeAuditingData",
+                        name: "disputeAuditingData",
+                        type: "tuple"
+                    }
+                ],
+                name: "DisputeCommittedWithAuditingData",
+                type: "event"
+            },
+            {
+                anonymous: false,
+                inputs: [
+                    {
+                        indexed: true,
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "bytes32",
+                        name: "forkId",
+                        type: "bytes32"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "address",
+                        name: "disputer",
+                        type: "address"
+                    }
+                ],
+                name: "DisputeKilled",
+                type: "event"
+            },
+            {
+                anonymous: false,
+                inputs: [
+                    {
+                        indexed: true,
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "bytes32",
+                        name: "forkId",
+                        type: "bytes32"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "bytes32",
+                        name: "reducedForkId",
+                        type: "bytes32"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "uint256",
+                        name: "reductionTimestamp",
+                        type: "uint256"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "address",
+                        name: "reducer",
+                        type: "address"
+                    }
+                ],
+                name: "DisputeReducedResultCommitted",
+                type: "event"
+            },
+            {
+                anonymous: false,
+                inputs: [
+                    {
+                        indexed: true,
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        components: [
+                            {
+                                internalType: "bytes32",
+                                name: "previousBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "messageType",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "participant",
+                                        type: "address"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "balance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Message[]",
+                                name: "messages",
+                                type: "tuple[]"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalBalance",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        indexed: false,
+                        internalType: "struct MessageBlock",
+                        name: "messageBlock",
+                        type: "tuple"
+                    }
+                ],
+                name: "InboundMessagesProcessed",
+                type: "event"
+            },
+            {
+                anonymous: false,
+                inputs: [
+                    {
+                        indexed: true,
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        components: [
+                            {
+                                internalType: "bytes32",
+                                name: "previousBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "messageType",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "participant",
+                                        type: "address"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "balance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Message[]",
+                                name: "messages",
+                                type: "tuple[]"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalBalance",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        indexed: false,
+                        internalType: "struct MessageBlock",
+                        name: "messageBlock",
+                        type: "tuple"
+                    },
+                    {
+                        indexed: false,
+                        internalType: "uint256",
+                        name: "timestamp",
+                        type: "uint256"
+                    },
+                    {
+                        components: [
+                            {
+                                internalType: "uint256",
+                                name: "amount",
+                                type: "uint256"
+                            },
+                            {
+                                internalType: "bytes",
+                                name: "data",
+                                type: "bytes"
+                            }
+                        ],
+                        indexed: false,
+                        internalType: "struct Balance",
+                        name: "totalWithdrawals",
+                        type: "tuple"
+                    }
+                ],
+                name: "OutboundMessagesProcessed",
+                type: "event"
+            },
+            {
+                anonymous: false,
+                inputs: [
+                    {
+                        indexed: true,
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "originForkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "stateMachineStateHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "participants",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestOutboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestOutboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalDeposits",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalWithdrawals",
+                                        type: "tuple"
+                                    }
+                                ],
+                                internalType: "struct SnapshotData",
+                                name: "snapshotData",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "forkId",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        indexed: false,
+                        internalType: "struct StateSnapshot",
+                        name: "stateSnapshot",
+                        type: "tuple"
+                    }
+                ],
+                name: "StateSnapshotUpdated",
+                type: "event"
+            },
+            {
+                anonymous: false,
+                inputs: [
+                    {
+                        indexed: true,
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        components: [
+                            {
+                                internalType: "uint256",
+                                name: "amount",
+                                type: "uint256"
+                            },
+                            {
+                                internalType: "bytes",
+                                name: "data",
+                                type: "bytes"
+                            }
+                        ],
+                        indexed: false,
+                        internalType: "struct Balance",
+                        name: "totalWithdrawals",
+                        type: "tuple"
+                    }
+                ],
+                name: "WithdrawalsUpdated",
+                type: "event"
+            },
+            {
+                inputs: [
+                    {
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        internalType: "address",
+                        name: "participant",
+                        type: "address"
+                    }
+                ],
+                name: "_canParticipateInDisputes",
+                outputs: [
+                    {
+                        internalType: "bool",
+                        name: "",
+                        type: "bool"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        components: [
+                            {
+                                internalType: "bytes32",
+                                name: "previousBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "messageType",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "participant",
+                                        type: "address"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "balance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Message[]",
+                                name: "messages",
+                                type: "tuple[]"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalBalance",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        internalType: "struct MessageBlock[]",
+                        name: "outboundMessageBlocks",
+                        type: "tuple[]"
+                    },
+                    {
+                        components: [
+                            {
+                                internalType: "bytes32",
+                                name: "originForkId",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "stateMachineStateHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "address[]",
+                                name: "participants",
+                                type: "address[]"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "latestInboundMessageBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "latestInboundMessageBlockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "latestOutboundMessageBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "latestOutboundMessageBlockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalDeposits",
+                                type: "tuple"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalWithdrawals",
+                                type: "tuple"
+                            }
+                        ],
+                        internalType: "struct SnapshotData",
+                        name: "fromSnapshot",
+                        type: "tuple"
+                    },
+                    {
+                        components: [
+                            {
+                                internalType: "bytes32",
+                                name: "originForkId",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "stateMachineStateHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "address[]",
+                                name: "participants",
+                                type: "address[]"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "latestInboundMessageBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "latestInboundMessageBlockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "latestOutboundMessageBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "latestOutboundMessageBlockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalDeposits",
+                                type: "tuple"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalWithdrawals",
+                                type: "tuple"
+                            }
+                        ],
+                        internalType: "struct SnapshotData",
+                        name: "toSnapshot",
+                        type: "tuple"
+                    }
+                ],
+                name: "_verifyOutboundMessageBlocks",
+                outputs: [
+                    {
+                        internalType: "bool",
+                        name: "",
+                        type: "bool"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [],
+                name: "agreementTime",
+                outputs: [
+                    {
+                        internalType: "uint256",
+                        name: "",
+                        type: "uint256"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        components: [
+                            {
+                                internalType: "enum DisputeFraudProofType",
+                                name: "proofType",
+                                type: "uint8"
+                            },
+                            {
+                                internalType: "address",
+                                name: "participant",
+                                type: "address"
+                            },
+                            {
+                                components: [
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "channelId",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "forkId",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestStateSnapshotHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestInboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "lastInboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        components: [
+                                                            {
+                                                                components: [
+                                                                    {
+                                                                        components:
+                                                                            [
+                                                                                {
+                                                                                    internalType:
+                                                                                        "bytes",
+                                                                                    name: "encodedBlock",
+                                                                                    type: "bytes"
+                                                                                },
+                                                                                {
+                                                                                    internalType:
+                                                                                        "bytes",
+                                                                                    name: "signature",
+                                                                                    type: "bytes"
+                                                                                }
+                                                                            ],
+                                                                        internalType:
+                                                                            "struct SignedBlock",
+                                                                        name: "signedBlock",
+                                                                        type: "tuple"
+                                                                    },
+                                                                    {
+                                                                        internalType:
+                                                                            "bytes[]",
+                                                                        name: "signatures",
+                                                                        type: "bytes[]"
+                                                                    }
+                                                                ],
+                                                                internalType:
+                                                                    "struct BlockConfirmation[]",
+                                                                name: "blockConfirmations",
+                                                                type: "tuple[]"
+                                                            }
+                                                        ],
+                                                        internalType:
+                                                            "struct MilestoneProof[]",
+                                                        name: "milestones",
+                                                        type: "tuple[]"
+                                                    },
+                                                    {
+                                                        components: [
+                                                            {
+                                                                internalType:
+                                                                    "bytes",
+                                                                name: "encodedBlock",
+                                                                type: "bytes"
+                                                            },
+                                                            {
+                                                                internalType:
+                                                                    "bytes",
+                                                                name: "signature",
+                                                                type: "bytes"
+                                                            }
+                                                        ],
+                                                        internalType:
+                                                            "struct SignedBlock[]",
+                                                        name: "signedBlocks",
+                                                        type: "tuple[]"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct StateProof",
+                                                name: "stateProof",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                internalType: "address[]",
+                                                name: "onChainSlashes",
+                                                type: "address[]"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "disputeAuditingDataHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "disputer",
+                                                type: "address"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "address",
+                                                        name: "participant",
+                                                        type: "address"
+                                                    },
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "blockHeight",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "minTimeStamp",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bool",
+                                                        name: "isForced",
+                                                        type: "bool"
+                                                    },
+                                                    {
+                                                        internalType: "address",
+                                                        name: "previousBlockProducer",
+                                                        type: "address"
+                                                    },
+                                                    {
+                                                        internalType: "bool",
+                                                        name: "previousBlockProducerPostedCalldata",
+                                                        type: "bool"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "participantSignatureOnPreviousBlock",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Timeout",
+                                                name: "timeout",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                internalType: "bool",
+                                                name: "selfRemoval",
+                                                type: "bool"
+                                            }
+                                        ],
+                                        internalType: "struct DisputeInput",
+                                        name: "input",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "outputSnapshotDataHash",
+                                        type: "bytes32"
+                                    }
+                                ],
+                                internalType: "struct Dispute",
+                                name: "dispute",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes",
+                                name: "encodedProof",
+                                type: "bytes"
+                            }
+                        ],
+                        internalType: "struct DisputeFraudProof[]",
+                        name: "proofs",
+                        type: "tuple[]"
+                    }
+                ],
+                name: "applyDisputeFraudProofs",
+                outputs: [],
+                stateMutability: "nonpayable",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        internalType: "bytes",
+                        name: "encodedState",
+                        type: "bytes"
+                    },
+                    {
+                        components: [
+                            {
+                                internalType: "bytes32",
+                                name: "channelId",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "address",
+                                name: "participant",
+                                type: "address"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "deadlineTimestamp",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "balance",
+                                type: "tuple"
+                            }
+                        ],
+                        internalType: "struct JoinChannel[]",
+                        name: "joinChannels",
+                        type: "tuple[]"
+                    }
+                ],
+                name: "applyJoinChannelToStateMachine",
+                outputs: [
+                    {
+                        internalType: "bytes",
+                        name: "encodedModifiedState",
+                        type: "bytes"
+                    }
+                ],
+                stateMutability: "nonpayable",
+                type: "function"
+            },
+            {
+                inputs: [],
+                name: "chainFallbackTime",
+                outputs: [
+                    {
+                        internalType: "uint256",
+                        name: "",
+                        type: "uint256"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "channelId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "forkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestStateSnapshotHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "lastInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                components: [
+                                                    {
+                                                        components: [
+                                                            {
+                                                                components: [
+                                                                    {
+                                                                        internalType:
+                                                                            "bytes",
+                                                                        name: "encodedBlock",
+                                                                        type: "bytes"
+                                                                    },
+                                                                    {
+                                                                        internalType:
+                                                                            "bytes",
+                                                                        name: "signature",
+                                                                        type: "bytes"
+                                                                    }
+                                                                ],
+                                                                internalType:
+                                                                    "struct SignedBlock",
+                                                                name: "signedBlock",
+                                                                type: "tuple"
+                                                            },
+                                                            {
+                                                                internalType:
+                                                                    "bytes[]",
+                                                                name: "signatures",
+                                                                type: "bytes[]"
+                                                            }
+                                                        ],
+                                                        internalType:
+                                                            "struct BlockConfirmation[]",
+                                                        name: "blockConfirmations",
+                                                        type: "tuple[]"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct MilestoneProof[]",
+                                                name: "milestones",
+                                                type: "tuple[]"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "encodedBlock",
+                                                        type: "bytes"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "signature",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct SignedBlock[]",
+                                                name: "signedBlocks",
+                                                type: "tuple[]"
+                                            }
+                                        ],
+                                        internalType: "struct StateProof",
+                                        name: "stateProof",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "onChainSlashes",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "disputeAuditingDataHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "disputer",
+                                        type: "address"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "address",
+                                                name: "participant",
+                                                type: "address"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "blockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "minTimeStamp",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bool",
+                                                name: "isForced",
+                                                type: "bool"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "previousBlockProducer",
+                                                type: "address"
+                                            },
+                                            {
+                                                internalType: "bool",
+                                                name: "previousBlockProducerPostedCalldata",
+                                                type: "bool"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "participantSignatureOnPreviousBlock",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Timeout",
+                                        name: "timeout",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bool",
+                                        name: "selfRemoval",
+                                        type: "bool"
+                                    }
+                                ],
+                                internalType: "struct DisputeInput",
+                                name: "input",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "outputSnapshotDataHash",
+                                type: "bytes32"
+                            }
+                        ],
+                        internalType: "struct Dispute[]",
+                        name: "disputes",
+                        type: "tuple[]"
+                    },
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "originForkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "stateMachineStateHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "participants",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestOutboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestOutboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalDeposits",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalWithdrawals",
+                                        type: "tuple"
+                                    }
+                                ],
+                                internalType: "struct SnapshotData",
+                                name: "snapshotData",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "forkId",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        internalType: "struct StateSnapshot",
+                        name: "latestStateSnapshot",
+                        type: "tuple"
+                    },
+                    {
+                        internalType: "bytes",
+                        name: "encodedStateMachineState",
+                        type: "bytes"
+                    },
+                    {
+                        components: [
+                            {
+                                internalType: "bytes32",
+                                name: "previousBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "messageType",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "participant",
+                                        type: "address"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "balance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Message[]",
+                                name: "messages",
+                                type: "tuple[]"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalBalance",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        internalType: "struct MessageBlock[]",
+                        name: "inboundMessageBlocks",
+                        type: "tuple[]"
+                    }
+                ],
+                name: "challengeDisputeReduction",
+                outputs: [],
+                stateMutability: "nonpayable",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "channelId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "forkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestStateSnapshotHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "lastInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                components: [
+                                                    {
+                                                        components: [
+                                                            {
+                                                                components: [
+                                                                    {
+                                                                        internalType:
+                                                                            "bytes",
+                                                                        name: "encodedBlock",
+                                                                        type: "bytes"
+                                                                    },
+                                                                    {
+                                                                        internalType:
+                                                                            "bytes",
+                                                                        name: "signature",
+                                                                        type: "bytes"
+                                                                    }
+                                                                ],
+                                                                internalType:
+                                                                    "struct SignedBlock",
+                                                                name: "signedBlock",
+                                                                type: "tuple"
+                                                            },
+                                                            {
+                                                                internalType:
+                                                                    "bytes[]",
+                                                                name: "signatures",
+                                                                type: "bytes[]"
+                                                            }
+                                                        ],
+                                                        internalType:
+                                                            "struct BlockConfirmation[]",
+                                                        name: "blockConfirmations",
+                                                        type: "tuple[]"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct MilestoneProof[]",
+                                                name: "milestones",
+                                                type: "tuple[]"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "encodedBlock",
+                                                        type: "bytes"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "signature",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct SignedBlock[]",
+                                                name: "signedBlocks",
+                                                type: "tuple[]"
+                                            }
+                                        ],
+                                        internalType: "struct StateProof",
+                                        name: "stateProof",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "onChainSlashes",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "disputeAuditingDataHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "disputer",
+                                        type: "address"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "address",
+                                                name: "participant",
+                                                type: "address"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "blockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "minTimeStamp",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bool",
+                                                name: "isForced",
+                                                type: "bool"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "previousBlockProducer",
+                                                type: "address"
+                                            },
+                                            {
+                                                internalType: "bool",
+                                                name: "previousBlockProducerPostedCalldata",
+                                                type: "bool"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "participantSignatureOnPreviousBlock",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Timeout",
+                                        name: "timeout",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bool",
+                                        name: "selfRemoval",
+                                        type: "bool"
+                                    }
+                                ],
+                                internalType: "struct DisputeInput",
+                                name: "input",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "outputSnapshotDataHash",
+                                type: "bytes32"
+                            }
+                        ],
+                        internalType: "struct Dispute",
+                        name: "dispute",
+                        type: "tuple"
+                    },
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "originForkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "stateMachineStateHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "participants",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestOutboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestOutboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalDeposits",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalWithdrawals",
+                                        type: "tuple"
+                                    }
+                                ],
+                                internalType: "struct SnapshotData",
+                                name: "genesisStateSnapshotData",
+                                type: "tuple"
+                            },
+                            {
+                                components: [
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "originForkId",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "stateMachineStateHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address[]",
+                                                name: "participants",
+                                                type: "address[]"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestInboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "latestInboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestOutboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "latestOutboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "totalDeposits",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "totalWithdrawals",
+                                                type: "tuple"
+                                            }
+                                        ],
+                                        internalType: "struct SnapshotData",
+                                        name: "snapshotData",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "forkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct StateSnapshot",
+                                name: "latestStateSnapshot",
+                                type: "tuple"
+                            },
+                            {
+                                components: [
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "originForkId",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "stateMachineStateHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address[]",
+                                                name: "participants",
+                                                type: "address[]"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestInboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "latestInboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestOutboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "latestOutboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "totalDeposits",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "totalWithdrawals",
+                                                type: "tuple"
+                                            }
+                                        ],
+                                        internalType: "struct SnapshotData",
+                                        name: "snapshotData",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "forkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct StateSnapshot[]",
+                                name: "milestoneSnapshots",
+                                type: "tuple[]"
+                            },
+                            {
+                                internalType: "bytes",
+                                name: "latestStateStateMachineState",
+                                type: "bytes"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "previousBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "messageType",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "participant",
+                                                type: "address"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "balance",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Message[]",
+                                        name: "messages",
+                                        type: "tuple[]"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalBalance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct MessageBlock[]",
+                                name: "inboundMessageBlocks",
+                                type: "tuple[]"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "previousBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "messageType",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "participant",
+                                                type: "address"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "balance",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Message[]",
+                                        name: "messages",
+                                        type: "tuple[]"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalBalance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct MessageBlock[]",
+                                name: "outboundMessageBlocks",
+                                type: "tuple[]"
+                            }
+                        ],
+                        internalType: "struct DisputeAuditingData",
+                        name: "disputeAuditingData",
+                        type: "tuple"
+                    }
+                ],
+                name: "checkDisputeAuditingDataCommitment",
+                outputs: [
+                    {
+                        internalType: "bool",
+                        name: "",
+                        type: "bool"
+                    }
+                ],
+                stateMutability: "pure",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        components: [
+                            {
+                                internalType: "bytes32",
+                                name: "channelId",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "forkId",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "latestStateSnapshotHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "latestInboundMessageBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "lastInboundMessageBlockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        components: [
+                                            {
+                                                components: [
+                                                    {
+                                                        components: [
+                                                            {
+                                                                internalType:
+                                                                    "bytes",
+                                                                name: "encodedBlock",
+                                                                type: "bytes"
+                                                            },
+                                                            {
+                                                                internalType:
+                                                                    "bytes",
+                                                                name: "signature",
+                                                                type: "bytes"
+                                                            }
+                                                        ],
+                                                        internalType:
+                                                            "struct SignedBlock",
+                                                        name: "signedBlock",
+                                                        type: "tuple"
+                                                    },
+                                                    {
+                                                        internalType: "bytes[]",
+                                                        name: "signatures",
+                                                        type: "bytes[]"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct BlockConfirmation[]",
+                                                name: "blockConfirmations",
+                                                type: "tuple[]"
+                                            }
+                                        ],
+                                        internalType: "struct MilestoneProof[]",
+                                        name: "milestones",
+                                        type: "tuple[]"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes",
+                                                name: "encodedBlock",
+                                                type: "bytes"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "signature",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct SignedBlock[]",
+                                        name: "signedBlocks",
+                                        type: "tuple[]"
+                                    }
+                                ],
+                                internalType: "struct StateProof",
+                                name: "stateProof",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "address[]",
+                                name: "onChainSlashes",
+                                type: "address[]"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "disputeAuditingDataHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "address",
+                                name: "disputer",
+                                type: "address"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "address",
+                                        name: "participant",
+                                        type: "address"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "minTimeStamp",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bool",
+                                        name: "isForced",
+                                        type: "bool"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "previousBlockProducer",
+                                        type: "address"
+                                    },
+                                    {
+                                        internalType: "bool",
+                                        name: "previousBlockProducerPostedCalldata",
+                                        type: "bool"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "participantSignatureOnPreviousBlock",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Timeout",
+                                name: "timeout",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bool",
+                                name: "selfRemoval",
+                                type: "bool"
+                            }
+                        ],
+                        internalType: "struct DisputeInput",
+                        name: "disputeInput",
+                        type: "tuple"
+                    },
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "originForkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "stateMachineStateHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "participants",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestOutboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestOutboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalDeposits",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalWithdrawals",
+                                        type: "tuple"
+                                    }
+                                ],
+                                internalType: "struct SnapshotData",
+                                name: "snapshotData",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "forkId",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        internalType: "struct StateSnapshot",
+                        name: "latestStateSnapshot",
+                        type: "tuple"
+                    },
+                    {
+                        internalType: "bytes",
+                        name: "latestStateMachineState",
+                        type: "bytes"
+                    },
+                    {
+                        components: [
+                            {
+                                internalType: "bytes32",
+                                name: "previousBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "messageType",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "participant",
+                                        type: "address"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "balance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Message[]",
+                                name: "messages",
+                                type: "tuple[]"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalBalance",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        internalType: "struct MessageBlock[]",
+                        name: "inboundMessageBlocks",
+                        type: "tuple[]"
+                    }
+                ],
+                name: "computeDisputeOutputSnapshotData",
+                outputs: [
+                    {
+                        components: [
+                            {
+                                internalType: "bytes32",
+                                name: "originForkId",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "stateMachineStateHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "address[]",
+                                name: "participants",
+                                type: "address[]"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "latestInboundMessageBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "latestInboundMessageBlockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "latestOutboundMessageBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "latestOutboundMessageBlockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalDeposits",
+                                type: "tuple"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalWithdrawals",
+                                type: "tuple"
+                            }
+                        ],
+                        internalType: "struct SnapshotData",
+                        name: "",
+                        type: "tuple"
+                    }
+                ],
+                stateMutability: "nonpayable",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        internalType: "bytes",
+                        name: "encodedBlock",
+                        type: "bytes"
+                    }
+                ],
+                name: "decodeBlock",
+                outputs: [
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "channelId",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "participant",
+                                                type: "address"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "forkId",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "transactionCnt",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "timestamp",
+                                                type: "uint256"
+                                            }
+                                        ],
+                                        internalType:
+                                            "struct TransactionHeader",
+                                        name: "header",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes",
+                                                name: "encodedData",
+                                                type: "bytes"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct TransactionBody",
+                                        name: "body",
+                                        type: "tuple"
+                                    }
+                                ],
+                                internalType: "struct Transaction",
+                                name: "transaction",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "stateSnapshotHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "previousBlockHash",
+                                type: "bytes32"
+                            }
+                        ],
+                        internalType: "struct Block",
+                        name: "",
+                        type: "tuple"
+                    }
+                ],
+                stateMutability: "pure",
+                type: "function"
+            },
+            {
+                inputs: [],
+                name: "evidenceTime",
+                outputs: [
+                    {
+                        internalType: "uint256",
+                        name: "",
+                        type: "uint256"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [],
+                name: "gasLimit",
+                outputs: [
+                    {
+                        internalType: "uint256",
+                        name: "",
+                        type: "uint256"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        internalType: "bytes",
+                        name: "encodedStateMachineState",
+                        type: "bytes"
+                    },
+                    {
+                        internalType: "address[]",
+                        name: "slashParticipants",
+                        type: "address[]"
+                    },
+                    {
+                        internalType: "address[]",
+                        name: "removeParticipants",
+                        type: "address[]"
+                    },
+                    {
+                        components: [
+                            {
+                                internalType: "bytes32",
+                                name: "previousBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "messageType",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "participant",
+                                        type: "address"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "balance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Message[]",
+                                name: "messages",
+                                type: "tuple[]"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalBalance",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        internalType: "struct MessageBlock[]",
+                        name: "inboundMessageBlocks",
+                        type: "tuple[]"
+                    },
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "originForkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "stateMachineStateHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "participants",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestOutboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestOutboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalDeposits",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalWithdrawals",
+                                        type: "tuple"
+                                    }
+                                ],
+                                internalType: "struct SnapshotData",
+                                name: "snapshotData",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "forkId",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        internalType: "struct StateSnapshot",
+                        name: "latestStateSnapshot",
+                        type: "tuple"
+                    }
+                ],
+                name: "generateDisputeOutputState",
+                outputs: [
+                    {
+                        components: [
+                            {
+                                internalType: "bytes",
+                                name: "encodedModifiedState",
+                                type: "bytes"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "previousBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "messageType",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "participant",
+                                                type: "address"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "balance",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Message[]",
+                                        name: "messages",
+                                        type: "tuple[]"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalBalance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct MessageBlock",
+                                name: "outboundMessageBlock",
+                                type: "tuple"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalDeposits",
+                                type: "tuple"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalWithdrawals",
+                                type: "tuple"
+                            }
+                        ],
+                        internalType: "struct DisputeOutputState",
+                        name: "outputState",
+                        type: "tuple"
+                    }
+                ],
+                stateMutability: "nonpayable",
+                type: "function"
+            },
+            {
+                inputs: [],
+                name: "getAgreementTime",
+                outputs: [
+                    {
+                        internalType: "uint256",
+                        name: "",
+                        type: "uint256"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [],
+                name: "getAllTimes",
+                outputs: [
+                    {
+                        internalType: "uint256",
+                        name: "",
+                        type: "uint256"
+                    },
+                    {
+                        internalType: "uint256",
+                        name: "",
+                        type: "uint256"
+                    },
+                    {
+                        internalType: "uint256",
+                        name: "",
+                        type: "uint256"
+                    },
+                    {
+                        internalType: "uint256",
+                        name: "",
+                        type: "uint256"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        internalType: "bytes32",
+                        name: "forkId",
+                        type: "bytes32"
+                    },
+                    {
+                        internalType: "uint256",
+                        name: "blockHeight",
+                        type: "uint256"
+                    },
+                    {
+                        internalType: "address",
+                        name: "participant",
+                        type: "address"
+                    }
+                ],
+                name: "getBlockCallDataCommitment",
+                outputs: [
+                    {
+                        internalType: "bool",
+                        name: "found",
+                        type: "bool"
+                    },
+                    {
+                        internalType: "bytes32",
+                        name: "blockCalldataCommitment",
+                        type: "bytes32"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [],
+                name: "getChainFallbackTime",
+                outputs: [
+                    {
+                        internalType: "uint256",
+                        name: "",
+                        type: "uint256"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [],
+                name: "getEvidenceTime",
+                outputs: [
+                    {
+                        internalType: "uint256",
+                        name: "",
+                        type: "uint256"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [],
+                name: "getGasLimit",
+                outputs: [
+                    {
+                        internalType: "uint256",
+                        name: "",
+                        type: "uint256"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        internalType: "bytes32",
+                        name: "originForkId",
+                        type: "bytes32"
+                    },
+                    {
+                        internalType: "bytes32",
+                        name: "forkId",
+                        type: "bytes32"
+                    }
+                ],
+                name: "getGenesisTimestamp",
+                outputs: [
+                    {
+                        internalType: "bool",
+                        name: "isAvailable",
+                        type: "bool"
+                    },
+                    {
+                        internalType: "uint256",
+                        name: "timestamp",
+                        type: "uint256"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    }
+                ],
+                name: "getOnChainSlashedParticipants",
+                outputs: [
+                    {
+                        internalType: "address[]",
+                        name: "",
+                        type: "address[]"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        internalType: "uint256",
+                        name: "timestamp",
+                        type: "uint256"
+                    }
+                ],
+                name: "getOnChainSlashedParticipantsUpToTimestamp",
+                outputs: [
+                    {
+                        internalType: "address[]",
+                        name: "",
+                        type: "address[]"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    }
+                ],
+                name: "getOnChainThresholdSet",
+                outputs: [
+                    {
+                        internalType: "address[]",
+                        name: "",
+                        type: "address[]"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [],
+                name: "getP2pTime",
+                outputs: [
+                    {
+                        internalType: "uint256",
+                        name: "",
+                        type: "uint256"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    }
+                ],
+                name: "getPendingParticipants",
+                outputs: [
+                    {
+                        internalType: "address[]",
+                        name: "",
+                        type: "address[]"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    }
+                ],
+                name: "getSnapshotParticipants",
+                outputs: [
+                    {
+                        internalType: "address[]",
+                        name: "",
+                        type: "address[]"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        internalType: "bytes",
+                        name: "encodedState",
+                        type: "bytes"
+                    }
+                ],
+                name: "getStateMachineParticipants",
+                outputs: [
+                    {
+                        internalType: "address[]",
+                        name: "",
+                        type: "address[]"
+                    }
+                ],
+                stateMutability: "nonpayable",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    }
+                ],
+                name: "getStateSnapshot",
+                outputs: [
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "originForkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "stateMachineStateHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "participants",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestOutboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestOutboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalDeposits",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalWithdrawals",
+                                        type: "tuple"
+                                    }
+                                ],
+                                internalType: "struct SnapshotData",
+                                name: "snapshotData",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "forkId",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        internalType: "struct StateSnapshot",
+                        name: "",
+                        type: "tuple"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        components: [
+                            {
+                                internalType: "bytes",
+                                name: "encodedBlock",
+                                type: "bytes"
+                            },
+                            {
+                                internalType: "bytes",
+                                name: "signature",
+                                type: "bytes"
+                            }
+                        ],
+                        internalType: "struct SignedBlock",
+                        name: "_block",
+                        type: "tuple"
+                    }
+                ],
+                name: "isBlockAuthentic",
+                outputs: [
+                    {
+                        internalType: "bool",
+                        name: "",
+                        type: "bool"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "channelId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "forkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestStateSnapshotHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "lastInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                components: [
+                                                    {
+                                                        components: [
+                                                            {
+                                                                components: [
+                                                                    {
+                                                                        internalType:
+                                                                            "bytes",
+                                                                        name: "encodedBlock",
+                                                                        type: "bytes"
+                                                                    },
+                                                                    {
+                                                                        internalType:
+                                                                            "bytes",
+                                                                        name: "signature",
+                                                                        type: "bytes"
+                                                                    }
+                                                                ],
+                                                                internalType:
+                                                                    "struct SignedBlock",
+                                                                name: "signedBlock",
+                                                                type: "tuple"
+                                                            },
+                                                            {
+                                                                internalType:
+                                                                    "bytes[]",
+                                                                name: "signatures",
+                                                                type: "bytes[]"
+                                                            }
+                                                        ],
+                                                        internalType:
+                                                            "struct BlockConfirmation[]",
+                                                        name: "blockConfirmations",
+                                                        type: "tuple[]"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct MilestoneProof[]",
+                                                name: "milestones",
+                                                type: "tuple[]"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "encodedBlock",
+                                                        type: "bytes"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "signature",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct SignedBlock[]",
+                                                name: "signedBlocks",
+                                                type: "tuple[]"
+                                            }
+                                        ],
+                                        internalType: "struct StateProof",
+                                        name: "stateProof",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "onChainSlashes",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "disputeAuditingDataHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "disputer",
+                                        type: "address"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "address",
+                                                name: "participant",
+                                                type: "address"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "blockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "minTimeStamp",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bool",
+                                                name: "isForced",
+                                                type: "bool"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "previousBlockProducer",
+                                                type: "address"
+                                            },
+                                            {
+                                                internalType: "bool",
+                                                name: "previousBlockProducerPostedCalldata",
+                                                type: "bool"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "participantSignatureOnPreviousBlock",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Timeout",
+                                        name: "timeout",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bool",
+                                        name: "selfRemoval",
+                                        type: "bool"
+                                    }
+                                ],
+                                internalType: "struct DisputeInput",
+                                name: "input",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "outputSnapshotDataHash",
+                                type: "bytes32"
+                            }
+                        ],
+                        internalType: "struct Dispute",
+                        name: "dispute",
+                        type: "tuple"
+                    },
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "originForkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "stateMachineStateHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "participants",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestOutboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestOutboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalDeposits",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalWithdrawals",
+                                        type: "tuple"
+                                    }
+                                ],
+                                internalType: "struct SnapshotData",
+                                name: "genesisStateSnapshotData",
+                                type: "tuple"
+                            },
+                            {
+                                components: [
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "originForkId",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "stateMachineStateHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address[]",
+                                                name: "participants",
+                                                type: "address[]"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestInboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "latestInboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestOutboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "latestOutboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "totalDeposits",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "totalWithdrawals",
+                                                type: "tuple"
+                                            }
+                                        ],
+                                        internalType: "struct SnapshotData",
+                                        name: "snapshotData",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "forkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct StateSnapshot",
+                                name: "latestStateSnapshot",
+                                type: "tuple"
+                            },
+                            {
+                                components: [
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "originForkId",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "stateMachineStateHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address[]",
+                                                name: "participants",
+                                                type: "address[]"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestInboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "latestInboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestOutboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "latestOutboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "totalDeposits",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "totalWithdrawals",
+                                                type: "tuple"
+                                            }
+                                        ],
+                                        internalType: "struct SnapshotData",
+                                        name: "snapshotData",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "forkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct StateSnapshot[]",
+                                name: "milestoneSnapshots",
+                                type: "tuple[]"
+                            },
+                            {
+                                internalType: "bytes",
+                                name: "latestStateStateMachineState",
+                                type: "bytes"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "previousBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "messageType",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "participant",
+                                                type: "address"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "balance",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Message[]",
+                                        name: "messages",
+                                        type: "tuple[]"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalBalance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct MessageBlock[]",
+                                name: "inboundMessageBlocks",
+                                type: "tuple[]"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "previousBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "messageType",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "participant",
+                                                type: "address"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "balance",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Message[]",
+                                        name: "messages",
+                                        type: "tuple[]"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalBalance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct MessageBlock[]",
+                                name: "outboundMessageBlocks",
+                                type: "tuple[]"
+                            }
+                        ],
+                        internalType: "struct DisputeAuditingData",
+                        name: "disputeAuditingData",
+                        type: "tuple"
+                    }
+                ],
+                name: "isCorrectAuditingData",
+                outputs: [
+                    {
+                        internalType: "bool",
+                        name: "",
+                        type: "bool"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "channelId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "forkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestStateSnapshotHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "lastInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                components: [
+                                                    {
+                                                        components: [
+                                                            {
+                                                                components: [
+                                                                    {
+                                                                        internalType:
+                                                                            "bytes",
+                                                                        name: "encodedBlock",
+                                                                        type: "bytes"
+                                                                    },
+                                                                    {
+                                                                        internalType:
+                                                                            "bytes",
+                                                                        name: "signature",
+                                                                        type: "bytes"
+                                                                    }
+                                                                ],
+                                                                internalType:
+                                                                    "struct SignedBlock",
+                                                                name: "signedBlock",
+                                                                type: "tuple"
+                                                            },
+                                                            {
+                                                                internalType:
+                                                                    "bytes[]",
+                                                                name: "signatures",
+                                                                type: "bytes[]"
+                                                            }
+                                                        ],
+                                                        internalType:
+                                                            "struct BlockConfirmation[]",
+                                                        name: "blockConfirmations",
+                                                        type: "tuple[]"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct MilestoneProof[]",
+                                                name: "milestones",
+                                                type: "tuple[]"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "encodedBlock",
+                                                        type: "bytes"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "signature",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct SignedBlock[]",
+                                                name: "signedBlocks",
+                                                type: "tuple[]"
+                                            }
+                                        ],
+                                        internalType: "struct StateProof",
+                                        name: "stateProof",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "onChainSlashes",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "disputeAuditingDataHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "disputer",
+                                        type: "address"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "address",
+                                                name: "participant",
+                                                type: "address"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "blockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "minTimeStamp",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bool",
+                                                name: "isForced",
+                                                type: "bool"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "previousBlockProducer",
+                                                type: "address"
+                                            },
+                                            {
+                                                internalType: "bool",
+                                                name: "previousBlockProducerPostedCalldata",
+                                                type: "bool"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "participantSignatureOnPreviousBlock",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Timeout",
+                                        name: "timeout",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bool",
+                                        name: "selfRemoval",
+                                        type: "bool"
+                                    }
+                                ],
+                                internalType: "struct DisputeInput",
+                                name: "input",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "outputSnapshotDataHash",
+                                type: "bytes32"
+                            }
+                        ],
+                        internalType: "struct Dispute",
+                        name: "dispute",
+                        type: "tuple"
+                    },
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "originForkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "stateMachineStateHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "participants",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestOutboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestOutboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalDeposits",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalWithdrawals",
+                                        type: "tuple"
+                                    }
+                                ],
+                                internalType: "struct SnapshotData",
+                                name: "genesisStateSnapshotData",
+                                type: "tuple"
+                            },
+                            {
+                                components: [
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "originForkId",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "stateMachineStateHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address[]",
+                                                name: "participants",
+                                                type: "address[]"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestInboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "latestInboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestOutboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "latestOutboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "totalDeposits",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "totalWithdrawals",
+                                                type: "tuple"
+                                            }
+                                        ],
+                                        internalType: "struct SnapshotData",
+                                        name: "snapshotData",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "forkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct StateSnapshot",
+                                name: "latestStateSnapshot",
+                                type: "tuple"
+                            },
+                            {
+                                components: [
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "originForkId",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "stateMachineStateHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address[]",
+                                                name: "participants",
+                                                type: "address[]"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestInboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "latestInboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes32",
+                                                name: "latestOutboundMessageBlockHash",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "latestOutboundMessageBlockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "totalDeposits",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "totalWithdrawals",
+                                                type: "tuple"
+                                            }
+                                        ],
+                                        internalType: "struct SnapshotData",
+                                        name: "snapshotData",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "forkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct StateSnapshot[]",
+                                name: "milestoneSnapshots",
+                                type: "tuple[]"
+                            },
+                            {
+                                internalType: "bytes",
+                                name: "latestStateStateMachineState",
+                                type: "bytes"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "previousBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "messageType",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "participant",
+                                                type: "address"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "balance",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Message[]",
+                                        name: "messages",
+                                        type: "tuple[]"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalBalance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct MessageBlock[]",
+                                name: "inboundMessageBlocks",
+                                type: "tuple[]"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "previousBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "bytes32",
+                                                name: "messageType",
+                                                type: "bytes32"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "participant",
+                                                type: "address"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "amount",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType: "struct Balance",
+                                                name: "balance",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Message[]",
+                                        name: "messages",
+                                        type: "tuple[]"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalBalance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "timestamp",
+                                        type: "uint256"
+                                    }
+                                ],
+                                internalType: "struct MessageBlock[]",
+                                name: "outboundMessageBlocks",
+                                type: "tuple[]"
+                            }
+                        ],
+                        internalType: "struct DisputeAuditingData",
+                        name: "disputeAuditingData",
+                        type: "tuple"
+                    }
+                ],
+                name: "isDisputeOutputCorrect",
+                outputs: [
+                    {
+                        internalType: "bool",
+                        name: "",
+                        type: "bool"
+                    }
+                ],
+                stateMutability: "nonpayable",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        internalType: "address",
+                        name: "participant",
+                        type: "address"
+                    }
+                ],
+                name: "isParticipantSlashedOnChain",
+                outputs: [
+                    {
+                        internalType: "bool",
+                        name: "",
+                        type: "bool"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [],
+                name: "p2pTime",
+                outputs: [
+                    {
+                        internalType: "uint256",
+                        name: "",
+                        type: "uint256"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "channelId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "forkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestStateSnapshotHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "lastInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                components: [
+                                                    {
+                                                        components: [
+                                                            {
+                                                                components: [
+                                                                    {
+                                                                        internalType:
+                                                                            "bytes",
+                                                                        name: "encodedBlock",
+                                                                        type: "bytes"
+                                                                    },
+                                                                    {
+                                                                        internalType:
+                                                                            "bytes",
+                                                                        name: "signature",
+                                                                        type: "bytes"
+                                                                    }
+                                                                ],
+                                                                internalType:
+                                                                    "struct SignedBlock",
+                                                                name: "signedBlock",
+                                                                type: "tuple"
+                                                            },
+                                                            {
+                                                                internalType:
+                                                                    "bytes[]",
+                                                                name: "signatures",
+                                                                type: "bytes[]"
+                                                            }
+                                                        ],
+                                                        internalType:
+                                                            "struct BlockConfirmation[]",
+                                                        name: "blockConfirmations",
+                                                        type: "tuple[]"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct MilestoneProof[]",
+                                                name: "milestones",
+                                                type: "tuple[]"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "encodedBlock",
+                                                        type: "bytes"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "signature",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct SignedBlock[]",
+                                                name: "signedBlocks",
+                                                type: "tuple[]"
+                                            }
+                                        ],
+                                        internalType: "struct StateProof",
+                                        name: "stateProof",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "onChainSlashes",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "disputeAuditingDataHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "disputer",
+                                        type: "address"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "address",
+                                                name: "participant",
+                                                type: "address"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "blockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "minTimeStamp",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bool",
+                                                name: "isForced",
+                                                type: "bool"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "previousBlockProducer",
+                                                type: "address"
+                                            },
+                                            {
+                                                internalType: "bool",
+                                                name: "previousBlockProducerPostedCalldata",
+                                                type: "bool"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "participantSignatureOnPreviousBlock",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Timeout",
+                                        name: "timeout",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bool",
+                                        name: "selfRemoval",
+                                        type: "bool"
+                                    }
+                                ],
+                                internalType: "struct DisputeInput",
+                                name: "input",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "outputSnapshotDataHash",
+                                type: "bytes32"
+                            }
+                        ],
+                        internalType: "struct Dispute[]",
+                        name: "disputes",
+                        type: "tuple[]"
+                    }
+                ],
+                name: "reduce",
+                outputs: [
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        components: [
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "bytes32",
+                                                        name: "channelId",
+                                                        type: "bytes32"
+                                                    },
+                                                    {
+                                                        internalType: "address",
+                                                        name: "participant",
+                                                        type: "address"
+                                                    },
+                                                    {
+                                                        internalType: "bytes32",
+                                                        name: "forkId",
+                                                        type: "bytes32"
+                                                    },
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "transactionCnt",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "timestamp",
+                                                        type: "uint256"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct TransactionHeader",
+                                                name: "header",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "encodedData",
+                                                        type: "bytes"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct TransactionBody",
+                                                name: "body",
+                                                type: "tuple"
+                                            }
+                                        ],
+                                        internalType: "struct Transaction",
+                                        name: "transaction",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "stateSnapshotHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "previousBlockHash",
+                                        type: "bytes32"
+                                    }
+                                ],
+                                internalType: "struct Block",
+                                name: "latestBlock",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "address[]",
+                                name: "slashedParticipants",
+                                type: "address[]"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "latestInboundMessageBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "latestInboundMessageBlockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "address",
+                                        name: "participant",
+                                        type: "address"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "minTimeStamp",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bool",
+                                        name: "isForced",
+                                        type: "bool"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "previousBlockProducer",
+                                        type: "address"
+                                    },
+                                    {
+                                        internalType: "bool",
+                                        name: "previousBlockProducerPostedCalldata",
+                                        type: "bool"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "participantSignatureOnPreviousBlock",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Timeout",
+                                name: "timeout",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "address[]",
+                                name: "selfRemovals",
+                                type: "address[]"
+                            }
+                        ],
+                        internalType: "struct ReduceOutput",
+                        name: "reducedOutput",
+                        type: "tuple"
+                    }
+                ],
+                stateMutability: "view",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "channelId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "forkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestStateSnapshotHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "lastInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                components: [
+                                                    {
+                                                        components: [
+                                                            {
+                                                                components: [
+                                                                    {
+                                                                        internalType:
+                                                                            "bytes",
+                                                                        name: "encodedBlock",
+                                                                        type: "bytes"
+                                                                    },
+                                                                    {
+                                                                        internalType:
+                                                                            "bytes",
+                                                                        name: "signature",
+                                                                        type: "bytes"
+                                                                    }
+                                                                ],
+                                                                internalType:
+                                                                    "struct SignedBlock",
+                                                                name: "signedBlock",
+                                                                type: "tuple"
+                                                            },
+                                                            {
+                                                                internalType:
+                                                                    "bytes[]",
+                                                                name: "signatures",
+                                                                type: "bytes[]"
+                                                            }
+                                                        ],
+                                                        internalType:
+                                                            "struct BlockConfirmation[]",
+                                                        name: "blockConfirmations",
+                                                        type: "tuple[]"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct MilestoneProof[]",
+                                                name: "milestones",
+                                                type: "tuple[]"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "encodedBlock",
+                                                        type: "bytes"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "signature",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct SignedBlock[]",
+                                                name: "signedBlocks",
+                                                type: "tuple[]"
+                                            }
+                                        ],
+                                        internalType: "struct StateProof",
+                                        name: "stateProof",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "onChainSlashes",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "disputeAuditingDataHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "disputer",
+                                        type: "address"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "address",
+                                                name: "participant",
+                                                type: "address"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "blockHeight",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "uint256",
+                                                name: "minTimeStamp",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bool",
+                                                name: "isForced",
+                                                type: "bool"
+                                            },
+                                            {
+                                                internalType: "address",
+                                                name: "previousBlockProducer",
+                                                type: "address"
+                                            },
+                                            {
+                                                internalType: "bool",
+                                                name: "previousBlockProducerPostedCalldata",
+                                                type: "bool"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "participantSignatureOnPreviousBlock",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Timeout",
+                                        name: "timeout",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bool",
+                                        name: "selfRemoval",
+                                        type: "bool"
+                                    }
+                                ],
+                                internalType: "struct DisputeInput",
+                                name: "input",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "outputSnapshotDataHash",
+                                type: "bytes32"
+                            }
+                        ],
+                        internalType: "struct Dispute[]",
+                        name: "disputes",
+                        type: "tuple[]"
+                    },
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "originForkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "stateMachineStateHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "participants",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestOutboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestOutboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalDeposits",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalWithdrawals",
+                                        type: "tuple"
+                                    }
+                                ],
+                                internalType: "struct SnapshotData",
+                                name: "snapshotData",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "forkId",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        internalType: "struct StateSnapshot",
+                        name: "stateSnapshot",
+                        type: "tuple"
+                    },
+                    {
+                        internalType: "bytes",
+                        name: "encodedStateMachineState",
+                        type: "bytes"
+                    },
+                    {
+                        components: [
+                            {
+                                internalType: "bytes32",
+                                name: "previousBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "messageType",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "participant",
+                                        type: "address"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "balance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Message[]",
+                                name: "messages",
+                                type: "tuple[]"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalBalance",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        internalType: "struct MessageBlock[]",
+                        name: "inboundMessageBlocks",
+                        type: "tuple[]"
+                    }
+                ],
+                name: "reduceAndFinalize",
+                outputs: [],
+                stateMutability: "nonpayable",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        internalType: "bytes32",
+                        name: "forkId",
+                        type: "bytes32"
+                    },
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        components: [
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "bytes32",
+                                                        name: "channelId",
+                                                        type: "bytes32"
+                                                    },
+                                                    {
+                                                        internalType: "address",
+                                                        name: "participant",
+                                                        type: "address"
+                                                    },
+                                                    {
+                                                        internalType: "bytes32",
+                                                        name: "forkId",
+                                                        type: "bytes32"
+                                                    },
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "transactionCnt",
+                                                        type: "uint256"
+                                                    },
+                                                    {
+                                                        internalType: "uint256",
+                                                        name: "timestamp",
+                                                        type: "uint256"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct TransactionHeader",
+                                                name: "header",
+                                                type: "tuple"
+                                            },
+                                            {
+                                                components: [
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "encodedData",
+                                                        type: "bytes"
+                                                    },
+                                                    {
+                                                        internalType: "bytes",
+                                                        name: "data",
+                                                        type: "bytes"
+                                                    }
+                                                ],
+                                                internalType:
+                                                    "struct TransactionBody",
+                                                name: "body",
+                                                type: "tuple"
+                                            }
+                                        ],
+                                        internalType: "struct Transaction",
+                                        name: "transaction",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "stateSnapshotHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "previousBlockHash",
+                                        type: "bytes32"
+                                    }
+                                ],
+                                internalType: "struct Block",
+                                name: "latestBlock",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "address[]",
+                                name: "slashedParticipants",
+                                type: "address[]"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "latestInboundMessageBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "latestInboundMessageBlockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "address",
+                                        name: "participant",
+                                        type: "address"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "blockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "minTimeStamp",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bool",
+                                        name: "isForced",
+                                        type: "bool"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "previousBlockProducer",
+                                        type: "address"
+                                    },
+                                    {
+                                        internalType: "bool",
+                                        name: "previousBlockProducerPostedCalldata",
+                                        type: "bool"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "participantSignatureOnPreviousBlock",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Timeout",
+                                name: "timeout",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "address[]",
+                                name: "selfRemovals",
+                                type: "address[]"
+                            }
+                        ],
+                        internalType: "struct ReduceOutput",
+                        name: "reducedOutput",
+                        type: "tuple"
+                    },
+                    {
+                        components: [
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "originForkId",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "stateMachineStateHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address[]",
+                                        name: "participants",
+                                        type: "address[]"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestInboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestInboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes32",
+                                        name: "latestOutboundMessageBlockHash",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "uint256",
+                                        name: "latestOutboundMessageBlockHeight",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalDeposits",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "totalWithdrawals",
+                                        type: "tuple"
+                                    }
+                                ],
+                                internalType: "struct SnapshotData",
+                                name: "snapshotData",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "forkId",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        internalType: "struct StateSnapshot",
+                        name: "latestStateSnapshot",
+                        type: "tuple"
+                    },
+                    {
+                        internalType: "bytes",
+                        name: "encodedStateMachineState",
+                        type: "bytes"
+                    },
+                    {
+                        components: [
+                            {
+                                internalType: "bytes32",
+                                name: "previousBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "messageType",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "participant",
+                                        type: "address"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "balance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Message[]",
+                                name: "messages",
+                                type: "tuple[]"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalBalance",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        internalType: "struct MessageBlock[]",
+                        name: "inboundMessageBlocks",
+                        type: "tuple[]"
+                    }
+                ],
+                name: "reduceOutputToSnapshotData",
+                outputs: [
+                    {
+                        components: [
+                            {
+                                internalType: "bytes32",
+                                name: "originForkId",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "stateMachineStateHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "address[]",
+                                name: "participants",
+                                type: "address[]"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "latestInboundMessageBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "latestInboundMessageBlockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "latestOutboundMessageBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "latestOutboundMessageBlockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalDeposits",
+                                type: "tuple"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalWithdrawals",
+                                type: "tuple"
+                            }
+                        ],
+                        internalType: "struct SnapshotData",
+                        name: "outputSnapshotData",
+                        type: "tuple"
+                    },
+                    {
+                        internalType: "bytes",
+                        name: "",
+                        type: "bytes"
+                    },
+                    {
+                        components: [
+                            {
+                                internalType: "bytes32",
+                                name: "previousBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "blockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "bytes32",
+                                        name: "messageType",
+                                        type: "bytes32"
+                                    },
+                                    {
+                                        internalType: "address",
+                                        name: "participant",
+                                        type: "address"
+                                    },
+                                    {
+                                        components: [
+                                            {
+                                                internalType: "uint256",
+                                                name: "amount",
+                                                type: "uint256"
+                                            },
+                                            {
+                                                internalType: "bytes",
+                                                name: "data",
+                                                type: "bytes"
+                                            }
+                                        ],
+                                        internalType: "struct Balance",
+                                        name: "balance",
+                                        type: "tuple"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Message[]",
+                                name: "messages",
+                                type: "tuple[]"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalBalance",
+                                type: "tuple"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "timestamp",
+                                type: "uint256"
+                            }
+                        ],
+                        internalType: "struct MessageBlock",
+                        name: "",
+                        type: "tuple"
+                    }
+                ],
+                stateMutability: "nonpayable",
+                type: "function"
+            },
+            {
+                inputs: [
+                    {
+                        internalType: "bytes32",
+                        name: "channelId",
+                        type: "bytes32"
+                    },
+                    {
+                        components: [
+                            {
+                                internalType: "bytes32",
+                                name: "originForkId",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "stateMachineStateHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "address[]",
+                                name: "participants",
+                                type: "address[]"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "latestInboundMessageBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "latestInboundMessageBlockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                internalType: "bytes32",
+                                name: "latestOutboundMessageBlockHash",
+                                type: "bytes32"
+                            },
+                            {
+                                internalType: "uint256",
+                                name: "latestOutboundMessageBlockHeight",
+                                type: "uint256"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalDeposits",
+                                type: "tuple"
+                            },
+                            {
+                                components: [
+                                    {
+                                        internalType: "uint256",
+                                        name: "amount",
+                                        type: "uint256"
+                                    },
+                                    {
+                                        internalType: "bytes",
+                                        name: "data",
+                                        type: "bytes"
+                                    }
+                                ],
+                                internalType: "struct Balance",
+                                name: "totalWithdrawals",
+                                type: "tuple"
+                            }
+                        ],
+                        internalType: "struct SnapshotData",
+                        name: "snapshotData",
+                        type: "tuple"
+                    },
+                    {
+                        internalType: "bytes",
+                        name: "encodedStateMachineState",
+                        type: "bytes"
+                    }
+                ],
+                name: "verifyBalanceInvariantCheckSnapshot",
+                outputs: [
+                    {
+                        internalType: "bool",
+                        name: "",
+                        type: "bool"
+                    }
+                ],
+                stateMutability: "nonpayable",
+                type: "function"
+            }
+        ],
+        bytecode:
+            "0x60808060405234601557616544908161001b8239f35b600080fdfe610460604052600436101561001357600080fd5b6000803560e01c806303ddbe2f146125e357806306476c9c146104bf57806309141273146122b0578063119df4cc14612290578063137838d6146121925780631a93d1c3146102055780632507dc8e1461215857806326ffddf014611ff2578063282bd8af14611fd25780633c27cde414611e0a578063436f9bf414611db2578063499f71e314611d7f5780635d90a35e14611c585780636139faa614611c22578063652b588e14611b13578063653d92f9146105045780636bde53aa146103ea5780636e9b5d4a14611af65780636fd7dd1c1461189b57806373c1889b146118605780637446b3b3146108b45780638ebf2a7f146107ae57806397a2ec2d14610730578063a67235d3146106d0578063b452f4111461066d578063bbc374ee14610639578063bc864c3614610522578063ca61a8df14610504578063d161ea3d146104dd578063d6315681146104bf578063df336ded14610408578063e83be4c7146103ea578063ead57d321461032b578063f54915d014610223578063f68016b714610205578063f82f3fa8146101d45763fc6268f8146101b557600080fd5b346101d157806003193601126101d15760209054604051908152f35b80fd5b50346101d15760403660031901126101d15760206101fb6101f3612806565b600435615e3d565b6040519015158152f35b50346101d157806003193601126101d1576020600454604051908152f35b50346101d1576102323661331a565b93929081511561031c5761024582613873565b51515192602061025484613873565b515101516102623386615e3d565b1561030d57848652601260205260026040872001602061028186613873565b51510151875260205260408620936102998186615f1c565b156102fe57916102b893916102b26102fb98999461571f565b906149e0565b50506040516102e5816102d760208201946020865260408301906128dd565b03601f19810183528261272a565b519020906102f560035442613b30565b92616056565b80f35b632f884dc760e11b8752600487fd5b63be1f26a160e01b8652600486fd5b631dad09ff60e01b8452600484fd5b50346101d15760803660031901126101d1576004356001600160401b0381116103e65761035c903690600401612aea565b906024356001600160401b0381116103e65761037c9036906004016130e4565b6044356001600160401b0381116103e25761039b903690600401612766565b91606435906001600160401b0382116101d1576103de6103ca8686866103c4366004890161313e565b92615c65565b6040519182916020835260208301906128dd565b0390f35b8280fd5b5080fd5b50346101d157806003193601126101d1576020600254604051908152f35b50346101d15760203660031901126101d157600435906001600160401b0382116101d1576103de61044461043f3660048601612fa9565b61571f565b6040519182916020835260a06104ab61048261046c845160c0602089015260e088019061364b565b6020850151878203601f190160408901526127b2565b60408401516060870152606084015160808701526080840151601f1987830301848801526136b7565b910151838203601f190160c08501526127b2565b50346101d157806003193601126101d1576020600154604051908152f35b50346101d15760403660031901126101d15760206101fb6104fc612806565b6004356156d6565b50346101d157806003193601126101d1576020600354604051908152f35b50346101d15760e090610534366133a2565b929051015190604051602081019160208352610576610560865160c060408601526101008501906128dd565b6020870151848203603f1901606086015261295c565b90604086015191603f19848203016080850152825190818152602081016020808460051b840101950193915b83831061060c575050505050816102d78660a06105ec6105d661060096606060209c0151603f198883030185890152612898565b6080840151868203603f190160c088015261567d565b910151838203603f190160e085015261567d565b51902014604051908152f35b909192939460208061062a600193601f19868203018752895161295c565b970193019301919392906105a2565b50346101d15760203660031901126101d1576103de610659600435615665565b6040519182916020835260208301906127b2565b50346101d15760203660031901126101d157600435906001600160401b0382116101d1576103de6106bc6106a43660048601612766565b6106ac615608565b5060208082518301019101614c9a565b60405191829160208352602083019061364b565b50346101d15760603660031901126101d1576024356001600160401b0381116103e657610701903690600401613027565b90604435906001600160401b0382116101d15760206101fb846107273660048701612766565b906004356152f2565b50346101d15760603660031901126101d1576004356001600160401b0381116103e65761076190369060040161313e565b906024356001600160401b0381116103e657610781903690600401613027565b90604435906001600160401b0382116101d15760206101fb85856107a83660048801613027565b91615178565b50346101d15760403660031901126101d1576004356024359080835260126020526107dc6040842054613b53565b908390845b81865260126020526040862054811080610891575b1561083d576108389082875260126020526108148160408920613b85565b50546001600160a01b031661083261082b8661511f565b9587613896565b5261511f565b6107e1565b5050915061084a82613b53565b925b82811061086957604051602080825281906103de908201876127b2565b6001906001600160a01b0361087e8285613896565b511661088a8287613896565b520161084c565b5081865260126020528460016108aa8360408a20613b85565b50015411156107f6565b50346101d15760203660031901126101d1576004356001600160401b0381116103e657366023820112156103e65780600401356108f0816127ef565b916108fe604051938461272a565b81835260208301906024829360051b820101903682116116e15790816024879596949301925b8284106117a657505050506040519283916308e03a7b60e31b8352602483019060206004850152518091526044830160448260051b8501019291855b81811061171957505050508190038183305af1801561170e57826102e0526116e9575b506102e051516102e051016103205260206102e0516103205103126101d15760206102e0510151610300526001600160401b0361030051116101d15760206103205101603f610300516102e051010112156101d1576020610300516102e0510101516020806109f1836127ef565b926109ff604051948561272a565b83610280528084528184016102805260051b610300516102e051010101016020610320510181116103e2576040610300516102e05101015b818110610d36575050815b8151811015610d3257610a558183613896565b518051518452601260205260408420600281019060208351015186528160205260408620610a856003548261624b565b50610d2357604051602081019060208252610aa7816102d76040820189614edb565b5190209087889160038a9101938454915b828110610cf5575b50505015610ce657610ae4855180519061010060018060a01b039101511690615f7f565b81546000198101908111610cd257610b10610b02610b279285615e25565b90549060031b1c9284615e25565b819391549060031b91821b91600019901b19161790565b9055610b32816163c3565b5415610b44575b505050600101610a42565b602083969592935101519283865260205284604081208181558160018201558160028201556003810180549083815581610cb1575b50506004810180549083815581610c90575b505060058101829055600681018290556007015560030190845b825480821015610c5d5784610bba8386615e25565b90549060031b1c14610bcf5750600101610ba5565b60009793929697198101908111610c495792610c2483604093610c1d610b10610b0260019b9a997f7011fd4f7f0ea23f270df69f3285ef844f2a7d78aefe8cfd17828dd380877db199615e25565b90556163c3565b5192835193610100878060a01b039101511682519182526020820152a2903880610b39565b634e487b7160e01b88526011600452602488fd5b5050939460019392915060407f7011fd4f7f0ea23f270df69f3285ef844f2a7d78aefe8cfd17828dd380877db191610c24565b835260208320908101905b81811015610b8b57888155889350600101610c9b565b835260208320908101905b81811015610b7957888155889350600101610cbc565b634e487b7160e01b89526011600452602489fd5b632f884dc760e11b8852600488fd5b81610d008288615e25565b90549060031b1c14610d1457600101610ab8565b93505050506001388080610ac0565b63f801479b60e01b8752600487fd5b8280f35b8051610240526001600160401b0361024051116116e55760406020601f198161024051610300516102e05101010161032051030101126116e55760405161026052610d83610260516126a2565b60208061024051610300516102e05101010101516102c0526001600160401b036102c051116116e5576101606020806102c0518161024051610300516102e0510101010101610320510301126116e5576040516102a052610de66102a0516126d8565b60206102c0518161024051610300516102e0510101010101516102a051526020806102c0518161024051610300516102e0510101010101015160206102a0510152604060206102c0518161024051610300516102e0510101010101015160406102a0510152606060206102c0518161024051610300516102e0510101010101015160606102a0510152608060206102c0518161024051610300516102e0510101010101015160806102a051015260a060206102c0518161024051610300516102e05101010101010151610200526001600160401b0361020051116116e5576040602061020051816102c0518161024051610300516102e051010101010101610320510301126116e55760405161022052610f02610220516126a2565b610200516102c05161024051610300516102e05101010101604001516101e08190526001600160401b03106116e55760206103205101601f6101e0516102005160206102c0518161024051610300516102e051010101010101010112156116e5576101e0516102005160206102c0518161024051610300516102e05101010101010101516101a052610fa9610f996101a0516127ef565b6040516101c0526101c05161272a565b6101c051610160526101a0516101c0515260206101c05101610160526020610320510160206101a05160051b6101e05161020051836102c0518161024051610300516102e051010101010101010101116116e55760206101e05161020051826102c0518161024051610300516102e0510101010101010101610180525b60206101a05160051b6101e05161020051836102c0518161024051610300516102e051010101010101010101610180511061135e576101c0516102205152602061020051816102c0518161024051610300516102e05101010101010101516001600160401b03811161131f576102005160206102c0518161024051610300516102e0510101010101010160206103205101601f8201121561131f578051906110cd826127ef565b916110db604051938461272a565b80835260208084019160051b8301019060206103205101821161135a5760208301905b828210611323575050505060206102205101526102205160a06102a051015260c060206102c0518161024051610300516102e051010101010101516001600160401b03811161131f5761117190602061032051019060206102c0518161024051610300516102e05101010101010161372e565b60c06102a051015260e060206102c0518161024051610300516102e0510101010101015160e06102a05101526111c161010060206102c0518161024051610300516102e05101010101010161371a565b6101006102a051015261012060206102c0518161024051610300516102e051010101010101516001600160401b03811161131f5760206102c0518161024051610300516102e0510101010101019060e06020836103205103011261131f5760405161122b8161270f565b6112348361371a565b81526020830151602082015260408301516040820152611256606084016138aa565b60608201526112676080840161371a565b608082015261127860a084016138aa565b60a082015260c08301516001600160401b03811161131b576020936112a49185610320510191016138b7565b60c08201526101206102a05101526112d5610140836102c0518161024051610300516102e0510101010101016138aa565b6101406102a05101526102a051610260515260408261024051610300516102e0510101010151826102605101526102605161028051528161028051016102805201610a37565b8680fd5b8480fd5b81516001600160401b0381116113565760209161134b83928380610320510191890101614c40565b8152019101906110fe565b8980fd5b8780fd5b610180515160e0526001600160401b0360e051116116e557602080601f1960e0516101e05161020051846102c0518161024051610300516102e051010101010101010161032051030101126116e557604051610140526113c0610140516126f4565b602060e0516101e05161020051836102c0518161024051610300516102e05101010101010101010151610100526001600160401b0361010051116116e55760206103205101601f60206101005160e0516101e05161020051846102c0518161024051610300516102e051010101010101010101010112156116e55760206101005160e0516101e05161020051846102c0518161024051610300516102e051010101010101010101015160c05261148a61147a60c0516127ef565b604051610120526101205161272a565b6101205160a05260c05161012051526020610120510160a05260206103205101602060c05160051b816101005160e0516101e05161020051846102c0518161024051610300516102e051010101010101010101010101116116e5576020806101005160e0516101e05161020051846102c0518161024051610300516102e05101010101010101010101015b602060c05160051b816101005160e0516101e05161020051846102c0518161024051610300516102e051010101010101010101010101811061157f575061012051610140515261014051610160515260206101605101610160526020610180510161018052611026565b80516001600160401b0381116116e15760206101005160e0516101e05161020051846102c0518161024051610300516102e051010101010101010101010160406020601f198361032051030101126116e157604051906115de826126a2565b60208101516001600160401b03811161135a5761160690602080610320510191840101614c40565b825260408101516001600160401b03811161135a5761032051602001603f83830101121561135a5760208183010151916020611641846127ef565b9361164f604051958661272a565b8460805280855281850160805260051b81848401010101602061032051018111611356576040828401015b8181106116a0575050505090602092918382015260a051528160a0510160a05201611515565b8051906001600160401b0382116116dd576116cb6020928380610320510191818989010101016138b7565b6080515281608051016080520161167a565b8b80fd5b8580fd5b8380fd5b611704903d8084833e6116fc818361272a565b8101906138f9565b6102e05238610983565b6040513d84823e3d90fd5b929550929093506043198682030184528451908151600e811015611792576117806001938360209493859452858060a01b03848301511684820152606061176f6040840151608060408501526080840190614edb565b920151906060818403910152612898565b96019401910190869492869492610960565b634e487b7160e01b89526021600452602489fd5b9091928094969550356001600160401b03811161135a5782016080602319823603011261135a57604051916117da8361261f565b6024820135600e8110156113565783526117f66044830161281c565b602084015260648201356001600160401b0381116113565761181e9060243691850101612f63565b60408401526084820135926001600160401b0384116113565761184b602094936024869536920101612766565b60608201528152019301919086949593610924565b50346101d15760203660031901126101d157600435906001600160401b0382116101d15760206101fb6118963660048601612990565b614d7d565b50346101d15760a03660031901126101d157602435906001600160401b0382116101d15760c060031983360301126101d157604051916118da8361266c565b80600401356001600160401b0381116103e2578101606060031982360301126103e2576040519061190a82612687565b60048101356001600160401b03811161131f576004908201018036039060c082126116e15760a06040519261193e846126a2565b126116e15760405161194f816126bd565b8135815261195f6020830161281c565b6020820152604082013560408201526060820135606082015260808201356080820152825260a08101356001600160401b03811161131b5760449392916119a891369101612990565b602082015283526024810135602084015201356040820152835260248101356001600160401b0381116103e2576119e590600436918401016129ea565b6020840152604481013560408401526064810135606084015260848101356001600160401b0381116103e257611a219060043691840101612a5c565b608084015260a48101356001600160401b0381116103e257611a48913691016004016129ea565b60a08301526044356001600160401b0381116103e657611a6c9036906004016130e4565b6064356001600160401b0381116103e257611a8b903690600401612766565b91608435906001600160401b0382116101d157611ada611ae86103de611ac3888888611aba3660048b0161313e565b926004356149e0565b9193906040519586956060875260608701906128dd565b908582036020870152612898565b90838203604085015261358d565b50346101d157806003193601126101d15760209054604051908152f35b50346101d15760203660031901126101d157600d54611b6a908290600435906001600160a01b031682611b4583613974565b611b4e84615665565b604051639e88e84360e01b8152968792839290600484016149bb565b0381845afa918215611c1757611ba8948493611bf7575b50611b8b90613ba1565b604051622847f160e01b81529485938492839291600484016149bb565b03915afa90811561170e57826103de9392611bd4575b50506040519182916020835260208301906127b2565b611bf092503d8091833e611be8818361272a565b810190613793565b3880611bbe565b611b8b919350611c10903d8087833e611be8818361272a565b9290611b81565b6040513d85823e3d90fd5b50346101d157806003193601126101d1576080905460015460025460035491604051938452602084015260408301526060820152f35b50346101d15760a03660031901126101d1576004356001600160401b0381116103e657611c89903690600401612766565b906024356001600160401b0381116103e657611ca99036906004016129ea565b6044356001600160401b0381116103e257611cc89036906004016129ea565b906064356001600160401b0381116116e557611ce890369060040161313e565b92608435906001600160401b0382116101d1576103de611d1887878787611d123660048a016130e4565b936140b6565b604051918291602083526060611d6b611d56611d4084516080602089015260a0880190612898565b6020850151878203601f1901604089015261358d565b6040840151868203601f1901848801526128bd565b910151838203601f190160808501526128bd565b50346101d15760603660031901126101d1576040611da4604435602435600435613dba565b825191151582526020820152f35b50346101d1576020611de081611dc7366133a2565b8193915190838101516080606083015192015192615c65565b604051611dfb816102d78582019486865260408301906128dd565b51902091015114604051908152f35b50346101d15760403660031901126101d1576004356001600160401b0381116103e657611e3b903690600401612f63565b6024356001600160401b0381116103e25760c060031982360301126103e25760405192611e678461266c565b81600401356001600160401b0381116103e657611e8a9060043691850101613027565b845260248201356001600160401b0381116103e657611eaf90600436918501016130e4565b602085015260448201356001600160401b0381116103e6578201366023820112156103e657600481013590611ee3826127ef565b91611ef1604051938461272a565b80835260051b81016024016020830136821161131f5760248301905b828210611fa15750505050604085015260648201356001600160401b0381116103e657611f409060043691850101612766565b606085015260848201356001600160401b0381116103e657611f68906004369185010161313e565b608085015260a4820135906001600160401b0382116101d15760206101fb8686611f973687890160040161313e565b60a0830152613c0c565b81356001600160401b03811161131b57602091611fc7839283600436928a0101016130e4565b815201910190611f0d565b50346101d15760203660031901126101d1576103de610659600435613ba1565b50346101d1576120013661331a565b8392919251156121495761201484613873565b51515192602061202386613873565b51510151926120323386615e3d565b1561213a57848752601260205260026040882001602061205188613873565b51510151885260205260408720936120698786615f1c565b15610ce65760035496600586019761208660068801549182613dad565b4210159081612130575b5080612123575b61211457906102b26120ab9594939261571f565b50506040516120ca816102d760208201946020865260408301906128dd565b519020908484548314156000146121055760078201546102fb95906120f8906001600160a01b031686615f7f565b556102f560035442613b30565b5050506102fb91503390615f7f565b635ce3a01d60e01b8952600489fd5b5060018601541515612097565b9050151538612090565b63be1f26a160e01b8752600487fd5b631dad09ff60e01b8552600485fd5b50346101d15760803660031901126101d157606435906001600160a01b03821682036101d1576040611da483604435602435600435613ae6565b50346101d15760203660031901126101d1576040816103de92606083516121b88161261f565b6121c06139a6565b8152826020820152828582015201526004358152601060205220600d604051916121e98361261f565b6040516121f581612650565b815481526001820154602082015261220f6002830161391e565b60408201526003820154606082015260048201546080820152600582015460a0820152600682015460c0820152612248600783016139fa565b60e0820152612259600983016139fa565b6101008201528352600b8101546020840152600c81015460408401520154606082015260405191829160208352602083019061295c565b50346101d15760203660031901126101d1576103de610659600435613974565b50346101d15760403660031901126101d1576004356001600160401b0381116103e6576122e1903690600401612766565b90602435916001600160401b0383116103e657366023840112156103e657826004013561230d816127ef565b9361231b604051958661272a565b8185526024602086019260051b8201019036821161131f5760248101925b82841061255857505050503330036124f8576005546001600160a01b031690813b156103e25761238a83928392604051948580948193630ee4451760e01b8352602060048401526024830190612898565b03925af1801561170e5782906124e8575b90505b825181101561247f57600554612417906020906060906001600160a01b03166123c78588613896565b518660405180968195829463129897cf60e31b84528860048501528051602485015260018060a01b03898201511660448501526040810151606485015201516080608484015260a48301906128bd565b03925af1908115611c17578391612446575b50156124375760010161239e565b6313121c1b60e11b8252600482fd5b90506020813d8211612477575b816124606020938361272a565b810103126103e257612471906138aa565b38612429565b3d9150612453565b50600554604051631865c57d60e01b8152908290829060049082906001600160a01b03165afa90811561170e57826103de93926124cd575b5050604051918291602083526020830190612898565b6124e192503d8091833e6116fc818361272a565b82806124b7565b6124f19161272a565b388161239b565b60405162461bcd60e51b815260206004820152603260248201527f4f6e6c792073656c6620286661636574292063616e2063616c6c207468697320604482015271143234b0b6b7b7321490333ab731ba34b7b760711b6064820152608490fd5b83356001600160401b03811161131b5782016080602319823603011261131b57604051906125858261261f565b602481013582526125986044820161281c565b60208301526064810135604083015260848101356001600160401b0381116125df57916125cf602094926024869536920101612830565b6060820152815201930192612339565b8880fd5b50346101d15760203660031901126101d157600435906001600160401b0382116101d1576103de61065961261a3660048601612766565b6137b8565b608081019081106001600160401b0382111761263a57604052565b634e487b7160e01b600052604160045260246000fd5b61012081019081106001600160401b0382111761263a57604052565b60c081019081106001600160401b0382111761263a57604052565b606081019081106001600160401b0382111761263a57604052565b604081019081106001600160401b0382111761263a57604052565b60a081019081106001600160401b0382111761263a57604052565b61016081019081106001600160401b0382111761263a57604052565b602081019081106001600160401b0382111761263a57604052565b60e081019081106001600160401b0382111761263a57604052565b90601f801991011681019081106001600160401b0382111761263a57604052565b6001600160401b03811161263a57601f01601f191660200190565b81601f820112156127ad5780359061277d8261274b565b9261278b604051948561272a565b828452602083830101116127ad57816000926020809301838601378301015290565b600080fd5b906020808351928381520192019060005b8181106127d05750505090565b82516001600160a01b03168452602093840193909201916001016127c3565b6001600160401b03811161263a5760051b60200190565b602435906001600160a01b03821682036127ad57565b35906001600160a01b03821682036127ad57565b91906040838203126127ad5760405190612849826126a2565b8193803583526020810135916001600160401b0383116127ad576020926128709201612766565b910152565b60005b8381106128885750506000910152565b8181015183820152602001612878565b906020916128b181518092818552858086019101612875565b601f01601f1916010190565b90604060206128da93805184520151918160208201520190612898565b90565b6128da91815181526020820151602082015261010061294a612910604085015161012060408601526101208501906127b2565b606085015160608501526080850151608085015260a085015160a085015260c085015160c085015260e085015184820360e08601526128bd565b920151906101008184039101526128bd565b9060608061297384516080855260808501906128dd565b936020810151602085015260408101516040850152015191015290565b91906040838203126127ad57604051906129a9826126a2565b819380356001600160401b0381116127ad57826129c7918301612766565b83526020810135916001600160401b0383116127ad576020926128709201612766565b9080601f830112156127ad578135612a01816127ef565b92612a0f604051948561272a565b81845260208085019260051b8201019283116127ad57602001905b828210612a375750505090565b60208091612a448461281c565b815201910190612a2a565b359081151582036127ad57565b919060e0838203126127ad5760405190612a758261270f565b8193612a808161281c565b83526020810135602084015260408101356040840152612aa260608201612a4f565b6060840152612ab36080820161281c565b6080840152612ac460a08201612a4f565b60a084015260c0810135916001600160401b0383116127ad5760c0926128709201612766565b919061044052610160826104405103126127ad57604051612b0a816126d8565b8092803582526020810135602083015260408101356040830152606081013560608301526080810135608083015260a0810135610400526001600160401b0361040051116127ad5760406104005182016104405103126127ad5760405161042052612b77610420516126a2565b610400518101356001600160401b0381116127ad5761044051601f82610400518501010112156127ad578061040051830101356103c052612bcd612bbd6103c0516127ef565b6040516103e0526103e05161272a565b6103e051506103c0516103e0515260206103e05101906104405160206103c05160051b83610400518701010101116127ad576020816104005185010101915b60206103c05160051b836104005187010101018310612d61575050506103e0516104205152602061040051820101356001600160401b0381116127ad576104005182010161044051601f820112156127ad578035612c69816127ef565b91612c77604051938461272a565b81835260208084019260051b820101906104405182116127ad5760208101925b828410612d30575050505060206104205101526104205160a083015260c08101356001600160401b0381116127ad5761044051612cd59183016129ea565b60c083015260e081013560e0830152612cf1610100820161281c565b610100830152610120810135906001600160401b0382116127ad5761014061287091612d24829461044051908301612a5c565b61012086015201612a4f565b83356001600160401b0381116127ad57602091612d568392836104405191870101612990565b815201930192612c97565b82356001600160401b0381116127ad578261040051860101016020601f1982610440510301126127ad5760405190612d98826126f4565b6020810135906001600160401b0382116127ad5761044051603f8284010112156127ad5760208282010135612dcc816127ef565b92612dda604051948561272a565b81845260208401926104405160208460051b81858501010101116127ad57604081830101935b6040828401600586901b01018510612e28575050509183525050815260209283019201612c0c565b84356001600160401b0381116127ad57602084840101016040601f1982610440510301126127ad5760405190612e5d826126a2565b6001600160401b036020820135116127ad57612e8461044051602080840135840101612990565b82526001600160401b036040820135116127ad5761044051603f604083013583010112156127ad57602060408201358201013590612ec1826127ef565b91612ecf604051938461272a565b80835260208301916104405160208360051b8160408501358501010101116127ad57604081810135820101925b6040828101358301600585901b01018410612f2a575050505091816020938480940152815201940193612e00565b83356001600160401b0381116127ad57602091612f5883928361044051918160408901358901010101612766565b815201930192612efc565b9190916040818403126127ad5760405190612f7d826126a2565b81938135916001600160401b0383116127ad57612fa06020939284938301612aea565b84520135910152565b9080601f830112156127ad578135612fc0816127ef565b92612fce604051948561272a565b81845260208085019260051b820101918383116127ad5760208201905b838210612ffa57505050505090565b81356001600160401b0381116127ad5760209161301c87848094880101612f63565b815201910190612feb565b9190610120838203126127ad576040519061304182612650565b8193803583526020810135602084015260408101356001600160401b0381116127ad57826130709183016129ea565b6040840152606081013560608401526080810135608084015260a081013560a084015260c081013560c084015260e08101356001600160401b0381116127ad57826130bc918301612830565b60e0840152610100810135916001600160401b0383116127ad57610100926128709201612830565b9190916080818403126127ad57604051906130fe8261261f565b81938135916001600160401b0383116127ad576131216060939284938301613027565b845260208101356020850152604081013560408501520135910152565b81601f820112156127ad57803590613155826127ef565b92613163604051948561272a565b82845260208085019360051b830101918183116127ad5760208101935b83851061318f57505050505090565b84356001600160401b0381116127ad57820160a0818503601f1901126127ad57604051916131bc836126bd565b602082013583526040820135602084015260608201356001600160401b0381116127ad5760209083010185601f820112156127ad578035906131fd826127ef565b9161320b604051938461272a565b80835260208084019160051b830101918883116127ad5760208101915b838310613277575050505060408401526080820135926001600160401b0384116127ad5760a083613260886020809881980101612830565b606084015201356080820152815201940193613180565b82356001600160401b0381116127ad578201906080828c03601f1901126127ad57604051906132a58261261f565b602083013582526132b86040840161281c565b602083015260608301356001600160401b0381116127ad578c60206132df92860101612830565b60408301526080830135916001600160401b0383116127ad5761330a8d602080969581960101612766565b6060820152815201920191613228565b9060806003198301126127ad576004356001600160401b0381116127ad578261334591600401612fa9565b916024356001600160401b0381116127ad5781613364916004016130e4565b916044356001600160401b0381116127ad578261338391600401612766565b91606435906001600160401b0382116127ad576128da9160040161313e565b9060406003198301126127ad576004356001600160401b0381116127ad57826133cd91600401612f63565b916024356001600160401b0381116127ad5760c081830360031901126127ad57604051916133fa8361266c565b81600401356001600160401b0381116127ad5781600461341c92850101613027565b835260248201356001600160401b0381116127ad57816004613440928501016130e4565b602084015260448201356001600160401b0381116127ad578201816023820112156127ad576004810135613473816127ef565b91613481604051938461272a565b818352602060048185019360051b83010101918483116127ad5760248201905b8382106135285750505050604084015260648201356001600160401b0381116127ad578160046134d392850101612766565b606084015260848201356001600160401b0381116127ad578160046134fa9285010161313e565b608084015260a4820135916001600160401b0383116127ad57613520920160040161313e565b60a082015290565b81356001600160401b0381116127ad5760209161354d888460048195890101016130e4565b8152019101906134a1565b6128da918151815260018060a01b036020830151166020820152606061176f60408401516080604085015260808401906128bd565b9060a08101825182526020830151602083015260408301519060a06040840152815180915260c0830190602060c08260051b8601019301916000905b8282106135f6575050505060806135ed8192606086015185820360608701526128bd565b93015191015290565b9091929360208061361360019360bf198a82030186528851613558565b9601920192019092916135c9565b6128da91602061363a8351604084526040840190612898565b920151906020818403910152612898565b906040806136a46020855160608652608081518051606089015260018060a01b038482015116828901528581015160a0890152606081015160c0890152015160e0870152015160c0610100860152610120850190613621565b9360208101516020850152015191015290565b9060e060c06128da9360018060a01b038151168452602081015160208501526040810151604085015260608101511515606085015260018060a01b03608082015116608085015260a0810151151560a08501520151918160c08201520190612898565b51906001600160a01b03821682036127ad57565b9080601f830112156127ad578151613745816127ef565b92613753604051948561272a565b81845260208085019260051b8201019283116127ad57602001905b82821061377b5750505090565b602080916137888461371a565b81520191019061376e565b906020828203126127ad5781516001600160401b0381116127ad576128da920161372e565b6005546000916001600160a01b0390911690813b156103e2576137fc83928392604051948580948193630ee4451760e01b8352602060048401526024830190612898565b03925af1801561170e578290613863575b60055460405163016a9a2b60e61b81529250829060049082906001600160a01b03165afa91821561385757809261384357505090565b6128da92503d8091833e611be8818361272a565b604051903d90823e3d90fd5b61386c9161272a565b388161380d565b8051156138805760200190565b634e487b7160e01b600052603260045260246000fd5b80518210156138805760209160051b010190565b519081151582036127ad57565b81601f820112156127ad5780516138cd8161274b565b926138db604051948561272a565b818452602082840101116127ad576128da9160208085019101612875565b906020828203126127ad5781516001600160401b0381116127ad576128da92016138b7565b906040519182815491828252602082019060005260206000209260005b8181106139525750506139509250038361272a565b565b84546001600160a01b031683526001948501948794506020909301920161393b565b60005260106020526128da600260406000200161391e565b60405190613999826126a2565b6060602083600081520152565b604051906139b382612650565b816000815260006020820152606060408201526000606082015260006080820152600060a0820152600060c08201526139ea61398c565b60e082015261010061287061398c565b90604051613a07816126a2565b60018193805483520190604051916000908054908160011c91600181168015613adc575b602084108114613ac85783875286949392918115613aa15750600114613a61575b505060209291613a5d91038461272a565b0152565b6000908152602081209092505b818310613a85575050810160200181613a5d613a4c565b6020919350806001915483858901015201910190918492613a6e565b60ff191660208681019190915292151560051b85019092019250839150613a5d9050613a4c565b634e487b7160e01b85526022600452602485fd5b92607f1692613a2b565b60009081526011602090815260408083206001600160a01b0390961683529481528482209282529182528381209281529190522054908115613b285760019190565b600091508190565b91908203918211613b3d57565b634e487b7160e01b600052601160045260246000fd5b90613b5d826127ef565b613b6a604051918261272a565b8281528092613b7b601f19916127ef565b0190602036910137565b80548210156138805760005260206000209060011b0190600090565b806000526012602052613bb8604060002054613b53565b60005b826000526012602052604060002054811015613c0657600190836000526012602052613beb816040600020613b85565b50828060a01b03905416613bff8285613896565b5201613bbb565b50905090565b6020815101518251604051613c31816102d760208201946020865260408301906128dd565b51902003613d1c57613c4760a0825101516160fb565b819081613d5f575b50613d23571580613d2b575b613d1c5760a0613c6d91510151616170565b805190604083019182515103613d235760005b8151811015613cda576020613c958284613896565b510151613ca3828551613896565b51604051613cc1816102d7602082019460208652604083019061295c565b51902003613cd157600101613c80565b50505050600090565b50505060208101519060208251015160608201516020815191012003613d1c57613d0d9160a08201519151905191615178565b15613d1757600190565b600090565b5050600090565b505050600090565b50602081510151602083015151604051613d55816102d760208201946020865260408301906128dd565b5190201415613c5b565b602091500180516020850151604051613d88816102d7602082019460208652604083019061295c565b5190201490811591613d9c575b5038613c4f565b905051604083510151141538613d95565b91908201809211613b3d57565b929190836000526012602052600260406000200190600052602052604060002092613df66002850154613df06003548092613dad565b9561624b565b5015613f76578315613e0a57505060019190565b600052601060205260406000209060405190613e258261261f565b604051613e3181612650565b8354815260018401546020820152613e4b6002850161391e565b60408201526003840154606082015260048401546080820152600584015460a0820152600684015460c0820152613e84600785016139fa565b60e0820152613e95600985016139fa565b6101008201528252600d600b84015493846020850152600c810154604085015201549260608301938452149081613edb575b50613ed3575060009190565b516001925090565b600d5460405163032a9c4160e11b81526020600482018190529093509183916001600160a01b03169082908190613f1690602483019061295c565b03915afa908115613f6a57600091613f30575b5038613ec7565b90506020813d602011613f62575b81613f4b6020938361272a565b810103126127ad57613f5c906138aa565b38613f29565b3d9150613f3e565b6040513d6000823e3d90fd5b505060009190565b60405190613f8b826126bd565b600060808382815282602082015260606040820152613fa861398c565b60608201520152565b91906040838203126127ad5760405190613fca826126a2565b8193805183526020810151916001600160401b0383116127ad5760209261287092016138b7565b91906040838203126127ad576040519061400a826126a2565b81936140158161371a565b83526020810151916001600160401b0383116127ad576020926128709201613fb1565b90604060206128da9360018060a01b03815116845201519181602082015201906128bd565b9080602083519182815201916020808360051b8301019401926000915b83831061408957505050505090565b90919293946020806140a7600193601f198682030187528951614038565b9701930193019193929061407a565b929194939094600095604051956140cc8761261f565b6060875260208701966140dd613f7e565b885260408101936140ec61398c565b855260608201916140fb61398c565b83528a60e08851015180885261010089510151855261411861398c565b509960018060a01b036005541690813b156103e257829161415791604051948580948193630ee4451760e01b8352602060048401526024830190612898565b03925af180156149b05761499c575b50979593918a999593915b88518b101561430f578b9a9998979b5b604061418d8c8b613896565b510151518110156142fd578b60206141e78b6141c38f60406141bb889260018060a01b036005541695613896565b510151613896565b51604051948580948193636f39473960e11b83528760048401526024830190613558565b03925af19081156142f2578d916142b5575b50156142a6578b808c9d9e8b60406142489d9e9f86826141bb6142279360018060a01b036005541696613896565b51015160405163225285e360e11b81529d8e93849283929160048401615153565b03915afa998a156142995761418d60018f9c6040938591614277575b509401939f5050509b5099989799614181565b61429391503d8087833e61428b818361272a565b81019061512e565b38614264565b50604051903d90823e3d90fd5b630fab57d360e11b8c5260048cfd5b90506020813d82116142ea575b816142cf6020938361272a565b810103126142e6576142e0906138aa565b386141f9565b8c80fd5b3d91506142c2565b6040513d8f823e3d90fd5b50999a60019099019997989697614171565b949a9950949196509496919660018060a01b03600554169060405198631865c57d60e01b8a528a8a600481865afa998a15614991578b9a614975575b505287835261435a8751616273565b97813b156113565761438d8a928392604051948580948193630ee4451760e01b8352602060048401526024830190612898565b03925af1801561492457908991614960575b505b865181101561444b57600554899081906001600160a01b03908116906024906143ca868d613896565b51166040519485938492635f6fde9f60e01b845260048401525af18015614440578a918b9161441c575b506143ff838b613896565b521561440d576001016143a1565b63048dde8960e31b8952600489fd5b905061443a91503d808c833e614432818361272a565b8101906162d7565b386143f4565b6040513d8c823e3d90fd5b50600554604051631865c57d60e01b815295999597939650919490939092916001600160a01b03168888600481845afa978815614924578998614944575b508786526144978751616273565b97813b15611356576144ca8a928392604051948580948193630ee4451760e01b8352602060048401526024830190612898565b03925af180156149245790899161492f575b505b865181101561457557600554899081906001600160a01b0390811690602490614507868d613896565b5116604051948593849263668a200160e01b845260048401525af18015614440578a918b91614559575b5061453c838b613896565b521561454a576001016144de565b630162e34160e71b8952600489fd5b905061456f91503d808c833e614432818361272a565b38614531565b50919395979092945060018060a01b036005541692604051631865c57d60e01b81528881600481885afa90811561492457916145fd9a918a93849161490a575b5089526145eb60018060a01b03600d5416916040519c8d948593849362de740960e71b855260406004860152604485019061405d565b8381036003190160248501529061405d565b03915afa9586156148ff578796614843575b8798508297959697519461462161398c565b5086955b89518710156146a1578761465e91602061463f8a8e613896565b51015160405163225285e360e11b815293849283929060048401615153565b0381895afa801561469657600191899161467c575b50960195614625565b61469091503d808b833e61428b818361272a565b38614673565b6040513d8a823e3d90fd5b929650935093509594909586528451966146ba886127ef565b976146c8604051998a61272a565b8089526146d7601f19916127ef565b01815b81811061480d575050805b86518110156147a5576001906001600160a01b03614703828a613896565b51511661473c6020614715848c613896565b51015161474a614725858d613896565b516040519384916020808401526040830190614038565b03601f19810184528361272a565b604051926147578461261f565b7f7fc958f6d896a018ea54afc012524ea8e277a718198f19cfe9d7795f10efadae8452602084015260408301526060820152614793828c613896565b5261479e818b613896565b50016146e5565b509295919450929560c06147b7613f7e565b865160a0015181529551015181511561480357600181018091116147ef5760208601525b604085015251606084015260808301525290565b634e487b7160e01b84526011600452602484fd5b60208601526147db565b60209060405161481c8161261f565b848152848382015261482c61398c565b604082015260608082015282828d010152016146da565b95503d80888a3e614854818a61272a565b8801976020818a031261135a578051906001600160401b0382116125df570188601f8201121561135a5780519061488a826127ef565b91614898604051938461272a565b80835260208084019160051b830101918b83116148fb5760208101915b8383106148ce5750999a508a99509197915061460f9050565b82516001600160401b0381116142e6576020916148f08f848094870101613ff1565b8152019201916148b5565b8a80fd5b6040513d89823e3d90fd5b61491e91503d8086833e6116fc818361272a565b386145b5565b6040513d8b823e3d90fd5b816149399161272a565b61135a5787386144dc565b6149599198503d808b833e6116fc818361272a565b9638614489565b8161496a9161272a565b61135a57873861439f565b61498a919a503d808d833e6116fc818361272a565b983861434b565b6040513d8d823e3d90fd5b8b6149a9919c929c61272a565b9938614166565b6040513d8e823e3d90fd5b90916149d26128da936040845260408401906127b2565b9160208184039101526127b2565b9394926149eb6139a6565b506149f4613f7e565b50815180515160400151614c065750848351604051614a23816102d760208201946020865260408301906128dd565b51902003614bf5575b6020835101518151602083012003614be45760608351015195614a5681604085019889519061630b565b15614bd35760a0830151608084015151859291906001600160a01b031680151580614bc6575b614b45575b5090614a96929160a0946020870151906140b6565b92510151946020830195865190602082015191604081015151614b1d575b508451936060614aca86516020880120966137b8565b9451910151906040870151946060880151966040519a614ae98c612650565b8b5260208b015260408a01526060890152608088015260a087015260c086015260e085015261010084015251925191929190565b9050604051614b3c816102d7602082019460208652604083019061358d565b51902038614ab4565b919250614b7e60009160018060a01b03600d541690604051809581948293630ce6d97960e11b84526040600485015260448401906127b2565b90602483015203915afa918215613f6a5760a093614a96938793600091614bab575b509192935093614a81565b614bc091503d806000833e611be8818361272a565b38614ba0565b5060208601515115614a7c565b6304b021fb60e41b60005260046000fd5b630fb4933d60e01b60005260046000fd5b6359db78e960e01b60005260046000fd5b60200151604051602081019060208252614c27816102d7604082018961295c565b51902014614a2c576359db78e960e01b60005260046000fd5b91906040838203126127ad5760405190614c59826126a2565b819380516001600160401b0381116127ad5782614c779183016138b7565b83526020810151916001600160401b0383116127ad5760209261287092016138b7565b6020818303126127ad578051906001600160401b0382116127ad5701906060828203126127ad5760405191614cce83612687565b80516001600160401b0381116127ad5781018083039060c082126127ad5760a060405192614cfb846126a2565b126127ad57604051614d0c816126bd565b81518152614d1c6020830161371a565b6020820152604082015160408201526060820151606082015260808201516080820152825260a0810151936001600160401b0385116127ad57604094614d629201614c40565b60208201528352602081015160208401520151604082015290565b6000808251604051614dac816102d7602082019463b452f41160e01b8652602060248401526044830190612898565b5190305afa3d15614ed3573d90614dc28261274b565b91614dd0604051938461272a565b82523d6000602084013e5b15613d1c57604081614df96020614e43945183010160208301614c9a565b93614e31602060018060a01b03600d54169201519284519586948593849363ba8585f960e01b85528860048601526044850190612898565b83810360031901602485015290612898565b03915afa918215613f6a57600091600093614e8a575b505151602001516001600160a01b0391821691161480159190614e81575b50613d1757600190565b90501538614e77565b915091506040813d604011614ecb575b81614ea76040938361272a565b810103126127ad57614ec46020614ebd8361371a565b92016138aa565b9138614e59565b3d9150614e9a565b606090614ddb565b9081519160408252825160408301526020830151606083015260408301516080830152606083015160a0830152608083015160c083015260a083015161016060e08401526101e083019080519160406101a0860152825180915261020085019060206102008260051b8801019401916000905b82821061502f5750505050602001519061019f19848203016101c0850152815180825260208201916020808360051b8301019401926000915b838310615002575050505050602091610140614fef614fb8859460c0890151603f19898303016101008a01526127b2565b60e0880151610120888101919091526101008901516001600160a01b031684890152880151878203603f19016101608901526136b7565b9501511515610180850152015191015290565b9091929394602080615020600193601f198682030187528951613621565b97019301930191939290614f87565b909192946101ff19888203018252855190602081019151916020825282518091526040820190602060408260051b85010194019260005b828110615086575050505050602080600192970192019201909291614f4e565b9091929394603f19838203018552855160206150ab8251604085526040850190613621565b91015191602081830391015281519081815260208101906020808460051b8301019401926000915b8183106150f457505050505060208060019297019501910192919092615066565b9091929394602080615112600193601f198682030189528951612898565b97019501930191906150d3565b6000198114613b3d5760010190565b906020828203126127ad5781516001600160401b0381116127ad576128da9201613fb1565b909161516a6128da936040845260408401906128bd565b9160208184039101526128bd565b92919060a08101519060c06101008201519101519260009460018060a01b0360055416935b875187101561528e576151b08789613896565b5151036152825760018501809511613b3d578460206151cf888a613896565b51015103615282576000925b8760406151e88983613896565b510151518510156152425761520a91604061463f87826141bb8d600097613896565b0381885afa8015613f6a57600191600091615229575b509301926151db565b61523c913d8091833e61428b818361272a565b38615220565b5094919590925060016152558289613896565b51604051615273816102d7602082019460208652604083019061358d565b5190209101959194929061519d565b95505050505050600090565b955095509291506040516152b2816102d760208201946020865260408301906128bd565b5190206101008301516040516152d8816102d760208201946020865260408301906128bd565b51902003613d235760c082015103613d1c5760a001511490565b9091600092828452600e60205260408420928452600f6020526040842060608201518552602052615334600561532d600360408820016139fa565b94016139fa565b91602082015181516020830120036155615760018060a01b036005541691615379602060e08301968751604051938492839263fd29285560e01b845260048401615153565b0381875afa9081156148ff5787916155b5575b50156155ad5760206101006153ba920194855160405193849283926306a017ed60e21b845260048401615153565b0381865afa9081156155a2578691615568575b5061556157813b1561131f5761540485928392604051948580948193630ee4451760e01b8352602060048401526024830190612898565b03925af1801561551b5761554d575b5060055460405163082df52f60e01b81526001600160a01b03909116928482600481875afa9182156155425791859161546e9594938392615526575b5051925160405163225285e360e11b8152958692839260048401615153565b0381855afa92831561551b57916154a7939160209386936154ff575b5060405180958194829363fd29285560e01b845260048401615153565b03915afa90811561170e5782916154c5575b50156128da5750600190565b90506020813d6020116154f7575b816154e06020938361272a565b810103126103e6576154f1906138aa565b386154b9565b3d91506154d3565b6155149193503d8088833e61428b818361272a565b913861548a565b6040513d86823e3d90fd5b61553b9192503d8085833e61428b818361272a565b903861544f565b6040513d87823e3d90fd5b8361555a9194929461272a565b9138615413565b5050505090565b90506020813d60201161559a575b816155836020938361272a565b810103126116e157615594906138aa565b386153cd565b3d9150615576565b6040513d88823e3d90fd5b505050505090565b90506020813d6020116155e7575b816155d06020938361272a565b8101031261131b576155e1906138aa565b3861538c565b3d91506155c3565b604051906155fc826126a2565b60606020838281520152565b6040519061561582612687565b60006040838151615625816126a2565b8251615630816126bd565b848152846020820152848482015284606082015284608082015281526156546155ef565b602082015281528260208201520152565b60005260126020526128da600160406000200161391e565b9080602083519182815201916020808360051b8301019401926000915b8383106156a957505050505090565b90919293946020806156c7600193601f19868203018752895161358d565b9701930193019193929061569a565b6156df90613ba1565b9060005b8251811015613d23576001600160a01b036156fe8285613896565b51166001600160a01b03831614615717576001016156e3565b505050600190565b90604051610380526157336103805161266c565b61573b615608565b610380515260606020610380510152600060406103805101526000606061038051015260405161576a8161270f565b6000815260006020820152600060408201526000606082015260006080820152600060a0820152606060c08201526080610380510152606060a06103805101526103805190600092600061034052610340516103405260009260006104205260006104205260006103a05260606103a0526157e58251613b53565b94825115615c54576157f983949293613873565b5151516000526012602052604060002090602061581586613873565b515101516000526002820160205261583860026040600020015460035490613dad565b6104005261584585613873565b51515160005260106020526040600020906000955b8051871015615bab5761586d8782613896565b51610360528115615a70575b61588a60a0610360515101516160fb565b906159f4575b5060005b60c06103605151015151811015615952576000805b610340518110615905575b5090600191156158c5575b01615894565b818060a01b036158dd8260c061036051510151613896565b51166158ff610340516158f26103405161511f565b610340526103a051613896565b526158bf565b6103a0516001600160a01b039061591d908390613896565b511660018060a01b036159388560c061036051510151613896565b511614615947576001016158a9565b5060019050806158b4565b50919395600190959193956080610380510151828060a01b03815116159081156159d9575b506159c2575b610360515161014081015161599b575b50019593919492909461585a565b610100838060a01b03910151166159bb6159b48b61511f565b9a8c613896565b523861598d565b61012061036051510151608061038051015261597d565b90506020806101206103605151015101519101511138615977565b8051516060015161042051615a16575061038051526001610420525b38615890565b61038051515151606001519081811115615a365750506103805152615a10565b1480615a53575b615a48575b50615a10565b610380515238615a42565b50615a5d81616402565b615a6a6103805151616402565b11615a3d565b949392919050615a896002820154600184015490613dad565b615a9281613b53565b6103a05260008354610440525b610440518110615b5b57506103605151516103e0526103e051600052600e6020526040600020546103c0526103e051600052600f60205260406000206103c05160005260205260406000205b6103c051151580615b4b575b15615b2657546103c0526103e051600052600f60205260406000206103c0516000526020526040600020615aeb565b600190969192939495966103c051604061038051015201546060610380510152615879565b5061040051600582015411615af7565b80615b6860019286613b85565b5082610400519101541115615b7e575b01615a9f565b615b888186613b85565b50828060a01b03905416615ba5610340516158f26103405161511f565b52615b78565b5050505092915092615bbf61034051613b53565b602061038051015260005b610340518110615c245750615bde82613b53565b60a061038051015260005b828110615bf557505050565b6001906001600160a01b03615c0a8285613896565b5116615c1d8260a0610380510151613896565b5201615be9565b600190818060a01b03615c3a826103a051613896565b5116615c4d826020610380510151613896565b5201615bca565b631dad09ff60e01b60005260046000fd5b9092615c6f6139a6565b506040516060936000615c82868461272a565b60028352601f198601366020850137610140850151615e03575b60c08501908151511580615deb575b615dc2575b9182615cbf8995939694613b53565b9260005b828110615d8857505050615cd89451906140b6565b92835193615cec85516020870120956137b8565b946040820151938583015195602060a08651015194015194602086015195604081015151615d5e575b5060200151976080828401519301519360405199615d328b612650565b8a5260208a01526040890152870152608086015260a085015260c084015260e083015261010082015290565b6020919550604051615d7e816102d785820194868652604083019061358d565b5190209490615d15565b949693955091939091906001906001600160a01b03615da78285613896565b5116615db38289613896565b52019089959396949291615cc3565b610120860151516001600160a01b0316615de5615dde8361511f565b9286613896565b52615cb0565b50610120860151516001600160a01b03161515615cab565b506101008401516001906001600160a01b0316615e1f84613873565b52615c9c565b80548210156138805760005260206000200190600090565b9081600052601060205260406000206000906002600091018054915b828110615ee0575b5050508015615e79575b50615e75916156d6565b1590565b60008381526012602052604081206001018054915b828110615ea4575b50505015613d1c5738615e6b565b615eae8183615e25565b905460039190911b1c6001600160a01b0390811690861614615ed257600101615e8e565b505050506001388080615e96565b615eea8183615e25565b905460039190911b1c6001600160a01b0390811690861614615f0e57600101615e59565b505050506001388080615e61565b60038251910190815403613d1c5760005b825181101561571757615f408184613896565b51604051615f5e816102d76020820194602086526040830190614edb565b519020615f6b8284615e25565b90549060031b1c03613d2357600101615f2d565b90615f8a81836156d6565b61605257816000526012602052604060002060405191615fa9836126a2565b6001600160a01b031680835242602084019081528254909290600160401b81101561263a57615fdd91600182018155613b85565b61603c57925183546001600160a01b0319166001600160a01b0391909116178355905160019290920191909155604080519182524260208301527fb7a7ada619c2b52a3b737a13161eb1293801db96799e9b3b41d4ccb8980bb3f291a2565b634e487b7160e01b600052600060045260246000fd5b5050565b9290916160656003548461624b565b50156160ea57600583019182546160d9577f1a4d9aa5d528536813845c104b56d01d86125c27c1c3191912cf29fc1da13a7a9382608094558160068201556007810160018060a01b03331660018060a01b0319825416179055549160405192835260208301526040820152336060820152a2565b6335cf417760e21b60005260046000fd5b633ae479d760e21b60005260046000fd5b90616104615608565b50616116616110615608565b92616425565b8161612057509190565b6128da9193505160208082518301019101614c9a565b6040519061614560208361272a565b600080835282815b82811061615957505050565b602090616164615608565b8282850101520161614d565b90815151156162415781515191616186836127ef565b92616194604051948561272a565b8084526161a3601f19916127ef565b0160005b81811061622a57505060005b8151805182101561622557816161c891613896565b5151511561621957806161fd6161eb6161e46001948651613896565b5151613873565b51515160208082518301019101614c9a565b6162078287613896565b526162128186613896565b50016161b3565b505090506128da616136565b505050565b602090616235615608565b828288010152016161a7565b90506128da616136565b60010154919061625b9083613dad565b9182421015908161626b57509190565b905015159190565b9061627d826127ef565b61628a604051918261272a565b828152809261629b601f19916127ef565b019060005b8281106162ac57505050565b6020906040516162bb816126a2565b600081526162c761398c565b83820152828285010152016162a0565b9190916040818403126127ad576162ed816138aa565b9260208201516001600160401b0381116127ad576128da9201613ff1565b9290926000806000925b85518410156163b8576163288487613896565b5151036163ad5781616389575b50616380576163448184613896565b51604051616362816102d7602082019460208652604083019061358d565b51902060206163718386613896565b51015160019283019291616315565b50915050600090565b905060206163978386613896565b51015160018201809211613b3d57141538616335565b505050915050600090565b939594505050501490565b805480156163ec5760001901906163da8282615e25565b8154906000199060031b1b1916905555565b634e487b7160e01b600052603160045260246000fd5b60405161641f816102d7602082019460208652604083019061364b565b51902090565b61642d6155ef565b5060006164386155ef565b825190815193841580616501575b6164f8576020018051519094901561647d57505050505180516000198101908111613b3d5761647491613896565b51905b60019190565b92949350909160001981019081116164e4576164999083613896565b515151156164df575080516000198101919082116147ef57906164bb91613896565b515180516000198101919082116147ef576164d7929350613896565b515190616477565b919050565b634e487b7160e01b85526011600452602485fd5b50939250509190565b506020810151511561644656fea2646970667358221220a76ebcd96c1a3ddd74bf56b0c55d3a49d99a39d178c39d3bd944cc2bf51d5e0764736f6c634300081e0033",
+        deployedBytecode:
+            "0x610460604052600436101561001357600080fd5b6000803560e01c806303ddbe2f146125e357806306476c9c146104bf57806309141273146122b0578063119df4cc14612290578063137838d6146121925780631a93d1c3146102055780632507dc8e1461215857806326ffddf014611ff2578063282bd8af14611fd25780633c27cde414611e0a578063436f9bf414611db2578063499f71e314611d7f5780635d90a35e14611c585780636139faa614611c22578063652b588e14611b13578063653d92f9146105045780636bde53aa146103ea5780636e9b5d4a14611af65780636fd7dd1c1461189b57806373c1889b146118605780637446b3b3146108b45780638ebf2a7f146107ae57806397a2ec2d14610730578063a67235d3146106d0578063b452f4111461066d578063bbc374ee14610639578063bc864c3614610522578063ca61a8df14610504578063d161ea3d146104dd578063d6315681146104bf578063df336ded14610408578063e83be4c7146103ea578063ead57d321461032b578063f54915d014610223578063f68016b714610205578063f82f3fa8146101d45763fc6268f8146101b557600080fd5b346101d157806003193601126101d15760209054604051908152f35b80fd5b50346101d15760403660031901126101d15760206101fb6101f3612806565b600435615e3d565b6040519015158152f35b50346101d157806003193601126101d1576020600454604051908152f35b50346101d1576102323661331a565b93929081511561031c5761024582613873565b51515192602061025484613873565b515101516102623386615e3d565b1561030d57848652601260205260026040872001602061028186613873565b51510151875260205260408620936102998186615f1c565b156102fe57916102b893916102b26102fb98999461571f565b906149e0565b50506040516102e5816102d760208201946020865260408301906128dd565b03601f19810183528261272a565b519020906102f560035442613b30565b92616056565b80f35b632f884dc760e11b8752600487fd5b63be1f26a160e01b8652600486fd5b631dad09ff60e01b8452600484fd5b50346101d15760803660031901126101d1576004356001600160401b0381116103e65761035c903690600401612aea565b906024356001600160401b0381116103e65761037c9036906004016130e4565b6044356001600160401b0381116103e25761039b903690600401612766565b91606435906001600160401b0382116101d1576103de6103ca8686866103c4366004890161313e565b92615c65565b6040519182916020835260208301906128dd565b0390f35b8280fd5b5080fd5b50346101d157806003193601126101d1576020600254604051908152f35b50346101d15760203660031901126101d157600435906001600160401b0382116101d1576103de61044461043f3660048601612fa9565b61571f565b6040519182916020835260a06104ab61048261046c845160c0602089015260e088019061364b565b6020850151878203601f190160408901526127b2565b60408401516060870152606084015160808701526080840151601f1987830301848801526136b7565b910151838203601f190160c08501526127b2565b50346101d157806003193601126101d1576020600154604051908152f35b50346101d15760403660031901126101d15760206101fb6104fc612806565b6004356156d6565b50346101d157806003193601126101d1576020600354604051908152f35b50346101d15760e090610534366133a2565b929051015190604051602081019160208352610576610560865160c060408601526101008501906128dd565b6020870151848203603f1901606086015261295c565b90604086015191603f19848203016080850152825190818152602081016020808460051b840101950193915b83831061060c575050505050816102d78660a06105ec6105d661060096606060209c0151603f198883030185890152612898565b6080840151868203603f190160c088015261567d565b910151838203603f190160e085015261567d565b51902014604051908152f35b909192939460208061062a600193601f19868203018752895161295c565b970193019301919392906105a2565b50346101d15760203660031901126101d1576103de610659600435615665565b6040519182916020835260208301906127b2565b50346101d15760203660031901126101d157600435906001600160401b0382116101d1576103de6106bc6106a43660048601612766565b6106ac615608565b5060208082518301019101614c9a565b60405191829160208352602083019061364b565b50346101d15760603660031901126101d1576024356001600160401b0381116103e657610701903690600401613027565b90604435906001600160401b0382116101d15760206101fb846107273660048701612766565b906004356152f2565b50346101d15760603660031901126101d1576004356001600160401b0381116103e65761076190369060040161313e565b906024356001600160401b0381116103e657610781903690600401613027565b90604435906001600160401b0382116101d15760206101fb85856107a83660048801613027565b91615178565b50346101d15760403660031901126101d1576004356024359080835260126020526107dc6040842054613b53565b908390845b81865260126020526040862054811080610891575b1561083d576108389082875260126020526108148160408920613b85565b50546001600160a01b031661083261082b8661511f565b9587613896565b5261511f565b6107e1565b5050915061084a82613b53565b925b82811061086957604051602080825281906103de908201876127b2565b6001906001600160a01b0361087e8285613896565b511661088a8287613896565b520161084c565b5081865260126020528460016108aa8360408a20613b85565b50015411156107f6565b50346101d15760203660031901126101d1576004356001600160401b0381116103e657366023820112156103e65780600401356108f0816127ef565b916108fe604051938461272a565b81835260208301906024829360051b820101903682116116e15790816024879596949301925b8284106117a657505050506040519283916308e03a7b60e31b8352602483019060206004850152518091526044830160448260051b8501019291855b81811061171957505050508190038183305af1801561170e57826102e0526116e9575b506102e051516102e051016103205260206102e0516103205103126101d15760206102e0510151610300526001600160401b0361030051116101d15760206103205101603f610300516102e051010112156101d1576020610300516102e0510101516020806109f1836127ef565b926109ff604051948561272a565b83610280528084528184016102805260051b610300516102e051010101016020610320510181116103e2576040610300516102e05101015b818110610d36575050815b8151811015610d3257610a558183613896565b518051518452601260205260408420600281019060208351015186528160205260408620610a856003548261624b565b50610d2357604051602081019060208252610aa7816102d76040820189614edb565b5190209087889160038a9101938454915b828110610cf5575b50505015610ce657610ae4855180519061010060018060a01b039101511690615f7f565b81546000198101908111610cd257610b10610b02610b279285615e25565b90549060031b1c9284615e25565b819391549060031b91821b91600019901b19161790565b9055610b32816163c3565b5415610b44575b505050600101610a42565b602083969592935101519283865260205284604081208181558160018201558160028201556003810180549083815581610cb1575b50506004810180549083815581610c90575b505060058101829055600681018290556007015560030190845b825480821015610c5d5784610bba8386615e25565b90549060031b1c14610bcf5750600101610ba5565b60009793929697198101908111610c495792610c2483604093610c1d610b10610b0260019b9a997f7011fd4f7f0ea23f270df69f3285ef844f2a7d78aefe8cfd17828dd380877db199615e25565b90556163c3565b5192835193610100878060a01b039101511682519182526020820152a2903880610b39565b634e487b7160e01b88526011600452602488fd5b5050939460019392915060407f7011fd4f7f0ea23f270df69f3285ef844f2a7d78aefe8cfd17828dd380877db191610c24565b835260208320908101905b81811015610b8b57888155889350600101610c9b565b835260208320908101905b81811015610b7957888155889350600101610cbc565b634e487b7160e01b89526011600452602489fd5b632f884dc760e11b8852600488fd5b81610d008288615e25565b90549060031b1c14610d1457600101610ab8565b93505050506001388080610ac0565b63f801479b60e01b8752600487fd5b8280f35b8051610240526001600160401b0361024051116116e55760406020601f198161024051610300516102e05101010161032051030101126116e55760405161026052610d83610260516126a2565b60208061024051610300516102e05101010101516102c0526001600160401b036102c051116116e5576101606020806102c0518161024051610300516102e0510101010101610320510301126116e5576040516102a052610de66102a0516126d8565b60206102c0518161024051610300516102e0510101010101516102a051526020806102c0518161024051610300516102e0510101010101015160206102a0510152604060206102c0518161024051610300516102e0510101010101015160406102a0510152606060206102c0518161024051610300516102e0510101010101015160606102a0510152608060206102c0518161024051610300516102e0510101010101015160806102a051015260a060206102c0518161024051610300516102e05101010101010151610200526001600160401b0361020051116116e5576040602061020051816102c0518161024051610300516102e051010101010101610320510301126116e55760405161022052610f02610220516126a2565b610200516102c05161024051610300516102e05101010101604001516101e08190526001600160401b03106116e55760206103205101601f6101e0516102005160206102c0518161024051610300516102e051010101010101010112156116e5576101e0516102005160206102c0518161024051610300516102e05101010101010101516101a052610fa9610f996101a0516127ef565b6040516101c0526101c05161272a565b6101c051610160526101a0516101c0515260206101c05101610160526020610320510160206101a05160051b6101e05161020051836102c0518161024051610300516102e051010101010101010101116116e55760206101e05161020051826102c0518161024051610300516102e0510101010101010101610180525b60206101a05160051b6101e05161020051836102c0518161024051610300516102e051010101010101010101610180511061135e576101c0516102205152602061020051816102c0518161024051610300516102e05101010101010101516001600160401b03811161131f576102005160206102c0518161024051610300516102e0510101010101010160206103205101601f8201121561131f578051906110cd826127ef565b916110db604051938461272a565b80835260208084019160051b8301019060206103205101821161135a5760208301905b828210611323575050505060206102205101526102205160a06102a051015260c060206102c0518161024051610300516102e051010101010101516001600160401b03811161131f5761117190602061032051019060206102c0518161024051610300516102e05101010101010161372e565b60c06102a051015260e060206102c0518161024051610300516102e0510101010101015160e06102a05101526111c161010060206102c0518161024051610300516102e05101010101010161371a565b6101006102a051015261012060206102c0518161024051610300516102e051010101010101516001600160401b03811161131f5760206102c0518161024051610300516102e0510101010101019060e06020836103205103011261131f5760405161122b8161270f565b6112348361371a565b81526020830151602082015260408301516040820152611256606084016138aa565b60608201526112676080840161371a565b608082015261127860a084016138aa565b60a082015260c08301516001600160401b03811161131b576020936112a49185610320510191016138b7565b60c08201526101206102a05101526112d5610140836102c0518161024051610300516102e0510101010101016138aa565b6101406102a05101526102a051610260515260408261024051610300516102e0510101010151826102605101526102605161028051528161028051016102805201610a37565b8680fd5b8480fd5b81516001600160401b0381116113565760209161134b83928380610320510191890101614c40565b8152019101906110fe565b8980fd5b8780fd5b610180515160e0526001600160401b0360e051116116e557602080601f1960e0516101e05161020051846102c0518161024051610300516102e051010101010101010161032051030101126116e557604051610140526113c0610140516126f4565b602060e0516101e05161020051836102c0518161024051610300516102e05101010101010101010151610100526001600160401b0361010051116116e55760206103205101601f60206101005160e0516101e05161020051846102c0518161024051610300516102e051010101010101010101010112156116e55760206101005160e0516101e05161020051846102c0518161024051610300516102e051010101010101010101015160c05261148a61147a60c0516127ef565b604051610120526101205161272a565b6101205160a05260c05161012051526020610120510160a05260206103205101602060c05160051b816101005160e0516101e05161020051846102c0518161024051610300516102e051010101010101010101010101116116e5576020806101005160e0516101e05161020051846102c0518161024051610300516102e05101010101010101010101015b602060c05160051b816101005160e0516101e05161020051846102c0518161024051610300516102e051010101010101010101010101811061157f575061012051610140515261014051610160515260206101605101610160526020610180510161018052611026565b80516001600160401b0381116116e15760206101005160e0516101e05161020051846102c0518161024051610300516102e051010101010101010101010160406020601f198361032051030101126116e157604051906115de826126a2565b60208101516001600160401b03811161135a5761160690602080610320510191840101614c40565b825260408101516001600160401b03811161135a5761032051602001603f83830101121561135a5760208183010151916020611641846127ef565b9361164f604051958661272a565b8460805280855281850160805260051b81848401010101602061032051018111611356576040828401015b8181106116a0575050505090602092918382015260a051528160a0510160a05201611515565b8051906001600160401b0382116116dd576116cb6020928380610320510191818989010101016138b7565b6080515281608051016080520161167a565b8b80fd5b8580fd5b8380fd5b611704903d8084833e6116fc818361272a565b8101906138f9565b6102e05238610983565b6040513d84823e3d90fd5b929550929093506043198682030184528451908151600e811015611792576117806001938360209493859452858060a01b03848301511684820152606061176f6040840151608060408501526080840190614edb565b920151906060818403910152612898565b96019401910190869492869492610960565b634e487b7160e01b89526021600452602489fd5b9091928094969550356001600160401b03811161135a5782016080602319823603011261135a57604051916117da8361261f565b6024820135600e8110156113565783526117f66044830161281c565b602084015260648201356001600160401b0381116113565761181e9060243691850101612f63565b60408401526084820135926001600160401b0384116113565761184b602094936024869536920101612766565b60608201528152019301919086949593610924565b50346101d15760203660031901126101d157600435906001600160401b0382116101d15760206101fb6118963660048601612990565b614d7d565b50346101d15760a03660031901126101d157602435906001600160401b0382116101d15760c060031983360301126101d157604051916118da8361266c565b80600401356001600160401b0381116103e2578101606060031982360301126103e2576040519061190a82612687565b60048101356001600160401b03811161131f576004908201018036039060c082126116e15760a06040519261193e846126a2565b126116e15760405161194f816126bd565b8135815261195f6020830161281c565b6020820152604082013560408201526060820135606082015260808201356080820152825260a08101356001600160401b03811161131b5760449392916119a891369101612990565b602082015283526024810135602084015201356040820152835260248101356001600160401b0381116103e2576119e590600436918401016129ea565b6020840152604481013560408401526064810135606084015260848101356001600160401b0381116103e257611a219060043691840101612a5c565b608084015260a48101356001600160401b0381116103e257611a48913691016004016129ea565b60a08301526044356001600160401b0381116103e657611a6c9036906004016130e4565b6064356001600160401b0381116103e257611a8b903690600401612766565b91608435906001600160401b0382116101d157611ada611ae86103de611ac3888888611aba3660048b0161313e565b926004356149e0565b9193906040519586956060875260608701906128dd565b908582036020870152612898565b90838203604085015261358d565b50346101d157806003193601126101d15760209054604051908152f35b50346101d15760203660031901126101d157600d54611b6a908290600435906001600160a01b031682611b4583613974565b611b4e84615665565b604051639e88e84360e01b8152968792839290600484016149bb565b0381845afa918215611c1757611ba8948493611bf7575b50611b8b90613ba1565b604051622847f160e01b81529485938492839291600484016149bb565b03915afa90811561170e57826103de9392611bd4575b50506040519182916020835260208301906127b2565b611bf092503d8091833e611be8818361272a565b810190613793565b3880611bbe565b611b8b919350611c10903d8087833e611be8818361272a565b9290611b81565b6040513d85823e3d90fd5b50346101d157806003193601126101d1576080905460015460025460035491604051938452602084015260408301526060820152f35b50346101d15760a03660031901126101d1576004356001600160401b0381116103e657611c89903690600401612766565b906024356001600160401b0381116103e657611ca99036906004016129ea565b6044356001600160401b0381116103e257611cc89036906004016129ea565b906064356001600160401b0381116116e557611ce890369060040161313e565b92608435906001600160401b0382116101d1576103de611d1887878787611d123660048a016130e4565b936140b6565b604051918291602083526060611d6b611d56611d4084516080602089015260a0880190612898565b6020850151878203601f1901604089015261358d565b6040840151868203601f1901848801526128bd565b910151838203601f190160808501526128bd565b50346101d15760603660031901126101d1576040611da4604435602435600435613dba565b825191151582526020820152f35b50346101d1576020611de081611dc7366133a2565b8193915190838101516080606083015192015192615c65565b604051611dfb816102d78582019486865260408301906128dd565b51902091015114604051908152f35b50346101d15760403660031901126101d1576004356001600160401b0381116103e657611e3b903690600401612f63565b6024356001600160401b0381116103e25760c060031982360301126103e25760405192611e678461266c565b81600401356001600160401b0381116103e657611e8a9060043691850101613027565b845260248201356001600160401b0381116103e657611eaf90600436918501016130e4565b602085015260448201356001600160401b0381116103e6578201366023820112156103e657600481013590611ee3826127ef565b91611ef1604051938461272a565b80835260051b81016024016020830136821161131f5760248301905b828210611fa15750505050604085015260648201356001600160401b0381116103e657611f409060043691850101612766565b606085015260848201356001600160401b0381116103e657611f68906004369185010161313e565b608085015260a4820135906001600160401b0382116101d15760206101fb8686611f973687890160040161313e565b60a0830152613c0c565b81356001600160401b03811161131b57602091611fc7839283600436928a0101016130e4565b815201910190611f0d565b50346101d15760203660031901126101d1576103de610659600435613ba1565b50346101d1576120013661331a565b8392919251156121495761201484613873565b51515192602061202386613873565b51510151926120323386615e3d565b1561213a57848752601260205260026040882001602061205188613873565b51510151885260205260408720936120698786615f1c565b15610ce65760035496600586019761208660068801549182613dad565b4210159081612130575b5080612123575b61211457906102b26120ab9594939261571f565b50506040516120ca816102d760208201946020865260408301906128dd565b519020908484548314156000146121055760078201546102fb95906120f8906001600160a01b031686615f7f565b556102f560035442613b30565b5050506102fb91503390615f7f565b635ce3a01d60e01b8952600489fd5b5060018601541515612097565b9050151538612090565b63be1f26a160e01b8752600487fd5b631dad09ff60e01b8552600485fd5b50346101d15760803660031901126101d157606435906001600160a01b03821682036101d1576040611da483604435602435600435613ae6565b50346101d15760203660031901126101d1576040816103de92606083516121b88161261f565b6121c06139a6565b8152826020820152828582015201526004358152601060205220600d604051916121e98361261f565b6040516121f581612650565b815481526001820154602082015261220f6002830161391e565b60408201526003820154606082015260048201546080820152600582015460a0820152600682015460c0820152612248600783016139fa565b60e0820152612259600983016139fa565b6101008201528352600b8101546020840152600c81015460408401520154606082015260405191829160208352602083019061295c565b50346101d15760203660031901126101d1576103de610659600435613974565b50346101d15760403660031901126101d1576004356001600160401b0381116103e6576122e1903690600401612766565b90602435916001600160401b0383116103e657366023840112156103e657826004013561230d816127ef565b9361231b604051958661272a565b8185526024602086019260051b8201019036821161131f5760248101925b82841061255857505050503330036124f8576005546001600160a01b031690813b156103e25761238a83928392604051948580948193630ee4451760e01b8352602060048401526024830190612898565b03925af1801561170e5782906124e8575b90505b825181101561247f57600554612417906020906060906001600160a01b03166123c78588613896565b518660405180968195829463129897cf60e31b84528860048501528051602485015260018060a01b03898201511660448501526040810151606485015201516080608484015260a48301906128bd565b03925af1908115611c17578391612446575b50156124375760010161239e565b6313121c1b60e11b8252600482fd5b90506020813d8211612477575b816124606020938361272a565b810103126103e257612471906138aa565b38612429565b3d9150612453565b50600554604051631865c57d60e01b8152908290829060049082906001600160a01b03165afa90811561170e57826103de93926124cd575b5050604051918291602083526020830190612898565b6124e192503d8091833e6116fc818361272a565b82806124b7565b6124f19161272a565b388161239b565b60405162461bcd60e51b815260206004820152603260248201527f4f6e6c792073656c6620286661636574292063616e2063616c6c207468697320604482015271143234b0b6b7b7321490333ab731ba34b7b760711b6064820152608490fd5b83356001600160401b03811161131b5782016080602319823603011261131b57604051906125858261261f565b602481013582526125986044820161281c565b60208301526064810135604083015260848101356001600160401b0381116125df57916125cf602094926024869536920101612830565b6060820152815201930192612339565b8880fd5b50346101d15760203660031901126101d157600435906001600160401b0382116101d1576103de61065961261a3660048601612766565b6137b8565b608081019081106001600160401b0382111761263a57604052565b634e487b7160e01b600052604160045260246000fd5b61012081019081106001600160401b0382111761263a57604052565b60c081019081106001600160401b0382111761263a57604052565b606081019081106001600160401b0382111761263a57604052565b604081019081106001600160401b0382111761263a57604052565b60a081019081106001600160401b0382111761263a57604052565b61016081019081106001600160401b0382111761263a57604052565b602081019081106001600160401b0382111761263a57604052565b60e081019081106001600160401b0382111761263a57604052565b90601f801991011681019081106001600160401b0382111761263a57604052565b6001600160401b03811161263a57601f01601f191660200190565b81601f820112156127ad5780359061277d8261274b565b9261278b604051948561272a565b828452602083830101116127ad57816000926020809301838601378301015290565b600080fd5b906020808351928381520192019060005b8181106127d05750505090565b82516001600160a01b03168452602093840193909201916001016127c3565b6001600160401b03811161263a5760051b60200190565b602435906001600160a01b03821682036127ad57565b35906001600160a01b03821682036127ad57565b91906040838203126127ad5760405190612849826126a2565b8193803583526020810135916001600160401b0383116127ad576020926128709201612766565b910152565b60005b8381106128885750506000910152565b8181015183820152602001612878565b906020916128b181518092818552858086019101612875565b601f01601f1916010190565b90604060206128da93805184520151918160208201520190612898565b90565b6128da91815181526020820151602082015261010061294a612910604085015161012060408601526101208501906127b2565b606085015160608501526080850151608085015260a085015160a085015260c085015160c085015260e085015184820360e08601526128bd565b920151906101008184039101526128bd565b9060608061297384516080855260808501906128dd565b936020810151602085015260408101516040850152015191015290565b91906040838203126127ad57604051906129a9826126a2565b819380356001600160401b0381116127ad57826129c7918301612766565b83526020810135916001600160401b0383116127ad576020926128709201612766565b9080601f830112156127ad578135612a01816127ef565b92612a0f604051948561272a565b81845260208085019260051b8201019283116127ad57602001905b828210612a375750505090565b60208091612a448461281c565b815201910190612a2a565b359081151582036127ad57565b919060e0838203126127ad5760405190612a758261270f565b8193612a808161281c565b83526020810135602084015260408101356040840152612aa260608201612a4f565b6060840152612ab36080820161281c565b6080840152612ac460a08201612a4f565b60a084015260c0810135916001600160401b0383116127ad5760c0926128709201612766565b919061044052610160826104405103126127ad57604051612b0a816126d8565b8092803582526020810135602083015260408101356040830152606081013560608301526080810135608083015260a0810135610400526001600160401b0361040051116127ad5760406104005182016104405103126127ad5760405161042052612b77610420516126a2565b610400518101356001600160401b0381116127ad5761044051601f82610400518501010112156127ad578061040051830101356103c052612bcd612bbd6103c0516127ef565b6040516103e0526103e05161272a565b6103e051506103c0516103e0515260206103e05101906104405160206103c05160051b83610400518701010101116127ad576020816104005185010101915b60206103c05160051b836104005187010101018310612d61575050506103e0516104205152602061040051820101356001600160401b0381116127ad576104005182010161044051601f820112156127ad578035612c69816127ef565b91612c77604051938461272a565b81835260208084019260051b820101906104405182116127ad5760208101925b828410612d30575050505060206104205101526104205160a083015260c08101356001600160401b0381116127ad5761044051612cd59183016129ea565b60c083015260e081013560e0830152612cf1610100820161281c565b610100830152610120810135906001600160401b0382116127ad5761014061287091612d24829461044051908301612a5c565b61012086015201612a4f565b83356001600160401b0381116127ad57602091612d568392836104405191870101612990565b815201930192612c97565b82356001600160401b0381116127ad578261040051860101016020601f1982610440510301126127ad5760405190612d98826126f4565b6020810135906001600160401b0382116127ad5761044051603f8284010112156127ad5760208282010135612dcc816127ef565b92612dda604051948561272a565b81845260208401926104405160208460051b81858501010101116127ad57604081830101935b6040828401600586901b01018510612e28575050509183525050815260209283019201612c0c565b84356001600160401b0381116127ad57602084840101016040601f1982610440510301126127ad5760405190612e5d826126a2565b6001600160401b036020820135116127ad57612e8461044051602080840135840101612990565b82526001600160401b036040820135116127ad5761044051603f604083013583010112156127ad57602060408201358201013590612ec1826127ef565b91612ecf604051938461272a565b80835260208301916104405160208360051b8160408501358501010101116127ad57604081810135820101925b6040828101358301600585901b01018410612f2a575050505091816020938480940152815201940193612e00565b83356001600160401b0381116127ad57602091612f5883928361044051918160408901358901010101612766565b815201930192612efc565b9190916040818403126127ad5760405190612f7d826126a2565b81938135916001600160401b0383116127ad57612fa06020939284938301612aea565b84520135910152565b9080601f830112156127ad578135612fc0816127ef565b92612fce604051948561272a565b81845260208085019260051b820101918383116127ad5760208201905b838210612ffa57505050505090565b81356001600160401b0381116127ad5760209161301c87848094880101612f63565b815201910190612feb565b9190610120838203126127ad576040519061304182612650565b8193803583526020810135602084015260408101356001600160401b0381116127ad57826130709183016129ea565b6040840152606081013560608401526080810135608084015260a081013560a084015260c081013560c084015260e08101356001600160401b0381116127ad57826130bc918301612830565b60e0840152610100810135916001600160401b0383116127ad57610100926128709201612830565b9190916080818403126127ad57604051906130fe8261261f565b81938135916001600160401b0383116127ad576131216060939284938301613027565b845260208101356020850152604081013560408501520135910152565b81601f820112156127ad57803590613155826127ef565b92613163604051948561272a565b82845260208085019360051b830101918183116127ad5760208101935b83851061318f57505050505090565b84356001600160401b0381116127ad57820160a0818503601f1901126127ad57604051916131bc836126bd565b602082013583526040820135602084015260608201356001600160401b0381116127ad5760209083010185601f820112156127ad578035906131fd826127ef565b9161320b604051938461272a565b80835260208084019160051b830101918883116127ad5760208101915b838310613277575050505060408401526080820135926001600160401b0384116127ad5760a083613260886020809881980101612830565b606084015201356080820152815201940193613180565b82356001600160401b0381116127ad578201906080828c03601f1901126127ad57604051906132a58261261f565b602083013582526132b86040840161281c565b602083015260608301356001600160401b0381116127ad578c60206132df92860101612830565b60408301526080830135916001600160401b0383116127ad5761330a8d602080969581960101612766565b6060820152815201920191613228565b9060806003198301126127ad576004356001600160401b0381116127ad578261334591600401612fa9565b916024356001600160401b0381116127ad5781613364916004016130e4565b916044356001600160401b0381116127ad578261338391600401612766565b91606435906001600160401b0382116127ad576128da9160040161313e565b9060406003198301126127ad576004356001600160401b0381116127ad57826133cd91600401612f63565b916024356001600160401b0381116127ad5760c081830360031901126127ad57604051916133fa8361266c565b81600401356001600160401b0381116127ad5781600461341c92850101613027565b835260248201356001600160401b0381116127ad57816004613440928501016130e4565b602084015260448201356001600160401b0381116127ad578201816023820112156127ad576004810135613473816127ef565b91613481604051938461272a565b818352602060048185019360051b83010101918483116127ad5760248201905b8382106135285750505050604084015260648201356001600160401b0381116127ad578160046134d392850101612766565b606084015260848201356001600160401b0381116127ad578160046134fa9285010161313e565b608084015260a4820135916001600160401b0383116127ad57613520920160040161313e565b60a082015290565b81356001600160401b0381116127ad5760209161354d888460048195890101016130e4565b8152019101906134a1565b6128da918151815260018060a01b036020830151166020820152606061176f60408401516080604085015260808401906128bd565b9060a08101825182526020830151602083015260408301519060a06040840152815180915260c0830190602060c08260051b8601019301916000905b8282106135f6575050505060806135ed8192606086015185820360608701526128bd565b93015191015290565b9091929360208061361360019360bf198a82030186528851613558565b9601920192019092916135c9565b6128da91602061363a8351604084526040840190612898565b920151906020818403910152612898565b906040806136a46020855160608652608081518051606089015260018060a01b038482015116828901528581015160a0890152606081015160c0890152015160e0870152015160c0610100860152610120850190613621565b9360208101516020850152015191015290565b9060e060c06128da9360018060a01b038151168452602081015160208501526040810151604085015260608101511515606085015260018060a01b03608082015116608085015260a0810151151560a08501520151918160c08201520190612898565b51906001600160a01b03821682036127ad57565b9080601f830112156127ad578151613745816127ef565b92613753604051948561272a565b81845260208085019260051b8201019283116127ad57602001905b82821061377b5750505090565b602080916137888461371a565b81520191019061376e565b906020828203126127ad5781516001600160401b0381116127ad576128da920161372e565b6005546000916001600160a01b0390911690813b156103e2576137fc83928392604051948580948193630ee4451760e01b8352602060048401526024830190612898565b03925af1801561170e578290613863575b60055460405163016a9a2b60e61b81529250829060049082906001600160a01b03165afa91821561385757809261384357505090565b6128da92503d8091833e611be8818361272a565b604051903d90823e3d90fd5b61386c9161272a565b388161380d565b8051156138805760200190565b634e487b7160e01b600052603260045260246000fd5b80518210156138805760209160051b010190565b519081151582036127ad57565b81601f820112156127ad5780516138cd8161274b565b926138db604051948561272a565b818452602082840101116127ad576128da9160208085019101612875565b906020828203126127ad5781516001600160401b0381116127ad576128da92016138b7565b906040519182815491828252602082019060005260206000209260005b8181106139525750506139509250038361272a565b565b84546001600160a01b031683526001948501948794506020909301920161393b565b60005260106020526128da600260406000200161391e565b60405190613999826126a2565b6060602083600081520152565b604051906139b382612650565b816000815260006020820152606060408201526000606082015260006080820152600060a0820152600060c08201526139ea61398c565b60e082015261010061287061398c565b90604051613a07816126a2565b60018193805483520190604051916000908054908160011c91600181168015613adc575b602084108114613ac85783875286949392918115613aa15750600114613a61575b505060209291613a5d91038461272a565b0152565b6000908152602081209092505b818310613a85575050810160200181613a5d613a4c565b6020919350806001915483858901015201910190918492613a6e565b60ff191660208681019190915292151560051b85019092019250839150613a5d9050613a4c565b634e487b7160e01b85526022600452602485fd5b92607f1692613a2b565b60009081526011602090815260408083206001600160a01b0390961683529481528482209282529182528381209281529190522054908115613b285760019190565b600091508190565b91908203918211613b3d57565b634e487b7160e01b600052601160045260246000fd5b90613b5d826127ef565b613b6a604051918261272a565b8281528092613b7b601f19916127ef565b0190602036910137565b80548210156138805760005260206000209060011b0190600090565b806000526012602052613bb8604060002054613b53565b60005b826000526012602052604060002054811015613c0657600190836000526012602052613beb816040600020613b85565b50828060a01b03905416613bff8285613896565b5201613bbb565b50905090565b6020815101518251604051613c31816102d760208201946020865260408301906128dd565b51902003613d1c57613c4760a0825101516160fb565b819081613d5f575b50613d23571580613d2b575b613d1c5760a0613c6d91510151616170565b805190604083019182515103613d235760005b8151811015613cda576020613c958284613896565b510151613ca3828551613896565b51604051613cc1816102d7602082019460208652604083019061295c565b51902003613cd157600101613c80565b50505050600090565b50505060208101519060208251015160608201516020815191012003613d1c57613d0d9160a08201519151905191615178565b15613d1757600190565b600090565b5050600090565b505050600090565b50602081510151602083015151604051613d55816102d760208201946020865260408301906128dd565b5190201415613c5b565b602091500180516020850151604051613d88816102d7602082019460208652604083019061295c565b5190201490811591613d9c575b5038613c4f565b905051604083510151141538613d95565b91908201809211613b3d57565b929190836000526012602052600260406000200190600052602052604060002092613df66002850154613df06003548092613dad565b9561624b565b5015613f76578315613e0a57505060019190565b600052601060205260406000209060405190613e258261261f565b604051613e3181612650565b8354815260018401546020820152613e4b6002850161391e565b60408201526003840154606082015260048401546080820152600584015460a0820152600684015460c0820152613e84600785016139fa565b60e0820152613e95600985016139fa565b6101008201528252600d600b84015493846020850152600c810154604085015201549260608301938452149081613edb575b50613ed3575060009190565b516001925090565b600d5460405163032a9c4160e11b81526020600482018190529093509183916001600160a01b03169082908190613f1690602483019061295c565b03915afa908115613f6a57600091613f30575b5038613ec7565b90506020813d602011613f62575b81613f4b6020938361272a565b810103126127ad57613f5c906138aa565b38613f29565b3d9150613f3e565b6040513d6000823e3d90fd5b505060009190565b60405190613f8b826126bd565b600060808382815282602082015260606040820152613fa861398c565b60608201520152565b91906040838203126127ad5760405190613fca826126a2565b8193805183526020810151916001600160401b0383116127ad5760209261287092016138b7565b91906040838203126127ad576040519061400a826126a2565b81936140158161371a565b83526020810151916001600160401b0383116127ad576020926128709201613fb1565b90604060206128da9360018060a01b03815116845201519181602082015201906128bd565b9080602083519182815201916020808360051b8301019401926000915b83831061408957505050505090565b90919293946020806140a7600193601f198682030187528951614038565b9701930193019193929061407a565b929194939094600095604051956140cc8761261f565b6060875260208701966140dd613f7e565b885260408101936140ec61398c565b855260608201916140fb61398c565b83528a60e08851015180885261010089510151855261411861398c565b509960018060a01b036005541690813b156103e257829161415791604051948580948193630ee4451760e01b8352602060048401526024830190612898565b03925af180156149b05761499c575b50979593918a999593915b88518b101561430f578b9a9998979b5b604061418d8c8b613896565b510151518110156142fd578b60206141e78b6141c38f60406141bb889260018060a01b036005541695613896565b510151613896565b51604051948580948193636f39473960e11b83528760048401526024830190613558565b03925af19081156142f2578d916142b5575b50156142a6578b808c9d9e8b60406142489d9e9f86826141bb6142279360018060a01b036005541696613896565b51015160405163225285e360e11b81529d8e93849283929160048401615153565b03915afa998a156142995761418d60018f9c6040938591614277575b509401939f5050509b5099989799614181565b61429391503d8087833e61428b818361272a565b81019061512e565b38614264565b50604051903d90823e3d90fd5b630fab57d360e11b8c5260048cfd5b90506020813d82116142ea575b816142cf6020938361272a565b810103126142e6576142e0906138aa565b386141f9565b8c80fd5b3d91506142c2565b6040513d8f823e3d90fd5b50999a60019099019997989697614171565b949a9950949196509496919660018060a01b03600554169060405198631865c57d60e01b8a528a8a600481865afa998a15614991578b9a614975575b505287835261435a8751616273565b97813b156113565761438d8a928392604051948580948193630ee4451760e01b8352602060048401526024830190612898565b03925af1801561492457908991614960575b505b865181101561444b57600554899081906001600160a01b03908116906024906143ca868d613896565b51166040519485938492635f6fde9f60e01b845260048401525af18015614440578a918b9161441c575b506143ff838b613896565b521561440d576001016143a1565b63048dde8960e31b8952600489fd5b905061443a91503d808c833e614432818361272a565b8101906162d7565b386143f4565b6040513d8c823e3d90fd5b50600554604051631865c57d60e01b815295999597939650919490939092916001600160a01b03168888600481845afa978815614924578998614944575b508786526144978751616273565b97813b15611356576144ca8a928392604051948580948193630ee4451760e01b8352602060048401526024830190612898565b03925af180156149245790899161492f575b505b865181101561457557600554899081906001600160a01b0390811690602490614507868d613896565b5116604051948593849263668a200160e01b845260048401525af18015614440578a918b91614559575b5061453c838b613896565b521561454a576001016144de565b630162e34160e71b8952600489fd5b905061456f91503d808c833e614432818361272a565b38614531565b50919395979092945060018060a01b036005541692604051631865c57d60e01b81528881600481885afa90811561492457916145fd9a918a93849161490a575b5089526145eb60018060a01b03600d5416916040519c8d948593849362de740960e71b855260406004860152604485019061405d565b8381036003190160248501529061405d565b03915afa9586156148ff578796614843575b8798508297959697519461462161398c565b5086955b89518710156146a1578761465e91602061463f8a8e613896565b51015160405163225285e360e11b815293849283929060048401615153565b0381895afa801561469657600191899161467c575b50960195614625565b61469091503d808b833e61428b818361272a565b38614673565b6040513d8a823e3d90fd5b929650935093509594909586528451966146ba886127ef565b976146c8604051998a61272a565b8089526146d7601f19916127ef565b01815b81811061480d575050805b86518110156147a5576001906001600160a01b03614703828a613896565b51511661473c6020614715848c613896565b51015161474a614725858d613896565b516040519384916020808401526040830190614038565b03601f19810184528361272a565b604051926147578461261f565b7f7fc958f6d896a018ea54afc012524ea8e277a718198f19cfe9d7795f10efadae8452602084015260408301526060820152614793828c613896565b5261479e818b613896565b50016146e5565b509295919450929560c06147b7613f7e565b865160a0015181529551015181511561480357600181018091116147ef5760208601525b604085015251606084015260808301525290565b634e487b7160e01b84526011600452602484fd5b60208601526147db565b60209060405161481c8161261f565b848152848382015261482c61398c565b604082015260608082015282828d010152016146da565b95503d80888a3e614854818a61272a565b8801976020818a031261135a578051906001600160401b0382116125df570188601f8201121561135a5780519061488a826127ef565b91614898604051938461272a565b80835260208084019160051b830101918b83116148fb5760208101915b8383106148ce5750999a508a99509197915061460f9050565b82516001600160401b0381116142e6576020916148f08f848094870101613ff1565b8152019201916148b5565b8a80fd5b6040513d89823e3d90fd5b61491e91503d8086833e6116fc818361272a565b386145b5565b6040513d8b823e3d90fd5b816149399161272a565b61135a5787386144dc565b6149599198503d808b833e6116fc818361272a565b9638614489565b8161496a9161272a565b61135a57873861439f565b61498a919a503d808d833e6116fc818361272a565b983861434b565b6040513d8d823e3d90fd5b8b6149a9919c929c61272a565b9938614166565b6040513d8e823e3d90fd5b90916149d26128da936040845260408401906127b2565b9160208184039101526127b2565b9394926149eb6139a6565b506149f4613f7e565b50815180515160400151614c065750848351604051614a23816102d760208201946020865260408301906128dd565b51902003614bf5575b6020835101518151602083012003614be45760608351015195614a5681604085019889519061630b565b15614bd35760a0830151608084015151859291906001600160a01b031680151580614bc6575b614b45575b5090614a96929160a0946020870151906140b6565b92510151946020830195865190602082015191604081015151614b1d575b508451936060614aca86516020880120966137b8565b9451910151906040870151946060880151966040519a614ae98c612650565b8b5260208b015260408a01526060890152608088015260a087015260c086015260e085015261010084015251925191929190565b9050604051614b3c816102d7602082019460208652604083019061358d565b51902038614ab4565b919250614b7e60009160018060a01b03600d541690604051809581948293630ce6d97960e11b84526040600485015260448401906127b2565b90602483015203915afa918215613f6a5760a093614a96938793600091614bab575b509192935093614a81565b614bc091503d806000833e611be8818361272a565b38614ba0565b5060208601515115614a7c565b6304b021fb60e41b60005260046000fd5b630fb4933d60e01b60005260046000fd5b6359db78e960e01b60005260046000fd5b60200151604051602081019060208252614c27816102d7604082018961295c565b51902014614a2c576359db78e960e01b60005260046000fd5b91906040838203126127ad5760405190614c59826126a2565b819380516001600160401b0381116127ad5782614c779183016138b7565b83526020810151916001600160401b0383116127ad5760209261287092016138b7565b6020818303126127ad578051906001600160401b0382116127ad5701906060828203126127ad5760405191614cce83612687565b80516001600160401b0381116127ad5781018083039060c082126127ad5760a060405192614cfb846126a2565b126127ad57604051614d0c816126bd565b81518152614d1c6020830161371a565b6020820152604082015160408201526060820151606082015260808201516080820152825260a0810151936001600160401b0385116127ad57604094614d629201614c40565b60208201528352602081015160208401520151604082015290565b6000808251604051614dac816102d7602082019463b452f41160e01b8652602060248401526044830190612898565b5190305afa3d15614ed3573d90614dc28261274b565b91614dd0604051938461272a565b82523d6000602084013e5b15613d1c57604081614df96020614e43945183010160208301614c9a565b93614e31602060018060a01b03600d54169201519284519586948593849363ba8585f960e01b85528860048601526044850190612898565b83810360031901602485015290612898565b03915afa918215613f6a57600091600093614e8a575b505151602001516001600160a01b0391821691161480159190614e81575b50613d1757600190565b90501538614e77565b915091506040813d604011614ecb575b81614ea76040938361272a565b810103126127ad57614ec46020614ebd8361371a565b92016138aa565b9138614e59565b3d9150614e9a565b606090614ddb565b9081519160408252825160408301526020830151606083015260408301516080830152606083015160a0830152608083015160c083015260a083015161016060e08401526101e083019080519160406101a0860152825180915261020085019060206102008260051b8801019401916000905b82821061502f5750505050602001519061019f19848203016101c0850152815180825260208201916020808360051b8301019401926000915b838310615002575050505050602091610140614fef614fb8859460c0890151603f19898303016101008a01526127b2565b60e0880151610120888101919091526101008901516001600160a01b031684890152880151878203603f19016101608901526136b7565b9501511515610180850152015191015290565b9091929394602080615020600193601f198682030187528951613621565b97019301930191939290614f87565b909192946101ff19888203018252855190602081019151916020825282518091526040820190602060408260051b85010194019260005b828110615086575050505050602080600192970192019201909291614f4e565b9091929394603f19838203018552855160206150ab8251604085526040850190613621565b91015191602081830391015281519081815260208101906020808460051b8301019401926000915b8183106150f457505050505060208060019297019501910192919092615066565b9091929394602080615112600193601f198682030189528951612898565b97019501930191906150d3565b6000198114613b3d5760010190565b906020828203126127ad5781516001600160401b0381116127ad576128da9201613fb1565b909161516a6128da936040845260408401906128bd565b9160208184039101526128bd565b92919060a08101519060c06101008201519101519260009460018060a01b0360055416935b875187101561528e576151b08789613896565b5151036152825760018501809511613b3d578460206151cf888a613896565b51015103615282576000925b8760406151e88983613896565b510151518510156152425761520a91604061463f87826141bb8d600097613896565b0381885afa8015613f6a57600191600091615229575b509301926151db565b61523c913d8091833e61428b818361272a565b38615220565b5094919590925060016152558289613896565b51604051615273816102d7602082019460208652604083019061358d565b5190209101959194929061519d565b95505050505050600090565b955095509291506040516152b2816102d760208201946020865260408301906128bd565b5190206101008301516040516152d8816102d760208201946020865260408301906128bd565b51902003613d235760c082015103613d1c5760a001511490565b9091600092828452600e60205260408420928452600f6020526040842060608201518552602052615334600561532d600360408820016139fa565b94016139fa565b91602082015181516020830120036155615760018060a01b036005541691615379602060e08301968751604051938492839263fd29285560e01b845260048401615153565b0381875afa9081156148ff5787916155b5575b50156155ad5760206101006153ba920194855160405193849283926306a017ed60e21b845260048401615153565b0381865afa9081156155a2578691615568575b5061556157813b1561131f5761540485928392604051948580948193630ee4451760e01b8352602060048401526024830190612898565b03925af1801561551b5761554d575b5060055460405163082df52f60e01b81526001600160a01b03909116928482600481875afa9182156155425791859161546e9594938392615526575b5051925160405163225285e360e11b8152958692839260048401615153565b0381855afa92831561551b57916154a7939160209386936154ff575b5060405180958194829363fd29285560e01b845260048401615153565b03915afa90811561170e5782916154c5575b50156128da5750600190565b90506020813d6020116154f7575b816154e06020938361272a565b810103126103e6576154f1906138aa565b386154b9565b3d91506154d3565b6155149193503d8088833e61428b818361272a565b913861548a565b6040513d86823e3d90fd5b61553b9192503d8085833e61428b818361272a565b903861544f565b6040513d87823e3d90fd5b8361555a9194929461272a565b9138615413565b5050505090565b90506020813d60201161559a575b816155836020938361272a565b810103126116e157615594906138aa565b386153cd565b3d9150615576565b6040513d88823e3d90fd5b505050505090565b90506020813d6020116155e7575b816155d06020938361272a565b8101031261131b576155e1906138aa565b3861538c565b3d91506155c3565b604051906155fc826126a2565b60606020838281520152565b6040519061561582612687565b60006040838151615625816126a2565b8251615630816126bd565b848152846020820152848482015284606082015284608082015281526156546155ef565b602082015281528260208201520152565b60005260126020526128da600160406000200161391e565b9080602083519182815201916020808360051b8301019401926000915b8383106156a957505050505090565b90919293946020806156c7600193601f19868203018752895161358d565b9701930193019193929061569a565b6156df90613ba1565b9060005b8251811015613d23576001600160a01b036156fe8285613896565b51166001600160a01b03831614615717576001016156e3565b505050600190565b90604051610380526157336103805161266c565b61573b615608565b610380515260606020610380510152600060406103805101526000606061038051015260405161576a8161270f565b6000815260006020820152600060408201526000606082015260006080820152600060a0820152606060c08201526080610380510152606060a06103805101526103805190600092600061034052610340516103405260009260006104205260006104205260006103a05260606103a0526157e58251613b53565b94825115615c54576157f983949293613873565b5151516000526012602052604060002090602061581586613873565b515101516000526002820160205261583860026040600020015460035490613dad565b6104005261584585613873565b51515160005260106020526040600020906000955b8051871015615bab5761586d8782613896565b51610360528115615a70575b61588a60a0610360515101516160fb565b906159f4575b5060005b60c06103605151015151811015615952576000805b610340518110615905575b5090600191156158c5575b01615894565b818060a01b036158dd8260c061036051510151613896565b51166158ff610340516158f26103405161511f565b610340526103a051613896565b526158bf565b6103a0516001600160a01b039061591d908390613896565b511660018060a01b036159388560c061036051510151613896565b511614615947576001016158a9565b5060019050806158b4565b50919395600190959193956080610380510151828060a01b03815116159081156159d9575b506159c2575b610360515161014081015161599b575b50019593919492909461585a565b610100838060a01b03910151166159bb6159b48b61511f565b9a8c613896565b523861598d565b61012061036051510151608061038051015261597d565b90506020806101206103605151015101519101511138615977565b8051516060015161042051615a16575061038051526001610420525b38615890565b61038051515151606001519081811115615a365750506103805152615a10565b1480615a53575b615a48575b50615a10565b610380515238615a42565b50615a5d81616402565b615a6a6103805151616402565b11615a3d565b949392919050615a896002820154600184015490613dad565b615a9281613b53565b6103a05260008354610440525b610440518110615b5b57506103605151516103e0526103e051600052600e6020526040600020546103c0526103e051600052600f60205260406000206103c05160005260205260406000205b6103c051151580615b4b575b15615b2657546103c0526103e051600052600f60205260406000206103c0516000526020526040600020615aeb565b600190969192939495966103c051604061038051015201546060610380510152615879565b5061040051600582015411615af7565b80615b6860019286613b85565b5082610400519101541115615b7e575b01615a9f565b615b888186613b85565b50828060a01b03905416615ba5610340516158f26103405161511f565b52615b78565b5050505092915092615bbf61034051613b53565b602061038051015260005b610340518110615c245750615bde82613b53565b60a061038051015260005b828110615bf557505050565b6001906001600160a01b03615c0a8285613896565b5116615c1d8260a0610380510151613896565b5201615be9565b600190818060a01b03615c3a826103a051613896565b5116615c4d826020610380510151613896565b5201615bca565b631dad09ff60e01b60005260046000fd5b9092615c6f6139a6565b506040516060936000615c82868461272a565b60028352601f198601366020850137610140850151615e03575b60c08501908151511580615deb575b615dc2575b9182615cbf8995939694613b53565b9260005b828110615d8857505050615cd89451906140b6565b92835193615cec85516020870120956137b8565b946040820151938583015195602060a08651015194015194602086015195604081015151615d5e575b5060200151976080828401519301519360405199615d328b612650565b8a5260208a01526040890152870152608086015260a085015260c084015260e083015261010082015290565b6020919550604051615d7e816102d785820194868652604083019061358d565b5190209490615d15565b949693955091939091906001906001600160a01b03615da78285613896565b5116615db38289613896565b52019089959396949291615cc3565b610120860151516001600160a01b0316615de5615dde8361511f565b9286613896565b52615cb0565b50610120860151516001600160a01b03161515615cab565b506101008401516001906001600160a01b0316615e1f84613873565b52615c9c565b80548210156138805760005260206000200190600090565b9081600052601060205260406000206000906002600091018054915b828110615ee0575b5050508015615e79575b50615e75916156d6565b1590565b60008381526012602052604081206001018054915b828110615ea4575b50505015613d1c5738615e6b565b615eae8183615e25565b905460039190911b1c6001600160a01b0390811690861614615ed257600101615e8e565b505050506001388080615e96565b615eea8183615e25565b905460039190911b1c6001600160a01b0390811690861614615f0e57600101615e59565b505050506001388080615e61565b60038251910190815403613d1c5760005b825181101561571757615f408184613896565b51604051615f5e816102d76020820194602086526040830190614edb565b519020615f6b8284615e25565b90549060031b1c03613d2357600101615f2d565b90615f8a81836156d6565b61605257816000526012602052604060002060405191615fa9836126a2565b6001600160a01b031680835242602084019081528254909290600160401b81101561263a57615fdd91600182018155613b85565b61603c57925183546001600160a01b0319166001600160a01b0391909116178355905160019290920191909155604080519182524260208301527fb7a7ada619c2b52a3b737a13161eb1293801db96799e9b3b41d4ccb8980bb3f291a2565b634e487b7160e01b600052600060045260246000fd5b5050565b9290916160656003548461624b565b50156160ea57600583019182546160d9577f1a4d9aa5d528536813845c104b56d01d86125c27c1c3191912cf29fc1da13a7a9382608094558160068201556007810160018060a01b03331660018060a01b0319825416179055549160405192835260208301526040820152336060820152a2565b6335cf417760e21b60005260046000fd5b633ae479d760e21b60005260046000fd5b90616104615608565b50616116616110615608565b92616425565b8161612057509190565b6128da9193505160208082518301019101614c9a565b6040519061614560208361272a565b600080835282815b82811061615957505050565b602090616164615608565b8282850101520161614d565b90815151156162415781515191616186836127ef565b92616194604051948561272a565b8084526161a3601f19916127ef565b0160005b81811061622a57505060005b8151805182101561622557816161c891613896565b5151511561621957806161fd6161eb6161e46001948651613896565b5151613873565b51515160208082518301019101614c9a565b6162078287613896565b526162128186613896565b50016161b3565b505090506128da616136565b505050565b602090616235615608565b828288010152016161a7565b90506128da616136565b60010154919061625b9083613dad565b9182421015908161626b57509190565b905015159190565b9061627d826127ef565b61628a604051918261272a565b828152809261629b601f19916127ef565b019060005b8281106162ac57505050565b6020906040516162bb816126a2565b600081526162c761398c565b83820152828285010152016162a0565b9190916040818403126127ad576162ed816138aa565b9260208201516001600160401b0381116127ad576128da9201613ff1565b9290926000806000925b85518410156163b8576163288487613896565b5151036163ad5781616389575b50616380576163448184613896565b51604051616362816102d7602082019460208652604083019061358d565b51902060206163718386613896565b51015160019283019291616315565b50915050600090565b905060206163978386613896565b51015160018201809211613b3d57141538616335565b505050915050600090565b939594505050501490565b805480156163ec5760001901906163da8282615e25565b8154906000199060031b1b1916905555565b634e487b7160e01b600052603160045260246000fd5b60405161641f816102d7602082019460208652604083019061364b565b51902090565b61642d6155ef565b5060006164386155ef565b825190815193841580616501575b6164f8576020018051519094901561647d57505050505180516000198101908111613b3d5761647491613896565b51905b60019190565b92949350909160001981019081116164e4576164999083613896565b515151156164df575080516000198101919082116147ef57906164bb91613896565b515180516000198101919082116147ef576164d7929350613896565b515190616477565b919050565b634e487b7160e01b85526011600452602485fd5b50939250509190565b506020810151511561644656fea2646970667358221220a76ebcd96c1a3ddd74bf56b0c55d3a49d99a39d178c39d3bd944cc2bf51d5e0764736f6c634300081e0033",
+        linkReferences: {},
+        deployedLinkReferences: {}
+    },
+    {
+        _format: "hh-sol-artifact-1",
         contractName: "FraudProofFacet",
         sourceName: "contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol",
         abi: [
@@ -32447,6 +39133,76 @@ export const errorAbis = [
     },
     {
         inputs: [],
+        name: "ErrorCantParticipateInDispute",
+        type: "error"
+    },
+    {
+        inputs: [],
+        name: "ErrorDisputeAlreadyReduced",
+        type: "error"
+    },
+    {
+        inputs: [],
+        name: "ErrorDisputeChallengePeriodExpired",
+        type: "error"
+    },
+    {
+        inputs: [],
+        name: "ErrorDisputeCommitmentNotAvailable",
+        type: "error"
+    },
+    {
+        inputs: [],
+        name: "ErrorDisputeExpired",
+        type: "error"
+    },
+    {
+        inputs: [],
+        name: "ErrorDisputeInboundMessageBlocksInvalid",
+        type: "error"
+    },
+    {
+        inputs: [],
+        name: "ErrorDisputeKillPeriodNotExpired",
+        type: "error"
+    },
+    {
+        inputs: [],
+        name: "ErrorDisputeStateMachineInboundProcessingFailed",
+        type: "error"
+    },
+    {
+        inputs: [],
+        name: "ErrorDisputeStateMachineJoiningFailed",
+        type: "error"
+    },
+    {
+        inputs: [],
+        name: "ErrorDisputeStateMachineRemovingFailed",
+        type: "error"
+    },
+    {
+        inputs: [],
+        name: "ErrorDisputeStateMachineSlashingFailed",
+        type: "error"
+    },
+    {
+        inputs: [],
+        name: "ErrorInvalidLatestState",
+        type: "error"
+    },
+    {
+        inputs: [],
+        name: "ErrorInvalidStateSnapshot",
+        type: "error"
+    },
+    {
+        inputs: [],
+        name: "ErrorNoDisputesProvided",
+        type: "error"
+    },
+    {
+        inputs: [],
         name: "ErrorDisputeKillPeriodNotExpired",
         type: "error"
     },
@@ -32660,6 +39416,9 @@ export const DisputeManagerFacetArtifact: Artifact = artifacts.find(
 )!;
 export const DisputeFraudProofFacetArtifact: Artifact = artifacts.find(
     (a) => a.contractName === "DisputeFraudProofFacet"
+)!;
+export const DisputeVerificationFacetArtifact: Artifact = artifacts.find(
+    (a) => a.contractName === "DisputeVerificationFacet"
 )!;
 export const FraudProofFacetArtifact: Artifact = artifacts.find(
     (a) => a.contractName === "FraudProofFacet"

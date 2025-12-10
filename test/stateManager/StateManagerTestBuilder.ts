@@ -163,7 +163,8 @@ export class StateManagerTestBuilder {
                     encodedData: "0x",
                     data: "0x"
                 }
-            }
+            },
+            messageBlocks: []
         };
 
         // Create a signed block struct

@@ -564,6 +564,13 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             if (blockHash != invalidStateProofBlockHash) {
                 return address(0); // the calling context may decide to slash the caller
             }
+        } else if (fraudProof.proofType == FraudProofType.ForgedInboundMessageBlock) {
+            ForgedInboundMessageBlockProof memory _proof =
+                abi.decode(fraudProof.encodedProof, (ForgedInboundMessageBlockProof));
+            bytes32 blockHash = keccak256(abi.encode(_proof.invalidBlock));
+            if (blockHash != invalidStateProofBlockHash) {
+                return address(0); // the calling context may decide to slash the caller
+            }
         } else {
             // FraudProofs like DoubleSign don't prove the stateProof is invalid or has double blocks, so it's a valid dispute, it just leaks information for the participant to be slashed regularly
             revert ErrorInvalidFraudProofType();

@@ -429,12 +429,12 @@ export class MockSetup {
                 store: sinon.stub(),
                 getMessageBlock: sinon.stub().returns(undefined)
             },
-            exitPoints: {
-                getExitPointsInRange: sinon.stub().returns([1, 3, 5, 7]),
-                storeExitPoint: sinon.stub()
+            participantSetChanges: {
+                getChangePointsInRange: sinon.stub().returns([1, 3, 5, 7]),
+                storeChangePoint: sinon.stub()
             },
             stateMachineStates: {
-                getStateMachineState: sinon.stub().returns("0xencodedstate"),
+                getStateMachineState: sinon.stub().returns(ZeroHash),
                 storeStateMachineState: sinon.stub()
             },
             getParticipants: sinon.stub().returns(["0xauthor123", "0xsigner1"]),
@@ -456,12 +456,13 @@ export class MockSetup {
                 .stub()
                 .resolves(["0x1234567890123456789012345678901234567890"]),
             setState: sinon.stub().resolves(),
-            getState: sinon.stub().resolves("0xencodedstate"),
+            getState: sinon.stub().resolves(ZeroHash),
             stateTransition: sinon.stub().resolves({
                 success: true,
                 successCallback: () => {},
                 outboundMessages: []
             }),
+            processInboundMessage: sinon.stub().resolves(true),
             getZeroBalance: sinon.stub().resolves({ amount: 0n, data: "0x" }),
             addBalance: sinon.stub().resolves({ amount: 100n, data: "0x" }),
             localDiamondContract: {
@@ -600,6 +601,9 @@ export class MockSetup {
                 .stub()
                 .resolves(BlockValidationResult.DISPUTE),
             invalidStateTransitionDetected: sinon
+                .stub()
+                .resolves(BlockValidationResult.DISPUTE),
+            forgedInboundMessageBlockDetected: sinon
                 .stub()
                 .resolves(BlockValidationResult.DISPUTE),
             wrongGenesisDetected: sinon

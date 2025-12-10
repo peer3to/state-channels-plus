@@ -121,6 +121,14 @@ export function getTimeConfig(overrides?: TimeConfig): TimeConfig {
     };
 }
 
+export type DeployFullStackParams = {
+    stateMachineArtifact: Artifact;
+    consumerFacetArtifact: Artifact;
+    stateMachineArgs?: any[];
+    consumerFacetArgs?: any[];
+    timeConfig?: TimeConfig;
+};
+
 export async function deploy(
     stateMachineAddress: string,
     consumerFacetAddress: string,
@@ -143,6 +151,38 @@ export async function deploy(
                 timeConfig.evidenceTime
             ]
         }
+    );
+}
+
+export async function deployFullStack(
+    signer: Signer,
+    params: DeployFullStackParams
+): Promise<{ address: string; contract: StateChannelManagerProxy }> {
+    const {
+        stateMachineArtifact,
+        consumerFacetArtifact,
+        stateMachineArgs,
+        consumerFacetArgs,
+        timeConfig
+    } = params;
+
+    const { address: stateMachineAddress } = await deployArtifact(
+        stateMachineArtifact,
+        signer,
+        { args: stateMachineArgs }
+    );
+
+    const { address: consumerFacetAddress } = await deployArtifact(
+        consumerFacetArtifact,
+        signer,
+        { args: consumerFacetArgs }
+    );
+
+    return deploy(
+        stateMachineAddress,
+        consumerFacetAddress,
+        signer,
+        timeConfig
     );
 }
 

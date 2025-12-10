@@ -10,18 +10,20 @@ import {
 } from "@test/test_utils/testHelpers";
 import { SignatureUtils } from "@/utils";
 import {
-    MathStateChannelManagerProxy,
-    MathStateMachine
+    StateChannelManagerProxy,
+    MathStateMachine,
+    MathConsumerFacet__factory
 } from "@typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { Bytes } from "@/types/types";
 import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 describe("StateChannelManagerProxy", function () {
-    let mathChannelManager: MathStateChannelManagerProxy;
+    let mathChannelManager: StateChannelManagerProxy;
     let mathInstance: MathStateMachine;
     let firstSigner: HardhatEthersSigner;
     let secondSigner: HardhatEthersSigner;
+    let thirdSigner: HardhatEthersSigner;
 
     // Default test objects - can be overridden in individual tests
     let jc1: JoinChannelStruct;
@@ -41,6 +43,7 @@ describe("StateChannelManagerProxy", function () {
         const signers = await getSigners(ethers);
         firstSigner = signers.firstSigner;
         secondSigner = signers.secondSigner;
+        thirdSigner = signers.thirdSigner;
 
         jc1 = createJoinChannelTestObject(firstSigner.address);
         jc2 = createJoinChannelTestObject(secondSigner.address);
@@ -75,7 +78,7 @@ describe("StateChannelManagerProxy", function () {
                 ]
             });
             const receipt = await res.wait();
-            expect(receipt?.logs.length, "Event logs").to.be.equal(1);
+            expect(receipt?.logs.length, "Event logs").to.be.equal(2); // ChannelOpened & InboundMessagesProcessed
             receipt?.logs.forEach((event: any) => {
                 const e: EventLog = event as EventLog;
                 const id = e.topics[1];
@@ -101,7 +104,7 @@ describe("StateChannelManagerProxy", function () {
                 ]
             });
             const receipt = await res.wait();
-            expect(receipt?.logs.length, "Event logs").to.be.equal(1);
+            expect(receipt?.logs.length, "Event logs").to.be.equal(2); // ChannelOpened & InboundMessagesProcessed
             receipt?.logs.forEach((event: any) => {
                 const e: EventLog = event as EventLog;
                 const id = e.topics[1];
@@ -188,6 +191,93 @@ describe("StateChannelManagerProxy", function () {
                     "ECDSAInvalidSignatureLength"
                 )
                 .withArgs(66);
+        });
+
+        it("forces inbound join message and updates math state machine", async function () {
+            const consumerFacet = MathConsumerFacet__factory.connect(
+                await mathChannelManager.getAddress(),
+                firstSigner
+            );
+            const openTx = await mathChannelManager.open({
+                encodedOpenChannel: openChannelSigned.encoded,
+                signatures: [
+                    await SignatureUtils.signOpenChannel(
+                        openChannel,
+                        firstSigner
+                    ).then((s) => s.signature as Bytes),
+                    await SignatureUtils.signOpenChannel(
+                        openChannel,
+                        secondSigner
+                    ).then((s) => s.signature as Bytes)
+                ]
+            });
+            const openReceipt = await openTx.wait();
+
+            const parsedOpenEvent = openReceipt?.logs
+                .map((log) => {
+                    try {
+                        return mathChannelManager.interface.parseLog(log);
+                    } catch (error) {
+                        return null;
+                    }
+                })
+                .find((parsed) => parsed && parsed.name === "ChannelOpened");
+            expect(parsedOpenEvent, "ChannelOpened event not found").to.exist;
+            const channelOpenedEvent = parsedOpenEvent!;
+            const genesisState = channelOpenedEvent.args.encodedState as string;
+
+            const forcedAmount = 250n;
+            const [messageBlock, newTotalDeposits] =
+                await consumerFacet.forceInboundJoin.staticCall(
+                    openChannel.channelId,
+                    thirdSigner.address,
+                    forcedAmount
+                );
+            await consumerFacet.forceInboundJoin(
+                openChannel.channelId,
+                thirdSigner.address,
+                forcedAmount
+            );
+
+            expect(messageBlock.messages.length).to.equal(1);
+            expect(messageBlock.blockHeight).to.equal(2);
+
+            const forcedMessage = messageBlock.messages[0];
+            const joinMessageType = ethers.keccak256(
+                ethers.toUtf8Bytes("JOIN_CHANNEL_MESSAGE")
+            );
+            expect(forcedMessage.messageType).to.equal(joinMessageType);
+            expect(forcedMessage.participant).to.equal(thirdSigner.address);
+            expect(forcedMessage.balance.amount).to.equal(forcedAmount);
+
+            const initialDeposits =
+                BigInt(jc1.balance.amount) + BigInt(jc2.balance.amount);
+            expect(newTotalDeposits.amount).to.equal(
+                initialDeposits + forcedAmount
+            );
+
+            await mathInstance
+                .connect(firstSigner)
+                .setState(genesisState as Bytes);
+
+            await mathInstance.connect(firstSigner).processInboundMessage({
+                messageType: forcedMessage.messageType,
+                participant: forcedMessage.participant,
+                balance: {
+                    amount: forcedMessage.balance.amount,
+                    data: forcedMessage.balance.data
+                },
+                data: forcedMessage.data
+            });
+
+            const participants = await mathInstance.getParticipants();
+            expect(participants).to.have.length(3);
+            expect(participants).to.include(thirdSigner.address);
+
+            const insertedBalance = await mathInstance.getBalance(
+                thirdSigner.address
+            );
+            expect(insertedBalance).to.equal(forcedAmount);
         });
 
         it("2 participants channelId = 0 - fail", async function () {

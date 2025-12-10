@@ -72,7 +72,6 @@ contract LocalDiamond is StateChannelManagerProxy {
             snapshotInboundBlock.blockHeight = stateSnapshot.snapshotData.latestInboundMessageBlockHeight;
             snapshotInboundBlock.totalBalance = stateSnapshot.snapshotData.totalDeposits;
             snapshotInboundBlock.timestamp = stateSnapshot.timestamp;
-            _persistInboundMessageBlock(channelId, inboundMessageBlockHash, snapshotInboundBlock);
         }
     }
 

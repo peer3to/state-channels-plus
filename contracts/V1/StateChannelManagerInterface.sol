@@ -35,6 +35,8 @@ abstract contract StateChannelManagerInterface {
         virtual
         returns (bool found, bytes32 blockCalldataCommitment);
 
+    function hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash) public view virtual returns (bool);
+
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public virtual;
 
     function uploadDisputeWithCalldata(

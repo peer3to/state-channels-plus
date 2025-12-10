@@ -2,7 +2,8 @@ import { Signer, ethers } from "ethers";
 import {
     BlockStruct,
     SignedBlockStruct,
-    BlockConfirmationStruct
+    BlockConfirmationStruct,
+    MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Codec, Type } from "../utils/Codec";
 import {
@@ -155,6 +156,10 @@ export default class Block {
 
     get transaction() {
         return this.block.transaction;
+    }
+
+    get messageBlocks(): MessageBlockStruct[] {
+        return this.block.messageBlocks;
     }
 
     get originalSignature(): Signature {

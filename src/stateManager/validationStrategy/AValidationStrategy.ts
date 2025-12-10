@@ -1,6 +1,9 @@
 import { Block } from "@/models";
 import { BlockValidationResult } from "@/types";
-import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    BlockConfirmationStruct,
+    MessageBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import ATransport from "@/transport/ATransport";
 
 export default abstract class AValidationStrategy {
@@ -41,6 +44,11 @@ export default abstract class AValidationStrategy {
 
     public abstract invalidStateTransitionDetected(
         block: Block
+    ): Promise<BlockValidationResult>;
+
+    public abstract forgedInboundMessageBlockDetected(
+        block: Block,
+        messageBlock: MessageBlockStruct
     ): Promise<BlockValidationResult>;
 
     public abstract wrongGenesisDetected(

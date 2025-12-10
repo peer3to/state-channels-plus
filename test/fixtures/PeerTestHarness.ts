@@ -1,3 +1,5 @@
+import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
+import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import { BytesLike, Signer, ethers } from "ethers";
 import { expect } from "chai";
 import * as sinon from "sinon";
@@ -38,6 +40,9 @@ import {
     BlockStruct,
     TransactionStruct,
     SignedBlockStruct,
+    MessageBlockStruct,
+    MessageStruct,
+    BalanceStruct,
     OpenChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
@@ -47,7 +52,7 @@ import {
 import Clock from "@/Clock";
 import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
-import { deploy } from "../../scripts/V1/deploy";
+import { deployFullStack } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import { ZeroHash } from "ethers";
 import { ATransport } from "@/transport";
@@ -224,27 +229,20 @@ export class PeerTestHarness<T extends AStateMachine> {
             await hre.ethers.getContractFactory("MathStateMachine");
         const mathInstance = await mathSMFactory.deploy(this.options.gasLimit);
         await mathInstance.waitForDeployment();
-        const stateMachineAddress = await mathInstance.getAddress();
 
         this.sharedDeployTx = await mathSMFactory.getDeployTransaction(
             this.options.gasLimit
         );
 
-        // Deploy MathConsumerFacet
-        const mathConsumerFactory =
-            await hre.ethers.getContractFactory("MathConsumerFacet");
-        const mathConsumerInstance = await mathConsumerFactory.deploy();
-        await mathConsumerInstance.waitForDeployment();
-        const consumerFacetAddress = await mathConsumerInstance.getAddress();
-
         const [hardhatSigner] = await hre.ethers.getSigners();
 
-        const deployment = await deploy(
-            stateMachineAddress,
-            consumerFacetAddress,
-            hardhatSigner,
-            this.options.timeConfig
-        );
+        const deployment = await deployFullStack(hardhatSigner, {
+            stateMachineArtifact: MathStateMachineArtifact,
+            consumerFacetArtifact: MathConsumerFacetArtifact,
+            stateMachineArgs: [this.options.gasLimit],
+            consumerFacetArgs: [],
+            timeConfig: this.options.timeConfig
+        });
 
         this.channelManager = deployment.contract;
     }
@@ -1231,7 +1229,8 @@ export class PeerTestHarness<T extends AStateMachine> {
         const blockStruct: BlockStruct = {
             transaction: transaction,
             stateSnapshotHash: stateSnapshotHash,
-            previousBlockHash: previousBlockHash
+            previousBlockHash: previousBlockHash,
+            messageBlocks: []
         };
 
         // Create invalid signature by corrupting the hash
@@ -1401,6 +1400,122 @@ export class PeerTestHarness<T extends AStateMachine> {
         );
     }
 
+    async submitForgedInboundMessageBlock(
+        peerIndex: number,
+        options?: {
+            forkId?: ForkId;
+        }
+    ): Promise<Block> {
+        const peer = this.getPeer(peerIndex);
+        const forkId = options?.forkId || this.activeForkId!;
+
+        const nextBlockHeight =
+            peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
+        const previousBlock =
+            peer.stateManager.storage.blocks.getLatestBlock(forkId);
+        const previousBlockHash = this.getPreviousBlockHash(
+            peer,
+            forkId,
+            nextBlockHeight
+        );
+        const stateSnapshotHash = this.getStateSnapshotHash(
+            peer,
+            forkId,
+            previousBlock
+        );
+
+        const previousStateSnapshot =
+            peer.stateManager.storage.getPreviousStateSnapshot({
+                forkId,
+                height: nextBlockHeight
+            });
+        if (!previousStateSnapshot) {
+            throw new Error(
+                `Unable to compute previous snapshot for fork ${forkId}`
+            );
+        }
+
+        const latestInboundHash = (previousStateSnapshot.snapshotData
+            .latestInboundMessageBlockHash ?? ZeroHash) as Hash;
+        const latestInboundHeightValue =
+            previousStateSnapshot.snapshotData
+                .latestInboundMessageBlockHeight ?? 0n;
+        const latestInboundHeight =
+            typeof latestInboundHeightValue === "bigint"
+                ? latestInboundHeightValue
+                : BigInt(latestInboundHeightValue);
+        const forgedInboundHeight = latestInboundHeight + 1n;
+
+        const forgedMessage: MessageStruct = {
+            messageType: ethers.hexlify(ethers.randomBytes(32)) as Bytes,
+            participant: peer.address,
+            balance: {
+                amount: 1n,
+                data: "0x"
+            },
+            data: ethers.hexlify(ethers.randomBytes(32)) as Bytes
+        };
+
+        const totalBalance: BalanceStruct = {
+            amount: forgedMessage.balance.amount,
+            data: "0x"
+        };
+
+        const forgedMessageBlock: MessageBlockStruct = {
+            previousBlockHash: latestInboundHash || (ZeroHash as Hash),
+            blockHeight: forgedInboundHeight,
+            messages: [forgedMessage],
+            totalBalance,
+            timestamp: BigInt(Clock.getTimeInSeconds())
+        };
+
+        const contractInterface = (peer.contractInstance as any).interface;
+        const transactionData = contractInterface.encodeFunctionData("add", [
+            1
+        ]) as Bytes;
+
+        const blockTimestampBase = previousBlock
+            ? previousBlock.timestamp + 1
+            : Clock.getTimeInSeconds();
+
+        const transaction: TransactionStruct = {
+            header: {
+                channelId: peer.stateManager.getChannelId(),
+                participant: peer.address,
+                forkId,
+                transactionCnt: BigInt(nextBlockHeight),
+                timestamp: BigInt(blockTimestampBase)
+            },
+            body: {
+                encodedData: transactionData,
+                data: transactionData
+            }
+        };
+
+        const blockStruct: BlockStruct = {
+            transaction,
+            stateSnapshotHash,
+            previousBlockHash,
+            messageBlocks: [forgedMessageBlock]
+        };
+
+        const forgedBlock = await Block.fromBlockStruct(
+            blockStruct,
+            peer.signer
+        );
+
+        this.logger.info(
+            `Peer ${peerIndex} broadcasting forged inbound message block at height ${forgedBlock.height}`,
+            { forkId }
+        );
+
+        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
+            .onBlockConfirmation(forgedBlock.blockConfirmationStruct)
+            .broadcast();
+
+        return forgedBlock;
+    }
+
     async submitDoubleSignBlock(
         peerIndex: number,
         options?: {
@@ -1452,7 +1567,8 @@ export class PeerTestHarness<T extends AStateMachine> {
                 }
             },
             stateSnapshotHash: conflictingStateSnapshotHash,
-            previousBlockHash: originalBlock.previousBlockHash
+            previousBlockHash: originalBlock.previousBlockHash,
+            messageBlocks: []
         };
 
         const conflictingBlock = await Block.fromBlockStruct(
@@ -1537,7 +1653,8 @@ export class PeerTestHarness<T extends AStateMachine> {
         const blockStruct: BlockStruct = {
             transaction: transaction,
             stateSnapshotHash: wrongStateSnapshotHash,
-            previousBlockHash: previousBlockHash
+            previousBlockHash: previousBlockHash,
+            messageBlocks: []
         };
 
         const invalidBlock = await Block.fromBlockStruct(

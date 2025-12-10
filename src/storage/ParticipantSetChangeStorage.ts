@@ -1,6 +1,6 @@
 import { BlockHeight, ForkId } from "@/types/types";
 
-export class ExitPointsStorage {
+export class ParticipantSetChangeStorage {
     private map: Map<ForkId, Set<BlockHeight>>;
 
     constructor() {
@@ -11,10 +11,13 @@ export class ExitPointsStorage {
     // CREATE
     // ====================================
 
-    storeExitPoint(forkId: ForkId, blockHeight: BlockHeight): Set<BlockHeight> {
-        const exitPoints = this.map.get(forkId) ?? new Set();
-        exitPoints.add(blockHeight);
-        this.map.set(forkId, exitPoints);
+    storeChangePoint(
+        forkId: ForkId,
+        blockHeight: BlockHeight
+    ): Set<BlockHeight> {
+        const changePoints = this.map.get(forkId) ?? new Set();
+        changePoints.add(blockHeight);
+        this.map.set(forkId, changePoints);
 
         return this.map.get(forkId) as Set<BlockHeight>;
     }
@@ -23,13 +26,13 @@ export class ExitPointsStorage {
     // READ
     // ====================================
 
-    getExitPointsInRange(
+    getChangePointsInRange(
         forkId: ForkId,
         start?: BlockHeight,
         end?: BlockHeight
     ): BlockHeight[] {
-        const exitPoints = this.map.get(forkId);
-        if (!exitPoints?.size) {
+        const changePoints = this.map.get(forkId);
+        if (!changePoints?.size) {
             return [];
         }
 
@@ -37,7 +40,7 @@ export class ExitPointsStorage {
         if (start !== undefined && end !== undefined && end <= start) {
             return [];
         }
-        const list = Array.from(exitPoints).sort(
+        const list = Array.from(changePoints).sort(
             (a, b) => Number(a) - Number(b)
         );
 
@@ -48,10 +51,10 @@ export class ExitPointsStorage {
         const actualStart = start ?? list[0];
         const actualEnd = end ?? list[list.length - 1] + 1;
 
-        const filteredExitPoints = list.filter(
+        const filteredChangePoints = list.filter(
             (height) => height >= actualStart && height <= actualEnd
         );
 
-        return filteredExitPoints;
+        return filteredChangePoints;
     }
 }

@@ -261,6 +261,26 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
     }
 
+    async processInboundMessage(message: MessageStruct): Promise<boolean> {
+        const callData = this.getEncodedCalldata("processInboundMessage", [
+            message
+        ]);
+
+        try {
+            const result =
+                await this.stateMachineContractExecuter.executeCall(callData);
+            const hexResult = hexlify(result.returnValue);
+            const [success] = ethers.AbiCoder.defaultAbiCoder().decode(
+                ["bool"],
+                hexResult
+            );
+            this.processLogs(result.logs);
+            return Boolean(success);
+        } catch (error) {
+            throw this.createContextError("processInboundMessage", error);
+        }
+    }
+
     async getTotalStateBalance(): Promise<BalanceStruct> {
         const callData = this.getEncodedCalldata("getTotalStateBalance");
 

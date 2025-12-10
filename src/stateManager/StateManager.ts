@@ -82,6 +82,11 @@ import { TimeoutManager } from "@/utils/TimeoutManager";
 
 const NULL = "0x00";
 const LOG_TAG = "[STATE MANAGER]";
+
+type ParticipantChanges = {
+    left: Set<Address>;
+    joined: Set<Address>;
+};
 class StateManager {
     diamondStateMachine: ADiamondStateMachine;
     p2pEventHooks: P2pEventHooks;
@@ -375,31 +380,52 @@ class StateManager {
                 }
             });
 
-        // Compute local state after reduction (optimistic - assume tx will succeed)
-        const [snapshotData, encodedStateMachineState, outboundMessageBlock] =
-            await this.diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
-                forkId,
-                reducedOutput,
-                reduceData.latestStateSnapshot,
-                reduceData.encodedStateMachineState,
-                reduceData.inboundMessageBlocks
+        try {
+            // Compute local state after reduction (optimistic - assume tx will succeed)
+            const [
+                snapshotData,
+                encodedStateMachineState,
+                outboundMessageBlock
+            ] =
+                await this.diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
+                    forkId,
+                    reducedOutput,
+                    reduceData.latestStateSnapshot,
+                    reduceData.encodedStateMachineState,
+                    reduceData.inboundMessageBlocks
+                );
+
+            const reducedForkId = ethers.keccak256(
+                Codec.encode(snapshotData, Type.SnapshotData)
             );
 
-        const reducedForkId = ethers.keccak256(
-            Codec.encode(snapshotData, Type.SnapshotData)
-        );
-
-        // Update local state to the reduced fork
-        this.logger.debug(
-            `Reduction complete: transitioning to fork ${reducedForkId}`
-        );
-        this.setGenesisState(
-            snapshotData,
-            encodedStateMachineState,
-            reducedForkId,
-            genesisTimestamp,
-            outboundMessageBlock
-        );
+            // Update local state to the reduced fork
+            this.logger.debug(
+                `Reduction complete: transitioning to fork ${reducedForkId}`
+            );
+            this.setGenesisState(
+                snapshotData,
+                encodedStateMachineState,
+                reducedForkId,
+                genesisTimestamp,
+                outboundMessageBlock
+            );
+        } catch (error) {
+            if (isCustomEvmError(error)) {
+                this.logger.error(
+                    "CustomError computing reduced snapshot data",
+                    {
+                        errorDescription: error.errorDescription
+                    }
+                );
+            } else {
+                this.logger.error("Error computing reduced snapshot data", {
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                });
+            }
+            throw error;
+        }
     }
     public getSignerAddress(): Address {
         return this.signerAddress;
@@ -571,12 +597,45 @@ class StateManager {
 
             // SUCCESS, continue with state transition validation
 
+            const coordinates = block.coordinates;
+            const previousStateSnapshot =
+                this.getPreviousStateSnapshotOrThrow(coordinates);
+            const inboundMessageBlocks = block.messageBlocks;
+
+            const brokenInboundChainBlock =
+                this.findBrokenInboundMessageChainBlock(
+                    previousStateSnapshot,
+                    inboundMessageBlocks
+                );
+
+            if (brokenInboundChainBlock) {
+                validationResult =
+                    await strategy.invalidStateTransitionDetected(block);
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
+            }
+
+            const forgedInboundMessageBlock =
+                await this.detectForgedInboundMessageBlock(block);
+
+            if (forgedInboundMessageBlock) {
+                validationResult =
+                    await strategy.forgedInboundMessageBlockDetected(
+                        block,
+                        forgedInboundMessageBlock
+                    );
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
+            }
+
             const {
                 success,
                 encodedState,
                 successCallback,
                 outboundMessages,
-                leftParticipants
+                participantsBefore
             } = await this.applyTransaction(block.transaction);
 
             if (!success) {
@@ -587,12 +646,28 @@ class StateManager {
                 );
             }
 
+            const { encodedState: stateAfterInbound } =
+                await this.applyInboundMessageBlocksToState(
+                    inboundMessageBlocks,
+                    previousStateSnapshot.snapshotData.totalDeposits,
+                    encodedState
+                );
+
+            const finalParticipants =
+                await this.diamondStateMachine.getParticipants();
+            const participantChanges = this.computeParticipantChanges(
+                participantsBefore,
+                finalParticipants
+            );
+
             const { stateSnapshot, outboundMessageBlock, totalWithdrawals } =
                 await this.createStateSnapshot(
-                    hash(encodedState),
-                    block.coordinates,
+                    hash(stateAfterInbound),
+                    coordinates,
                     block.timestamp,
-                    outboundMessages
+                    outboundMessages,
+                    inboundMessageBlocks,
+                    finalParticipants
                 );
 
             if (stateSnapshot.hash !== block.stateSnapshotHash) {
@@ -608,10 +683,10 @@ class StateManager {
             await this.success(
                 block,
                 stateSnapshot,
-                encodedState,
+                stateAfterInbound,
                 successCallback,
                 totalWithdrawals,
-                leftParticipants,
+                participantChanges,
                 outboundMessageBlock
             );
 
@@ -628,27 +703,20 @@ class StateManager {
         encodedState: Bytes;
         successCallback: () => void;
         outboundMessages: MessageStruct[];
-        leftParticipants: Set<Address>;
+        participantsBefore: Address[];
     }> {
-        const previousParticipants =
+        const participantsBefore =
             await this.diamondStateMachine.getParticipants();
         const { success, successCallback, outboundMessages } =
             await this.diamondStateMachine.stateTransition(transaction);
         const encodedState = await this.diamondStateMachine.getState();
-        const currentParticipants =
-            await this.diamondStateMachine.getParticipants();
-
-        const leftParticipants = difference(
-            new Set(previousParticipants),
-            new Set(currentParticipants)
-        );
 
         return {
             success,
             encodedState,
             successCallback,
             outboundMessages,
-            leftParticipants
+            participantsBefore
         };
     }
 
@@ -669,12 +737,33 @@ class StateManager {
             }
             this.adjustTimestampIfNeeded(tx);
 
+            const coordinates = {
+                forkId: this.forkId,
+                height: Number(tx.header.transactionCnt)
+            };
+            const previousStateSnapshot =
+                this.getPreviousStateSnapshotOrThrow(coordinates);
+            const inboundMessageBlocks = this.getPendingInboundMessageBlocks(
+                previousStateSnapshot
+            );
+
+            const invalidPendingInboundBlock =
+                this.findBrokenInboundMessageChainBlock(
+                    previousStateSnapshot,
+                    inboundMessageBlocks
+                );
+            if (invalidPendingInboundBlock) {
+                throw new Error(
+                    "Pending inbound message blocks do not form a valid chain"
+                );
+            }
+
             const {
                 success,
                 encodedState,
                 successCallback,
                 outboundMessages,
-                leftParticipants
+                participantsBefore
             } = await this.applyTransaction(tx);
 
             if (!success) {
@@ -683,18 +772,35 @@ class StateManager {
                 );
             }
 
-            const { stateSnapshot, outboundMessageBlock, totalWithdrawals } =
-                await this.createStateSnapshot(
-                    hash(encodedState),
-                    {
-                        forkId: this.forkId,
-                        height: Number(tx.header.transactionCnt)
-                    },
-                    Number(tx.header.timestamp),
-                    outboundMessages
+            const { encodedState: stateAfterInbound } =
+                await this.applyInboundMessageBlocksToState(
+                    inboundMessageBlocks,
+                    previousStateSnapshot.snapshotData.totalDeposits,
+                    encodedState
                 );
 
-            const blockStruct = await this.createBlock(tx, stateSnapshot.hash);
+            const finalParticipants =
+                await this.diamondStateMachine.getParticipants();
+            const participantChanges = this.computeParticipantChanges(
+                participantsBefore,
+                finalParticipants
+            );
+
+            const { stateSnapshot, outboundMessageBlock, totalWithdrawals } =
+                await this.createStateSnapshot(
+                    hash(stateAfterInbound),
+                    coordinates,
+                    Number(tx.header.timestamp),
+                    outboundMessages,
+                    inboundMessageBlocks,
+                    finalParticipants
+                );
+
+            const blockStruct = await this.createBlock(
+                tx,
+                stateSnapshot.hash,
+                inboundMessageBlocks
+            );
 
             const encodedBlock = Codec.encode(blockStruct, Type.Block);
             const blockHash = hash(encodedBlock);
@@ -710,10 +816,10 @@ class StateManager {
             await this.success(
                 block,
                 stateSnapshot,
-                encodedState,
+                stateAfterInbound,
                 successCallback,
                 totalWithdrawals,
-                leftParticipants,
+                participantChanges,
                 outboundMessageBlock
             );
 
@@ -1388,23 +1494,20 @@ class StateManager {
         stateMachineStateHash: Hash,
         coordinates: BlockCoordinates,
         timestamp: Timestamp,
-        outboundMessages: MessageStruct[]
+        outboundMessages: MessageStruct[],
+        inboundMessageBlocks: MessageBlockStruct[],
+        participants: Address[]
     ): Promise<{
         stateSnapshot: StateSnapshot;
         outboundMessageBlock?: MessageBlockStruct;
         totalWithdrawals: BalanceStruct;
     }> {
         const previousStateSnapshot =
-            this.storage.getPreviousStateSnapshot(coordinates);
-        if (!previousStateSnapshot)
-            throw new Error(
-                "createStateSnapshot for block - previousStateSnapshot undefined"
-            );
-
+            this.getPreviousStateSnapshotOrThrow(coordinates);
         const previousSnapshotData = previousStateSnapshot.snapshotData;
-        const latestInboundMessageBlockHash =
+        let latestInboundMessageBlockHash =
             previousSnapshotData.latestInboundMessageBlockHash;
-        const totalDeposits = previousSnapshotData.totalDeposits;
+        let totalDeposits = previousSnapshotData.totalDeposits;
         const originForkId = previousSnapshotData.originForkId;
 
         let { latestOutboundMessageBlockHash, totalWithdrawals } =
@@ -1412,10 +1515,20 @@ class StateManager {
         let latestOutboundMessageBlockHeight = BigInt(
             previousSnapshotData.latestOutboundMessageBlockHeight ?? 0n
         );
-        const latestInboundMessageBlockHeight = BigInt(
+        let latestInboundMessageBlockHeight = BigInt(
             previousSnapshotData.latestInboundMessageBlockHeight ?? 0n
         );
-        const participants = await this.diamondStateMachine.getParticipants();
+        if (inboundMessageBlocks.length > 0) {
+            const lastInboundBlock =
+                inboundMessageBlocks[inboundMessageBlocks.length - 1];
+            latestInboundMessageBlockHash = hash(
+                Codec.encode(lastInboundBlock, Type.MessageBlock)
+            );
+            latestInboundMessageBlockHeight = BigInt(
+                lastInboundBlock.blockHeight ?? latestInboundMessageBlockHeight
+            );
+            totalDeposits = lastInboundBlock.totalBalance;
+        }
 
         let outboundMessageBlock: MessageBlockStruct | undefined;
 
@@ -1465,9 +1578,128 @@ class StateManager {
         };
     }
 
+    private getPreviousStateSnapshotOrThrow(
+        coordinates: BlockCoordinates
+    ): StateSnapshot {
+        const previousStateSnapshot =
+            this.storage.getPreviousStateSnapshot(coordinates);
+        if (!previousStateSnapshot)
+            throw new Error(
+                "createStateSnapshot for block - previousStateSnapshot undefined"
+            );
+        return previousStateSnapshot;
+    }
+
+    private getPendingInboundMessageBlocks(
+        previousStateSnapshot: StateSnapshot
+    ): MessageBlockStruct[] {
+        const latestStoredHash =
+            this.storage.inboundMessages.getLatestBlockHash();
+        if (!latestStoredHash) {
+            return [];
+        }
+
+        const previousHash =
+            previousStateSnapshot.snapshotData.latestInboundMessageBlockHash;
+
+        if (previousHash && latestStoredHash === previousHash) {
+            return [];
+        }
+
+        return this.storage.inboundMessages.getMessageBlocksInRange(
+            latestStoredHash,
+            previousHash ?? ethers.ZeroHash
+        );
+    }
+
+    private findBrokenInboundMessageChainBlock(
+        previousStateSnapshot: StateSnapshot,
+        inboundMessageBlocks: MessageBlockStruct[]
+    ): MessageBlockStruct | undefined {
+        if (inboundMessageBlocks.length === 0) {
+            return undefined;
+        }
+
+        let expectedPreviousHash =
+            previousStateSnapshot.snapshotData.latestInboundMessageBlockHash ??
+            ethers.ZeroHash;
+        let expectedHeight = BigInt(
+            previousStateSnapshot.snapshotData
+                .latestInboundMessageBlockHeight ?? 0n
+        );
+
+        for (const inboundBlock of inboundMessageBlocks) {
+            if (inboundBlock.previousBlockHash !== expectedPreviousHash) {
+                return inboundBlock;
+            }
+            expectedHeight += 1n;
+            if (BigInt(inboundBlock.blockHeight ?? 0n) !== expectedHeight) {
+                return inboundBlock;
+            }
+            expectedPreviousHash = hash(
+                Codec.encode(inboundBlock, Type.MessageBlock)
+            );
+        }
+
+        return undefined;
+    }
+
+    private async applyInboundMessageBlocksToState(
+        inboundMessageBlocks: MessageBlockStruct[],
+        totalDeposits: BalanceStruct,
+        encodedState: Bytes
+    ): Promise<{ encodedState: Bytes; totalDeposits: BalanceStruct }> {
+        let updatedTotalDeposits = totalDeposits;
+
+        if (inboundMessageBlocks.length === 0) {
+            return {
+                encodedState,
+                totalDeposits: updatedTotalDeposits
+            };
+        }
+
+        for (const messageBlock of inboundMessageBlocks) {
+            for (const message of messageBlock.messages) {
+                const processed =
+                    await this.diamondStateMachine.processInboundMessage(
+                        message
+                    );
+                if (!processed) {
+                    throw new Error("Failed to process inbound message");
+                }
+                updatedTotalDeposits =
+                    await this.diamondStateMachine.addBalance(
+                        updatedTotalDeposits,
+                        message.balance
+                    );
+            }
+        }
+
+        const updatedEncodedState = await this.diamondStateMachine.getState();
+
+        return {
+            encodedState: updatedEncodedState,
+            totalDeposits: updatedTotalDeposits
+        };
+    }
+
+    private computeParticipantChanges(
+        previousParticipants: Address[],
+        finalParticipants: Address[]
+    ): ParticipantChanges {
+        const previousSet = new Set(previousParticipants);
+        const finalSet = new Set(finalParticipants);
+
+        return {
+            left: difference(previousSet, finalSet),
+            joined: difference(finalSet, previousSet)
+        };
+    }
+
     private async createBlock(
         tx: TransactionStruct,
-        stateSnapshotHash: Hash
+        stateSnapshotHash: Hash,
+        messageBlocks: MessageBlockStruct[]
     ): Promise<BlockStruct> {
         const forkId = this.forkId;
         const blockHeight = Number(tx.header.transactionCnt);
@@ -1487,13 +1719,48 @@ class StateManager {
             previousHash = previousBlockOrSnapshot.stateSnapshot!.hash;
         }
 
-        const blockStruct: BlockStruct = {
+        const blockStruct = {
             transaction: tx,
             stateSnapshotHash: stateSnapshotHash,
-            previousBlockHash: previousHash
-        };
+            previousBlockHash: previousHash,
+            messageBlocks
+        } as BlockStruct;
 
         return blockStruct;
+    }
+
+    private async detectForgedInboundMessageBlock(
+        block: Block
+    ): Promise<MessageBlockStruct | undefined> {
+        if (block.messageBlocks.length === 0) {
+            return undefined;
+        }
+
+        for (const inboundBlock of block.messageBlocks) {
+            const inboundBlockHash = hash(
+                Codec.encode(inboundBlock, Type.MessageBlock)
+            );
+
+            const existsLocally =
+                this.storage.inboundMessages.getMessageBlock(inboundBlockHash);
+            if (existsLocally) {
+                continue;
+            }
+
+            const existsOnChain =
+                await this.stateChannelManagerContract.hasInboundMessageBlock(
+                    this.channelId,
+                    inboundBlockHash
+                );
+
+            if (existsOnChain) {
+                continue;
+            }
+
+            return inboundBlock;
+        }
+
+        return undefined;
     }
 
     // ─────────────────────── ACTION HANDLERS ───────────────────────
@@ -1503,7 +1770,7 @@ class StateManager {
         encodedStateMachineState: Bytes,
         successCallback: () => void,
         totalWithdrawals: BalanceStruct,
-        leftParticipants: Set<Address>,
+        participantChanges: ParticipantChanges,
         outboundMessageBlock?: MessageBlockStruct
     ): Promise<void> {
         // step 1 - Confirm and Gossip
@@ -1534,16 +1801,22 @@ class StateManager {
             this.storage.outboundMessages.store(outboundMessageBlock);
         }
 
-        // step 6 - persist exit points
-        if (leftParticipants.size > 0) {
-            this.storage.exitPoints.storeExitPoint(block.forkId, block.height);
+        // step 6 - persist participant change points
+        if (
+            participantChanges.left.size > 0 ||
+            participantChanges.joined.size > 0
+        ) {
+            this.storage.participantSetChanges.storeChangePoint(
+                block.forkId,
+                block.height
+            );
         }
 
         // step 7 - startMaybeExitOnChain
         await this.startMaybeExitOnChain(
             block,
             stateSnapshot,
-            leftParticipants,
+            participantChanges,
             outboundMessageBlock
         );
 
@@ -1584,7 +1857,7 @@ class StateManager {
         );
     }
 
-    private async shouldSignBlock(block: Block): Promise<boolean> {
+    public async shouldSignBlock(block: Block): Promise<boolean> {
         if (this.p2pManager.isBlacklisted(block.author)) return false;
 
         // Check if the block is posted on-chain and I am the next to write
@@ -1601,11 +1874,12 @@ class StateManager {
     private async startMaybeExitOnChain(
         block: Block,
         _stateSnapshot: StateSnapshot,
-        leftParticipants: Set<Address>,
+        participantChanges: ParticipantChanges,
         _outboundMessageBlock?: MessageBlockStruct
     ): Promise<void> {
-        if (!leftParticipants.has(this.signerAddress)) {
+        if (!participantChanges.left.has(this.signerAddress)) {
             // I didn't exit, nothing to do
+            // TODO - think about this
             return;
         }
 

@@ -123,7 +123,8 @@ export function block(
     const blockStruct: BlockStruct = {
         transaction: transaction(undefined, signer),
         previousBlockHash: ethers.hexlify(ethers.randomBytes(32)),
-        stateSnapshotHash: ethers.hexlify(ethers.randomBytes(32))
+        stateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
+        messageBlocks: []
     };
 
     if (overrides.transaction) {

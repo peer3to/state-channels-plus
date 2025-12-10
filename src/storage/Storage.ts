@@ -2,7 +2,7 @@ import { BlockStorage } from "./BlockStorage";
 import { MessageBlockStorage } from "./MessageBlockStorage";
 import { StateSnapshotStorage } from "./StateSnapshotStorage";
 import { StateMachineStateStorage } from "./StateMachineStateStorage";
-import { ExitPointsStorage } from "./ExitPointsStorage";
+import { ParticipantSetChangeStorage } from "./ParticipantSetChangeStorage";
 import { QueueStorage } from "./QueueStorage";
 import { DisputeStorage } from "./DisputeStorage";
 import { FraudProofStorage } from "./FraudProofStorage";
@@ -22,7 +22,7 @@ export class Storage {
     public readonly outboundMessages: MessageBlockStorage;
     public readonly stateSnapshots: StateSnapshotStorage;
     public readonly stateMachineStates: StateMachineStateStorage;
-    public readonly exitPoints: ExitPointsStorage;
+    public readonly participantSetChanges: ParticipantSetChangeStorage;
     public readonly queues: QueueStorage;
     public readonly disputes: DisputeStorage;
     public readonly fraudProofs: FraudProofStorage;
@@ -37,7 +37,9 @@ export class Storage {
         this.outboundMessages = deepCopyProxy(new MessageBlockStorage());
         this.stateSnapshots = deepCopyProxy(new StateSnapshotStorage());
         this.stateMachineStates = deepCopyProxy(new StateMachineStateStorage());
-        this.exitPoints = deepCopyProxy(new ExitPointsStorage());
+        this.participantSetChanges = deepCopyProxy(
+            new ParticipantSetChangeStorage()
+        );
         this.queues = deepCopyProxy(new QueueStorage());
         this.disputes = deepCopyProxy(new DisputeStorage());
         this.fraudProofs = deepCopyProxy(new FraudProofStorage());

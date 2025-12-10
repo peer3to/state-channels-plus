@@ -88,17 +88,18 @@ class AgreementManager {
         }
 
         // Get all exit points for this fork
-        const exitPoints = this.storage.exitPoints.getExitPointsInRange(forkId);
+        const participantChangeHeights =
+            this.storage.participantSetChanges.getChangePointsInRange(forkId);
 
         const milestones: MilestoneProofStruct[] = [];
         let currentSnapshot = genesisSnapshot;
 
-        // For each exit point, iterate forward to prove it's final
-        for (const exitPointHeight of exitPoints) {
+        // For each participant change point, iterate forward to prove it's final
+        for (const changeHeight of participantChangeHeights) {
             const blockIterator = this.storage.blocks.getIterator(
                 forkId,
                 SortOrder.ASC,
-                exitPointHeight
+                changeHeight
             );
 
             const milestone = this.tryBuildMilestone(

@@ -1,6 +1,9 @@
 import { expect } from "chai";
 import { PeerTestHarness, sleep } from "@test/fixtures/PeerTestHarness";
-import { MathStateMachine } from "@typechain-types/index";
+import {
+    MathStateMachine,
+    MathConsumerFacet__factory
+} from "@typechain-types/index";
 import hre from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 
@@ -544,6 +547,75 @@ describe("E2E: Core Functionality", function () {
             expect(timeoutStruct!.isForced).to.be.false;
         });
     });
+
+    describe("Forced Inbound Joins", function () {
+        it("should propagate forced joins through event listeners and state updates", async function () {
+            await harness!.setup(3);
+            await harness!.openChannel();
+
+            const mathConsumerFacet = MathConsumerFacet__factory.connect(
+                await harness!.channelManager.getAddress(),
+                harness!.peers[0].signer
+            );
+            const [, , , forcedJoinSigner] = await hre.ethers.getSigners();
+            const forcedAmount = 275n;
+
+            const initialParticipants =
+                await harness!.peers[0].stateManager.diamondStateMachine.getParticipants();
+            expect(initialParticipants).to.have.length(3);
+
+            harness!.resetEventSpies();
+
+            const tx = await mathConsumerFacet.forceInboundJoin(
+                harness!.channelId,
+                forcedJoinSigner.address,
+                forcedAmount
+            );
+            await tx.wait();
+
+            const inboundEventsObserved = await harness!.waitForEventCounts(
+                "onInboundMessagesProcessed",
+                harness!.peers.map((peer) => ({
+                    peerId: peer.index,
+                    expectedCount: 1
+                })),
+                5000,
+                { mode: "atLeast" }
+            );
+            expect(inboundEventsObserved).to.be.true;
+
+            const latestInboundBlock =
+                harness!.peers[0].stateManager.storage.inboundMessages.getLatestMessageBlock();
+            expect(latestInboundBlock).to.not.equal(
+                undefined,
+                "forced inbound block should be stored"
+            );
+
+            const forcedMessage = latestInboundBlock!.messages[0];
+            expect(forcedMessage.participant).to.equal(
+                forcedJoinSigner.address
+            );
+            expect(forcedMessage.balance.amount).to.equal(forcedAmount);
+
+            await harness!.submitNextTransaction((contract) =>
+                contract.add(10)
+            );
+            harness!.assertAllPeersInSync();
+
+            for (const peer of harness!.peers) {
+                const participants =
+                    await peer.stateManager.diamondStateMachine.getParticipants();
+                expect(participants).to.have.length(4);
+                expect(participants).to.include(forcedJoinSigner.address);
+
+                const insertedBalance = await peer.contractInstance.getBalance(
+                    forcedJoinSigner.address
+                );
+                expect(insertedBalance).to.equal(forcedAmount);
+            }
+        });
+    });
+
 
     describe("Open/Join Channel", function () {
         // Arrange: Setup 3 participants, remove one signature from OpenChannelConfirmation

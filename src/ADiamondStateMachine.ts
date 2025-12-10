@@ -33,6 +33,10 @@ abstract class ADiamondStateMachine {
         balance2: BalanceStruct
     ): Promise<BalanceStruct>;
 
+    public abstract processInboundMessage(
+        message: MessageStruct
+    ): Promise<boolean>;
+
     public abstract getTotalStateBalance(): Promise<BalanceStruct>;
 
     public abstract getZeroBalance(): Promise<BalanceStruct>;
