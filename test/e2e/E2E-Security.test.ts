@@ -287,7 +287,6 @@ describe("E2E: Advanced Security", function () {
         });
 
         it("should remove malicious participant after fork and keep liveness", async function () {
-            // Arrange - same timing as reduction happy path
             await harness!.setup(4, {
                 timeConfig: {
                     p2pTime: 3,
