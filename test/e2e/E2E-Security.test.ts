@@ -728,6 +728,112 @@ describe("E2E: Advanced Security", function () {
             // Restore original handler
             peer2EventHandler.onBlockCalldataPosted = originalCalldataHandler;
         });
+
+        it("should sync missing state via validStateProofButNotSynced when peer receives dispute with blocks it doesn't have", async function () {
+            // Setup: 3 peers with timing that allows disputes
+            await harness!.setup(3, {
+                timeConfig: {
+                    p2pTime: 3,
+                    agreementTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 3
+                }
+            });
+            const forkId = await harness!.openChannel();
+
+            // Submit initial transaction and wait for sync
+            await harness!.submitNextTransaction((contract) => contract.add(1));
+            harness!.assertAllPeersInSync();
+            harness!.resetEventSpies();
+
+            // Get peer 1's broadcast function reference
+            const peer1 = harness!.peers[1];
+            const peer1RemoteRpc = peer1.stateManager.p2pManager.remoteRpc;
+            const originalStateTransitionService =
+                peer1RemoteRpc.stateTransitionService;
+
+            // Stub peer 1's broadcast to be a no-op - peer 1 will author but not broadcast
+            peer1RemoteRpc.stateTransitionService.onBlockConfirmation = (
+                _blockConfirmation
+            ) => {
+                // Return a dummy handler that does nothing
+                return {
+                    broadcast: () => {
+                        peer1.logger.info("Suppressed broadcast from peer 1");
+                    },
+                    sendOne: () => {},
+                    sendMultiple: () => {}
+                } as unknown as ReturnType<
+                    typeof originalStateTransitionService.onBlockConfirmation
+                >;
+            };
+
+            // Peer 1 authors a block but doesn't broadcast it
+            // This creates a state where peer 1 is 1 block ahead of peers 0 and 2
+            await harness!.waitForTurn(peer1);
+            await harness!.submitNextTransaction(
+                (contract) => contract.add(10),
+                { waitForSync: false }
+            );
+
+            // Verify peer 1 has more blocks than peer 2
+
+            await harness!.waitForCondition(
+                () =>
+                    peer1.stateManager.storage.blocks.getNextBlockHeight(
+                        forkId
+                    ) >
+                    harness!.peers[2].stateManager.storage.blocks.getNextBlockHeight(
+                        forkId
+                    ),
+                5000
+            );
+
+            // Now peer 0 submits an invalid state transition block
+            // This will trigger disputes from both peer 1 and peer 2
+            await harness!.submitInvalidStateTransitionBlock(0, { forkId });
+
+            // Wait for disputes to be committed on-chain
+            const disputesCommitted = await harness!.waitForEventCounts(
+                "onDisputeCommitted",
+                [
+                    { peerId: 1, expectedCount: 2 },
+                    { peerId: 2, expectedCount: 2 }
+                ],
+                8000,
+                { mode: "atLeast" }
+            );
+            expect(disputesCommitted).to.be.true;
+
+            // Peer 2 should sync the missing block via validStateProofButNotSynced
+            // when validating peer 1's dispute which contains blocks peer 2 doesn't have
+            const peer2Synced = await harness!.waitForCondition(() => {
+                const peer2BlockCount =
+                    harness!.peers[2].stateManager.storage.blocks.getNextBlockHeight(
+                        forkId
+                    );
+                const peer1BlockCount =
+                    peer1.stateManager.storage.blocks.getNextBlockHeight(
+                        forkId
+                    );
+
+                const peer2LatestBlockHash =
+                    harness!.peers[2].stateManager.storage.blocks.getLatestBlock(
+                        forkId
+                    )?.hash;
+                const peer1LatestBlockHash =
+                    peer1.stateManager.storage.blocks.getLatestBlock(
+                        forkId
+                    )?.hash;
+                // Peer 2 should have gained the block that peer 1 had
+                return (
+                    peer2LatestBlockHash === peer1LatestBlockHash &&
+                    peer2BlockCount === 2 &&
+                    peer1BlockCount === 2
+                );
+            }, 5000);
+            expect(peer2Synced).to.be.true;
+        });
     });
 
     describe.skip("Economic Security", function () {
