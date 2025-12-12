@@ -16,6 +16,7 @@ import SpectateServiceRpcMethods from "./SpectateRpcMethods";
 import P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { Status } from "@/types";
+import { HandshakeCompletedGuard } from "@/rpc/guards";
 
 export interface DisputeWindowVerification {
     disputeConfirmations: DisputeConfirmationStruct[];
@@ -55,6 +56,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             })
         );
         this.timeoutManager = p2pManager.stateManager.timeoutManager;
+        this.guards = [new HandshakeCompletedGuard(this)];
     }
 
     public createRPCMethods(transport: ATransport): SpectateServiceRpcMethods {

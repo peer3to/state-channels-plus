@@ -5,6 +5,7 @@ import WebRTCTransport from "@/transport/WebRTCTransport";
 import P2PManager from "@/P2PManager";
 import WebRTCSetupRpcMethods from "./WebRTCSetupRpcMethods";
 import { ATransport } from "@/transport";
+import { HandshakeCompletedGuard } from "@/rpc/guards";
 
 class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
     connectionMap: Map<string, RTCPeerConnection> = new Map();
@@ -16,6 +17,7 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
                 module: "WebRTCSetupService"
             })
         );
+        this.guards = [new HandshakeCompletedGuard(this)];
     }
 
     public createRPCMethods(transport: ATransport): WebRTCSetupRpcMethods {

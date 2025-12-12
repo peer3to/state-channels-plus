@@ -76,12 +76,21 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[originForkId];
-        timestamp = disputeWindow.evidence.lastEvidenceSubmissionTimestamp + getEvidenceTime();
-        (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
-        if (!isExpired) {
-            return (false, timestamp);
+        if (disputeWindow.evidence.creationTimestamp == 0) {
+            StateSnapshot memory currentOnChainSnapshot = stateSnapshots[channelId];
+            if (
+                currentOnChainSnapshot.forkId == forkId
+                    && UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
+            ) {
+                return (true, currentOnChainSnapshot.timestamp);
+            }
+            return (false, 0);
         }
-        if (timestamp == 0) {
+        (bool isExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        if (!isExpired) {
+            return (false, killPeriodEnd);
+        }
+        if (killPeriodEnd == 0) {
             // Dispute window doesn't exist
             StateSnapshot memory currentOnChainSnapshot = stateSnapshots[channelId];
             // check if current on-chain snapshot.fork == forkId
@@ -91,9 +100,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             ) {
                 return (true, currentOnChainSnapshot.timestamp);
             }
-            return (false, timestamp);
+            return (false, killPeriodEnd);
         }
-        return (true, timestamp);
+        return (true, killPeriodEnd);
     }
 
     function getSnapshotParticipants(bytes32 channelId) public view virtual returns (address[] memory) {

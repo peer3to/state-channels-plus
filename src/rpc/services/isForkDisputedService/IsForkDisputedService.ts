@@ -1,4 +1,5 @@
 import { ARpcService } from "@/rpc";
+import { HandshakeCompletedGuard } from "@/rpc/guards";
 import { ChannelId, ForkId } from "@/types/types";
 import ATransport from "@/transport/ATransport";
 import P2PManager from "@/P2PManager";
@@ -20,6 +21,8 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
             })
         );
         this.timeoutManager = p2pManager.stateManager.timeoutManager;
+
+        this.guards = [new HandshakeCompletedGuard(this)];
     }
 
     public createRPCMethods(transport: ATransport): IsForkDisputedRpcMethods {

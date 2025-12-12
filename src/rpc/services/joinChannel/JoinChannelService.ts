@@ -13,6 +13,7 @@ import { Address, Bytes, ChannelId, Hash, Signature } from "@/types/types";
 import JoinChannelRpcMethods from "./JoinChannelRpcMethods";
 import { ATransport } from "@/transport";
 import P2PManager from "@/P2PManager";
+import { HandshakeCompletedGuard } from "@/rpc/guards";
 
 export enum ValidationFlag {
     VALID,
@@ -32,6 +33,7 @@ class JoinChannelService extends ARpcService<JoinChannelRpcMethods> {
                 component: "JoinChannelService"
             })
         );
+        this.guards = [new HandshakeCompletedGuard(this)];
     }
 
     public createRPCMethods(transport: ATransport): JoinChannelRpcMethods {
