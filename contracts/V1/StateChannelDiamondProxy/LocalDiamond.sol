@@ -6,6 +6,7 @@ import "../types/DisputeTypes.sol";
 import "../types/MessageTypeHashes.sol";
 import "../StateChannelManagerEvents.sol";
 import "./utils/DisputeUtils.sol";
+import "hardhat/console.sol";
 
 /**
  * @title LocalDiamond
@@ -52,6 +53,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         StateSnapshot calldata stateSnapshot,
         bytes calldata /* encodedState */
     ) external {
+        console.log("onChannelOpened");
         // Store the genesis state snapshot
         stateSnapshots[channelId] = stateSnapshot;
 

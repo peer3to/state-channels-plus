@@ -243,7 +243,7 @@ class StateManager {
         const handle = this.timeoutManager.scheduleTask(
             () => {
                 this.reductionTriggerMap.delete(forkId); // Clear entry when timeout fires
-                this.tryReduce(forkId, triggerTimestamp);
+                this.tryReduce(forkId);
             },
             Math.max(0, (triggerTimestamp - now) * 1000),
             `reduction-${forkId}`
