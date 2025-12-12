@@ -1,4 +1,4 @@
-import { EVM } from "@ethereumjs/evm";
+import { createEvm } from "./EvmFactory";
 import { ethers, Signer, hexlify, ContractDeployTransaction } from "ethers";
 import {
     StateChannelManagerProxy,
@@ -311,7 +311,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         deploymentResult: DeploymentResult;
     }> {
         // since this is local deployment, we can allow unlimited contract size
-        const evm = await EVM.create({ allowUnlimitedContractSize: true });
+        const evm = await createEvm({ allowUnlimitedContractSize: true });
 
         const stateMachineAddress = await deployLocalFromTx(
             deployStateMachineTx,
