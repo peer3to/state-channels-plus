@@ -300,7 +300,12 @@ contract UtilityFacet {
                 }
             } else {
                 //check if signedBlocks are linked, signed and built on genesis
-                if (!_areSignedBlocksLinkedAndVerified(dispute.input.stateProof.signedBlocks, dispute.input.forkId)) {
+                // HACK:Pass bytes32(0) to skip "linked to genesis" check for the first block
+                // propsoed solution:  convert first block's `previousBlockHash`  = forkId = keccak256(abi.encode(genesisSnapshotData))
+
+                bool linkedAndVerified =
+                    _areSignedBlocksLinkedAndVerified(dispute.input.stateProof.signedBlocks, bytes32(0));
+                if (!linkedAndVerified) {
                     return false;
                 }
 
