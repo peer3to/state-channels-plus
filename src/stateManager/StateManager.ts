@@ -243,7 +243,7 @@ class StateManager {
         const handle = this.timeoutManager.scheduleTask(
             () => {
                 this.reductionTriggerMap.delete(forkId); // Clear entry when timeout fires
-                this.tryReduce(forkId, triggerTimestamp);
+                this.tryReduce(forkId);
             },
             Math.max(0, (triggerTimestamp - now) * 1000),
             `reduction-${forkId}`
@@ -258,7 +258,7 @@ class StateManager {
             `Scheduled reduction timeout for fork ${forkId} at ${triggerTimestamp} (in ${triggerTimestamp - now}s)`
         );
     }
-    private async tryReduce(forkId: ForkId, genesisTimestamp: Timestamp) {
+    private async tryReduce(forkId: ForkId) {
         // Ensure we're still on this fork
         if (this.forkId !== forkId) {
             this.logger.debug(
@@ -323,7 +323,7 @@ class StateManager {
         }
 
         // Step 4: Perform reduction
-        await this.performReduction(forkId, genesisTimestamp);
+        await this.performReduction(forkId, Number(onChainKillTimestamp));
     }
 
     private async performReduction(
