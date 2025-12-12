@@ -4,6 +4,7 @@ import { MathStateMachine } from "@typechain-types/index";
 import { ZeroHash } from "ethers";
 import { Codec, Type } from "@/utils";
 import { hash } from "../factory";
+import { ForkId } from "@/types/types";
 
 describe("E2E: Advanced Security", function () {
     let harness: PeerTestHarness<MathStateMachine> | null = null;
@@ -389,18 +390,22 @@ describe("E2E: Advanced Security", function () {
     });
 
     describe("Dishonest disputes", function () {
-        // Arrange: peer submits dispute with tampered auditing data commitment
-        // Act: tampered dispute is posted on-chain
-        // Assert: validation rejects it, dispute is killed, fork stays unchanged
-        it("should reject dispute with incorrect auditing data commitment", async function () {
+        let originalForkId: ForkId;
+
+        beforeEach(async function () {
             await harness!.setup(3);
-            const originalForkId = await harness!.openChannel();
+            originalForkId = await harness!.openChannel();
 
             await harness!.submitNextTransaction((contract) => contract.add(1));
             await harness!.submitNextTransaction((contract) => contract.add(2));
             harness!.assertAllPeersInSync();
             harness!.resetEventSpies();
+        });
 
+        // Arrange: peer submits dispute with tampered auditing data commitment
+        // Act: tampered dispute is posted on-chain
+        // Assert: validation rejects it, dispute is killed, fork stays unchanged
+        it("should reject dispute with incorrect auditing data commitment", async function () {
             // Peer 1 crafts and posts a tampered dispute
             const { dispute } = await harness!.postTamperedDispute(
                 1,
@@ -444,14 +449,6 @@ describe("E2E: Advanced Security", function () {
         // Act: tampered timeout data is posted on-chain
         // Assert: validation rejects it, dispute is killed, fork stays unchanged
         it("should reject timeout dispute when accused participant is not next to write", async function () {
-            await harness!.setup(3);
-            const originalForkId = await harness!.openChannel();
-
-            await harness!.submitNextTransaction((contract) => contract.add(1));
-            await harness!.submitNextTransaction((contract) => contract.add(2));
-            harness!.assertAllPeersInSync();
-            harness!.resetEventSpies();
-
             const notNextPeer = harness!.peers[1];
 
             const { dispute: timeoutDispute } =
@@ -487,14 +484,6 @@ describe("E2E: Advanced Security", function () {
         // Act: post tampered dispute on-chain -> validators can't reconstruct full data and state proof is invalid
         // Assert: validation rejects it, dispute is killed, fraud proof stored, fork stays unchanged
         it("should reject dispute when auditing data is partial and state proof invalid", async function () {
-            await harness!.setup(3);
-            const originalForkId = await harness!.openChannel();
-
-            await harness!.submitNextTransaction((contract) => contract.add(1));
-            await harness!.submitNextTransaction((contract) => contract.add(2));
-            harness!.assertAllPeersInSync();
-            harness!.resetEventSpies();
-
             // Peer 1 crafts and posts a tampered dispute
             // Tamper the first milestone's first signed block to reference an unknown snapshot
             // This makes auditing data reconstruction partial (missing snapshot) and state proof invalid
@@ -558,14 +547,6 @@ describe("E2E: Advanced Security", function () {
         // Act: post tampered dispute on-chain -> validators reconstruct full data but reject due to both bad commitment and bad stateProof
         // Assert: validation rejects it, dispute is killed, fraud proof stored, fork stays unchanged
         it("should reject dispute when full auditing data reconstructed but both commitment and state proof are invalid", async function () {
-            await harness!.setup(3);
-            const originalForkId = await harness!.openChannel();
-
-            await harness!.submitNextTransaction((contract) => contract.add(1));
-            await harness!.submitNextTransaction((contract) => contract.add(2));
-            harness!.assertAllPeersInSync();
-            harness!.resetEventSpies();
-
             // Peer 1 crafts and posts a tampered dispute
             // Tamper both the auditing data commitment and a critical part of the state proof
             //  checkDisputeAuditingDataCommitment returns false
@@ -612,14 +593,6 @@ describe("E2E: Advanced Security", function () {
         });
 
         it("should reject dispute when auditing data commitment is valid but state proof is invalid (createDisputeInvalidStateProofWithAuditingDataIntegrityVerified)", async function () {
-            await harness!.setup(3);
-            const originalForkId = await harness!.openChannel();
-
-            await harness!.submitNextTransaction((contract) => contract.add(1));
-            await harness!.submitNextTransaction((contract) => contract.add(2));
-            harness!.assertAllPeersInSync();
-            harness!.resetEventSpies();
-
             const { dispute } = await harness!.postTamperedDispute(
                 1,
                 (dispute) => {
@@ -658,9 +631,12 @@ describe("E2E: Advanced Security", function () {
             );
             expect(forkUnchanged).to.be.true;
         });
+    });
 
-        it("should handle valid dispute when validating peer is missing snapshot data (validStateProofButNotSynced)", async function () {
-            // Setup with short timeout so timeout dispute gets posted when peer 2 can't sign
+    describe("DisputeValidationService - validStateProofButNotSynced", function () {
+        let forkId: ForkId;
+
+        beforeEach(async function () {
             await harness!.setup(3, {
                 timeConfig: {
                     p2pTime: 1,
@@ -668,8 +644,10 @@ describe("E2E: Advanced Security", function () {
                     chainFallbackTime: 2
                 }
             });
-            await harness!.openChannel();
+            forkId = await harness!.openChannel();
+        });
 
+        it("should handle valid dispute when validating peer is missing snapshot data ", async function () {
             // Stub peer 2's calldata handler to prevent syncing from on-chain calldata
             // Save original handler so peer 2 can't sync via calldata
             const peer2EventHandler =
@@ -730,17 +708,6 @@ describe("E2E: Advanced Security", function () {
         });
 
         it("should sync missing state via validStateProofButNotSynced when peer receives dispute with blocks it doesn't have", async function () {
-            // Setup: 3 peers with timing that allows disputes
-            await harness!.setup(3, {
-                timeConfig: {
-                    p2pTime: 3,
-                    agreementTime: 2,
-                    chainFallbackTime: 2,
-                    evidenceTime: 3
-                }
-            });
-            const forkId = await harness!.openChannel();
-
             // Submit initial transaction and wait for sync
             await harness!.submitNextTransaction((contract) => contract.add(1));
             harness!.assertAllPeersInSync();
