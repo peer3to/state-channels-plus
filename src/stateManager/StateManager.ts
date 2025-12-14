@@ -225,7 +225,14 @@ class StateManager {
     public getChannelId(): ChannelId {
         return this.channelId;
     }
-    public setReductionTimeout(forkId: ForkId, triggerTimestamp: Timestamp) {
+    public setReductionTimeout(
+        forkId: ForkId,
+        triggerTimestamp: Timestamp,
+        isRescheduled: boolean = false
+    ) {
+        this.logger.debug(
+            `setReductionTimeout called for fork ${forkId} at ${triggerTimestamp}`
+        );
         if (this.forkId !== forkId) return;
 
         const existingHandle = this.reductionTriggerMap.get(forkId);
@@ -233,7 +240,13 @@ class StateManager {
 
         // If existing timeout exists, only replace if new timeout is further in the future
         if (existingHandle) {
-            if (existingHandle.triggerTimestamp >= triggerTimestamp) {
+            if (existingHandle.triggerTimestamp > triggerTimestamp) {
+                return;
+            }
+            if (
+                existingHandle.triggerTimestamp == triggerTimestamp &&
+                !isRescheduled
+            ) {
                 return;
             }
             this.timeoutManager.cancelTask(existingHandle.handle);
@@ -242,7 +255,7 @@ class StateManager {
         // Schedule new reduction attempt
         const handle = this.timeoutManager.scheduleTask(
             () => {
-                this.reductionTriggerMap.delete(forkId); // Clear entry when timeout fires
+                // Don't call reductionTriggerMap.delete(forkId) - race condition problem
                 this.tryReduce(forkId);
             },
             Math.max(0, (triggerTimestamp - now) * 1000),
@@ -268,7 +281,10 @@ class StateManager {
         }
 
         // Step 1: Check locally if kill period expired (fast, no RPC call)
-        const [canReduceLocally, killTimestamp] =
+        const {
+            isKillPeriodExpired: canReduceLocally,
+            killPeriodEnd: killTimestamp
+        } =
             await this.diamondStateMachine.localDiamondContract.isKillPeriodExpired(
                 this.channelId,
                 forkId
@@ -279,7 +295,7 @@ class StateManager {
             Number(killTimestamp) - Clock.getTimeInSeconds()
         );
         this.logger.debug(
-            `Reduction check for fork ${forkId}: canReduce=${canReduceLocally}, timeRemaining=${timeRemaining}s`
+            `Local Reduction check for fork ${forkId}: canReduce=${canReduceLocally}, timeRemaining=${timeRemaining}s`
         );
 
         // Step 2: If local state says not ready, reschedule check
@@ -288,7 +304,11 @@ class StateManager {
                 this.logger.debug(
                     `Rescheduling reduction check in ${timeRemaining}s`
                 );
-                return this.setReductionTimeout(forkId, Number(killTimestamp));
+                return this.setReductionTimeout(
+                    forkId,
+                    Number(killTimestamp),
+                    true
+                );
             }
             // timeRemaining is 0 but can't reduce -> local state not synced, fall through to on-chain check
             this.logger.debug(
@@ -297,24 +317,33 @@ class StateManager {
         }
 
         // Step 3: Verify on-chain before committing to reduction
-        const [canReduceOnChain, onChainKillTimestamp] =
-            await this.stateChannelManagerContract.isKillPeriodExpired(
-                this.channelId,
-                forkId
-            );
+        const {
+            isKillPeriodExpired: canReduceOnChain,
+            killPeriodEnd: onChainKillTimestamp,
+            blockTimestamp: onChainTimestamp
+        } = await this.stateChannelManagerContract.isKillPeriodExpired(
+            this.channelId,
+            forkId
+        );
+
+        const remaining = Math.max(
+            0,
+            Number(onChainKillTimestamp) - Number(onChainTimestamp) // TODO this was Clock.getTimeInSeconds() before, but we were ecountering remaining == 0
+        );
+
+        this.logger.debug(
+            `On-chain Reduction check for fork ${forkId}: canReduce=${canReduceOnChain}, timeRemaining=${remaining}s`
+        );
 
         if (!canReduceOnChain) {
-            const remaining = Math.max(
-                0,
-                Number(onChainKillTimestamp) - Clock.getTimeInSeconds()
-            );
             if (remaining > 0) {
                 this.logger.debug(
                     `On-chain check: rescheduling in ${remaining}s`
                 );
                 return this.setReductionTimeout(
                     forkId,
-                    Number(onChainKillTimestamp)
+                    Number(onChainKillTimestamp),
+                    true
                 );
             }
             throw new Error(

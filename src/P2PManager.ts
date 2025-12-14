@@ -82,7 +82,11 @@ class P2PManager implements IOnMessage {
     public async tryOpenConnectionToChannel(channelId: string) {
         if (DEBUG_LOCAL_TRANSPORT) {
             await LocalDiscoveryServer.tryStart();
-            await LocalDiscoveryServer.connectToPeers(this.self, channelId);
+            await LocalDiscoveryServer.connectToPeers(
+                this.self,
+                channelId,
+                this.stateManager.signerAddress.toString()
+            );
             return;
         }
         const topic = Buffer.alloc(32).fill(channelId);

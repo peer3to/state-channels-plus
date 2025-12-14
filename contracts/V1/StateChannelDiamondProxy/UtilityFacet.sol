@@ -3,6 +3,7 @@ pragma solidity ^0.8.8;
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "../types/DisputeTypes.sol";
 import "./Errors.sol";
+import "hardhat/console.sol";
 
 contract UtilityFacet {
     /**
@@ -272,7 +273,6 @@ contract UtilityFacet {
         if (dispute.input.stateProof.milestones.length != 0 && dispute.input.stateProof.signedBlocks.length != 0) {
             return false;
         }
-
         // Milestone checking
         (bool isValid, bytes memory lastBlockEncoded) = verifyMilestones(
             dispute.input.stateProof.milestones,

@@ -7,7 +7,6 @@ import { ATransport } from "@/transport";
 import IsForkDisputedService from "@/rpc/services/isForkDisputedService/IsForkDisputedService";
 import { ethers } from "ethers";
 import Clock from "@/Clock";
-import { LocalDiscoveryServer } from "@/utils/LocalDiscoveryServer";
 
 describe("E2E: RPC Services", function () {
     let harness: PeerTestHarness<MathStateMachine>;
@@ -618,9 +617,9 @@ describe("E2E: RPC Services", function () {
                 .true;
 
             const newPeer = harness.peers[2];
-            LocalDiscoveryServer.connectToPeers(
-                newPeer.stateManager.p2pManager,
-                harness.channelId?.toString()
+
+            await newPeer.stateManager.p2pManager.tryOpenConnectionToChannel(
+                harness.channelId!.toString()
             );
 
             await harness.waitForCondition(
@@ -664,9 +663,8 @@ describe("E2E: RPC Services", function () {
             );
 
             const newPeer = harness.peers[2];
-            LocalDiscoveryServer.connectToPeers(
-                newPeer.stateManager.p2pManager,
-                harness.channelId?.toString()
+            await newPeer.stateManager.p2pManager.tryOpenConnectionToChannel(
+                harness.channelId!.toString()
             );
 
             await harness.waitForCondition(
@@ -719,9 +717,8 @@ describe("E2E: RPC Services", function () {
             );
 
             const newPeer = harness.peers[2];
-            LocalDiscoveryServer.connectToPeers(
-                newPeer.stateManager.p2pManager,
-                harness.channelId?.toString()
+            await newPeer.stateManager.p2pManager.tryOpenConnectionToChannel(
+                harness.channelId!.toString()
             );
 
             await harness.waitForCondition(

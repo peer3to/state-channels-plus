@@ -116,6 +116,13 @@ function getGlobalLogger(): winston.Logger {
         const logLevel = PeerLogger.parseLogLevelFromArgs();
 
         // Create the single global logger with exception/rejection handling
+        const transports: winston.transport[] = [
+            new winston.transports.Console({
+                handleExceptions: true,
+                handleRejections: true
+            })
+        ];
+
         globalLogger = winston.createLogger({
             levels: customLevels.levels,
             level: logLevel,
@@ -124,12 +131,7 @@ function getGlobalLogger(): winston.Logger {
                 winston.format.errors({ stack: true }),
                 peerColorFormat
             ),
-            transports: [
-                new winston.transports.Console({
-                    handleExceptions: true,
-                    handleRejections: true
-                })
-            ],
+            transports,
             exitOnError: false
         });
     }

@@ -32,7 +32,8 @@ import {
     Codec,
     Type,
     hash,
-    retry
+    retry,
+    EventBarrier
 } from "@/utils";
 import Block from "@/models/Block";
 import {
@@ -152,6 +153,7 @@ export class PeerTestHarness<T extends AStateMachine> {
     private logger: Logger;
     private syncCoordinator!: SyncCoordinator;
     private autoTimeAdvanceInterval?: NodeJS.Timeout;
+    private eventBarrier: EventBarrier;
 
     constructor() {
         // toJSON can't serialize BigInts, so we need to override it
@@ -161,6 +163,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             };
         }
         this.logger = createLogger({ component: "TestHarness" });
+        this.eventBarrier = new EventBarrier(this.logger);
     }
 
     async setup(numPeers: number, options: HarnessOptions = {}): Promise<void> {
@@ -286,28 +289,33 @@ export class PeerTestHarness<T extends AStateMachine> {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onConnection?.(addr);
+                this.eventBarrier.signal();
             },
             onTurn: (addr: Address) => {
                 PeerLogger.verbose(`Turn received from ${addr}`, {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onTurn?.(addr);
+                this.eventBarrier.signal();
             },
             onSetState: () => {
                 PeerLogger.debug("State set", { component: "P2pEventHooks" });
                 eventSpies.onSetState?.();
+                this.eventBarrier.signal();
             },
             onPostingCalldata: () => {
                 PeerLogger.debug("Posting calldata to blockchain", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onPostingCalldata?.();
+                this.eventBarrier.signal();
             },
             onPostedCalldata: () => {
                 PeerLogger.debug("Calldata posted to blockchain", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onPostedCalldata?.();
+                this.eventBarrier.signal();
             },
             onInitiatingDispute: (
                 disputeHash: Hash,
@@ -320,12 +328,14 @@ export class PeerTestHarness<T extends AStateMachine> {
                     }
                 );
                 eventSpies.onInitiatingDispute?.(disputeHash, dispute);
+                this.eventBarrier.signal();
             },
             onDisputeUpdate: (dispute: any) => {
                 PeerLogger.info("Dispute updated", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onDisputeUpdate?.(dispute);
+                this.eventBarrier.signal();
             }
         };
 
@@ -684,9 +694,10 @@ export class PeerTestHarness<T extends AStateMachine> {
         // Connect each peer in the subset
         await Promise.all(
             peerIndices.map((index) =>
-                LocalDiscoveryServer.connectToPeers(
-                    this.peers[index].stateManager.p2pManager,
-                    this.channelId?.toString()
+                this.peers[
+                    index
+                ].stateManager.p2pManager.tryOpenConnectionToChannel(
+                    this.channelId!.toString()
                 )
             )
         );
@@ -698,39 +709,20 @@ export class PeerTestHarness<T extends AStateMachine> {
         const isGitHubActionsEnv = process.env.GITHUB_ACTIONS === "true";
         const defaultTimeout = isGitHubActionsEnv ? 15000 : 5000;
         const actualTimeout = timeoutMs ?? defaultTimeout;
-        const pollInterval = 50;
-        const stableDurationThreshold = 200;
 
-        const startTime = Date.now();
-        let lastConnectionCount = 0;
-        let stableDuration = 0;
-
-        while (Date.now() - startTime < actualTimeout) {
-            const connected = this.peers.filter(
+        const condition = () =>
+            this.peers.filter(
                 (p) =>
                     p.p2pInstance.p2pSigner.p2pManager.openConnections.length >
                     0
-            ).length;
+            ).length >= Math.min(2, this.peers.length);
 
-            // Require stable connections for 200ms before considering established
-            if (connected === lastConnectionCount) {
-                stableDuration += pollInterval;
-            } else {
-                stableDuration = 0;
-                lastConnectionCount = connected;
-            }
+        if (await condition()) return;
 
-            if (
-                connected >= Math.min(2, this.peers.length) &&
-                stableDuration > stableDurationThreshold
-            ) {
-                return;
-            }
-            await sleep(50);
-        }
-        throw new Error(
-            `P2P connections not established within ${actualTimeout}ms`
-        );
+        await this.eventBarrier.waitFor(condition, {
+            timeoutMs: actualTimeout,
+            timeoutMessage: `P2P connections not established within ${actualTimeout}ms`
+        });
     }
 
     async submitTransaction(
@@ -818,6 +810,8 @@ export class PeerTestHarness<T extends AStateMachine> {
         if (this.channelManager) {
             this.channelManager.removeAllListeners();
         }
+
+        this.eventBarrier.clear();
 
         const disposePromises: Promise<any>[] = [];
 
@@ -948,7 +942,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         timeoutMs: number = 10000,
         { mode = "exact" }: { mode?: "exact" | "atLeast" } = { mode: "exact" }
     ): Promise<boolean> {
-        return this.waitForCondition(() => {
+        return await this.waitForCondition(() => {
             for (const { peerId, expectedCount } of expectedCounts) {
                 const actualCount = this.getEventCallCount(peerId, eventName);
                 if (
@@ -1284,7 +1278,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             requestingPeer.stateManager.p2pManager.localRpc
                 .isForkDisputedService;
 
-        return await this.waitForCondition(() => {
+        const condition = () => {
             const connections =
                 requestingPeer.stateManager.p2pManager.openConnections;
 
@@ -1313,7 +1307,9 @@ export class PeerTestHarness<T extends AStateMachine> {
                 );
             });
             return allAcked;
-        }, timeoutMs);
+        };
+
+        return await this.waitForCondition(condition, timeoutMs);
     }
 
     getPeerTransport(
@@ -1352,37 +1348,31 @@ export class PeerTestHarness<T extends AStateMachine> {
         const toPeer = this.getPeer(toPeerIndex);
         let resolvedTransport: ATransport | undefined;
 
-        const found = await this.waitForCondition(
-            () => {
-                const transport =
-                    fromPeer.stateManager.p2pManager.openConnections.find(
-                        (t) => {
-                            const profile =
-                                fromPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
-                                    t
-                                );
-                            return profile?.evmAddress === toPeer.address;
-                        }
-                    );
+        const condition = () => {
+            const transport =
+                fromPeer.stateManager.p2pManager.openConnections.find((t) => {
+                    const profile =
+                        fromPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
+                            t
+                        );
+                    return profile?.evmAddress === toPeer.address;
+                });
 
-                if (transport) {
-                    resolvedTransport = transport;
-                    return true;
-                }
+            if (transport) {
+                resolvedTransport = transport;
+                return true;
+            }
 
-                return false;
-            },
-            timeoutMs,
-            50
-        );
+            return false;
+        };
 
+        const found = await this.waitForCondition(condition, timeoutMs, 50);
         if (!found || !resolvedTransport) {
             throw new Error(
                 `Transport from peer ${fromPeerIndex} to peer ${toPeerIndex} not available within ${timeoutMs}ms`
             );
         }
-
-        return resolvedTransport;
+        return resolvedTransport!;
     }
 
     getConnectionCount(peerIndex: number): number {

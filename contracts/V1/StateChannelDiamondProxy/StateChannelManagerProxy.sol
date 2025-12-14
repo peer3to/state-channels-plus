@@ -496,10 +496,15 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     // ********** private/internal functions **********
 
-    function isKillPeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool, uint256) {
+    function isKillPeriodExpired(bytes32 channelId, bytes32 forkId)
+        public
+        view
+        returns (bool isKillPeriodExpired, uint256 killPeriodEnd, uint256 blockTimestamp)
+    {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
-        return _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        (isKillPeriodExpired, killPeriodEnd) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        return (isKillPeriodExpired, killPeriodEnd, block.timestamp);
     }
 
     function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {

@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 const { spawn } = require("child_process");
+const fs = require("fs");
 const { globSync } = require("glob");
 const path = require("path");
 const { Project, SyntaxKind } = require("ts-morph");
@@ -72,10 +73,74 @@ function escapeRegex(text) {
     return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-async function runTask(cmd, args, env, label) {
+function sanitizeFileName(name) {
+    return name.replace(/[^a-zA-Z0-9._-]+/g, "_");
+}
+
+function safeEmptyDir(dirPath) {
+    const resolved = path.resolve(dirPath);
+    const expected = path.resolve("./logs");
+
+    // Safety: only auto-purge the default ./logs directory unless explicitly allowed.
+    const canAutoPurge = resolved === expected;
+    const allowUnsafe = process.env.ALLOW_LOGDIR_PURGE === "1";
+
+    if (!canAutoPurge && !allowUnsafe) {
+        console.warn(
+            `Skipping purge of ${resolved}. Set ALLOW_LOGDIR_PURGE=1 to allow.`
+        );
+        return;
+    }
+
+    fs.mkdirSync(resolved, { recursive: true });
+    for (const entry of fs.readdirSync(resolved)) {
+        fs.rmSync(path.join(resolved, entry), { recursive: true, force: true });
+    }
+}
+
+function cleanupNonErrorLogs(logDir) {
+    const resolved = path.resolve(logDir);
+    const expected = path.resolve("./logs");
+    const canAutoPurge = resolved === expected;
+    const allowUnsafe = process.env.ALLOW_LOGDIR_PURGE === "1";
+
+    if (!canAutoPurge && !allowUnsafe) {
+        console.warn(
+            `Skipping end-of-run cleanup in ${resolved}. Set ALLOW_LOGDIR_PURGE=1 to allow.`
+        );
+        return;
+    }
+
+    if (!fs.existsSync(resolved)) return;
+    for (const entry of fs.readdirSync(resolved)) {
+        if (entry.startsWith("error_")) continue;
+        fs.rmSync(path.join(resolved, entry), { recursive: true, force: true });
+    }
+}
+
+function getLogPath(logDir, logName) {
+    return path.resolve(path.join(logDir, `${logName}.ansi`));
+}
+
+function markLogAsError(logDir, logName) {
+    const src = getLogPath(logDir, logName);
+    const dst = path.resolve(path.join(logDir, `error_${logName}.ansi`));
+    if (!fs.existsSync(src)) return;
+    try {
+        fs.renameSync(src, dst);
+    } catch (err) {
+        console.error(`Failed to rename log file ${src} -> ${dst}:`, err);
+    }
+}
+
+async function runTask(cmd, args, env, label, logPath) {
     return new Promise((resolve) => {
         let stdout = "";
         let stderr = "";
+
+        fs.mkdirSync(path.dirname(logPath), { recursive: true });
+        const logStream = fs.createWriteStream(logPath, { flags: "w" });
+
         const child = spawn(cmd, args, {
             stdio: ["inherit", "pipe", "pipe"],
             env: { ...process.env, ...env }
@@ -84,6 +149,7 @@ async function runTask(cmd, args, env, label) {
         child.stdout.on("data", (data) => {
             // Write raw buffer to preserve colors
             process.stdout.write(data);
+            logStream.write(data);
             // Also capture as string for parsing
             stdout += data.toString();
         });
@@ -91,12 +157,20 @@ async function runTask(cmd, args, env, label) {
         child.stderr.on("data", (data) => {
             // Write raw buffer to preserve colors
             process.stderr.write(data);
+            logStream.write(data);
             // Also capture as string for parsing
             stderr += data.toString();
         });
 
         child.on("exit", (code) => {
+            logStream.end();
             resolve({ code, label, stdout, stderr });
+        });
+
+        child.on("error", (err) => {
+            logStream.end();
+            stderr += String(err);
+            resolve({ code: 1, label, stdout, stderr });
         });
     });
 }
@@ -114,9 +188,13 @@ async function main() {
         const tests = extractE2ETests(f);
         for (const { suite, test } of tests) {
             const grep = `^${escapeRegex(suite)}.*${escapeRegex(test)}$`;
+            const logName = sanitizeFileName(
+                `${path.basename(f, path.extname(f))}__${suite}__${test}`
+            );
             tasks.push({
                 label: `test:${path.basename(f)}:${test}`,
-                args: ["hardhat", "test", "--no-compile", f, "--grep", grep]
+                args: ["hardhat", "test", "--no-compile", f, "--grep", grep],
+                logName
             });
         }
     }
@@ -131,6 +209,11 @@ async function main() {
     console.log(
         `Running ${tasks.length} E2E task(s) with ${workers} worker(s)`
     );
+
+    const logDir = process.env.LOG_FILE_DIR || "./logs";
+
+    // Clean logs from previous runs
+    safeEmptyDir(logDir);
 
     const env = {
         ...process.env,
@@ -174,8 +257,11 @@ async function main() {
                 runTask(
                     "yarn",
                     ["--silent", ...task.args],
-                    env,
-                    task.label
+                    {
+                        ...env
+                    },
+                    task.label,
+                    getLogPath(logDir, task.logName)
                 ).then(({ code, label, stdout, stderr }) => {
                     active--;
                     const output = stdout + stderr;
@@ -186,6 +272,7 @@ async function main() {
 
                     if (code !== 0) {
                         failed.push(label);
+                        markLogAsError(logDir, task.logName);
                     }
                     maybeStartNext();
                 });
@@ -209,9 +296,13 @@ async function main() {
     }
 
     if (failed.length > 0) {
+        cleanupNonErrorLogs(logDir);
         console.error(`\nFailed tasks:\n- ${failed.join("\n- ")}\n`);
         process.exit(1);
     }
+
+    // Keep workspace tidy: keep only error_* logs
+    cleanupNonErrorLogs(logDir);
 }
 
 main().catch((err) => {
