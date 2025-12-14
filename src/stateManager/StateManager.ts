@@ -583,15 +583,16 @@ class StateManager {
             senderTransport?: ATransport;
         }
     ): Promise<boolean> {
-        // the try/catch is to ensure that the mutex is unlocked in case of an error
-        // no error is actually expected to happen, and the catch block just re-throws the error
         const strategy =
             options?.validationStrategy ||
             this.getStrategyByStatus(this.status);
+
         try {
             await this.mutex.lock();
+
             let validationResult: BlockValidationResult =
                 BlockValidationResult.SUCCESS;
+
             const isAuthentic =
                 await this.diamondStateMachine.localDiamondContract.isBlockAuthentic(
                     blockConfirmation.signedBlock
@@ -600,6 +601,18 @@ class StateManager {
             if (!isAuthentic) {
                 validationResult =
                     await strategy.authenticateBlockFailed(blockConfirmation);
+
+                this.logger.warn(
+                    "onBlockConfirmation - authentication failed",
+                    {
+                        status: this.status,
+                        strategy: (strategy as any)?.constructor?.name,
+                        blockHash: ethers.keccak256(
+                            blockConfirmation.signedBlock.encodedBlock
+                        )
+                    }
+                );
+
                 return await strategy.interpretFinalValidationResult(
                     validationResult
                 );
@@ -640,6 +653,11 @@ class StateManager {
             if (brokenInboundChainBlock) {
                 validationResult =
                     await strategy.invalidStateTransitionDetected(block);
+                this.logger.warn("onBlockConfirmation - broken inbound chain", {
+                    status: this.status,
+                    strategy: (strategy as any)?.constructor?.name,
+                    block
+                });
                 return await strategy.interpretFinalValidationResult(
                     validationResult
                 );
@@ -654,6 +672,14 @@ class StateManager {
                         block,
                         forgedInboundMessageBlock
                     );
+                this.logger.warn(
+                    "onBlockConfirmation - forged inbound message block",
+                    {
+                        status: this.status,
+                        strategy: (strategy as any)?.constructor?.name,
+                        block
+                    }
+                );
                 return await strategy.interpretFinalValidationResult(
                     validationResult
                 );
@@ -670,6 +696,14 @@ class StateManager {
             if (!success) {
                 validationResult =
                     await strategy.invalidStateTransitionDetected(block);
+                this.logger.warn(
+                    "onBlockConfirmation - state transition failed",
+                    {
+                        status: this.status,
+                        strategy: (strategy as any)?.constructor?.name,
+                        block
+                    }
+                );
                 return await strategy.interpretFinalValidationResult(
                     validationResult
                 );
@@ -702,6 +736,14 @@ class StateManager {
             if (stateSnapshot.hash !== block.stateSnapshotHash) {
                 validationResult =
                     await strategy.invalidStateTransitionDetected(block);
+                this.logger.warn(
+                    "onBlockConfirmation - state snapshot hash mismatch",
+                    {
+                        status: this.status,
+                        strategy: (strategy as any)?.constructor?.name,
+                        block
+                    }
+                );
                 return await strategy.interpretFinalValidationResult(
                     validationResult
                 );
@@ -721,6 +763,33 @@ class StateManager {
 
             // success - no disconnect
             return true;
+        } catch (error) {
+            if (isCustomEvmError(error)) {
+                this.logger.error("onBlockConfirmation - error", {
+                    status: this.status,
+                    strategy: (strategy as any)?.constructor?.name,
+                    channelId: this.channelId,
+                    blockHash: ethers.keccak256(
+                        blockConfirmation.signedBlock.encodedBlock
+                    ),
+                    errorDescription: error.errorDescription,
+                    errorName: error.name,
+                    errorMessage: error.message
+                });
+            } else {
+                this.logger.error("onBlockConfirmation - error", {
+                    status: this.status,
+                    strategy: (strategy as any)?.constructor?.name,
+                    channelId: this.channelId,
+                    blockHash: ethers.keccak256(
+                        blockConfirmation.signedBlock.encodedBlock
+                    ),
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                    stack: error instanceof Error ? error.stack : undefined
+                });
+            }
+            throw error;
         } finally {
             this.mutex.unlock();
         }
@@ -749,20 +818,38 @@ class StateManager {
         };
     }
 
+    private async logPlayTransaction(tx: TransactionStruct): Promise<string> {
+        const forkId = this.forkId;
+        const txHeight = Number(tx.header.transactionCnt);
+        const nextToWrite = await this.diamondStateMachine.getNextToWrite();
+        const latestBlock = this.storage.blocks.getLatestBlock(forkId);
+        const latestStoredHeight = latestBlock?.height ?? null;
+        const nextStoredHeight = this.storage.blocks.getNextBlockHeight(forkId);
+        const message =
+            `playTransaction: ` +
+            ` - myAddress: ${String(this.signerAddress)}` +
+            ` - nextToWrite: ${String(nextToWrite)}` +
+            ` - txHeight: ${txHeight}` +
+            ` - latestStoredHeight: ${String(latestStoredHeight)}` +
+            ` - nextStoredHeight: ${nextStoredHeight}` +
+            ` - forkId: ${forkId}`;
+        this.logger.info(message);
+        return message;
+    }
+
     // Used when authoring a block - Executes the transaction and returns a signed block
     public async playTransaction(
         tx: TransactionStruct
     ): Promise<BlockConfirmationStruct> {
         await this.mutex.lock();
-
+        const forkId = this.forkId;
+        const message = await this.logPlayTransaction(tx);
         try {
             if (!this.validationService.isChannelOpen(this.forkId)) {
                 throw new Error("Channel not open");
             }
             if (!(await this.isMyTurn())) {
-                throw new Error(
-                    `Not player turn - myAddress: ${String(this.signerAddress)} - nextToWrite: ${await this.diamondStateMachine.getNextToWrite()}`
-                );
+                throw new Error("NOT MY TURN: " + message);
             }
             this.adjustTimestampIfNeeded(tx);
 
