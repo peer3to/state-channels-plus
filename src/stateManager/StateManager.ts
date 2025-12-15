@@ -1604,6 +1604,15 @@ class StateManager {
         if (Number(tx.header.timestamp) <= previousTimestamp) {
             tx.header.timestamp = BigInt(previousTimestamp);
         }
+
+        if (
+            Number(tx.header.timestamp) >
+            previousTimestamp + this.timeConfig.p2pTime
+        ) {
+            tx.header.timestamp = BigInt(
+                previousTimestamp + this.timeConfig.p2pTime
+            );
+        }
     }
 
     private async createStateSnapshot(
