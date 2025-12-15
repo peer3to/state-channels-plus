@@ -153,7 +153,11 @@ export class PeerTestHarness<T extends AStateMachine> {
     private logger: Logger;
     private syncCoordinator!: SyncCoordinator;
     private autoTimeAdvanceInterval?: NodeJS.Timeout;
-    private eventBarrier: EventBarrier;
+
+    // barriers
+    private connectionBarrier: EventBarrier;
+    private turnBarrier: EventBarrier;
+    private eventCountsBarrier: EventBarrier;
 
     constructor() {
         // toJSON can't serialize BigInts, so we need to override it
@@ -163,7 +167,9 @@ export class PeerTestHarness<T extends AStateMachine> {
             };
         }
         this.logger = createLogger({ component: "TestHarness" });
-        this.eventBarrier = new EventBarrier(this.logger);
+        this.connectionBarrier = new EventBarrier(this.logger);
+        this.turnBarrier = new EventBarrier(this.logger);
+        this.eventCountsBarrier = new EventBarrier(this.logger);
     }
 
     async setup(numPeers: number, options: HarnessOptions = {}): Promise<void> {
@@ -221,10 +227,19 @@ export class PeerTestHarness<T extends AStateMachine> {
         throw new Error("Fork ID unavailable");
     }
     public async waitForTurn(peer: TestPeer<T>, timeoutMs = 3000) {
-        return this.waitForCondition(
-            () => peer.stateManager.isMyTurn?.() ?? false,
-            timeoutMs
-        );
+        try {
+            await this.turnBarrier.waitFor(
+                () => peer.stateManager.isMyTurn?.() ?? false,
+                {
+                    timeoutMs,
+                    timeoutMessage: `Turn not received within ${timeoutMs}ms`
+                }
+            );
+            this.logger.debug(`Peer ${peer.index} turn`);
+        } catch (e) {
+            this.logger.error(`Peer ${peer.index} turn wait timed out`);
+            throw e;
+        }
     }
 
     private async deployContracts(): Promise<void> {
@@ -289,33 +304,35 @@ export class PeerTestHarness<T extends AStateMachine> {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onConnection?.(addr);
-                this.eventBarrier.signal();
+                this.connectionBarrier.signal();
+                this.eventCountsBarrier.signal();
             },
             onTurn: (addr: Address) => {
                 PeerLogger.verbose(`Turn received from ${addr}`, {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onTurn?.(addr);
-                this.eventBarrier.signal();
+                this.turnBarrier.signal();
+                this.eventCountsBarrier.signal();
             },
             onSetState: () => {
                 PeerLogger.debug("State set", { component: "P2pEventHooks" });
                 eventSpies.onSetState?.();
-                this.eventBarrier.signal();
+                this.eventCountsBarrier.signal();
             },
             onPostingCalldata: () => {
                 PeerLogger.debug("Posting calldata to blockchain", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onPostingCalldata?.();
-                this.eventBarrier.signal();
+                this.eventCountsBarrier.signal();
             },
             onPostedCalldata: () => {
                 PeerLogger.debug("Calldata posted to blockchain", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onPostedCalldata?.();
-                this.eventBarrier.signal();
+                this.eventCountsBarrier.signal();
             },
             onInitiatingDispute: (
                 disputeHash: Hash,
@@ -328,14 +345,14 @@ export class PeerTestHarness<T extends AStateMachine> {
                     }
                 );
                 eventSpies.onInitiatingDispute?.(disputeHash, dispute);
-                this.eventBarrier.signal();
+                this.eventCountsBarrier.signal();
             },
             onDisputeUpdate: (dispute: any) => {
                 PeerLogger.info("Dispute updated", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onDisputeUpdate?.(dispute);
-                this.eventBarrier.signal();
+                this.eventCountsBarrier.signal();
             }
         };
 
@@ -375,6 +392,7 @@ export class PeerTestHarness<T extends AStateMachine> {
     private wrapEventHandlerWithSpies(peer: TestPeer<T>): void {
         const eventHandler = peer.stateManager.eventHandler;
         const spies = peer.eventSpies;
+        const harness = this;
 
         // Create a proxy that intercepts EventHandler method calls and calls both the spy and original method
         const eventHandlerProxy = new Proxy(eventHandler, {
@@ -389,7 +407,8 @@ export class PeerTestHarness<T extends AStateMachine> {
                         spy?.(...args);
 
                         // Then call the original method
-                        return Reflect.apply(originalMethod, target, args);
+                        Reflect.apply(originalMethod, target, args);
+                        return harness.eventCountsBarrier.signal();
                     };
                 }
 
@@ -719,7 +738,7 @@ export class PeerTestHarness<T extends AStateMachine> {
 
         if (await condition()) return;
 
-        await this.eventBarrier.waitFor(condition, {
+        await this.connectionBarrier.waitFor(condition, {
             timeoutMs: actualTimeout,
             timeoutMessage: `P2P connections not established within ${actualTimeout}ms`
         });
@@ -811,7 +830,9 @@ export class PeerTestHarness<T extends AStateMachine> {
             this.channelManager.removeAllListeners();
         }
 
-        this.eventBarrier.clear();
+        this.connectionBarrier.clear();
+        this.turnBarrier.clear();
+        this.eventCountsBarrier.clear();
 
         const disposePromises: Promise<any>[] = [];
 
@@ -942,7 +963,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         timeoutMs: number = 10000,
         { mode = "exact" }: { mode?: "exact" | "atLeast" } = { mode: "exact" }
     ): Promise<boolean> {
-        return await this.waitForCondition(() => {
+        const condition = () => {
             for (const { peerId, expectedCount } of expectedCounts) {
                 const actualCount = this.getEventCallCount(peerId, eventName);
                 if (
@@ -953,7 +974,17 @@ export class PeerTestHarness<T extends AStateMachine> {
                 }
             }
             return true;
-        }, timeoutMs);
+        };
+
+        try {
+            await this.eventCountsBarrier.waitFor(condition, {
+                timeoutMs,
+                timeoutMessage: `${String(eventName)} counts not reached within ${timeoutMs}ms`
+            });
+            return true;
+        } catch {
+            return false;
+        }
     }
 
     getEventArgs(
