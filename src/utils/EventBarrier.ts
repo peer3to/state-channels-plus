@@ -3,13 +3,11 @@ import { Logger } from "./PeerLogger";
 export type EventBarrierOptions = {
     timeoutMs?: number;
     timeoutMessage?: string;
-    label?: string;
 };
 
 type Waiter = {
     condition: () => boolean | Promise<boolean>;
-    resolve: () => void;
-    reject: (error: Error) => void;
+    done: (err?: Error) => void;
     timeoutId: NodeJS.Timeout;
 };
 
@@ -34,28 +32,23 @@ export class EventBarrier {
         }
 
         return new Promise<void>((resolve, reject) => {
-            const timeoutId = setTimeout(() => {
+            const finish = (err?: Error) => {
+                clearTimeout(waiter.timeoutId);
                 this.waiters.delete(waiter);
+                err ? reject(err) : resolve();
+            };
+            const timeoutId = setTimeout(() => {
                 const errorMessage =
                     "EventBarrier timeout: " +
                     (timeoutMessage ||
                         `Condition not met within ${timeoutMs}ms`);
                 this.logger.error(errorMessage);
-                reject(new Error(errorMessage));
+                finish(new Error(errorMessage));
             }, timeoutMs);
 
             const waiter: Waiter = {
                 condition,
-                resolve: () => {
-                    clearTimeout(timeoutId);
-                    this.waiters.delete(waiter);
-                    resolve();
-                },
-                reject: (err: Error) => {
-                    clearTimeout(timeoutId);
-                    this.waiters.delete(waiter);
-                    reject(err);
-                },
+                done: finish,
                 timeoutId
             };
 
@@ -66,23 +59,18 @@ export class EventBarrier {
     /**
      * Signal that state may have changed; re-evaluates all waiters.
      */
-    async signal(): Promise<void> {
-        const waiters = Array.from(this.waiters);
-
-        await Promise.allSettled(
-            waiters.map(async (waiter) => {
-                try {
-                    if (await waiter.condition()) {
-                        waiter.resolve();
-                    }
-                } catch (err) {
+    signal(): void {
+        for (const waiter of [...this.waiters]) {
+            Promise.resolve()
+                .then(waiter.condition)
+                .then((ok) => ok && waiter.done())
+                .catch((err) => {
                     this.logger.error(
-                        `EventBarrier - signal - Error evaluating condition: ${(err as Error).message}`
+                        `EventBarrier condition error: ${err.message}`
                     );
-                    waiter.reject(err as Error);
-                }
-            })
-        );
+                    waiter.done(err);
+                });
+        }
     }
 
     /**
