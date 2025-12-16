@@ -5,6 +5,76 @@ const { globSync } = require("glob");
 const path = require("path");
 const { Project, SyntaxKind } = require("ts-morph");
 
+const DEFAULT_LOG_DIR = "./logs";
+const DEFAULT_WORKERS = 8;
+
+function parseCliArgs(argv) {
+    const options = {
+        logDir: DEFAULT_LOG_DIR,
+        allowLogdirPurge: false,
+        workers: DEFAULT_WORKERS
+    };
+
+    for (let i = 2; i < argv.length; i++) {
+        const arg = argv[i];
+
+        if (
+            arg === "--logDir" ||
+            arg === "--log-dir" ||
+            arg === "--dir" ||
+            arg === "-d"
+        ) {
+            const next = argv[i + 1];
+            if (next) {
+                options.logDir = next;
+                i++;
+            }
+            continue;
+        }
+
+        if (
+            arg.startsWith("--logDir=") ||
+            arg.startsWith("--log-dir=") ||
+            arg.startsWith("--dir=") ||
+            arg.startsWith("-d=")
+        ) {
+            options.logDir = arg.split("=").slice(1).join("=");
+            continue;
+        }
+
+        if (
+            arg === "--allowLogdirPurge" ||
+            arg === "--allow-logdir-purge" ||
+            arg === "--purge" ||
+            arg === "-p"
+        ) {
+            options.allowLogdirPurge = true;
+            continue;
+        }
+
+        if (arg === "--workers" || arg === "-w") {
+            const next = argv[i + 1];
+            const parsed = next ? Number.parseInt(next, 10) : NaN;
+            if (Number.isFinite(parsed) && parsed > 0) {
+                options.workers = parsed;
+                i++;
+            }
+            continue;
+        }
+
+        if (arg.startsWith("--workers=") || arg.startsWith("-w=")) {
+            const value = arg.split("=").slice(1).join("=");
+            const parsed = Number.parseInt(value, 10);
+            if (Number.isFinite(parsed) && parsed > 0) {
+                options.workers = parsed;
+            }
+            continue;
+        }
+    }
+
+    return options;
+}
+
 function getStringLiteralValue(node) {
     if (node.getKind() === SyntaxKind.StringLiteral) {
         return node.getText().slice(1, -1); // Remove quotes
@@ -77,13 +147,13 @@ function sanitizeFileName(name) {
     return name.replace(/[^a-zA-Z0-9._-]+/g, "_");
 }
 
-function safeEmptyDir(dirPath) {
+function safeEmptyDir(dirPath, allowLogdirPurge) {
     const resolved = path.resolve(dirPath);
-    const expected = path.resolve("./logs");
+    const expected = path.resolve(DEFAULT_LOG_DIR);
 
     // Safety: only auto-purge the default ./logs directory unless explicitly allowed.
     const canAutoPurge = resolved === expected;
-    const allowUnsafe = process.env.ALLOW_LOGDIR_PURGE === "1";
+    const allowUnsafe = allowLogdirPurge === true;
 
     if (!canAutoPurge && !allowUnsafe) {
         console.warn(
@@ -98,11 +168,11 @@ function safeEmptyDir(dirPath) {
     }
 }
 
-function cleanupNonErrorLogs(logDir) {
+function cleanupNonErrorLogs(logDir, allowLogdirPurge) {
     const resolved = path.resolve(logDir);
-    const expected = path.resolve("./logs");
+    const expected = path.resolve(DEFAULT_LOG_DIR);
     const canAutoPurge = resolved === expected;
-    const allowUnsafe = process.env.ALLOW_LOGDIR_PURGE === "1";
+    const allowUnsafe = allowLogdirPurge === true;
 
     if (!canAutoPurge && !allowUnsafe) {
         console.warn(
@@ -176,6 +246,7 @@ async function runTask(cmd, args, env, label, logPath) {
 }
 
 async function main() {
+    const cli = parseCliArgs(process.argv);
     const e2eDir = path.resolve("test/e2e");
     const files = globSync(path.join(e2eDir, "*.ts"));
     if (files.length === 0) {
@@ -204,16 +275,16 @@ async function main() {
         process.exit(1);
     }
 
-    const workers = 8;
+    const workers = cli.workers;
 
     console.log(
         `Running ${tasks.length} E2E task(s) with ${workers} worker(s)`
     );
 
-    const logDir = process.env.LOG_FILE_DIR || "./logs";
+    const logDir = cli.logDir;
 
     // Clean logs from previous runs
-    safeEmptyDir(logDir);
+    safeEmptyDir(logDir, cli.allowLogdirPurge);
 
     const env = {
         ...process.env,
@@ -296,13 +367,13 @@ async function main() {
     }
 
     if (failed.length > 0) {
-        cleanupNonErrorLogs(logDir);
+        cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
         console.error(`\nFailed tasks:\n- ${failed.join("\n- ")}\n`);
         process.exit(1);
     }
 
     // Keep workspace tidy: keep only error_* logs
-    cleanupNonErrorLogs(logDir);
+    cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
 }
 
 main().catch((err) => {

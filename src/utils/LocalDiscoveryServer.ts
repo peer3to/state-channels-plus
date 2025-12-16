@@ -301,7 +301,7 @@ export class LocalDiscoveryServer {
                 });
 
                 const resolvedPort = this.getServerPort(result.server);
-                this.logger.info("Server bound", {
+                this.logger.debug("Server bound", {
                     mode: options.mode,
                     requestedPort: port,
                     resolvedPort,
@@ -436,7 +436,7 @@ export class LocalDiscoveryServer {
             this.discoveryServer = server;
             this.discoveryPort = port;
 
-            this.logger.info("Discovery server started", {
+            this.logger.debug("Discovery server started", {
                 mode: "registry",
                 registryPort: port
             });
@@ -802,7 +802,7 @@ export class LocalDiscoveryServer {
 
         let retryScheduled = false;
 
-        const ws = this.createOutboundWebSocket({
+        this.createOutboundWebSocket({
             url: peerUrl,
             purpose: "peer",
             log,
