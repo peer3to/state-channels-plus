@@ -137,12 +137,13 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                 [];
             for (const dw of syncPayload.disputeWindows) {
                 // 2.2) verify that they're expired - if they're not expired abort
-                const [isExpired, _] =
+                const { isKillPeriodExpired } =
                     await diamondStateMachine.localDiamondContract.isKillPeriodExpired(
                         channelId,
                         dw.forkId
                     );
-                if (!isExpired) return this.service.abort(senderTransport);
+                if (!isKillPeriodExpired)
+                    return this.service.abort(senderTransport);
 
                 // 2.3) reduce them if they're not already reduced
                 const isReducedAndFinal =

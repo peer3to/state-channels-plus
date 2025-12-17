@@ -16,6 +16,7 @@ import ATransport from "@/transport/ATransport";
 
 export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
+    private readonly logger: Logger;
     constructor(
         private readonly storage: Storage,
         private readonly diamondStateMachine: ADiamondStateMachine,
@@ -24,10 +25,10 @@ export default class ValidationService {
         private readonly stateManager: StateManager,
         logger: Logger
     ) {
-        const childLogger = logger.child({ component: "ValidationService" });
+        this.logger = logger.child({ component: "ValidationService" });
         this.fraudProofService = new FraudProofService(
             this.storage,
-            childLogger
+            this.logger
         );
     }
 
@@ -36,25 +37,30 @@ export default class ValidationService {
         strategy: AValidationStrategy,
         senderTransport?: ATransport
     ): Promise<BlockValidationResult> {
-        const forkId = block.forkId;
-        const channelId = block.channelId;
-
         // Check is correct channel
         if (
             !this.stateManager.channelId ||
             block.channelId != this.stateManager.channelId
-        )
+        ) {
+            this.logger.warn("validateBlockConfirmation - wrong channel", {
+                blockHash: block.hash,
+                stateManagerChannelId: String(this.stateManager.channelId)
+            });
             return await strategy.wrongChannel(block);
+        }
 
         // Check if channel is open
         if (!this.isChannelOpen(this.stateManager.forkId)) {
+            this.logger.warn("validateBlockConfirmation - channel not opened", {
+                stateManagerForkId: String(this.stateManager.forkId)
+            });
             return await strategy.channelNotOpened(block);
         }
 
         //  Get participants
         const participants = await this.getParticipants(
             block.coordinates,
-            channelId
+            block.channelId
         );
 
         // Check duplicate blocks
@@ -65,11 +71,20 @@ export default class ValidationService {
         );
 
         if (duplicateResult !== BlockValidationResult.SUCCESS) {
+            // this.logger.warn("validateBlockConfirmation - duplicate block", {
+            //     block
+            // });
             return duplicateResult;
         }
 
         // Author is a participant
         if (!participants.has(block.author)) {
+            this.logger.warn(
+                "validateBlockConfirmation - author is not participant",
+                {
+                    block
+                }
+            );
             return await strategy.blockAuthorIsNotParticipant(block);
         }
 
@@ -79,15 +94,29 @@ export default class ValidationService {
             strategy
         );
         if (conflictResult !== BlockValidationResult.SUCCESS) {
+            this.logger.warn("validateBlockConfirmation - conflicting block", {
+                block
+            });
             return conflictResult;
         }
 
-        if (await this.isDisputedFork(block.forkId, channelId)) {
+        if (await this.isDisputedFork(block.forkId, block.channelId)) {
+            this.logger.warn("validateBlockConfirmation - fork disputed", {
+                block
+            });
             return await strategy.blockForkIsDisputed(block, senderTransport);
         }
 
         // isNext
-        if (block.height > this.storage.blocks.getNextBlockHeight(forkId)) {
+        if (
+            block.height > this.storage.blocks.getNextBlockHeight(block.forkId)
+        ) {
+            this.logger.warn(
+                "validateBlockConfirmation - block is in the future",
+                {
+                    block
+                }
+            );
             return await strategy.blockIsNotNextAndIsInTheFuture(block);
         }
 
@@ -95,20 +124,38 @@ export default class ValidationService {
         if (!this.isLinked(block)) {
             // if first block -> wrong genesis fraud proof
             if (block.height === 0) {
+                this.logger.warn("validateBlockConfirmation - wrong genesis", {
+                    block
+                });
                 return await strategy.wrongGenesisDetected(block);
             }
+            this.logger.warn("validateBlockConfirmation - block not linked", {
+                block
+            });
             return await strategy.blockIsNotLinkedAndIsNotFirstBlock(block);
         }
 
         // isNextLeader
         const nextLeader = await this.diamondStateMachine.getNextToWrite();
         if (nextLeader !== block.author) {
+            this.logger.warn(
+                "validateBlockConfirmation - unexpected next leader",
+                {
+                    block
+                }
+            );
             return await strategy.invalidStateTransitionDetected(block);
         }
 
         // Time logic
         const timeResult = await this.validateTimeLogic(block, strategy);
 
+        if (timeResult !== BlockValidationResult.SUCCESS) {
+            this.logger.warn("validateBlockConfirmation - time logic", {
+                block
+            });
+            return timeResult;
+        }
         return timeResult;
     }
 
@@ -224,16 +271,28 @@ export default class ValidationService {
         const conflictingBlock = maybePreExistingBlock;
 
         if (conflictingBlock.author === block.author) {
+            this.logger.warn("checkConflictingBlock - double sign detected", {
+                block
+            });
             return await strategy.doubleSignDetected(conflictingBlock, block);
         }
 
         // If not linked we can't slash since the peer could have been building on the wrong 'reality' since someone performed a double sign
         if (this.isLinked(block)) {
+            this.logger.warn(
+                "checkConflictingBlock - isLinked but conflict detected",
+                {
+                    block
+                }
+            );
             return await strategy.invalidStateTransitionDetected(block);
         }
 
         // if first block -> wrong genesis
         if (conflictingBlock.height === 0) {
+            this.logger.warn("checkConflictingBlock - wrong genesis detected", {
+                block
+            });
             return await strategy.wrongGenesisDetected(block);
         }
 

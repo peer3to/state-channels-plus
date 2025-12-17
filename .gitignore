@@ -23,3 +23,6 @@ peer3.config.json
 lib
 out
 cache_forge
+
+temp
+logs

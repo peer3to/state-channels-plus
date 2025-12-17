@@ -225,7 +225,14 @@ class StateManager {
     public getChannelId(): ChannelId {
         return this.channelId;
     }
-    public setReductionTimeout(forkId: ForkId, triggerTimestamp: Timestamp) {
+    public setReductionTimeout(
+        forkId: ForkId,
+        triggerTimestamp: Timestamp,
+        isRescheduled: boolean = false
+    ) {
+        this.logger.debug(
+            `setReductionTimeout called for fork ${forkId} at ${triggerTimestamp}`
+        );
         if (this.forkId !== forkId) return;
 
         const existingHandle = this.reductionTriggerMap.get(forkId);
@@ -233,7 +240,13 @@ class StateManager {
 
         // If existing timeout exists, only replace if new timeout is further in the future
         if (existingHandle) {
-            if (existingHandle.triggerTimestamp >= triggerTimestamp) {
+            if (existingHandle.triggerTimestamp > triggerTimestamp) {
+                return;
+            }
+            if (
+                existingHandle.triggerTimestamp == triggerTimestamp &&
+                !isRescheduled
+            ) {
                 return;
             }
             this.timeoutManager.cancelTask(existingHandle.handle);
@@ -242,7 +255,7 @@ class StateManager {
         // Schedule new reduction attempt
         const handle = this.timeoutManager.scheduleTask(
             () => {
-                this.reductionTriggerMap.delete(forkId); // Clear entry when timeout fires
+                // Don't call reductionTriggerMap.delete(forkId) - race condition problem
                 this.tryReduce(forkId);
             },
             Math.max(0, (triggerTimestamp - now) * 1000),
@@ -268,7 +281,10 @@ class StateManager {
         }
 
         // Step 1: Check locally if kill period expired (fast, no RPC call)
-        const [canReduceLocally, killTimestamp] =
+        const {
+            isKillPeriodExpired: canReduceLocally,
+            killPeriodEnd: killTimestamp
+        } =
             await this.diamondStateMachine.localDiamondContract.isKillPeriodExpired(
                 this.channelId,
                 forkId
@@ -279,7 +295,7 @@ class StateManager {
             Number(killTimestamp) - Clock.getTimeInSeconds()
         );
         this.logger.debug(
-            `Reduction check for fork ${forkId}: canReduce=${canReduceLocally}, timeRemaining=${timeRemaining}s`
+            `Local Reduction check for fork ${forkId}: canReduce=${canReduceLocally}, timeRemaining=${timeRemaining}s`
         );
 
         // Step 2: If local state says not ready, reschedule check
@@ -288,7 +304,11 @@ class StateManager {
                 this.logger.debug(
                     `Rescheduling reduction check in ${timeRemaining}s`
                 );
-                return this.setReductionTimeout(forkId, Number(killTimestamp));
+                return this.setReductionTimeout(
+                    forkId,
+                    Number(killTimestamp),
+                    true
+                );
             }
             // timeRemaining is 0 but can't reduce -> local state not synced, fall through to on-chain check
             this.logger.debug(
@@ -297,24 +317,33 @@ class StateManager {
         }
 
         // Step 3: Verify on-chain before committing to reduction
-        const [canReduceOnChain, onChainKillTimestamp] =
-            await this.stateChannelManagerContract.isKillPeriodExpired(
-                this.channelId,
-                forkId
-            );
+        const {
+            isKillPeriodExpired: canReduceOnChain,
+            killPeriodEnd: onChainKillTimestamp,
+            blockTimestamp: onChainTimestamp
+        } = await this.stateChannelManagerContract.isKillPeriodExpired(
+            this.channelId,
+            forkId
+        );
+
+        const remaining = Math.max(
+            0,
+            Number(onChainKillTimestamp) - Number(onChainTimestamp) // TODO this was Clock.getTimeInSeconds() before, but we were ecountering remaining == 0
+        );
+
+        this.logger.debug(
+            `On-chain Reduction check for fork ${forkId}: canReduce=${canReduceOnChain}, timeRemaining=${remaining}s`
+        );
 
         if (!canReduceOnChain) {
-            const remaining = Math.max(
-                0,
-                Number(onChainKillTimestamp) - Clock.getTimeInSeconds()
-            );
             if (remaining > 0) {
                 this.logger.debug(
                     `On-chain check: rescheduling in ${remaining}s`
                 );
                 return this.setReductionTimeout(
                     forkId,
-                    Number(onChainKillTimestamp)
+                    Number(onChainKillTimestamp),
+                    true
                 );
             }
             throw new Error(
@@ -554,15 +583,16 @@ class StateManager {
             senderTransport?: ATransport;
         }
     ): Promise<boolean> {
-        // the try/catch is to ensure that the mutex is unlocked in case of an error
-        // no error is actually expected to happen, and the catch block just re-throws the error
         const strategy =
             options?.validationStrategy ||
             this.getStrategyByStatus(this.status);
+
         try {
             await this.mutex.lock();
+
             let validationResult: BlockValidationResult =
                 BlockValidationResult.SUCCESS;
+
             const isAuthentic =
                 await this.diamondStateMachine.localDiamondContract.isBlockAuthentic(
                     blockConfirmation.signedBlock
@@ -571,6 +601,18 @@ class StateManager {
             if (!isAuthentic) {
                 validationResult =
                     await strategy.authenticateBlockFailed(blockConfirmation);
+
+                this.logger.warn(
+                    "onBlockConfirmation - authentication failed",
+                    {
+                        status: this.status,
+                        strategy: (strategy as any)?.constructor?.name,
+                        blockHash: ethers.keccak256(
+                            blockConfirmation.signedBlock.encodedBlock
+                        )
+                    }
+                );
+
                 return await strategy.interpretFinalValidationResult(
                     validationResult
                 );
@@ -611,6 +653,11 @@ class StateManager {
             if (brokenInboundChainBlock) {
                 validationResult =
                     await strategy.invalidStateTransitionDetected(block);
+                this.logger.warn("onBlockConfirmation - broken inbound chain", {
+                    status: this.status,
+                    strategy: (strategy as any)?.constructor?.name,
+                    block
+                });
                 return await strategy.interpretFinalValidationResult(
                     validationResult
                 );
@@ -625,6 +672,14 @@ class StateManager {
                         block,
                         forgedInboundMessageBlock
                     );
+                this.logger.warn(
+                    "onBlockConfirmation - forged inbound message block",
+                    {
+                        status: this.status,
+                        strategy: (strategy as any)?.constructor?.name,
+                        block
+                    }
+                );
                 return await strategy.interpretFinalValidationResult(
                     validationResult
                 );
@@ -641,6 +696,14 @@ class StateManager {
             if (!success) {
                 validationResult =
                     await strategy.invalidStateTransitionDetected(block);
+                this.logger.warn(
+                    "onBlockConfirmation - state transition failed",
+                    {
+                        status: this.status,
+                        strategy: (strategy as any)?.constructor?.name,
+                        block
+                    }
+                );
                 return await strategy.interpretFinalValidationResult(
                     validationResult
                 );
@@ -673,6 +736,14 @@ class StateManager {
             if (stateSnapshot.hash !== block.stateSnapshotHash) {
                 validationResult =
                     await strategy.invalidStateTransitionDetected(block);
+                this.logger.warn(
+                    "onBlockConfirmation - state snapshot hash mismatch",
+                    {
+                        status: this.status,
+                        strategy: (strategy as any)?.constructor?.name,
+                        block
+                    }
+                );
                 return await strategy.interpretFinalValidationResult(
                     validationResult
                 );
@@ -692,6 +763,33 @@ class StateManager {
 
             // success - no disconnect
             return true;
+        } catch (error) {
+            if (isCustomEvmError(error)) {
+                this.logger.error("onBlockConfirmation - error", {
+                    status: this.status,
+                    strategy: (strategy as any)?.constructor?.name,
+                    channelId: this.channelId,
+                    blockHash: ethers.keccak256(
+                        blockConfirmation.signedBlock.encodedBlock
+                    ),
+                    errorDescription: error.errorDescription,
+                    errorName: error.name,
+                    errorMessage: error.message
+                });
+            } else {
+                this.logger.error("onBlockConfirmation - error", {
+                    status: this.status,
+                    strategy: (strategy as any)?.constructor?.name,
+                    channelId: this.channelId,
+                    blockHash: ethers.keccak256(
+                        blockConfirmation.signedBlock.encodedBlock
+                    ),
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                    stack: error instanceof Error ? error.stack : undefined
+                });
+            }
+            throw error;
         } finally {
             this.mutex.unlock();
         }
@@ -720,20 +818,38 @@ class StateManager {
         };
     }
 
+    private async logPlayTransaction(tx: TransactionStruct): Promise<string> {
+        const forkId = this.forkId;
+        const txHeight = Number(tx.header.transactionCnt);
+        const nextToWrite = await this.diamondStateMachine.getNextToWrite();
+        const latestBlock = this.storage.blocks.getLatestBlock(forkId);
+        const latestStoredHeight = latestBlock?.height ?? null;
+        const nextStoredHeight = this.storage.blocks.getNextBlockHeight(forkId);
+        const message =
+            `playTransaction: ` +
+            ` - myAddress: ${String(this.signerAddress)}` +
+            ` - nextToWrite: ${String(nextToWrite)}` +
+            ` - txHeight: ${txHeight}` +
+            ` - latestStoredHeight: ${String(latestStoredHeight)}` +
+            ` - nextStoredHeight: ${nextStoredHeight}` +
+            ` - forkId: ${forkId}`;
+        this.logger.info(message);
+        return message;
+    }
+
     // Used when authoring a block - Executes the transaction and returns a signed block
     public async playTransaction(
         tx: TransactionStruct
     ): Promise<BlockConfirmationStruct> {
         await this.mutex.lock();
-
+        const forkId = this.forkId;
+        const message = await this.logPlayTransaction(tx);
         try {
             if (!this.validationService.isChannelOpen(this.forkId)) {
                 throw new Error("Channel not open");
             }
             if (!(await this.isMyTurn())) {
-                throw new Error(
-                    `Not player turn - myAddress: ${String(this.signerAddress)} - nextToWrite: ${await this.diamondStateMachine.getNextToWrite()}`
-                );
+                throw new Error("NOT MY TURN: " + message);
             }
             this.adjustTimestampIfNeeded(tx);
 
@@ -1487,6 +1603,15 @@ class StateManager {
 
         if (Number(tx.header.timestamp) <= previousTimestamp) {
             tx.header.timestamp = BigInt(previousTimestamp);
+        }
+
+        if (
+            Number(tx.header.timestamp) >
+            previousTimestamp + this.timeConfig.p2pTime
+        ) {
+            tx.header.timestamp = BigInt(
+                previousTimestamp + this.timeConfig.p2pTime
+            );
         }
     }
 
