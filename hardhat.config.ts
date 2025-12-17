@@ -1,6 +1,7 @@
-import { HardhatUserConfig } from "hardhat/config";
+import { HardhatUserConfig, task, types } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 import "@nomicfoundation/hardhat-foundry";
+import { TASK_TEST } from "hardhat/builtin-tasks/task-names";
 
 // You need to export an object to set up your config
 // Go to https://hardhat.org/config/ to learn more
@@ -50,5 +51,19 @@ const config: HardhatUserConfig = {
     }
     // solidity: "0.8.26"
 };
+
+task(TASK_TEST)
+    .addOptionalParam(
+        "excludeTags",
+        "Comma-separated log tags to exclude from output",
+        undefined,
+        types.string
+    )
+    .setAction(async (taskArgs, _hre, runSuper) => {
+        if (taskArgs.excludeTags) {
+            process.env.LOG_EXCLUDE_TAGS = taskArgs.excludeTags;
+        }
+        return runSuper(taskArgs);
+    });
 
 export default config;
