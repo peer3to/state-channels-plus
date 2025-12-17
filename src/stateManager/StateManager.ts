@@ -1266,6 +1266,15 @@ class StateManager {
                 )
             );
 
+            this.logger.debug("prepareUpdateStateSnapshotFork - start", {
+                channelId: this.channelId,
+                onChainForkId: currentOnChainSnapshot.forkId,
+                onChainBlockHeight: currentOnChainSnapshot.blockHeight,
+                onChainLatestOutboundMessageBlockHash:
+                    currentOnChainSnapshot.snapshotData
+                        .latestOutboundMessageBlockHash
+            });
+
             let currentForkId = currentOnChainSnapshot.forkId;
 
             // Traverse through dispute windows until we reach a fork with no disputes
@@ -1275,11 +1284,39 @@ class StateManager {
                     currentForkId
                 );
 
+            this.logger.debug(
+                "prepareUpdateStateSnapshotFork - dispute status",
+                {
+                    forkId: currentForkId,
+                    isDisputed
+                }
+            );
+
             if (!isDisputed) {
+                // Helpful for diagnosing cases where reduction already happened
+                // but snapshot still points at a pre-reduction fork.
+                const reducedResult =
+                    await this.stateChannelManagerContract.getReducedResult(
+                        this.channelId,
+                        currentForkId
+                    );
+                this.logger.debug(
+                    "prepareUpdateStateSnapshotFork - fork not disputed; reducedResult",
+                    {
+                        forkId: currentForkId,
+                        reducedForkId: reducedResult?.reducedForkId
+                    }
+                );
                 return undefined; // No fork update needed
             }
 
             while (isDisputed) {
+                this.logger.debug(
+                    "prepareUpdateStateSnapshotFork - traversing disputed fork",
+                    {
+                        forkId: currentForkId
+                    }
+                );
                 // If reduced result already exists on-chain, traverse to it
                 const existingReducedResult =
                     await this.stateChannelManagerContract.getReducedResult(
@@ -1287,13 +1324,28 @@ class StateManager {
                         currentForkId
                     );
                 // if reduceResult exists and is final
-                if (existingReducedResult[0]) {
-                    currentForkId = existingReducedResult[0];
+                if (existingReducedResult?.reducedForkId) {
+                    this.logger.debug(
+                        "prepareUpdateStateSnapshotFork - reduced result exists; traversing",
+                        {
+                            fromForkId: currentForkId,
+                            toForkId: existingReducedResult.reducedForkId
+                        }
+                    );
+                    currentForkId = existingReducedResult.reducedForkId;
                     isDisputed =
                         await this.stateChannelManagerContract.isForkDisputed(
                             this.channelId,
                             currentForkId
                         );
+
+                    this.logger.debug(
+                        "prepareUpdateStateSnapshotFork - dispute status after traverse",
+                        {
+                            forkId: currentForkId,
+                            isDisputed
+                        }
+                    );
                     continue;
                 }
 
@@ -1303,8 +1355,22 @@ class StateManager {
                         this.channelId,
                         currentForkId
                     );
+
+                this.logger.debug(
+                    "prepareUpdateStateSnapshotFork - window commitments",
+                    {
+                        forkId: currentForkId,
+                        commitmentsCount: disputeCommitments?.length ?? 0
+                    }
+                );
                 if (!disputeCommitments || disputeCommitments.length === 0) {
                     // Nothing to reduce; wait for more data
+                    this.logger.debug(
+                        "prepareUpdateStateSnapshotFork - no commitments; stopping traversal",
+                        {
+                            forkId: currentForkId
+                        }
+                    );
                     break;
                 }
 
@@ -1322,6 +1388,14 @@ class StateManager {
                     }
                 );
 
+                this.logger.debug(
+                    "prepareUpdateStateSnapshotFork - disputes built from storage",
+                    {
+                        forkId: currentForkId,
+                        disputesCount: disputes.length
+                    }
+                );
+
                 // Use proxy view to compute reduced output cheaply (no tx)
                 const reducedOutput =
                     await this.stateChannelManagerContract.reduce.staticCall(
@@ -1330,6 +1404,15 @@ class StateManager {
                 const reduceData = await this.agreementManager.getReduceData(
                     currentForkId,
                     reducedOutput
+                );
+
+                this.logger.debug(
+                    "prepareUpdateStateSnapshotFork - reduce data prepared",
+                    {
+                        forkId: currentForkId,
+                        latestStateSnapshotForkId: (reduceData as any)
+                            ?.latestStateSnapshot?.forkId
+                    }
                 );
 
                 // Reduce and finalize on-chain to obtain the reduced fork id
@@ -1342,6 +1425,14 @@ class StateManager {
                             reduceData.inboundMessageBlocks
                         );
                     await txResponse.wait();
+
+                    this.logger.debug(
+                        "prepareUpdateStateSnapshotFork - reduceAndFinalize mined",
+                        {
+                            forkId: currentForkId,
+                            txHash: txResponse.hash
+                        }
+                    );
                 } catch (error) {
                     if (
                         isCustomEvmError(error) &&
@@ -1359,14 +1450,38 @@ class StateManager {
                         currentForkId
                     );
 
+                this.logger.debug(
+                    "prepareUpdateStateSnapshotFork - reduced result read",
+                    {
+                        fromForkId: currentForkId,
+                        reducedForkId: reducedResult?.reducedForkId
+                    }
+                );
+
                 // Traverse to the reduced fork
-                currentForkId = reducedResult[0];
+                currentForkId = reducedResult.reducedForkId;
                 isDisputed =
                     await this.stateChannelManagerContract.isForkDisputed(
                         this.channelId,
                         currentForkId
                     );
+
+                this.logger.debug(
+                    "prepareUpdateStateSnapshotFork - dispute status after reduction",
+                    {
+                        forkId: currentForkId,
+                        isDisputed
+                    }
+                );
             }
+
+            this.logger.debug(
+                "prepareUpdateStateSnapshotFork - traversal complete",
+                {
+                    resolvedForkId: currentForkId,
+                    resolvedForkIsDisputed: isDisputed
+                }
+            );
 
             // Get the genesis snapshot for the final resolved fork
             const genesisSnapshot =
@@ -1390,6 +1505,16 @@ class StateManager {
                     latestOutboundBlockHash,
                     currentOnChainOutboundBlockHash
                 );
+
+            this.logger.debug(
+                "prepareUpdateStateSnapshotFork - outbound message block range",
+                {
+                    forkId: currentForkId,
+                    fromBlockHash: latestOutboundBlockHash,
+                    toBlockHash: currentOnChainOutboundBlockHash,
+                    blocksCount: outboundMessageBlocks.length
+                }
+            );
 
             return {
                 genesisSnapshot,
