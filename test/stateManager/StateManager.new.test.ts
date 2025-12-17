@@ -347,7 +347,8 @@ describe("StateManager - Refactored", () => {
         // Assert: Throws error indicating no genesis snapshot found for the fork
         it("should throw error when disputed fork is resolved but genesis snapshot is missing", async () => {
             // Arrange
-            const builder = createDefaultBuilder();
+            const builder =
+                createDefaultBuilder().withoutDefaultGenesisSnapshot(); // Don't create default genesis snapshot
 
             // Configure contract - current fork is disputed but no genesis snapshot exists
             builder
@@ -388,24 +389,6 @@ describe("StateManager - Refactored", () => {
 
             stateManager = builder.build();
 
-            // Configure agreement manager to return valid update data
-            stateManager.agreementManager.getStateProof = async () => ({
-                milestones: [
-                    {
-                        blockConfirmations: [
-                            {
-                                signedBlock: {
-                                    encodedBlock: "0x",
-                                    signature: "0x"
-                                },
-                                signatures: []
-                            }
-                        ]
-                    }
-                ],
-                signedBlocks: []
-            });
-
             // Create a proper StateSnapshot object
             const realSnapshot = stateSnapshot({
                 forkId: defaults.forkId,
@@ -415,8 +398,12 @@ describe("StateManager - Refactored", () => {
                 })
             });
 
-            stateManager.agreementManager.getSnapshotFromMilestone = () =>
-                realSnapshot;
+            // Stub prepareUpdateSnapshotSameFork to return valid data directly
+            sinon.stub(stateManager, "prepareUpdateSnapshotSameFork").resolves({
+                milestoneProofs: [{ blockConfirmations: [] }],
+                milestoneSnapshots: [realSnapshot],
+                outboundMessageBlocks: []
+            });
 
             // Act
             await stateManager.postStateSnapshot(defaults.forkId);
@@ -507,6 +494,12 @@ describe("StateManager - Refactored", () => {
                     snapshotData: onChainSnapshot.snapshotData
                 }
             );
+
+            // Stub prepareUpdateSnapshotSameFork to return undefined (no same-fork updates needed)
+            // This test focuses on verifying multicall is called for fork updates
+            sinon
+                .stub(stateManager, "prepareUpdateSnapshotSameFork")
+                .resolves(undefined);
 
             // Act - Call with target fork (reduced fork, different from on-chain fork)
             await stateManager.postStateSnapshot(reducedFork);

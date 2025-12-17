@@ -1293,18 +1293,10 @@ class StateManager {
             );
 
             if (!isDisputed) {
-                // Helpful for diagnosing cases where reduction already happened
-                // but snapshot still points at a pre-reduction fork.
-                const reducedResult =
-                    await this.stateChannelManagerContract.getReducedResult(
-                        this.channelId,
-                        currentForkId
-                    );
                 this.logger.debug(
-                    "prepareUpdateStateSnapshotFork - fork not disputed; reducedResult",
+                    "prepareUpdateStateSnapshotFork - fork not disputed; no update needed",
                     {
-                        forkId: currentForkId,
-                        reducedForkId: reducedResult?.reducedForkId
+                        forkId: currentForkId
                     }
                 );
                 return undefined; // No fork update needed
