@@ -1060,7 +1060,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             peer.stateManager.storage.blocks.getLatestBlock(forkId);
         if (!latestBlock) {
             const genesisSnapshot =
-                peer.stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
                     forkId
                 );
             return genesisSnapshot ? "genesis" : null;
@@ -1193,7 +1193,7 @@ export class PeerTestHarness<T extends AStateMachine> {
             peer.stateManager.storage.blocks.getLatestBlock(forkId);
         return (
             previousBlock?.hash ||
-            peer.stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+            peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
                 forkId
             )?.hash ||
             ethers.ZeroHash
@@ -1207,7 +1207,7 @@ export class PeerTestHarness<T extends AStateMachine> {
     ): Hash {
         return previousBlock
             ? previousBlock.stateSnapshotHash
-            : peer.stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+            : peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
                   forkId
               )?.hash || ethers.ZeroHash;
     }

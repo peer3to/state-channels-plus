@@ -360,7 +360,7 @@ class DisputeManager {
         let isPartial = false;
         // genesisStateSnapshot
         const genesisStateSnapshot =
-            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
+            this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
         if (!genesisStateSnapshot)
             throw new Error(
                 "getDisputeAuditingData - genesisStateSnapshot not found"

@@ -1155,12 +1155,12 @@ class StateManager {
     > {
         try {
             // Get the current on-chain snapshot first
-            const currentOnChainSnapshot = StateSnapshot.from(
-                await this.stateChannelManagerContract.getStateSnapshot(
-                    this.channelId
-                )
-            );
+            const currentOnChainSnapshot =
+                this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
 
+            if (!currentOnChainSnapshot) {
+                return undefined;
+            }
             // Get the latest block height for this fork from storage
             const latestBlockHeight =
                 this.storage.blocks.getNextBlockHeight(forkId) - 1;
@@ -1485,7 +1485,7 @@ class StateManager {
 
             // Get the genesis snapshot for the final resolved fork
             const genesisSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                this.storage.stateSnapshots.getGenesisSnapshotByForkId(
                     currentForkId
                 );
             if (!genesisSnapshot) {
@@ -1776,7 +1776,7 @@ class StateManager {
         if (!latestBlock) {
             // No blocks yet - check against genesis snapshot timestamp
             const genesisSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                this.storage.stateSnapshots.getGenesisSnapshotByForkId(
                     this.forkId
                 );
             if (!genesisSnapshot) {

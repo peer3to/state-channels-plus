@@ -475,7 +475,7 @@ export class EventHandler {
                 `StateMachineState not available for hash: ${latestSnapshot.snapshotData.stateMachineStateHash}`
             );
         const genesisSnapshot =
-            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
+            this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
         if (!genesisSnapshot)
             throw new Error(
                 `GenesisSnapshot not available for forkId: ${forkId}`
@@ -519,7 +519,7 @@ export class EventHandler {
         if (this.stateManager.forkId == forkId) {
             // Get the latest state snapshot - it should be reduced locally if not we'll reduce it on the spot
             const latestStateSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                this.storage.stateSnapshots.getGenesisSnapshotByForkId(
                     reducedForkId
                 );
             if (!latestStateSnapshot) {

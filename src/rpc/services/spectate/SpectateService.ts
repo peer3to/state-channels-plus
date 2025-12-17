@@ -193,7 +193,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
         // Get the latest fork genesis snapshot to include in the payload
         const latestForkGenesisSnapshot =
-            stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+            stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
                 forkId
             );
         if (!latestForkGenesisSnapshot) {

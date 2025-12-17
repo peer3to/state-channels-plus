@@ -636,7 +636,7 @@ describe("StateManager - Refactored", () => {
                     forkId: snapshotDataHash,
                     height: -1
                 }) ??
-                stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
                     snapshotDataHash
                 );
             expect(storedSnapshot).to.not.be.undefined;

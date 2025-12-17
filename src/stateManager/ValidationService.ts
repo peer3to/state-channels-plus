@@ -171,9 +171,7 @@ export default class ValidationService {
         const { forkId, height } = block.coordinates;
         if (height === 0) {
             const genesisSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                    forkId
-                );
+                this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
 
             return genesisSnapshot?.hash === block.previousBlockHash;
         }

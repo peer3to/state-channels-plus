@@ -45,7 +45,7 @@ describe("StateSnapshotStorage", () => {
                 );
 
                 // Should be  added to genesis mapping
-                const genesisStored = storage.getGenesisSnapshotDataByForkId(
+                const genesisStored = storage.getGenesisSnapshotByForkId(
                     genesisStateSnapshot.forkId
                 );
                 expect(genesisStored?.toStruct()).to.deep.equal(
@@ -82,7 +82,7 @@ describe("StateSnapshotStorage", () => {
                 );
 
                 // Should be  added to genesis mapping
-                const genesisStored = storage.getGenesisSnapshotDataByForkId(
+                const genesisStored = storage.getGenesisSnapshotByForkId(
                     genesisStateSnapshot.forkId
                 );
                 expect(genesisStored?.toStruct()).to.deep.equal(
@@ -110,7 +110,7 @@ describe("StateSnapshotStorage", () => {
         });
 
         it("should get genesis snapshot by forkId", () => {
-            const result = storage.getGenesisSnapshotDataByForkId(
+            const result = storage.getGenesisSnapshotByForkId(
                 genesisStateSnapshot.forkId
             );
             expect(result?.toStruct()).to.deep.equal(
@@ -120,8 +120,8 @@ describe("StateSnapshotStorage", () => {
 
         it("should return undefined for non-existent genesis forkId", () => {
             const nonExistentForkId = ethers.hexlify(ethers.randomBytes(32));
-            expect(storage.getGenesisSnapshotDataByForkId(nonExistentForkId)).to
-                .be.undefined;
+            expect(storage.getGenesisSnapshotByForkId(nonExistentForkId)).to.be
+                .undefined;
         });
     });
 
@@ -136,7 +136,7 @@ describe("StateSnapshotStorage", () => {
             storage.storeStateSnapshot(stateSnapshot);
 
             // Should not be in genesis mapping
-            const genesisStored = storage.getGenesisSnapshotDataByForkId(
+            const genesisStored = storage.getGenesisSnapshotByForkId(
                 stateSnapshot.forkId
             );
             expect(genesisStored).to.be.undefined;

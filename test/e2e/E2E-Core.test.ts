@@ -161,7 +161,7 @@ describe("E2E: Core Functionality", function () {
         // Arrange: Setup 3 participants, open channel, execute 3 state transitions
         // Act: Post the latest state snapshot on-chain
         // Assert: All peers observe StateSnapshotUpdated and on-chain snapshot matches latest local snapshot
-        it.only("should post updated state snapshot on-chain after 3 transitions", async function () {
+        it("should post updated state snapshot on-chain after 3 transitions", async function () {
             await harness!.setup(3);
             const forkId = await harness!.openChannel();
 
