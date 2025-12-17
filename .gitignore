@@ -26,3 +26,7 @@ cache_forge
 
 temp
 logs
+
+# generated files
+src/types/sol-enums.ts
+src/utils/GeneratedArtifacts.ts
