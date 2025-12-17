@@ -313,12 +313,14 @@ contract LocalDiamond is StateChannelManagerProxy {
     }
 
     function verifyMilestones(
+        bytes32 forkId,
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         SnapshotData memory genesisSnapshotData
     ) public view returns (bool isValid, bytes memory lastBlockEncoded) {
-        return
-            UtilityFacet(utilityFacetAddress).verifyMilestones(milestoneProofs, milestoneSnapshots, genesisSnapshotData);
+        return UtilityFacet(utilityFacetAddress).verifyMilestones(
+            forkId, milestoneProofs, milestoneSnapshots, genesisSnapshotData
+        );
     }
 
     function getLatestBlockFromStateProof(StateProof memory stateProof)

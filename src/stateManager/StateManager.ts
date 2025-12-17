@@ -1004,6 +1004,19 @@ class StateManager {
                 await this.prepareUpdateSnapshotSameFork(forkId);
             if (sameForkData) {
                 try {
+                    this.logger.debug(
+                        "postStateSnapshot - prepared updateStateSnapshotSameFork args",
+                        {
+                            milestoneProofs:
+                                this.summarizeMilestoneProofsForLog(
+                                    sameForkData.milestoneProofs
+                                ),
+                            milestoneSnapshots:
+                                this.summarizeMilestoneSnapshotsForLog(
+                                    sameForkData.milestoneSnapshots
+                                )
+                        }
+                    );
                     const txResponse =
                         await this.stateChannelManagerContract.updateStateSnapshotSameFork(
                             this.channelId,
@@ -1039,6 +1052,30 @@ class StateManager {
         const forkData = await this.prepareUpdateStateSnapshotFork();
         const sameForkData = await this.prepareUpdateSnapshotSameFork(forkId);
 
+        if (forkData) {
+            this.logger.debug(
+                "postStateSnapshot - prepared updateStateSnapshotFork args",
+                {
+                    ThresholdSet:
+                        forkData.genesisSnapshot.snapshotData.participants
+                }
+            );
+        }
+
+        if (sameForkData) {
+            this.logger.debug(
+                "postStateSnapshot - prepared updateStateSnapshotSameFork args",
+                {
+                    milestoneProofs: this.summarizeMilestoneProofsForLog(
+                        sameForkData.milestoneProofs
+                    ),
+                    milestoneSnapshots: this.summarizeMilestoneSnapshotsForLog(
+                        sameForkData.milestoneSnapshots
+                    )
+                }
+            );
+        }
+
         // Encode data for multicall
         const callData: string[] = [];
         if (forkData) {
@@ -1053,6 +1090,7 @@ class StateManager {
                             forkData.outboundMessageBlocks
                         ]
                     );
+
                 callData.push(forkCalldata);
             } else {
                 // Fork update results in a different fork
@@ -1074,6 +1112,7 @@ class StateManager {
                         sameForkData.outboundMessageBlocks
                     ]
                 );
+
             callData.push(sameForkCalldata);
         }
 
@@ -1379,6 +1418,28 @@ class StateManager {
         }
 
         return total;
+    }
+
+    private summarizeMilestoneProofsForLog(
+        milestoneProofs: MilestoneProofStruct[]
+    ): Array<{ blockHeight: number; signers: Address[] }> {
+        return milestoneProofs.flatMap((milestone) =>
+            milestone.blockConfirmations.map((blockConfirmation) => {
+                const block = Block.fromBlockConfirmation(blockConfirmation);
+                return {
+                    blockHeight: block.height,
+                    signers: Array.from(block.allSignerAddresses)
+                };
+            })
+        );
+    }
+
+    private summarizeMilestoneSnapshotsForLog(
+        milestoneSnapshots: StateSnapshot[]
+    ): Array<{ ThresholdSet: Address[] }> {
+        return milestoneSnapshots.map((snapshot) => ({
+            ThresholdSet: snapshot.snapshotData.participants
+        }));
     }
 
     // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute

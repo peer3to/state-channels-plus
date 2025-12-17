@@ -79,6 +79,7 @@
     "test:e2e:debug": "LOG_LEVEL=debug yarn hardhat test test/e2e/*",
     "test:e2e:verbose": "LOG_LEVEL=verbose yarn hardhat test test/e2e/*",
     "test:e2e:parallel": "node scripts/test-e2e-parallel.js",
+    "test:e2e:parallel:debug": "LOG_LEVEL=debug node scripts/test-e2e-parallel.js",
     "test:coverage": "nyc --reporter=html yarn test",
     "build": "yarn compile && rimraf dist && mkdir -p dist && tsc && npm pack && node rename-pack.js",
     "format": "prettier --write .",

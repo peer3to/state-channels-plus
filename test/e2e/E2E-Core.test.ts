@@ -1,5 +1,6 @@
 import { expect } from "chai";
 import { PeerTestHarness, sleep } from "@test/fixtures/PeerTestHarness";
+import { StateSnapshot } from "@/models";
 import {
     MathStateMachine,
     MathConsumerFacet__factory
@@ -155,6 +156,156 @@ describe("E2E: Core Functionality", function () {
             }
 
             harness!.assertAllPeersInSync();
+        });
+
+        // Arrange: Setup 3 participants, open channel, execute 3 state transitions
+        // Act: Post the latest state snapshot on-chain
+        // Assert: All peers observe StateSnapshotUpdated and on-chain snapshot matches latest local snapshot
+        it.only("should post updated state snapshot on-chain after 3 transitions", async function () {
+            await harness!.setup(3);
+            const forkId = await harness!.openChannel();
+
+            await harness!.submitNextTransaction((contract) => contract.add(1));
+            await harness!.submitNextTransaction((contract) =>
+                contract.leaveChannel()
+            );
+            await harness!.submitNextTransaction((contract) => contract.add(3));
+
+            const latestBlockHeight =
+                harness!.peers[0].stateManager.storage.blocks.getNextBlockHeight(
+                    forkId
+                ) - 1;
+
+            harness!.assertAllPeersInSync();
+            harness!.resetEventSpies();
+
+            const preparedSameForkData =
+                await harness!.peers[0].stateManager.prepareUpdateSnapshotSameFork(
+                    forkId
+                );
+            expect(
+                preparedSameForkData,
+                "Expected snapshot data to post"
+            ).to.not.equal(undefined);
+
+            const stateMachine =
+                harness!.peers[0].stateManager.diamondStateMachine;
+            const zeroBalance = await stateMachine.getZeroBalance();
+            let expectedWithdrawalsDeltaBalance = zeroBalance;
+            for (const outboundBlock of preparedSameForkData!
+                .outboundMessageBlocks) {
+                for (const message of outboundBlock.messages) {
+                    expectedWithdrawalsDeltaBalance =
+                        await stateMachine.addBalance(
+                            expectedWithdrawalsDeltaBalance,
+                            message.balance
+                        );
+                }
+            }
+
+            const onChainSnapshotBefore = StateSnapshot.from(
+                await harness!.channelManager.getStateSnapshot(
+                    harness!.channelId
+                )
+            );
+
+            const channelBalanceBefore =
+                await harness!.channelManager.getChannelBalance(
+                    harness!.channelId
+                );
+            expect(
+                await stateMachine.areBalancesEqual(
+                    channelBalanceBefore.totalWithdrawals,
+                    onChainSnapshotBefore.snapshotData.totalWithdrawals
+                ),
+                "channelBalances.totalWithdrawals should match snapshot.totalWithdrawals (before)"
+            ).to.equal(true);
+
+            await harness!.peers[0].stateManager.postStateSnapshot(forkId);
+
+            const onChainSnapshotAfterPost = StateSnapshot.from(
+                await harness!.channelManager.getStateSnapshot(
+                    harness!.channelId
+                )
+            );
+
+            const channelBalanceAfter = await (
+                harness!.channelManager as any
+            ).getChannelBalance(harness!.channelId);
+            expect(
+                await stateMachine.areBalancesEqual(
+                    channelBalanceAfter.totalWithdrawals,
+                    onChainSnapshotAfterPost.snapshotData.totalWithdrawals
+                ),
+                "channelBalances.totalWithdrawals should match snapshot.totalWithdrawals (after)"
+            ).to.equal(true);
+
+            const withdrawalsDeltaActual = await stateMachine.subtractBalance(
+                channelBalanceAfter.totalWithdrawals,
+                channelBalanceBefore.totalWithdrawals
+            );
+            expect(
+                await stateMachine.areBalancesEqual(
+                    withdrawalsDeltaActual,
+                    expectedWithdrawalsDeltaBalance
+                )
+            ).to.equal(
+                true,
+                "On-chain totalWithdrawals should increase by outbound message balances"
+            );
+
+            const sawSnapshotUpdate = await harness!.waitForEventCounts(
+                "onStateSnapshotUpdated",
+                [
+                    { peerId: 0, expectedCount: 1 },
+                    { peerId: 1, expectedCount: 1 },
+                    { peerId: 2, expectedCount: 1 }
+                ],
+                15000,
+                { mode: "atLeast" }
+            );
+            expect(sawSnapshotUpdate).to.be.true;
+
+            const localLatestSnapshot =
+                harness!.peers[0].stateManager.storage.getStateSnapshot({
+                    forkId,
+                    height: latestBlockHeight
+                });
+            expect(localLatestSnapshot).to.not.equal(undefined);
+
+            const onChainSnapshot = StateSnapshot.from(
+                await harness!.channelManager.getStateSnapshot(
+                    harness!.channelId
+                )
+            );
+
+            expect(onChainSnapshot.blockHeight).to.equal(
+                latestBlockHeight,
+                "On-chain snapshot should be updated to latest block height"
+            );
+            expect(onChainSnapshot.hash).to.equal(
+                localLatestSnapshot!.hash,
+                "On-chain snapshot hash should match latest local snapshot"
+            );
+
+            expect(
+                await stateMachine.areBalancesEqual(
+                    onChainSnapshot.snapshotData.totalDeposits,
+                    localLatestSnapshot!.snapshotData.totalDeposits
+                )
+            ).to.equal(
+                true,
+                "On-chain totalDeposits should match latest local snapshot"
+            );
+            expect(
+                await stateMachine.areBalancesEqual(
+                    onChainSnapshot.snapshotData.totalWithdrawals,
+                    localLatestSnapshot!.snapshotData.totalWithdrawals
+                )
+            ).to.equal(
+                true,
+                "On-chain totalWithdrawals should match latest local snapshot"
+            );
         });
     });
 
@@ -615,7 +766,6 @@ describe("E2E: Core Functionality", function () {
             }
         });
     });
-
 
     describe("Open/Join Channel", function () {
         // Arrange: Setup 3 participants, remove one signature from OpenChannelConfirmation

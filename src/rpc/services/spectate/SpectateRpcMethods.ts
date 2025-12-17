@@ -235,6 +235,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             // 2.9) verify stateProof proves latest state -> abort otherwise
             const [isValid, _] =
                 await diamondStateMachine.localDiamondContract.verifyMilestones(
+                    syncPayload.latestForkGenesisSnapshot.forkId,
                     syncPayload.stateProof.milestones,
                     syncPayload.milestoneSnapshots,
                     syncPayload.latestForkGenesisSnapshot.snapshotData

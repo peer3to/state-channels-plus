@@ -130,9 +130,11 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                     hexResult
                 );
             return {
-                success: true,
+                success: Boolean(success),
                 successCallback: () => this.processLogs(result.logs),
-                outboundMessages: outboundMessages as MessageStruct[]
+                outboundMessages: Codec.ethersResultToObjectRecursive(
+                    outboundMessages as ethers.Result
+                ) as unknown as MessageStruct[]
             };
         } catch (error) {
             return {
@@ -258,6 +260,25 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             );
         } catch (error) {
             throw this.createContextError("subtractBalance", error);
+        }
+    }
+
+    async areBalancesEqual(
+        balance1: BalanceStruct,
+        balance2: BalanceStruct
+    ): Promise<boolean> {
+        const callData = this.getEncodedCalldata("areBalancesEqual", [
+            balance1,
+            balance2
+        ]);
+
+        try {
+            return Codec.decodeEvmResult<boolean>(
+                await this.stateMachineContractExecuter.executeCall(callData),
+                "bool"
+            );
+        } catch (error) {
+            throw this.createContextError("areBalancesEqual", error);
         }
     }
 

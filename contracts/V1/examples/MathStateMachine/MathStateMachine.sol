@@ -91,9 +91,9 @@ contract MathStateMachine is AStateMachine {
         return (false, exitChannel);
     }
 
-    // Game-specific function: player voluntarily leaves the game
-    function leaveGame() public returns (bool) {
-        require(_tx.header.participant == getNextToWrite(), "MathStateMachine: leaveGame only next player can leave");
+    // Channel-specific function: participant voluntarily leaves the channel and produces an EXIT outbound message.
+    function leaveChannel() public returns (bool) {
+        require(_tx.header.participant == getNextToWrite(), "MathStateMachine: leaveChannel only next player can leave");
 
         address leavingPlayer = _tx.header.participant;
         (bool success, ExitChannel memory exitChannel) = _removeParticipant(leavingPlayer);
