@@ -637,147 +637,87 @@ describe("E2E: Advanced Security", function () {
         // Flow:
         // 1. Peer 0 authors block 0 - all sync (finalized)
         // 2. Stub peer 1 to not broadcast block 1
-        // 3. Peer 1 authors block 1 (no other peers will receive it)
-        // 4. Peer 0 submits invalid state transition
-        // 5. Peers 1 and 2 observe the invalid state transition and initiate disputes (peer 1 should have signedblocks in its state proof)
-        // 6. Peer 1 dispute gets corrupted.
-        // 7. Peer 2 should observe the corrupted dispute and re-dispute against peer 0
+        // Scenario:
+        //  - 4 peers total; peer3 stays disconnected from P2P
+        //  - Peer0 makes a valid block (everyone connected sees it)
+        //  - Peer1 makes an invalid block
+        //  - Peer0 disputes peer1, but we corrupt peer0's dispute (signed block present)
+        //  - Peer2 successfully disputes peer1 (honest)
+        //  - Peer2 then validates peer0's corrupted dispute and files a dispute against peer0
 
-        await harness!.setup(3);
-        const forkId = await harness!.openChannel();
-
-        const peer0 = harness!.peers[0];
-        const peer1 = harness!.peers[1];
-        const peer2 = harness!.peers[2];
-
-        // Step 1: First transaction - peer 0 authors, all sync (finalized)
-        await harness!.submitNextTransaction((contract) => contract.add(1));
-        harness!.assertAllPeersInSync();
-        harness!.resetEventSpies();
-
-        // Get peer 1's broadcast function reference
-        const peer1RemoteRpc = peer1.stateManager.p2pManager.remoteRpc;
-
-        const originalOnBlockConfirmation =
-            peer1RemoteRpc.stateTransitionService.onBlockConfirmation;
-
-        // Stub peer 1's broadcast to be a no-op - peer 1 will author but not broadcast
-        peer1RemoteRpc.stateTransitionService.onBlockConfirmation = (
-            _blockConfirmation
-        ) => {
-            // Return a dummy handler that does nothing
-            return {
-                broadcast: () => {
-                    peer1.logger.info("Suppressed broadcast from peer 1");
-                },
-                sendOne: () => {},
-                sendMultiple: () => {}
-            } as unknown as ReturnType<typeof originalOnBlockConfirmation>;
-        };
-
-        // Step 3: Peer 1 authors block 1
-        await harness!.submitNextTransaction((contract) => contract.add(100), {
-            waitForPeers: [1, 2],
-            waitForSync: false
-        });
-
-        harness!.resetEventSpies();
-
-        // Verify peer 1 is ahead of peer 0 and peer 2
-        const peersAhead = await harness!.waitForCondition(() => {
-            const p0Height =
-                peer0.stateManager.storage.blocks.getNextBlockHeight(forkId);
-            const p1Height =
-                peer1.stateManager.storage.blocks.getNextBlockHeight(forkId);
-            const p2Height =
-                peer2.stateManager.storage.blocks.getNextBlockHeight(forkId);
-            peer1.logger.info(
-                `Block heights - peer0: ${p0Height}, peer1: ${p1Height}, peer2: ${p2Height}`
-            );
-            return p1Height > p0Height && p1Height > p2Height;
-        }, 5000);
-        expect(peersAhead).to.be.true;
-
-        // restore peer 1's broadcast
-        peer1RemoteRpc.stateTransitionService.onBlockConfirmation =
-            originalOnBlockConfirmation;
-
-        // Step 6: Tamper peer 1's constructDispute to corrupt the first signed block height
-        const peer1DisputeManager = peer1.stateManager.disputeManager;
-        const originalConstructDispute =
-            peer1DisputeManager.constructDispute.bind(peer1DisputeManager);
-
-        let tamperedDispute: any;
-        peer1DisputeManager.constructDispute = async (targetForkId) => {
-            const res = await originalConstructDispute(targetForkId);
-            const stateProof = res.dispute.input.stateProof;
-
-            peer1.logger.info(
-                `Peer 1 constructDispute: signedBlocks.length = ${stateProof.signedBlocks.length}`
-            );
-
-            if (stateProof.signedBlocks.length === 0) {
-                throw new Error("Expected signedBlocks in state proof");
+        await harness!.setup(4, {
+            timeConfig: {
+                p2pTime: 2,
+                agreementTime: 1,
+                chainFallbackTime: 2,
+                evidenceTime: 4
             }
+        });
+        const originalForkId = await harness!.openChannel();
 
-            const firstSignedBlock = stateProof.signedBlocks[0];
-            const firstBlock = Codec.decode(
-                firstSignedBlock.encodedBlock,
-                Type.Block
-            );
+        //  disconnect peer 3
+        await harness!.simulatePeerTimeout(3);
 
-            // Corrupt the height (transactionCnt) of the first signed block
-            peer1.logger.info(
-                `Tampering block height from ${firstBlock.transaction.header.transactionCnt} to ${BigInt(firstBlock.transaction.header.transactionCnt) + 5n}`
-            );
-            firstBlock.transaction.header.transactionCnt =
-                BigInt(firstBlock.transaction.header.transactionCnt) + 5n;
-            stateProof.signedBlocks[0].encodedBlock = Codec.encode(
-                firstBlock,
-                Type.Block
-            );
+        // Peer0 authors first valid tx so stateProofs have signedBlocks
+        await harness!.submitNextTransaction((contract) => contract.add(1), {
+            waitForPeers: [0, 1, 2],
+            waitForSync: true
+        });
+        harness!.assertAllPeersInSync({ peerIndices: [0, 1, 2] });
+        harness!.resetEventSpies();
 
-            // Re-sign the tampered dispute
-            const tamperedSig = await SignatureUtils.signDispute(
-                res.dispute,
-                peer1.signer
-            );
-            res.disputeConfirmation.signedDispute = {
-                encodedDispute: tamperedSig.encoded,
-                signature: tamperedSig.signature as Bytes
-            };
+        // Tamper peer0's dispute construction (keep signedBlocks, corrupt height)
 
-            tamperedDispute = res.dispute;
-            return res;
-        };
+        const { restore: restoreConstructDispute } =
+            harness!.withConstructDisputeTampering(0, async (res) => {
+                const stateProof = res.dispute.input.stateProof;
 
-        // Step 5: Peer 0 submits an invalid state transition block
-        // This triggers disputes from peer 1 (tampered) and peer 2 (honest)
-        await harness!.submitInvalidStateTransitionBlock(0, { forkId });
+                if (stateProof.signedBlocks.length === 0) {
+                    throw new Error("Expected signedBlocks in state proof");
+                }
+                const firstSignedBlock = stateProof.signedBlocks[0];
+                const firstBlock = Codec.decode(
+                    firstSignedBlock.encodedBlock,
+                    Type.Block
+                );
 
-        // Wait for peer 1 to initiate its (tampered) dispute
-        const peer1Initiated = await harness!.waitForCondition(
-            () => harness!.getEventCallCount(1, "onInitiatingDispute") > 0,
-            10000
+                firstBlock.transaction.header.transactionCnt =
+                    BigInt(firstBlock.transaction.header.transactionCnt) + 5n;
+                stateProof.signedBlocks[0].encodedBlock = Codec.encode(
+                    firstBlock,
+                    Type.Block
+                );
+                res.dispute.input.stateProof = stateProof;
+
+                const tamperedSig = await SignatureUtils.signDispute(
+                    res.dispute,
+                    harness!.peers[0].signer
+                );
+                res.disputeConfirmation.signedDispute = {
+                    encodedDispute: tamperedSig.encoded,
+                    signature: tamperedSig.signature as Bytes
+                };
+
+                return res;
+            });
+
+        // Peer1 authors an invalid block; disputes will follow
+        await harness!.submitInvalidStateTransitionBlock(1, {
+            forkId: originalForkId
+        });
+        const honestPeers = [2, 3];
+
+        // wait for peer 2 initiate a dispute event twice or more
+        const disputeInitiated = await harness!.waitForEventCounts(
+            "onInitiatingDispute",
+            [
+                { peerId: 2, expectedCount: 2 },
+                { peerId: 3, expectedCount: 2 }
+            ],
+            25000,
+            { mode: "atLeast" }
         );
-        expect(peer1Initiated).to.be.true;
-
-        // Wait for peer 2 to detect peer 0's invalid dispute and redispute against it
-        // Peer 2 validates all disputes and should detect the tampered signed block height
-        const peer2Redisputed = await harness!.waitForCondition(() => {
-            // Peer 2 should have multiple disputes:
-            // 1. Against peer 0 (invalid state transition)
-            // 2. Against peer 1 (tampered dispute)
-            return harness!.getEventCallCount(2, "onInitiatingDispute") >= 2;
-        }, 15000);
-
-        expect(peer2Redisputed).to.be.true;
-
-        // Verify the tampered dispute exists
-        expect(tamperedDispute).to.exist;
-
-        // Restore constructDispute
-        peer1DisputeManager.constructDispute = originalConstructDispute;
+        expect(disputeInitiated).to.be.true;
     });
 
     describe("DisputeValidationService - validStateProofButNotSynced", function () {

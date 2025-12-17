@@ -58,6 +58,7 @@ import SyncCoordinator from "@test/utils/SyncCoordinator";
 import { ZeroHash } from "ethers";
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
+import DisputeManager from "@/disputeManager";
 
 export interface TestPeer<T extends AStateMachine> {
     index: number;
@@ -1739,6 +1740,35 @@ export class PeerTestHarness<T extends AStateMachine> {
         await txResp.wait();
 
         return { dispute, disputeConfirmation };
+    }
+
+    withConstructDisputeTampering(
+        peerOrIndex: number | TestPeer<T>,
+        tamper: (
+            result: Awaited<ReturnType<DisputeManager["constructDispute"]>>
+        ) => ReturnType<DisputeManager["constructDispute"]>
+    ): {
+        restore: () => void;
+    } {
+        const peer =
+            typeof peerOrIndex === "number"
+                ? this.getPeer(peerOrIndex)
+                : peerOrIndex;
+
+        const disputeManager: DisputeManager = peer.stateManager.disputeManager;
+        const originalConstructDispute =
+            disputeManager.constructDispute.bind(disputeManager);
+
+        disputeManager.constructDispute = async (targetForkId: ForkId) => {
+            const res = await originalConstructDispute(targetForkId);
+            return tamper(res);
+        };
+
+        return {
+            restore: () => {
+                disputeManager.constructDispute = originalConstructDispute;
+            }
+        };
     }
 }
 
