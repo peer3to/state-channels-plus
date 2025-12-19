@@ -1,12 +1,16 @@
 import P2pSigner from "./P2pSigner";
 import { AStateMachine } from "@typechain-types";
 import P2pEventHooks from "@/P2pEventHooks";
+import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
-export default class P2pInstance<T extends AStateMachine> {
+export default class P2pInstance<
+    T extends AStateMachine,
+    TFactories extends RpcServiceFactoryMap = {}
+> {
     p2pContractInstance: T;
-    p2pSigner: P2pSigner;
+    p2pSigner: P2pSigner<TFactories>;
 
-    constructor(p2pContractInstance: T, p2pSigner: P2pSigner) {
+    constructor(p2pContractInstance: T, p2pSigner: P2pSigner<TFactories>) {
         this.p2pContractInstance = p2pContractInstance;
         this.p2pSigner = p2pSigner;
     }

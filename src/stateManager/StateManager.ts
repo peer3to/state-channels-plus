@@ -79,6 +79,7 @@ import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidat
 import { DEBUG_STATE_MANAGER } from "@/utils/config";
 import ATransport from "@/transport/ATransport";
 import { TimeoutManager } from "@/utils/TimeoutManager";
+import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
 const NULL = "0x00";
 const LOG_TAG = "[STATE MANAGER]";
@@ -123,7 +124,8 @@ class StateManager {
         timeConfig: TimeConfig,
         p2pEventHooks: P2pEventHooks,
         storage: Storage,
-        logger: Logger
+        logger: Logger,
+        rpcServiceFactories?: RpcServiceFactoryMap
     ) {
         this.signer = signer;
         this.signerAddress = signerAddress;
@@ -162,7 +164,11 @@ class StateManager {
             this.diamondStateMachine,
             logger
         );
-        this.p2pManager = new P2PManager(this.self, signer);
+        this.p2pManager = new P2PManager<RpcServiceFactoryMap>(
+            this.self,
+            signer,
+            rpcServiceFactories
+        );
         this.fraudProofService = new FraudProofService(
             this.storage,
             this.logger

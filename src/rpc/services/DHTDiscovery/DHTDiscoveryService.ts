@@ -1,5 +1,5 @@
 import { ARpcService } from "@/rpc";
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import { ATransport } from "@/transport";
 import DHTDiscoveryRpcMethods from "./DHTDiscoveryRpcMethods";
 import { HandshakeCompletedGuard } from "@/rpc/guards";

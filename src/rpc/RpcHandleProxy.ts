@@ -1,5 +1,5 @@
 import ARpcMethods from "./ARpcMethods";
-import ARpcService from "./ARpcService";
+import ARpcService from "@/rpc/ARpcService";
 import Rpc from "./Rpc";
 import RpcHandler from "./RpcHandler";
 

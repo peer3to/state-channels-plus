@@ -2,7 +2,7 @@ import { ARpcService, MainRpcService } from "@/rpc";
 //@ts-ignore
 import { RTCPeerConnection } from "get-webrtc";
 import WebRTCTransport from "@/transport/WebRTCTransport";
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import WebRTCSetupRpcMethods from "./WebRTCSetupRpcMethods";
 import { ATransport } from "@/transport";
 import { HandshakeCompletedGuard } from "@/rpc/guards";

@@ -11,7 +11,7 @@ import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
-import StateManager from "@/stateManager";
+import type StateManager from "@/stateManager";
 import ATransport from "@/transport/ATransport";
 
 export default class ValidationService {

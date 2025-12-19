@@ -2,7 +2,7 @@ import { ARpcService } from "@/rpc";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 import { ChannelId, ForkId } from "@/types/types";
 import ATransport from "@/transport/ATransport";
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import IsForkDisputedRpcMethods from "./IsForkDisputedRpcMethods";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 

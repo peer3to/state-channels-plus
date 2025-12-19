@@ -1,6 +1,6 @@
 import { SignedJoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import { DebugProxy } from "@/utils";
 
 import { DEBUG_RPC } from "@/utils/config";

@@ -22,6 +22,7 @@ import {
 import P2pEventHooks from "@/P2pEventHooks";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
+import P2pSigner from "./P2pSigner";
 import { Address, Bytes } from "@/types/types";
 import {
     BalanceStruct,
@@ -37,6 +38,7 @@ import LocalDiamondSigner from "./LocalDiamondSigner";
 import { LocalDiamondArtifact } from "@/utils/GeneratedArtifacts";
 
 import { DEBUG_CHANNEL_CONTRACT } from "@/utils/config";
+import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
 /**
  * Manages peer-to-peer communication and state machines
@@ -387,15 +389,19 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
      * @param timeConfigOverride Optional time configuration override for testing
      * @returns Promise with the created P2P interaction object
      */
-    public static async p2pSetup<T extends AStateMachineContract>(
+    public static async p2pSetup<
+        T extends AStateMachineContract,
+        TFactories extends RpcServiceFactoryMap = {}
+    >(
         signer: Signer,
         deployStateMachineTx: any,
         deployedStateChannelContractInstance: StateChannelManagerProxy,
         stateMachineContractInstance: T,
         p2pEventHooks?: P2pEventHooks,
         peerId?: number,
-        peerLogger?: Logger
-    ): Promise<P2pInstance<T>> {
+        peerLogger?: Logger,
+        rpcServiceFactories?: TFactories
+    ): Promise<P2pInstance<T, TFactories>> {
         // Sync clock to DLT
         await Clock.init(signer.provider!);
         deployedStateChannelContractInstance = decodeErrorProxy(
@@ -407,7 +413,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             await deployedStateChannelContractInstance.connect(signer);
 
         // Apply debug proxy if enabled
-
         if (DEBUG_CHANNEL_CONTRACT) {
             deployedStateChannelContractInstance = DebugProxy.createProxy(
                 deployedStateChannelContractInstance
@@ -452,7 +457,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             timeConfig,
             p2pEventHooks || {},
             storage,
-            logger
+            logger,
+            rpcServiceFactories
         );
 
         // Set state manager on P2P communication manager
@@ -466,9 +472,12 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         // Set P2P contract instance on P2P manager
         evmDiamondStateMachine.setP2pContractInstance(p2pContractInstance);
 
-        return new P2pInstance(
+        const typedP2pSigner = stateManager.p2pManager
+            .p2pSigner as unknown as P2pSigner<TFactories>;
+
+        return new P2pInstance<T, TFactories>(
             p2pContractInstance,
-            stateManager.p2pManager.p2pSigner
+            typedP2pSigner
         );
     }
 }

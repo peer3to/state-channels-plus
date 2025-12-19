@@ -1,5 +1,5 @@
 import WebSocket, { WebSocketServer, AddressInfo } from "ws";
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import { LocalTransport } from "@/transport";
 import { ChannelId } from "@/types/types";
 // Import directly to avoid circular dependency through the utils barrel

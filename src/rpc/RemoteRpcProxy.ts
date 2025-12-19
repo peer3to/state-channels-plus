@@ -1,5 +1,4 @@
-import ARpcService from "./ARpcService";
-import MainRpcService from "./MainRpcService";
+import ARpcService from "@/rpc/ARpcService";
 import RpcMethodsProxy, { RpcHandleMethods } from "./RpcHandleProxy";
 
 /**
@@ -7,25 +6,33 @@ import RpcMethodsProxy, { RpcHandleMethods } from "./RpcHandleProxy";
  * E.g. initService: InitService -> initService : InitRpcMethods
  * Now we can use a simple interface: remoteProxy.initService.initHandshakre(...)
  */
-export type RemoteRpcProxyType<T extends MainRpcService> = {
-    [K in keyof T as T[K] extends ARpcService<any>
+export type RemoteRpcProxyType<T extends object> = {
+    [K in keyof T as T[K] extends ARpcService<any, any>
         ? K
-        : never]: T[K] extends ARpcService<infer R>
+        : never]: T[K] extends ARpcService<infer R, any>
         ? RpcHandleMethods<R>
         : never;
 };
 
 class RemoteRpcProxy {
-    public static createProxy(
-        mainRpcService: MainRpcService
-    ): RemoteRpcProxyType<MainRpcService> {
+    public static createProxy<TLocalRpcRoot extends object>(
+        localRpcRoot: TLocalRpcRoot
+    ): RemoteRpcProxyType<TLocalRpcRoot> {
         const proxyCache = new Map<
             string,
             ReturnType<typeof RpcMethodsProxy.createProxy>
         >();
 
-        return new Proxy(mainRpcService, {
+        return new Proxy(localRpcRoot, {
             get(target, prop, receiver) {
+                // Avoid breaking common JS runtime inspection paths.
+                if (typeof prop === "symbol") {
+                    return Reflect.get(target, prop, receiver);
+                }
+                if (prop === "then") {
+                    return undefined;
+                }
+
                 const val = Reflect.get(target, prop, receiver);
 
                 if (typeof val != "object" || !(val instanceof ARpcService)) {
@@ -49,7 +56,7 @@ class RemoteRpcProxy {
 
                 return proxyCache.get(serviceName)!;
             }
-        }) as unknown as RemoteRpcProxyType<MainRpcService>;
+        }) as unknown as RemoteRpcProxyType<TLocalRpcRoot>;
     }
 }
 export default RemoteRpcProxy;

@@ -2,16 +2,19 @@ import Rpc from "./Rpc";
 import { ATransport } from "@/transport";
 import ARpcMethods from "./ARpcMethods";
 import { hasMethod } from "@/utils/ObjectChecks";
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import { Logger } from "@/utils";
 import { AGuard, runGuards } from "@/rpc/guards";
 
-abstract class ARpcService<R extends ARpcMethods> {
-    p2pManager: P2PManager;
+abstract class ARpcService<
+    R extends ARpcMethods<TP2PManager>,
+    TP2PManager extends P2PManager = P2PManager
+> {
+    p2pManager: TP2PManager;
     logger: Logger;
     protected guards: AGuard[] = [];
 
-    constructor(p2pManager: P2PManager, logger: Logger) {
+    constructor(p2pManager: TP2PManager, logger: Logger) {
         this.p2pManager = p2pManager;
         this.logger = logger;
     }
@@ -37,7 +40,7 @@ abstract class ARpcService<R extends ARpcMethods> {
         return true;
     }
 
-    get remoteRpc() {
+    get remoteRpc(): TP2PManager["remoteRpc"] {
         return this.p2pManager.remoteRpc;
     }
 }

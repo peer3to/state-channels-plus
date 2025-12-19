@@ -13,7 +13,7 @@ import {
 
 import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import SpectateServiceRpcMethods from "./SpectateRpcMethods";
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { Status } from "@/types";
 import { HandshakeCompletedGuard } from "@/rpc/guards";

@@ -13,7 +13,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import DisputeManager from "@/disputeManager";
 import AgreementManager from "@/agreementManager";
-import StateManager from "./StateManager";
+import type StateManager from "./StateManager";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 
 export default class DisputeValidationService {
