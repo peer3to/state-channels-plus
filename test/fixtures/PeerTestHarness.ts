@@ -180,35 +180,28 @@ export class PeerTestHarness<
         this.eventCountsBarrier = new EventBarrier(this.logger);
     }
 
-    async setup<const TNewFactories extends RpcServiceFactoryMap>(
+    async setup<const TNewFactories extends RpcServiceFactoryMap = {}>(
         numPeers: number,
-        options: HarnessOptions<TNewFactories>
-    ): Promise<PeerTestHarness<T, TNewFactories>>;
-    async setup(
-        numPeers: number,
-        options?: HarnessOptions<TFactories>
-    ): Promise<void>;
-    async setup(
-        numPeers: number,
-        options: HarnessOptions<any> = {}
-    ): Promise<any> {
+        options?: HarnessOptions<TNewFactories>
+    ): Promise<void> {
         if (numPeers < 2 || numPeers > 10) {
             throw new Error("Number of peers must be between 2 and 10");
         }
         this.harnessConfig = createConfig({
             ...testConfig,
-            ...(options.configOverrides || {})
+            ...(options?.configOverrides || {})
         });
         this.options = {
-            timeConfig: options.timeConfig || {},
+            timeConfig: options?.timeConfig || {},
             channelId:
-                options.channelId ||
+                options?.channelId ||
                 `test-channel-${Date.now()}-${process.pid}-${Math.floor(Math.random() * 1e9)}`,
-            initialBalance: options.initialBalance || 500,
-            gasLimit: options.gasLimit || 500000,
-            autoConnect: options.autoConnect !== false,
-            configOverrides: options.configOverrides || {},
-            rpcServiceFactories: options.rpcServiceFactories ?? {}
+            initialBalance: options?.initialBalance || 500,
+            gasLimit: options?.gasLimit || 500000,
+            autoConnect: options?.autoConnect !== false,
+            configOverrides: options?.configOverrides || {},
+            rpcServiceFactories: (options?.rpcServiceFactories ??
+                {}) as TFactories
         };
         this.syncCoordinator = new SyncCoordinator(this.logger);
 
@@ -222,8 +215,6 @@ export class PeerTestHarness<
         this.startAutoTimeAdvance();
 
         this.logger.info("Test harness setup completed");
-
-        return this;
     }
 
     private get forkId(): ForkId {

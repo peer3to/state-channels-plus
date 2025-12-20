@@ -148,7 +148,11 @@ describe("E2E: PingService (custom RPC)", function () {
             relayService: (p2p) => new RelayService(p2p)
         });
 
-        const harness = await new PeerTestHarness<MathStateMachine>().setup(2, {
+        const harness = new PeerTestHarness<
+            MathStateMachine,
+            typeof rpcServiceFactories
+        >();
+        await harness.setup(2, {
             autoConnect: false,
             rpcServiceFactories
         });
