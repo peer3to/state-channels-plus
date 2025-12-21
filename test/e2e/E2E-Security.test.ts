@@ -4,7 +4,12 @@ import { MathStateMachine } from "@typechain-types/index";
 import { ZeroHash } from "ethers";
 import { Codec, SignatureUtils, Type } from "@/utils";
 import { hash } from "../factory";
-import { Bytes, ForkId } from "@/types/types";
+import { Bytes, ForkId, Hash } from "@/types/types";
+import Block from "@/models/Block";
+import {
+    BlockStruct,
+    TransactionStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 
 describe("E2E: Advanced Security", function () {
     let harness: PeerTestHarness<MathStateMachine> | null = null;
@@ -895,6 +900,177 @@ describe("E2E: Advanced Security", function () {
                 );
             }, 5000);
             expect(peer2Synced).to.be.true;
+        });
+
+        //  Arrange: Setup initial state where peer 1 authors valid block but doesn't broadcast
+        //  Act: Tamper peer 1's dispute to include invalid block, trigger disputes
+        //  Assert: Verify that fraud proof was created when onBlockConfirmation returns false
+        it("should handle onBlockConfirmation returning false during validStateProofButNotSynced", async function () {
+            // Arrange: Setup initial state and create out-of-sync scenario
+            // Submit initial transaction and wait for sync
+            await harness!.submitNextTransaction((contract) => contract.add(1));
+            harness!.assertAllPeersInSync();
+            harness!.resetEventSpies();
+
+            // Get peer 1's broadcast function reference
+            const peer1 = harness!.peers[1];
+            const peer1RemoteRpc = peer1.stateManager.p2pManager.remoteRpc;
+            const originalStateTransitionService =
+                peer1RemoteRpc.stateTransitionService;
+
+            // Stub peer 1's broadcast to be a no-op - peer 1 will author but not broadcast
+            peer1RemoteRpc.stateTransitionService.onBlockConfirmation = (
+                _blockConfirmation
+            ) => {
+                // Return a dummy handler that does nothing
+                return {
+                    broadcast: () => {
+                        peer1.logger.info("Suppressed broadcast from peer 1");
+                    },
+                    sendOne: () => {},
+                    sendMultiple: () => {}
+                } as unknown as ReturnType<
+                    typeof originalStateTransitionService.onBlockConfirmation
+                >;
+            };
+
+            // Peer 1 authors a valid block but doesn't broadcast it
+            // This creates a state where peer 1 is 1 block ahead of peers 0 and 2
+            await harness!.waitForTurn(peer1);
+            await harness!.submitNextTransaction(
+                (contract) => contract.add(10),
+                { waitForSync: false }
+            );
+
+            // Verify peer 1 has more blocks than peer 2
+            await harness!.waitForCondition(
+                () =>
+                    peer1.stateManager.storage.blocks.getNextBlockHeight(
+                        forkId
+                    ) >
+                    harness!.peers[2].stateManager.storage.blocks.getNextBlockHeight(
+                        forkId
+                    ),
+                5000
+            );
+
+            // We need to create the invalid block inside the tampering function
+            // so we can link it to the last block in peer 1's milestone
+            const peer1Signer = harness!.peers[1].signer;
+            const peer0 = harness!.peers[0];
+            const contractInterface = (peer0.contractInstance as any).interface;
+
+            // Tamper peer 1's dispute construction to include the invalid block in state proof
+
+            const { dispute: tamperedDisputePromise } =
+                harness!.withConstructDisputeTampering(1, async (res) => {
+                    const stateProof = res.dispute.input.stateProof;
+
+                    // Get the last milestone and ensure it has at least one block
+                    const lastMilestone =
+                        stateProof.milestones[stateProof.milestones.length - 1];
+
+                    // Get the last block in the milestone to link our invalid block to it
+                    const lastBlockIndex =
+                        lastMilestone.blockConfirmations.length - 1;
+                    const lastBlockConfirmation =
+                        lastMilestone.blockConfirmations[lastBlockIndex];
+                    const lastBlock = Block.fromBlockConfirmation(
+                        lastBlockConfirmation
+                    );
+
+                    // Create an invalid block that's properly linked to the last block
+                    // This way the blocks are linked, but the invalid block has wrong state snapshot hash
+                    const transactionData =
+                        contractInterface.encodeFunctionData("add", [
+                            1
+                        ]) as Bytes;
+                    const transaction: TransactionStruct = {
+                        header: {
+                            channelId: peer0.stateManager.getChannelId(),
+                            participant: peer0.address,
+                            forkId: forkId,
+                            transactionCnt: BigInt(lastBlock.height + 1),
+                            timestamp: BigInt(lastBlock.timestamp) + 1n
+                        },
+                        body: {
+                            encodedData: transactionData,
+                            data: transactionData
+                        }
+                    };
+
+                    const wrongStateSnapshotHash: Hash = ZeroHash as Hash;
+                    const blockStruct: BlockStruct = {
+                        transaction: transaction,
+                        stateSnapshotHash: wrongStateSnapshotHash,
+                        previousBlockHash: lastBlock.hash,
+                        messageBlocks: []
+                    };
+
+                    // Create the invalid block (properly linked but with wrong state snapshot hash)
+                    const invalidBlock = await Block.fromBlockStruct(
+                        blockStruct,
+                        peer0.signer
+                    );
+                    const invalidBlockConfirmation = {
+                        signedBlock:
+                            invalidBlock.blockConfirmationStruct.signedBlock,
+                        signatures: []
+                    };
+
+                    // Add the invalid block at the end of the milestone
+                    lastMilestone.blockConfirmations.push(
+                        invalidBlockConfirmation
+                    );
+
+                    // Update the dispute's latestStateSnapshotHash to match the invalid block's stateSnapshotHash
+                    res.dispute.input.latestStateSnapshotHash =
+                        wrongStateSnapshotHash;
+                    res.dispute.input.stateProof = stateProof;
+
+                    const tamperedSig = await SignatureUtils.signDispute(
+                        res.dispute,
+                        peer1Signer
+                    );
+                    res.disputeConfirmation.signedDispute = {
+                        encodedDispute: tamperedSig.encoded,
+                        signature: tamperedSig.signature as Bytes
+                    };
+
+                    return res;
+                });
+
+            // Act: Submit invalid state transition block to trigger disputes
+            // This will cause peer 1 to create a tampered dispute with the invalid block in state proof
+            // The tampered dispute will be validated by peer 2, which will try to sync the invalid block
+            await harness!.submitInvalidStateTransitionBlock(0, { forkId });
+
+            // Wait for disputes to be committed on-chain
+            const disputesCommitted = await harness!.waitForEventCounts(
+                "onDisputeCommitted",
+                [
+                    { peerId: 1, expectedCount: 2 },
+                    { peerId: 2, expectedCount: 2 }
+                ],
+                8000,
+                { mode: "atLeast" }
+            );
+            expect(disputesCommitted).to.be.true;
+
+            // Assert: Verify that fraud proof was created when onBlockConfirmation returns false
+            // Wait for peer 2 to validate the tampered dispute and hit the code path where
+            // onBlockConfirmation returns false, triggering getDisputeFraudProofForDispute
+            // The tampered dispute will contain the invalid block in the state proof
+            const tamperedDispute = await tamperedDisputePromise;
+            const fraudProofCreated = await harness!.waitForCondition(() => {
+                const fraudProof =
+                    harness!.peers[2].stateManager.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                        tamperedDispute
+                    );
+                return !!fraudProof;
+            }, 10000);
+
+            expect(fraudProofCreated).to.be.true;
         });
     });
 
