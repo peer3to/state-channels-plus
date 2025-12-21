@@ -127,15 +127,14 @@ export default class DisputeValidationService {
                 disputeAuditingData
             );
             return false;
-        } else {
-            // this is the easy case where we just need to create an invalidStateProof Dispute Fraud Proof
-            this.disputeFraudProofService.createDisputeInvalidStateProofWithoutAuditingDataIntegrityVerified(
-                dispute,
-                disputeAuditingData
-            );
-            // still a TODO - but EASY
-            return false;
         }
+        // this is the easy case where we just need to create an invalidStateProof Dispute Fraud Proof
+        this.disputeFraudProofService.createDisputeInvalidStateProofWithoutAuditingDataIntegrityVerified(
+            dispute,
+            disputeAuditingData
+        );
+        // still a TODO - but EASY
+        return false;
     }
     private async continueValidationWithVerifiedDisputeAuditingDataCommitment(
         dispute: DisputeStruct,

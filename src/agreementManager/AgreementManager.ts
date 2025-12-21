@@ -31,7 +31,7 @@ class AgreementManager {
         private storage: Storage,
         private logger: Logger
     ) {
-        this.logger = logger.child({ module: "AgreementManager" });
+        this.logger = logger.child({ component: "AgreementManager" });
     }
 
     public getLatestSignedBlockByParticipant(
@@ -132,7 +132,6 @@ class AgreementManager {
             blockIterator,
             currentSnapshot
         );
-
         if (milestone) {
             milestones.push(milestone);
             const newSnapshot = this.getSnapshotFromMilestone(milestone);
