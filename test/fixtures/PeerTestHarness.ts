@@ -1346,8 +1346,17 @@ export class PeerTestHarness<
                     return true;
                 }
 
+                const peerAddress = transport.peerAddress
+                    ? transport.peerAddress
+                    : profile?.evmAddress
+                      ? requestingPeer.stateManager.p2pManager.profileManager.normalizeEvmAddress(
+                            profile.evmAddress
+                        )
+                      : undefined;
+                if (!peerAddress) return false;
+
                 return requestingPeerService.didPeerAcknowledgeDisputedFork(
-                    transport,
+                    peerAddress,
                     forkId
                 );
             });

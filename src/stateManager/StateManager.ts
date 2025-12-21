@@ -77,7 +77,6 @@ import BlockValidationStrategy from "./validationStrategy/BlockValidationStrateg
 import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidationStrategy";
 
 import { DEBUG_STATE_MANAGER } from "@/utils/config";
-import ATransport from "@/transport/ATransport";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
@@ -112,7 +111,7 @@ class StateManager {
     spectatingValidationStrategy: SpectatingValidationStrategy;
     eventHandler: EventHandler;
     reductionTriggerMap: Map<ForkId, ReductionTimeoutHandle> = new Map();
-    status: Status = Status.SPECTATING;
+    status: Status = Status.NOT_OPENED;
     timeoutManager: TimeoutManager;
     logger: Logger;
 
@@ -222,6 +221,39 @@ class StateManager {
     public getStatus(): Status {
         return this.status;
     }
+
+    /**
+     * Refreshes the status from on-chain `isChannelOpen(channelId)`.
+     *
+     * Intended for the early lifecycle where we know the channelId (e.g. after
+     * `connectToChannel`) but we haven't synced/appplied the genesis snapshot yet.
+     */
+    public async refreshOpenedStatusFromChain(): Promise<Status> {
+        if (!this.channelId || this.channelId === NULL) {
+            this.setStatus(Status.NOT_OPENED);
+            return this.status;
+        }
+
+        try {
+            const isOpen = await this.stateChannelManagerContract.isChannelOpen(
+                this.channelId
+            );
+
+            if (!isOpen) {
+                this.setStatus(Status.NOT_OPENED);
+                return this.status;
+            }
+
+            // Only move to OPENED if we haven't already synced/applied state.
+            if (this.status === Status.NOT_OPENED) {
+                this.setStatus(Status.OPENED);
+            }
+        } catch {
+            // Best-effort: don't flip status on transient RPC errors.
+        }
+
+        return this.status;
+    }
     public setChannelId(channelId: ChannelId) {
         this.logger.verbose("Setting channel ID", { channelId });
         this.channelId = channelId;
@@ -230,6 +262,18 @@ class StateManager {
     }
     public getChannelId(): ChannelId {
         return this.channelId;
+    }
+
+    /**
+     * High-level status for SDK consumers.
+     *
+     * - NOT_OPENED: channel not opened on-chain
+     * - OPENED: opened on-chain but local node not yet synced (no fork id)
+     * - SYNCED: opened on-chain and locally synced, but signer is not a participant
+     * - PARTICIPATING: opened on-chain, locally synced, and signer is a participant
+     */
+    public async getChannelStatus(): Promise<Status> {
+        return this.status;
     }
     public setReductionTimeout(
         forkId: ForkId,
@@ -543,6 +587,8 @@ class StateManager {
         const isParticipant = participants.includes(this.signerAddress);
         if (isParticipant) {
             this.setStatus(Status.PARTICIPATING);
+        } else {
+            this.setStatus(Status.SYNCED);
         }
 
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();
@@ -586,7 +632,7 @@ class StateManager {
         options?: {
             onChainTimestamp?: Timestamp;
             validationStrategy?: AValidationStrategy;
-            senderTransport?: ATransport;
+            senderAddress?: string;
         }
     ): Promise<boolean> {
         const strategy =
@@ -633,7 +679,7 @@ class StateManager {
                 await this.validationService.validateBlockConfirmation(
                     block,
                     strategy,
-                    options?.senderTransport
+                    options?.senderAddress
                 );
 
             if (validationResult !== BlockValidationResult.SUCCESS) {
@@ -2220,14 +2266,10 @@ class StateManager {
     }
 
     private getStrategyByStatus(status: Status): AValidationStrategy {
-        switch (status) {
-            case Status.SPECTATING:
-                return this.spectatingValidationStrategy;
-            case Status.PARTICIPATING:
-                return this.blockValidationStrategy;
-            default:
-                throw new Error("Strategy must be explicit");
+        if (status === Status.PARTICIPATING) {
+            return this.blockValidationStrategy;
         }
+        return this.spectatingValidationStrategy;
     }
 
     async fetchBlockCommitmentCalldata(

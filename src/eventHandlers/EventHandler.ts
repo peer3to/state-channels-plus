@@ -25,6 +25,7 @@ import { Codec, hash, Logger, Type } from "@/utils";
 import { isEqual } from "lodash";
 import { ZeroHash } from "ethers";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
+import { Status } from "@/types";
 
 export class EventHandler {
     private logger: Logger;
@@ -88,6 +89,8 @@ export class EventHandler {
 
     private async handleChannelClose(channelId: ChannelId): Promise<void> {
         this.logger.info("Handling channel close", { channelId });
+
+        this.stateManager.setStatus(Status.NOT_OPENED);
 
         // Disconnect from all peers in this channel
         this.stateManager.p2pManager.disconnectAll();

@@ -5,6 +5,7 @@ import { Hash, Signature, Timestamp } from "@/types/types";
 import { ethers } from "ethers";
 import InitHandshakeService from "./InitHandshakeService";
 import PeerProfile from "@/PeerProfile";
+import { Status } from "@/types";
 
 class InitHandshakeRpcMethods extends ARpcMethods {
     service: InitHandshakeService;
@@ -100,14 +101,27 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             );
         }
         profile.setIsHandshakeCompleted(true);
-        if (
+
+        const shouldInitiateWebRTC =
             (preferredTransport === TransportType.WEBRTC ||
                 this.p2pManager.preferredTransport === TransportType.WEBRTC) &&
             this.senderTransport.transportType != TransportType.WEBRTC &&
-            this.p2pManager.p2pSigner.signerAddress < signerAddress
-        ) {
+            this.p2pManager.p2pSigner.signerAddress < signerAddress;
+
+        // If we're about to upgrade the connection to WebRTC, we still attempt to
+        // sync on the current transport. If WebRTC setup succeeds, this transport
+        // may be aborted; if WebRTC fails, the current transport should continue.
+        if (shouldInitiateWebRTC) {
             this.p2pManager.localRpc.webRTCSetupService.initiateWebRTC(
                 this.senderTransport
+            );
+        }
+
+        const stateManager = this.p2pManager.stateManager;
+        if (stateManager.getStatus() === Status.OPENED) {
+            this.p2pManager.localRpc.spectateService.sync(
+                signerAddress,
+                stateManager.getChannelId()
             );
         }
 

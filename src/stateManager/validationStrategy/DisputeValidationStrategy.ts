@@ -13,7 +13,6 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Logger } from "@/utils";
 
-
 export default class DisputeValidationStrategy extends AValidationStrategy {
     readonly fraudProofService: FraudProofService;
     readonly disputeFraudProofService: DisputeFraudProofService;
@@ -181,14 +180,14 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
     }
     public async blockForkIsDisputed(
         block: Block,
-        senderTransport?: ATransport
+        _senderAddress?: string
     ): Promise<BlockValidationResult> {
         // continue syncing
         return BlockValidationResult.SUCCESS;
     }
     public async blockIsNotNextAndIsInTheFuture(
         block: Block,
-        senderTransport?: ATransport
+        _senderAddress?: string
     ): Promise<BlockValidationResult> {
         // This should never be the case, since stateProof is valid
         throw new Error(

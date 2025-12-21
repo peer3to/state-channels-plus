@@ -166,6 +166,32 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
             this.disconnectConnection(transport);
         }
     }
+
+    /**
+     * Returns a snapshot of currently connected peer identities (EVM addresses).
+     */
+    public getConnectedPeers(): Set<string> {
+        const addresses = new Set<string>();
+        for (const transport of this.openConnections) {
+            const fromTransport = transport.peerAddress;
+            if (fromTransport) {
+                addresses.add(
+                    this.profileManager.normalizeEvmAddress(fromTransport)
+                );
+                continue;
+            }
+
+            const profile =
+                this.profileManager.getProfileByTransport(transport);
+            const fromProfile = profile?.getEvmAddress();
+            if (fromProfile) {
+                addresses.add(
+                    this.profileManager.normalizeEvmAddress(fromProfile)
+                );
+            }
+        }
+        return addresses;
+    }
 }
 
 export default P2PManager;

@@ -1,5 +1,12 @@
 import { ARpcService } from "@/rpc";
-import { ChannelId, Timestamp, Bytes, Hash, ForkId } from "@/types/types";
+import {
+    Address,
+    ChannelId,
+    Timestamp,
+    Bytes,
+    Hash,
+    ForkId
+} from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
@@ -42,10 +49,8 @@ export interface SyncRequest {
     blockHeight?: number;
 }
 class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
-    requestMap: WeakMap<ATransport, SyncRequest> = new WeakMap<
-        ATransport,
-        SyncRequest
-    >();
+    private readonly requestMapByPeerAddress: Map<string, SyncRequest> =
+        new Map();
     timeoutManager: TimeoutManager;
 
     constructor(p2pManager: P2PManager) {
@@ -65,32 +70,69 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
     // Called locally to initiate spectate sync
     public sync(
-        transport: ATransport,
+        peerAddress: Address,
         channelId: ChannelId,
         forkId?: ForkId,
         blockHeight?: number
     ) {
         this.logger.debug("spectateSync !");
+        const normalizedPeerAddress =
+            this.p2pManager.profileManager.normalizeEvmAddress(peerAddress);
+
+        if (this.requestMapByPeerAddress.has(normalizedPeerAddress)) {
+            this.logger.debug(
+                "spectateSync - sync already in-flight; ignoring",
+                { peerAddress: normalizedPeerAddress }
+            );
+            return;
+        }
+
         const syncRequest: SyncRequest = {
             channelId,
             initTime: Clock.getTimeInSeconds(),
             forkId,
             blockHeight
         };
-        // Store the init time for RTT calculation per channel
-        this.requestMap.set(transport, syncRequest);
-
-        this.remoteRpc.spectateService
-            .onSpectateRequest(syncRequest)
-            .sendOne(transport);
 
         this.timeoutManager.scheduleTask(
             () => {
-                if (!this.didRespond(transport)) this.abort(transport);
+                const pending = this.requestMapByPeerAddress.get(
+                    normalizedPeerAddress
+                );
+                if (!pending) return;
+                if (pending.initTime !== syncRequest.initTime) return;
+
+                this.requestMapByPeerAddress.delete(normalizedPeerAddress);
+
+                this.logger.debug(
+                    "SpectateService - spectateSync timeout; blacklisting peer",
+                    { peerAddress: normalizedPeerAddress }
+                );
+
+                this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                    peerAddress
+                );
             },
             this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
             "SpectateService - spectateSync timeout"
         );
+
+        this.requestMapByPeerAddress.set(normalizedPeerAddress, syncRequest);
+
+        // Transport can change (e.g. WebRTC upgrade). Always send by address.
+        this.remoteRpc.spectateService
+            .onSpectateRequest(syncRequest)
+            .sendOne(peerAddress);
+    }
+
+    public takePendingRequestByPeerAddress(
+        peerAddress: string
+    ): SyncRequest | undefined {
+        const pending = this.requestMapByPeerAddress.get(peerAddress);
+        if (!pending) return undefined;
+
+        this.requestMapByPeerAddress.delete(peerAddress);
+        return pending;
     }
 
     /**
@@ -434,17 +476,18 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             );
         }
     }
-    public didRespond(transport: ATransport): boolean {
-        return !this.requestMap.has(transport);
-    }
-
-    public abort(transport: ATransport) {
-        if (this.p2pManager.stateManager.getStatus() == Status.SPECTATING) {
+    public abort(peerAddress: string) {
+        // HandshakeCompletedGuard guarantees stable peer identity.
+        // If we're not actively participating, treat this as a fatal sync failure.
+        if (this.p2pManager.stateManager.getStatus() !== Status.PARTICIPATING) {
             this.p2pManager.disconnectAll();
             return;
         }
 
-        return this.p2pManager.disconnectAndBlacklistPeer(transport);
+        // If participating, punish only the offending peer.
+        return this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+            peerAddress
+        );
     }
 }
 

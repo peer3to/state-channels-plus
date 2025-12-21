@@ -12,9 +12,14 @@ class ProfileManager {
     >();
 
     public registerProfile(profile: PeerProfile) {
-        const transport = profile.getTransport();
-        if (transport) this.mapTransportToProfile.set(transport, profile);
         const evmAddress = profile.getEvmAddress();
+        const transport = profile.getTransport();
+        if (transport) {
+            this.mapTransportToProfile.set(transport, profile);
+            if (evmAddress && !transport.peerAddress) {
+                transport.peerAddress = this.normalizeAddress(evmAddress);
+            }
+        }
         if (evmAddress)
             this.mapEvmAddressToProfile.set(
                 this.normalizeAddress(evmAddress),
@@ -43,6 +48,10 @@ class ProfileManager {
         if (!profile) return;
         const oldTransport = profile.getTransport();
         if (oldTransport) this.removeTransport(oldTransport);
+
+        // Ensure the new transport carries the peer identity.
+        newTransport.peerAddress = this.normalizeAddress(profileAddress);
+
         profile.setTransport(newTransport);
         this.mapTransportToProfile.set(newTransport, profile);
     }
@@ -78,6 +87,14 @@ class ProfileManager {
     }
     public getProfileByHpAddress(hpAddress: Address): PeerProfile | undefined {
         return this.mapHpAddressToProfile.get(hpAddress);
+    }
+
+    public normalizeEvmAddress(address: Address): string {
+        return this.normalizeAddress(address);
+    }
+
+    public getTransportByEvmAddress(evmAddress: Address): ATransport | null {
+        return this.getProfileByEvmAddress(evmAddress)?.getTransport() ?? null;
     }
     private normalizeAddress(address: Address): string {
         const addressString =

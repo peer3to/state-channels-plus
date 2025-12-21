@@ -36,29 +36,30 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
                 this.p2pManager
             );
 
+            const adr =
+                this.p2pManager.profileManager.getProfileByTransport(
+                    transport
+                )?.evmAddress;
+            if (!adr)
+                return this.logger.error("initiateWebRTC - no EVM address");
+
             // Handle ICE candidates
             connection.onicecandidate = (event: any) => {
                 if (event.candidate) {
                     const serializedCandidate = JSON.stringify(event.candidate);
                     this.remoteRpc.webRTCSetupService
                         .onIceCandidate(serializedCandidate)
-                        .sendOne(transport);
+                        .sendOne(adr);
                 }
             };
 
             const offer = await connection.createOffer();
             connection.setLocalDescription(offer);
-            const adr =
-                this.p2pManager.profileManager.getProfileByTransport(
-                    transport
-                )?.evmAddress;
-            if (!adr)
-                return this.logger.debug("initiateWebRTC - no EVM address");
             this.connectionMap.set(adr.toString(), connection);
             const serializedOffer = JSON.stringify(offer);
             this.remoteRpc.webRTCSetupService
                 .onOfferWebRTC(serializedOffer)
-                .sendOne(transport);
+                .sendOne(adr);
         } catch (e) {
             this.logger.debug("initiateWebRTC - error", e);
         }

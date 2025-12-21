@@ -18,6 +18,15 @@ class SpectateServiceRpcMethods extends ARpcMethods {
     }
 
     public async onSpectateRequest(syncRequest: SyncRequest) {
+        const senderTransport = this.senderTransport;
+        const peerAddress = senderTransport.peerAddress;
+        if (!peerAddress) {
+            // HandshakeCompletedGuard should guarantee peerAddress is present.
+            // If it's not, treat as malicious/broken peer.
+            this.service.p2pManager.disconnectAndBlacklistPeer(senderTransport);
+            return;
+        }
+
         const localTime = Clock.getTimeInSeconds();
 
         this.service.logger.debug(
@@ -27,12 +36,14 @@ class SpectateServiceRpcMethods extends ARpcMethods {
         // Generate payload to prove the latest possible snapshot
         // (but don't send it on-chain - send it to the spectator)
         const syncPayload = await this.service.generateSyncPayload(
-            syncRequest.channelId
+            syncRequest.channelId,
+            syncRequest.forkId,
+            syncRequest.blockHeight
         );
 
         if (!syncPayload) {
-            this.service.p2pManager.disconnectAndBlacklistPeer(
-                this.senderTransport
+            this.service.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                peerAddress
             );
             return;
         }
@@ -40,25 +51,34 @@ class SpectateServiceRpcMethods extends ARpcMethods {
         this.service.logger.debug(`onSpectateRequest - done`);
         this.remoteRpc.spectateService
             .onSpectateResponse(syncRequest.channelId, syncPayload)
-            .sendOne(this.senderTransport);
+            .sendOne(peerAddress);
     }
 
     public async onSpectateResponse(
         channelId: ChannelId,
         syncPayload: SyncPayload
     ) {
+        const senderTransport = this.senderTransport;
+        const peerAddress = senderTransport.peerAddress;
+        if (!peerAddress) {
+            // HandshakeCompletedGuard should guarantee peerAddress is present.
+            // If it's not, treat as malicious/broken peer.
+            this.service.p2pManager.disconnectAndBlacklistPeer(senderTransport);
+            return;
+        }
+
         try {
             this.service.logger.debug(`onSpectateResponse - start`);
-            const senderTransport = this.senderTransport;
 
-            if (!this.service.requestMap.has(senderTransport)) {
+            const syncRequest =
+                this.service.takePendingRequestByPeerAddress(peerAddress);
+            if (!syncRequest) {
                 this.service.logger.debug(
-                    "onSpectateResponse - no request found - aborting"
+                    "onSpectateResponse - no pending request for peer; aborting",
+                    { peerAddress }
                 );
-                return this.service.abort(senderTransport); // someone trying to sync us without us asking -> not cooperating
+                return this.service.abort(peerAddress);
             }
-            const syncRequest = this.service.requestMap.get(senderTransport)!;
-            this.service.requestMap.delete(senderTransport);
 
             const localTime = Clock.getTimeInSeconds();
             const rtt = localTime - syncRequest.initTime;
@@ -73,7 +93,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                 this.service.logger.debug(
                     `onSpectateResponse - RTT too high (${rtt}s), disconnecting from all peers`
                 );
-                return this.service.abort(senderTransport);
+                return;
             }
 
             // What we ultimately want to do here is:
@@ -143,7 +163,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                         dw.forkId
                     );
                 if (!isKillPeriodExpired)
-                    return this.service.abort(senderTransport);
+                    return this.service.abort(peerAddress);
 
                 // 2.3) reduce them if they're not already reduced
                 const isReducedAndFinal =
@@ -167,7 +187,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                     );
                     // 2.4) ** If more than 1  has to be reduced -> abort **
                     if (++notReducedCount > 1)
-                        return this.service.abort(senderTransport);
+                        return this.service.abort(peerAddress);
                 }
 
                 // 2.5) verify that they reduce to the correct forks as given in the SyncPayload
@@ -178,7 +198,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                     )
                 )[0];
                 if (_dw.reducedResult.forkId != dw.reducedForkId)
-                    return this.service.abort(senderTransport);
+                    return this.service.abort(peerAddress);
                 // if the above call fails -> local evm will throw -> catch and abort
                 finalForkId = dw.reducedForkId;
             }
@@ -203,7 +223,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                 isAvailable &&
                 genesisTimestamp ==
                     syncPayload.latestForkGenesisSnapshot.timestamp;
-            if (!isCorrectGenesis) return this.service.abort(senderTransport);
+            if (!isCorrectGenesis) return this.service.abort(peerAddress);
 
             // 2.7) verify outboundMessageBlocks from onChainSnapshot to final genesisSnapshot
             let areValidExitBlocks =
@@ -212,7 +232,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                     onChainSnapshot.snapshotData,
                     syncPayload.latestForkGenesisSnapshot.snapshotData
                 );
-            if (!areValidExitBlocks) return this.service.abort(senderTransport);
+            if (!areValidExitBlocks) return this.service.abort(peerAddress);
 
             // 2.8) Depending are we syncing to the 'latest state' (spectating) or some requested state (forkId,blockHeight), verify that:
             // 2.8.1) (spectating) genesisSnapshot.forkId is not disputed on-chain -> abort otherwise
@@ -225,11 +245,11 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                         finalForkId
                     );
                 if (Number(_timestamp) != 0)
-                    return this.service.abort(senderTransport);
+                    return this.service.abort(peerAddress);
             } else {
                 // 2.8.2) (requested)
                 if (finalForkId != syncRequest.forkId)
-                    return this.service.abort(senderTransport);
+                    return this.service.abort(peerAddress);
             }
 
             // 2.9) verify stateProof proves latest state -> abort otherwise
@@ -240,7 +260,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                     syncPayload.milestoneSnapshots,
                     syncPayload.latestForkGenesisSnapshot.snapshotData
                 );
-            if (!isValid) return this.service.abort(senderTransport);
+            if (!isValid) return this.service.abort(peerAddress);
 
             const latestFinalizedSnapshot =
                 syncPayload.milestoneSnapshots.length > 0
@@ -251,7 +271,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                 latestFinalizedSnapshot.snapshotData.stateMachineStateHash !=
                 hash(syncPayload.latestFinalizedEncodedState)
             )
-                return this.service.abort(senderTransport);
+                return this.service.abort(peerAddress);
 
             // 2.10) verify outboundMessageBlocks from final genesisSnapshot to latestFinalizedSnapshot
             areValidExitBlocks =
@@ -260,7 +280,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                     syncPayload.latestForkGenesisSnapshot.snapshotData,
                     latestFinalizedSnapshot.snapshotData
                 );
-            if (!areValidExitBlocks) return this.service.abort(senderTransport);
+            if (!areValidExitBlocks) return this.service.abort(peerAddress);
 
             // 2.11) verify balance invariant of the latestFinalizedState -> abort otherwise
             const isValidBalance =
@@ -269,7 +289,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                     latestFinalizedSnapshot.snapshotData,
                     syncPayload.latestFinalizedEncodedState
                 );
-            if (!isValidBalance) this.service.abort(senderTransport);
+            if (!isValidBalance) this.service.abort(peerAddress);
 
             // 3) Finally - On the RPC node as a staticcall `eth_call`(multicall(reduceAll,updateStateSnapshotFork,updateStateSnapshotSameFork)) to deduct failure/success -> on failure abort
             const isMulticallSuccess =
@@ -279,7 +299,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                     syncPayload,
                     disputeWindowsThatNeedToBeReducedOnChain
                 );
-            if (!isMulticallSuccess) return this.service.abort(senderTransport);
+            if (!isMulticallSuccess) return this.service.abort(peerAddress);
 
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
             this.service.persistSyncPayload(syncPayload);
@@ -292,7 +312,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                 );
             for (const bc of blockConfirmations) {
                 const isOk = await stateManager.onBlockConfirmation(bc);
-                if (!isOk) this.service.abort(senderTransport);
+                if (!isOk) this.service.abort(peerAddress);
             }
             // 6) If state requested (forkId,blockHeight) - check if blockHeight reached
             if (syncRequest.blockHeight !== undefined) {
@@ -300,19 +320,19 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                     await diamondStateMachine.localDiamondContract.getLatestBlockFromStateProof(
                         syncPayload.stateProof
                     );
-                if (!hasBlock) return this.service.abort(senderTransport);
+                if (!hasBlock) return this.service.abort(peerAddress);
                 if (
                     Number(latestBlock.transaction.header.transactionCnt) !=
                     syncRequest.blockHeight
                 )
-                    return this.service.abort(senderTransport);
+                    return this.service.abort(peerAddress);
             }
             this.service.logger.debug(
                 "Spectator successfully synced to latest proven state"
             );
         } catch (e) {
             this.service.logger.debug(e);
-            this.service.abort(this.senderTransport);
+            this.service.abort(peerAddress);
         }
     }
 }

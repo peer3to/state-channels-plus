@@ -108,15 +108,21 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         );
     }
     public async blockForkIsDisputed(
-        block: Block
+        block: Block,
+        senderAddress?: string
     ): Promise<BlockValidationResult> {
-        return this.blockValidationStrategy.blockForkIsDisputed(block);
+        return this.blockValidationStrategy.blockForkIsDisputed(
+            block,
+            senderAddress
+        );
     }
     public async blockIsNotNextAndIsInTheFuture(
-        block: Block
+        block: Block,
+        senderAddress?: string
     ): Promise<BlockValidationResult> {
         return this.blockValidationStrategy.blockIsNotNextAndIsInTheFuture(
-            block
+            block,
+            senderAddress
         );
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(

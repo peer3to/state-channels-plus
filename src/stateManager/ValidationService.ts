@@ -12,7 +12,6 @@ import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 import FraudProofService from "./utils/FraudProofService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
 import type StateManager from "@/stateManager";
-import ATransport from "@/transport/ATransport";
 
 export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
@@ -35,7 +34,7 @@ export default class ValidationService {
     async validateBlockConfirmation(
         block: Block,
         strategy: AValidationStrategy,
-        senderTransport?: ATransport
+        senderAddress?: string
     ): Promise<BlockValidationResult> {
         // Check is correct channel
         if (
@@ -104,7 +103,7 @@ export default class ValidationService {
             this.logger.warn("validateBlockConfirmation - fork disputed", {
                 block
             });
-            return await strategy.blockForkIsDisputed(block, senderTransport);
+            return await strategy.blockForkIsDisputed(block, senderAddress);
         }
 
         // isNext
@@ -117,7 +116,10 @@ export default class ValidationService {
                     block
                 }
             );
-            return await strategy.blockIsNotNextAndIsInTheFuture(block);
+            return await strategy.blockIsNotNextAndIsInTheFuture(
+                block,
+                senderAddress
+            );
         }
 
         // Is linked

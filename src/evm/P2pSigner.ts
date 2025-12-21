@@ -10,6 +10,7 @@ import type P2PManager from "@/P2PManager";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 import { Codec, Type } from "@/utils";
 import { Address, Amount, Bytes, Timestamp } from "@/types/types";
+import { Status } from "@/types";
 
 class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
     implements Signer
@@ -135,13 +136,21 @@ class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
         return this.isLeader;
     }
 
-    public connectToChannel(channelId: Bytes) {
+    public async connectToChannel(channelId: Bytes) {
         this.setChannelId(channelId);
+
+        // Update status to NOT_OPENED/OPENED as soon as we know the channelId.
+        await this.p2pManager.stateManager.refreshOpenedStatusFromChain();
+
         return this.p2pManager.tryOpenConnectionToChannel(channelId.toString());
     }
 
     public disconnectFromPeers() {
         this.p2pManager.disconnectAll();
+    }
+
+    public async getChannelStatus(): Promise<Status> {
+        return await this.p2pManager.stateManager.getChannelStatus();
     }
 
     public async joinChannel(
