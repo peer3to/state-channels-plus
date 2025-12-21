@@ -58,12 +58,16 @@ import SyncCoordinator from "@test/utils/SyncCoordinator";
 import { ZeroHash } from "ethers";
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
+import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
-export interface TestPeer<T extends AStateMachine> {
+export interface TestPeer<
+    T extends AStateMachine,
+    TFactories extends RpcServiceFactoryMap = {}
+> {
     index: number;
     signer: Signer;
     address: string;
-    p2pInstance: P2pInstance<T>;
+    p2pInstance: P2pInstance<T, TFactories>;
     stateManager: StateManager;
     contractInstance: T;
     eventSpies: EventSpies;
@@ -101,13 +105,14 @@ export interface EventSpies {
 /**
  * Options for configuring the test harness
  */
-export interface HarnessOptions {
+export interface HarnessOptions<TFactories extends RpcServiceFactoryMap = {}> {
     timeConfig?: Partial<TimeConfig>;
     channelId?: string;
     initialBalance?: number;
     gasLimit?: number;
     autoConnect?: boolean;
     configOverrides?: Partial<Config>; // Direct config overrides
+    rpcServiceFactories?: TFactories;
 }
 
 export type SubmitTransactionOptions = {
@@ -142,12 +147,15 @@ type BuildJoinChannelRequestArgs = {
 /**
  * Main test harness for E2E peer-to-peer testing
  */
-export class PeerTestHarness<T extends AStateMachine> {
-    public peers: TestPeer<T>[] = [];
+export class PeerTestHarness<
+    T extends AStateMachine,
+    TFactories extends RpcServiceFactoryMap = {}
+> {
+    public peers: TestPeer<T, TFactories>[] = [];
     public channelManager!: StateChannelManagerProxy;
     private sharedDeployTx!: any;
     public channelId!: ChannelId;
-    private options!: Required<HarnessOptions>;
+    private options!: Required<HarnessOptions<TFactories>>;
     public activeForkId?: ForkId;
     private harnessConfig!: Config;
     private logger: Logger;
@@ -172,23 +180,28 @@ export class PeerTestHarness<T extends AStateMachine> {
         this.eventCountsBarrier = new EventBarrier(this.logger);
     }
 
-    async setup(numPeers: number, options: HarnessOptions = {}): Promise<void> {
+    async setup<const TNewFactories extends RpcServiceFactoryMap = {}>(
+        numPeers: number,
+        options?: HarnessOptions<TNewFactories>
+    ): Promise<void> {
         if (numPeers < 2 || numPeers > 10) {
             throw new Error("Number of peers must be between 2 and 10");
         }
         this.harnessConfig = createConfig({
             ...testConfig,
-            ...(options.configOverrides || {})
+            ...(options?.configOverrides || {})
         });
         this.options = {
-            timeConfig: options.timeConfig || {},
+            timeConfig: options?.timeConfig || {},
             channelId:
-                options.channelId ||
+                options?.channelId ||
                 `test-channel-${Date.now()}-${process.pid}-${Math.floor(Math.random() * 1e9)}`,
-            initialBalance: options.initialBalance || 500,
-            gasLimit: options.gasLimit || 500000,
-            autoConnect: options.autoConnect !== false,
-            configOverrides: options.configOverrides || {}
+            initialBalance: options?.initialBalance || 500,
+            gasLimit: options?.gasLimit || 500000,
+            autoConnect: options?.autoConnect !== false,
+            configOverrides: options?.configOverrides || {},
+            rpcServiceFactories: (options?.rpcServiceFactories ??
+                {}) as TFactories
         };
         this.syncCoordinator = new SyncCoordinator(this.logger);
 
@@ -226,7 +239,7 @@ export class PeerTestHarness<T extends AStateMachine> {
 
         throw new Error("Fork ID unavailable");
     }
-    public async waitForTurn(peer: TestPeer<T>, timeoutMs = 3000) {
+    public async waitForTurn(peer: TestPeer<T, TFactories>, timeoutMs = 3000) {
         try {
             await this.turnBarrier.waitFor(
                 () => peer.stateManager.isMyTurn?.() ?? false,
@@ -361,17 +374,18 @@ export class PeerTestHarness<T extends AStateMachine> {
             await hre.ethers.getContractFactory("MathStateMachine");
         const mathInstance = await mathSMFactory.deploy(this.options.gasLimit);
 
-        const p2pInstance = await EvmStateMachine.p2pSetup<any>(
+        const p2pInstance = await EvmStateMachine.p2pSetup<any, TFactories>(
             signer,
             this.sharedDeployTx,
             this.channelManager,
             mathInstance,
             hooks,
             index, // Pass peer index for logging
-            PeerLogger
+            PeerLogger,
+            this.options.rpcServiceFactories
         );
 
-        const peer: TestPeer<any> = {
+        const peer: TestPeer<any, TFactories> = {
             index,
             signer,
             address,
@@ -389,7 +403,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         this.logger.debug(`Peer ${index} created successfully`);
     }
 
-    private wrapEventHandlerWithSpies(peer: TestPeer<T>): void {
+    private wrapEventHandlerWithSpies(peer: TestPeer<T, TFactories>): void {
         const eventHandler = peer.stateManager.eventHandler;
         const spies = peer.eventSpies;
         const harness = this;
@@ -745,7 +759,7 @@ export class PeerTestHarness<T extends AStateMachine> {
     }
 
     async submitTransaction(
-        peer: TestPeer<T>,
+        peer: TestPeer<T, TFactories>,
         txFn: (contract: T) => Promise<any>,
         options: SubmitTransactionOptions = { waitForSync: true }
     ): Promise<void> {
@@ -1038,7 +1052,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
     }
 
-    getPeer(index: number): TestPeer<T> {
+    getPeer(index: number): TestPeer<T, TFactories> {
         const peer = this.peers[index];
         if (!peer) throw new Error(`Peer ${index} not found`);
         return peer;
@@ -1089,7 +1103,7 @@ export class PeerTestHarness<T extends AStateMachine> {
         }
     }
 
-    async getNextPeerToWrite(): Promise<TestPeer<T>> {
+    async getNextPeerToWrite(): Promise<TestPeer<T, TFactories>> {
         try {
             const nextAddress =
                 await this.peers[0].stateManager.diamondStateMachine.getNextToWrite();
@@ -1174,7 +1188,7 @@ export class PeerTestHarness<T extends AStateMachine> {
     }
 
     private getPreviousBlockHash(
-        peer: TestPeer<T>,
+        peer: TestPeer<T, TFactories>,
         forkId: ForkId,
         height?: BlockHeight
     ): Hash {
@@ -1201,7 +1215,7 @@ export class PeerTestHarness<T extends AStateMachine> {
     }
 
     private getStateSnapshotHash(
-        peer: TestPeer<T>,
+        peer: TestPeer<T, TFactories>,
         forkId: ForkId,
         previousBlock?: Block
     ): Hash {

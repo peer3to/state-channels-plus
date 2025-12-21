@@ -9,7 +9,7 @@ import {
     DisputeConfirmationStruct,
     DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import StateManager from "@/stateManager";
+import type StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
 import {
     ChannelId,

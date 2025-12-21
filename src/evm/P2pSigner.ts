@@ -6,15 +6,18 @@ import {
     TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
+import type { RpcServiceFactoryMap } from "@/rpc/registry";
 import { Codec, Type } from "@/utils";
 import { Address, Amount, Bytes, Timestamp } from "@/types/types";
 
-class P2pSigner implements Signer {
+class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
+    implements Signer
+{
     signer: Signer;
     signerAddress: Address;
     provider: ethers.Provider | null;
-    p2pManager: P2PManager;
+    p2pManager: P2PManager<TFactories>;
 
     //local profile
     isLeader: boolean;
@@ -29,7 +32,7 @@ class P2pSigner implements Signer {
     constructor(
         signer: Signer,
         signerAddress: Address,
-        p2pManager: P2PManager
+        p2pManager: P2PManager<TFactories>
     ) {
         this.signer = signer;
         this.signerAddress = signerAddress;

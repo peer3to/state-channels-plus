@@ -1,5 +1,5 @@
 import IOnMessage from "@/IOnMessage";
-import StateManager from "@/stateManager";
+import type StateManager from "@/stateManager";
 import { deserializeRpc } from "@/rpc/Rpc";
 import MainRpcService from "@/rpc/MainRpcService";
 import { P2pSigner } from "@/evm";
@@ -19,28 +19,63 @@ import {
 } from "./utils/ObjectChecks";
 import { ARpcService } from "./rpc";
 import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
+import type { RpcServiceFactoryMap, RpcServiceInstances } from "./rpc/registry";
 
-class P2PManager implements IOnMessage {
+type LocalRpcRoot<TFactories extends RpcServiceFactoryMap> = MainRpcService &
+    RpcServiceInstances<TFactories>;
+
+type RemoteRpcRoot<TFactories extends RpcServiceFactoryMap> =
+    RemoteRpcProxyType<MainRpcService> &
+        RemoteRpcProxyType<RpcServiceInstances<TFactories>>;
+
+class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
+    implements IOnMessage
+{
     stateManager: StateManager;
-    p2pSigner: P2pSigner;
+    p2pSigner: P2pSigner<TFactories>;
     profileManager = new ProfileManager();
-    localRpc: MainRpcService;
-    remoteRpc: RemoteRpcProxyType<MainRpcService>;
+    localRpc: LocalRpcRoot<TFactories>;
+    remoteRpc: RemoteRpcRoot<TFactories>;
     //TODO - map EVM address to websocket
     openConnections: ATransport[] = [];
     holepunch: Holepunch;
     self = DEBUG_P2P_MANAGER ? DebugProxy.createProxy(this) : this;
     preferredTransport: TransportType = TransportType.HOLEPUNCH;
 
-    constructor(stateManager: StateManager, signer: ethers.Signer) {
+    constructor(
+        stateManager: StateManager,
+        signer: ethers.Signer,
+        rpcServiceFactories?: TFactories
+    ) {
         this.stateManager = stateManager;
         this.p2pSigner = new P2pSigner(
             signer,
             stateManager.signerAddress,
             this.self
         );
-        this.localRpc = new MainRpcService(this.self);
-        this.remoteRpc = RemoteRpcProxy.createProxy(this.localRpc);
+
+        const builtInRoot = new MainRpcService(this.self);
+        const customServices: Partial<RpcServiceInstances<TFactories>> = {};
+
+        if (rpcServiceFactories) {
+            for (const [serviceName, factory] of Object.entries(
+                rpcServiceFactories
+            )) {
+                if (typeof factory !== "function") continue;
+                (customServices as any)[serviceName] = (factory as any)(
+                    this.self
+                );
+            }
+        }
+
+        this.localRpc = Object.assign(
+            builtInRoot,
+            customServices
+        ) as LocalRpcRoot<TFactories>;
+
+        this.remoteRpc = RemoteRpcProxy.createProxy(
+            this.localRpc
+        ) as unknown as RemoteRpcRoot<TFactories>;
         this.holepunch = new Holepunch(this.self);
         return this.self;
     }

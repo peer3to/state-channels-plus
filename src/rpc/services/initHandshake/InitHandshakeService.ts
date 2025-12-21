@@ -7,7 +7,7 @@ import ATransport from "@/transport/ATransport";
 import PeerProfile from "@/PeerProfile";
 import { Hash, Signature, Timestamp } from "@/types/types";
 import InitHandshakeRpcMethods from "./InitHandshakeRpcMethods";
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 
 type ConnectionChallenge = {

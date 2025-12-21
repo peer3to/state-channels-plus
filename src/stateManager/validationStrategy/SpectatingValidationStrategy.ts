@@ -7,7 +7,7 @@ import {
 import AValidationStrategy from "./AValidationStrategy";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import { ATransport } from "@/transport";
 import { Logger } from "@/utils";
 

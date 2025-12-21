@@ -12,7 +12,7 @@ import { StateSnapshot } from "@/models";
 import { Address, Bytes, ChannelId, Hash, Signature } from "@/types/types";
 import JoinChannelRpcMethods from "./JoinChannelRpcMethods";
 import { ATransport } from "@/transport";
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 
 export enum ValidationFlag {
