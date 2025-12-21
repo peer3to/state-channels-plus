@@ -668,7 +668,8 @@ describe("E2E: Advanced Security", function () {
 
         // Tamper peer0's dispute construction (keep signedBlocks, corrupt height)
 
-        const { restore: restoreConstructDispute } =
+        // Tamper peer0's dispute construction (keep signedBlocks, corrupt height)
+        const { dispute: tamperedDisputePromise } =
             harness!.withConstructDisputeTampering(0, async (res) => {
                 const stateProof = res.dispute.input.stateProof;
 
@@ -705,19 +706,26 @@ describe("E2E: Advanced Security", function () {
         await harness!.submitInvalidStateTransitionBlock(1, {
             forkId: originalForkId
         });
-        const honestPeers = [2, 3];
 
         // wait for peer 2 initiate a dispute event twice or more
         const disputeInitiated = await harness!.waitForEventCounts(
             "onInitiatingDispute",
-            [
-                { peerId: 2, expectedCount: 2 },
-                { peerId: 3, expectedCount: 2 }
-            ],
+            [{ peerId: 2, expectedCount: 2 }],
             25000,
             { mode: "atLeast" }
         );
         expect(disputeInitiated).to.be.true;
+
+        // Wait for dispute fraud proof to be stored (validation rejection)
+        const tamperedDispute = await tamperedDisputePromise;
+        const fraudProofStored = await harness!.waitForCondition(() => {
+            const proof =
+                harness!.peers[2].stateManager.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                    tamperedDispute
+                );
+            return !!proof;
+        }, 2000);
+        expect(fraudProofStored).to.be.true;
     });
 
     describe("DisputeValidationService - validStateProofButNotSynced", function () {

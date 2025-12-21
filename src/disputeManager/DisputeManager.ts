@@ -33,6 +33,13 @@ import Clock from "../Clock";
 import { BytesLike } from "ethers";
 import { DEBUG_DISPUTE_HANDLER } from "@/utils/config";
 
+export type ConstructDisputeResult = {
+    dispute: DisputeStruct;
+    disputeConfirmation: DisputeConfirmationStruct;
+    auditingData: DisputeAuditingDataStruct;
+    fraudProofsToApply: FraudProofStruct[];
+};
+
 class DisputeManager {
     signer: ethers.Signer;
     signerAddress: Address;
@@ -194,12 +201,10 @@ class DisputeManager {
             }
         }
     }
-    public async constructDispute(forkId: ForkId): Promise<{
-        dispute: DisputeStruct;
-        disputeConfirmation: DisputeConfirmationStruct;
-        auditingData: DisputeAuditingDataStruct;
-        fraudProofsToApply: FraudProofStruct[];
-    }> {
+
+    public async constructDispute(
+        forkId: ForkId
+    ): Promise<ConstructDisputeResult> {
         const latestBlockHeight =
             this.storage.blocks.getNextBlockHeight(forkId) - 1;
 
