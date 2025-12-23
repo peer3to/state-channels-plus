@@ -18,7 +18,9 @@ import {
     Mutex,
     difference,
     isCustomEvmError,
-    Logger
+    StructuredLogger,
+    Logger,
+    LogEventType
 } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import { Address, ChannelId, ForkId } from "../types/types";
@@ -51,7 +53,7 @@ class DisputeManager {
     storage: Storage;
     diamondStateMachine: ADiamondStateMachine;
     mutex: Mutex = new Mutex();
-    private logger: Logger;
+    private log: StructuredLogger;
 
     constructor(
         channelId: ChannelId,
@@ -72,11 +74,30 @@ class DisputeManager {
         this.p2pEventHooks = p2pEventHooks;
         this.storage = storage;
         this.diamondStateMachine = diamondStateMachine;
-        this.logger = logger.child({ component: "DisputeManager" });
+        this.log = new StructuredLogger(
+            logger as any,
+            "DisputeManager",
+            () => ({
+                channelId: this.channelId?.slice(0, 10),
+                peer: this.signerAddress
+                    ? String(this.signerAddress).slice(0, 10)
+                    : undefined
+            })
+        );
         return this.self;
     }
 
     public async dispute(forkId: ForkId): Promise<void> {
+        const disputeLog = this.log.trace();
+
+        disputeLog.dispute(
+            LogEventType.DISPUTE_INITIATED,
+            String(forkId).slice(0, 12),
+            {
+                forkId: String(forkId).slice(0, 12)
+            }
+        );
+
         try {
             await this.mutex.lock();
             if (this.storage.disputes.didIDispute(forkId)) return;
@@ -139,28 +160,30 @@ class DisputeManager {
             }
 
             this.storage.disputes.storeDisputedFork(forkId, true);
-            this.p2pEventHooks.onInitiatingDispute?.(
-                hash(Codec.encode(dispute, Type.Dispute)),
-                dispute
-            );
+
+            const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
+            disputeLog.dispute(LogEventType.DISPUTE_COMMITTED, disputeHash, {
+                stateProofMilestones:
+                    dispute.input?.stateProof?.milestones?.length || 0,
+                fraudProofs: fraudProofsToApply?.length || 0
+            });
+
+            this.p2pEventHooks.onInitiatingDispute?.(disputeHash, dispute);
         } catch (error) {
-            if (isCustomEvmError(error)) {
-                this.logger.error("Error uploading dispute", {
-                    forkId,
-                    channelId: this.channelId,
-                    signerAddress: this.signerAddress,
-                    errorDescription: error.errorDescription,
-                    errorName: error.name
-                });
-            } else {
-                this.logger.error("Error uploading dispute", {
-                    forkId,
-                    channelId: this.channelId,
-                    signerAddress: this.signerAddress,
-                    error:
-                        error instanceof Error ? error.message : String(error)
-                });
-            }
+            // Log error with trace-aware logger (includes trace ID)
+            disputeLog.error(error, {
+                message: "Dispute upload failed",
+                data: {
+                    forkId: forkId.slice(0, 12),
+                    ...(isCustomEvmError(error)
+                        ? {
+                              errorDescription: error.errorDescription,
+                              errorName: error.name
+                          }
+                        : {})
+                }
+            });
+
             this.storage.disputes.storeDisputedFork(forkId, false);
         } finally {
             this.mutex.unlock();
@@ -181,22 +204,30 @@ class DisputeManager {
                     disputeFraudProof
                 ]);
             txRespone.wait().then(() => {
-                this.logger.debug("Dispute killed successfully", {
-                    forkId: dispute.input.forkId,
-                    channelId: this.channelId
+                this.log.debug({
+                    message: "Dispute killed successfully",
+                    data: {
+                        forkId: dispute.input.forkId.slice(0, 12)
+                    }
                 });
             });
         } catch (error) {
             if (isCustomEvmError(error)) {
-                this.logger.error("CustomError killing dispute", {
-                    forkId: dispute.input.forkId,
-                    errorDescription: error.errorDescription
+                this.log.error({
+                    message: "CustomError killing dispute",
+                    err: error,
+                    data: {
+                        forkId: dispute.input.forkId.slice(0, 12),
+                        errorDescription: error.errorDescription
+                    }
                 });
             } else {
-                this.logger.error("Error killing dispute", {
-                    forkId: dispute.input.forkId,
-                    error:
-                        error instanceof Error ? error.message : String(error)
+                this.log.error({
+                    message: "Error killing dispute",
+                    err: error,
+                    data: {
+                        forkId: dispute.input.forkId.slice(0, 12)
+                    }
                 });
             }
         }

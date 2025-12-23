@@ -2,7 +2,7 @@ import ValidationService from "../../src/stateManager/ValidationService";
 import { BlockValidationResult } from "../../src/types";
 import { expect } from "chai";
 import sinon from "sinon";
-import { createLogger } from "../../src/utils";
+import { getGlobalLogger } from "../../src/utils/logging";
 
 import {
     BlockBuilder,
@@ -15,7 +15,9 @@ import {
 describe("ValidationService - Progressive Validation Tests", () => {
     let validationService: ValidationService;
     let mockSetup: MockSetup;
-    const testLogger = createLogger({ component: "ValidationService.test" });
+    const testLogger = getGlobalLogger().child({
+        component: "ValidationService.test"
+    });
 
     beforeEach(() => {
         sinon.restore();

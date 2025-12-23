@@ -25,7 +25,6 @@ import {
 } from "@test/test_utils/testHelpers";
 import { pollUntil } from "@test/test_utils/pollUntil";
 import {
-    createLogger,
     LocalDiscoveryServer,
     Logger,
     SignatureUtils,
@@ -52,6 +51,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "@/Clock";
 import { createConfig, Config } from "@/utils/config";
+import { getGlobalLogger } from "@/utils/logging";
 import testConfig from "../peer3.test.config";
 import { deployFullStack } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
@@ -168,7 +168,7 @@ export class PeerTestHarness<T extends AStateMachine> {
                 return Number(this);
             };
         }
-        this.logger = createLogger({ component: "TestHarness" });
+        this.logger = getGlobalLogger().child({ component: "TestHarness" });
         this.connectionBarrier = new EventBarrier(this.logger);
         this.turnBarrier = new EventBarrier(this.logger);
         this.eventCountsBarrier = new EventBarrier(this.logger);
@@ -270,7 +270,7 @@ export class PeerTestHarness<T extends AStateMachine> {
     private async createPeer(index: number, signer: Signer): Promise<void> {
         const address = await signer.getAddress();
 
-        const PeerLogger = createLogger({
+        const PeerLogger = getGlobalLogger().child({
             peerId: index,
             peerAddress: address
         });

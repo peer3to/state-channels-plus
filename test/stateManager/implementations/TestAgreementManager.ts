@@ -3,7 +3,7 @@ import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes
 import { StateSnapshot } from "@/models";
 import AgreementManager from "@/agreementManager/AgreementManager";
 import Storage from "@/storage";
-import { Logger, createLogger } from "@/utils";
+import { getGlobalLogger, Logger } from "@/utils/logging";
 
 /**
  * test mock of AgreementManager
@@ -16,7 +16,8 @@ export class TestAgreementManager extends AgreementManager {
     constructor(storage: Storage, logger?: Logger) {
         super(
             storage,
-            logger || createLogger({ component: "TestAgreementManager" })
+            logger ||
+                getGlobalLogger().child({ component: "TestAgreementManager" })
         );
     }
 

@@ -21,13 +21,20 @@ import {
 } from "@/types/types";
 import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
-import { Codec, hash, Logger, Type } from "@/utils";
+import {
+    Codec,
+    hash,
+    Logger,
+    Type,
+    StructuredLogger,
+    LogEventType
+} from "@/utils";
 import { isEqual } from "lodash";
 import { ZeroHash } from "ethers";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 
 export class EventHandler {
-    private logger: Logger;
+    private log: StructuredLogger;
 
     constructor(
         private storage: Storage,
@@ -36,7 +43,10 @@ export class EventHandler {
         private diamondStateMachine: ADiamondStateMachine,
         logger: Logger
     ) {
-        this.logger = logger.child({ component: "EventHandler" });
+        this.log = new StructuredLogger(logger, "EventHandler", () => ({
+            channelId: this.stateManager.channelId,
+            forkId: this.stateManager.forkId
+        }));
     }
 
     async onChannelOpened(
@@ -44,9 +54,11 @@ export class EventHandler {
         stateSnapshot: StateSnapshotStruct,
         encodedState: Bytes
     ): Promise<void> {
-        this.logger.debug("Channel opened", {
-            channelId,
-            forkId: stateSnapshot.forkId
+        this.log.info({
+            event: LogEventType.CHANNEL_OPENED,
+            data: {
+                forkId: stateSnapshot.forkId.slice(0, 12)
+            }
         });
 
         await this.diamondStateMachine.localDiamondContract.onChannelOpened(
@@ -76,18 +88,19 @@ export class EventHandler {
 
         // Check if channel should be closed (0 participants remaining)
         if (stateSnapshot.snapshotData.participants.length === 0) {
-            this.logger.info(
-                "Channel has 0 participants remaining, closing channel",
-                {
-                    channelId
-                }
-            );
+            this.log.info({
+                event: LogEventType.CHANNEL_CLOSED,
+                message: "Channel has 0 participants remaining, closing channel"
+            });
             await this.handleChannelClose(channelId);
         }
     }
 
     private async handleChannelClose(channelId: ChannelId): Promise<void> {
-        this.logger.info("Handling channel close", { channelId });
+        this.log.info({
+            event: LogEventType.CHANNEL_CLOSED,
+            message: "Handling channel close"
+        });
 
         // Disconnect from all peers in this channel
         this.stateManager.p2pManager.disconnectAll();
@@ -103,11 +116,12 @@ export class EventHandler {
         signedBlock: SignedBlockStruct,
         timestamp: Timestamp
     ): Promise<void> {
-        this.logger.verbose("Block calldata posted on-chain", {
-            channelId,
-            commitmentHash,
-            sender,
-            blockHeight: signedBlock.encodedBlock
+        this.log.verbose({
+            message: "Block calldata posted on-chain",
+            data: {
+                commitmentHash: commitmentHash.slice(0, 12),
+                sender: sender.toString().slice(0, 10)
+            }
         });
         this.storage.blockCalldata.storeBlockCalldata({
             signedBlock,
@@ -120,6 +134,14 @@ export class EventHandler {
             signedBlock,
             timestamp
         );
+        this.log.debug({
+            event: LogEventType.BLOCK_POSTED_ONCHAIN,
+            message: "Block calldata posted on-chain",
+            data: {
+                commitmentHash: String(commitmentHash).slice(0, 12),
+                timestamp
+            }
+        });
         this.p2pEventHooks.onPostedCalldata?.();
         const blockConfirmation: BlockConfirmationStruct = {
             signedBlock,
@@ -150,13 +172,18 @@ export class EventHandler {
         const disputeHash = hash(
             disputeConfirmation.signedDispute.encodedDispute
         );
-        this.logger.debug("Dispute committed", {
-            channelId,
-            forkId,
-            disputeHash,
-            isFinal,
-            disputeCreationTimestamp,
-            isForced: dispute.input.timeout?.isForced
+
+        // Create trace-scoped logger for this dispute handling flow
+        const disputeLog = this.log.trace();
+
+        disputeLog.debug({
+            event: LogEventType.DISPUTE_COMMITTED,
+            data: {
+                disputeHash: disputeHash.slice(0, 12),
+                isFinal,
+                disputeCreationTimestamp,
+                isForced: dispute.input.timeout?.isForced
+            }
         });
         // sync LocalDiamond state
         await this.diamondStateMachine.localDiamondContract.onDisputeCommitted(
@@ -216,8 +243,10 @@ export class EventHandler {
         this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
 
         // this is like success - TODO - consider moving this to DisputeStrategy.success
-        const canConstructMoreEvidence =
-            await this.canConstructMoreEvidence(dispute);
+        const canConstructMoreEvidence = await this.canConstructMoreEvidence(
+            dispute,
+            disputeLog
+        );
         if (canConstructMoreEvidence) {
             return this.stateManager.disputeManager.dispute(forkId);
         }
@@ -236,7 +265,8 @@ export class EventHandler {
     }
 
     private async canConstructMoreEvidence(
-        dispute: DisputeStruct
+        dispute: DisputeStruct,
+        disputeLog: StructuredLogger
     ): Promise<boolean> {
         // Create our own dispute
         const {
@@ -261,7 +291,12 @@ export class EventHandler {
             singleDisputeReduction,
             combinedDisputeReduction
         );
-        this.logger.debug(`hasMoreEvidence=${hasMoreEvidence}`);
+
+        disputeLog.debug({
+            message: `Checked for more evidence`,
+            data: { hasMoreEvidence }
+        });
+
         return hasMoreEvidence;
     }
 

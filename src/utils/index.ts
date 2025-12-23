@@ -15,5 +15,5 @@ export * from "./participantUtils";
 export * from "./config";
 export * from "./hash";
 export * from "./evmErrorHandler";
-export * from "./PeerLogger";
 export * from "./EthersResultProxy";
+export * from "./logging";

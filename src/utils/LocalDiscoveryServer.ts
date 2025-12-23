@@ -2,8 +2,7 @@ import WebSocket, { WebSocketServer, AddressInfo } from "ws";
 import P2PManager from "@/P2PManager";
 import { LocalTransport } from "@/transport";
 import { ChannelId } from "@/types/types";
-// Import directly to avoid circular dependency through the utils barrel
-import { createLogger, Logger } from "@/utils/PeerLogger";
+import { getGlobalLogger, Logger } from "@/utils/logging";
 
 const MAX_PORT_RETRIES = 20;
 const LOCAL_WS_HOST = "127.0.0.1";
@@ -34,9 +33,15 @@ type DiscoveryInfo = {
  *    - Connects directly to other Peers upon receiving announcements.
  */
 export class LocalDiscoveryServer {
-    private static logger: Logger = createLogger({
-        component: "LocalDiscovery"
-    });
+    private static _logger: Logger | null = null;
+    private static get logger(): Logger {
+        if (!LocalDiscoveryServer._logger) {
+            LocalDiscoveryServer._logger = getGlobalLogger().child({
+                component: "LocalDiscovery"
+            });
+        }
+        return LocalDiscoveryServer._logger;
+    }
     // --- Registry State ---
     private static discoveryServer: WebSocketServer | null = null;
     private static discoveryPort: number | null = null;

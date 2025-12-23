@@ -54,7 +54,9 @@ import {
     isCustomEvmError,
     difference,
     Logger,
-    createEthersResultProxy
+    createEthersResultProxy,
+    StructuredLogger,
+    LogEventType
 } from "@/utils";
 // Types
 import { BlockValidationResult, Status, TimeConfig } from "@/types";
@@ -114,6 +116,7 @@ class StateManager {
     status: Status = Status.SPECTATING;
     timeoutManager: TimeoutManager;
     logger: Logger;
+    log: StructuredLogger;
 
     constructor(
         signer: ethers.Signer,
@@ -134,8 +137,17 @@ class StateManager {
             stateChannelManagerContract
         ) as StateChannelManagerProxy;
         this.storage = storage;
+        this.logger = logger;
+        this.log = new StructuredLogger(logger, "StateManager", () => ({
+            channelId: this.channelId,
+            forkId: this.forkId
+                ? String(this.latestForkId).slice(0, 10)
+                : undefined,
+            peer: this.signerAddress
+                ? String(this.signerAddress).slice(0, 10)
+                : undefined
+        }));
 
-        this.logger = logger.child({ component: "StateManager" });
         this.timeoutManager = new TimeoutManager(logger);
 
         this.eventHandler = new EventHandler(
@@ -150,7 +162,7 @@ class StateManager {
             this.eventHandler,
             this.diamondStateMachine.localDiamondContract
         );
-        this.agreementManager = new AgreementManager(this.storage, this.logger);
+        this.agreementManager = new AgreementManager(this.storage, logger);
         this.disputeManager = new DisputeManager(
             this.channelId,
             signer,
@@ -163,29 +175,26 @@ class StateManager {
             logger
         );
         this.p2pManager = new P2PManager(this.self, signer);
-        this.fraudProofService = new FraudProofService(
-            this.storage,
-            this.logger
-        );
+        this.fraudProofService = new FraudProofService(this.storage, logger);
         this.validationService = new ValidationService(
             this.storage,
             this.diamondStateMachine,
             this.stateChannelManagerContract,
             this.timeConfig,
             this.self,
-            this.logger
+            logger
         );
         this.disputeValidationService = new DisputeValidationService(this.self);
         this.blockValidationStrategy = new BlockValidationStrategy(
             this.storage,
             this.p2pManager,
             this.disputeManager,
-            this.logger
+            logger
         );
         this.spectatingValidationStrategy = new SpectatingValidationStrategy(
             this.storage,
             this.p2pManager,
-            this.logger
+            logger
         );
     }
     //Mark resources for garbage collection
@@ -207,7 +216,8 @@ class StateManager {
         this.p2pEventHooks = p2pEventHooks;
     }
     public setStatus(status: Status) {
-        this.logger.debug("Status changed", {
+        this.log.debug({
+            message: "Status changed",
             oldStatus: this.status,
             newStatus: status
         });
@@ -217,7 +227,9 @@ class StateManager {
         return this.status;
     }
     public setChannelId(channelId: ChannelId) {
-        this.logger.verbose("Setting channel ID", { channelId });
+        this.log.verbose({
+            message: "Setting channel ID"
+        });
         this.channelId = channelId;
         this.stateChannelEventListener.setChannelId(channelId);
         this.disputeManager.setChannelId(channelId);
@@ -230,9 +242,12 @@ class StateManager {
         triggerTimestamp: Timestamp,
         isRescheduled: boolean = false
     ) {
-        this.logger.debug(
-            `setReductionTimeout called for fork ${forkId} at ${triggerTimestamp}`
-        );
+        this.log.debug({
+            event: LogEventType.SET_REDUCTION_TIMEOUT,
+            data: {
+                triggerTimestamp
+            }
+        });
         if (this.forkId !== forkId) return;
 
         const existingHandle = this.reductionTriggerMap.get(forkId);
@@ -267,16 +282,21 @@ class StateManager {
             triggerTimestamp
         });
 
-        this.logger.debug(
-            `Scheduled reduction timeout for fork ${forkId} at ${triggerTimestamp} (in ${triggerTimestamp - now}s)`
-        );
+        this.log.debug({
+            message: `Scheduled reduction timeout`,
+            data: {
+                triggerTimestamp,
+                timeRemaining: triggerTimestamp - now
+            }
+        });
     }
     private async tryReduce(forkId: ForkId) {
         // Ensure we're still on this fork
         if (this.forkId !== forkId) {
-            this.logger.debug(
-                `Skipping reduction - no longer on fork ${forkId}`
-            );
+            this.log.debug({
+                message: "Skipping reduction - no longer on fork",
+                data: { forkId: forkId.slice(0, 12) }
+            });
             return;
         }
 
@@ -294,16 +314,21 @@ class StateManager {
             0,
             Number(killTimestamp) - Clock.getTimeInSeconds()
         );
-        this.logger.debug(
-            `Local Reduction check for fork ${forkId}: canReduce=${canReduceLocally}, timeRemaining=${timeRemaining}s`
-        );
+        this.log.debug({
+            message: "Local reduction check",
+            data: {
+                canReduce: canReduceLocally,
+                timeRemaining
+            }
+        });
 
         // Step 2: If local state says not ready, reschedule check
         if (!canReduceLocally) {
             if (timeRemaining > 0) {
-                this.logger.debug(
-                    `Rescheduling reduction check in ${timeRemaining}s`
-                );
+                this.log.debug({
+                    message: "Rescheduling reduction check",
+                    data: { timeRemaining }
+                });
                 return this.setReductionTimeout(
                     forkId,
                     Number(killTimestamp),
@@ -311,9 +336,9 @@ class StateManager {
                 );
             }
             // timeRemaining is 0 but can't reduce -> local state not synced, fall through to on-chain check
-            this.logger.debug(
-                `Local state not synced, checking on-chain state`
-            );
+            this.log.debug({
+                message: "Local state not synced, checking on-chain state"
+            });
         }
 
         // Step 3: Verify on-chain before committing to reduction
@@ -331,15 +356,20 @@ class StateManager {
             Number(onChainKillTimestamp) - Number(onChainTimestamp) // TODO this was Clock.getTimeInSeconds() before, but we were ecountering remaining == 0
         );
 
-        this.logger.debug(
-            `On-chain Reduction check for fork ${forkId}: canReduce=${canReduceOnChain}, timeRemaining=${remaining}s`
-        );
+        this.log.debug({
+            message: "On-chain reduction check",
+            data: {
+                canReduce: canReduceOnChain,
+                timeRemaining: remaining
+            }
+        });
 
         if (!canReduceOnChain) {
             if (remaining > 0) {
-                this.logger.debug(
-                    `On-chain check: rescheduling in ${remaining}s`
-                );
+                this.log.debug({
+                    message: "On-chain check: rescheduling",
+                    data: { timeRemaining: remaining }
+                });
                 return this.setReductionTimeout(
                     forkId,
                     Number(onChainKillTimestamp),
@@ -385,25 +415,27 @@ class StateManager {
                     const decodedError = decodeCustomError(error.data)!;
 
                     if (decodedError.name === "ErrorDisputeAlreadyReduced") {
-                        this.logger.debug(
-                            `Reduction already completed by another peer: ${decodedError.name}`
-                        );
+                        this.log.debug({
+                            message:
+                                "Reduction already completed by another peer",
+                            data: { errorName: decodedError.name }
+                        });
                         return;
                     }
                     if (decodedError.name === "ErrorCantParticipateInDispute") {
-                        this.logger.debug(
-                            `Cannot participate in dispute: ${decodedError.name} (slashed on chain)`
-                        );
+                        this.log.debug({
+                            message:
+                                "Cannot participate in dispute (slashed on chain)",
+                            data: { errorName: decodedError.name }
+                        });
                         return;
                     } else {
                         throw error;
                     }
                 } catch (error) {
-                    this.logger.error("Error decoding custom error", {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error)
+                    this.log.error({
+                        message: "Error decoding custom error",
+                        err: error
                     });
                     throw error;
                 }
@@ -429,9 +461,13 @@ class StateManager {
             );
 
             // Update local state to the reduced fork
-            this.logger.debug(
-                `Reduction complete: transitioning to fork ${reducedForkId}`
-            );
+            this.log.info({
+                event: LogEventType.REDUCTION_COMPLETED,
+                data: {
+                    oldForkId: forkId.slice(0, 12),
+                    newForkId: reducedForkId.slice(0, 12)
+                }
+            });
             this.setGenesisState(
                 snapshotData,
                 encodedStateMachineState,
@@ -441,16 +477,17 @@ class StateManager {
             );
         } catch (error) {
             if (isCustomEvmError(error)) {
-                this.logger.error(
-                    "CustomError computing reduced snapshot data",
-                    {
+                this.log.error({
+                    message: "CustomError computing reduced snapshot data",
+                    err: error,
+                    data: {
                         errorDescription: error.errorDescription
                     }
-                );
+                });
             } else {
-                this.logger.error("Error computing reduced snapshot data", {
-                    error:
-                        error instanceof Error ? error.message : String(error)
+                this.log.error({
+                    message: "Error computing reduced snapshot data",
+                    err: error
                 });
             }
             throw error;
@@ -505,10 +542,13 @@ class StateManager {
         outboundMessageBlock?: MessageBlockStruct
     ): Promise<void> {
         const normalizedGenesisTimestamp = Number(genesisTimestamp);
-        this.logger.verbose("Setting genesis state", {
-            forkId,
-            genesisTimestamp: normalizedGenesisTimestamp,
-            participantCount: snapshotData.participants.length
+        this.log.info({
+            event: LogEventType.FORK_CREATED,
+            forkId: String(forkId).slice(0, 10),
+            data: {
+                timestamp: normalizedGenesisTimestamp,
+                participants: snapshotData.participants.length
+            }
         });
 
         // generate and store genesis snapshot
@@ -602,14 +642,13 @@ class StateManager {
                 validationResult =
                     await strategy.authenticateBlockFailed(blockConfirmation);
 
-                this.logger.warn(
+                const block = Block.fromBlockConfirmation(blockConfirmation);
+                this.log.blockWarn(
+                    block,
                     "onBlockConfirmation - authentication failed",
                     {
                         status: this.status,
-                        strategy: (strategy as any)?.constructor?.name,
-                        blockHash: ethers.keccak256(
-                            blockConfirmation.signedBlock.encodedBlock
-                        )
+                        strategy: (strategy as any)?.constructor?.name
                     }
                 );
 
@@ -653,11 +692,14 @@ class StateManager {
             if (brokenInboundChainBlock) {
                 validationResult =
                     await strategy.invalidStateTransitionDetected(block);
-                this.logger.warn("onBlockConfirmation - broken inbound chain", {
-                    status: this.status,
-                    strategy: (strategy as any)?.constructor?.name,
-                    block
-                });
+                this.log.blockWarn(
+                    block,
+                    "onBlockConfirmation - broken inbound chain",
+                    {
+                        status: this.status,
+                        strategy: (strategy as any)?.constructor?.name
+                    }
+                );
                 return await strategy.interpretFinalValidationResult(
                     validationResult
                 );
@@ -672,12 +714,12 @@ class StateManager {
                         block,
                         forgedInboundMessageBlock
                     );
-                this.logger.warn(
+                this.log.blockWarn(
+                    block,
                     "onBlockConfirmation - forged inbound message block",
                     {
                         status: this.status,
-                        strategy: (strategy as any)?.constructor?.name,
-                        block
+                        strategy: (strategy as any)?.constructor?.name
                     }
                 );
                 return await strategy.interpretFinalValidationResult(
@@ -696,12 +738,12 @@ class StateManager {
             if (!success) {
                 validationResult =
                     await strategy.invalidStateTransitionDetected(block);
-                this.logger.warn(
+                this.log.blockWarn(
+                    block,
                     "onBlockConfirmation - state transition failed",
                     {
                         status: this.status,
-                        strategy: (strategy as any)?.constructor?.name,
-                        block
+                        strategy: (strategy as any)?.constructor?.name
                     }
                 );
                 return await strategy.interpretFinalValidationResult(
@@ -736,12 +778,12 @@ class StateManager {
             if (stateSnapshot.hash !== block.stateSnapshotHash) {
                 validationResult =
                     await strategy.invalidStateTransitionDetected(block);
-                this.logger.warn(
+                this.log.blockWarn(
+                    block,
                     "onBlockConfirmation - state snapshot hash mismatch",
                     {
                         status: this.status,
-                        strategy: (strategy as any)?.constructor?.name,
-                        block
+                        strategy: (strategy as any)?.constructor?.name
                     }
                 );
                 return await strategy.interpretFinalValidationResult(
@@ -764,30 +806,32 @@ class StateManager {
             // success - no disconnect
             return true;
         } catch (error) {
+            const block = Block.fromBlockConfirmation(blockConfirmation);
             if (isCustomEvmError(error)) {
-                this.logger.error("onBlockConfirmation - error", {
-                    status: this.status,
-                    strategy: (strategy as any)?.constructor?.name,
-                    channelId: this.channelId,
-                    blockHash: ethers.keccak256(
-                        blockConfirmation.signedBlock.encodedBlock
-                    ),
-                    errorDescription: error.errorDescription,
-                    errorName: error.name,
-                    errorMessage: error.message
-                });
+                this.log.blockError(
+                    block,
+                    "onBlockConfirmation - error",
+                    error,
+                    {
+                        status: this.status,
+                        strategy: (strategy as any)?.constructor?.name,
+                        channelId: this.channelId?.slice(0, 12),
+                        errorDescription: error.errorDescription,
+                        errorName: error.name,
+                        errorMessage: error.message
+                    }
+                );
             } else {
-                this.logger.error("onBlockConfirmation - error", {
-                    status: this.status,
-                    strategy: (strategy as any)?.constructor?.name,
-                    channelId: this.channelId,
-                    blockHash: ethers.keccak256(
-                        blockConfirmation.signedBlock.encodedBlock
-                    ),
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                    stack: error instanceof Error ? error.stack : undefined
-                });
+                this.log.blockError(
+                    block,
+                    "onBlockConfirmation - error",
+                    error,
+                    {
+                        status: this.status,
+                        strategy: (strategy as any)?.constructor?.name,
+                        channelId: this.channelId?.slice(0, 12)
+                    }
+                );
             }
             throw error;
         } finally {
@@ -818,38 +862,25 @@ class StateManager {
         };
     }
 
-    private async logPlayTransaction(tx: TransactionStruct): Promise<string> {
-        const forkId = this.forkId;
-        const txHeight = Number(tx.header.transactionCnt);
-        const nextToWrite = await this.diamondStateMachine.getNextToWrite();
-        const latestBlock = this.storage.blocks.getLatestBlock(forkId);
-        const latestStoredHeight = latestBlock?.height ?? null;
-        const nextStoredHeight = this.storage.blocks.getNextBlockHeight(forkId);
-        const message =
-            `playTransaction: ` +
-            ` - myAddress: ${String(this.signerAddress)}` +
-            ` - nextToWrite: ${String(nextToWrite)}` +
-            ` - txHeight: ${txHeight}` +
-            ` - latestStoredHeight: ${String(latestStoredHeight)}` +
-            ` - nextStoredHeight: ${nextStoredHeight}` +
-            ` - forkId: ${forkId}`;
-        this.logger.info(message);
-        return message;
-    }
-
     // Used when authoring a block - Executes the transaction and returns a signed block
     public async playTransaction(
         tx: TransactionStruct
     ): Promise<BlockConfirmationStruct> {
         await this.mutex.lock();
-        const forkId = this.forkId;
-        const message = await this.logPlayTransaction(tx);
+
         try {
             if (!this.validationService.isChannelOpen(this.forkId)) {
                 throw new Error("Channel not open");
             }
             if (!(await this.isMyTurn())) {
-                throw new Error("NOT MY TURN: " + message);
+                const nextToWrite =
+                    await this.diamondStateMachine.getNextToWrite();
+                this.log.warn({
+                    message: "Not my turn",
+                    myAddress: String(this.signerAddress).slice(0, 10),
+                    nextToWrite: String(nextToWrite).slice(0, 10)
+                });
+                throw new Error("NOT MY TURN");
             }
             this.adjustTimestampIfNeeded(tx);
 
@@ -929,6 +960,17 @@ class StateManager {
 
             const block = Block.fromSignedBlock(signedBlock);
 
+            // Single log for authoring with all relevant info
+            this.log.blockInfo(
+                block,
+                `Authoring block #${block.height}`,
+                {
+                    participant: String(tx.header.participant).slice(0, 10),
+                    timestamp: Number(tx.header.timestamp)
+                },
+                LogEventType.BLOCK_AUTHORING
+            );
+
             await this.success(
                 block,
                 stateSnapshot,
@@ -940,6 +982,13 @@ class StateManager {
             );
 
             return block.blockConfirmationStruct;
+        } catch (error) {
+            this.log.error({
+                message: "Transaction failed",
+                err: error,
+                participant: String(tx.header.participant).slice(0, 10)
+            });
+            throw error;
         } finally {
             this.mutex.unlock();
         }
@@ -962,6 +1011,14 @@ class StateManager {
             );
 
         if (!block.didEveryoneSign(participants)) {
+            this.log.debug({
+                event: LogEventType.BLOCK_POSTED_ONCHAIN,
+                height: block.height,
+                data: {
+                    blockHash: block.hash.slice(0, 12),
+                    author: String(block.author).slice(0, 10)
+                }
+            });
             this.p2pEventHooks.onPostingCalldata?.();
 
             const maxTimestamp =
@@ -975,15 +1032,17 @@ class StateManager {
                 .then((txResponse) => txResponse.wait())
                 .catch((error) => {
                     if (isCustomEvmError(error)) {
-                        this.logger.warn("Error posting block on chain", {
-                            errorDescription: error.errorDescription
+                        this.log.warn({
+                            message: "Error posting block on chain",
+                            err: error,
+                            data: {
+                                errorDescription: error.errorDescription
+                            }
                         });
                     } else {
-                        this.logger.warn("Error posting block on chain", {
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : String(error)
+                        this.log.warn({
+                            message: "Error posting block on chain",
+                            err: error
                         });
                     }
                 });
@@ -1004,6 +1063,17 @@ class StateManager {
                 await this.prepareUpdateSnapshotSameFork(forkId);
             if (sameForkData) {
                 try {
+                    this.log.debug({
+                        event: LogEventType.SNAPSHOT_POSTED,
+                        message: "Posting state snapshot update (same fork)",
+                        data: {
+                            milestones: sameForkData.milestoneProofs.length,
+                            latestHeight:
+                                sameForkData.milestoneSnapshots[
+                                    sameForkData.milestoneSnapshots.length - 1
+                                ]?.blockHeight
+                        }
+                    });
                     const txResponse =
                         await this.stateChannelManagerContract.updateStateSnapshotSameFork(
                             this.channelId,
@@ -1016,21 +1086,25 @@ class StateManager {
                     await txResponse.wait();
                 } catch (error) {
                     if (isCustomEvmError(error)) {
-                        this.logger.error("Error posting state snapshot", {
-                            errorDescription: error.errorDescription
+                        this.log.error({
+                            message: "Error posting state snapshot",
+                            err: error,
+                            data: {
+                                errorDescription: error.errorDescription
+                            }
                         });
                     } else {
-                        this.logger.error("Error posting state snapshot", {
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : String(error)
+                        this.log.error({
+                            message: "Error posting state snapshot",
+                            err: error
                         });
                     }
                     throw error;
                 }
             } else {
-                this.logger.debug("No state snapshot updates needed");
+                this.log.debug({
+                    message: "No state snapshot updates needed"
+                });
             }
             return;
         }
@@ -1080,26 +1154,37 @@ class StateManager {
         // Execute the final snapshot updates in a single multicall transaction
         if (callData.length > 0) {
             try {
+                this.log.debug({
+                    event: LogEventType.SNAPSHOT_POSTED,
+                    message: "Posting state snapshot update (fork transition)",
+                    data: {
+                        callDataCount: callData.length
+                    }
+                });
                 const txResponse =
                     await this.stateChannelManagerContract.multicall(callData);
                 await txResponse.wait();
             } catch (error) {
                 if (isCustomEvmError(error)) {
-                    this.logger.error("Error posting state snapshot", {
-                        errorDescription: error.errorDescription
+                    this.log.error({
+                        message: "Error posting state snapshot",
+                        err: error,
+                        data: {
+                            errorDescription: error.errorDescription
+                        }
                     });
                 } else {
-                    this.logger.error("Error posting state snapshot", {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error)
+                    this.log.error({
+                        message: "Error posting state snapshot",
+                        err: error
                     });
                 }
                 throw error;
             }
         } else {
-            this.logger.debug("No state snapshot updates needed");
+            this.log.debug({
+                message: "No state snapshot updates needed"
+            });
         }
     }
 
@@ -1198,13 +1283,10 @@ class StateManager {
                 outboundMessageBlocks
             };
         } catch (error) {
-            this.logger.error(
-                "Error preparing update snapshot for the same fork",
-                {
-                    error:
-                        error instanceof Error ? error.message : String(error)
-                }
-            );
+            this.log.error({
+                message: "Error preparing update snapshot for the same fork",
+                err: error
+            });
             throw error;
         }
     }
@@ -1357,8 +1439,9 @@ class StateManager {
                 outboundMessageBlocks
             };
         } catch (error) {
-            this.logger.error("Error preparing update state snapshot fork", {
-                error: error instanceof Error ? error.message : String(error)
+            this.log.error({
+                message: "Error preparing update state snapshot fork",
+                err: error
             });
             throw error;
         }
@@ -1898,6 +1981,12 @@ class StateManager {
         participantChanges: ParticipantChanges,
         outboundMessageBlock?: MessageBlockStruct
     ): Promise<void> {
+        this.log.block(block.height, "confirmed", {
+            blockHash: block.hash.slice(0, 12),
+            author: String(block.author).slice(0, 10),
+            signatures: block.confirmationSignatures.size
+        });
+
         // step 1 - Confirm and Gossip
         if (await this.shouldSignBlock(block)) {
             // Sign the block and add our signature to confirmation signatures
