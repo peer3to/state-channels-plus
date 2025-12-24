@@ -114,6 +114,25 @@ function getGlobalLogger(): winston.Logger {
         };
 
         const logLevel = PeerLogger.parseLogLevelFromArgs();
+        const excludedTags = PeerLogger.parseExcludedTagsFromArgs();
+
+        const tagFilter = winston.format((info) => {
+            const tagsToCheck: string[] = [];
+
+            if (typeof info.component === "string") {
+                tagsToCheck.push(info.component);
+            }
+
+            if (Array.isArray((info as any).tags)) {
+                tagsToCheck.push(...(info as any).tags);
+            }
+
+            const shouldExclude = tagsToCheck.some((tag) =>
+                excludedTags.has(tag.toLowerCase())
+            );
+
+            return shouldExclude ? false : info;
+        });
 
         // Create the single global logger with exception/rejection handling
         const transports: winston.transport[] = [
@@ -127,6 +146,7 @@ function getGlobalLogger(): winston.Logger {
             levels: customLevels.levels,
             level: logLevel,
             format: winston.format.combine(
+                tagFilter(),
                 winston.format.timestamp(),
                 winston.format.errors({ stack: true }),
                 peerColorFormat
@@ -226,6 +246,37 @@ class PeerLogger {
         }
 
         return logLevel;
+    }
+
+    public static parseExcludedTagsFromArgs(
+        args: string[] = process.argv
+    ): Set<string> {
+        const excludedTags: Set<string> = new Set();
+        const normalize = (tag: string) => tag.trim().toLowerCase();
+
+        const addTags = (value?: string) => {
+            if (!value) return;
+            value
+                .split(/[,\s]+/)
+                .map(normalize)
+                .filter(Boolean)
+                .forEach((tag) => excludedTags.add(tag));
+        };
+
+        addTags(process.env.LOG_EXCLUDE_TAGS);
+        addTags(process.env.EXCLUDE_LOG_TAGS);
+
+        const flagIndex = args.findIndex((arg) => arg === "--exclude-tags");
+        if (flagIndex !== -1) {
+            addTags(args[flagIndex + 1]);
+        }
+
+        const eqFlag = args.find((arg) => arg.startsWith("--exclude-tags="));
+        if (eqFlag) {
+            addTags(eqFlag.split("=", 2)[1]);
+        }
+
+        return excludedTags;
     }
 }
 

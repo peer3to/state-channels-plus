@@ -440,7 +440,7 @@ export class EventHandler {
     ): Promise<boolean> {
         // TODO - extract this function since it's used in multiple places (e.g spectating RPC...)
         const disputeWindow = (
-            await this.diamondStateMachine.localDiamondContract.getDisputeWindows(
+            await this.stateManager.stateChannelManagerContract.getDisputeWindows(
                 channelId,
                 [forkId]
             )

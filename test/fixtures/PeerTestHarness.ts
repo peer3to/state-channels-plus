@@ -61,6 +61,9 @@ import { ZeroHash } from "ethers";
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
+import DisputeManager, {
+    ConstructDisputeResult
+} from "@/disputeManager/DisputeManager";
 
 export interface TestPeer<
     T extends AStateMachine,
@@ -2086,6 +2089,44 @@ export class PeerTestHarness<
         await txResp.wait();
 
         return { dispute, disputeConfirmation };
+    }
+
+    withConstructDisputeTampering(
+        peerOrIndex: number | TestPeer<T>,
+        tamper: (
+            result: ConstructDisputeResult
+        ) => Promise<ConstructDisputeResult>
+    ): {
+        restore: () => void;
+        dispute: Promise<DisputeStruct>;
+    } {
+        let disputeResolver!: (dispute: DisputeStruct) => void;
+        const disputePromise = new Promise<DisputeStruct>((resolve) => {
+            disputeResolver = resolve;
+        });
+
+        const peer =
+            typeof peerOrIndex === "number"
+                ? this.getPeer(peerOrIndex)
+                : peerOrIndex;
+
+        const disputeManager: DisputeManager = peer.stateManager.disputeManager;
+        const originalConstructDispute =
+            disputeManager.constructDispute.bind(disputeManager);
+
+        disputeManager.constructDispute = async (targetForkId: ForkId) => {
+            const res = await originalConstructDispute(targetForkId);
+            const tamperedRes = await tamper(res);
+            disputeResolver(tamperedRes.dispute);
+            return tamperedRes;
+        };
+
+        return {
+            restore: () => {
+                disputeManager.constructDispute = originalConstructDispute;
+            },
+            dispute: disputePromise
+        };
     }
 }
 
