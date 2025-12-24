@@ -15,7 +15,7 @@ class WebRTCTransport extends ATransport {
         };
         this.webRTCChannel.onopen = () => {
             console.log("WebRTC Channel Opened");
-            this.p2pManager.addConnection(this);
+            this.p2pManager.localRpc.initHandshakeService.initHandshake(this);
             //TODO! update peerProfile and close old socket
         };
         this.webRTCChannel.onclose = () => {

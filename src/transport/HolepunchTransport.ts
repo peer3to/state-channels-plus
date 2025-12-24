@@ -24,7 +24,7 @@ class HolepunchTransport extends ATransport {
             console.log("DATA RECEIVED", data);
             this.onMessage(data);
         });
-        this.p2pManager.addConnection(this);
+        this.p2pManager.localRpc.initHandshakeService.initHandshake(this);
         this.holepunchSocket.on("close", () => {
             this.close();
         });

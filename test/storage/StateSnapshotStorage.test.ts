@@ -46,7 +46,7 @@ describe("StateSnapshotStorage", () => {
 
                 // Should be  added to genesis mapping
                 const genesisStored = storage.getGenesisSnapshotByForkId(
-                    genesisStateSnapshot.forkId
+                    genesisStateSnapshot.forkID
                 );
                 expect(genesisStored?.toStruct()).to.deep.equal(
                     genesisStateSnapshot.toStruct()
@@ -83,7 +83,7 @@ describe("StateSnapshotStorage", () => {
 
                 // Should be  added to genesis mapping
                 const genesisStored = storage.getGenesisSnapshotByForkId(
-                    genesisStateSnapshot.forkId
+                    genesisStateSnapshot.forkID
                 );
                 expect(genesisStored?.toStruct()).to.deep.equal(
                     genesisStateSnapshot.toStruct()
@@ -111,7 +111,7 @@ describe("StateSnapshotStorage", () => {
 
         it("should get genesis snapshot by forkId", () => {
             const result = storage.getGenesisSnapshotByForkId(
-                genesisStateSnapshot.forkId
+                genesisStateSnapshot.forkID
             );
             expect(result?.toStruct()).to.deep.equal(
                 genesisStateSnapshot.toStruct()
@@ -137,7 +137,7 @@ describe("StateSnapshotStorage", () => {
 
             // Should not be in genesis mapping
             const genesisStored = storage.getGenesisSnapshotByForkId(
-                stateSnapshot.forkId
+                stateSnapshot.forkID
             );
             expect(genesisStored).to.be.undefined;
         });

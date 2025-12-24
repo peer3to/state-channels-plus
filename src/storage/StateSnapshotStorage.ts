@@ -30,7 +30,7 @@ export class StateSnapshotStorage {
         this.snapshotsByHash.set(hash, snapshot);
 
         if (snapshot.isGenesis) {
-            this.genesisSnapshotByForkId.set(snapshot.forkId, snapshot);
+            this.genesisSnapshotByForkId.set(snapshot.forkID, snapshot);
         }
 
         return hash;

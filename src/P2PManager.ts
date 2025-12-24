@@ -8,6 +8,7 @@ import ProfileManager from "@/ProfileManager";
 import Holepunch from "@/Holepunch";
 import { ethers } from "ethers";
 import { DebugProxy, LocalDiscoveryServer } from "@/utils";
+import type { Logger } from "@/utils/PeerLogger";
 import { RpcHandleMethods } from "@/rpc/RpcHandleProxy";
 import { Buffer } from "buffer";
 import { DEBUG_P2P_MANAGER, DEBUG_LOCAL_TRANSPORT } from "@/utils/config";
@@ -32,6 +33,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
     implements IOnMessage
 {
     stateManager: StateManager;
+    logger: Logger;
     p2pSigner: P2pSigner<TFactories>;
     profileManager = new ProfileManager();
     localRpc: LocalRpcRoot<TFactories>;
@@ -48,6 +50,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         rpcServiceFactories?: TFactories
     ) {
         this.stateManager = stateManager;
+        this.logger = stateManager.logger.child({ component: "P2PManager" });
         this.p2pSigner = new P2pSigner(
             signer,
             stateManager.signerAddress,
@@ -128,15 +131,38 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         await this.holepunch.join(topic);
     }
     public addConnection(transport: ATransport) {
-        this.openConnections.push(transport);
-        this.localRpc.initHandshakeService.initHandshake(transport);
+        // A "connection" only exists after full handshake completion.
+        if (!this.openConnections.includes(transport)) {
+            this.openConnections.push(transport);
+        }
     }
+
     public disconnectConnection(transport: ATransport) {
+        const profile = this.profileManager.getProfileByTransport(transport);
+
+        try {
+            const disconnectedPeer =
+                transport.peerAddress || profile?.getEvmAddress() || "unknown";
+            const stack = new Error("Disconnecting connection").stack;
+            this.logger.warn("disconnectConnection", {
+                disconnectedPeer,
+                transportType: transport.transportType,
+                stack
+            });
+        } catch {
+            // ignore logging errors
+        }
+
         this.openConnections = this.openConnections.filter(
             (t) => t !== transport
         );
-        const profile = this.profileManager.getProfileByTransport(transport);
         profile && this.profileManager.removeTransport(transport);
+
+        try {
+            transport.close();
+        } catch {
+            // ignore
+        }
     }
 
     public disconnectAndBlacklistPeer(transport: ATransport) {

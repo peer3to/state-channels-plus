@@ -76,7 +76,7 @@ describe("StateMachineStateStorage", () => {
 
             genesisSnapshot = StateSnapshot.from(genesisSnapshotStruct);
 
-            forkId = genesisSnapshot.forkId;
+            forkId = genesisSnapshot.forkID;
 
             // Store the genesis snapshot
             mainStorage.stateSnapshots.storeStateSnapshot(genesisSnapshot);
@@ -116,7 +116,7 @@ describe("StateMachineStateStorage", () => {
             mainStorage.stateSnapshots.storeStateSnapshot(orphanedSnapshot);
 
             const result = mainStorage.getGenesisStateMachineState(
-                orphanedSnapshot.forkId
+                orphanedSnapshot.forkID
             );
 
             expect(result).to.be.undefined;

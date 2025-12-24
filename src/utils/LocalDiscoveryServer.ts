@@ -533,7 +533,7 @@ export class LocalDiscoveryServer {
             onConnection: (ws: WebSocket) => {
                 // Accepted a direct connection from another peer
                 const lt = new LocalTransport(ws, p2pManager);
-                p2pManager.addConnection(lt);
+                p2pManager.localRpc.initHandshakeService.initHandshake(lt);
                 this.logger.debug("Inbound peer connection accepted", {
                     ...peerLog,
                     myPeerPort: port
@@ -809,7 +809,7 @@ export class LocalDiscoveryServer {
             onOpen: (ws) => {
                 // Successful direct connection
                 const lt = new LocalTransport(ws, p2pManager);
-                p2pManager.addConnection(lt);
+                p2pManager.localRpc.initHandshakeService.initHandshake(lt);
                 this._peerRetryCount.delete(peerPort);
                 this.logger.info("Connected to peer", {
                     ...log

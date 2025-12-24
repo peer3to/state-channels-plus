@@ -21,12 +21,7 @@ export class HandshakeCompletedGuard extends AGuard<ARpcService<ARpcMethods>> {
             this.service.p2pManager.profileManager.getProfileByTransport(
                 transport
             );
-        const completed = profile?.getIsHandshakeCompleted() ?? false;
-        if (completed) {
-            return true;
-        }
-
-        return false;
+        return !!profile; // If the profile exists, we've verified the remote, regardless if the remote verfied us, so this is enough for receiving RPCs
     }
 
     onFailure(rpc: Rpc, transport: ATransport): void {
@@ -41,10 +36,23 @@ export class HandshakeCompletedGuard extends AGuard<ARpcService<ARpcMethods>> {
         const peerAddress = profile?.evmAddress?.toString();
 
         this.service.logger.warn(
-            "Handshake never completed; aborting RPC execution",
+            "No peer profile for transport; disconnecting",
             {
-                peerAddress
+                peerAddress,
+                service: rpc.service,
+                method: rpc.method
             }
         );
+
+        // With the new connection semantics, any guarded RPC over an unverified
+        // transport is considered malicious.
+        if (transport.peerAddress) {
+            this.service.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                transport.peerAddress
+            );
+            return;
+        }
+
+        this.service.p2pManager.disconnectAndBlacklistPeer(transport);
     }
 }

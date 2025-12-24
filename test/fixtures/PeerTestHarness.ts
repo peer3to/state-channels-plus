@@ -54,7 +54,9 @@ import Clock from "@/Clock";
 import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
 import { deployFullStack } from "../../scripts/V1/deploy";
-import SyncCoordinator from "@test/utils/SyncCoordinator";
+import SyncCoordinator, {
+    WaitForPeersInSyncOptions
+} from "@test/utils/SyncCoordinator";
 import { ZeroHash } from "ethers";
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
@@ -72,6 +74,7 @@ export interface TestPeer<
     contractInstance: T;
     eventSpies: EventSpies;
     joinChannelCommitment?: JoinChannelStruct;
+    turnBarrier: EventBarrier;
     logger: Logger;
 }
 
@@ -126,6 +129,28 @@ export type AssertAllPeersInSyncOptions = {
     peerIndices?: number[];
 };
 
+export type CreateAndResolveDisputeResult<
+    T extends AStateMachine,
+    TFactories extends RpcServiceFactoryMap = {}
+> = {
+    originalForkId: ForkId;
+    newForkId: ForkId;
+    maliciousPeerIndex: number;
+    honestPeerIndices: number[];
+    honestPeers: Array<TestPeer<T, TFactories>>;
+};
+
+export type CreateAndResolveForkResult<
+    T extends AStateMachine,
+    TFactories extends RpcServiceFactoryMap = {}
+> = {
+    originalForkId: ForkId;
+    reducedForkId: ForkId;
+    maliciousPeerIndex: number;
+    honestPeerIndices: number[];
+    honestPeers: Array<TestPeer<T, TFactories>>;
+};
+
 type BuildOpenChannelArgs = {
     participantAddresses?: string[];
     initialBalance?: number;
@@ -164,7 +189,6 @@ export class PeerTestHarness<
 
     // barriers
     private connectionBarrier: EventBarrier;
-    private turnBarrier: EventBarrier;
     private eventCountsBarrier: EventBarrier;
 
     constructor() {
@@ -176,7 +200,6 @@ export class PeerTestHarness<
         }
         this.logger = createLogger({ component: "TestHarness" });
         this.connectionBarrier = new EventBarrier(this.logger);
-        this.turnBarrier = new EventBarrier(this.logger);
         this.eventCountsBarrier = new EventBarrier(this.logger);
     }
 
@@ -217,6 +240,38 @@ export class PeerTestHarness<
         this.logger.info("Test harness setup completed");
     }
 
+    /**
+     * Create a new peer after `setup()` has already run.
+     * If a channel is already open (i.e. `this.channelId` is set), the peer is also connected to that channel.
+     */
+    public async addPeer(signer?: Signer): Promise<TestPeer<T, TFactories>> {
+        if (!this.channelManager || !this.sharedDeployTx) {
+            throw new Error("Harness not initialized; call setup() first");
+        }
+
+        const index = this.peers.length;
+        const signers = await hre.ethers.getSigners();
+        const resolvedSigner = signer ?? signers[index];
+        if (!resolvedSigner) {
+            throw new Error(
+                `No signer available to create peer at index ${index}`
+            );
+        }
+
+        await this.createPeer(index, resolvedSigner);
+        const peer = this.peers[index];
+        if (!peer) {
+            throw new Error(`Failed to create peer ${index}`);
+        }
+
+        // If a channel is already known, connect the new peer to it.
+        if (this.channelId) {
+            await peer.p2pInstance.p2pSigner.connectToChannel(this.channelId);
+        }
+
+        return peer as TestPeer<T, TFactories>;
+    }
+
     private get forkId(): ForkId {
         // Always prefer the latest fork ID observed on the peers; keep
         // activeForkId in sync so callers that access it directly remain valid.
@@ -241,7 +296,7 @@ export class PeerTestHarness<
     }
     public async waitForTurn(peer: TestPeer<T, TFactories>, timeoutMs = 3000) {
         try {
-            await this.turnBarrier.waitFor(
+            await peer.turnBarrier.waitFor(
                 () => peer.stateManager.isMyTurn?.() ?? false,
                 {
                     timeoutMs,
@@ -288,6 +343,8 @@ export class PeerTestHarness<
 
         this.logger.debug(`Creating peer ${index} at ${address}`);
 
+        const peerTurnBarrier = new EventBarrier(PeerLogger);
+
         const eventSpies: EventSpies = {
             // P2pEventHooks spies
             onConnection: sinon.spy(),
@@ -325,7 +382,7 @@ export class PeerTestHarness<
                     component: "P2pEventHooks"
                 });
                 eventSpies.onTurn?.(addr);
-                this.turnBarrier.signal();
+                peerTurnBarrier.signal();
                 this.eventCountsBarrier.signal();
             },
             onSetState: () => {
@@ -393,6 +450,7 @@ export class PeerTestHarness<
             stateManager: p2pInstance.p2pSigner.p2pManager.stateManager,
             contractInstance: p2pInstance.p2pContractInstance,
             eventSpies,
+            turnBarrier: peerTurnBarrier,
             logger: PeerLogger
         };
 
@@ -797,10 +855,12 @@ export class PeerTestHarness<
         });
     }
 
-    async waitForSync(timeout?: number): Promise<void> {
-        await this.syncCoordinator.waitForPeersInSync(this.peers, this.forkId, {
-            timeout
-        });
+    async waitForSync(options: WaitForPeersInSyncOptions = {}): Promise<void> {
+        await this.syncCoordinator.waitForPeersInSync(
+            this.peers,
+            this.forkId,
+            options
+        );
     }
 
     async waitForEventProcessing(timeout: number = 100): Promise<void> {
@@ -845,7 +905,6 @@ export class PeerTestHarness<
         }
 
         this.connectionBarrier.clear();
-        this.turnBarrier.clear();
         this.eventCountsBarrier.clear();
 
         const disposePromises: Promise<any>[] = [];
@@ -1185,6 +1244,271 @@ export class PeerTestHarness<
         }
 
         return false;
+    }
+
+    private async getParticipantPeerIndices(
+        providerPeerIndex: number = 0
+    ): Promise<number[]> {
+        const provider = this.getPeer(providerPeerIndex);
+        const participants =
+            await provider.stateManager.diamondStateMachine.getParticipants();
+        const participantSet = new Set(
+            participants.map((a) => a.toString().toLowerCase())
+        );
+
+        return this.peers
+            .map((p) => p.index)
+            .filter((idx) =>
+                participantSet.has(this.getPeer(idx).address.toLowerCase())
+            );
+    }
+
+    /**
+     * Creates a dispute via the provided action, then waits until:
+     * - disputes are committed on-chain (observed via onDisputeCommitted events)
+     * - honest peers converge on a new fork (fork reduction settled)
+     */
+    async createAndResolveDispute(
+        disputeAction: () => Promise<void>,
+        maliciousPeerIndex: number,
+        options?: {
+            forkId?: ForkId;
+            honestPeerIndices?: number[];
+            resetEventSpies?: boolean;
+            disputesCommittedTimeoutMs?: number;
+            forkSettleTimeoutMs?: number;
+            expectedDisputesCommittedPerPeer?: number;
+            disputesCommittedMode?: "exact" | "atLeast";
+            assertMaliciousRemoved?: boolean;
+        }
+    ): Promise<CreateAndResolveDisputeResult<T, TFactories>> {
+        const originalForkId = options?.forkId || this.forkId;
+        const honestPeerIndices =
+            options?.honestPeerIndices ??
+            (await this.getParticipantPeerIndices()).filter(
+                (i) => i !== maliciousPeerIndex
+            );
+
+        if (honestPeerIndices.length < 1) {
+            throw new Error(
+                `Need at least 1 honest peer to resolve dispute (got ${honestPeerIndices.length})`
+            );
+        }
+
+        if (options?.resetEventSpies !== false) {
+            this.resetEventSpies();
+        }
+
+        await disputeAction();
+
+        const disputesCommittedTimeoutMs =
+            options?.disputesCommittedTimeoutMs ?? 5000;
+
+        const expectedDisputesCommittedPerPeer =
+            options?.expectedDisputesCommittedPerPeer ?? 1;
+
+        const disputesCommitted = await this.waitForEventCounts(
+            "onDisputeCommitted",
+            honestPeerIndices.map((peerId) => ({
+                peerId,
+                expectedCount: expectedDisputesCommittedPerPeer
+            })),
+            disputesCommittedTimeoutMs,
+            { mode: options?.disputesCommittedMode ?? "atLeast" }
+        );
+
+        if (!disputesCommitted) {
+            throw new Error(
+                `Disputes not committed across peers within ${String(
+                    disputesCommittedTimeoutMs
+                )}ms`
+            );
+        }
+
+        const forkSettled = await this.waitForCondition(() => {
+            const forkIds = honestPeerIndices.map(
+                (idx) => this.getPeer(idx).stateManager.forkId
+            );
+            const uniqueForks = new Set(forkIds);
+            const allMoved =
+                forkIds.length > 0 &&
+                forkIds.every(
+                    (forkId) => forkId !== originalForkId && forkId !== ZeroHash
+                );
+            return allMoved && uniqueForks.size === 1;
+        }, options?.forkSettleTimeoutMs ?? 10000);
+
+        if (!forkSettled) {
+            throw new Error(
+                `Fork did not settle within ${String(
+                    options?.forkSettleTimeoutMs ?? 10000
+                )}ms`
+            );
+        }
+
+        const honestPeers = honestPeerIndices.map((idx) => this.getPeer(idx));
+        const newForkId = honestPeers[0]!.stateManager.forkId;
+
+        if (newForkId === originalForkId || newForkId === ZeroHash) {
+            throw new Error(
+                `Expected new forkId after reduction (got ${newForkId})`
+            );
+        }
+
+        if (options?.assertMaliciousRemoved ?? true) {
+            const maliciousAddress = this.getPeer(maliciousPeerIndex).address;
+            for (const peer of honestPeers) {
+                const participants =
+                    await peer.stateManager.diamondStateMachine.getParticipants();
+                expect(participants).to.have.lengthOf(honestPeers.length);
+                expect(participants).to.not.include(maliciousAddress);
+            }
+        }
+
+        return {
+            originalForkId,
+            newForkId,
+            maliciousPeerIndex,
+            honestPeerIndices,
+            honestPeers
+        };
+    }
+
+    async createAndResolveInvalidStateTransitionDispute(
+        maliciousPeerIndex: number,
+        options?: {
+            forkId?: ForkId;
+            honestPeerIndices?: number[];
+            resetEventSpies?: boolean;
+            disputesCommittedTimeoutMs?: number;
+            forkSettleTimeoutMs?: number;
+            disputesCommittedMode?: "exact" | "atLeast";
+            expectedDisputesCommittedPerPeer?: number;
+            assertMaliciousRemoved?: boolean;
+        }
+    ): Promise<CreateAndResolveDisputeResult<T, TFactories>> {
+        return this.createAndResolveDispute(
+            async () => {
+                await this.submitInvalidStateTransitionBlock(
+                    maliciousPeerIndex,
+                    {
+                        forkId: options?.forkId || this.forkId
+                    }
+                );
+            },
+            maliciousPeerIndex,
+            options
+        );
+    }
+
+    /**
+     * Helper for tests that induce a fork via a double-sign block, then wait until
+     * honest peers converge on the reduced fork.
+     *
+     * This intentionally does NOT wait on dispute event-counts; those can be flaky
+     * and the spectate fork-traversal scenario only needs:
+     * - original fork becomes disputed on-chain
+     * - honest peers move to the same non-zero forkId != originalForkId
+     */
+    async createAndResolveDoubleSignFork(
+        maliciousPeerIndex: number,
+        options?: {
+            forkId?: ForkId;
+            honestPeerIndices?: number[];
+            providerPeerIndex?: number;
+            resetEventSpies?: boolean;
+            waitForForkDisputedTimeoutMs?: number;
+            forkSettleTimeoutMs?: number;
+            disposeMaliciousPeer?: boolean;
+        }
+    ): Promise<CreateAndResolveForkResult<T, TFactories>> {
+        const originalForkId = options?.forkId || this.forkId;
+        const honestPeerIndices =
+            options?.honestPeerIndices ??
+            (
+                await this.getParticipantPeerIndices(
+                    options?.providerPeerIndex ?? 0
+                )
+            ).filter((i) => i !== maliciousPeerIndex);
+
+        if (honestPeerIndices.length < 2) {
+            throw new Error(
+                `Need at least 2 honest peers to resolve fork (got ${honestPeerIndices.length})`
+            );
+        }
+
+        if (options?.resetEventSpies !== false) {
+            this.resetEventSpies();
+        }
+
+        await this.submitDoubleSignBlock(maliciousPeerIndex, {
+            forkId: originalForkId
+        });
+
+        const providerPeerIndex =
+            options?.providerPeerIndex ?? honestPeerIndices[0]!;
+        const provider = this.getPeer(providerPeerIndex);
+
+        const forkDisputed = await this.waitForCondition(
+            async () => {
+                return await provider.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
+                    this.channelId,
+                    originalForkId
+                );
+            },
+            options?.waitForForkDisputedTimeoutMs ?? 15000,
+            250
+        );
+
+        if (!forkDisputed) {
+            throw new Error(
+                `Fork was not disputed within ${String(
+                    options?.waitForForkDisputedTimeoutMs ?? 15000
+                )}ms`
+            );
+        }
+
+        if (options?.disposeMaliciousPeer ?? true) {
+            await this.getPeer(maliciousPeerIndex).p2pInstance.dispose();
+        }
+
+        const forkSettled = await this.waitForCondition(() => {
+            const forkIds = honestPeerIndices.map(
+                (idx) => this.getPeer(idx).stateManager.forkId
+            );
+            const uniqueForks = new Set(forkIds);
+            const allMoved =
+                forkIds.length > 0 &&
+                forkIds.every(
+                    (forkId) => forkId !== originalForkId && forkId !== ZeroHash
+                );
+            return allMoved && uniqueForks.size === 1;
+        }, options?.forkSettleTimeoutMs ?? 20000);
+
+        if (!forkSettled) {
+            throw new Error(
+                `Fork did not settle within ${String(
+                    options?.forkSettleTimeoutMs ?? 20000
+                )}ms`
+            );
+        }
+
+        const honestPeers = honestPeerIndices.map((idx) => this.getPeer(idx));
+        const reducedForkId = honestPeers[0]!.stateManager.forkId;
+
+        if (reducedForkId === originalForkId || reducedForkId === ZeroHash) {
+            throw new Error(
+                `Expected reduced forkId after settlement (got ${reducedForkId})`
+            );
+        }
+
+        return {
+            originalForkId,
+            reducedForkId,
+            maliciousPeerIndex,
+            honestPeerIndices,
+            honestPeers
+        };
     }
 
     private getPreviousBlockHash(

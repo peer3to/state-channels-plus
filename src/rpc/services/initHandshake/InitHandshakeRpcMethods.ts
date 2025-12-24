@@ -85,6 +85,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
         }
 
         const normalizedAddress = signerAddress.toLowerCase();
+
         this.senderTransport.peerAddress = normalizedAddress;
 
         let profile =
@@ -100,34 +101,21 @@ class InitHandshakeRpcMethods extends ARpcMethods {
                 this.senderTransport
             );
         }
-        profile.setIsHandshakeCompleted(true);
 
-        const shouldInitiateWebRTC =
-            (preferredTransport === TransportType.WEBRTC ||
-                this.p2pManager.preferredTransport === TransportType.WEBRTC) &&
-            this.senderTransport.transportType != TransportType.WEBRTC &&
-            this.p2pManager.p2pSigner.signerAddress < signerAddress;
-
-        // If we're about to upgrade the connection to WebRTC, we still attempt to
-        // sync on the current transport. If WebRTC setup succeeds, this transport
-        // may be aborted; if WebRTC fails, the current transport should continue.
-        if (shouldInitiateWebRTC) {
-            this.p2pManager.localRpc.webRTCSetupService.initiateWebRTC(
-                this.senderTransport
-            );
-        }
-
-        const stateManager = this.p2pManager.stateManager;
-        if (stateManager.getStatus() === Status.OPENED) {
-            this.p2pManager.localRpc.spectateService.sync(
-                signerAddress,
-                stateManager.getChannelId()
-            );
-        }
-
-        this.p2pManager.stateManager.p2pEventHooks.onConnection?.(
-            signerAddress
+        this.service.ensureHandshakeAckTimeoutScheduled(this.senderTransport);
+        this.service.setRemotePreferredTransport(
+            this.senderTransport,
+            preferredTransport
         );
+
+        this.service.maybeFinalizeHandshakeOnceFromTransport(
+            this.senderTransport
+        );
+
+        // Inform the remote that we've authenticated them.
+        this.remoteRpc.initHandshakeService
+            .onInitHandshakeAck()
+            .sendOne(this.senderTransport);
         //TODO! TEST!!
         // this.rpcProxy
         //     .onSignJoinChannelTEST(
@@ -135,6 +123,25 @@ class InitHandshakeRpcMethods extends ARpcMethods {
         //         this.p2pManager.p2pSigner.signedJc.signature
         //     )
         //     .broadcast();
+    }
+
+    /**
+     * Sent after a peer verifies our handshake response. We only treat the handshake
+     * as complete once we have both: (1) verified the remote, and (2) received this ack.
+     */
+    public async onInitHandshakeAck() {
+        if (this.service.didReceiveAck(this.senderTransport)) {
+            this.p2pManager.disconnectAndBlacklistPeer(this.senderTransport);
+            return;
+        }
+
+        // Ack may arrive before we have verified the remote (simultaneous initiation).
+        // Record it on the transport and apply it to the profile once available.
+        this.service.markAcked(this.senderTransport);
+
+        this.service.maybeFinalizeHandshakeOnceFromTransport(
+            this.senderTransport
+        );
     }
 }
 

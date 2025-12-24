@@ -200,6 +200,9 @@ export default class ValidationService {
             const areAllParticipants = isSubset(signerAddresses, participants);
 
             if (!areAllParticipants) {
+                this.logger.warn(
+                    "BlockConfirmation - checkDuplicateBlock - not all signers are participants"
+                );
                 return await strategy.notAllSingersAreParticipants(block);
             }
 
@@ -244,6 +247,9 @@ export default class ValidationService {
             );
 
             if (!areNewSignersParticipants) {
+                this.logger.warn(
+                    "BlockConfirmation - checkDuplicateBlock - not all new signers are participants"
+                );
                 return await strategy.notAllSingersAreParticipants(block);
             }
 

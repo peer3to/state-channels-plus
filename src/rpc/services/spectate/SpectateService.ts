@@ -75,7 +75,12 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         forkId?: ForkId,
         blockHeight?: number
     ) {
-        this.logger.debug("spectateSync !");
+        this.logger.debug("spectateSync - starting", {
+            peerAddress,
+            channelId,
+            forkId,
+            blockHeight
+        });
         const normalizedPeerAddress =
             this.p2pManager.profileManager.normalizeEvmAddress(peerAddress);
 
@@ -161,7 +166,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         );
 
         const disputeWindows: DisputeWindowVerification[] = [];
-        let currentForkId = currentOnChainSnapshot.forkId;
+        let currentForkId = currentOnChainSnapshot.forkID;
         let isDisputed =
             await diamondStateMachine.localDiamondContract.isForkDisputed(
                 channelId,
@@ -299,15 +304,17 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 latestForkGenesisSnapshot.latestOutboundMessageBlockHash
             );
         // Return payload with all available data
-        return {
+        const syncPayload: SyncPayload = {
             disputeWindows,
-            latestForkGenesisSnapshot,
+            latestForkGenesisSnapshot: latestForkGenesisSnapshot.toStruct(),
             stateProof: latestStateProof,
-            milestoneSnapshots,
+            milestoneSnapshots: milestoneSnapshots.map((ms) => ms.toStruct()),
             latestFinalizedEncodedState,
             outboundMessageBlocksUpToLatestGenesis,
             outboundMessageBlocksOfTheLatestFork
         };
+        this.logger.debug(`Generated syncpayload`, syncPayload);
+        return syncPayload;
     }
 
     /**
@@ -326,7 +333,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         // sync our local EVM to it
         await this.p2pManager.stateManager.eventHandler.onStateSnapshotUpdated(
             channelId,
-            currentOnChainSnapshot
+            currentOnChainSnapshot.toStruct()
         );
         return currentOnChainSnapshot;
     }
@@ -424,9 +431,33 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         return true;
     }
 
-    public persistSyncPayload(syncPayload: SyncPayload) {
+    public async persistSyncPayload(syncPayload: SyncPayload) {
+        this.logger.debug(`Persisting sync payload`, syncPayload);
         // TODO - check in the case of syncing to the requested (forkId, blockHeight), that storage stays consistent - what was already there should still be there
         const storage = this.p2pManager.stateManager.storage;
+
+        const latestFinalizedSnapshot =
+            syncPayload.milestoneSnapshots.length > 0
+                ? syncPayload.milestoneSnapshots.at(-1)!
+                : syncPayload.latestForkGenesisSnapshot;
+
+        const finalizedForkId = latestFinalizedSnapshot.forkId;
+        const finalizedHeight = Number(latestFinalizedSnapshot.blockHeight);
+        const localLatestBlock = storage.blocks.getLatestBlock(finalizedForkId);
+        const localLatestHeight = localLatestBlock?.height ?? -1;
+
+        if (localLatestHeight >= finalizedHeight) {
+            this.logger.warn(
+                "Skipping sync payload persistence: local storage is already ahead of latest finalized snapshot",
+                {
+                    finalizedForkId,
+                    finalizedHeight,
+                    localLatestHeight
+                }
+            );
+            return;
+        }
+
         for (const dw of syncPayload.disputeWindows) {
             for (const dispute of dw.disputeConfirmations) {
                 storage.disputes.storeDisputeConfirmation(dispute);
@@ -449,13 +480,16 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             storage.stateSnapshots.storeStateSnapshot(
                 StateSnapshot.from(snapshot)
             );
-        storage.stateMachineStates.storeStateMachineState(
+        for (const omb of syncPayload.outboundMessageBlocksUpToLatestGenesis)
+            storage.outboundMessages.store(omb);
+        for (const omb of syncPayload.outboundMessageBlocksOfTheLatestFork)
+            storage.outboundMessages.store(omb);
+
+        await this.p2pManager.stateManager.setLatestState(
+            latestFinalizedSnapshot,
             syncPayload.latestFinalizedEncodedState
         );
-        for (const ecb of syncPayload.outboundMessageBlocksUpToLatestGenesis)
-            storage.outboundMessages.store(ecb);
-        for (const ecb of syncPayload.outboundMessageBlocksOfTheLatestFork)
-            storage.outboundMessages.store(ecb);
+        this.logger.debug(`Finished persisting sync payload`);
     }
     public persistFinalizedPartsOfStateProof(stateProof: StateProofStruct) {
         const storage = this.p2pManager.stateManager.storage;

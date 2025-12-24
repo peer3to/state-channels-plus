@@ -154,7 +154,7 @@ export default class Block {
         return this.block.stateSnapshotHash as Hash;
     }
 
-    get transaction() {
+    get tx() {
         return this.block.transaction;
     }
 

@@ -9,6 +9,8 @@ import { ChannelId, Timestamp } from "@/types/types";
 import Clock from "@/Clock";
 import { Codec, hash, Type } from "@/utils";
 import { Block } from "@/models";
+import { Status } from "@/types";
+import { BlockStruct } from "@/index";
 
 class SpectateServiceRpcMethods extends ARpcMethods {
     service: SpectateService;
@@ -58,6 +60,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
         channelId: ChannelId,
         syncPayload: SyncPayload
     ) {
+        this.service.logger.debug(`Syncpayload received`, { syncPayload });
         const senderTransport = this.senderTransport;
         const peerAddress = senderTransport.peerAddress;
         if (!peerAddress) {
@@ -68,8 +71,6 @@ class SpectateServiceRpcMethods extends ARpcMethods {
         }
 
         try {
-            this.service.logger.debug(`onSpectateResponse - start`);
-
             const syncRequest =
                 this.service.takePendingRequestByPeerAddress(peerAddress);
             if (!syncRequest) {
@@ -141,7 +142,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             // 1) Fetch the onChainSnapshot and persist/update the local EVM with it
             const onChainSnapshot =
                 await this.service.fetchAndPersistOnChainSnapshot(channelId);
-            let finalForkId = onChainSnapshot.forkId;
+            let finalForkId = onChainSnapshot.forkID;
 
             // 2) & 2.1) Fetch all disputeWindows that where provided in the SyncPayload:
             const forkIds = syncPayload.disputeWindows.map(
@@ -211,7 +212,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                 (await diamondStateMachine.localDiamondContract.isGenesisSnapshotWithoutTimeCheck(
                     syncPayload.latestForkGenesisSnapshot
                 ));
-            const [isAvailable, genesisTimestamp] =
+            const { isAvailable, timestamp: genesisTimestamp } =
                 await diamondStateMachine.localDiamondContract.getGenesisTimestamp(
                     channelId,
                     syncPayload.latestForkGenesisSnapshot.snapshotData
@@ -253,7 +254,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             }
 
             // 2.9) verify stateProof proves latest state -> abort otherwise
-            const [isValid, _] =
+            const { isValid } =
                 await diamondStateMachine.localDiamondContract.verifyMilestones(
                     syncPayload.latestForkGenesisSnapshot.forkId,
                     syncPayload.stateProof.milestones,
@@ -295,25 +296,40 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             const isMulticallSuccess =
                 await this.service.tryMulticallSnapshotUpdate(
                     channelId,
-                    onChainSnapshot,
+                    onChainSnapshot.toStruct(),
                     syncPayload,
                     disputeWindowsThatNeedToBeReducedOnChain
                 );
             if (!isMulticallSuccess) return this.service.abort(peerAddress);
 
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
-            this.service.persistSyncPayload(syncPayload);
+            await this.service.persistSyncPayload(syncPayload);
 
-            // 5) set some syncFlag to true that will start executing the onBlockConfirmation pipeline with `SpectateStrategy` from unfinalized blocks
-            // Not sure if we need to set the flag - the default one is 'SPECTATING' - think that's enough, but maybe we need 1 more flag
+            // 5) Start executing the onBlockConfirmation pipeline with unfinalized blocks
             const blockConfirmations =
                 await diamondStateMachine.localDiamondContract.getUnfinalizedBlockConfirmationsFromStateProof(
                     syncPayload.stateProof
                 );
+            this.service.logger.debug(
+                `Spectate sync - next block height before pipeline ${stateManager.storage.blocks.getNextBlockHeight(finalForkId)}`
+            );
+            this.service.logger.debug(
+                `Spectate sync - BlockConfirmation pipeline for ${blockConfirmations.length} unfinalized block`,
+                blockConfirmations.map((bc) => {
+                    const _block = Block.fromBlockConfirmation(bc);
+                    return {
+                        blockHeight: _block.height,
+                        signerAddress: _block.author
+                    };
+                })
+            );
             for (const bc of blockConfirmations) {
                 const isOk = await stateManager.onBlockConfirmation(bc);
                 if (!isOk) this.service.abort(peerAddress);
             }
+            this.service.logger.debug(
+                `Spectate sync - next block height after pipeline ${stateManager.storage.blocks.getNextBlockHeight(finalForkId)}`
+            );
             // 6) If state requested (forkId,blockHeight) - check if blockHeight reached
             if (syncRequest.blockHeight !== undefined) {
                 const [hasBlock, latestBlock] =

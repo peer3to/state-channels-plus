@@ -547,6 +547,70 @@ class StateManager {
         }
     }
 
+    public async setLatestState(
+        stateSnapshot: StateSnapshotStruct,
+        encodedState: Bytes,
+        outboundMessageBlock?: MessageBlockStruct
+    ): Promise<void> {
+        const normalizedTimestamp = Number(stateSnapshot.timestamp);
+
+        // Persist state snapshot (as a model)
+        const latestSnapshot = StateSnapshot.from(stateSnapshot);
+        this.storage.stateSnapshots.storeStateSnapshot(latestSnapshot);
+
+        // Persist outbound message block if provided
+        if (outboundMessageBlock) {
+            this.storage.outboundMessages.store(outboundMessageBlock);
+        }
+
+        // Persist state machine state (keyed by snapshot hash when available)
+        this.storage.stateMachineStates.storeStateMachineState(encodedState, {
+            hash: stateSnapshot.snapshotData.stateMachineStateHash
+        });
+
+        // Update local EVM/state machine
+        await this.diamondStateMachine.setState(encodedState);
+
+        // Update the forkId to the new fork
+        const forkId = stateSnapshot.forkId;
+        this.forkId = forkId;
+
+        const participants = await this.diamondStateMachine.getParticipants();
+        const isParticipant = participants.includes(this.signerAddress);
+        if (isParticipant) {
+            this.setStatus(Status.PARTICIPATING);
+        } else {
+            this.setStatus(Status.SYNCED);
+        }
+
+        const nextToWrite = await this.diamondStateMachine.getNextToWrite();
+        this.p2pEventHooks.onTurn?.(nextToWrite);
+
+        const nextTransactionCnt = this.storage.blocks.getNextBlockHeight(
+            this.forkId
+        );
+
+        let timeLost = Clock.getTimeInSeconds() - normalizedTimestamp;
+        timeLost = timeLost < 0 ? 0 : timeLost; // if timestamp is in the future - no time is lost
+
+        this.timeoutManager.scheduleTask(
+            () =>
+                this.tryTimeoutParticipant(
+                    forkId,
+                    nextTransactionCnt,
+                    nextToWrite
+                ),
+            (this.getTimeoutWaitTimeSeconds() - timeLost) * 1000,
+            "participantTimeout"
+        );
+
+        this.timeoutManager.scheduleTask(
+            () => this.tryExecuteFromQueue(),
+            0,
+            "queueProcessing"
+        );
+    }
+
     public async setGenesisState(
         snapshotData: SnapshotDataStruct,
         encodedState: Bytes,
@@ -568,51 +632,12 @@ class StateManager {
             timestamp: normalizedGenesisTimestamp,
             snapshotData: snapshotData
         };
-        const genesisSnapshot = StateSnapshot.from(_genesisSnapshot);
-        this.storage.stateSnapshots.storeStateSnapshot(genesisSnapshot);
+        this.logger.debug("Stored genesis snapshot", { _genesisSnapshot });
 
-        // store exit channel block
-        // TODO - check if exists
-        if (outboundMessageBlock)
-            this.storage.outboundMessages.store(outboundMessageBlock);
-
-        // store genesis state
-        this.storage.stateMachineStates.storeStateMachineState(encodedState);
-
-        await this.diamondStateMachine.setState(encodedState);
-        // Update the forkId to the new fork
-        this.forkId = forkId;
-
-        const participants = await this.diamondStateMachine.getParticipants();
-        const isParticipant = participants.includes(this.signerAddress);
-        if (isParticipant) {
-            this.setStatus(Status.PARTICIPATING);
-        } else {
-            this.setStatus(Status.SYNCED);
-        }
-
-        const nextToWrite = await this.diamondStateMachine.getNextToWrite();
-        this.p2pEventHooks.onTurn?.(nextToWrite);
-        const nextTransactionCnt =
-            this.storage.blocks.getNextBlockHeight(forkId);
-        let timeLost = Clock.getTimeInSeconds() - normalizedGenesisTimestamp;
-        timeLost = timeLost < 0 ? 0 : timeLost; // if genesisTimestamp is in the future - no time is lost
-
-        this.timeoutManager.scheduleTask(
-            () =>
-                this.tryTimeoutParticipant(
-                    forkId,
-                    nextTransactionCnt,
-                    nextToWrite
-                ),
-            (this.getTimeoutWaitTimeSeconds() - timeLost) * 1000,
-            "participantTimeout"
-        );
-
-        this.timeoutManager.scheduleTask(
-            () => this.tryExecuteFromQueue(),
-            0,
-            "queueProcessing"
+        await this.setLatestState(
+            _genesisSnapshot,
+            encodedState,
+            outboundMessageBlock
         );
     }
 
@@ -657,8 +682,9 @@ class StateManager {
                 this.logger.warn(
                     "onBlockConfirmation - authentication failed",
                     {
-                        status: this.status,
                         strategy: (strategy as any)?.constructor?.name,
+                        validationResult:
+                            BlockValidationResult[validationResult],
                         blockHash: ethers.keccak256(
                             blockConfirmation.signedBlock.encodedBlock
                         )
@@ -684,9 +710,24 @@ class StateManager {
 
             if (validationResult !== BlockValidationResult.SUCCESS) {
                 // handle all non-success actions
-                return await strategy.interpretFinalValidationResult(
-                    validationResult
-                );
+                const keepConnection =
+                    await strategy.interpretFinalValidationResult(
+                        validationResult
+                    );
+                if (!keepConnection) {
+                    this.logger.warn(
+                        "onBlockConfirmation - validateBlockConfirmation failed",
+                        {
+                            strategy: (strategy as any)?.constructor?.name,
+                            validationResult:
+                                BlockValidationResult[validationResult],
+                            blockHash: ethers.keccak256(
+                                blockConfirmation.signedBlock.encodedBlock
+                            )
+                        }
+                    );
+                }
+                return keepConnection;
             }
 
             // SUCCESS, continue with state transition validation
@@ -706,8 +747,8 @@ class StateManager {
                 validationResult =
                     await strategy.invalidStateTransitionDetected(block);
                 this.logger.warn("onBlockConfirmation - broken inbound chain", {
-                    status: this.status,
                     strategy: (strategy as any)?.constructor?.name,
+                    validationResult: BlockValidationResult[validationResult],
                     block
                 });
                 return await strategy.interpretFinalValidationResult(
@@ -727,8 +768,9 @@ class StateManager {
                 this.logger.warn(
                     "onBlockConfirmation - forged inbound message block",
                     {
-                        status: this.status,
                         strategy: (strategy as any)?.constructor?.name,
+                        validationResult:
+                            BlockValidationResult[validationResult],
                         block
                     }
                 );
@@ -743,7 +785,7 @@ class StateManager {
                 successCallback,
                 outboundMessages,
                 participantsBefore
-            } = await this.applyTransaction(block.transaction);
+            } = await this.applyTransaction(block.tx);
 
             if (!success) {
                 validationResult =
@@ -751,8 +793,9 @@ class StateManager {
                 this.logger.warn(
                     "onBlockConfirmation - state transition failed",
                     {
-                        status: this.status,
                         strategy: (strategy as any)?.constructor?.name,
+                        validationResult:
+                            BlockValidationResult[validationResult],
                         block
                     }
                 );
@@ -775,7 +818,7 @@ class StateManager {
                 finalParticipants
             );
 
-            const { stateSnapshot, outboundMessageBlock, totalWithdrawals } =
+            const { stateSnapshot, outboundMessageBlock } =
                 await this.createStateSnapshot(
                     hash(stateAfterInbound),
                     coordinates,
@@ -791,8 +834,9 @@ class StateManager {
                 this.logger.warn(
                     "onBlockConfirmation - state snapshot hash mismatch",
                     {
-                        status: this.status,
                         strategy: (strategy as any)?.constructor?.name,
+                        validationResult:
+                            BlockValidationResult[validationResult],
                         block
                     }
                 );
@@ -808,7 +852,6 @@ class StateManager {
                 stateSnapshot,
                 stateAfterInbound,
                 successCallback,
-                totalWithdrawals,
                 participantChanges,
                 outboundMessageBlock
             );
@@ -818,7 +861,6 @@ class StateManager {
         } catch (error) {
             if (isCustomEvmError(error)) {
                 this.logger.error("onBlockConfirmation - error", {
-                    status: this.status,
                     strategy: (strategy as any)?.constructor?.name,
                     channelId: this.channelId,
                     blockHash: ethers.keccak256(
@@ -830,7 +872,6 @@ class StateManager {
                 });
             } else {
                 this.logger.error("onBlockConfirmation - error", {
-                    status: this.status,
                     strategy: (strategy as any)?.constructor?.name,
                     channelId: this.channelId,
                     blockHash: ethers.keccak256(
@@ -954,7 +995,7 @@ class StateManager {
                 finalParticipants
             );
 
-            const { stateSnapshot, outboundMessageBlock, totalWithdrawals } =
+            const { stateSnapshot, outboundMessageBlock } =
                 await this.createStateSnapshot(
                     hash(stateAfterInbound),
                     coordinates,
@@ -986,7 +1027,6 @@ class StateManager {
                 stateSnapshot,
                 stateAfterInbound,
                 successCallback,
-                totalWithdrawals,
                 participantChanges,
                 outboundMessageBlock
             );
@@ -1051,7 +1091,7 @@ class StateManager {
         );
 
         // If we're on the same fork, call updateStateSnapshotSameFork directly
-        if (currentOnChainSnapshot.forkId === forkId) {
+        if (currentOnChainSnapshot.forkID === forkId) {
             const sameForkData =
                 await this.prepareUpdateSnapshotSameFork(forkId);
             if (sameForkData) {
@@ -1132,7 +1172,7 @@ class StateManager {
         const callData: string[] = [];
         if (forkData) {
             // Check if the fork update will result in the same fork as the target
-            if (forkData.genesisSnapshot.forkId === forkId) {
+            if (forkData.genesisSnapshot.forkID === forkId) {
                 const forkCalldata =
                     this.stateChannelManagerContract.interface.encodeFunctionData(
                         "updateStateSnapshotFork",
@@ -1147,7 +1187,7 @@ class StateManager {
             } else {
                 // Fork update results in a different fork
                 throw new Error(
-                    `Fork mismatch: update will result in fork ${forkData.genesisSnapshot.forkId}, but target fork is ${forkId}.`
+                    `Fork mismatch: update will result in fork ${forkData.genesisSnapshot.forkID}, but target fork is ${forkId}.`
                 );
             }
         }
@@ -1266,9 +1306,9 @@ class StateManager {
             }
 
             // Verify that both snapshots belong to the same fork
-            if (currentOnChainSnapshot.forkId !== latestSnapshot.forkId) {
+            if (currentOnChainSnapshot.forkID !== latestSnapshot.forkID) {
                 throw new Error(
-                    `Fork mismatch: current fork ${currentOnChainSnapshot.forkId}, new fork ${latestSnapshot.forkId}`
+                    `Fork mismatch: current fork ${currentOnChainSnapshot.forkID}, new fork ${latestSnapshot.forkID}`
                 );
             }
 
@@ -1320,14 +1360,14 @@ class StateManager {
 
             this.logger.debug("prepareUpdateStateSnapshotFork - start", {
                 channelId: this.channelId,
-                onChainForkId: currentOnChainSnapshot.forkId,
+                onChainForkId: currentOnChainSnapshot.forkID,
                 onChainBlockHeight: currentOnChainSnapshot.blockHeight,
                 onChainLatestOutboundMessageBlockHash:
                     currentOnChainSnapshot.snapshotData
                         .latestOutboundMessageBlockHash
             });
 
-            let currentForkId = currentOnChainSnapshot.forkId;
+            let currentForkId = currentOnChainSnapshot.forkID;
 
             // Traverse through dispute windows until we reach a fork with no disputes
             let isDisputed =
@@ -1855,7 +1895,6 @@ class StateManager {
     ): Promise<{
         stateSnapshot: StateSnapshot;
         outboundMessageBlock?: MessageBlockStruct;
-        totalWithdrawals: BalanceStruct;
     }> {
         const previousStateSnapshot =
             this.getPreviousStateSnapshotOrThrow(coordinates);
@@ -1928,8 +1967,7 @@ class StateManager {
 
         return {
             stateSnapshot: StateSnapshot.from(stateSnapshot),
-            outboundMessageBlock,
-            totalWithdrawals
+            outboundMessageBlock
         };
     }
 
@@ -2124,7 +2162,6 @@ class StateManager {
         stateSnapshot: StateSnapshot,
         encodedStateMachineState: Bytes,
         successCallback: () => void,
-        totalWithdrawals: BalanceStruct,
         participantChanges: ParticipantChanges,
         outboundMessageBlock?: MessageBlockStruct
     ): Promise<void> {
@@ -2134,10 +2171,11 @@ class StateManager {
             const signature = await block.sign(this.signer);
             block.expandSignatures([signature]);
         }
-        // always broadcast
-        this.p2pManager.remoteRpc.stateTransitionService
-            .onBlockConfirmation(block.blockConfirmationStruct)
-            .broadcast();
+        // always broadcast if participating
+        if (this.status === Status.PARTICIPATING)
+            this.p2pManager.remoteRpc.stateTransitionService
+                .onBlockConfirmation(block.blockConfirmationStruct)
+                .broadcast();
 
         // step 2 - persist the block
         this.storage.blocks.storeBlock(block);
@@ -2214,7 +2252,7 @@ class StateManager {
 
     public async shouldSignBlock(block: Block): Promise<boolean> {
         if (this.p2pManager.isBlacklisted(block.author)) return false;
-
+        if (this.status !== Status.PARTICIPATING) return false;
         // Check if the block is posted on-chain and I am the next to write
         if (block.onChainTimestamp !== undefined) {
             const nextToWrite = await this.diamondStateMachine.getNextToWrite();
@@ -2287,16 +2325,25 @@ class StateManager {
                 );
 
             // Calculate how many blocks back should we look for the log on-chain
+            const latestBlock =
+                await this.stateChannelManagerContract.runner?.provider?.getBlockNumber();
+            if (!latestBlock) {
+                const message =
+                    "fetchBlockCommitmentCalldata - Unable to fetch latest block number from provider";
+                this.logger.error(message);
+                throw new Error(message);
+            }
             const avgBlockTime = Clock.getAverageOnChainBlockTime();
             const maxTime =
                 this.timeConfig.p2pTime +
                 this.timeConfig.agreementTime +
                 this.timeConfig.chainFallbackTime;
             const blocksToLookBack = Math.ceil(maxTime / avgBlockTime) * 2; // *2 to be safe and account for some delay/failure
+            const fromBlock = Math.max(0, latestBlock - blocksToLookBack);
 
             const logs = await this.stateChannelManagerContract.queryFilter(
                 filter,
-                -blocksToLookBack, // from block
+                fromBlock, // from block
                 "latest" // to block
             );
 
