@@ -469,7 +469,7 @@ describe("ForkIdToMaxHeightMap", () => {
                     transactionCnt: height
                 })
             })
-        });
+        }).blockStruct;
 
         const signedBlock = factory.signedBlock({
             encodedBlock: Codec.encode(block, Type.Block)
