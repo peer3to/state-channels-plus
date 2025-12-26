@@ -1,9 +1,9 @@
 import { EVM, EVMOpts } from "@ethereumjs/evm";
 import { maybeGetLogs } from "@ganache/console.log";
 import { Buffer } from "buffer";
-import { createLogger, Logger } from "@/utils";
+import { createLogger } from "@/utils";
 
-const solidityLogger: Logger = createLogger({ component: "Solidity" });
+const solidityLogger = createLogger("Solidity");
 
 export interface EvmFactoryOptions extends EVMOpts {
     enableConsoleLog?: boolean;

@@ -7,13 +7,15 @@ export { LogEvent, LogEventType } from "./LogEvents";
 export {
     LoggingConfig,
     LoggingMode,
-    RemoteConfig,
+    BrowserStorageConfig,
+    CrashUploadConfig,
     createWinstonLogger,
     createLoggerConfig,
     createAutoConfig,
     detectLoggingMode,
-    defaultConfigs
+    loggingConfigs as defaultConfigs
 } from "./LoggingConfig";
+export { setupCrashHandler } from "./CrashHandler";
 
 import winston from "winston";
 import {
@@ -22,6 +24,7 @@ import {
     LoggingConfig
 } from "./LoggingConfig";
 import { StructuredLogger, ContextProvider } from "./StructuredLogger";
+import { setupCrashHandler } from "./CrashHandler";
 
 // Re-export Winston Logger type for convenience
 export type Logger = winston.Logger;
@@ -30,11 +33,14 @@ export type Logger = winston.Logger;
 let globalWinston: winston.Logger | null = null;
 let globalConfig: LoggingConfig | null = null;
 
-export function initLogging(
-    overrides: Partial<LoggingConfig> = {}
-): LoggingConfig {
-    globalConfig = createAutoConfig(overrides);
+export function initLogging(): LoggingConfig {
+    globalConfig = createAutoConfig();
     globalWinston = createWinstonLogger(globalConfig);
+
+    // Setup crash handler if crash upload is configured
+    if (globalConfig.crashUpload?.enabled) {
+        setupCrashHandler(globalWinston, globalConfig);
+    }
 
     // Log initialization (only if console enabled)
     if (globalConfig.console && globalConfig.enabled) {
@@ -52,6 +58,11 @@ export function initLogging(
 export function initLoggingWithConfig(config: LoggingConfig): void {
     globalConfig = config;
     globalWinston = createWinstonLogger(config);
+
+    // Setup crash handler if crash upload is configured
+    if (config.crashUpload?.enabled) {
+        setupCrashHandler(globalWinston, config);
+    }
 }
 
 /**
