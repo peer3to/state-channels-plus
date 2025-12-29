@@ -85,12 +85,11 @@ async function uploadCrashLogs(
 }
 
 /**
- * Get storage transport from logger
+ * Get memory transport from logger
  */
-function getStorageTransport(logger: winston.Logger): {
-    getAllLogs: () => Promise<any[]>;
-    flush: () => Promise<void>;
-    clearLogs: () => Promise<void>;
+function getMemoryTransport(logger: winston.Logger): {
+    getAllLogs: () => any[];
+    clearLogs: () => void;
 } | null {
     const transport = logger.transports.find(
         (t: any) => t.getAllLogs && typeof t.getAllLogs === "function"
@@ -102,8 +101,7 @@ function getStorageTransport(logger: winston.Logger): {
 
     return {
         getAllLogs: transport.getAllLogs.bind(transport),
-        flush: transport.flush?.bind(transport) || (async () => {}),
-        clearLogs: transport.clearLogs?.bind(transport) || (async () => {})
+        clearLogs: transport.clearLogs?.bind(transport) || (() => {})
     };
 }
 
@@ -126,15 +124,14 @@ class CrashHandlerState {
 }
 
 /**
- *  handles crash, uploads logs, and clears storage
+ *  handles crash, uploads logs, and clears memory
  */
 async function handleCrashEvent(
     error: Error,
     context: "exception" | "rejection",
-    storageTransport: {
-        getAllLogs: () => Promise<any[]>;
-        flush: () => Promise<void>;
-        clearLogs: () => Promise<void>;
+    memoryTransport: {
+        getAllLogs: () => any[];
+        clearLogs: () => void;
     },
     crashUploadConfig: CrashUploadConfig,
     state: CrashHandlerState
@@ -145,11 +142,8 @@ async function handleCrashEvent(
     }
 
     try {
-        // Flush any buffered logs to ensure we capture everything
-        await storageTransport.flush();
-
-        // Get all stored logs
-        const logs = await storageTransport.getAllLogs();
+        // Get all stored logs from memory
+        const logs = memoryTransport.getAllLogs();
 
         // Add the crash error as the last log entry
         logs.push({
@@ -180,8 +174,8 @@ async function handleCrashEvent(
         });
 
         // Clear logs after successful upload
-        // This prevents duplicate uploads and frees storage for new logs
-        await storageTransport.clearLogs();
+        // This prevents duplicate uploads and frees memory for new logs
+        memoryTransport.clearLogs();
     } catch (uploadError) {
         // Silently fail - we don't want to break the app further
         console.error(
@@ -193,7 +187,7 @@ async function handleCrashEvent(
 }
 
 /**
- * Set up crash handler with shared state
+ * Set up crash handler with memory transport
  * Returns handle function for testing
  */
 export function setupCrashHandler(
@@ -202,20 +196,20 @@ export function setupCrashHandler(
 ): {
     handle: (error: Error, context: "exception" | "rejection") => Promise<void>;
 } | void {
-    const storage = getStorageTransport(logger);
+    const memory = getMemoryTransport(logger);
     const state = new CrashHandlerState();
 
-    if (!storage || !config.crashUpload?.enabled) {
-        if (!storage) {
+    if (!memory || !config.crashUpload?.enabled) {
+        if (!memory) {
             console.warn(
-                "[CrashHandler] Browser storage transport not found, crash logs won't be uploaded"
+                "[CrashHandler] Memory transport not found, crash logs won't be uploaded"
             );
         }
         return;
     }
 
     const handle = (error: Error, context: "exception" | "rejection") =>
-        handleCrashEvent(error, context, storage, config.crashUpload!, state);
+        handleCrashEvent(error, context, memory, config.crashUpload!, state);
 
     // Browser event handlers
     if (isBrowser()) {

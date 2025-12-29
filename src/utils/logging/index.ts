@@ -7,7 +7,7 @@ export { LogEvent, LogEventType } from "./LogEvents";
 export {
     LoggingConfig,
     LoggingMode,
-    BrowserStorageConfig,
+    MemoryStorageConfig,
     CrashUploadConfig,
     createWinstonLogger,
     createLoggerConfig,

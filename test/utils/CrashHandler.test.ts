@@ -6,27 +6,23 @@ import { LoggingConfig, LoggingMode } from "@/utils/logging/LoggingConfig";
 
 /**
  * Mock Winston transport that stores logs in memory
- * Uses setImmediate for async correctness (matches real transport behavior)
  */
 class MockStorageTransport extends Transport {
     private logs: any[] = [];
 
     log(info: any, callback: () => void): void {
         // Store the log entry as-is (Winston formats it before calling log)
+        // MemoryTransport stores { entry, size }, but for testing we just store the entry
         this.logs.push(info);
         // Use setImmediate to ensure async behavior closer to real transports
         setImmediate(callback);
     }
 
-    async flush(): Promise<void> {
-        // no-op - logs are already in memory
-    }
-
-    async getAllLogs(): Promise<any[]> {
+    getAllLogs(): any[] {
         return [...this.logs];
     }
 
-    async clearLogs(): Promise<void> {
+    clearLogs(): void {
         this.logs = [];
     }
 }
@@ -193,7 +189,7 @@ describe("CrashHandler", function () {
         expect(crashLog).to.not.be.undefined;
 
         // Assert logs were cleared after upload
-        const remainingLogs = await mockTransport.getAllLogs();
+        const remainingLogs = mockTransport.getAllLogs();
         expect(remainingLogs.length).to.equal(
             0,
             "Logs should be cleared after upload"

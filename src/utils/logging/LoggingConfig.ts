@@ -1,22 +1,17 @@
 import winston from "winston";
-import IndexDBTransport from "./transports/IndexDBTransport";
+import MemoryTransport from "./transports/MemoryTransport";
 import { consoleFormat } from "./formatters/consoleFormat";
 import { parseExcludeTags } from "./cli";
 
 export enum LoggingMode {
-    DEVELOPMENT = "development", // Console
-    TESTNET = "testnet", // Console +  Browser's IndexedDB storage
+    DEVELOPMENT = "development", // Console only
+    TESTNET = "testnet", // Console + Memory (for crash upload)
     MAINNET = "mainnet" // None
 }
 
-/**
- * Browser's IndexedDB storage logging configuration with rotation
- */
-export interface BrowserStorageConfig {
+export interface MemoryStorageConfig {
     enabled: boolean;
-    maxSize?: number; // Max storage size in bytes (default: 50MB)
-    maxAge?: number; // Max age in milliseconds (default: 7 days)
-    dbName?: string; // IndexedDB database name (default: "peer3_logs")
+    maxSize?: number;
 }
 
 /**
@@ -37,7 +32,7 @@ export interface LoggingConfig {
 
     // Transport flags
     console: boolean;
-    browserStorage?: BrowserStorageConfig;
+    memoryStorage?: MemoryStorageConfig;
 
     // Crash upload (only used on uncaught exceptions)
     crashUpload?: CrashUploadConfig;
@@ -56,7 +51,7 @@ export const loggingConfigs: Record<LoggingMode, Partial<LoggingConfig>> = {
         enabled: true,
         level: "debug",
         console: true,
-        browserStorage: {
+        memoryStorage: {
             enabled: false
         }
     },
@@ -65,10 +60,8 @@ export const loggingConfigs: Record<LoggingMode, Partial<LoggingConfig>> = {
         enabled: true,
         level: "verbose",
         console: true,
-        browserStorage: {
-            enabled: true,
-            maxSize: 50 * 1024 * 1024, // 50MB
-            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days in milliseconds
+        memoryStorage: {
+            enabled: true
         }
     },
     [LoggingMode.MAINNET]: {
@@ -137,12 +130,10 @@ export function createWinstonLogger(config: LoggingConfig): winston.Logger {
         );
     }
 
-    // IndexedDB Transport
-    if (config.browserStorage?.enabled && typeof indexedDB !== "undefined") {
-        const indexDBTransport = new IndexDBTransport({
-            dbName: config.browserStorage.dbName,
-            maxSize: config.browserStorage.maxSize,
-            maxAge: config.browserStorage.maxAge,
+    // Memory Transport (for crash reporting)
+    if (config.memoryStorage?.enabled) {
+        const memoryTransport = new MemoryTransport({
+            maxSize: config.memoryStorage.maxSize,
             format: winston.format.combine(
                 tagFilter(),
                 winston.format.timestamp(),
@@ -153,7 +144,7 @@ export function createWinstonLogger(config: LoggingConfig): winston.Logger {
             handleRejections: false
         });
 
-        transports.push(indexDBTransport);
+        transports.push(memoryTransport);
     }
 
     return winston.createLogger({
