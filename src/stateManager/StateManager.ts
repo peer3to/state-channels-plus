@@ -1029,7 +1029,11 @@ class StateManager {
 
             this.stateChannelManagerContract
                 .postBlockCalldata(block.signedBlock, maxTimestamp)
-                .then((txResponse) => txResponse.wait())
+                .then(async (txResponse) => {
+                    const receipt = await txResponse.wait();
+                    this.log.gas("postBlockCalldata", receipt);
+                    return receipt;
+                })
                 .catch((error) => {
                     if (isCustomEvmError(error)) {
                         this.log.warn({
@@ -1083,7 +1087,8 @@ class StateManager {
                             ),
                             sameForkData.outboundMessageBlocks
                         );
-                    await txResponse.wait();
+                    const receipt = await txResponse.wait();
+                    this.log.gas("updateStateSnapshotSameFork", receipt);
                 } catch (error) {
                     if (isCustomEvmError(error)) {
                         this.log.error({
@@ -1163,7 +1168,8 @@ class StateManager {
                 });
                 const txResponse =
                     await this.stateChannelManagerContract.multicall(callData);
-                await txResponse.wait();
+                const receipt = await txResponse.wait();
+                this.log.gas("multicall", receipt);
             } catch (error) {
                 if (isCustomEvmError(error)) {
                     this.log.error({
@@ -1384,7 +1390,8 @@ class StateManager {
                             reduceData.encodedStateMachineState,
                             reduceData.inboundMessageBlocks
                         );
-                    await txResponse.wait();
+                    const receipt = await txResponse.wait();
+                    this.log.gas("reduceAndFinalize", receipt);
                 } catch (error) {
                     if (
                         isCustomEvmError(error) &&

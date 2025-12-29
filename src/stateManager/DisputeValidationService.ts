@@ -4,6 +4,7 @@ import { ethers } from "ethers";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Storage from "@/storage";
 import { isSubset, Logger } from "@/utils";
+import { StructuredLogger } from "@/utils/logging";
 import { Address, Signature } from "@/types/types";
 
 import DisputeFraudProofService from "./utils/DisputeFraudProofService";
@@ -24,10 +25,15 @@ export default class DisputeValidationService {
     private readonly disputeManager: DisputeManager;
     private readonly agreementManager: AgreementManager;
     private readonly logger: Logger;
+    private readonly log: StructuredLogger;
     constructor(private readonly stateManager: StateManager) {
         this.logger = stateManager.logger.child({
             component: "DisputeValidationService"
         });
+        this.log = new StructuredLogger(
+            this.logger as any,
+            "DisputeValidationService"
+        );
         this.storage = stateManager.storage;
         this.diamondStateMachine = stateManager.diamondStateMachine;
         this.stateChannelManagerContract =
@@ -213,7 +219,8 @@ export default class DisputeValidationService {
                         await this.stateChannelManagerContract.applyDisputeFraudProofs(
                             [disputeFraudProof]
                         );
-                    await txResponse.wait();
+                    const receipt = await txResponse.wait();
+                    this.log.gas("applyDisputeFraudProofs", receipt);
                 } catch (e) {
                     //TODO - interpret custom error
                     this.logger.error("Error applying dispute fraud proof:", {

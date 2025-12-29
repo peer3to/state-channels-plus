@@ -25,7 +25,10 @@ export enum LogEventType {
     REDUCTION_COMPLETED = "reduction.completed",
 
     // Snapshots
-    SNAPSHOT_POSTED = "snapshot.posted"
+    SNAPSHOT_POSTED = "snapshot.posted",
+
+    // Gas tracking
+    GAS_USED = "gas.used"
 }
 
 export interface LogEvent {

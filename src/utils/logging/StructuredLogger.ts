@@ -2,6 +2,7 @@ import winston from "winston";
 import { LogEventType } from "./LogEvents";
 import { randomBytes } from "crypto";
 import { Address, BlockHeight, ChannelId, ForkId } from "@/types/types";
+import { ContractTransactionReceipt } from "ethers";
 
 /**
  * Context provider function - automatically adds channel/peer/trace context
@@ -350,6 +351,29 @@ export class StructuredLogger {
             data: {
                 blockHash: blockHash.slice(0, 12),
                 ...data
+            }
+        });
+    }
+    gas(operation: string, receipt: ContractTransactionReceipt | null): void {
+        if (receipt === null) {
+            // Log without gas data if receipt is null
+            this.logEvent("info", {
+                event: LogEventType.GAS_USED,
+                message: `Gas: ${operation} (receipt unavailable)`,
+                data: {
+                    operation
+                }
+            });
+            return;
+        }
+
+        this.logEvent("info", {
+            event: LogEventType.GAS_USED,
+            message: `Gas: ${operation}`,
+            data: {
+                operation,
+                gasUsed: receipt.gasUsed.toString(), // Convert to string for JSON
+                txHash: receipt.hash
             }
         });
     }

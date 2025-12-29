@@ -203,7 +203,8 @@ class DisputeManager {
                 await this.stateChannelManagerContract.applyDisputeFraudProofs([
                     disputeFraudProof
                 ]);
-            txRespone.wait().then(() => {
+            txRespone.wait().then((receipt) => {
+                this.log.gas("applyDisputeFraudProofs", receipt);
                 this.log.debug({
                     message: "Dispute killed successfully",
                     data: {

@@ -1,5 +1,6 @@
 import winston from "winston";
 import { LoggingConfig, CrashUploadConfig, isBrowser } from "./LoggingConfig";
+import { LogEventType } from "./LogEvents";
 
 interface CompressionResult {
     blob: Blob;
@@ -106,6 +107,52 @@ function getMemoryTransport(logger: winston.Logger): {
 }
 
 /**
+ * Generate gas usage summary from logs
+ */
+function generateGasSummary(logs: any[]): string {
+    const gasLogs = logs.filter(
+        (log) =>
+            log.event === LogEventType.GAS_USED &&
+            log.data?.operation &&
+            log.data?.gasUsed
+    );
+
+    if (gasLogs.length === 0) {
+        return "No gas data collected";
+    }
+
+    const byOperation: Record<string, { count: number; total: bigint }> = {};
+    let totalGas = BigInt(0);
+
+    for (const log of gasLogs) {
+        const operation = log.data.operation;
+        const gas = BigInt(log.data.gasUsed);
+
+        if (!byOperation[operation]) {
+            byOperation[operation] = { count: 0, total: BigInt(0) };
+        }
+        byOperation[operation].count++;
+        byOperation[operation].total += gas;
+        totalGas += gas;
+    }
+
+    let summary = `\n=== GAS USAGE SUMMARY ===\n`;
+    summary += `Total transactions: ${gasLogs.length}\n`;
+    summary += `Total gas used: ${totalGas.toString()}\n\n`;
+
+    for (const [operation, stats] of Object.entries(byOperation)) {
+        const avg = stats.total / BigInt(stats.count);
+        summary += `${operation}:\n`;
+        summary += `  Count: ${stats.count}\n`;
+        summary += `  Total: ${stats.total.toString()}\n`;
+        summary += `  Average: ${avg.toString()}\n`;
+    }
+    summary += `========================\n`;
+
+    return summary;
+}
+
+/**
  * Crash handler state - tracks upload progress to prevent cascading uploads
  */
 class CrashHandlerState {
@@ -145,12 +192,16 @@ async function handleCrashEvent(
         // Get all stored logs from memory
         const logs = memoryTransport.getAllLogs();
 
+        // Generate gas summary
+        const gasSummary = generateGasSummary(logs);
+
         // Add the crash error as the last log entry
         logs.push({
             ts: Date.now(),
             level: "error",
             message: `Uncaught ${context}: ${error.message}`,
             component: "CrashHandler",
+            gasSummary,
             error: {
                 name: error.name,
                 message: error.message,
