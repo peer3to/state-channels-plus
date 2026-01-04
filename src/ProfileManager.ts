@@ -47,7 +47,12 @@ class ProfileManager {
         );
         if (!profile) return;
         const oldTransport = profile.getTransport();
-        if (oldTransport) this.removeTransport(oldTransport);
+        if (oldTransport) {
+            setTimeout(() => {
+                // allow agreementTime for everyone to update transport and start using new one, before closing this one
+                this.removeTransport(oldTransport);
+            }, oldTransport.p2pManager.stateManager.timeConfig.agreementTime * 1000);
+        }
 
         // Ensure the new transport carries the peer identity.
         newTransport.peerAddress = this.normalizeAddress(profileAddress);

@@ -1,4 +1,4 @@
-import { ARpcService } from "@/rpc";
+import ARpcService from "@/rpc/ARpcService";
 import {
     Address,
     ChannelId,

@@ -31,7 +31,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
-import { DEBUG_DISPUTE_HANDLER } from "@/utils/config";
+import { config } from "@/utils/config";
 
 export type ConstructDisputeResult = {
     dispute: DisputeStruct;
@@ -47,7 +47,7 @@ class DisputeManager {
     stateChannelManagerContract: StateChannelManagerProxy;
     channelId: ChannelId;
     p2pEventHooks: P2pEventHooks;
-    self = DEBUG_DISPUTE_HANDLER ? DebugProxy.createProxy(this) : this;
+    self = config.DEBUG_DISPUTE_HANDLER ? DebugProxy.createProxy(this) : this;
     storage: Storage;
     diamondStateMachine: ADiamondStateMachine;
     mutex: Mutex = new Mutex();
@@ -133,7 +133,8 @@ class DisputeManager {
                     );
                 } else {
                     await this.stateChannelManagerContract.uploadDispute(
-                        disputeConfirmation
+                        disputeConfirmation,
+                        { gasLimit: 5000000 }
                     );
                 }
             }

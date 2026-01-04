@@ -3,7 +3,7 @@ import { SignedJoinChannelStruct } from "@typechain-types/contracts/V1/types/Dat
 import type P2PManager from "@/P2PManager";
 import { DebugProxy } from "@/utils";
 
-import { DEBUG_RPC } from "@/utils/config";
+import { config } from "@/utils/config";
 import { Signature } from "@/types/types";
 import {
     DHTDiscoveryService,
@@ -26,7 +26,7 @@ class MainRpcService {
     p2pManager: P2PManager;
     // rpcProxy = RpcProxy.createProxy(this);
 
-    self = DEBUG_RPC ? DebugProxy.createProxy(this) : this;
+    self = config.DEBUG_RPC ? DebugProxy.createProxy(this) : this;
 
     //RPC Services
     initHandshakeService: InitHandshakeService;

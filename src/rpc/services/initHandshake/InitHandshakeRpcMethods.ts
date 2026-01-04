@@ -4,8 +4,6 @@ import { ATransport, TransportType } from "@/transport";
 import { Hash, Signature, Timestamp } from "@/types/types";
 import { ethers } from "ethers";
 import InitHandshakeService from "./InitHandshakeService";
-import PeerProfile from "@/PeerProfile";
-import { Status } from "@/types";
 
 class InitHandshakeRpcMethods extends ARpcMethods {
     service: InitHandshakeService;
@@ -40,6 +38,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
                 this.p2pManager.preferredTransport
             )
             .sendOne(this.senderTransport);
+        this.service.ensureHandshakeAckTimeoutScheduled(this.senderTransport);
     }
 
     public async onInitHandshakeResponse(
@@ -86,23 +85,11 @@ class InitHandshakeRpcMethods extends ARpcMethods {
 
         const normalizedAddress = signerAddress.toLowerCase();
 
-        this.senderTransport.peerAddress = normalizedAddress;
+        this.service.recordVerifiedPeerAddress(
+            this.senderTransport,
+            normalizedAddress
+        );
 
-        let profile =
-            this.p2pManager.profileManager.getProfileByEvmAddress(
-                signerAddress
-            );
-        if (!profile) {
-            profile = new PeerProfile(this.senderTransport, signerAddress);
-            this.p2pManager.profileManager.registerProfile(profile);
-        } else {
-            this.p2pManager.profileManager.updateTransport(
-                profile.getEvmAddress().toString(),
-                this.senderTransport
-            );
-        }
-
-        this.service.ensureHandshakeAckTimeoutScheduled(this.senderTransport);
         this.service.setRemotePreferredTransport(
             this.senderTransport,
             preferredTransport
@@ -123,6 +110,9 @@ class InitHandshakeRpcMethods extends ARpcMethods {
         //         this.p2pManager.p2pSigner.signedJc.signature
         //     )
         //     .broadcast();
+
+        // Ensure we have a timeout path in case ack gets lost.
+        this.service.ensureHandshakeAckTimeoutScheduled(this.senderTransport);
     }
 
     /**

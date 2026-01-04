@@ -5,12 +5,10 @@ import SpectateService, {
     SyncPayload,
     SyncRequest
 } from "./SpectateService";
-import { ChannelId, Timestamp } from "@/types/types";
+import { ChannelId } from "@/types/types";
 import Clock from "@/Clock";
 import { Codec, hash, Type } from "@/utils";
 import { Block } from "@/models";
-import { Status } from "@/types";
-import { BlockStruct } from "@/index";
 
 class SpectateServiceRpcMethods extends ARpcMethods {
     service: SpectateService;

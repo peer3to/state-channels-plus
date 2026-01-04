@@ -1,92 +1,98 @@
 import { ethers } from "hardhat";
+import fs from "fs";
 import path from "path";
-import { Wallet, NonceManager, Signer } from "ethers";
-import { DeployUtils, config } from "@peer3/state-channels-plus";
+import { deploy, getTimeConfig } from "@peer3/state-channels-plus";
 import {
     TicTacToeStateChannelManagerProxy,
-    TicTacToeStateMachine
-} from "../../../typechain-types";
+    TicTacToeStateMachine,
+    TicTacToeConsumerFacet
+} from "../typechain-types";
+import { Signer } from "ethers";
 
-const getRandomSigner = () => {
-    let randomSinger: Signer = Wallet.createRandom(
-        new ethers.JsonRpcProvider(config.PROVIDER_URL)
-    );
+const DEFAULT_GAS_LIMIT = 500000;
 
-    randomSinger = new NonceManager(randomSinger);
-    return randomSinger;
+const LOCALHOST_RPC_URL = process.env.PROVIDER_URL ?? "http://localhost:8545";
+
+const getLocalhostSigners = async (): Promise<Signer> => {
+    const provider = new ethers.JsonRpcProvider(LOCALHOST_RPC_URL);
+
+    // Random signer: useful for the SDK demo flow where gas price is 0.
+    const randomSigner = ethers.Wallet.createRandom(provider);
+
+    // NonceManager prevents tx replacement when multiple sends happen concurrently.
+    const managedSigner = new ethers.NonceManager(randomSigner);
+
+    return managedSigner as unknown as Signer;
 };
+
 export async function deployTicTacToe(): Promise<
     [TicTacToeStateChannelManagerProxy, TicTacToeStateMachine]
 > {
-    let randomSinger = getRandomSigner();
-    let contractsJSONpath = path.resolve(__dirname, "../contracts.json");
-    const deployUtils = new DeployUtils(contractsJSONpath);
+    const deployer = await getLocalhostSigners();
+    console.log("Deploying to", LOCALHOST_RPC_URL);
+    console.log("Deployer:", await deployer.getAddress());
 
-    console.log("Provider url:", config.PROVIDER_URL);
+    const exampleContractsJsonPath = path.resolve(
+        __dirname,
+        "../contracts.json"
+    );
+    const viteContractsJsonPath = path.resolve(
+        __dirname,
+        "../tic-tac-toe-vite/src/contracts.json"
+    );
 
-    //Deploy library
-    let stateChannelUtilLibraryFactory = await ethers.getContractFactory(
-        "StateChannelUtilLibrary"
+    // State machine logic (app-specific)
+    const ticTacToeSmFactory = await ethers.getContractFactory(
+        "TicTacToeStateMachine",
+        deployer
     );
-    stateChannelUtilLibraryFactory =
-        stateChannelUtilLibraryFactory.connect(randomSinger);
-    let stateChannelUtilLibrary = await deployUtils.deployAsync(
-        stateChannelUtilLibraryFactory,
-        "StateChannelUtilLibrary"
-    );
-    let libraryAddress = await stateChannelUtilLibrary.getAddress();
-    console.log("Deployed StateChannelUtilLibrary at ", libraryAddress);
-
-    //Deploy DisputeManagerFacet
-    let disputeManagerFacetFactory = await ethers.getContractFactory(
-        "DisputeManagerFacet",
-        { libraries: { StateChannelUtilLibrary: libraryAddress } }
-    );
-    disputeManagerFacetFactory =
-        disputeManagerFacetFactory.connect(randomSinger);
-    let disputeManagerFacet = await deployUtils.deployAsync(
-        disputeManagerFacetFactory,
-        "DisputeManagerFacet"
-    );
-    let disputeManagerFacetAddress = await disputeManagerFacet.getAddress();
-    console.log("Deployed DisputeManagerFacet at ", disputeManagerFacetAddress);
-
-    //State machine logic
-    let TicTacToeSmFactory = await ethers.getContractFactory(
-        "TicTacToeStateMachine"
-    );
-    TicTacToeSmFactory = TicTacToeSmFactory.connect(randomSinger);
-    // let mathContactInstance = await mathSmFactory.deploy();
-    let TicTacToeContactInstance = await deployUtils.deployAsync(
-        TicTacToeSmFactory,
-        "TicTacToeStateMachine"
-    );
+    const ticTacToeContactInstance = (await ticTacToeSmFactory.deploy(
+        DEFAULT_GAS_LIMIT
+    )) as unknown as TicTacToeStateMachine;
+    await ticTacToeContactInstance.waitForDeployment();
     console.log(
         "Deployed TicTacToeStateMachine at ",
-        await TicTacToeContactInstance.getAddress()
+        await ticTacToeContactInstance.getAddress()
     );
 
-    //Deploy MathStateChannelManager
-    let TicTacToeSmcFactory = await ethers.getContractFactory(
-        "TicTacToeStateChannelManagerProxy",
-        { libraries: { StateChannelUtilLibrary: libraryAddress } }
+    // Consumer facet (app-specific on-chain logic)
+    const ticTacToeConsumerFacetFactory = await ethers.getContractFactory(
+        "TicTacToeConsumerFacet",
+        deployer
     );
-    TicTacToeSmcFactory = TicTacToeSmcFactory.connect(randomSinger);
-    // let mathStateChannelContactInstance = await mathSmcFactory.deploy(
-    //     await mathContactInstance.getAddress()
-    // );
+    const ticTacToeConsumerFacet =
+        (await ticTacToeConsumerFacetFactory.deploy()) as unknown as TicTacToeConsumerFacet;
+    await ticTacToeConsumerFacet.waitForDeployment();
+    const ticTacToeConsumerFacetAddress =
+        await ticTacToeConsumerFacet.getAddress();
+    console.log(
+        "Deployed TicTacToeConsumerFacet at ",
+        ticTacToeConsumerFacetAddress
+    );
 
-    let TicTacToeStateChannelContactInstance = await deployUtils.deployAsync(
-        TicTacToeSmcFactory,
-        "TicTacToeStateChannelManagerProxy",
-        [
-            await TicTacToeContactInstance.getAddress(),
-            disputeManagerFacetAddress
-        ]
+    // Deploy core facets + StateChannelManagerProxy via the SDK helper.
+    const timeConfig = getTimeConfig();
+    const sdkProxy = await deploy(
+        await ticTacToeContactInstance.getAddress(),
+        ticTacToeConsumerFacetAddress,
+        deployer as any,
+        {
+            p2pTime: 5,
+            agreementTime: 3,
+            chainFallbackTime: 3,
+            evidenceTime: 5
+        }
     );
+
+    // Use the example project's ethers instance for typing + ABI formatting.
+    const ticTacToeStateChannelContactInstance = (await ethers.getContractAt(
+        "TicTacToeStateChannelManagerProxy",
+        sdkProxy.address,
+        deployer
+    )) as unknown as TicTacToeStateChannelManagerProxy;
     console.log(
         "Deployed TicTacToeStateChannelManagerProxy at ",
-        await TicTacToeStateChannelContactInstance.getAddress()
+        await ticTacToeStateChannelContactInstance.getAddress()
     );
     // await new Promise((resolve) => setTimeout(resolve, 20000));
     // console.log("This is needed so the block is mined and the contract is deployed");
@@ -94,7 +100,35 @@ export async function deployTicTacToe(): Promise<
     //     "TIME - ",
     //     await TicTacToeStateChannelContactInstance.getAllTimes()
     // );
-    return [TicTacToeStateChannelContactInstance, TicTacToeContactInstance];
+    const proxyFactory = await ethers.getContractFactory(
+        "TicTacToeStateChannelManagerProxy"
+    );
+
+    const contractsJson = {
+        TicTacToeStateMachine: {
+            address: await ticTacToeContactInstance.getAddress(),
+            abi: ticTacToeSmFactory.interface.formatJson()
+        },
+        TicTacToeConsumerFacet: {
+            address: ticTacToeConsumerFacetAddress,
+            abi: ticTacToeConsumerFacetFactory.interface.formatJson()
+        },
+        TicTacToeStateChannelManagerProxy: {
+            address: await ticTacToeStateChannelContactInstance.getAddress(),
+            abi: proxyFactory.interface.formatJson()
+        }
+    };
+
+    fs.writeFileSync(
+        exampleContractsJsonPath,
+        JSON.stringify(contractsJson, null, 2)
+    );
+    fs.writeFileSync(
+        viteContractsJsonPath,
+        JSON.stringify(contractsJson, null, 2)
+    );
+
+    return [ticTacToeStateChannelContactInstance, ticTacToeContactInstance];
 }
 
 deployTicTacToe()

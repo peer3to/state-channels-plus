@@ -34,9 +34,14 @@ type DiscoveryInfo = {
  *    - Connects directly to other Peers upon receiving announcements.
  */
 export class LocalDiscoveryServer {
-    private static logger: Logger = createLogger({
-        component: "LocalDiscovery"
-    });
+    private static _logger?: Logger;
+
+    private static get logger(): Logger {
+        if (!this._logger) {
+            this._logger = createLogger({ component: "LocalDiscovery" });
+        }
+        return this._logger;
+    }
     // --- Registry State ---
     private static discoveryServer: WebSocketServer | null = null;
     private static discoveryPort: number | null = null;

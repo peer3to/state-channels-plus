@@ -1,4 +1,5 @@
-import { ARpcService, MainRpcService } from "@/rpc";
+import ARpcService from "@/rpc/ARpcService";
+import MainRpcService from "@/rpc/MainRpcService";
 import TESTJoinChannelRpcMethods from "./TESTJoinChannelRpcMethods";
 import { ATransport } from "@/transport";
 import type P2PManager from "@/P2PManager";

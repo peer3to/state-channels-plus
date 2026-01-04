@@ -1,8 +1,6 @@
-import React, { useState, useEffect } from "react";
-import Board from "./Board";
+import React, { useState } from "react";
 import TempSingleton from "../stateChannel/TempSingleton";
 import Account from "./Account";
-import { EvmUtils } from "@peer3/state-channels-plus";
 
 interface LobbyProps {
     gameId: string;
@@ -18,18 +16,18 @@ const Lobby: React.FC<LobbyProps> = ({
     const [openingChannel, setOpeningChannel] = useState<boolean>(false); // Track if the game has started
 
     const handleStartGame = async () => {
-        let jc = TempSingleton.getJoinChannel();
-        let signedJoinChannel = await EvmUtils.signJoinChannel(
-            jc!,
-            TempSingleton.signer
-        );
-        TempSingleton.p2pSigner?.p2pManager.rpcProxy
-            .onSignJoinChannelTEST(
-                signedJoinChannel.encodedJoinChannel as string,
-                signedJoinChannel.signature as string
-            )
-            .broadcast();
+        if (!opponentAddress) return;
+
         setOpeningChannel(true);
+
+        try {
+            await TempSingleton.p2pSigner?.p2pManager.localRpc.openChannelNegotiationService.beginNegotiation(
+                opponentAddress
+            );
+        } catch (e) {
+            console.error("beginNegotiation failed", e);
+            setOpeningChannel(false);
+        }
     };
     const handleLeaveGame = async () => {
         TempSingleton.p2pDispose();

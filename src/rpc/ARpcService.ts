@@ -1,10 +1,11 @@
 import Rpc from "./Rpc";
-import { ATransport } from "@/transport";
+import type ATransport from "@/transport/ATransport";
 import ARpcMethods from "./ARpcMethods";
 import { hasMethod } from "@/utils/ObjectChecks";
 import type P2PManager from "@/P2PManager";
 import { Logger } from "@/utils";
-import { AGuard, runGuards } from "@/rpc/guards";
+import type { AGuard } from "@/rpc/guards/AGuard";
+import { runGuards } from "@/rpc/guards/runGuards";
 
 abstract class ARpcService<
     R extends ARpcMethods<TP2PManager>,

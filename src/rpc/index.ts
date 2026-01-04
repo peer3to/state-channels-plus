@@ -1,8 +1,11 @@
-export { default as MainRpcService } from "./MainRpcService";
-export { default as ARpcService } from "./ARpcService";
+import ARpcService from "./ARpcService";
 
-export {
-    defineRpcServices,
-    type RpcServiceFactoryMap,
-    type RpcServiceInstances
-} from "./registry";
+// Export the base class first to avoid CommonJS circular-dependency
+// initialization issues (services import from "../../../rpc").
+export { ARpcService };
+
+import MainRpcService from "./MainRpcService";
+
+export { MainRpcService };
+export { defineRpcServices } from "./registry";
+export type { RpcServiceFactoryMap, RpcServiceInstances } from "./registry";

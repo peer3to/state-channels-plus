@@ -1,4 +1,4 @@
-import { ARpcService } from "@/rpc";
+import ARpcService from "@/rpc/ARpcService";
 import type P2PManager from "@/P2PManager";
 import { ATransport } from "@/transport";
 import DHTDiscoveryRpcMethods from "./DHTDiscoveryRpcMethods";

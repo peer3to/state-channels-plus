@@ -185,7 +185,7 @@ export class PeerTestHarness<
     public channelId!: ChannelId;
     private options!: Required<HarnessOptions<TFactories>>;
     public activeForkId?: ForkId;
-    private harnessConfig!: Config;
+    private harnessConfig!: Partial<Config>;
     private logger: Logger;
     private syncCoordinator!: SyncCoordinator;
     private autoTimeAdvanceInterval?: NodeJS.Timeout;
@@ -201,6 +201,7 @@ export class PeerTestHarness<
                 return Number(this);
             };
         }
+        createConfig(); // Ensure config is initialized -> load env for tests
         this.logger = createLogger({ component: "TestHarness" });
         this.connectionBarrier = new EventBarrier(this.logger);
         this.eventCountsBarrier = new EventBarrier(this.logger);
@@ -213,10 +214,10 @@ export class PeerTestHarness<
         if (numPeers < 2 || numPeers > 10) {
             throw new Error("Number of peers must be between 2 and 10");
         }
-        this.harnessConfig = createConfig({
+        this.harnessConfig = {
             ...testConfig,
             ...(options?.configOverrides || {})
-        });
+        };
         this.options = {
             timeConfig: options?.timeConfig || {},
             channelId:
@@ -372,11 +373,11 @@ export class PeerTestHarness<
         };
 
         const hooks: P2pEventHooks = {
-            onConnection: (addr: Address) => {
+            onConnection: (addr: Address, isChannelOpened: boolean) => {
                 PeerLogger.verbose(`Connection established with ${addr}`, {
                     component: "P2pEventHooks"
                 });
-                eventSpies.onConnection?.(addr);
+                eventSpies.onConnection?.(addr, isChannelOpened);
                 this.connectionBarrier.signal();
                 this.eventCountsBarrier.signal();
             },
@@ -439,13 +440,16 @@ export class PeerTestHarness<
             this.sharedDeployTx,
             this.channelManager,
             mathInstance,
-            hooks,
-            index, // Pass peer index for logging
-            PeerLogger,
-            this.options.rpcServiceFactories
+            {
+                peerId: index,
+                peerLogger: PeerLogger,
+                p2pEventHooks: hooks,
+                rpcServiceFactories: this.options.rpcServiceFactories,
+                config: this.harnessConfig
+            }
         );
 
-        const peer: TestPeer<any, TFactories> = {
+        const peer: TestPeer<T, TFactories> = {
             index,
             signer,
             address,
@@ -1124,7 +1128,7 @@ export class PeerTestHarness<
         return this.peers.map((p) => p.address);
     }
 
-    getConfig(): Config {
+    getConfig(): Partial<Config> {
         return this.harnessConfig;
     }
 

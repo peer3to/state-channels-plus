@@ -12,7 +12,7 @@ Complete everything in the [README](../README.md) of the parent directory.
 
 In the parent directory, after completeing all steps there will be a `typechain-types` and `artifacts` directory and a `contracts.json` file. These are needed for the user interface to interact with the contracts. </b>
 
-Copy the `typechain-types` directory to a place where it's accesable by the user interface, the example requires them in the [stateChannel](./src/stateChannel) directory.
+Hardhat is configured to emit TypeChain output directly into [src/stateChannel/typechain-types](./src/stateChannel/typechain-types) when you run `hardhat compile` in the parent directory.
 
 `TicTacToeStateMachine.json` (or the appropriate artifact) needs to be copied from `artifacts` to the [src](./src) directory. <b style="color: yellow;"> This is done automatically during the build process. </b>
 
@@ -22,21 +22,31 @@ Copy the `typechain-types` directory to a place where it's accesable by the user
 
 ## Installation
 ```shell
-yarn install-all
+# Recommended (fast iteration): use pnpm + local link
+# From this repo root, first build (or watch-build) the SDK so dist/ exists:
+#   pnpm -w run dev:tsc
+# Then, in this folder:
+pnpm install
+
+# Optional: install hyperswarm deps used by the Pear build
+cd hyperswarm && pnpm install && cd ..
+
+# Legacy
+# pnpm -w run install-all
 ```
 
 ## Build
 
 ```shell
-yarn build:browser
+pnpm run build:browser
 ```
 This will generate the dist directory.
 
 ## Serve the UI
 Use a static server to serve the UI. For example, you can use `http-server`.
 ```shell
-npm install -g http-server
+pnpm add -g http-server
 ```
 ```shell
-cd dist && https-server
+cd dist && http-server
 ```

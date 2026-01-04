@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
-import { ARpcService, MainRpcService } from "@/rpc";
+import ARpcService from "@/rpc/ARpcService";
+import MainRpcService from "@/rpc/MainRpcService";
 import Clock from "@/Clock";
 
 import { TransportType } from "@/transport/TransportType";
@@ -9,6 +10,7 @@ import { Hash, Signature, Timestamp } from "@/types/types";
 import InitHandshakeRpcMethods from "./InitHandshakeRpcMethods";
 import type P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
+import EventBarrier from "@/utils/EventBarrier";
 import { Status } from "@/types";
 
 type ConnectionChallenge = {
@@ -27,6 +29,11 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
     private ackTimeoutScheduled: WeakSet<ATransport> = new WeakSet();
     private remotePreferredTransportMap: WeakMap<ATransport, TransportType> =
         new WeakMap();
+
+    private verifiedPeerAddressByTransport: WeakMap<ATransport, string> =
+        new WeakMap();
+
+    private readonly handshakeBarrier: EventBarrier;
     constructor(p2pManager: P2PManager) {
         super(
             p2pManager,
@@ -35,6 +42,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
             })
         );
         this.timeoutManager = p2pManager.stateManager.timeoutManager;
+        this.handshakeBarrier = new EventBarrier(this.logger);
     }
 
     public createRPCMethods(transport: ATransport): InitHandshakeRpcMethods {
@@ -74,6 +82,49 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         return !this.getChallenge(transport);
     }
 
+    public isNegotiating(transport: ATransport): boolean {
+        return (
+            this.mapTransportToChallenge.has(transport) ||
+            this.remotePreferredTransportMap.has(transport) ||
+            this.verifiedPeerAddressByTransport.has(transport) ||
+            this.didReceiveAck(transport)
+        );
+    }
+
+    public recordVerifiedPeerAddress(
+        transport: ATransport,
+        peerAddress: string
+    ) {
+        const normalized = peerAddress.toLowerCase();
+        this.verifiedPeerAddressByTransport.set(transport, normalized);
+        transport.peerAddress = normalized;
+    }
+
+    public isHandshakeCompletedForTransport(transport: ATransport): boolean {
+        const profile =
+            this.p2pManager.profileManager.getProfileByTransport(transport);
+        return !!profile && profile.getIsHandshakeCompleted();
+    }
+
+    public async waitForHandshakeCompleted(
+        transport: ATransport,
+        timeoutMs: number
+    ): Promise<boolean> {
+        try {
+            await this.handshakeBarrier.waitFor(
+                () => this.isHandshakeCompletedForTransport(transport),
+                {
+                    timeoutMs,
+                    timeoutMessage: "Handshake did not complete in time",
+                    label: "InitHandshakeService.waitForHandshakeCompleted"
+                }
+            );
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
     public markAcked(transport: ATransport) {
         this.ackedTransports.add(transport);
     }
@@ -98,16 +149,25 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
 
         this.timeoutManager.scheduleTask(
             () => {
-                // If we already saw an ack on this transport, we're good.
                 if (this.didReceiveAck(transport)) return;
+                this.logger.warn(
+                    `Handshake ack not received in time from transport ${TransportType[transport.transportType]}, disconnecting.`
+                );
+                // Handshake negotiation started but never finalized.
+                // If we have an authenticated peer address, blacklist by address;
+                // otherwise just disconnect the transport.
+                const peerAddress =
+                    transport.peerAddress ||
+                    this.verifiedPeerAddressByTransport.get(transport);
 
-                const profile =
-                    this.p2pManager.profileManager.getProfileByTransport(
-                        transport
+                if (peerAddress) {
+                    this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                        peerAddress
                     );
-                if (!profile) return;
-                if (profile.getIsHandshakeCompleted()) return;
-                this.p2pManager.disconnectAndBlacklistPeer(transport);
+                    return;
+                }
+
+                this.p2pManager.disconnectConnection(transport);
             },
             this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
             "InitHandshakeService - handshake ack timeout"
@@ -115,21 +175,40 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
     }
 
     public maybeFinalizeHandshakeOnceFromTransport(transport: ATransport) {
-        const profile =
-            this.p2pManager.profileManager.getProfileByTransport(transport);
-        if (!profile) return;
+        const verifiedPeerAddress =
+            this.verifiedPeerAddressByTransport.get(transport);
+        if (!verifiedPeerAddress) return;
         if (!this.didReceiveAck(transport)) return;
 
         const remotePreferred = this.remotePreferredTransportMap.get(transport);
         if (remotePreferred === undefined) return;
 
-        if (profile.getIsHandshakeCompleted()) return;
+        // Only create/update the profile once the handshake has fully completed.
+        let profile =
+            this.p2pManager.profileManager.getProfileByEvmAddress(
+                verifiedPeerAddress
+            );
+        if (!profile) {
+            profile = new PeerProfile(transport, verifiedPeerAddress);
+            this.p2pManager.profileManager.registerProfile(profile);
+        } else {
+            this.p2pManager.profileManager.updateTransport(
+                profile.getEvmAddress().toString(),
+                transport
+            );
+        }
+
+        // Ensure the transport always carries the canonical peer address.
+        transport.peerAddress = verifiedPeerAddress;
 
         profile.setIsHandshakeCompleted(true);
 
-        const peerAddress = profile.getEvmAddress().toString().toLowerCase();
+        const completedPeerAddress = profile
+            .getEvmAddress()
+            .toString()
+            .toLowerCase();
         this.logger.debug(
-            `Handshake completed with peer ${peerAddress} over transport ${TransportType[transport.transportType]}`
+            `Handshake completed with peer ${completedPeerAddress} over transport ${TransportType[transport.transportType]}`
         );
 
         // Only treat the transport as an "open connection" after handshake is final.
@@ -143,7 +222,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
             (remotePreferred === TransportType.WEBRTC ||
                 this.p2pManager.preferredTransport === TransportType.WEBRTC) &&
             transport.transportType != TransportType.WEBRTC &&
-            localAddress < peerAddress;
+            localAddress < completedPeerAddress;
 
         if (shouldInitiateWebRTC) {
             this.p2pManager.localRpc.webRTCSetupService.initiateWebRTC(
@@ -152,17 +231,24 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         }
 
         const stateManager = this.p2pManager.stateManager;
-        if (stateManager.getStatus() === Status.OPENED) {
+        const isChannelOpened = stateManager.getStatus() === Status.OPENED;
+        if (isChannelOpened) {
             this.logger.debug(
-                `Initiating sync after handshake with peer ${peerAddress}`
+                `Initiating sync after handshake with peer ${completedPeerAddress}`
             );
             this.p2pManager.localRpc.spectateService.sync(
-                peerAddress,
+                completedPeerAddress,
                 stateManager.getChannelId()
             );
         }
 
-        this.p2pManager.stateManager.p2pEventHooks.onConnection?.(peerAddress);
+        this.p2pManager.stateManager.p2pEventHooks.onConnection?.(
+            completedPeerAddress,
+            isChannelOpened
+        );
+
+        // Allow guards to return early once handshake completes.
+        void this.handshakeBarrier.signal();
     }
 }
 

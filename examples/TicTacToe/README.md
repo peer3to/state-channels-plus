@@ -6,15 +6,15 @@ The [contracts](./contracts/) hold the state machine logic that is ultimately en
 The [user interface](./tic-tac-toe-vite/) is built with React and utilizes the TypeScript portion of the SDK. 
 
 ## Installation
-<b style="color: yellow;">Note: Examples within this repository use the current version of the SDK(this repository) and not the remote package available on npm. This requires to install dependencies and build the SDK locally. Please make sure you've run `yarn && yarn build` in the root directory of this repository, before proceeding. </b>
+<b style="color: yellow;">Note: Examples within this repository use the current version of the SDK(this repository) and not the remote package available on npm. This requires to install dependencies and build the SDK locally. Please make sure you've run `pnpm install && pnpm build` in the root directory of this repository, before proceeding. </b>
 
 Continue with installation of local dependencies:
 ```shell
-yarn
+pnpm install
 ```
 ## Compile contracts
 ```shell
-yarn hardhat compile
+pnpm exec hardhat compile
 ```
 This will generate <b>typechain-types</b> and <b>artifacts</b> directories which contain typescript types, contract ABIs and bytecodes needed for deployment and interaction.
 ## EVM testnet
@@ -26,14 +26,14 @@ npm install -g ganache
 ```
 Run a ganache node locally with gas price set to 0, the berlin hardfork, and block time set to 2 seconds:
 ```shell
-ganache -g 0 --chain.hardfork 'berlin' -b 2
+ganache -g 0 -k 'berlin' -b 2 -h 0.0.0.0 --chain.allowUnlimitedContractSize true
 ```
 This will run a node on http://localhost:8545
 
 ## Deploy contracts
 To deploy to a custom network, add a .env file and define PROVIDER_URL (look at .env.example). Default network: http://localhost:8545
 ```shell
-yarn hardhat run scripts/deployTicTacToeContractsProxy.ts
+pnpm exec hardhat run scripts/deployTicTacToeContractsProxy.ts
 ```
 Contracts should be deployed and a contracts.json file generated.
 This file contains the ABIs and contract addresses that are used by the user interface.

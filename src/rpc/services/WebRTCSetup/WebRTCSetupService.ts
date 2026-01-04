@@ -1,4 +1,5 @@
-import { ARpcService, MainRpcService } from "@/rpc";
+import ARpcService from "@/rpc/ARpcService";
+import MainRpcService from "@/rpc/MainRpcService";
 //@ts-ignore
 import { RTCPeerConnection } from "get-webrtc";
 import WebRTCTransport from "@/transport/WebRTCTransport";
@@ -35,13 +36,12 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
                 channel,
                 this.p2pManager
             );
-
-            const adr =
-                this.p2pManager.profileManager.getProfileByTransport(
-                    transport
-                )?.evmAddress;
+            const profileManager = this.p2pManager.profileManager;
+            let adr =
+                profileManager.getProfileByTransport(transport)?.evmAddress;
             if (!adr)
                 return this.logger.error("initiateWebRTC - no EVM address");
+            adr = profileManager.normalizeEvmAddress(adr);
 
             // Handle ICE candidates
             connection.onicecandidate = (event: any) => {
@@ -55,7 +55,7 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
 
             const offer = await connection.createOffer();
             connection.setLocalDescription(offer);
-            this.connectionMap.set(adr.toString(), connection);
+            this.connectionMap.set(adr, connection);
             const serializedOffer = JSON.stringify(offer);
             this.remoteRpc.webRTCSetupService
                 .onOfferWebRTC(serializedOffer)

@@ -17,7 +17,9 @@ typechain-types
 ./wake
 
 .nyc_output
+
 peer3.config.json
+
 
 # foundry stuff
 lib

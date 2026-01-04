@@ -6,6 +6,7 @@ import type P2PManager from "@/P2PManager";
 import { HolepunchTransport, TransportType } from "@/transport";
 import { Buffer } from "buffer";
 import HolepunchRelay from "@/HolepunchRelay";
+import { config } from "@/utils/config";
 
 class Holepunch {
     swarm: any;
@@ -31,10 +32,7 @@ class Holepunch {
         if (typeof window != "undefined") {
             console.log("window.Hyperswarm");
             p2pManager.preferredTransport = TransportType.WEBRTC;
-            const relayerUrls = [
-                "wss://sigma8solution.com/dht-relay/",
-                "wss://dht1-relay.leet.ar:49443"
-            ];
+            const relayerUrls = config.HOLEPUNCH_RELAYER_URLS;
             const relayerUpdateCallback = () => {
                 const swarm = HolepunchRelay.getInstance().getSwarm();
                 // console.log("Holepunch - callback - swarm", swarm);
