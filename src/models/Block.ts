@@ -139,7 +139,9 @@ export default class Block {
         this._onChainTimestamp = onChainTimestamp;
     }
     get author() {
-        return this.block.transaction.header.participant as Address;
+        return ethers.getAddress(
+            this.block.transaction.header.participant as string
+        ) as Address;
     }
 
     get channelId() {
@@ -227,12 +229,16 @@ export default class Block {
     }
 
     signatureToAddress(signature: Signature): Address {
-        return ethers.verifyMessage(ethers.getBytes(this.hash), signature);
+        return ethers.verifyMessage(
+            ethers.getBytes(this.hash),
+            signature
+        ) as Address;
     }
 
     findSignature(participant: Address): Signature | undefined {
+        const expected = ethers.getAddress(participant as string) as Address;
         for (const sig of this.allSignatures) {
-            if (this.signatureToAddress(sig) === participant) {
+            if (this.signatureToAddress(sig) === expected) {
                 return sig;
             }
         }
@@ -240,14 +246,22 @@ export default class Block {
     }
 
     didEveryoneSign(participants: Address[] | Set<Address>): boolean {
-        const participantsSet =
+        const rawSet =
             participants instanceof Set ? participants : new Set(participants);
+        const participantsSet = new Set<Address>();
+        for (const participant of rawSet) {
+            participantsSet.add(
+                ethers.getAddress(participant as string) as Address
+            );
+        }
         if (participantsSet.size === 0) return false;
         return isSubset(participantsSet, this.allSignerAddresses);
     }
 
     didSign(participant: Address): boolean {
-        return this.allSignerAddresses.has(participant);
+        return this.allSignerAddresses.has(
+            ethers.getAddress(participant as string) as Address
+        );
     }
 
     sign(signer: Signer): Promise<Signature> {

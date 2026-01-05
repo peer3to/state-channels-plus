@@ -1,12 +1,10 @@
 import { ethers } from "ethers";
 import ARpcService from "@/rpc/ARpcService";
-import MainRpcService from "@/rpc/MainRpcService";
 import Clock from "@/Clock";
 
 import { TransportType } from "@/transport/TransportType";
 import ATransport from "@/transport/ATransport";
 import PeerProfile from "@/PeerProfile";
-import { Hash, Signature, Timestamp } from "@/types/types";
 import InitHandshakeRpcMethods from "./InitHandshakeRpcMethods";
 import type P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
@@ -95,9 +93,10 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         transport: ATransport,
         peerAddress: string
     ) {
-        const normalized = peerAddress.toLowerCase();
-        this.verifiedPeerAddressByTransport.set(transport, normalized);
-        transport.peerAddress = normalized;
+        // Boundary: peerAddress may come from non-ethers sources; canonicalize once.
+        const checksummed = ethers.getAddress(peerAddress);
+        this.verifiedPeerAddressByTransport.set(transport, checksummed);
+        transport.peerAddress = checksummed;
     }
 
     public isHandshakeCompletedForTransport(transport: ATransport): boolean {
@@ -203,10 +202,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
 
         profile.setIsHandshakeCompleted(true);
 
-        const completedPeerAddress = profile
-            .getEvmAddress()
-            .toString()
-            .toLowerCase();
+        const completedPeerAddress = profile.getEvmAddress().toString();
         this.logger.debug(
             `Handshake completed with peer ${completedPeerAddress} over transport ${TransportType[transport.transportType]}`
         );
@@ -214,9 +210,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         // Only treat the transport as an "open connection" after handshake is final.
         this.p2pManager.addConnection(transport);
 
-        const localAddress = this.p2pManager.p2pSigner.signerAddress
-            .toString()
-            .toLowerCase();
+        const localAddress = this.p2pManager.p2pSigner.signerAddress.toString();
 
         const shouldInitiateWebRTC =
             (remotePreferred === TransportType.WEBRTC ||

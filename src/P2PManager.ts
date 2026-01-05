@@ -198,14 +198,13 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
     /**
      * Returns a snapshot of currently connected peer identities (EVM addresses).
      */
-    public getConnectedPeers(): Set<string> {
-        const addresses = new Set<string>();
+    public getConnectedPeers(): Set<Address> {
+        const addresses = new Set<Address>();
         for (const transport of this.openConnections) {
             const fromTransport = transport.peerAddress;
             if (fromTransport) {
-                addresses.add(
-                    this.profileManager.normalizeEvmAddress(fromTransport)
-                );
+                // Boundary: transport.peerAddress can originate outside ethers.
+                addresses.add(ethers.getAddress(fromTransport));
                 continue;
             }
 
@@ -213,9 +212,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
                 this.profileManager.getProfileByTransport(transport);
             const fromProfile = profile?.getEvmAddress();
             if (fromProfile) {
-                addresses.add(
-                    this.profileManager.normalizeEvmAddress(fromProfile)
-                );
+                addresses.add(fromProfile.toString());
             }
         }
         return addresses;

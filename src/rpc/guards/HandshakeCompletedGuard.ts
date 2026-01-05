@@ -66,6 +66,9 @@ export class HandshakeCompletedGuard extends AGuard<ARpcService<ARpcMethods>> {
     }
 
     onFailure(rpc: Rpc, transport: ATransport): void {
+        if (this.options?.onFailure) {
+            return this.options.onFailure(rpc, transport);
+        }
         const initHandshakeService =
             this.service.p2pManager.localRpc.initHandshakeService;
 
@@ -127,10 +130,6 @@ export class HandshakeCompletedGuard extends AGuard<ARpcService<ARpcMethods>> {
             })();
 
             return;
-        }
-
-        if (this.options?.onFailure) {
-            return this.options.onFailure(rpc, transport);
         }
 
         const profile =

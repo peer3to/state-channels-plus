@@ -81,8 +81,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             forkId,
             blockHeight
         });
-        const normalizedPeerAddress =
-            this.p2pManager.profileManager.normalizeEvmAddress(peerAddress);
+        const normalizedPeerAddress = ethers.getAddress(peerAddress.toString());
 
         if (this.requestMapByPeerAddress.has(normalizedPeerAddress)) {
             this.logger.debug(
@@ -115,7 +114,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 );
 
                 this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                    peerAddress
+                    normalizedPeerAddress
                 );
             },
             this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
@@ -127,7 +126,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         // Transport can change (e.g. WebRTC upgrade). Always send by address.
         this.remoteRpc.spectateService
             .onSpectateRequest(syncRequest)
-            .sendOne(peerAddress);
+            .sendOne(normalizedPeerAddress);
     }
 
     public takePendingRequestByPeerAddress(

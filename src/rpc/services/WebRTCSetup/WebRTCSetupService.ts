@@ -7,6 +7,7 @@ import type P2PManager from "@/P2PManager";
 import WebRTCSetupRpcMethods from "./WebRTCSetupRpcMethods";
 import { ATransport } from "@/transport";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
+import { ethers } from "ethers";
 
 class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
     connectionMap: Map<string, RTCPeerConnection> = new Map();
@@ -41,7 +42,7 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
                 profileManager.getProfileByTransport(transport)?.evmAddress;
             if (!adr)
                 return this.logger.error("initiateWebRTC - no EVM address");
-            adr = profileManager.normalizeEvmAddress(adr);
+            adr = ethers.getAddress(adr.toString());
 
             // Handle ICE candidates
             connection.onicecandidate = (event: any) => {

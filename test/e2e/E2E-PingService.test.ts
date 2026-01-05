@@ -137,7 +137,10 @@ describe("E2E: PingService (custom RPC)", function () {
         >();
         await harness.setup(2, {
             autoConnect: false,
-            rpcServiceFactories
+            rpcServiceFactories,
+            timeConfig: {
+                agreementTime: 10 // seconds
+            }
         });
 
         const peer0 = harness.peers[0];
@@ -173,10 +176,10 @@ describe("E2E: PingService (custom RPC)", function () {
 
         // Ensure a deterministic "handshake incomplete" window on peer1 by
         // temporarily preventing it from initiating its own handshake.
-        const peer0InitHandshakeService = peer0.stateManager.p2pManager.localRpc
-            .initHandshakeService as any;
-        const peer1InitHandshakeService = peer1.stateManager.p2pManager.localRpc
-            .initHandshakeService as any;
+        const peer0InitHandshakeService =
+            peer0.stateManager.p2pManager.localRpc.initHandshakeService;
+        const peer1InitHandshakeService =
+            peer1.stateManager.p2pManager.localRpc.initHandshakeService;
 
         const originalPeer0InitHandshake =
             peer0InitHandshakeService.initHandshake.bind(
@@ -222,45 +225,46 @@ describe("E2E: PingService (custom RPC)", function () {
             );
         }
 
-        // Wait until peer0 has verified peer1 (profile exists).
-        await harness.waitForCondition(
-            () => hasVerifiedProfile(peer0, peer1),
+        // Wait until peer1 responds to peer0
+        let ok = await harness.waitForCondition(
+            () => peer0InitHandshakeService.didRespond(capturedPeer1Transport!),
             5000,
             50
         );
-
-        expect(hasVerifiedProfile(peer1, peer0)).to.equal(false);
+        expect(ok).to.equal(true);
+        expect(hasVerifiedProfile(peer0, peer1)).to.equal(false);
 
         // Send ping from peer0 -> peer1; it should arrive but be blocked by HandshakeCompletedGuard on peer1.
         const nonce1 = `nonce-${Date.now()}-1`;
         p2p0.remoteRpc.pingService.ping(nonce1).sendOne(capturedPeer1Transport);
 
-        await harness.waitForCondition(
+        ok = await harness.waitForCondition(
             () =>
                 ping1.guardFailureCount >= 1 &&
                 peer1GuardFailureSignalCount >= 1,
             2000,
             25
         );
+        expect(ok).to.equal(true);
         expect(ping1.receivedPingNonces).to.deep.equal([]);
 
         // Restore and force peer1 to initiate its own handshake so the guard will pass.
         peer1InitHandshakeService.initHandshake = originalPeer1InitHandshake;
         originalPeer1InitHandshake(capturedPeer0Transport);
 
-        await harness.waitForCondition(
+        ok = await harness.waitForCondition(
+            () => hasVerifiedProfile(peer0, peer1),
+            5000,
+            50
+        );
+        expect(ok).to.equal(true);
+
+        ok = await harness.waitForCondition(
             () => hasVerifiedProfile(peer1, peer0),
             5000,
             50
         );
-
-        // Ensure peer0 received the ack so it won't disconnect on the ack-timeout.
-        await harness.waitForCondition(
-            () =>
-                peer0InitHandshakeService.didReceiveAck(capturedPeer1Transport),
-            5000,
-            50
-        );
+        expect(ok).to.equal(true);
 
         // Now ping should succeed and the cross-service calls should execute.
         const nonce2 = `nonce-${Date.now()}-2`;

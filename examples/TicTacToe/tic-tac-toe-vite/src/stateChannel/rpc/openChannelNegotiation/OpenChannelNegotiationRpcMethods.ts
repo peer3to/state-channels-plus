@@ -6,7 +6,7 @@ import {
 
 import { ethers } from "@peer3/state-channels-plus";
 
-import { normalizeAddress } from "./OpenChannelNegotiationHelpers";
+import { toChecksumAddress } from "./OpenChannelNegotiationHelpers";
 
 import type OpenChannelNegotiationService from "./OpenChannelNegotiationService.ts";
 
@@ -31,7 +31,7 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
         amount: number
     ): Promise<void> {
         const from = this.senderTransport.peerAddress
-            ? normalizeAddress(this.senderTransport.peerAddress)
+            ? toChecksumAddress(this.senderTransport.peerAddress)
             : undefined;
         if (!from) return;
 
@@ -74,7 +74,7 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
         amount: number
     ): Promise<void> {
         const from = this.senderTransport.peerAddress
-            ? normalizeAddress(this.senderTransport.peerAddress)
+            ? toChecksumAddress(this.senderTransport.peerAddress)
             : undefined;
         if (!from) return;
 
@@ -97,7 +97,7 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
 
     public negotiateBusy(): void {
         const from = this.senderTransport.peerAddress
-            ? normalizeAddress(this.senderTransport.peerAddress)
+            ? toChecksumAddress(this.senderTransport.peerAddress)
             : undefined;
         if (!from) return;
 
@@ -113,7 +113,7 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
         lowerSignature: string
     ): Promise<void> {
         const from = this.senderTransport.peerAddress
-            ? normalizeAddress(this.senderTransport.peerAddress)
+            ? toChecksumAddress(this.senderTransport.peerAddress)
             : undefined;
         if (!from) return;
 
@@ -143,7 +143,7 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
 
     public abort(reason: string): void {
         const from = this.senderTransport.peerAddress
-            ? normalizeAddress(this.senderTransport.peerAddress)
+            ? toChecksumAddress(this.senderTransport.peerAddress)
             : undefined;
         if (!from) return;
 

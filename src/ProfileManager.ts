@@ -1,6 +1,7 @@
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
 import { Address } from "./types/types";
+import { ethers } from "ethers";
 
 class ProfileManager {
     private mapTransportToProfile: WeakMap<ATransport, PeerProfile> =
@@ -17,12 +18,14 @@ class ProfileManager {
         if (transport) {
             this.mapTransportToProfile.set(transport, profile);
             if (evmAddress && !transport.peerAddress) {
-                transport.peerAddress = this.normalizeAddress(evmAddress);
+                transport.peerAddress = ethers.getAddress(
+                    evmAddress.toString()
+                );
             }
         }
         if (evmAddress)
             this.mapEvmAddressToProfile.set(
-                this.normalizeAddress(evmAddress),
+                ethers.getAddress(evmAddress.toString()),
                 profile
             );
         const hpAddress = profile.getHpAddress();
@@ -36,14 +39,14 @@ class ProfileManager {
         const evmAddress = profile.getEvmAddress();
         if (evmAddress)
             this.mapEvmAddressToProfile.delete(
-                this.normalizeAddress(evmAddress)
+                ethers.getAddress(evmAddress.toString())
             );
         const hpAddress = profile.getHpAddress();
         if (hpAddress) this.mapHpAddressToProfile.delete(hpAddress);
     }
     public updateTransport(profileAddress: string, newTransport: ATransport) {
         const profile = this.mapEvmAddressToProfile.get(
-            this.normalizeAddress(profileAddress)
+            ethers.getAddress(profileAddress)
         );
         if (!profile) return;
         const oldTransport = profile.getTransport();
@@ -55,7 +58,7 @@ class ProfileManager {
         }
 
         // Ensure the new transport carries the peer identity.
-        newTransport.peerAddress = this.normalizeAddress(profileAddress);
+        newTransport.peerAddress = ethers.getAddress(profileAddress);
 
         profile.setTransport(newTransport);
         this.mapTransportToProfile.set(newTransport, profile);
@@ -87,24 +90,15 @@ class ProfileManager {
         evmAddress: Address
     ): PeerProfile | undefined {
         return this.mapEvmAddressToProfile.get(
-            this.normalizeAddress(evmAddress)
+            ethers.getAddress(evmAddress.toString())
         );
     }
     public getProfileByHpAddress(hpAddress: Address): PeerProfile | undefined {
         return this.mapHpAddressToProfile.get(hpAddress);
     }
 
-    public normalizeEvmAddress(address: Address): string {
-        return this.normalizeAddress(address);
-    }
-
     public getTransportByEvmAddress(evmAddress: Address): ATransport | null {
         return this.getProfileByEvmAddress(evmAddress)?.getTransport() ?? null;
-    }
-    private normalizeAddress(address: Address): string {
-        const addressString =
-            typeof address === "string" ? address : address.toString();
-        return addressString.toLowerCase();
     }
 }
 

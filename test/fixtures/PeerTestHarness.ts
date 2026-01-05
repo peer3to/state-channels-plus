@@ -1680,9 +1680,7 @@ export class PeerTestHarness<
                 const peerAddress = transport.peerAddress
                     ? transport.peerAddress
                     : profile?.evmAddress
-                      ? requestingPeer.stateManager.p2pManager.profileManager.normalizeEvmAddress(
-                            profile.evmAddress
-                        )
+                      ? profile.evmAddress.toString()
                       : undefined;
                 if (!peerAddress) return false;
 
