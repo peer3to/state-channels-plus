@@ -34,7 +34,7 @@
     "eslint": "^9.35.0",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-unused-imports": "^4.2.0",
-    "ethers": "^6.4.0",
+    "ethers": "6.13.7",
     "hardhat-gas-reporter": "^1.0.8",
     "husky": "^8.0.3",
     "lint-staged": "^14.0.1",
