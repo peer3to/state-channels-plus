@@ -13,16 +13,30 @@ export async function createEvm(options: EvmFactoryOptions = {}): Promise<EVM> {
     const evm = await EVM.create(options);
 
     if (enableConsoleLog) {
-        setupConsoleLogHook(evm);
+        setupGanacheConsoleLogHook(evm);
     }
 
     return evm;
 }
 
-export function setupConsoleLogHook(evm: EVM): void {
-    const log = createLogger({ component: "Solidity" });
+/**
+ * Sets up Ganache's console.log hook for Node runtime.
+ * This intercepts console.log at the EVM opcode level during execution,
+ * analyzing stack/memory to decode Hardhat console.log calls.
+ *
+ * Note: This only works in Node runtime because @ganache/console.log
+ * requires Node.js-specific dependencies (Buffer, etc.)
+ *
+ * For browser runtime, console.log is handled via log event parsing
+ * in EvmDiamondStateMachine.processLogs()
+ */
+export function setupGanacheConsoleLogHook(evm: EVM): void {
+    if (!isNodeRuntime()) {
+        // Browser runtime should use processLogs() instead
+        return;
+    }
 
-    if (!isNodeRuntime()) return;
+    const log = createLogger({ component: "Solidity" });
 
     // Lazy-load to avoid pulling Node-only deps into browser runtime evaluation.
     void import("@ganache/console.log")
