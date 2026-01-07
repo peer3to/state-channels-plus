@@ -3,13 +3,11 @@ import { DebugProxy } from "@/utils";
 
 import { config } from "@/utils/config";
 import {
-    DHTDiscoveryService,
     InitHandshakeService,
     StateTransitionService,
     WebRTCSetupService,
     SpectateService,
-    IsForkDisputedService,
-    JoinChannelService
+    IsForkDisputedService
 } from "./services";
 
 class MainRpcService {
@@ -22,8 +20,6 @@ class MainRpcService {
     initHandshakeService: InitHandshakeService;
     webRTCSetupService: WebRTCSetupService;
     stateTransitionService: StateTransitionService;
-    dhtDiscoveryService: DHTDiscoveryService;
-    joinChannelService: JoinChannelService;
     spectateService: SpectateService;
     isForkDisputedService: IsForkDisputedService;
 
@@ -31,13 +27,11 @@ class MainRpcService {
         this.p2pManager = p2pManager;
         this.initHandshakeService = new InitHandshakeService(this.p2pManager);
         this.webRTCSetupService = new WebRTCSetupService(this.p2pManager);
-        this.dhtDiscoveryService = new DHTDiscoveryService(this.p2pManager);
         this.stateTransitionService = new StateTransitionService(
             this.p2pManager
         );
         this.spectateService = new SpectateService(this.p2pManager);
         this.isForkDisputedService = new IsForkDisputedService(this.p2pManager);
-        this.joinChannelService = new JoinChannelService(this.p2pManager);
         return this.self;
     }
 }

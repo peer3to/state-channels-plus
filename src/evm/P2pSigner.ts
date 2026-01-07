@@ -1,15 +1,10 @@
 import { ethers, Signer, TransactionResponse } from "ethers";
 
-import {
-    JoinChannelStruct,
-    SignedJoinChannelStruct,
-    TransactionStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import type P2PManager from "@/P2PManager";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
-import { Codec, Type } from "@/utils";
-import { Address, Amount, Bytes, Timestamp } from "@/types/types";
+import { Address, Bytes } from "@/types/types";
 import { Status } from "@/types";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -24,13 +19,6 @@ class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
     //local profile
     isLeader: boolean;
 
-    //TODO! TEST
-    jc: JoinChannelStruct | undefined;
-    signedJc: any;
-    setJc(jc: JoinChannelStruct, signedJc: any) {
-        this.jc = jc;
-        this.signedJc = signedJc;
-    }
     constructor(
         signer: Signer,
         signerAddress: Address,
@@ -152,40 +140,6 @@ class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
 
     public async getChannelStatus(): Promise<Status> {
         return await this.p2pManager.stateManager.getChannelStatus();
-    }
-
-    public async joinChannel(
-        channelId: Bytes,
-        amount: Amount,
-        deadlineTimestamp: Timestamp,
-        data: Bytes
-    ) {
-        const joinChannelRequest: JoinChannelStruct = {
-            channelId,
-            participant: this.signerAddress,
-            balance: {
-                amount,
-                data
-            },
-            deadlineTimestamp
-        };
-
-        // Encode and sign the request
-        const encodedJoinChannel = Codec.encode(
-            joinChannelRequest,
-            Type.JoinChannel
-        );
-        const signedJoinChannel: SignedJoinChannelStruct = {
-            encodedJoinChannel: encodedJoinChannel,
-            signature: await this.signMessage(encodedJoinChannel)
-        };
-
-        // Store locally before broadcasting ?
-
-        // Broadcast the request
-        this.p2pManager.remoteRpc.joinChannelService
-            .onJoinChannelRequest(signedJoinChannel)
-            .broadcast();
     }
 }
 
