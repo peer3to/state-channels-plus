@@ -1,23 +1,22 @@
-import {
-    ARpcMethods,
-    ATransport,
-    getChecksumAddress,
-    P2PManager
-} from "@peer3/state-channels-plus";
+import { ethers } from "ethers";
 
-import { ethers } from "@peer3/state-channels-plus";
+import ARpcMethods from "@/rpc/ARpcMethods";
+import type ATransport from "@/transport/ATransport";
+import { getChecksumAddress } from "@/utils";
+import type P2PManager from "@/P2PManager";
 
-import type OpenChannelNegotiationService from "./OpenChannelNegotiationService.ts";
+import type OpenChannelNegotiationService from "./OpenChannelNegotiationService";
 
-export type NegotiationFactories = {
+export type OpenChannelNegotiationFactories = {
     openChannelNegotiationService: (
-        p2pManager: P2PManager<NegotiationFactories>
+        p2pManager: P2PManager<OpenChannelNegotiationFactories>
     ) => OpenChannelNegotiationService;
 };
 
-export type NegotiationP2PManager = P2PManager<NegotiationFactories>;
+export type OpenChannelNegotiationP2PManager =
+    P2PManager<OpenChannelNegotiationFactories>;
 
-export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<NegotiationP2PManager> {
+export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<OpenChannelNegotiationP2PManager> {
     constructor(
         transport: ATransport,
         private readonly service: OpenChannelNegotiationService
@@ -39,7 +38,6 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
         );
         if (channelId !== currentChannel) return;
 
-        // Busy with someone else -> reject.
         if (
             this.service.state.negotiatingWith &&
             this.service.state.negotiatingWith !== from
@@ -50,7 +48,6 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
             return;
         }
 
-        // Start or continue negotiation with this sender.
         if (!this.service.state.negotiatingWith) {
             this.service.state.negotiatingWith = from;
             this.service.state.initiatedByMe = false;
@@ -60,7 +57,6 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
 
         this.service.state.theirAmount = amount;
 
-        // Respond with my amount.
         this.remoteRpc.openChannelNegotiationService
             .negotiateAccept(currentChannel, this.service.state.myAmount)
             .sendOne(from);
@@ -82,7 +78,6 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
         );
         if (channelId !== currentChannel) return;
 
-        // If we're not negotiating or negotiating with someone else, ignore.
         if (
             !this.service.state.negotiatingWith ||
             this.service.state.negotiatingWith !== from
@@ -102,7 +97,7 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
 
         if (this.service.state.negotiatingWith === from) {
             this.service.resetNegotiation(
-                `remote busy: negotiating with someone else`
+                "remote busy: negotiating with someone else"
             );
         }
     }
@@ -116,13 +111,13 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
             : undefined;
         if (!from) return;
 
-        // Only accept from current counterparty if set.
         if (
             this.service.state.negotiatingWith &&
             this.service.state.negotiatingWith !== from
         ) {
             return;
         }
+
         if (!this.service.state.negotiatingWith) {
             this.service.state.negotiatingWith = from;
             this.service.state.startedAtMs = Date.now();

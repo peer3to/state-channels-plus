@@ -16,6 +16,7 @@ import ARpcService from "@/rpc/ARpcService";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 import { defineRpcServices } from "@/rpc/registry";
 import { ATransport } from "@/transport";
+export * from "@/rpc/services";
 
 export { ethers } from "ethers";
 export type {

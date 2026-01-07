@@ -1,4 +1,4 @@
-import { getChecksumAddress } from "@peer3/state-channels-plus";
+import { getChecksumAddress } from "@/utils";
 
 export type Address = string;
 

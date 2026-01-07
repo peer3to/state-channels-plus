@@ -1,14 +1,13 @@
-import { defineRpcServices } from "@peer3/state-channels-plus";
-
-import OpenChannelNegotiationService from "./rpc/openChannelNegotiation/OpenChannelNegotiationService";
-import type { NegotiationFactories } from "./rpc/openChannelNegotiation/OpenChannelNegotiationRpcMethods";
+import {
+    defineRpcServices,
+    OpenChannelNegotiationService
+} from "@peer3/state-channels-plus";
+import type { OpenChannelNegotiationFactories } from "@peer3/state-channels-plus";
 
 export const ticTacToeRpcServiceFactories =
-    defineRpcServices<NegotiationFactories>({
+    defineRpcServices<OpenChannelNegotiationFactories>({
         openChannelNegotiationService: (p2pManager) =>
             new OpenChannelNegotiationService(p2pManager)
     });
 
 export type TicTacToeRpcFactories = typeof ticTacToeRpcServiceFactories;
-
-export { OpenChannelNegotiationService };

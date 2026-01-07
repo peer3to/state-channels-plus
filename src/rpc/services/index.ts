@@ -12,3 +12,11 @@ export { default as SpectateRpcMethods } from "./spectate/SpectateRpcMethods";
 
 export { default as IsForkDisputedService } from "./isForkDisputedService/IsForkDisputedService";
 export { default as IsForkDisputedRpcMethods } from "./isForkDisputedService/IsForkDisputedRpcMethods";
+
+export { default as OpenChannelNegotiationService } from "./openChannelNegotiation/OpenChannelNegotiationService";
+export { default as OpenChannelNegotiationRpcMethods } from "./openChannelNegotiation/OpenChannelNegotiationRpcMethods";
+export type {
+    OpenChannelNegotiationFactories,
+    OpenChannelNegotiationP2PManager
+} from "./openChannelNegotiation/OpenChannelNegotiationRpcMethods";
+export * from "./openChannelNegotiation/OpenChannelNegotiationHelpers";
