@@ -9,7 +9,6 @@ import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
 import type P2PManager from "@/P2PManager";
 import DisputeManager from "@/disputeManager";
-import ATransport from "@/transport/ATransport";
 import { Logger } from "@/utils";
 
 export default class BlockValidationStrategy extends AValidationStrategy {
@@ -56,7 +55,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         }
     }
     public async authenticateBlockFailed(
-        block: BlockConfirmationStruct
+        _block: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
         return BlockValidationResult.DISCONNECT;
     }

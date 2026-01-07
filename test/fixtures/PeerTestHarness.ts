@@ -67,6 +67,7 @@ import DisputeManager, {
 
 export interface TestPeer<
     T extends AStateMachine,
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
 > {
     index: number;
@@ -111,7 +112,10 @@ export interface EventSpies {
 /**
  * Options for configuring the test harness
  */
-export interface HarnessOptions<TFactories extends RpcServiceFactoryMap = {}> {
+export interface HarnessOptions<
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+    TFactories extends RpcServiceFactoryMap = {}
+> {
     timeConfig?: Partial<TimeConfig>;
     channelId?: string;
     initialBalance?: number;
@@ -134,6 +138,7 @@ export type AssertAllPeersInSyncOptions = {
 
 export type CreateAndResolveDisputeResult<
     T extends AStateMachine,
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
 > = {
     originalForkId: ForkId;
@@ -145,6 +150,7 @@ export type CreateAndResolveDisputeResult<
 
 export type CreateAndResolveForkResult<
     T extends AStateMachine,
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
 > = {
     originalForkId: ForkId;
@@ -177,6 +183,7 @@ type BuildJoinChannelRequestArgs = {
  */
 export class PeerTestHarness<
     T extends AStateMachine,
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
 > {
     public peers: TestPeer<T, TFactories>[] = [];
@@ -207,7 +214,10 @@ export class PeerTestHarness<
         this.eventCountsBarrier = new EventBarrier(this.logger);
     }
 
-    async setup<const TNewFactories extends RpcServiceFactoryMap = {}>(
+    async setup<
+        // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+        const TNewFactories extends RpcServiceFactoryMap = {}
+    >(
         numPeers: number,
         options?: HarnessOptions<TNewFactories>
     ): Promise<void> {
@@ -471,7 +481,7 @@ export class PeerTestHarness<
     private wrapEventHandlerWithSpies(peer: TestPeer<T, TFactories>): void {
         const eventHandler = peer.stateManager.eventHandler;
         const spies = peer.eventSpies;
-        const harness = this;
+        const eventCountsBarrier = this.eventCountsBarrier;
 
         // Create a proxy that intercepts EventHandler method calls and calls both the spy and original method
         const eventHandlerProxy = new Proxy(eventHandler, {
@@ -487,7 +497,7 @@ export class PeerTestHarness<
 
                         // Then call the original method
                         Reflect.apply(originalMethod, target, args);
-                        return harness.eventCountsBarrier.signal();
+                        return eventCountsBarrier.signal();
                     };
                 }
 
@@ -711,7 +721,7 @@ export class PeerTestHarness<
                         );
                         return false;
                     }
-                } catch (error) {
+                } catch {
                     // If we can't get participants yet, keep waiting
                     return false;
                 }
@@ -1197,7 +1207,7 @@ export class PeerTestHarness<
                             const participants =
                                 await peer.stateManager.diamondStateMachine.getParticipants();
                             return `Peer ${i}: ${participants.length} participants`;
-                        } catch (err) {
+                        } catch {
                             return `Peer ${i}: error getting participants`;
                         }
                     })

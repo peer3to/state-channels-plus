@@ -309,7 +309,7 @@ function getGlobalLogger(): Logger {
         }
 
         // Lazy-load winston only in Node runtimes.
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
+
         const winstonImpl = require("winston") as typeof import("winston");
 
         // Define custom log levels with numerical priorities

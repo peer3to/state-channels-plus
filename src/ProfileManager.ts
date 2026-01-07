@@ -1,7 +1,6 @@
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
 import { Address } from "./types/types";
-import { ethers } from "ethers";
 import { getChecksumAddress } from "./utils";
 
 class ProfileManager {

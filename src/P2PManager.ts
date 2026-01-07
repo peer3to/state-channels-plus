@@ -24,6 +24,7 @@ type RemoteRpcRoot<TFactories extends RpcServiceFactoryMap> =
     RemoteRpcProxyType<MainRpcService> &
         RemoteRpcProxyType<RpcServiceInstances<TFactories>>;
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
     implements IOnMessage
 {
@@ -79,7 +80,6 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
     }
     //Mark resources for garbage collection
     public async dispose() {
-        const remoteRpc = RemoteRpcProxy.createProxy(this.localRpc);
         await this.holepunch.dispose();
         this.disconnectAll();
     }

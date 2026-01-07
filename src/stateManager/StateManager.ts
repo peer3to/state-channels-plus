@@ -937,7 +937,6 @@ class StateManager {
         tx: TransactionStruct
     ): Promise<BlockConfirmationStruct> {
         await this.mutex.lock();
-        const forkId = this.forkId;
         const message = await this.logPlayTransaction(tx);
         try {
             if (!this.validationService.isChannelOpen(this.forkId)) {

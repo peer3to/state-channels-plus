@@ -6,7 +6,6 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Codec, SignatureCollectionMap, SignatureUtils, Type } from "@/utils";
-import Clock from "@/Clock";
 import { getActiveParticipants } from "@/utils/participantUtils";
 import { StateSnapshot } from "@/models";
 import { Address, Bytes, ChannelId, Hash, Signature } from "@/types/types";
@@ -104,7 +103,7 @@ class JoinChannelService extends ARpcService<JoinChannelRpcMethods> {
     }
 
     public async needsStateSnapshotSubmission(
-        channelId: ChannelId
+        _channelId: ChannelId
     ): Promise<boolean> {
         // TODO
         // right now we are cutting slack and just assume that we need to submit a state snapshot
@@ -179,11 +178,8 @@ class JoinChannelService extends ARpcService<JoinChannelRpcMethods> {
 
         // 2. If state snapshot submission is needed, prepare and submit
         if (needsStateSnapshotSubmission) {
-            const {
-                milestoneProofs,
-                milestoneSnapshots: snapshots,
-                exitChannelBlocks
-            } = await this.prepareStateSnapshotData();
+            const { milestoneSnapshots: snapshots } =
+                await this.prepareStateSnapshotData();
 
             milestoneSnapshots = snapshots;
 
@@ -193,13 +189,13 @@ class JoinChannelService extends ARpcService<JoinChannelRpcMethods> {
         }
 
         // 3. Create JoinChannelBlock with the completed join channel request
-        const previousBlockHash = await this.getPreviousJoinChannelBlockHash(
+        let previousBlockHash = await this.getPreviousJoinChannelBlockHash(
             joinChannel.channelId,
             needsStateSnapshotSubmission,
             milestoneSnapshots
         );
 
-        const joinChannelBlock = {
+        const _joinChannelBlock = {
             joinChannels: [joinChannel],
             previousBlockHash
         };

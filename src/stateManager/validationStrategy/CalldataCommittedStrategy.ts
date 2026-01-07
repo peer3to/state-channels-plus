@@ -23,7 +23,7 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         );
     }
     public async authenticateBlockFailed(
-        block: BlockConfirmationStruct
+        _block: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
         // The block is committed on-chain by a participant (otherwise we're not interested in the calldata) -> the participant created an objective fault
         // TODO - fraud proof for this

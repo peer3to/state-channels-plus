@@ -32,10 +32,7 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
             this.logger.debug("initiateWebRTC");
             const connection = new RTCPeerConnection();
             const channel = connection.createDataChannel("webRTC-DataChannel");
-            const webRTCTransport = new WebRTCTransport(
-                channel,
-                this.p2pManager
-            );
+            new WebRTCTransport(channel, this.p2pManager);
             const profileManager = this.p2pManager.profileManager;
             let adr =
                 profileManager.getProfileByTransport(transport)?.evmAddress;

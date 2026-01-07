@@ -502,7 +502,7 @@ export class LocalDiscoveryServer {
                         }
                     }
                 }
-            } catch (_err) {
+            } catch {
                 // Ignore malformed messages
                 this.logger.warn("Malformed registration message", {
                     mode: "registry",
@@ -760,7 +760,7 @@ export class LocalDiscoveryServer {
                 ...logBase,
                 myChannelId
             });
-        } catch (_err) {
+        } catch {
             // Ignore malformed messages
             this.logger.warn("Malformed peer announcement", {
                 mode: "peer",

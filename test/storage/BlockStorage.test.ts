@@ -396,7 +396,7 @@ describe("BlockStorage", () => {
         describe("Different blocks with same hash but different coordinates", () => {
             it("should return hash when storing block with same hash but different coordinates", () => {
                 // Store first block
-                const hash1 = storage.storeBlock(
+                storage.storeBlock(
                     Block.fromBlockConfirmation(mockBlockConfirmation)
                 );
 
