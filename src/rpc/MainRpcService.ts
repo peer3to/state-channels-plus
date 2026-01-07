@@ -1,10 +1,7 @@
-import { SignedJoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-
 import type P2PManager from "@/P2PManager";
 import { DebugProxy } from "@/utils";
 
 import { config } from "@/utils/config";
-import { Signature } from "@/types/types";
 import {
     DHTDiscoveryService,
     InitHandshakeService,
@@ -12,15 +9,8 @@ import {
     WebRTCSetupService,
     SpectateService,
     IsForkDisputedService,
-    JoinChannelService,
-    TESTJoinChannelService
+    JoinChannelService
 } from "./services";
-
-//TODO! refactor this
-type JoinChannelConfirmation = {
-    signedJoinChannel: SignedJoinChannelStruct;
-    confirmationSignatures: Signature[];
-};
 
 class MainRpcService {
     p2pManager: P2PManager;
@@ -32,7 +22,6 @@ class MainRpcService {
     initHandshakeService: InitHandshakeService;
     webRTCSetupService: WebRTCSetupService;
     stateTransitionService: StateTransitionService;
-    testJoinChannelService: TESTJoinChannelService;
     dhtDiscoveryService: DHTDiscoveryService;
     joinChannelService: JoinChannelService;
     spectateService: SpectateService;
@@ -49,9 +38,6 @@ class MainRpcService {
         this.spectateService = new SpectateService(this.p2pManager);
         this.isForkDisputedService = new IsForkDisputedService(this.p2pManager);
         this.joinChannelService = new JoinChannelService(this.p2pManager);
-        this.testJoinChannelService = new TESTJoinChannelService(
-            this.p2pManager
-        );
         return this.self;
     }
 }

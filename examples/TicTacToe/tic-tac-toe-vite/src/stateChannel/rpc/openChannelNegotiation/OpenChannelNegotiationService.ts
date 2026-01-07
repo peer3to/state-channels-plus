@@ -5,7 +5,8 @@ import {
     Clock,
     HandshakeCompletedGuard,
     SignatureUtils,
-    Type
+    Type,
+    getChecksumAddress
 } from "@peer3/state-channels-plus";
 
 import type { DataTypes } from "@peer3/state-channels-plus";
@@ -20,7 +21,6 @@ import {
     DEFAULT_JOIN_AMOUNT,
     NEGOTIATION_TIMEOUT_MS,
     compareAddresses,
-    toChecksumAddress,
     type Address
 } from "./OpenChannelNegotiationHelpers";
 
@@ -70,8 +70,8 @@ export default class OpenChannelNegotiationService extends ARpcService<
             return;
         }
 
-        const peer = toChecksumAddress(peerAddress);
-        const me = toChecksumAddress(
+        const peer = getChecksumAddress(peerAddress);
+        const me = getChecksumAddress(
             String(this.p2pManager.stateManager.signerAddress)
         );
         if (peer === me) return;
@@ -113,10 +113,10 @@ export default class OpenChannelNegotiationService extends ARpcService<
         balances: DataTypes.OpenChannelStruct["balances"];
         lower: Address;
     } {
-        const me = toChecksumAddress(
+        const me = getChecksumAddress(
             String(this.p2pManager.stateManager.signerAddress)
         );
-        const peer = toChecksumAddress(peerAddress);
+        const peer = getChecksumAddress(peerAddress);
 
         const [a0, a1] =
             compareAddresses(me, peer) <= 0 ? [me, peer] : [peer, me];
@@ -149,10 +149,10 @@ export default class OpenChannelNegotiationService extends ARpcService<
         if (this.state.channelOpened) return;
         if (!this.state.negotiatingWith) return;
 
-        const me = toChecksumAddress(
+        const me = getChecksumAddress(
             String(this.p2pManager.stateManager.signerAddress)
         );
-        const peer = toChecksumAddress(peerAddress);
+        const peer = getChecksumAddress(peerAddress);
 
         const { participants, balances, lower } =
             this.getParticipantsAndBalances(peer);
@@ -210,8 +210,8 @@ export default class OpenChannelNegotiationService extends ARpcService<
     ): Promise<void> {
         if (this.state.channelOpened) return;
 
-        const peer = toChecksumAddress(peerAddress);
-        const me = toChecksumAddress(
+        const peer = getChecksumAddress(peerAddress);
+        const me = getChecksumAddress(
             String(this.p2pManager.stateManager.signerAddress)
         );
         if (peer === me) return;
@@ -243,7 +243,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
         const deadlineSeconds = Number(decoded.deadlineTimestamp);
 
         // Verify proposal signature came from the lower address.
-        const recovered = toChecksumAddress(
+        const recovered = getChecksumAddress(
             SignatureUtils.getSignerAddress(
                 encodedOpenChannel,
                 lowerSignature
@@ -295,7 +295,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
                 ? deadlineTimestampSeconds - now + agreementTimeSeconds
                 : agreementTimeSeconds;
 
-        peerAddress = toChecksumAddress(peerAddress);
+        peerAddress = getChecksumAddress(peerAddress);
 
         this.state.timeoutHandle = setTimeout(async () => {
             try {

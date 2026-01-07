@@ -7,7 +7,7 @@ import { ATransport, TransportType } from "@/transport";
 import ProfileManager from "@/ProfileManager";
 import Holepunch from "@/Holepunch";
 import { ethers } from "ethers";
-import { DebugProxy, LocalDiscoveryServer } from "@/utils";
+import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
 import type { Logger } from "@/utils/PeerLogger";
 import { Buffer } from "buffer";
 import { config } from "@/utils/config";
@@ -204,7 +204,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
             const fromTransport = transport.peerAddress;
             if (fromTransport) {
                 // Boundary: transport.peerAddress can originate outside ethers.
-                addresses.add(ethers.getAddress(fromTransport));
+                addresses.add(getChecksumAddress(fromTransport));
                 continue;
             }
 

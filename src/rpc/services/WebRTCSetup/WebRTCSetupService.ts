@@ -1,5 +1,4 @@
 import ARpcService from "@/rpc/ARpcService";
-import MainRpcService from "@/rpc/MainRpcService";
 //@ts-ignore
 import { RTCPeerConnection } from "get-webrtc";
 import WebRTCTransport from "@/transport/WebRTCTransport";
@@ -7,7 +6,7 @@ import type P2PManager from "@/P2PManager";
 import WebRTCSetupRpcMethods from "./WebRTCSetupRpcMethods";
 import { ATransport } from "@/transport";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
-import { ethers } from "ethers";
+import { getChecksumAddress } from "@/utils";
 
 class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
     connectionMap: Map<string, RTCPeerConnection> = new Map();
@@ -42,7 +41,7 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
                 profileManager.getProfileByTransport(transport)?.evmAddress;
             if (!adr)
                 return this.logger.error("initiateWebRTC - no EVM address");
-            adr = ethers.getAddress(adr.toString());
+            adr = getChecksumAddress(adr);
 
             // Handle ICE candidates
             connection.onicecandidate = (event: any) => {

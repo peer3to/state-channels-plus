@@ -18,6 +18,3 @@ export { default as IsForkDisputedRpcMethods } from "./isForkDisputedService/IsF
 
 export { default as JoinChannelService } from "./joinChannel/JoinChannelService";
 export { default as JoinChannelRpcMethods } from "./joinChannel/JoinChannelRpcMethods";
-
-export { default as TESTJoinChannelService } from "./TESTJoinChannel/TESTJoinChannelService";
-export { default as TESTJoinChannelRpcMethods } from "./TESTJoinChannel/TESTJoinChannelRpcMethods";

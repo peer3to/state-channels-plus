@@ -1,12 +1,11 @@
 import {
     ARpcMethods,
     ATransport,
+    getChecksumAddress,
     P2PManager
 } from "@peer3/state-channels-plus";
 
 import { ethers } from "@peer3/state-channels-plus";
-
-import { toChecksumAddress } from "./OpenChannelNegotiationHelpers";
 
 import type OpenChannelNegotiationService from "./OpenChannelNegotiationService.ts";
 
@@ -31,7 +30,7 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
         amount: number
     ): Promise<void> {
         const from = this.senderTransport.peerAddress
-            ? toChecksumAddress(this.senderTransport.peerAddress)
+            ? getChecksumAddress(this.senderTransport.peerAddress)
             : undefined;
         if (!from) return;
 
@@ -74,7 +73,7 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
         amount: number
     ): Promise<void> {
         const from = this.senderTransport.peerAddress
-            ? toChecksumAddress(this.senderTransport.peerAddress)
+            ? getChecksumAddress(this.senderTransport.peerAddress)
             : undefined;
         if (!from) return;
 
@@ -97,7 +96,7 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
 
     public negotiateBusy(): void {
         const from = this.senderTransport.peerAddress
-            ? toChecksumAddress(this.senderTransport.peerAddress)
+            ? getChecksumAddress(this.senderTransport.peerAddress)
             : undefined;
         if (!from) return;
 
@@ -113,7 +112,7 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
         lowerSignature: string
     ): Promise<void> {
         const from = this.senderTransport.peerAddress
-            ? toChecksumAddress(this.senderTransport.peerAddress)
+            ? getChecksumAddress(this.senderTransport.peerAddress)
             : undefined;
         if (!from) return;
 
@@ -143,7 +142,7 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
 
     public abort(reason: string): void {
         const from = this.senderTransport.peerAddress
-            ? toChecksumAddress(this.senderTransport.peerAddress)
+            ? getChecksumAddress(this.senderTransport.peerAddress)
             : undefined;
         if (!from) return;
 
@@ -151,6 +150,4 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<Negoti
             this.service.resetNegotiation(`remote abort: ${reason}`);
         }
     }
-
-    // helper functions moved to the service
 }

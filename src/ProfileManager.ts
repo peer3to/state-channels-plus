@@ -2,6 +2,7 @@ import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
 import { Address } from "./types/types";
 import { ethers } from "ethers";
+import { getChecksumAddress } from "./utils";
 
 class ProfileManager {
     private mapTransportToProfile: WeakMap<ATransport, PeerProfile> =
@@ -18,14 +19,12 @@ class ProfileManager {
         if (transport) {
             this.mapTransportToProfile.set(transport, profile);
             if (evmAddress && !transport.peerAddress) {
-                transport.peerAddress = ethers.getAddress(
-                    evmAddress.toString()
-                );
+                transport.peerAddress = getChecksumAddress(evmAddress);
             }
         }
         if (evmAddress)
             this.mapEvmAddressToProfile.set(
-                ethers.getAddress(evmAddress.toString()),
+                getChecksumAddress(evmAddress),
                 profile
             );
         const hpAddress = profile.getHpAddress();
@@ -38,15 +37,13 @@ class ProfileManager {
         if (transport) this.mapTransportToProfile.delete(transport);
         const evmAddress = profile.getEvmAddress();
         if (evmAddress)
-            this.mapEvmAddressToProfile.delete(
-                ethers.getAddress(evmAddress.toString())
-            );
+            this.mapEvmAddressToProfile.delete(getChecksumAddress(evmAddress));
         const hpAddress = profile.getHpAddress();
         if (hpAddress) this.mapHpAddressToProfile.delete(hpAddress);
     }
     public updateTransport(profileAddress: string, newTransport: ATransport) {
         const profile = this.mapEvmAddressToProfile.get(
-            ethers.getAddress(profileAddress)
+            getChecksumAddress(profileAddress)
         );
         if (!profile) return;
         const oldTransport = profile.getTransport();
@@ -58,7 +55,7 @@ class ProfileManager {
         }
 
         // Ensure the new transport carries the peer identity.
-        newTransport.peerAddress = ethers.getAddress(profileAddress);
+        newTransport.peerAddress = getChecksumAddress(profileAddress);
 
         profile.setTransport(newTransport);
         this.mapTransportToProfile.set(newTransport, profile);
@@ -89,9 +86,7 @@ class ProfileManager {
     public getProfileByEvmAddress(
         evmAddress: Address
     ): PeerProfile | undefined {
-        return this.mapEvmAddressToProfile.get(
-            ethers.getAddress(evmAddress.toString())
-        );
+        return this.mapEvmAddressToProfile.get(getChecksumAddress(evmAddress));
     }
     public getProfileByHpAddress(hpAddress: Address): PeerProfile | undefined {
         return this.mapHpAddressToProfile.get(hpAddress);

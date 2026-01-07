@@ -10,6 +10,7 @@ import type P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import EventBarrier from "@/utils/EventBarrier";
 import { Status } from "@/types";
+import { getChecksumAddress } from "@/utils";
 
 type ConnectionChallenge = {
     randomChallengeHash: string;
@@ -94,7 +95,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         peerAddress: string
     ) {
         // Boundary: peerAddress may come from non-ethers sources; canonicalize once.
-        const checksummed = ethers.getAddress(peerAddress);
+        const checksummed = getChecksumAddress(peerAddress);
         this.verifiedPeerAddressByTransport.set(transport, checksummed);
         transport.peerAddress = checksummed;
     }

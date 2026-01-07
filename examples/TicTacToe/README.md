@@ -6,15 +6,15 @@ The [contracts](./contracts/) hold the state machine logic that is ultimately en
 The [user interface](./tic-tac-toe-vite/) is built with React and utilizes the TypeScript portion of the SDK. 
 
 ## Installation
-<b style="color: yellow;">Note: Examples within this repository use the current version of the SDK(this repository) and not the remote package available on npm. This requires to install dependencies and build the SDK locally. Please make sure you've run `pnpm install && pnpm build` in the root directory of this repository, before proceeding. </b>
+<b style="color: yellow;">Note: Examples within this repository use the current version of the SDK(this repository) and not the remote package available on npm. This requires to install dependencies and build the SDK locally. Please make sure you've run `yarn && yarn build` in the root directory of this repository, before proceeding. </b>
 
 Continue with installation of local dependencies:
 ```shell
-pnpm install
+yarn
 ```
 ## Compile contracts
 ```shell
-pnpm exec hardhat compile
+yarn hardhat compile
 ```
 This will generate <b>typechain-types</b> and <b>artifacts</b> directories which contain typescript types, contract ABIs and bytecodes needed for deployment and interaction.
 ## EVM testnet
@@ -33,7 +33,7 @@ This will run a node on http://localhost:8545
 ## Deploy contracts
 To deploy to a custom network, add a .env file and define PROVIDER_URL (look at .env.example). Default network: http://localhost:8545
 ```shell
-pnpm exec hardhat run scripts/deployTicTacToeContractsProxy.ts
+yarn hardhat run scripts/deployTicTacToeContractsProxy.ts
 ```
 Contracts should be deployed and a contracts.json file generated.
 This file contains the ABIs and contract addresses that are used by the user interface.
@@ -44,3 +44,5 @@ Change the directory to the UI directory.
 cd tic-tac-toe-vite
 ```
 Follow instructions in the [UI README](./tic-tac-toe-vite/README.md)
+
+Note: Create `tic-tac-toe-vite/src/peer3.config.ts` by copying `tic-tac-toe-vite/src/example.peer3.config.ts` and update `HOLEPUNCH_RELAYER_URLS`.

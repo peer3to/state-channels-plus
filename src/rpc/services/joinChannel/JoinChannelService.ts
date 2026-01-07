@@ -1,5 +1,4 @@
 import ARpcService from "@/rpc/ARpcService";
-import MainRpcService from "@/rpc/MainRpcService";
 import {
     SignedJoinChannelStruct,
     JoinChannelStruct,

@@ -17,7 +17,7 @@ import {
     Bytes
 } from "@/types/types";
 
-import { union, isSubset, SignatureUtils } from "@/utils";
+import { union, isSubset, SignatureUtils, getChecksumAddress } from "@/utils";
 
 export type BlockCoordinates = {
     forkId: ForkId;
@@ -139,8 +139,8 @@ export default class Block {
         this._onChainTimestamp = onChainTimestamp;
     }
     get author() {
-        return ethers.getAddress(
-            this.block.transaction.header.participant as string
+        return getChecksumAddress(
+            this.block.transaction.header.participant
         ) as Address;
     }
 
@@ -236,7 +236,7 @@ export default class Block {
     }
 
     findSignature(participant: Address): Signature | undefined {
-        const expected = ethers.getAddress(participant as string) as Address;
+        const expected = getChecksumAddress(participant) as Address;
         for (const sig of this.allSignatures) {
             if (this.signatureToAddress(sig) === expected) {
                 return sig;
@@ -250,9 +250,7 @@ export default class Block {
             participants instanceof Set ? participants : new Set(participants);
         const participantsSet = new Set<Address>();
         for (const participant of rawSet) {
-            participantsSet.add(
-                ethers.getAddress(participant as string) as Address
-            );
+            participantsSet.add(getChecksumAddress(participant) as Address);
         }
         if (participantsSet.size === 0) return false;
         return isSubset(participantsSet, this.allSignerAddresses);
@@ -260,7 +258,7 @@ export default class Block {
 
     didSign(participant: Address): boolean {
         return this.allSignerAddresses.has(
-            ethers.getAddress(participant as string) as Address
+            getChecksumAddress(participant) as Address
         );
     }
 

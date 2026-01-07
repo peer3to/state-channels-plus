@@ -19,8 +19,6 @@ contract TicTacToeConsumerFacet is AConsumerFacet {
         override
         returns (bytes memory encodedGenesisState, address[] memory participants)
     {
-        require(successfulJoinChannels.length >= 2, "TicTacToeConsumerFacet: at least 2 participants");
-
         uint256 betAmount = DEFAULT_BET_AMOUNT;
         if (optionalOpeningData.length > 0) {
             betAmount = abi.decode(optionalOpeningData, (uint256));
