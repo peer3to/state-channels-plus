@@ -1,13 +1,9 @@
 import { EVM, EVMOpts } from "@ethereumjs/evm";
 import { Buffer } from "buffer";
-import { createLogger } from "@/utils";
+import { createLogger, isNodeRuntime } from "@/utils";
 
 export interface EvmFactoryOptions extends EVMOpts {
     enableConsoleLog?: boolean;
-}
-
-function isNodeRuntime(): boolean {
-    return typeof process !== "undefined" && !!(process as any).versions?.node;
 }
 
 export async function createEvm(options: EvmFactoryOptions = {}): Promise<EVM> {

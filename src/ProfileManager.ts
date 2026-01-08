@@ -47,10 +47,15 @@ class ProfileManager {
         if (!profile) return;
         const oldTransport = profile.getTransport();
         if (oldTransport) {
-            setTimeout(() => {
-                // allow agreementTime for everyone to update transport and start using new one, before closing this one
-                this.removeTransport(oldTransport);
-            }, oldTransport.p2pManager.stateManager.timeConfig.agreementTime * 1000);
+            const stateManager = oldTransport.p2pManager.stateManager;
+            stateManager.timeoutManager.scheduleTask(
+                () => {
+                    // allow agreementTime for everyone to update transport and start using new one, before closing this one
+                    this.removeTransport(oldTransport);
+                },
+                stateManager.timeConfig.agreementTime * 1000,
+                "Transport update completed - disconnecting old transport"
+            );
         }
 
         // Ensure the new transport carries the peer identity.

@@ -1,9 +1,9 @@
 import type winston from "winston";
-import { config } from "./config";
+import { config, isNodeRuntime } from "./config";
+import { Address } from "@/types/types";
 export interface LoggerContext {
     peerId?: number;
-    // Can be an EVM AddressLike or any identifier; keep flexible.
-    peerAddress?: any;
+    peerAddress?: Address;
     component?: string;
     [key: string]: any; // Allow additional metadata properties
 }
@@ -48,14 +48,6 @@ export type Logger = {
     clear?: () => void;
     close?: () => void;
 };
-
-function isNodeRuntime(): boolean {
-    return (
-        typeof process !== "undefined" &&
-        !!(process as any).versions?.node &&
-        typeof (process as any).argv !== "undefined"
-    );
-}
 
 class BrowserLogger implements Logger {
     public level?: string;

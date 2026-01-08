@@ -26,9 +26,15 @@ npm install -g ganache
 ```
 Run a ganache node locally with gas price set to 0, the berlin hardfork, and block time set to 2 seconds:
 ```shell
-ganache -g 0 -k 'berlin' -b 2 -h 0.0.0.0 --chain.allowUnlimitedContractSize true
+ganache -g 0 -k 'berlin' -b 2 -h 0.0.0.0 --chain.allowUnlimitedContractSize true
 ```
 This will run a node on http://localhost:8545
+
+Alternatively, you can use [Anvil](https://book.getfoundry.sh/reference/anvil/) (Foundry) with a 2-second block time and gas settings that avoid needing funded accounts:
+```shell
+anvil -b 2 --block-base-fee-per-gas 0 --disable-code-size-limit --disable-min-priority-fee --gas-price 0
+```
+This will also run a node on http://localhost:8545
 
 ## Deploy contracts
 To deploy to a custom network, add a .env file and define PROVIDER_URL (look at .env.example). Default network: http://localhost:8545
