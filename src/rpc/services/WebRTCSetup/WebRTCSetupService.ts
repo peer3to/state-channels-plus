@@ -36,8 +36,10 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
             const profileManager = this.p2pManager.profileManager;
             let adr =
                 profileManager.getProfileByTransport(transport)?.evmAddress;
-            if (!adr)
-                return this.logger.error("initiateWebRTC - no EVM address");
+            if (!adr) {
+                this.logger.error("initiateWebRTC - no EVM address");
+                return;
+            }
             adr = getChecksumAddress(adr);
 
             // Handle ICE candidates

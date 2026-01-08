@@ -138,8 +138,8 @@ class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
         this.p2pManager.disconnectAll();
     }
 
-    public async getChannelStatus(): Promise<Status> {
-        return await this.p2pManager.stateManager.getChannelStatus();
+    public getChannelStatus(): Promise<Status> {
+        return this.p2pManager.stateManager.getChannelStatus();
     }
 }
 
