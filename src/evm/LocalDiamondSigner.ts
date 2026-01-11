@@ -60,7 +60,7 @@ class LocalDiamondSigner implements Signer {
     async resolveName(name: string): Promise<string | null> {
         try {
             return await this.signer.resolveName(name);
-        } catch (error) {
+        } catch {
             const isAddress = (address: string) =>
                 address.startsWith("0x") && address.length === 42;
             return isAddress(name) ? name : null;

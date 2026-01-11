@@ -11,7 +11,7 @@ import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { Codec, Type } from "@/utils";
+import { Codec, getChecksumAddress, Type } from "@/utils";
 import { ethers } from "ethers";
 import {
     StateSnapshotStruct,
@@ -81,7 +81,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             forkId,
             blockHeight
         });
-        const normalizedPeerAddress = ethers.getAddress(peerAddress.toString());
+        const normalizedPeerAddress = getChecksumAddress(peerAddress);
 
         if (this.requestMapByPeerAddress.has(normalizedPeerAddress)) {
             this.logger.debug(

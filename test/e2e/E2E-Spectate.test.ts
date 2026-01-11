@@ -1,5 +1,5 @@
 import { expect } from "chai";
-import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { MathStateMachine } from "@typechain-types/index";
 import { ATransport } from "@/transport";
 import { StateSnapshot } from "@/models";
@@ -20,17 +20,6 @@ describe("E2E: SpectateService", function () {
         }
     });
 
-    const hasHandshakeCompleted = (
-        ownerPeer: TestPeer<MathStateMachine>,
-        counterparty: TestPeer<MathStateMachine>
-    ): boolean => {
-        const profile =
-            ownerPeer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
-                counterparty.address
-            );
-        return profile?.getIsHandshakeCompleted() ?? false;
-    };
-
     it("should NOT allow spectate RPC before handshake completes", async function () {
         harness = new PeerTestHarness<MathStateMachine>();
         await harness.setup(2, {
@@ -50,17 +39,6 @@ describe("E2E: SpectateService", function () {
 
         const peer0 = h.peers[0];
         const peer1 = h.peers[1];
-
-        const hasVerifiedProfile = (
-            ownerPeer: TestPeer<MathStateMachine>,
-            counterparty: TestPeer<MathStateMachine>
-        ): boolean => {
-            const profile =
-                ownerPeer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
-                    counterparty.address
-                );
-            return !!profile;
-        };
 
         // Ensure a deterministic "handshake incomplete" window on peer1 by
         // temporarily preventing it from initiating its own handshake.
@@ -165,7 +143,7 @@ describe("E2E: SpectateService", function () {
         });
 
         // Create a 4th peer later and connect it to the same channelId.
-        const spectatingPeer = await h.addPeer();
+        await h.addPeer();
         await h.waitForP2PConnections(5000);
 
         await h.waitForSync({ timeout: 5000 });

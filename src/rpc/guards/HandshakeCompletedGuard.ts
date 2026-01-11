@@ -147,8 +147,7 @@ export class HandshakeCompletedGuard extends AGuard<ARpcService<ARpcMethods>> {
             }
         );
 
-        // With the new connection semantics, any guarded RPC over an unverified
-        // transport is considered malicious.
+        // Any guarded RPC over an unverified transport is considered malicious.
         if (transport.peerAddress) {
             this.service.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
                 transport.peerAddress

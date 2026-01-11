@@ -8,7 +8,6 @@ import AValidationStrategy from "./AValidationStrategy";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
 import type P2PManager from "@/P2PManager";
-import { ATransport } from "@/transport";
 import { Logger } from "@/utils";
 
 export default class SpectatingValidationStrategy extends AValidationStrategy {

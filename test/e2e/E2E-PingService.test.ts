@@ -157,7 +157,7 @@ describe("E2E: PingService (custom RPC)", function () {
         // -------------------------------------------------------------
         // Type-safety demonstration (compile-time only)
         // -------------------------------------------------------------
-        if (false) {
+        if (process.env.PEER3_TYPECHECK === "true") {
             p2p0.remoteRpc.pingService.ping("ok");
             p2p0.remoteRpc.relayService.recordPing("ok");
 

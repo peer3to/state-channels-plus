@@ -40,6 +40,7 @@ export type ConstructDisputeResult = {
     fraudProofsToApply: FraudProofStruct[];
 };
 
+const DEFAULT_GAS_LIMIT = 5000000;
 class DisputeManager {
     signer: ethers.Signer;
     signerAddress: Address;
@@ -134,7 +135,7 @@ class DisputeManager {
                 } else {
                     await this.stateChannelManagerContract.uploadDispute(
                         disputeConfirmation,
-                        { gasLimit: 5000000 }
+                        { gasLimit: DEFAULT_GAS_LIMIT }
                     );
                 }
             }

@@ -1,7 +1,7 @@
 import { ethers } from "hardhat";
 import fs from "fs";
 import path from "path";
-import { deploy, getTimeConfig } from "@peer3/state-channels-plus";
+import { deploy } from "@peer3/state-channels-plus";
 import {
     TicTacToeStateChannelManagerProxy,
     TicTacToeStateMachine,
@@ -71,7 +71,6 @@ export async function deployTicTacToe(): Promise<
     );
 
     // Deploy core facets + StateChannelManagerProxy via the SDK helper.
-    const timeConfig = getTimeConfig();
     const sdkProxy = await deploy(
         await ticTacToeContactInstance.getAddress(),
         ticTacToeConsumerFacetAddress,

@@ -129,7 +129,7 @@ export class SignatureUtils {
                 if (requiredAddresses.has(signer)) {
                     matchedAddresses.add(signer);
                 }
-            } catch (e) {
+            } catch {
                 // Skip invalid signatures
                 continue;
             }
