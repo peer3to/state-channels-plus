@@ -7,7 +7,7 @@ import { ATransport, TransportType } from "@/transport";
 import ProfileManager from "@/ProfileManager";
 import Holepunch from "@/Holepunch";
 import { ethers } from "ethers";
-import { DebugProxy, LocalDiscoveryServer } from "@/utils";
+import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
 import type { Logger } from "@/utils/PeerLogger";
 import { Buffer } from "buffer";
 import { config } from "@/utils/config";
@@ -24,6 +24,7 @@ type RemoteRpcRoot<TFactories extends RpcServiceFactoryMap> =
     RemoteRpcProxyType<MainRpcService> &
         RemoteRpcProxyType<RpcServiceInstances<TFactories>>;
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
     implements IOnMessage
 {
@@ -79,7 +80,6 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
     }
     //Mark resources for garbage collection
     public async dispose() {
-        const remoteRpc = RemoteRpcProxy.createProxy(this.localRpc);
         await this.holepunch.dispose();
         this.disconnectAll();
     }
@@ -198,14 +198,13 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
     /**
      * Returns a snapshot of currently connected peer identities (EVM addresses).
      */
-    public getConnectedPeers(): Set<string> {
-        const addresses = new Set<string>();
+    public getConnectedPeers(): Set<Address> {
+        const addresses = new Set<Address>();
         for (const transport of this.openConnections) {
             const fromTransport = transport.peerAddress;
             if (fromTransport) {
-                addresses.add(
-                    this.profileManager.normalizeEvmAddress(fromTransport)
-                );
+                // Boundary: transport.peerAddress can originate outside ethers.
+                addresses.add(getChecksumAddress(fromTransport));
                 continue;
             }
 
@@ -213,9 +212,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
                 this.profileManager.getProfileByTransport(transport);
             const fromProfile = profile?.getEvmAddress();
             if (fromProfile) {
-                addresses.add(
-                    this.profileManager.normalizeEvmAddress(fromProfile)
-                );
+                addresses.add(fromProfile.toString());
             }
         }
         return addresses;

@@ -66,6 +66,9 @@ export class HandshakeCompletedGuard extends AGuard<ARpcService<ARpcMethods>> {
     }
 
     onFailure(rpc: Rpc, transport: ATransport): void {
+        if (this.options?.onFailure) {
+            return this.options.onFailure(rpc, transport);
+        }
         const initHandshakeService =
             this.service.p2pManager.localRpc.initHandshakeService;
 
@@ -129,10 +132,6 @@ export class HandshakeCompletedGuard extends AGuard<ARpcService<ARpcMethods>> {
             return;
         }
 
-        if (this.options?.onFailure) {
-            return this.options.onFailure(rpc, transport);
-        }
-
         const profile =
             this.service.p2pManager.profileManager.getProfileByTransport(
                 transport
@@ -148,8 +147,7 @@ export class HandshakeCompletedGuard extends AGuard<ARpcService<ARpcMethods>> {
             }
         );
 
-        // With the new connection semantics, any guarded RPC over an unverified
-        // transport is considered malicious.
+        // Any guarded RPC over an unverified transport is considered malicious.
         if (transport.peerAddress) {
             this.service.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
                 transport.peerAddress

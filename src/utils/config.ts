@@ -28,7 +28,7 @@ const DEFAULT_CONFIG: Config = {
     HOLEPUNCH_RELAYER_URLS: []
 };
 
-function isNode() {
+export function isNodeRuntime() {
     return (
         typeof process !== "undefined" &&
         process.versions &&
@@ -97,7 +97,7 @@ function coerceEnvValue(
 }
 
 function envOverrides(): PartialConfig {
-    if (!isNode()) return {};
+    if (!isNodeRuntime()) return {};
 
     const env: Record<string, unknown> = process.env || {};
     const overrides: PartialConfig = {};

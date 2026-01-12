@@ -7,6 +7,15 @@ This is the user interface for the Tic-Tac-Toe game utilizing the SDK.
 
 Complete everything in the [README](../README.md) of the parent directory. 
 
+## Local SDK config (`peer3.config.ts`)
+
+This UI expects a local config file at [src/peer3.config.ts](src/peer3.config.ts) (same folder as `main.tsx`).
+
+- Create it by copying the template:
+	- `cp src/example.peer3.config.ts src/peer3.config.ts`
+- The only required change is `HOLEPUNCH_RELAYER_URLS` (set it to your relay URL(s)).
+
+
 ## Typechain types, ABI and Bytecode
 <b style="color: yellow;">
 
@@ -22,31 +31,30 @@ Hardhat is configured to emit TypeChain output directly into [src/stateChannel/t
 
 ## Installation
 ```shell
-# Recommended (fast iteration): use pnpm + local link
-# From this repo root, first build (or watch-build) the SDK so dist/ exists:
-#   pnpm -w run dev:tsc
+# From the repo root, first build (or watch-build) the SDK so `dist/` exists:
+#   yarn && yarn build
+#   # or (watch mode)
+#   yarn dev:tsc
+
 # Then, in this folder:
-pnpm install
+yarn
 
-# Optional: install hyperswarm deps used by the Pear build
-cd hyperswarm && pnpm install && cd ..
-
-# Legacy
-# pnpm -w run install-all
+# Optional (Pear build): install hyperswarm deps as well
+yarn install-all
 ```
 
 ## Build
 
 ```shell
-pnpm run build:browser
+yarn build:browser
 ```
 This will generate the dist directory.
 
 ## Serve the UI
 Use a static server to serve the UI. For example, you can use `http-server`.
 ```shell
-pnpm add -g http-server
+yarn add -D http-server
 ```
 ```shell
-cd dist && http-server
+npx http-server dist
 ```

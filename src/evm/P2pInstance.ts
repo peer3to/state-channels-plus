@@ -5,6 +5,7 @@ import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
 export default class P2pInstance<
     T extends AStateMachine,
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
 > {
     p2pContractInstance: T;

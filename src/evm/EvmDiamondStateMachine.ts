@@ -138,7 +138,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                     outboundMessages as ethers.Result
                 ) as unknown as MessageStruct[]
             };
-        } catch (error) {
+        } catch {
             return {
                 success: false,
                 successCallback: () => {},
@@ -391,6 +391,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
      */
     public static async p2pSetup<
         T extends AStateMachineContract,
+        // eslint-disable-next-line @typescript-eslint/no-empty-object-type
         TFactories extends RpcServiceFactoryMap = {}
     >(
         signer: Signer,

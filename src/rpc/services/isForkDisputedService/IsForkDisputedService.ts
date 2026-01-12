@@ -65,7 +65,7 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
                 for (const peerAddress of snapshotAddresses) {
                     if (
                         this.didPeerAddressAcknowledgeDisputedFork(
-                            peerAddress,
+                            peerAddress.toString(),
                             forkId
                         )
                     ) {

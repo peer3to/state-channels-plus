@@ -59,7 +59,7 @@ import {
     DisputeStruct,
     DisputeAuditingDataStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { Address, Bytes, Timestamp } from "@/types/types";
+import { Bytes, Timestamp } from "@/types/types";
 import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
 import { ExecResult } from "@ethereumjs/evm";
 import {
@@ -326,7 +326,7 @@ export class Codec {
                 cnt++;
             }
             if (cnt == 0) obj = result.toArray();
-        } catch (e) {
+        } catch {
             obj = result.toArray();
         }
         for (const key in obj) {
@@ -369,11 +369,5 @@ export class Codec {
 
     public static convertEthersResultToObject<T>(result: ethers.Result): T {
         return this.ethersResultToObjectRecursive(result) as T;
-    }
-
-    public static normalizeAddress(address: Address): string {
-        const addressString =
-            typeof address === "string" ? address : address.toString();
-        return addressString.toLowerCase();
     }
 }

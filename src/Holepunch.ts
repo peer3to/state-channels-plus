@@ -54,7 +54,7 @@ class Holepunch {
     }
     public async join(topic: Buffer) {
         this.topics.push(topic);
-        const discovery = this.swarm.join(topic, {
+        this.swarm.join(topic, {
             server: true,
             client: true
         });
@@ -64,7 +64,7 @@ class Holepunch {
 
     private rejoinTopics() {
         for (const topic of this.topics) {
-            const discovery = this.swarm.join(topic, {
+            this.swarm.join(topic, {
                 server: true,
                 client: true
             });

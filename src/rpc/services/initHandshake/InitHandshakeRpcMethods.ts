@@ -83,11 +83,9 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             return;
         }
 
-        const normalizedAddress = signerAddress.toLowerCase();
-
         this.service.recordVerifiedPeerAddress(
             this.senderTransport,
-            normalizedAddress
+            signerAddress
         );
 
         this.service.setRemotePreferredTransport(

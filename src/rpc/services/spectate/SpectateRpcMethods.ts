@@ -58,7 +58,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
         channelId: ChannelId,
         syncPayload: SyncPayload
     ) {
-        this.service.logger.debug(`Syncpayload received`, { syncPayload });
+        this.service.logger.debug(`Sync payload received`, { syncPayload });
         const senderTransport = this.senderTransport;
         const peerAddress = senderTransport.peerAddress;
         if (!peerAddress) {

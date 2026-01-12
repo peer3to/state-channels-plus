@@ -620,7 +620,7 @@ describe("E2E: RPC Services", function () {
         // Arrange: Setup 3 peers but connect only the first 2
         // Act: New peer connects and completes handshake
         // Assert: Handshake completes successfully, profile is created
-        it.only("should complete handshake successfully and create peer profile", async function () {
+        it("should complete handshake successfully and create peer profile", async function () {
             // Arrange
             const initiatingPeer = harness.peers[0];
             const peer1 = harness.peers[1];

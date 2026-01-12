@@ -217,7 +217,7 @@ describe("StateChannelManagerProxy", function () {
                 .map((log) => {
                     try {
                         return mathChannelManager.interface.parseLog(log);
-                    } catch (error) {
+                    } catch {
                         return null;
                     }
                 })

@@ -1,26 +1,20 @@
-import {
-    ARpcService,
-    ATransport,
-    Codec,
-    Clock,
-    HandshakeCompletedGuard,
-    SignatureUtils,
-    Type
-} from "@peer3/state-channels-plus";
+import { ethers } from "ethers";
 
-import type { DataTypes } from "@peer3/state-channels-plus";
+import Clock from "@/Clock";
+import type { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import ARpcService from "@/rpc/ARpcService";
+import { HandshakeCompletedGuard } from "@/rpc/guards";
+import type ATransport from "@/transport/ATransport";
+import { Codec, SignatureUtils, Type, getChecksumAddress } from "@/utils";
 
-import { ethers } from "@peer3/state-channels-plus";
 import OpenChannelNegotiationRpcMethods, {
-    type NegotiationFactories,
-    type NegotiationP2PManager
-} from "./OpenChannelNegotiationRpcMethods.ts";
-
+    type OpenChannelNegotiationFactories,
+    type OpenChannelNegotiationP2PManager
+} from "./OpenChannelNegotiationRpcMethods";
 import {
     DEFAULT_JOIN_AMOUNT,
     NEGOTIATION_TIMEOUT_MS,
     compareAddresses,
-    normalizeAddress,
     type Address
 } from "./OpenChannelNegotiationHelpers";
 
@@ -41,18 +35,18 @@ type NegotiationState = {
 
 export default class OpenChannelNegotiationService extends ARpcService<
     OpenChannelNegotiationRpcMethods,
-    NegotiationP2PManager
+    OpenChannelNegotiationP2PManager
 > {
     public state: NegotiationState = {
         myAmount: DEFAULT_JOIN_AMOUNT,
         channelOpened: false
     };
 
-    constructor(p2pManager: NegotiationP2PManager) {
+    constructor(p2pManager: OpenChannelNegotiationP2PManager) {
         super(
             p2pManager,
             p2pManager.stateManager.logger.child({
-                module: "OpenChannelNegotiationService"
+                component: "OpenChannelNegotiationService"
             })
         );
 
@@ -70,13 +64,12 @@ export default class OpenChannelNegotiationService extends ARpcService<
             return;
         }
 
-        const peer = normalizeAddress(peerAddress);
-        const me = normalizeAddress(
+        const peer = getChecksumAddress(peerAddress);
+        const me = getChecksumAddress(
             String(this.p2pManager.stateManager.signerAddress)
         );
         if (peer === me) return;
 
-        // If we are already negotiating with someone else, do nothing.
         if (this.state.negotiatingWith) {
             return;
         }
@@ -110,13 +103,13 @@ export default class OpenChannelNegotiationService extends ARpcService<
 
     private getParticipantsAndBalances(peerAddress: Address): {
         participants: [Address, Address];
-        balances: DataTypes.OpenChannelStruct["balances"];
+        balances: OpenChannelStruct["balances"];
         lower: Address;
     } {
-        const me = normalizeAddress(
+        const me = getChecksumAddress(
             String(this.p2pManager.stateManager.signerAddress)
         );
-        const peer = normalizeAddress(peerAddress);
+        const peer = getChecksumAddress(peerAddress);
 
         const [a0, a1] =
             compareAddresses(me, peer) <= 0 ? [me, peer] : [peer, me];
@@ -127,7 +120,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
                 ? this.state.theirAmount
                 : DEFAULT_JOIN_AMOUNT;
 
-        const balances: DataTypes.OpenChannelStruct["balances"] = [
+        const balances: OpenChannelStruct["balances"] = [
             {
                 amount: a0 === me ? this.state.myAmount : theirAmount,
                 data: "0x"
@@ -149,15 +142,14 @@ export default class OpenChannelNegotiationService extends ARpcService<
         if (this.state.channelOpened) return;
         if (!this.state.negotiatingWith) return;
 
-        const me = normalizeAddress(
+        const me = getChecksumAddress(
             String(this.p2pManager.stateManager.signerAddress)
         );
-        const peer = normalizeAddress(peerAddress);
+        const peer = getChecksumAddress(peerAddress);
 
         const { participants, balances, lower } =
             this.getParticipantsAndBalances(peer);
 
-        // If channel already open, finalize.
         const channelId = this.p2pManager.stateManager.getChannelId();
         const alreadyOpen =
             await this.p2pManager.stateManager.stateChannelManagerContract.isChannelOpen(
@@ -171,14 +163,11 @@ export default class OpenChannelNegotiationService extends ARpcService<
 
         const isLower = me === lower;
         const haveAmounts = typeof this.state.theirAmount === "number";
-
-        // Only the lower-address peer should progress negotiation via maybeProgress.
         if (!isLower) return;
 
-        // Lower-address peer sends proposal once both amounts known.
         if (haveAmounts && !this.state.proposalSent) {
             const deadlineTimestamp = Clock.getTimeInSeconds() + 60;
-            const openChannel: DataTypes.OpenChannelStruct = {
+            const openChannel: OpenChannelStruct = {
                 channelId,
                 participants,
                 balances,
@@ -197,9 +186,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
                 .sendOne(peer);
 
             this.state.proposalSent = true;
-            // Schedule a single deadline-based check (no polling).
             this.scheduleDeadlineCheck(deadlineTimestamp, peer);
-            return;
         }
     }
 
@@ -210,16 +197,14 @@ export default class OpenChannelNegotiationService extends ARpcService<
     ): Promise<void> {
         if (this.state.channelOpened) return;
 
-        const peer = normalizeAddress(peerAddress);
-        const me = normalizeAddress(
+        const peer = getChecksumAddress(peerAddress);
+        const me = getChecksumAddress(
             String(this.p2pManager.stateManager.signerAddress)
         );
         if (peer === me) return;
 
-        // Record proposal (optional, but useful for debugging/state).
         this.state.receivedProposal = { encodedOpenChannel, lowerSignature };
 
-        // Ensure we have a negotiation context.
         if (!this.state.negotiatingWith) {
             this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peer);
             this.resetNegotiation("openProposal - no negotiation in progress");
@@ -228,8 +213,6 @@ export default class OpenChannelNegotiationService extends ARpcService<
 
         const { lower } = this.getParticipantsAndBalances(peer);
         const isLower = me === lower;
-
-        // openProposal should only be processed by the higher-address peer.
         if (isLower) {
             this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peer);
             this.resetNegotiation("openProposal - lower address called");
@@ -239,11 +222,10 @@ export default class OpenChannelNegotiationService extends ARpcService<
         const decoded = Codec.decode(
             encodedOpenChannel,
             Type.OpenChannel
-        ) as DataTypes.OpenChannelStruct;
+        ) as OpenChannelStruct;
         const deadlineSeconds = Number(decoded.deadlineTimestamp);
 
-        // Verify proposal signature came from the lower address.
-        const recovered = normalizeAddress(
+        const recovered = getChecksumAddress(
             SignatureUtils.getSignerAddress(
                 encodedOpenChannel,
                 lowerSignature
@@ -274,6 +256,8 @@ export default class OpenChannelNegotiationService extends ARpcService<
                 .sendOne(peer);
             this.resetNegotiation("open tx failed");
         }
+
+        this.scheduleDeadlineCheck(deadlineSeconds, peer);
     }
 
     public scheduleDeadlineCheck(
@@ -295,7 +279,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
                 ? deadlineTimestampSeconds - now + agreementTimeSeconds
                 : agreementTimeSeconds;
 
-        peerAddress = normalizeAddress(peerAddress);
+        peerAddress = getChecksumAddress(peerAddress);
 
         this.state.timeoutHandle = setTimeout(async () => {
             try {
@@ -352,4 +336,4 @@ export default class OpenChannelNegotiationService extends ARpcService<
     }
 }
 
-export type { NegotiationFactories };
+export type { OpenChannelNegotiationFactories };

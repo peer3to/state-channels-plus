@@ -66,13 +66,6 @@ export async function deployArtifact<T>(
 ): Promise<{ address: string; contract: T }> {
     const linkedArtifact = linkLibraries(artifact, options?.libs || {});
 
-    // Important: do NOT bind the factory to `signer` here.
-    // In consumer projects (like the TicTacToe example) `signer` may come from a
-    // different installed copy of ethers. Passing that signer directly into the
-    // ethers ContractFactory constructor can lead to subtle cross-instance issues.
-    //
-    // Instead: build the deploy tx with a runner-less factory and send it via
-    // the passed signer.
     const factory = new ContractFactory(artifact.abi, linkedArtifact.bytecode);
     const deployTx = await factory.getDeployTransaction(
         ...(options?.args || [])

@@ -11,7 +11,7 @@ import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { Codec, Type } from "@/utils";
+import { Codec, getChecksumAddress, Type } from "@/utils";
 import { ethers } from "ethers";
 import {
     StateSnapshotStruct,
@@ -81,8 +81,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             forkId,
             blockHeight
         });
-        const normalizedPeerAddress =
-            this.p2pManager.profileManager.normalizeEvmAddress(peerAddress);
+        const normalizedPeerAddress = getChecksumAddress(peerAddress);
 
         if (this.requestMapByPeerAddress.has(normalizedPeerAddress)) {
             this.logger.debug(
@@ -115,7 +114,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 );
 
                 this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                    peerAddress
+                    normalizedPeerAddress
                 );
             },
             this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
@@ -127,7 +126,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         // Transport can change (e.g. WebRTC upgrade). Always send by address.
         this.remoteRpc.spectateService
             .onSpectateRequest(syncRequest)
-            .sendOne(peerAddress);
+            .sendOne(normalizedPeerAddress);
     }
 
     public takePendingRequestByPeerAddress(

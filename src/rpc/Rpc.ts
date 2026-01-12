@@ -18,7 +18,7 @@ export function deserializeRpc(serializedRpc: string): Rpc | undefined {
             return undefined;
         }
         return rpc as Rpc;
-    } catch (e) {
+    } catch {
         return undefined;
     }
 }
