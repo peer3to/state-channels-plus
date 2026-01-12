@@ -19,6 +19,16 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
         channelId: ChannelId,
         forkId: ForkId
     ) {
+        const peerAddress = this.senderTransport.peerAddress;
+        if (!peerAddress) {
+            this.service.logger.error(
+                `onDisputeAcknowledgmentRequest - missing peer address`
+            );
+            return this.p2pManager.disconnectAndBlacklistPeer(
+                this.senderTransport
+            );
+        }
+
         // Check if fork is disputed locally
         let isDisputed =
             await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
@@ -42,7 +52,7 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
                 `Fork ${forkId} is disputed on-chain, responding`
             );
             return this.service.respondToDisputeAcknowledgment(
-                this.senderTransport,
+                peerAddress,
                 channelId,
                 forkId
             );
@@ -52,7 +62,9 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
         this.service.logger.debug(
             `Fork ${forkId} is not disputed, disconnecting`
         );
-        return this.p2pManager.disconnectAndBlacklistPeer(this.senderTransport);
+        return this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+            peerAddress
+        );
     }
 
     /**
@@ -66,8 +78,16 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
             `Received dispute acknowledgment response for fork ${forkId}`
         );
 
+        const peerAddress = this.senderTransport.peerAddress;
+        if (!peerAddress) {
+            this.service.logger.error(
+                `onDisputeAcknowledgmentResponse - missing peer address`
+            );
+            return;
+        }
+
         // Mark that this peer has acknowledged (from our perspective)
-        this.service.peerAcknowledgesDisputedFork(this.senderTransport, forkId);
+        this.service.peerAcknowledgesDisputedFork(peerAddress, forkId);
     }
 }
 

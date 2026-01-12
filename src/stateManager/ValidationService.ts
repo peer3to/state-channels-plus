@@ -11,8 +11,7 @@ import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
-import StateManager from "@/stateManager";
-import ATransport from "@/transport/ATransport";
+import type StateManager from "@/stateManager";
 
 export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
@@ -35,7 +34,7 @@ export default class ValidationService {
     async validateBlockConfirmation(
         block: Block,
         strategy: AValidationStrategy,
-        senderTransport?: ATransport
+        senderAddress?: string
     ): Promise<BlockValidationResult> {
         // Check is correct channel
         if (
@@ -104,7 +103,7 @@ export default class ValidationService {
             this.logger.warn("validateBlockConfirmation - fork disputed", {
                 block
             });
-            return await strategy.blockForkIsDisputed(block, senderTransport);
+            return await strategy.blockForkIsDisputed(block, senderAddress);
         }
 
         // isNext
@@ -117,7 +116,10 @@ export default class ValidationService {
                     block
                 }
             );
-            return await strategy.blockIsNotNextAndIsInTheFuture(block);
+            return await strategy.blockIsNotNextAndIsInTheFuture(
+                block,
+                senderAddress
+            );
         }
 
         // Is linked
@@ -171,9 +173,7 @@ export default class ValidationService {
         const { forkId, height } = block.coordinates;
         if (height === 0) {
             const genesisSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                    forkId
-                );
+                this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
 
             return genesisSnapshot?.hash === block.previousBlockHash;
         }
@@ -200,6 +200,9 @@ export default class ValidationService {
             const areAllParticipants = isSubset(signerAddresses, participants);
 
             if (!areAllParticipants) {
+                this.logger.warn(
+                    "BlockConfirmation - checkDuplicateBlock - not all signers are participants"
+                );
                 return await strategy.notAllSingersAreParticipants(block);
             }
 
@@ -244,6 +247,9 @@ export default class ValidationService {
             );
 
             if (!areNewSignersParticipants) {
+                this.logger.warn(
+                    "BlockConfirmation - checkDuplicateBlock - not all new signers are participants"
+                );
                 return await strategy.notAllSingersAreParticipants(block);
             }
 

@@ -326,7 +326,7 @@ export class Codec {
                 cnt++;
             }
             if (cnt == 0) obj = result.toArray();
-        } catch (e) {
+        } catch {
             obj = result.toArray();
         }
         for (const key in obj) {

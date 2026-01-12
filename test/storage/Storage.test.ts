@@ -4,7 +4,7 @@ import Storage from "@/storage";
 import { BlockCoordinates, Block, StateSnapshot } from "@/models";
 import * as factory from "../factory";
 import { ForkId } from "@/types/types";
-import { BlockConfirmationStruct } from "@/index";
+import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 describe("Storage", () => {
     describe("getStateSnapshot", () => {

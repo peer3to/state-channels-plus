@@ -4,7 +4,6 @@ import {
     BlockConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import ATransport from "@/transport/ATransport";
 
 export default abstract class AValidationStrategy {
     public abstract interpretFinalValidationResult(
@@ -61,12 +60,12 @@ export default abstract class AValidationStrategy {
 
     public abstract blockForkIsDisputed(
         block: Block,
-        senderTransport?: ATransport
+        senderAddress?: string
     ): Promise<BlockValidationResult>;
 
     public abstract blockIsNotNextAndIsInTheFuture(
         block: Block,
-        senderTransport?: ATransport
+        senderAddress?: string
     ): Promise<BlockValidationResult>;
 
     public abstract blockIsNotLinkedAndIsNotFirstBlock(

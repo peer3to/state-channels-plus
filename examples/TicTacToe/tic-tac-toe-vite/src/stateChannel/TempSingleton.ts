@@ -1,27 +1,28 @@
-import {
-    JoinChannelStruct,
-    Clock,
-    P2pSigner,
-    AStateChannelManagerProxy,
-    SignatureUtils
+import { ethers, P2pSigner } from "@peer3/state-channels-plus";
+import type { DataTypes, DisputeTypes } from "@peer3/state-channels-plus";
+import type {
+    AddressLike,
+    BigNumberish,
+    Signer
 } from "@peer3/state-channels-plus";
-import { Signer } from "ethers";
 import {
     getDltContracts,
     getRandomSigner,
     p2pSetup
 } from "./TicTacToeStateChannel";
-import { TicTacToeStateMachine } from "./typechain-types";
-import { ethers, BigNumberish } from "ethers";
-import { DisputeStruct } from "@peer3/state-channels-plus";
+import type { TicTacToeRpcFactories } from "./CustomRpc";
+import {
+    TicTacToeStateChannelManagerProxy,
+    TicTacToeStateMachine
+} from "./typechain-types";
 //Singleton just for demo!
 class TempSingleton {
     private static instance: TempSingleton;
-    joinChanel: JoinChannelStruct | undefined;
+    private joinChanel: DataTypes.JoinChannelStruct | undefined;
     signer: Signer = getRandomSigner();
     p2pContract: TicTacToeStateMachine | undefined;
-    p2pSigner: P2pSigner | undefined;
-    stateChannelManagerContract: AStateChannelManagerProxy | undefined;
+    p2pSigner: P2pSigner<TicTacToeRpcFactories> | undefined;
+    stateChannelManagerContract: TicTacToeStateChannelManagerProxy | undefined;
     myBalance = 500;
     opponentBalance = 500;
     //game data
@@ -61,9 +62,8 @@ class TempSingleton {
     }
 
     public async setJoinChannel(channelId: string) {
-        await Clock.init(this.signer.provider!);
-        console.log("Clock seconds:", Clock.getTimeInSeconds());
-        console.log("Signer address:", await this.signer.getAddress());
+        // console.log("Clock seconds:", Clock.getTimeInSeconds());
+        console.debug("Signer address:", await this.signer.getAddress());
         let encodedChannelId = ethers.AbiCoder.defaultAbiCoder().encode(
             ["string"],
             [channelId]
@@ -72,32 +72,46 @@ class TempSingleton {
         let channelIdHash = ethers.keccak256(encodedChannelId);
         console.log("channelIdHash:", channelIdHash);
         console.log("My Balance:", this.getMyBalance());
-        this.joinChanel = {
-            channelId: channelIdHash,
-            participant: await this.signer.getAddress(),
-            amount: this.getMyBalance(),
-            deadlineTimestamp: Clock.getTimeInSeconds() + 120,
-            data: "0x00"
-        };
-        let { encoded, signature } = await SignatureUtils.signJoinChannel(
-            this.joinChanel,
-            this.signer
-        );
-        let signedJoinChannel = {
-            encodedJoinChannel: encoded,
-            signature
-        };
+        // this.joinChanel = {
+        //     channelId: channelIdHash,
+        //     participant: await this.signer.getAddress(),
+        //     deadlineTimestamp: Clock.getTimeInSeconds() + 120,
+        //     balance: {
+        //         amount: this.getMyBalance(),
+        //         data: "0x"
+        //     }
+        // };
+        // let { encoded, signature } = await SignatureUtils.signJoinChannel(
+        //     this.joinChanel,
+        //     this.signer
+        // );
+        // let signedJoinChannel = {
+        //     encodedJoinChannel: encoded,
+        //     signature
+        // };
         let contracts = await getDltContracts(this.signer);
         let p2p = await p2pSetup(
             contracts.TicTacToeStateChannelManagerInstance,
             contracts.TicTacToeSmInstance,
             {
-                onConnection: async (address) => {
-                    //TODO! This is only for tests - currently
-                    console.log("onConnection");
-                    this.setOpponentAddress(address);
+                onConnection: async (address, isChannelOpened) => {
+                    console.log("onConnection", {
+                        address: address.toString(),
+                        isChannelOpened
+                    });
+                    this.setOpponentAddress(address.toString());
+
+                    if (!isChannelOpened) {
+                        try {
+                            await p2p.p2pSigner.p2pManager.localRpc.openChannelNegotiationService.beginNegotiation(
+                                address.toString()
+                            );
+                        } catch (e) {
+                            console.error("beginNegotiation failed", e);
+                        }
+                    }
                 },
-                onTurn: async (address: string) => {
+                onTurn: async (address: AddressLike) => {
                     let timeConfig =
                         p2p.p2pSigner.p2pManager.stateManager.timeConfig;
                     this.setTimer(timeConfig.p2pTime);
@@ -151,35 +165,6 @@ class TempSingleton {
                         timeConfig.agreementTime,
                         timeConfig.chainFallbackTime
                     ]);
-                },
-                onDisputeUpdate: async (dispute: DisputeStruct) => {
-                    console.log("onDisputeUpdate", dispute);
-                    for (let i = 0; i < dispute.processExits.length; i++) {
-                        let processExit = dispute.processExits[i];
-                        let participant = processExit.participant;
-                        let amount = processExit.amount;
-                        if (participant === this.p2pSigner?.signerAddress) {
-                            this.myBalance = Number(amount);
-                            console.log(
-                                "Removed Participant My Balance",
-                                this.myBalance
-                            );
-                            console.trace("Removed Participant My Balance");
-                            this.setMyBalance(this.myBalance);
-                            //!!!! Can NOT !!! set opponent's balance (from local state) since this executed on-chain
-                        } else {
-                            this.opponentBalance = Number(amount);
-                            console.log(
-                                "Removed Participant Opponent Balance",
-                                this.opponentBalance
-                            );
-                            console.trace(
-                                "Removed Participant Opponent Balance"
-                            );
-                            this.setOpponentBalance(this.opponentBalance);
-                            //!!!! Can NOT !!! set my balance (fron local state) since this executed on-chain
-                        }
-                    }
                 }
             }
         );
@@ -190,7 +175,7 @@ class TempSingleton {
             contracts.TicTacToeStateChannelManagerInstance;
         this.p2pContract = p2p.p2pContractInstance;
         this.p2pSigner = p2p.p2pSigner;
-        this.p2pSigner.setJc(this.joinChanel, signedJoinChannel);
+        // this.p2pSigner.setJc(this.joinChanel, signedJoinChannel);
         this.p2pSigner.connectToChannel(channelIdHash);
 
         this.p2pContract.on(
@@ -257,7 +242,7 @@ class TempSingleton {
         //   }
         // );
     }
-    public getJoinChannel() {
+    public getJoinChannel(): DataTypes.JoinChannelStruct | undefined {
         return this.joinChanel;
     }
 

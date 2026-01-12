@@ -124,10 +124,9 @@ export default class FraudProofService {
     createWrongGenesisProof(block: Block): Hash {
         const proof: WrongGenesisProofStruct = {
             invalidBlock: block.signedBlock,
-            genesisSnapshot:
-                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                    block.forkId
-                )!
+            genesisSnapshot: this.storage.stateSnapshots
+                .getGenesisSnapshotByForkId(block.forkId)!
+                .toStruct()
         };
 
         return this.storeFraudProof(block.signerAddress, {

@@ -5,14 +5,12 @@ import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes"
 import AValidationStrategy from "./AValidationStrategy";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
-import ATransport from "@/transport/ATransport";
 import DisputeFraudProofService from "../utils/DisputeFraudProofService";
 import {
     BlockConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Logger } from "@/utils";
-
 
 export default class DisputeValidationStrategy extends AValidationStrategy {
     readonly fraudProofService: FraudProofService;
@@ -72,7 +70,7 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         }
     }
     public async authenticateBlockFailed(
-        block: BlockConfirmationStruct
+        _block: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
         // This should never be the case, since stateProof is valid
         throw new Error("authenticateBlockFailed in DisputeValidationStrategy");
@@ -82,7 +80,7 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         throw new Error("wrongChannel in DisputeValidationStrategy");
     }
     public async channelNotOpened(
-        block: Block
+        _block: Block
     ): Promise<BlockValidationResult> {
         // TODO - should not be the case, but have to think about it - can someone create junk disputes while the channel is not open and what to do in that case - probably abort channel opening if dispute window for genesis for exists
         throw new Error("channelNotOpened in DisputeValidationStrategy");
@@ -180,15 +178,15 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         );
     }
     public async blockForkIsDisputed(
-        block: Block,
-        senderTransport?: ATransport
+        _block: Block,
+        _senderAddress?: string
     ): Promise<BlockValidationResult> {
         // continue syncing
         return BlockValidationResult.SUCCESS;
     }
     public async blockIsNotNextAndIsInTheFuture(
-        block: Block,
-        senderTransport?: ATransport
+        _block: Block,
+        _senderAddress?: string
     ): Promise<BlockValidationResult> {
         // This should never be the case, since stateProof is valid
         throw new Error(

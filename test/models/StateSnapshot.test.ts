@@ -78,7 +78,7 @@ describe("StateSnapshot Model", () => {
 
     describe("Property getters", () => {
         it("should return correct forkId", () => {
-            expect(stateSnapshot.forkId).to.equal(stateSnapshotStruct.forkId);
+            expect(stateSnapshot.forkID).to.equal(stateSnapshotStruct.forkId);
         });
 
         it("should return correct snapshotData", () => {
@@ -107,14 +107,14 @@ describe("StateSnapshot Model", () => {
     describe("Genesis snapshot logic", () => {
         it("should identify genesis snapshot correctly", () => {
             expect(genesisStateSnapshot.isGenesis).to.be.true;
-            expect(genesisStateSnapshot.forkId).to.equal(
+            expect(genesisStateSnapshot.forkID).to.equal(
                 genesisStateSnapshot.snapshotDataHash
             );
         });
 
         it("should identify non-genesis snapshot correctly", () => {
             expect(stateSnapshot.isGenesis).to.be.false;
-            expect(stateSnapshot.forkId).to.not.equal(
+            expect(stateSnapshot.forkID).to.not.equal(
                 stateSnapshot.snapshotDataHash
             );
         });

@@ -1,3 +1,5 @@
+import peer3Config from "../../peer3.config";
+
 export interface Config {
     PROVIDER_URL: string;
     DEBUG_STATE_MANAGER: boolean;
@@ -6,14 +8,10 @@ export interface Config {
     DEBUG_RPC: boolean;
     DEBUG_CHANNEL_CONTRACT: boolean;
     DEBUG_LOCAL_TRANSPORT: boolean;
-}
-
-function isNode() {
-    return (
-        typeof process !== "undefined" &&
-        process.versions &&
-        process.versions.node
-    );
+    LOG_LEVEL: string;
+    LOG_EXCLUDE_TAGS: string;
+    EXCLUDE_LOG_TAGS: string;
+    HOLEPUNCH_RELAYER_URLS: string[];
 }
 
 const DEFAULT_CONFIG: Config = {
@@ -23,53 +21,122 @@ const DEFAULT_CONFIG: Config = {
     DEBUG_P2P_MANAGER: false,
     DEBUG_RPC: false,
     DEBUG_CHANNEL_CONTRACT: false,
-    DEBUG_LOCAL_TRANSPORT: false
+    DEBUG_LOCAL_TRANSPORT: false,
+    LOG_LEVEL: "info",
+    LOG_EXCLUDE_TAGS: "",
+    EXCLUDE_LOG_TAGS: "",
+    HOLEPUNCH_RELAYER_URLS: []
 };
 
-// Create configuration: if node -> test config, else -> regular config, then apply overrides
-function createConfig(overrides: Partial<Config> = {}): Config {
-    let baseConfig: Partial<Config> = {};
-
-    // If running in Node.js, use test config, otherwise use regular config
-    if (isNode()) {
-        try {
-            const testConfigModule = require("../../test/peer3.test.config");
-            baseConfig = testConfigModule.default || testConfigModule;
-        } catch (e) {
-            try {
-                const regularConfigModule = require("../../peer3.config");
-                baseConfig = regularConfigModule.default || regularConfigModule;
-            } catch {
-                // Use defaults if both fail
-            }
-        }
-    } else {
-        try {
-            const regularConfigModule = require("../../peer3.config");
-            baseConfig = regularConfigModule.default || regularConfigModule;
-        } catch {
-            // Use defaults if regular config fails
-        }
-    }
-
-    return {
-        ...DEFAULT_CONFIG,
-        ...baseConfig,
-        ...overrides
-    };
+export function isNodeRuntime() {
+    return (
+        typeof process !== "undefined" &&
+        process.versions &&
+        process.versions.node
+    );
 }
 
-export const config = createConfig();
+type PartialConfig = Partial<Config>;
 
-// Export individual config values for easy import
-export const {
-    PROVIDER_URL,
-    DEBUG_STATE_MANAGER,
-    DEBUG_DISPUTE_HANDLER,
-    DEBUG_P2P_MANAGER,
-    DEBUG_RPC,
-    DEBUG_CHANNEL_CONTRACT,
-    DEBUG_LOCAL_TRANSPORT
-} = config;
+function parseBooleanEnv(value: unknown): boolean | undefined {
+    if (typeof value !== "string") return undefined;
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "y", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "n", "off"].includes(normalized)) return false;
+    return undefined;
+}
 
-export { createConfig };
+function coerceEnvValue(
+    defaultValue: Config[keyof Config],
+    raw: unknown
+): Config[keyof Config] | undefined {
+    if (raw == null) return undefined;
+    if (typeof raw !== "string") return undefined;
+
+    if (Array.isArray(defaultValue)) {
+        const trimmed = raw.trim();
+        if (!trimmed) return undefined;
+
+        // Allow JSON array syntax: HOLEPUNCH_RELAYER_URLS='["wss://...","wss://..."]'
+        if (trimmed.startsWith("[")) {
+            try {
+                const parsed = JSON.parse(trimmed);
+                if (
+                    Array.isArray(parsed) &&
+                    parsed.every((v) => typeof v === "string")
+                ) {
+                    return parsed as any;
+                }
+            } catch {
+                return undefined;
+            }
+        }
+
+        // Fallback: comma/space separated.
+        const items = trimmed
+            .split(/[\s,]+/)
+            .map((s) => s.trim())
+            .filter(Boolean);
+
+        return items.length ? (items as any) : undefined;
+    }
+
+    if (typeof defaultValue === "boolean") {
+        return parseBooleanEnv(raw);
+    }
+    if (typeof defaultValue === "number") {
+        const n = Number(raw);
+        return Number.isFinite(n) ? (n as any) : undefined;
+    }
+    if (typeof defaultValue === "string") {
+        return raw;
+    }
+
+    // Unsupported types (objects, arrays) are ignored.
+    return undefined;
+}
+
+function envOverrides(): PartialConfig {
+    if (!isNodeRuntime()) return {};
+
+    const env: Record<string, unknown> = process.env || {};
+    const overrides: PartialConfig = {};
+
+    const keys = Object.keys(DEFAULT_CONFIG) as Array<keyof Config>;
+    for (const key of keys) {
+        const parsed = coerceEnvValue(DEFAULT_CONFIG[key], env[key as string]);
+        if (parsed !== undefined) {
+            (overrides as Record<keyof Config, Config[keyof Config]>)[key] =
+                parsed;
+        }
+    }
+    return overrides;
+}
+
+const baseConfig: PartialConfig =
+    peer3Config && typeof peer3Config === "object"
+        ? (peer3Config as PartialConfig)
+        : {};
+
+// Process-lifespan singleton config object.
+// Only this module can mutate it (via createConfig); other modules should only read.
+export let config: Config = { ...DEFAULT_CONFIG };
+
+/**
+ * Computes and applies config for the current process.
+ * Intended to be called once during p2pSetup.
+ * Precedence: overrides > process.env > peer3.config.ts > defaults
+ */
+export function createConfig(overrides: PartialConfig = {}): Config {
+    config = {
+        ...DEFAULT_CONFIG,
+        ...baseConfig,
+        ...envOverrides(),
+        ...overrides
+    };
+    // console.log("Config:", config);
+    // console.log("Peer3 config", peer3Config);
+    // console.log("Env overrides:", envOverrides());
+    // console.log("Overrides:", overrides);
+    return config;
+}

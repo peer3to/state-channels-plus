@@ -1,5 +1,5 @@
 import WebSocket, { WebSocketServer, AddressInfo } from "ws";
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import { LocalTransport } from "@/transport";
 import { ChannelId } from "@/types/types";
 // Import directly to avoid circular dependency through the utils barrel
@@ -34,9 +34,14 @@ type DiscoveryInfo = {
  *    - Connects directly to other Peers upon receiving announcements.
  */
 export class LocalDiscoveryServer {
-    private static logger: Logger = createLogger({
-        component: "LocalDiscovery"
-    });
+    private static _logger?: Logger;
+
+    private static get logger(): Logger {
+        if (!this._logger) {
+            this._logger = createLogger({ component: "LocalDiscovery" });
+        }
+        return this._logger;
+    }
     // --- Registry State ---
     private static discoveryServer: WebSocketServer | null = null;
     private static discoveryPort: number | null = null;
@@ -497,7 +502,7 @@ export class LocalDiscoveryServer {
                         }
                     }
                 }
-            } catch (_err) {
+            } catch {
                 // Ignore malformed messages
                 this.logger.warn("Malformed registration message", {
                     mode: "registry",
@@ -533,7 +538,7 @@ export class LocalDiscoveryServer {
             onConnection: (ws: WebSocket) => {
                 // Accepted a direct connection from another peer
                 const lt = new LocalTransport(ws, p2pManager);
-                p2pManager.addConnection(lt);
+                p2pManager.localRpc.initHandshakeService.initHandshake(lt);
                 this.logger.debug("Inbound peer connection accepted", {
                     ...peerLog,
                     myPeerPort: port
@@ -755,7 +760,7 @@ export class LocalDiscoveryServer {
                 ...logBase,
                 myChannelId
             });
-        } catch (_err) {
+        } catch {
             // Ignore malformed messages
             this.logger.warn("Malformed peer announcement", {
                 mode: "peer",
@@ -809,7 +814,7 @@ export class LocalDiscoveryServer {
             onOpen: (ws) => {
                 // Successful direct connection
                 const lt = new LocalTransport(ws, p2pManager);
-                p2pManager.addConnection(lt);
+                p2pManager.localRpc.initHandshakeService.initHandshake(lt);
                 this._peerRetryCount.delete(peerPort);
                 this.logger.info("Connected to peer", {
                     ...log

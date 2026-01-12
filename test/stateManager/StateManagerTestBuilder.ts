@@ -58,6 +58,7 @@ export class StateManagerTestBuilder {
     private testContract: TestStateChannelManagerContract;
     private mockP2pEventHooks: any;
     private logger: Logger;
+    private skipDefaultGenesisSnapshot: boolean = false;
 
     constructor() {
         // Initialize test implementations for external dependencies
@@ -83,6 +84,15 @@ export class StateManagerTestBuilder {
 
     withFork(forkId: ForkId): this {
         this.forkId = forkId;
+        return this;
+    }
+
+    /**
+     * Skip the automatic genesis snapshot creation in build()
+     * Use this when testing scenarios where no genesis snapshot should exist
+     */
+    withoutDefaultGenesisSnapshot(): this {
+        this.skipDefaultGenesisSnapshot = true;
         return this;
     }
 
@@ -113,7 +123,8 @@ export class StateManagerTestBuilder {
 
     withGenesisSnapshot(
         forkId: ForkId,
-        snapshotData: Partial<SnapshotDataStruct>
+        snapshotData: Partial<SnapshotDataStruct>,
+        options?: { blockHeight?: bigint }
     ): this {
         const fullSnapshotData: SnapshotDataStruct = {
             originForkId: forkId,
@@ -130,13 +141,13 @@ export class StateManagerTestBuilder {
 
         const snapshotStruct = {
             forkId,
-            blockHeight: 0n,
+            blockHeight: options?.blockHeight ?? defaults.onChainBlockHeight,
             timestamp: 0,
             snapshotData: fullSnapshotData
         };
 
         const genesisSnapshot = StateSnapshot.from(snapshotStruct);
-        (this.storage.stateSnapshots as any).genesisSnapshotDataByForkId.set(
+        (this.storage.stateSnapshots as any).genesisSnapshotByForkId.set(
             forkId,
             genesisSnapshot
         );
@@ -228,14 +239,24 @@ export class StateManagerTestBuilder {
             timestamp: 1000,
             snapshotData: {
                 originForkId: this.forkId,
-                stateMachineStateHash: "0x",
+                stateMachineStateHash: defaults.emptyBlockHash,
                 participants: [],
                 latestInboundMessageBlockHash: defaults.emptyBlockHash,
+                latestInboundMessageBlockHeight: 0n,
                 latestOutboundMessageBlockHash: defaults.emptyBlockHash,
+                latestOutboundMessageBlockHeight: 0n,
                 totalDeposits: { amount: 0n, data: "0x" },
                 totalWithdrawals: { amount: 0n, data: "0x" }
             }
         });
+
+        // Also store a genesis snapshot in storage for prepareUpdateSnapshotSameFork to find
+        // This uses the same data as the contract default, with blockHeight matching onChainBlockHeight
+        if (!this.skipDefaultGenesisSnapshot) {
+            this.withGenesisSnapshot(this.forkId, {
+                latestOutboundMessageBlockHash: defaults.emptyBlockHash
+            });
+        }
 
         return stateManager;
     }

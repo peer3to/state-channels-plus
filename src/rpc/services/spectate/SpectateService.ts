@@ -1,10 +1,17 @@
-import { ARpcService } from "@/rpc";
-import { ChannelId, Timestamp, Bytes, Hash, ForkId } from "@/types/types";
+import ARpcService from "@/rpc/ARpcService";
+import {
+    Address,
+    ChannelId,
+    Timestamp,
+    Bytes,
+    Hash,
+    ForkId
+} from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { Codec, Type } from "@/utils";
+import { Codec, getChecksumAddress, Type } from "@/utils";
 import { ethers } from "ethers";
 import {
     StateSnapshotStruct,
@@ -13,7 +20,7 @@ import {
 
 import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import SpectateServiceRpcMethods from "./SpectateRpcMethods";
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { Status } from "@/types";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
@@ -42,10 +49,8 @@ export interface SyncRequest {
     blockHeight?: number;
 }
 class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
-    requestMap: WeakMap<ATransport, SyncRequest> = new WeakMap<
-        ATransport,
-        SyncRequest
-    >();
+    private readonly requestMapByPeerAddress: Map<string, SyncRequest> =
+        new Map();
     timeoutManager: TimeoutManager;
 
     constructor(p2pManager: P2PManager) {
@@ -65,32 +70,73 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
     // Called locally to initiate spectate sync
     public sync(
-        transport: ATransport,
+        peerAddress: Address,
         channelId: ChannelId,
         forkId?: ForkId,
         blockHeight?: number
     ) {
-        this.logger.debug("spectateSync !");
+        this.logger.debug("spectateSync - starting", {
+            peerAddress,
+            channelId,
+            forkId,
+            blockHeight
+        });
+        const normalizedPeerAddress = getChecksumAddress(peerAddress);
+
+        if (this.requestMapByPeerAddress.has(normalizedPeerAddress)) {
+            this.logger.debug(
+                "spectateSync - sync already in-flight; ignoring",
+                { peerAddress: normalizedPeerAddress }
+            );
+            return;
+        }
+
         const syncRequest: SyncRequest = {
             channelId,
             initTime: Clock.getTimeInSeconds(),
             forkId,
             blockHeight
         };
-        // Store the init time for RTT calculation per channel
-        this.requestMap.set(transport, syncRequest);
-
-        this.remoteRpc.spectateService
-            .onSpectateRequest(syncRequest)
-            .sendOne(transport);
 
         this.timeoutManager.scheduleTask(
             () => {
-                if (!this.didRespond(transport)) this.abort(transport);
+                const pending = this.requestMapByPeerAddress.get(
+                    normalizedPeerAddress
+                );
+                if (!pending) return;
+                if (pending.initTime !== syncRequest.initTime) return;
+
+                this.requestMapByPeerAddress.delete(normalizedPeerAddress);
+
+                this.logger.debug(
+                    "SpectateService - spectateSync timeout; blacklisting peer",
+                    { peerAddress: normalizedPeerAddress }
+                );
+
+                this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                    normalizedPeerAddress
+                );
             },
             this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
             "SpectateService - spectateSync timeout"
         );
+
+        this.requestMapByPeerAddress.set(normalizedPeerAddress, syncRequest);
+
+        // Transport can change (e.g. WebRTC upgrade). Always send by address.
+        this.remoteRpc.spectateService
+            .onSpectateRequest(syncRequest)
+            .sendOne(normalizedPeerAddress);
+    }
+
+    public takePendingRequestByPeerAddress(
+        peerAddress: string
+    ): SyncRequest | undefined {
+        const pending = this.requestMapByPeerAddress.get(peerAddress);
+        if (!pending) return undefined;
+
+        this.requestMapByPeerAddress.delete(peerAddress);
+        return pending;
     }
 
     /**
@@ -119,7 +165,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         );
 
         const disputeWindows: DisputeWindowVerification[] = [];
-        let currentForkId = currentOnChainSnapshot.forkId;
+        let currentForkId = currentOnChainSnapshot.forkID;
         let isDisputed =
             await diamondStateMachine.localDiamondContract.isForkDisputed(
                 channelId,
@@ -193,7 +239,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
         // Get the latest fork genesis snapshot to include in the payload
         const latestForkGenesisSnapshot =
-            stateManager.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+            stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
                 forkId
             );
         if (!latestForkGenesisSnapshot) {
@@ -257,15 +303,17 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 latestForkGenesisSnapshot.latestOutboundMessageBlockHash
             );
         // Return payload with all available data
-        return {
+        const syncPayload: SyncPayload = {
             disputeWindows,
-            latestForkGenesisSnapshot,
+            latestForkGenesisSnapshot: latestForkGenesisSnapshot.toStruct(),
             stateProof: latestStateProof,
-            milestoneSnapshots,
+            milestoneSnapshots: milestoneSnapshots.map((ms) => ms.toStruct()),
             latestFinalizedEncodedState,
             outboundMessageBlocksUpToLatestGenesis,
             outboundMessageBlocksOfTheLatestFork
         };
+        this.logger.debug(`Generated syncpayload`, syncPayload);
+        return syncPayload;
     }
 
     /**
@@ -284,7 +332,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         // sync our local EVM to it
         await this.p2pManager.stateManager.eventHandler.onStateSnapshotUpdated(
             channelId,
-            currentOnChainSnapshot
+            currentOnChainSnapshot.toStruct()
         );
         return currentOnChainSnapshot;
     }
@@ -382,9 +430,33 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         return true;
     }
 
-    public persistSyncPayload(syncPayload: SyncPayload) {
+    public async persistSyncPayload(syncPayload: SyncPayload) {
+        this.logger.debug(`Persisting sync payload`, syncPayload);
         // TODO - check in the case of syncing to the requested (forkId, blockHeight), that storage stays consistent - what was already there should still be there
         const storage = this.p2pManager.stateManager.storage;
+
+        const latestFinalizedSnapshot =
+            syncPayload.milestoneSnapshots.length > 0
+                ? syncPayload.milestoneSnapshots.at(-1)!
+                : syncPayload.latestForkGenesisSnapshot;
+
+        const finalizedForkId = latestFinalizedSnapshot.forkId;
+        const finalizedHeight = Number(latestFinalizedSnapshot.blockHeight);
+        const localLatestBlock = storage.blocks.getLatestBlock(finalizedForkId);
+        const localLatestHeight = localLatestBlock?.height ?? -1;
+
+        if (localLatestHeight >= finalizedHeight) {
+            this.logger.warn(
+                "Skipping sync payload persistence: local storage is already ahead of latest finalized snapshot",
+                {
+                    finalizedForkId,
+                    finalizedHeight,
+                    localLatestHeight
+                }
+            );
+            return;
+        }
+
         for (const dw of syncPayload.disputeWindows) {
             for (const dispute of dw.disputeConfirmations) {
                 storage.disputes.storeDisputeConfirmation(dispute);
@@ -407,13 +479,16 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             storage.stateSnapshots.storeStateSnapshot(
                 StateSnapshot.from(snapshot)
             );
-        storage.stateMachineStates.storeStateMachineState(
+        for (const omb of syncPayload.outboundMessageBlocksUpToLatestGenesis)
+            storage.outboundMessages.store(omb);
+        for (const omb of syncPayload.outboundMessageBlocksOfTheLatestFork)
+            storage.outboundMessages.store(omb);
+
+        await this.p2pManager.stateManager.setLatestState(
+            latestFinalizedSnapshot,
             syncPayload.latestFinalizedEncodedState
         );
-        for (const ecb of syncPayload.outboundMessageBlocksUpToLatestGenesis)
-            storage.outboundMessages.store(ecb);
-        for (const ecb of syncPayload.outboundMessageBlocksOfTheLatestFork)
-            storage.outboundMessages.store(ecb);
+        this.logger.debug(`Finished persisting sync payload`);
     }
     public persistFinalizedPartsOfStateProof(stateProof: StateProofStruct) {
         const storage = this.p2pManager.stateManager.storage;
@@ -434,17 +509,18 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             );
         }
     }
-    public didRespond(transport: ATransport): boolean {
-        return !this.requestMap.has(transport);
-    }
-
-    public abort(transport: ATransport) {
-        if (this.p2pManager.stateManager.getStatus() == Status.SPECTATING) {
+    public abort(peerAddress: string) {
+        // HandshakeCompletedGuard guarantees stable peer identity.
+        // If we're not actively participating, treat this as a fatal sync failure.
+        if (this.p2pManager.stateManager.getStatus() !== Status.PARTICIPATING) {
             this.p2pManager.disconnectAll();
             return;
         }
 
-        return this.p2pManager.disconnectAndBlacklistPeer(transport);
+        // If participating, punish only the offending peer.
+        return this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+            peerAddress
+        );
     }
 }
 

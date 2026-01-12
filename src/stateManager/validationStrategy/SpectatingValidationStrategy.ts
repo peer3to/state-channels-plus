@@ -7,8 +7,7 @@ import {
 import AValidationStrategy from "./AValidationStrategy";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
-import P2PManager from "@/P2PManager";
-import { ATransport } from "@/transport";
+import type P2PManager from "@/P2PManager";
 import { Logger } from "@/utils";
 
 export default class SpectatingValidationStrategy extends AValidationStrategy {
@@ -138,7 +137,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     }
     public async blockIsNotNextAndIsInTheFuture(
         block: Block,
-        senderTransport?: ATransport
+        _senderAddress?: string
     ): Promise<BlockValidationResult> {
         // not ready
         this.storage.queues.queueBlock(block);

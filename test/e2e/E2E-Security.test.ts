@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { MathStateMachine } from "@typechain-types/index";
 import { ZeroHash } from "ethers";
+import { StateSnapshot } from "@/models";
 import { Codec, SignatureUtils, Type } from "@/utils";
 import { hash } from "../factory";
 import { Bytes, ForkId } from "@/types/types";
@@ -290,7 +291,7 @@ describe("E2E: Advanced Security", function () {
         it("should remove malicious participant after fork and keep liveness", async function () {
             await harness!.setup(4, {
                 timeConfig: {
-                    p2pTime: 3,
+                    p2pTime: 30,
                     agreementTime: 2,
                     chainFallbackTime: 2,
                     evidenceTime: 3
@@ -304,58 +305,18 @@ describe("E2E: Advanced Security", function () {
             harness!.assertAllPeersInSync();
 
             // Reset spies so we only count dispute-related activity
-            harness!.resetEventSpies();
-
-            // Act - have the next writer broadcast an invalid block
             const maliciousPeer = harness!.peers[2];
-            const honestPeers = [
-                harness!.peers[0],
-                harness!.peers[1],
-                harness!.peers[3]
-            ];
-            const maliciousIndex = maliciousPeer.index;
-            const honestIndices = honestPeers.map((peer) => peer.index);
-
-            await harness!.submitInvalidStateTransitionBlock(maliciousIndex, {
-                forkId: originalForkId
-            });
-
-            // Wait for disputes to be committed across peers
-            const disputesCommitted = await harness!.waitForEventCounts(
-                "onDisputeCommitted",
-                harness!.peers.map((peer) => ({
-                    peerId: peer.index,
-                    expectedCount: 3
-                })),
-                8000,
-                { mode: "atLeast" }
+            const {
+                honestPeers,
+                honestPeerIndices: honestIndices,
+                maliciousPeerIndex: maliciousIndex
+            } = await harness!.createAndResolveInvalidStateTransitionDispute(
+                maliciousPeer.index,
+                {
+                    forkId: originalForkId,
+                    honestPeerIndices: [0, 1, 3]
+                }
             );
-            expect(disputesCommitted).to.be.true;
-
-            // Wait for honest peers to agree on the new fork
-            const forkSettled = await harness!.waitForCondition(() => {
-                const forkIds = honestPeers.map(
-                    (peer) => peer.stateManager.forkId
-                );
-                const uniqueForks = new Set(forkIds);
-                const allMoved =
-                    forkIds.length > 0 &&
-                    forkIds.every(
-                        (forkId) =>
-                            forkId !== originalForkId && forkId !== ZeroHash
-                    );
-                return allMoved && uniqueForks.size === 1;
-            }, 10000);
-            expect(forkSettled).to.be.true;
-
-            // Assert - malicious participant removed from new fork
-            for (const peer of honestPeers) {
-                const participants =
-                    await peer.stateManager.diamondStateMachine.getParticipants();
-                expect(participants).to.have.lengthOf(honestPeers.length);
-
-                expect(participants).to.not.include(maliciousPeer.address);
-            }
 
             // advance the state between honest peers
             await harness!.submitTransaction(
@@ -384,6 +345,419 @@ describe("E2E: Advanced Security", function () {
             const nextWriter = await harness!.getNextPeerToWrite();
             expect(nextWriter.index).to.not.equal(
                 maliciousIndex, // 2
+                "Removed peer should NOT receive next turn"
+            );
+        });
+
+        it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - 2 independent snapshot updates", async function () {
+            await harness!.setup(4, {
+                timeConfig: {
+                    p2pTime: 3,
+                    agreementTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 3
+                }
+            });
+            const originalForkId = await harness!.openChannel();
+
+            // Establish baseline state
+            await harness!.submitNextTransaction((contract) => contract.add(1));
+            await harness!.submitNextTransaction((contract) => contract.add(2));
+            harness!.assertAllPeersInSync();
+
+            harness!.resetEventSpies();
+
+            const maliciousPeer = harness!.peers[2];
+            const {
+                honestPeers,
+                honestPeerIndices: honestIndices,
+                maliciousPeerIndex: maliciousIndex,
+                newForkId
+            } = await harness!.createAndResolveInvalidStateTransitionDispute(
+                maliciousPeer.index,
+                {
+                    forkId: originalForkId,
+                    honestPeerIndices: [0, 1, 3]
+                }
+            );
+
+            // Ensure the on-chain snapshot is moved onto the reduced fork first.
+            await honestPeers[0].stateManager.postStateSnapshot(newForkId);
+            const onChainSnapshotAfterForkSync = StateSnapshot.from(
+                await harness!.channelManager.getStateSnapshot(
+                    harness!.channelId
+                )
+            );
+            expect(onChainSnapshotAfterForkSync.forkID).to.equal(
+                newForkId,
+                "On-chain snapshot should be on the reduced fork before same-fork updates"
+            );
+
+            // From here, do the same 3 transitions as E2E-Core and post a same-fork snapshot update.
+            await harness!.submitNextTransaction(
+                (contract) => contract.add(1),
+                {
+                    waitForTurn: true,
+                    waitForPeers: honestIndices,
+                    waitForSync: true
+                }
+            );
+            await harness!.submitNextTransaction(
+                (contract) => contract.leaveChannel(),
+                {
+                    waitForTurn: true,
+                    waitForPeers: honestIndices,
+                    waitForSync: true
+                }
+            );
+            await harness!.submitNextTransaction(
+                (contract) => contract.add(3),
+                {
+                    waitForTurn: true,
+                    waitForPeers: honestIndices,
+                    waitForSync: true
+                }
+            );
+
+            harness!.assertAllPeersInSync({ peerIndices: honestIndices });
+            harness!.resetEventSpies();
+
+            const latestBlockHeight =
+                honestPeers[0].stateManager.storage.blocks.getNextBlockHeight(
+                    newForkId
+                ) - 1;
+
+            const preparedSameForkData =
+                await honestPeers[0].stateManager.prepareUpdateSnapshotSameFork(
+                    newForkId
+                );
+            expect(
+                preparedSameForkData,
+                "Expected snapshot data to post on the reduced fork"
+            ).to.not.equal(undefined);
+
+            const stateMachine =
+                honestPeers[0].stateManager.diamondStateMachine;
+            const zeroBalance = await stateMachine.getZeroBalance();
+            let expectedWithdrawalsDeltaBalance = zeroBalance;
+            for (const outboundBlock of preparedSameForkData!
+                .outboundMessageBlocks) {
+                for (const message of outboundBlock.messages) {
+                    expectedWithdrawalsDeltaBalance =
+                        await stateMachine.addBalance(
+                            expectedWithdrawalsDeltaBalance,
+                            message.balance
+                        );
+                }
+            }
+
+            const onChainSnapshotBefore = StateSnapshot.from(
+                await harness!.channelManager.getStateSnapshot(
+                    harness!.channelId
+                )
+            );
+            const channelBalanceBefore =
+                await harness!.channelManager.getChannelBalance(
+                    harness!.channelId
+                );
+            expect(
+                await stateMachine.areBalancesEqual(
+                    channelBalanceBefore.totalWithdrawals,
+                    onChainSnapshotBefore.snapshotData.totalWithdrawals
+                ),
+                "channelBalances.totalWithdrawals should match snapshot.totalWithdrawals (before)"
+            ).to.equal(true);
+
+            await honestPeers[0].stateManager.postStateSnapshot(newForkId);
+
+            const onChainSnapshotAfterPost = StateSnapshot.from(
+                await harness!.channelManager.getStateSnapshot(
+                    harness!.channelId
+                )
+            );
+            const channelBalanceAfter =
+                await harness!.channelManager.getChannelBalance(
+                    harness!.channelId
+                );
+            expect(
+                await stateMachine.areBalancesEqual(
+                    channelBalanceAfter.totalWithdrawals,
+                    onChainSnapshotAfterPost.snapshotData.totalWithdrawals
+                ),
+                "channelBalances.totalWithdrawals should match snapshot.totalWithdrawals (after)"
+            ).to.equal(true);
+
+            const withdrawalsDeltaActual = await stateMachine.subtractBalance(
+                channelBalanceAfter.totalWithdrawals,
+                channelBalanceBefore.totalWithdrawals
+            );
+            expect(
+                await stateMachine.areBalancesEqual(
+                    withdrawalsDeltaActual,
+                    expectedWithdrawalsDeltaBalance
+                )
+            ).to.equal(
+                true,
+                "On-chain totalWithdrawals should increase by outbound message balances"
+            );
+
+            const sawSnapshotUpdate = await harness!.waitForEventCounts(
+                "onStateSnapshotUpdated",
+                honestIndices.map((peerId) => ({
+                    peerId,
+                    expectedCount: 1
+                })),
+                15000,
+                { mode: "atLeast" }
+            );
+            expect(sawSnapshotUpdate).to.be.true;
+
+            const localLatestSnapshot =
+                honestPeers[0].stateManager.storage.getStateSnapshot({
+                    forkId: newForkId,
+                    height: latestBlockHeight
+                });
+            expect(localLatestSnapshot).to.not.equal(undefined);
+
+            const onChainSnapshot = StateSnapshot.from(
+                await harness!.channelManager.getStateSnapshot(
+                    harness!.channelId
+                )
+            );
+            expect(onChainSnapshot.blockHeight).to.equal(
+                latestBlockHeight,
+                "On-chain snapshot should be updated to latest block height (reduced fork)"
+            );
+            expect(onChainSnapshot.hash).to.equal(
+                localLatestSnapshot!.hash,
+                "On-chain snapshot hash should match latest local snapshot (reduced fork)"
+            );
+            expect(
+                await stateMachine.areBalancesEqual(
+                    onChainSnapshot.snapshotData.totalDeposits,
+                    localLatestSnapshot!.snapshotData.totalDeposits
+                )
+            ).to.equal(
+                true,
+                "On-chain totalDeposits should match latest local snapshot (reduced fork)"
+            );
+            expect(
+                await stateMachine.areBalancesEqual(
+                    onChainSnapshot.snapshotData.totalWithdrawals,
+                    localLatestSnapshot!.snapshotData.totalWithdrawals
+                )
+            ).to.equal(
+                true,
+                "On-chain totalWithdrawals should match latest local snapshot (reduced fork)"
+            );
+
+            const nextWriter = await harness!.getNextPeerToWrite();
+            expect(nextWriter.index).to.not.equal(
+                maliciousIndex,
+                "Removed peer should NOT receive next turn"
+            );
+        });
+
+        it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - multicall", async function () {
+            await harness!.setup(4, {
+                timeConfig: {
+                    p2pTime: 3,
+                    agreementTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 3
+                }
+            });
+            const originalForkId = await harness!.openChannel();
+
+            // Establish baseline state
+            await harness!.submitNextTransaction((contract) => contract.add(1));
+            await harness!.submitNextTransaction((contract) => contract.add(2));
+            harness!.assertAllPeersInSync();
+
+            harness!.resetEventSpies();
+
+            const maliciousPeer = harness!.peers[2];
+            const {
+                honestPeers,
+                honestPeerIndices: honestIndices,
+                maliciousPeerIndex: maliciousIndex,
+                newForkId
+            } = await harness!.createAndResolveInvalidStateTransitionDispute(
+                maliciousPeer.index,
+                {
+                    forkId: originalForkId,
+                    honestPeerIndices: [0, 1, 3]
+                }
+            );
+
+            // From here, do the same 3 transitions as E2E-Core and post a same-fork snapshot update.
+            await harness!.submitNextTransaction(
+                (contract) => contract.add(1),
+                {
+                    waitForTurn: true,
+                    waitForPeers: honestIndices,
+                    waitForSync: true
+                }
+            );
+            await harness!.submitNextTransaction(
+                (contract) => contract.leaveChannel(),
+                {
+                    waitForTurn: true,
+                    waitForPeers: honestIndices,
+                    waitForSync: true
+                }
+            );
+            await harness!.submitNextTransaction(
+                (contract) => contract.add(3),
+                {
+                    waitForTurn: true,
+                    waitForPeers: honestIndices,
+                    waitForSync: true
+                }
+            );
+
+            harness!.assertAllPeersInSync({ peerIndices: honestIndices });
+            harness!.resetEventSpies();
+
+            const latestBlockHeight =
+                honestPeers[0].stateManager.storage.blocks.getNextBlockHeight(
+                    newForkId
+                ) - 1;
+
+            const onChainSnapshotBefore = StateSnapshot.from(
+                await harness!.channelManager.getStateSnapshot(
+                    harness!.channelId
+                )
+            );
+
+            const preparedSameForkData =
+                await honestPeers[0].stateManager.prepareUpdateSnapshotSameFork(
+                    newForkId
+                );
+            const lastSnapshot =
+                preparedSameForkData?.milestoneSnapshots.at(-1);
+
+            expect(
+                preparedSameForkData,
+                "Expected snapshot data to post on the reduced fork"
+            ).to.not.equal(undefined);
+
+            expect(
+                lastSnapshot,
+                "Expected at least 1 milestone snapshot"
+            ).to.not.equal(undefined);
+
+            const outboundMessageBlocksForDelta =
+                honestPeers[0].stateManager.storage.outboundMessages.getMessageBlocksInRange(
+                    lastSnapshot!.snapshotData.latestOutboundMessageBlockHash,
+                    onChainSnapshotBefore.snapshotData
+                        .latestOutboundMessageBlockHash
+                );
+
+            const stateMachine =
+                honestPeers[0].stateManager.diamondStateMachine;
+            const zeroBalance = await stateMachine.getZeroBalance();
+            let expectedWithdrawalsDeltaBalance = zeroBalance;
+            for (const outboundBlock of outboundMessageBlocksForDelta) {
+                for (const message of outboundBlock.messages) {
+                    expectedWithdrawalsDeltaBalance =
+                        await stateMachine.addBalance(
+                            expectedWithdrawalsDeltaBalance,
+                            message.balance
+                        );
+                }
+            }
+            const channelBalanceBefore =
+                await harness!.channelManager.getChannelBalance(
+                    harness!.channelId
+                );
+            expect(
+                await stateMachine.areBalancesEqual(
+                    channelBalanceBefore.totalWithdrawals,
+                    onChainSnapshotBefore.snapshotData.totalWithdrawals
+                ),
+                "channelBalances.totalWithdrawals should match snapshot.totalWithdrawals (before)"
+            ).to.equal(true);
+
+            await honestPeers[0].stateManager.postStateSnapshot(newForkId);
+
+            const onChainSnapshotAfterPost = StateSnapshot.from(
+                await harness!.channelManager.getStateSnapshot(
+                    harness!.channelId
+                )
+            );
+            const channelBalanceAfter =
+                await harness!.channelManager.getChannelBalance(
+                    harness!.channelId
+                );
+            expect(
+                await stateMachine.areBalancesEqual(
+                    channelBalanceAfter.totalWithdrawals,
+                    onChainSnapshotAfterPost.snapshotData.totalWithdrawals
+                ),
+                "channelBalances.totalWithdrawals should match snapshot.totalWithdrawals (after)"
+            ).to.equal(true);
+
+            const withdrawalsDeltaActual = await stateMachine.subtractBalance(
+                channelBalanceAfter.totalWithdrawals,
+                channelBalanceBefore.totalWithdrawals
+            );
+            expect(
+                await stateMachine.areBalancesEqual(
+                    withdrawalsDeltaActual,
+                    expectedWithdrawalsDeltaBalance
+                )
+            ).to.equal(
+                true,
+                "On-chain totalWithdrawals should increase by outbound message balances"
+            );
+
+            const sawSnapshotUpdate = await harness!.waitForEventCounts(
+                "onStateSnapshotUpdated",
+                honestIndices.map((peerId) => ({
+                    peerId,
+                    expectedCount: 1
+                })),
+                15000,
+                { mode: "atLeast" }
+            );
+            expect(sawSnapshotUpdate).to.be.true;
+
+            const onChainSnapshot = StateSnapshot.from(
+                await harness!.channelManager.getStateSnapshot(
+                    harness!.channelId
+                )
+            );
+            expect(onChainSnapshot.blockHeight).to.equal(
+                latestBlockHeight,
+                "On-chain snapshot should be updated to latest block height (reduced fork)"
+            );
+            expect(onChainSnapshot.hash).to.equal(
+                lastSnapshot!.hash,
+                "On-chain snapshot hash should match latest local snapshot (reduced fork)"
+            );
+            expect(
+                await stateMachine.areBalancesEqual(
+                    onChainSnapshot.snapshotData.totalDeposits,
+                    lastSnapshot!.snapshotData.totalDeposits
+                )
+            ).to.equal(
+                true,
+                "On-chain totalDeposits should match latest local snapshot (reduced fork)"
+            );
+            expect(
+                await stateMachine.areBalancesEqual(
+                    onChainSnapshot.snapshotData.totalWithdrawals,
+                    lastSnapshot!.snapshotData.totalWithdrawals
+                )
+            ).to.equal(
+                true,
+                "On-chain totalWithdrawals should match latest local snapshot (reduced fork)"
+            );
+
+            const nextWriter = await harness!.getNextPeerToWrite();
+            expect(nextWriter.index).to.not.equal(
+                maliciousIndex,
                 "Removed peer should NOT receive next turn"
             );
         });
@@ -754,7 +1128,7 @@ describe("E2E: Advanced Security", function () {
             };
 
             // Track peer 2's snapshots
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             const snapshotStorage = harness!.peers[2].stateManager.storage
                 .stateSnapshots as any;
             const snapshotCountBefore = Array.from(
@@ -811,8 +1185,6 @@ describe("E2E: Advanced Security", function () {
             // Get peer 1's broadcast function reference
             const peer1 = harness!.peers[1];
             const peer1RemoteRpc = peer1.stateManager.p2pManager.remoteRpc;
-            const originalStateTransitionService =
-                peer1RemoteRpc.stateTransitionService;
 
             // Stub peer 1's broadcast to be a no-op - peer 1 will author but not broadcast
             peer1RemoteRpc.stateTransitionService.onBlockConfirmation = (
@@ -826,7 +1198,7 @@ describe("E2E: Advanced Security", function () {
                     sendOne: () => {},
                     sendMultiple: () => {}
                 } as unknown as ReturnType<
-                    typeof originalStateTransitionService.onBlockConfirmation
+                    typeof peer1RemoteRpc.stateTransitionService.onBlockConfirmation
                 >;
             };
 

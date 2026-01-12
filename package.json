@@ -8,6 +8,9 @@
     "url": "git+https://github.com/peer3to/state-channels-plus.git"
   },
   "license": "MIT",
+  "peerDependencies": {
+    "ethers": "6.4.0"
+  },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
     "@nomicfoundation/hardhat-ethers": "^3.0.0",
@@ -31,6 +34,7 @@
     "eslint": "^9.35.0",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-unused-imports": "^4.2.0",
+    "ethers": "6.13.7",
     "hardhat-gas-reporter": "^1.0.8",
     "husky": "^8.0.3",
     "lint-staged": "^14.0.1",
@@ -42,6 +46,7 @@
     "source-map-support": "^0.5.21",
     "ts-morph": "^27.0.2",
     "ts-node": "^10.9.2",
+    "tsc-alias": "^1.8.16",
     "tsconfig-paths": "^4.2.0",
     "typechain": "^8.3.0",
     "typescript": "^5.3.3",
@@ -56,7 +61,6 @@
     "@openzeppelin/contracts": "^5.0.2",
     "buffer": "^6.0.3",
     "ethereum-waffle": "4.0.10",
-    "ethers": "^6.4.0",
     "get-webrtc": "^1.0.1",
     "glob": "10.3.10",
     "hardhat": "^2.22.1",
@@ -69,6 +73,7 @@
   },
   "scripts": {
     "compile": "yarn hardhat clean && yarn hardhat compile --force && yarn hardhat typechain && yarn generate-enums && yarn generate-artifacts",
+    "dev:tsc": "tsc -w -p tsconfig.json",
     "generate-enums": "ts-node scripts/generate-enums.ts",
     "generate-artifacts": "node scripts/generate-artifacts.js",
     "test": "yarn hardhat test --no-compile --grep '^(?!.*[Ee]2[Ee])'",
@@ -79,8 +84,9 @@
     "test:e2e:debug": "LOG_LEVEL=debug yarn hardhat test test/e2e/*",
     "test:e2e:verbose": "LOG_LEVEL=verbose yarn hardhat test test/e2e/*",
     "test:e2e:parallel": "node scripts/test-e2e-parallel.js",
+    "test:e2e:parallel:debug": "LOG_LEVEL=debug node scripts/test-e2e-parallel.js",
     "test:coverage": "nyc --reporter=html yarn test",
-    "build": "yarn compile && rimraf dist && mkdir -p dist && tsc && npm pack && node rename-pack.js",
+    "build": "yarn compile && rimraf dist && mkdir -p dist && tsc && tsc-alias -p tsconfig.json && npm pack && node rename-pack.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint:fix": "eslint src/**/*.ts test/**/*.ts --fix",

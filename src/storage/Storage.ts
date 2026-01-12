@@ -61,7 +61,7 @@ export class Storage {
         const { forkId, height } = coordinates;
 
         if (height < 0) {
-            return this.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
+            return this.stateSnapshots.getGenesisSnapshotByForkId(forkId);
         }
 
         const block = this.blocks.getBlock(forkId, height);
@@ -76,7 +76,7 @@ export class Storage {
 
     getGenesisStateMachineState(forkId: ForkId): Bytes | undefined {
         const genesisSnapshot =
-            this.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
+            this.stateSnapshots.getGenesisSnapshotByForkId(forkId);
         if (!genesisSnapshot) {
             return undefined;
         }
@@ -115,7 +115,7 @@ export class Storage {
         }
 
         const genesisSnapshot =
-            this.stateSnapshots.getGenesisSnapshotDataByForkId(forkId)!;
+            this.stateSnapshots.getGenesisSnapshotByForkId(forkId)!;
         return { stateSnapshot: genesisSnapshot };
     }
 

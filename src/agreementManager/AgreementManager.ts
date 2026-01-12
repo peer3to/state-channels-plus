@@ -82,7 +82,7 @@ class AgreementManager {
         blockHeight: BlockHeight
     ): Promise<StateProofStruct> {
         const genesisSnapshot =
-            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
+            this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
         if (!genesisSnapshot) {
             throw new Error("Fork not found");
         }
@@ -382,9 +382,7 @@ class AgreementManager {
         ) {
             // Genesis state case - use the genesis snapshot for this fork
             const genesisSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                    forkId
-                );
+                this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
             if (!genesisSnapshot) {
                 throw new Error(`No genesis snapshot found for fork ${forkId}`);
             }

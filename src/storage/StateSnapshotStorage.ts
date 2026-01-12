@@ -10,11 +10,11 @@ type StoreOptions = {
 export class StateSnapshotStorage {
     private snapshotsByHash: Map<StateSnapshotHash, StateSnapshot>;
     // Store genesis SnapshotData by forkId (forkId = hash(snapshotData)
-    private genesisSnapshotDataByForkId: Map<ForkId, StateSnapshot>;
+    private genesisSnapshotByForkId: Map<ForkId, StateSnapshot>;
 
     constructor() {
         this.snapshotsByHash = new Map();
-        this.genesisSnapshotDataByForkId = new Map();
+        this.genesisSnapshotByForkId = new Map();
     }
 
     // ====================================
@@ -30,7 +30,7 @@ export class StateSnapshotStorage {
         this.snapshotsByHash.set(hash, snapshot);
 
         if (snapshot.isGenesis) {
-            this.genesisSnapshotDataByForkId.set(snapshot.forkId, snapshot);
+            this.genesisSnapshotByForkId.set(snapshot.forkID, snapshot);
         }
 
         return hash;
@@ -49,7 +49,7 @@ export class StateSnapshotStorage {
         return this.snapshotsByHash.get(snapshotHash);
     }
 
-    getGenesisSnapshotDataByForkId(forkId: ForkId): StateSnapshot | undefined {
-        return this.genesisSnapshotDataByForkId.get(forkId);
+    getGenesisSnapshotByForkId(forkId: ForkId): StateSnapshot | undefined {
+        return this.genesisSnapshotByForkId.get(forkId);
     }
 }

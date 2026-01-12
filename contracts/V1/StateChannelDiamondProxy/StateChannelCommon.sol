@@ -117,6 +117,10 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return stateSnapshots[channelId];
     }
 
+    function getChannelBalance(bytes32 channelId) public view virtual returns (ChannelBalance memory) {
+        return channelBalances[channelId];
+    }
+
     function getStateMachineParticipants(bytes memory encodedState) public virtual returns (address[] memory) {
         // setState fails
         stateMachineImplementation.setState(encodedState);

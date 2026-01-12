@@ -27,5 +27,4 @@ export enum DisputeFraudProofType {
 
 export const toSolidityFraudProofType = (value: FraudProofType) => value % 100;
 
-export const toSolidityDisputeFraudProofType = (value: DisputeFraudProofType) =>
-    value % 200;
+export const toSolidityDisputeFraudProofType = (value: DisputeFraudProofType) => value % 200;

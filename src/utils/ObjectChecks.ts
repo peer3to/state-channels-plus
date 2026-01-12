@@ -1,5 +1,3 @@
-import { ARpcService } from "@/rpc";
-
 /**
  * Type guard to check if an object has a certain property.
  */
@@ -30,6 +28,9 @@ export function isInstanceOfRpcService<T, P extends string>(
     return (
         hasProperty(obj, prop) &&
         typeof obj[prop] === "object" &&
-        obj[prop] instanceof ARpcService
+        obj[prop] !== null &&
+        // Avoid importing ARpcService at runtime (prevents circular deps in browser bundles).
+        // Structural check is sufficient for our usage.
+        typeof (obj as any)[prop]?.runRPC === "function"
     );
 }

@@ -208,7 +208,7 @@ export class BlockBuilder {
                 break;
 
             case ValidationFailure.WRONG_GENESIS:
-                this.mockSetup.mockStorage.stateSnapshots.getGenesisSnapshotDataByForkId.returns(
+                this.mockSetup.mockStorage.stateSnapshots.getGenesisSnapshotByForkId.returns(
                     {
                         hash: "0xrightgenesis"
                     }
@@ -414,7 +414,7 @@ export class MockSetup {
                 })
             },
             stateSnapshots: {
-                getGenesisSnapshotDataByForkId: sinon.stub().returns({
+                getGenesisSnapshotByForkId: sinon.stub().returns({
                     hash: "0xprevhash"
                 }),
                 getStateSnapshotByHash: sinon.stub().returns(stateSnapshot()),
