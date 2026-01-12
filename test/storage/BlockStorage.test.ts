@@ -10,7 +10,6 @@ import {
 import { Hash, ForkId, BlockHeight } from "@/types/types";
 import * as factory from "../factory";
 import { Block } from "@/models";
-import { Codec, Type } from "@/utils";
 
 const sig = () => ethers.hexlify(ethers.randomBytes(65));
 
@@ -397,7 +396,7 @@ describe("BlockStorage", () => {
         describe("Different blocks with same hash but different coordinates", () => {
             it("should return hash when storing block with same hash but different coordinates", () => {
                 // Store first block
-                const hash1 = storage.storeBlock(
+                storage.storeBlock(
                     Block.fromBlockConfirmation(mockBlockConfirmation)
                 );
 
@@ -469,15 +468,11 @@ describe("ForkIdToMaxHeightMap", () => {
                     transactionCnt: height
                 })
             })
-        });
+        }).blockStruct;
 
-        const signedBlock = factory.signedBlock({
-            encodedBlock: Codec.encode(block, Type.Block)
-        });
-
-        return factory.blockConfirmation({
-            signedBlock: signedBlock
-        });
+        // `factory.block()` returns a `Block` model (already backed by an encoded `BlockStruct`).
+        // Use its confirmation struct directly rather than trying to ABI-encode the class instance.
+        return block.blockConfirmationStruct;
     }
 
     describe("ADDING - Max Height Updates", () => {

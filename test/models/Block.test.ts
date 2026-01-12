@@ -106,7 +106,7 @@ describe("Block Model", () => {
         });
 
         it("should return correct transaction", () => {
-            expect(block.transaction).to.deep.equal(blockStruct.transaction);
+            expect(block.tx).to.deep.equal(blockStruct.transaction);
         });
     });
 

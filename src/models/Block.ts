@@ -17,7 +17,7 @@ import {
     Bytes
 } from "@/types/types";
 
-import { union, isSubset, SignatureUtils } from "@/utils";
+import { union, isSubset, SignatureUtils, getChecksumAddress } from "@/utils";
 
 export type BlockCoordinates = {
     forkId: ForkId;
@@ -139,7 +139,9 @@ export default class Block {
         this._onChainTimestamp = onChainTimestamp;
     }
     get author() {
-        return this.block.transaction.header.participant as Address;
+        return getChecksumAddress(
+            this.block.transaction.header.participant
+        ) as Address;
     }
 
     get channelId() {
@@ -154,7 +156,7 @@ export default class Block {
         return this.block.stateSnapshotHash as Hash;
     }
 
-    get transaction() {
+    get tx() {
         return this.block.transaction;
     }
 
@@ -227,12 +229,16 @@ export default class Block {
     }
 
     signatureToAddress(signature: Signature): Address {
-        return ethers.verifyMessage(ethers.getBytes(this.hash), signature);
+        return ethers.verifyMessage(
+            ethers.getBytes(this.hash),
+            signature
+        ) as Address;
     }
 
     findSignature(participant: Address): Signature | undefined {
+        const expected = getChecksumAddress(participant) as Address;
         for (const sig of this.allSignatures) {
-            if (this.signatureToAddress(sig) === participant) {
+            if (this.signatureToAddress(sig) === expected) {
                 return sig;
             }
         }
@@ -240,14 +246,20 @@ export default class Block {
     }
 
     didEveryoneSign(participants: Address[] | Set<Address>): boolean {
-        const participantsSet =
+        const rawSet =
             participants instanceof Set ? participants : new Set(participants);
+        const participantsSet = new Set<Address>();
+        for (const participant of rawSet) {
+            participantsSet.add(getChecksumAddress(participant) as Address);
+        }
         if (participantsSet.size === 0) return false;
         return isSubset(participantsSet, this.allSignerAddresses);
     }
 
     didSign(participant: Address): boolean {
-        return this.allSignerAddresses.has(participant);
+        return this.allSignerAddresses.has(
+            getChecksumAddress(participant) as Address
+        );
     }
 
     sign(signer: Signer): Promise<Signature> {

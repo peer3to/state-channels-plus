@@ -9,7 +9,6 @@ import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
 import type P2PManager from "@/P2PManager";
 import DisputeManager from "@/disputeManager";
-import ATransport from "@/transport/ATransport";
 import { Logger } from "@/utils";
 
 export default class BlockValidationStrategy extends AValidationStrategy {
@@ -56,7 +55,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         }
     }
     public async authenticateBlockFailed(
-        block: BlockConfirmationStruct
+        _block: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
         return BlockValidationResult.DISCONNECT;
     }
@@ -136,20 +135,20 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     }
     public async blockForkIsDisputed(
         block: Block,
-        senderTransport?: ATransport
+        senderAddress?: string
     ): Promise<BlockValidationResult> {
-        // Check if peer has already acknowledged this disputed fork
+        // If we know who sent this, and they already acknowledged the dispute,
+        // disconnect/blacklist them for building on a disputed fork.
         if (
-            senderTransport &&
+            senderAddress &&
             this.p2pManager.localRpc.isForkDisputedService.didPeerAcknowledgeDisputedFork(
-                senderTransport,
+                senderAddress,
                 block.forkId
             )
         ) {
-            console.log(
-                `Peer is building on acknowledged disputed fork ${block.forkId}, disconnecting`
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                senderAddress
             );
-            this.p2pManager.disconnectAndBlacklistPeer(senderTransport);
             return BlockValidationResult.DISCONNECT;
         }
 
@@ -159,12 +158,12 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     }
     public async blockIsNotNextAndIsInTheFuture(
         block: Block,
-        senderTransport?: ATransport
+        senderAddress?: string
     ): Promise<BlockValidationResult> {
         // not ready
-        if (senderTransport)
+        if (senderAddress)
             this.p2pManager.localRpc.spectateService.sync(
-                senderTransport,
+                senderAddress,
                 block.channelId,
                 block.forkId,
                 block.height

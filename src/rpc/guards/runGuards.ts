@@ -1,6 +1,6 @@
-import { AGuard } from "@/rpc/guards/AGuard";
-import Rpc from "@/rpc/Rpc";
-import ATransport from "@/transport/ATransport";
+import type { AGuard } from "@/rpc/guards/AGuard";
+import type Rpc from "@/rpc/Rpc";
+import type ATransport from "@/transport/ATransport";
 
 /**
  * Runs guards sequentially.

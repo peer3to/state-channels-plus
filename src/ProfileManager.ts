@@ -1,6 +1,7 @@
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
 import { Address } from "./types/types";
+import { getChecksumAddress } from "./utils";
 
 class ProfileManager {
     private mapTransportToProfile: WeakMap<ATransport, PeerProfile> =
@@ -12,12 +13,17 @@ class ProfileManager {
     >();
 
     public registerProfile(profile: PeerProfile) {
-        const transport = profile.getTransport();
-        if (transport) this.mapTransportToProfile.set(transport, profile);
         const evmAddress = profile.getEvmAddress();
+        const transport = profile.getTransport();
+        if (transport) {
+            this.mapTransportToProfile.set(transport, profile);
+            if (evmAddress && !transport.peerAddress) {
+                transport.peerAddress = getChecksumAddress(evmAddress);
+            }
+        }
         if (evmAddress)
             this.mapEvmAddressToProfile.set(
-                this.normalizeAddress(evmAddress),
+                getChecksumAddress(evmAddress),
                 profile
             );
         const hpAddress = profile.getHpAddress();
@@ -30,19 +36,31 @@ class ProfileManager {
         if (transport) this.mapTransportToProfile.delete(transport);
         const evmAddress = profile.getEvmAddress();
         if (evmAddress)
-            this.mapEvmAddressToProfile.delete(
-                this.normalizeAddress(evmAddress)
-            );
+            this.mapEvmAddressToProfile.delete(getChecksumAddress(evmAddress));
         const hpAddress = profile.getHpAddress();
         if (hpAddress) this.mapHpAddressToProfile.delete(hpAddress);
     }
     public updateTransport(profileAddress: string, newTransport: ATransport) {
         const profile = this.mapEvmAddressToProfile.get(
-            this.normalizeAddress(profileAddress)
+            getChecksumAddress(profileAddress)
         );
         if (!profile) return;
         const oldTransport = profile.getTransport();
-        if (oldTransport) this.removeTransport(oldTransport);
+        if (oldTransport) {
+            const stateManager = oldTransport.p2pManager.stateManager;
+            stateManager.timeoutManager.scheduleTask(
+                () => {
+                    // allow agreementTime for everyone to update transport and start using new one, before closing this one
+                    this.removeTransport(oldTransport);
+                },
+                stateManager.timeConfig.agreementTime * 1000,
+                "Transport update completed - disconnecting old transport"
+            );
+        }
+
+        // Ensure the new transport carries the peer identity.
+        newTransport.peerAddress = getChecksumAddress(profileAddress);
+
         profile.setTransport(newTransport);
         this.mapTransportToProfile.set(newTransport, profile);
     }
@@ -72,17 +90,14 @@ class ProfileManager {
     public getProfileByEvmAddress(
         evmAddress: Address
     ): PeerProfile | undefined {
-        return this.mapEvmAddressToProfile.get(
-            this.normalizeAddress(evmAddress)
-        );
+        return this.mapEvmAddressToProfile.get(getChecksumAddress(evmAddress));
     }
     public getProfileByHpAddress(hpAddress: Address): PeerProfile | undefined {
         return this.mapHpAddressToProfile.get(hpAddress);
     }
-    private normalizeAddress(address: Address): string {
-        const addressString =
-            typeof address === "string" ? address : address.toString();
-        return addressString.toLowerCase();
+
+    public getTransportByEvmAddress(evmAddress: Address): ATransport | null {
+        return this.getProfileByEvmAddress(evmAddress)?.getTransport() ?? null;
     }
 }
 

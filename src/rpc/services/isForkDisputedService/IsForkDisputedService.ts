@@ -1,4 +1,4 @@
-import { ARpcService } from "@/rpc";
+import ARpcService from "@/rpc/ARpcService";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 import { ChannelId, ForkId } from "@/types/types";
 import ATransport from "@/transport/ATransport";
@@ -45,10 +45,10 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
             `Requesting all peers to acknowledge disputed fork ${forkId}`
         );
 
-        // Create a snapshot of openConnections at the time of request
-        // This captures the peers we sent the request to, so we don't disconnect
-        // from peers that connect after we sent the request
-        const snapshotTransports = [...this.p2pManager.openConnections];
+        // Snapshot peer identities (EVM addresses) at request time.
+        // Transport instances can change (e.g. WebRTC upgrade), and we also
+        // don't want to disconnect peers that connect after we sent the request.
+        const snapshotAddresses = this.p2pManager.getConnectedPeers();
 
         // Broadcast the request
         this.remoteRpc.isForkDisputedService
@@ -61,22 +61,24 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
                     `Checking dispute acknowledgment for fork ${forkId}`
                 );
 
-                // Check which transports from the snapshot haven't acknowledged
-                const transportsToDisconnect: ATransport[] = [];
-                for (const transport of snapshotTransports) {
+                // Disconnect snapshot peers that haven't acknowledged.
+                for (const peerAddress of snapshotAddresses) {
                     if (
-                        !this.didPeerAcknowledgeDisputedFork(transport, forkId)
+                        this.didPeerAddressAcknowledgeDisputedFork(
+                            peerAddress.toString(),
+                            forkId
+                        )
                     ) {
-                        transportsToDisconnect.push(transport);
+                        continue;
                     }
-                }
 
-                // Disconnect from peers that haven't acknowledged
-                for (const transport of transportsToDisconnect) {
                     this.logger.debug(
-                        `Peer did not acknowledge disputed fork ${forkId}, disconnecting`
+                        `Peer did not acknowledge disputed fork ${forkId}, disconnecting`,
+                        { peerAddress }
                     );
-                    this.p2pManager.disconnectAndBlacklistPeer(transport);
+                    this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                        peerAddress
+                    );
                 }
             },
             2 * this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
@@ -84,44 +86,51 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
         );
     }
 
+    private didPeerAddressAcknowledgeDisputedFork(
+        peerAddress: string,
+        forkId: ForkId
+    ): boolean {
+        return this.hasAddressAcknowledged(
+            this.peerAcknowledgementsByAddress,
+            peerAddress,
+            forkId
+        );
+    }
+
     public respondToDisputeAcknowledgment(
-        transport: ATransport,
+        peerAddress: string,
         channelId: ChannelId,
         forkId: ForkId
     ): Promise<void> | void {
-        this.logger.debug(
-            `respondToDisputeAcknowledgment constructor=${transport?.constructor?.name}`
-        );
-        const peerAddress = this.getPeerAddress(transport);
-        if (this.didIAcknowledgeDisputedFork(transport, forkId)) {
+        if (this.didIAcknowledgeDisputedFork(peerAddress, forkId)) {
             this.logger.debug(
                 `Already responded for fork ${forkId} to ${peerAddress}, disconnecting`
             );
-            return this.p2pManager.disconnectAndBlacklistPeer(transport);
+            return this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                peerAddress
+            );
         }
 
-        this.IAcknowledgeDisputedFork(transport, forkId);
+        this.IAcknowledgeDisputedFork(peerAddress, forkId);
         this.logger.debug(
             `I Acknowledge disputed fork ${forkId} to ${peerAddress}`
         );
 
-        this.remoteRpc.isForkDisputedService
-            .onDisputeAcknowledgmentResponse(channelId, forkId)
-            .sendOne(transport);
+        const handler =
+            this.remoteRpc.isForkDisputedService.onDisputeAcknowledgmentResponse(
+                channelId,
+                forkId
+            );
+        handler.sendOne(peerAddress);
     }
 
     /**
      * Check if a peer has acknowledged that a fork is disputed
      */
     public didPeerAcknowledgeDisputedFork(
-        transport: ATransport,
+        peerAddress: string,
         forkId: ForkId
     ): boolean {
-        const peerAddress = this.getPeerAddress(transport);
-        if (!peerAddress) {
-            return false;
-        }
-
         return this.hasAddressAcknowledged(
             this.peerAcknowledgementsByAddress,
             peerAddress,
@@ -133,14 +142,9 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
      * Check if I have acknowledged that a fork is disputed
      */
     public didIAcknowledgeDisputedFork(
-        transport: ATransport,
+        peerAddress: string,
         forkId: ForkId
     ): boolean {
-        const peerAddress = this.getPeerAddress(transport);
-        if (!peerAddress) {
-            return false;
-        }
-
         return this.hasAddressAcknowledged(
             this.myAcknowledgementsByAddress,
             peerAddress,
@@ -151,14 +155,14 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
     /**
      * Mark that a peer has acknowledged a fork as disputed
      */
-    public peerAcknowledgesDisputedFork(transport: ATransport, forkId: ForkId) {
-        if (this.didPeerAcknowledgeDisputedFork(transport, forkId)) {
-            this.p2pManager.disconnectAndBlacklistPeer(transport);
+    public peerAcknowledgesDisputedFork(peerAddress: string, forkId: ForkId) {
+        if (this.didPeerAcknowledgeDisputedFork(peerAddress, forkId)) {
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
             return;
         }
         this.recordAcknowledgement(
             this.peerAcknowledgementsByAddress,
-            transport,
+            peerAddress,
             forkId
         );
     }
@@ -166,31 +170,23 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
     /**
      * Mark that a peer has acknowledged a fork as disputed
      */
-    public IAcknowledgeDisputedFork(transport: ATransport, forkId: ForkId) {
-        if (this.didIAcknowledgeDisputedFork(transport, forkId)) {
-            this.p2pManager.disconnectAndBlacklistPeer(transport);
+    public IAcknowledgeDisputedFork(peerAddress: string, forkId: ForkId) {
+        if (this.didIAcknowledgeDisputedFork(peerAddress, forkId)) {
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
             return;
         }
         this.recordAcknowledgement(
             this.myAcknowledgementsByAddress,
-            transport,
+            peerAddress,
             forkId
         );
     }
 
     private recordAcknowledgement(
         mapByAddress: Map<string, Set<ForkId>>,
-        transport: ATransport,
+        peerAddress: string,
         forkId: ForkId
     ) {
-        const peerAddress = this.getPeerAddress(transport);
-        if (!peerAddress) {
-            this.logger.warn(
-                `Unable to record acknowledgement for fork ${forkId} - missing peer address`
-            );
-            return;
-        }
-
         const ackSet = mapByAddress.get(peerAddress);
         if (ackSet) {
             ackSet.add(forkId);
@@ -198,23 +194,6 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
         }
 
         mapByAddress.set(peerAddress, new Set([forkId]));
-    }
-
-    private getPeerAddress(transport: ATransport): string | undefined {
-        if (transport.peerAddress) {
-            return transport.peerAddress.toLowerCase();
-        }
-
-        const profile =
-            this.p2pManager.profileManager.getProfileByTransport(transport);
-        const address = profile?.evmAddress;
-        if (!address) {
-            return undefined;
-        }
-
-        const addressString =
-            typeof address === "string" ? address : address.toString();
-        return addressString.toLowerCase();
     }
 
     private hasAddressAcknowledged(

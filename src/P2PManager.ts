@@ -7,17 +7,13 @@ import { ATransport, TransportType } from "@/transport";
 import ProfileManager from "@/ProfileManager";
 import Holepunch from "@/Holepunch";
 import { ethers } from "ethers";
-import { DebugProxy, LocalDiscoveryServer } from "@/utils";
-import { RpcHandleMethods } from "@/rpc/RpcHandleProxy";
+import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
+import type { Logger } from "@/utils/PeerLogger";
 import { Buffer } from "buffer";
-import { DEBUG_P2P_MANAGER, DEBUG_LOCAL_TRANSPORT } from "@/utils/config";
+import { config } from "@/utils/config";
 import { Address } from "./types/types";
-import {
-    hasMethod,
-    hasProperty,
-    isInstanceOfRpcService
-} from "./utils/ObjectChecks";
-import { ARpcService } from "./rpc";
+import { isInstanceOfRpcService } from "./utils/ObjectChecks";
+import type ARpcService from "@/rpc/ARpcService";
 import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
 import type { RpcServiceFactoryMap, RpcServiceInstances } from "./rpc/registry";
 
@@ -28,10 +24,12 @@ type RemoteRpcRoot<TFactories extends RpcServiceFactoryMap> =
     RemoteRpcProxyType<MainRpcService> &
         RemoteRpcProxyType<RpcServiceInstances<TFactories>>;
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
     implements IOnMessage
 {
     stateManager: StateManager;
+    logger: Logger;
     p2pSigner: P2pSigner<TFactories>;
     profileManager = new ProfileManager();
     localRpc: LocalRpcRoot<TFactories>;
@@ -39,7 +37,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
     //TODO - map EVM address to websocket
     openConnections: ATransport[] = [];
     holepunch: Holepunch;
-    self = DEBUG_P2P_MANAGER ? DebugProxy.createProxy(this) : this;
+    self = config.DEBUG_P2P_MANAGER ? DebugProxy.createProxy(this) : this;
     preferredTransport: TransportType = TransportType.HOLEPUNCH;
 
     constructor(
@@ -48,6 +46,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         rpcServiceFactories?: TFactories
     ) {
         this.stateManager = stateManager;
+        this.logger = stateManager.logger.child({ component: "P2PManager" });
         this.p2pSigner = new P2pSigner(
             signer,
             stateManager.signerAddress,
@@ -81,11 +80,17 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
     }
     //Mark resources for garbage collection
     public async dispose() {
-        const remoteRpc = RemoteRpcProxy.createProxy(this.localRpc);
         await this.holepunch.dispose();
         this.disconnectAll();
     }
     public broadcastRpc(serializedRPC: string) {
+        const debugConnections = this.openConnections.map((transport) => {
+            return {
+                transportType: transport.transportType,
+                peerAddress: transport.peerAddress
+            };
+        });
+        this.logger.debug("broadcastRpc", { serializedRPC, debugConnections });
         for (const transport of this.openConnections) {
             transport.send(serializedRPC);
         }
@@ -115,7 +120,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         }
     }
     public async tryOpenConnectionToChannel(channelId: string) {
-        if (DEBUG_LOCAL_TRANSPORT) {
+        if (config.DEBUG_LOCAL_TRANSPORT) {
             await LocalDiscoveryServer.tryStart();
             await LocalDiscoveryServer.connectToPeers(
                 this.self,
@@ -128,15 +133,38 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         await this.holepunch.join(topic);
     }
     public addConnection(transport: ATransport) {
-        this.openConnections.push(transport);
-        this.localRpc.initHandshakeService.initHandshake(transport);
+        // A "connection" only exists after full handshake completion.
+        if (!this.openConnections.includes(transport)) {
+            this.openConnections.push(transport);
+        }
     }
+
     public disconnectConnection(transport: ATransport) {
+        const profile = this.profileManager.getProfileByTransport(transport);
+
+        try {
+            const disconnectedPeer =
+                transport.peerAddress || profile?.getEvmAddress() || "unknown";
+            const stack = new Error("Disconnecting connection").stack;
+            this.logger.warn("disconnectConnection", {
+                disconnectedPeer,
+                transportType: transport.transportType,
+                stack
+            });
+        } catch {
+            // ignore logging errors
+        }
+
         this.openConnections = this.openConnections.filter(
             (t) => t !== transport
         );
-        const profile = this.profileManager.getProfileByTransport(transport);
         profile && this.profileManager.removeTransport(transport);
+
+        try {
+            transport.close();
+        } catch {
+            // ignore
+        }
     }
 
     public disconnectAndBlacklistPeer(transport: ATransport) {
@@ -165,6 +193,29 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         for (const transport of this.openConnections) {
             this.disconnectConnection(transport);
         }
+    }
+
+    /**
+     * Returns a snapshot of currently connected peer identities (EVM addresses).
+     */
+    public getConnectedPeers(): Set<Address> {
+        const addresses = new Set<Address>();
+        for (const transport of this.openConnections) {
+            const fromTransport = transport.peerAddress;
+            if (fromTransport) {
+                // Boundary: transport.peerAddress can originate outside ethers.
+                addresses.add(getChecksumAddress(fromTransport));
+                continue;
+            }
+
+            const profile =
+                this.profileManager.getProfileByTransport(transport);
+            const fromProfile = profile?.getEvmAddress();
+            if (fromProfile) {
+                addresses.add(fromProfile.toString());
+            }
+        }
+        return addresses;
     }
 }
 

@@ -1,17 +1,3 @@
-export enum ExecutionFlags {
-    SUCCESS,
-    NOT_READY,
-    DUPLICATE,
-    DISCONNECT,
-    DISPUTE,
-    TIMESTAMP_IN_FUTURE,
-    TIMESTAMP_TOO_OLD,
-    NOT_ENOUGH_TIME,
-    PAST_FORK,
-    BROADCAST,
-    DOUBLE_SIGN
-}
-
 export enum BlockValidationResult {
     SUCCESS,
     NOT_READY,
@@ -22,22 +8,9 @@ export enum BlockValidationResult {
     DUPLICATE
 }
 
-export enum FraudType {
-    DOUBLE_SIGN,
-    INVALID_STATE_TRANSITION
-}
-
-export enum AgreementFlag {
-    INVALID_SIGNATURE,
-    READY,
-    DUPLICATE,
-    INCORRECT_DATA,
-    DOUBLE_SIGN,
-    NOT_READY
-}
-
-// TODO - think do we need more statuses
 export enum Status {
-    SPECTATING,
+    NOT_OPENED,
+    OPENED,
+    SYNCED,
     PARTICIPATING
 }

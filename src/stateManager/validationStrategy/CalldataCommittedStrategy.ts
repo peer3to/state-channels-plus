@@ -23,7 +23,7 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         );
     }
     public async authenticateBlockFailed(
-        block: BlockConfirmationStruct
+        _block: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
         // The block is committed on-chain by a participant (otherwise we're not interested in the calldata) -> the participant created an objective fault
         // TODO - fraud proof for this
@@ -108,15 +108,21 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         );
     }
     public async blockForkIsDisputed(
-        block: Block
+        block: Block,
+        senderAddress?: string
     ): Promise<BlockValidationResult> {
-        return this.blockValidationStrategy.blockForkIsDisputed(block);
+        return this.blockValidationStrategy.blockForkIsDisputed(
+            block,
+            senderAddress
+        );
     }
     public async blockIsNotNextAndIsInTheFuture(
-        block: Block
+        block: Block,
+        senderAddress?: string
     ): Promise<BlockValidationResult> {
         return this.blockValidationStrategy.blockIsNotNextAndIsInTheFuture(
-            block
+            block,
+            senderAddress
         );
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(

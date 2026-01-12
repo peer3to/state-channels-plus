@@ -57,7 +57,7 @@ export default class StateSnapshot {
         );
     }
 
-    get forkId(): ForkId {
+    get forkID(): ForkId {
         return this.snapshot.forkId as ForkId;
     }
 
@@ -84,6 +84,6 @@ export default class StateSnapshot {
     }
 
     get isGenesis(): boolean {
-        return this.forkId === this.snapshotDataHash;
+        return this.forkID === this.snapshotDataHash;
     }
 }

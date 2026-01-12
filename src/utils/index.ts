@@ -17,3 +17,4 @@ export * from "./hash";
 export * from "./evmErrorHandler";
 export * from "./PeerLogger";
 export * from "./EthersResultProxy";
+export * from "./address";

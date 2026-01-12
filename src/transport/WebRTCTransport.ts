@@ -4,23 +4,21 @@ import { Buffer } from "buffer";
 import { TransportType } from "./TransportType";
 class WebRTCTransport extends ATransport {
     transportType = TransportType.WEBRTC;
-    p2pManager: P2PManager;
     webRTCChannel: any;
     constructor(webRTCChannel: any, p2pManager: P2PManager) {
-        super();
-        this.p2pManager = p2pManager;
+        super(p2pManager);
         this.webRTCChannel = webRTCChannel;
         this.webRTCChannel.onmessage = (event: any) => {
             this.onMessage(event.data);
         };
         this.webRTCChannel.onopen = () => {
             console.log("WebRTC Channel Opened");
-            this.p2pManager.addConnection(this);
+            this.p2pManager.localRpc.initHandshakeService.initHandshake(this);
             //TODO! update peerProfile and close old socket
         };
         this.webRTCChannel.onclose = () => {
             console.log("WebRTC Channel Closed");
-            this.p2pManager.disconnectConnection(this);
+            this.close();
         };
     }
     send(serializedRPC: string): void {

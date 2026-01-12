@@ -2,7 +2,6 @@ import { expect } from "chai";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { MathStateMachine } from "@typechain-types/index";
 import { ZeroHash } from "ethers";
-import { Codec, Type } from "@/utils";
 import { StateSnapshot } from "@/models";
 import { Codec, SignatureUtils, Type } from "@/utils";
 import { hash } from "../factory";
@@ -292,7 +291,7 @@ describe("E2E: Advanced Security", function () {
         it("should remove malicious participant after fork and keep liveness", async function () {
             await harness!.setup(4, {
                 timeConfig: {
-                    p2pTime: 3,
+                    p2pTime: 30,
                     agreementTime: 2,
                     chainFallbackTime: 2,
                     evidenceTime: 3
@@ -306,58 +305,18 @@ describe("E2E: Advanced Security", function () {
             harness!.assertAllPeersInSync();
 
             // Reset spies so we only count dispute-related activity
-            harness!.resetEventSpies();
-
-            // Act - have the next writer broadcast an invalid block
             const maliciousPeer = harness!.peers[2];
-            const honestPeers = [
-                harness!.peers[0],
-                harness!.peers[1],
-                harness!.peers[3]
-            ];
-            const maliciousIndex = maliciousPeer.index;
-            const honestIndices = honestPeers.map((peer) => peer.index);
-
-            await harness!.submitInvalidStateTransitionBlock(maliciousIndex, {
-                forkId: originalForkId
-            });
-
-            // Wait for disputes to be committed across peers
-            const disputesCommitted = await harness!.waitForEventCounts(
-                "onDisputeCommitted",
-                harness!.peers.map((peer) => ({
-                    peerId: peer.index,
-                    expectedCount: 3
-                })),
-                8000,
-                { mode: "atLeast" }
+            const {
+                honestPeers,
+                honestPeerIndices: honestIndices,
+                maliciousPeerIndex: maliciousIndex
+            } = await harness!.createAndResolveInvalidStateTransitionDispute(
+                maliciousPeer.index,
+                {
+                    forkId: originalForkId,
+                    honestPeerIndices: [0, 1, 3]
+                }
             );
-            expect(disputesCommitted).to.be.true;
-
-            // Wait for honest peers to agree on the new fork
-            const forkSettled = await harness!.waitForCondition(() => {
-                const forkIds = honestPeers.map(
-                    (peer) => peer.stateManager.forkId
-                );
-                const uniqueForks = new Set(forkIds);
-                const allMoved =
-                    forkIds.length > 0 &&
-                    forkIds.every(
-                        (forkId) =>
-                            forkId !== originalForkId && forkId !== ZeroHash
-                    );
-                return allMoved && uniqueForks.size === 1;
-            }, 10000);
-            expect(forkSettled).to.be.true;
-
-            // Assert - malicious participant removed from new fork
-            for (const peer of honestPeers) {
-                const participants =
-                    await peer.stateManager.diamondStateMachine.getParticipants();
-                expect(participants).to.have.lengthOf(honestPeers.length);
-
-                expect(participants).to.not.include(maliciousPeer.address);
-            }
 
             // advance the state between honest peers
             await harness!.submitTransaction(
@@ -409,56 +368,18 @@ describe("E2E: Advanced Security", function () {
             harness!.resetEventSpies();
 
             const maliciousPeer = harness!.peers[2];
-            const honestPeers = [
-                harness!.peers[0],
-                harness!.peers[1],
-                harness!.peers[3]
-            ];
-            const maliciousIndex = maliciousPeer.index;
-            const honestIndices = honestPeers.map((peer) => peer.index);
-
-            await harness!.submitInvalidStateTransitionBlock(maliciousIndex, {
-                forkId: originalForkId
-            });
-
-            const disputesCommitted = await harness!.waitForEventCounts(
-                "onDisputeCommitted",
-                harness!.peers.map((peer) => ({
-                    peerId: peer.index,
-                    expectedCount: 3
-                })),
-                8000,
-                { mode: "atLeast" }
+            const {
+                honestPeers,
+                honestPeerIndices: honestIndices,
+                maliciousPeerIndex: maliciousIndex,
+                newForkId
+            } = await harness!.createAndResolveInvalidStateTransitionDispute(
+                maliciousPeer.index,
+                {
+                    forkId: originalForkId,
+                    honestPeerIndices: [0, 1, 3]
+                }
             );
-            expect(disputesCommitted).to.be.true;
-
-            const forkSettled = await harness!.waitForCondition(() => {
-                const forkIds = honestPeers.map(
-                    (peer) => peer.stateManager.forkId
-                );
-                const uniqueForks = new Set(forkIds);
-                const allMoved =
-                    forkIds.length > 0 &&
-                    forkIds.every(
-                        (forkId) =>
-                            forkId !== originalForkId && forkId !== ZeroHash
-                    );
-                return allMoved && uniqueForks.size === 1;
-            }, 10000);
-            expect(forkSettled).to.be.true;
-
-            const newForkId = honestPeers[0].stateManager.forkId;
-            expect(newForkId).to.not.equal(
-                originalForkId,
-                "Expected to be on a new fork after reduction"
-            );
-
-            for (const peer of honestPeers) {
-                const participants =
-                    await peer.stateManager.diamondStateMachine.getParticipants();
-                expect(participants).to.have.lengthOf(honestPeers.length);
-                expect(participants).to.not.include(maliciousPeer.address);
-            }
 
             // Ensure the on-chain snapshot is moved onto the reduced fork first.
             await honestPeers[0].stateManager.postStateSnapshot(newForkId);
@@ -467,7 +388,7 @@ describe("E2E: Advanced Security", function () {
                     harness!.channelId
                 )
             );
-            expect(onChainSnapshotAfterForkSync.forkId).to.equal(
+            expect(onChainSnapshotAfterForkSync.forkID).to.equal(
                 newForkId,
                 "On-chain snapshot should be on the reduced fork before same-fork updates"
             );
@@ -656,56 +577,18 @@ describe("E2E: Advanced Security", function () {
             harness!.resetEventSpies();
 
             const maliciousPeer = harness!.peers[2];
-            const honestPeers = [
-                harness!.peers[0],
-                harness!.peers[1],
-                harness!.peers[3]
-            ];
-            const maliciousIndex = maliciousPeer.index;
-            const honestIndices = honestPeers.map((peer) => peer.index);
-
-            await harness!.submitInvalidStateTransitionBlock(maliciousIndex, {
-                forkId: originalForkId
-            });
-
-            const disputesCommitted = await harness!.waitForEventCounts(
-                "onDisputeCommitted",
-                harness!.peers.map((peer) => ({
-                    peerId: peer.index,
-                    expectedCount: 3
-                })),
-                8000,
-                { mode: "atLeast" }
+            const {
+                honestPeers,
+                honestPeerIndices: honestIndices,
+                maliciousPeerIndex: maliciousIndex,
+                newForkId
+            } = await harness!.createAndResolveInvalidStateTransitionDispute(
+                maliciousPeer.index,
+                {
+                    forkId: originalForkId,
+                    honestPeerIndices: [0, 1, 3]
+                }
             );
-            expect(disputesCommitted).to.be.true;
-
-            const forkSettled = await harness!.waitForCondition(() => {
-                const forkIds = honestPeers.map(
-                    (peer) => peer.stateManager.forkId
-                );
-                const uniqueForks = new Set(forkIds);
-                const allMoved =
-                    forkIds.length > 0 &&
-                    forkIds.every(
-                        (forkId) =>
-                            forkId !== originalForkId && forkId !== ZeroHash
-                    );
-                return allMoved && uniqueForks.size === 1;
-            }, 10000);
-            expect(forkSettled).to.be.true;
-
-            const newForkId = honestPeers[0].stateManager.forkId;
-            expect(newForkId).to.not.equal(
-                originalForkId,
-                "Expected to be on a new fork after reduction"
-            );
-
-            for (const peer of honestPeers) {
-                const participants =
-                    await peer.stateManager.diamondStateMachine.getParticipants();
-                expect(participants).to.have.lengthOf(honestPeers.length);
-                expect(participants).to.not.include(maliciousPeer.address);
-            }
 
             // From here, do the same 3 transitions as E2E-Core and post a same-fork snapshot update.
             await harness!.submitNextTransaction(
@@ -1245,7 +1128,7 @@ describe("E2E: Advanced Security", function () {
             };
 
             // Track peer 2's snapshots
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             const snapshotStorage = harness!.peers[2].stateManager.storage
                 .stateSnapshots as any;
             const snapshotCountBefore = Array.from(
@@ -1302,8 +1185,6 @@ describe("E2E: Advanced Security", function () {
             // Get peer 1's broadcast function reference
             const peer1 = harness!.peers[1];
             const peer1RemoteRpc = peer1.stateManager.p2pManager.remoteRpc;
-            const originalStateTransitionService =
-                peer1RemoteRpc.stateTransitionService;
 
             // Stub peer 1's broadcast to be a no-op - peer 1 will author but not broadcast
             peer1RemoteRpc.stateTransitionService.onBlockConfirmation = (
@@ -1317,7 +1198,7 @@ describe("E2E: Advanced Security", function () {
                     sendOne: () => {},
                     sendMultiple: () => {}
                 } as unknown as ReturnType<
-                    typeof originalStateTransitionService.onBlockConfirmation
+                    typeof peer1RemoteRpc.stateTransitionService.onBlockConfirmation
                 >;
             };
 

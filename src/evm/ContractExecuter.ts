@@ -3,7 +3,6 @@ import { Address } from "@ethereumjs/util";
 import { ethers } from "ethers";
 import { Bytes } from "@/types/types";
 import { decodeErrorProxy } from "@/utils/evmErrorHandler";
-import { defaultBlock } from "node_modules/@ethereumjs/evm/dist/esm/evm";
 import Clock from "@/Clock";
 
 export default class ContractExecuter {
@@ -27,8 +26,20 @@ export default class ContractExecuter {
         isSimulation = false
     ): Promise<ExecResult> {
         // set timestamp
-        const block = defaultBlock();
-        block.header.timestamp = BigInt(Clock.getTimeInSeconds());
+        const zeroAddress = Address.zero();
+        const block = {
+            header: {
+                number: 0n,
+                cliqueSigner: () => zeroAddress,
+                coinbase: zeroAddress,
+                timestamp: BigInt(Clock.getTimeInSeconds()),
+                difficulty: 0n,
+                prevRandao: new Uint8Array(32),
+                gasLimit: 30_000_000n,
+                baseFeePerGas: 0n,
+                getBlobGasPrice: () => undefined
+            }
+        } as any;
         if (isSimulation) await this.evm.journal.checkpoint();
         const result = await this.evm.runCall({
             data: ethers.getBytes(data),

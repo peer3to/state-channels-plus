@@ -25,6 +25,7 @@ import { Codec, hash, Logger, Type } from "@/utils";
 import { isEqual } from "lodash";
 import { ZeroHash } from "ethers";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
+import { Status } from "@/types";
 
 export class EventHandler {
     private logger: Logger;
@@ -88,6 +89,8 @@ export class EventHandler {
 
     private async handleChannelClose(channelId: ChannelId): Promise<void> {
         this.logger.info("Handling channel close", { channelId });
+
+        this.stateManager.setStatus(Status.NOT_OPENED);
 
         // Disconnect from all peers in this channel
         this.stateManager.p2pManager.disconnectAll();
@@ -239,12 +242,10 @@ export class EventHandler {
         dispute: DisputeStruct
     ): Promise<boolean> {
         // Create our own dispute
-        const {
-            dispute: ourDispute,
-            disputeConfirmation: ourDisputeConfirmation
-        } = await this.stateManager.disputeManager.constructDispute(
-            this.stateManager.latestForkId
-        );
+        const { dispute: ourDispute } =
+            await this.stateManager.disputeManager.constructDispute(
+                this.stateManager.latestForkId
+            );
 
         // Compare reduced disputes to see if we have more evidence
         const singleDisputeReduction =
@@ -513,7 +514,7 @@ export class EventHandler {
     private async setForkIfLatestAndCurrent(
         forkId: ForkId,
         reducedForkId: ForkId,
-        reductionTimestamp: Timestamp
+        _reductionTimestamp: Timestamp
     ): Promise<void> {
         // enough for now - this will change later
         if (this.stateManager.forkId == forkId) {
