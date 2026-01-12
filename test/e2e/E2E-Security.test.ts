@@ -1128,7 +1128,7 @@ describe("E2E: Advanced Security", function () {
             };
 
             // Track peer 2's snapshots
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             const snapshotStorage = harness!.peers[2].stateManager.storage
                 .stateSnapshots as any;
             const snapshotCountBefore = Array.from(
@@ -1185,8 +1185,6 @@ describe("E2E: Advanced Security", function () {
             // Get peer 1's broadcast function reference
             const peer1 = harness!.peers[1];
             const peer1RemoteRpc = peer1.stateManager.p2pManager.remoteRpc;
-            const originalStateTransitionService =
-                peer1RemoteRpc.stateTransitionService;
 
             // Stub peer 1's broadcast to be a no-op - peer 1 will author but not broadcast
             peer1RemoteRpc.stateTransitionService.onBlockConfirmation = (
@@ -1200,7 +1198,7 @@ describe("E2E: Advanced Security", function () {
                     sendOne: () => {},
                     sendMultiple: () => {}
                 } as unknown as ReturnType<
-                    typeof originalStateTransitionService.onBlockConfirmation
+                    typeof peer1RemoteRpc.stateTransitionService.onBlockConfirmation
                 >;
             };
 

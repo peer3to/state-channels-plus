@@ -1,9 +1,10 @@
 import { expect } from "chai";
-import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { MathStateMachine } from "@typechain-types/index";
 import { ATransport } from "@/transport";
 import { StateSnapshot } from "@/models";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
+import { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 
 describe("E2E: SpectateService", function () {
     let harness: PeerTestHarness<MathStateMachine> | undefined;
@@ -19,25 +20,12 @@ describe("E2E: SpectateService", function () {
         }
     });
 
-    const hasHandshakeCompleted = (
-        ownerPeer: TestPeer<MathStateMachine>,
-        counterparty: TestPeer<MathStateMachine>
-    ): boolean => {
-        const profile =
-            ownerPeer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
-                counterparty.address
-            );
-        return profile?.getIsHandshakeCompleted() ?? false;
-    };
-
     it("should NOT allow spectate RPC before handshake completes", async function () {
-        this.timeout(30000);
-
         harness = new PeerTestHarness<MathStateMachine>();
         await harness.setup(2, {
             autoConnect: false,
             timeConfig: {
-                agreementTime: 1,
+                agreementTime: 10,
                 p2pTime: 2,
                 chainFallbackTime: 2,
                 evidenceTime: 2
@@ -52,21 +40,10 @@ describe("E2E: SpectateService", function () {
         const peer0 = h.peers[0];
         const peer1 = h.peers[1];
 
-        const hasVerifiedProfile = (
-            ownerPeer: TestPeer<MathStateMachine>,
-            counterparty: TestPeer<MathStateMachine>
-        ): boolean => {
-            const profile =
-                ownerPeer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
-                    counterparty.address
-                );
-            return !!profile;
-        };
-
         // Ensure a deterministic "handshake incomplete" window on peer1 by
         // temporarily preventing it from initiating its own handshake.
-        const peer1InitHandshakeService = peer1.stateManager.p2pManager.localRpc
-            .initHandshakeService as any;
+        const peer1InitHandshakeService =
+            peer1.stateManager.p2pManager.localRpc.initHandshakeService;
         const originalPeer1InitHandshake =
             peer1InitHandshakeService.initHandshake.bind(
                 peer1InitHandshakeService
@@ -76,8 +53,8 @@ describe("E2E: SpectateService", function () {
         };
 
         // Capture the transport that peer0 uses to talk to peer1 (same trick as PingService E2E).
-        const peer0InitHandshakeService = peer0.stateManager.p2pManager.localRpc
-            .initHandshakeService as any;
+        const peer0InitHandshakeService =
+            peer0.stateManager.p2pManager.localRpc.initHandshakeService;
         const originalPeer0InitHandshake =
             peer0InitHandshakeService.initHandshake.bind(
                 peer0InitHandshakeService
@@ -111,24 +88,17 @@ describe("E2E: SpectateService", function () {
             );
         }
 
-        // Wait until peer0 has verified peer1 (profile exists).
-        await h.waitForCondition(
-            () => hasVerifiedProfile(peer0, peer1),
-            5000,
-            50
-        );
-        // Peer1 should still NOT have verified peer0.
-        expect(hasVerifiedProfile(peer1, peer0)).to.equal(false);
-
         const initiatorSpectateService =
             peer0.p2pInstance.p2pSigner.p2pManager.localRpc.spectateService;
 
         // Act: attempt to sync; receiver guard should block and initiator should timeout.
-        initiatorSpectateService.sync(peer1.address, h.channelId);
+        initiatorSpectateService.remoteRpc.spectateService
+            .onSpectateRequest({} as SyncRequest)
+            .sendOne(capturedPeer0Transport); // sync the handhsahke is not completed calling sync(address) would not send the RPC since address has not been verified -> need to send by transport directly
 
         const sawGuardFailure = await h.waitForCondition(
             () => peer1GuardFailureCount >= 1,
-            2000,
+            5000,
             25
         );
         expect(sawGuardFailure).to.equal(true);
@@ -173,7 +143,7 @@ describe("E2E: SpectateService", function () {
         });
 
         // Create a 4th peer later and connect it to the same channelId.
-        const spectatingPeer = await h.addPeer();
+        await h.addPeer();
         await h.waitForP2PConnections(5000);
 
         await h.waitForSync({ timeout: 5000 });

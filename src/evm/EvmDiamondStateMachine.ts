@@ -37,7 +37,7 @@ import {
 import LocalDiamondSigner from "./LocalDiamondSigner";
 import { LocalDiamondArtifact } from "@/utils/GeneratedArtifacts";
 
-import { DEBUG_CHANNEL_CONTRACT } from "@/utils/config";
+import { createConfig, config, Config } from "@/utils/config";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
 /**
@@ -138,7 +138,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                     outboundMessages as ethers.Result
                 ) as unknown as MessageStruct[]
             };
-        } catch (error) {
+        } catch {
             return {
                 success: false,
                 successCallback: () => {},
@@ -391,17 +391,29 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
      */
     public static async p2pSetup<
         T extends AStateMachineContract,
+        // eslint-disable-next-line @typescript-eslint/no-empty-object-type
         TFactories extends RpcServiceFactoryMap = {}
     >(
         signer: Signer,
         deployStateMachineTx: any,
         deployedStateChannelContractInstance: StateChannelManagerProxy,
         stateMachineContractInstance: T,
-        p2pEventHooks?: P2pEventHooks,
-        peerId?: number,
-        peerLogger?: Logger,
-        rpcServiceFactories?: TFactories
+        options?: {
+            p2pEventHooks?: P2pEventHooks;
+            peerId?: number;
+            peerLogger?: Logger;
+            rpcServiceFactories?: TFactories;
+            config?: Partial<Config>;
+        }
     ): Promise<P2pInstance<T, TFactories>> {
+        // Initialize SDK config for this runtime (intended to be called once).
+        createConfig(options?.config);
+
+        const p2pEventHooks = options?.p2pEventHooks;
+        const pid = options?.peerId;
+        const peerLogger = options?.peerLogger;
+        const rpcServiceFactories = options?.rpcServiceFactories;
+
         // Sync clock to DLT
         await Clock.init(signer.provider!);
         deployedStateChannelContractInstance = decodeErrorProxy(
@@ -413,7 +425,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             await deployedStateChannelContractInstance.connect(signer);
 
         // Apply debug proxy if enabled
-        if (DEBUG_CHANNEL_CONTRACT) {
+        if (config.DEBUG_CHANNEL_CONTRACT) {
             deployedStateChannelContractInstance = DebugProxy.createProxy(
                 deployedStateChannelContractInstance
             );
@@ -445,7 +457,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const logger =
             peerLogger ||
             createLogger({
-                peerId,
+                peerId: pid,
                 peerAddress: signerAddress
             });
 

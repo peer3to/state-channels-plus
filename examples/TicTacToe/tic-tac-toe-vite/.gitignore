@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local app-specific Peer3 config overrides
+src/peer3.config.ts
+
+# TypeScript incremental build info
+*.tsbuildinfo

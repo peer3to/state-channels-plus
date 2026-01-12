@@ -22,6 +22,10 @@ struct TicTacToeState {
 contract TicTacToeStateMachine is AStateMachine {
     TicTacToeState state;
 
+    constructor(uint256 _gasLimit) AStateMachine(_gasLimit) {
+        gasLimit = _gasLimit;
+    }
+
     event MoveMade(address player, uint8 row, uint8 col, Cell cell);
     event GameOver(Cell winner);
     event RemovedParticipant(address participant, uint256 amount);
@@ -148,31 +152,32 @@ contract TicTacToeStateMachine is AStateMachine {
         return state.currentPlayer;
     }
 
-    function _slashParticipant(address adr) internal virtual override returns (bool, ProcessExit memory) {
+    function _slashParticipant(address adr) internal virtual override returns (bool, ExitChannel memory) {
         return _removeParticipant(adr);
     }
 
-    function _removeParticipant(address adr) internal virtual override returns (bool, ProcessExit memory) {
+    function _removeParticipant(address adr) internal virtual override returns (bool, ExitChannel memory) {
         uint256 length = state.participants.length;
-        ProcessExit memory processExit;
+        ExitChannel memory exitChannel;
         for (uint256 i = 0; i < length; i++) {
             if (state.participants[i] == adr) {
                 uint256 transferAmount = state.betAmount > state.balances[i] ? state.balances[i] : state.betAmount;
                 state.balances[i] -= transferAmount;
                 state.balances[(i + 1) % 2] += transferAmount;
 
-                processExit.participant = adr;
-                processExit.amount = state.balances[i];
+                exitChannel.participant = adr;
+                exitChannel.balance.amount = state.balances[i];
+                exitChannel.balance.data = "";
 
                 state.participants[i] = state.participants[length - 1];
                 state.participants.pop();
                 state.balances[i] = state.balances[length - 1];
                 state.balances.pop();
-                emit RemovedParticipant(adr, processExit.amount);
-                return (true, processExit);
+                emit RemovedParticipant(adr, exitChannel.balance.amount);
+                return (true, exitChannel);
             }
         }
-        return (false, processExit);
+        return (false, exitChannel);
     }
 
     function _joinChannel(JoinChannel memory joinChannel) internal virtual override returns (bool) {
@@ -183,5 +188,53 @@ contract TicTacToeStateMachine is AStateMachine {
             state.gameActive = true;
         }
         return true;
+    }
+
+    function addBalance(Balance memory balance1, Balance memory balance2)
+        public
+        pure
+        override
+        returns (Balance memory sum)
+    {
+        sum.amount = balance1.amount + balance2.amount;
+        return sum;
+    }
+
+    function subtractBalance(Balance memory balance1, Balance memory balance2)
+        public
+        pure
+        override
+        returns (Balance memory diff)
+    {
+        require(balance1.amount >= balance2.amount, "TicTacToeStateMachine: balance1 < balance2");
+        diff.amount = balance1.amount - balance2.amount;
+        return diff;
+    }
+
+    function areBalancesEqual(Balance memory balance1, Balance memory balance2) public pure override returns (bool) {
+        return balance1.amount == balance2.amount;
+    }
+
+    function isBalanceLesserThan(Balance memory balance1, Balance memory balance2)
+        public
+        pure
+        override
+        returns (bool)
+    {
+        return balance1.amount < balance2.amount;
+    }
+
+    function getTotalStateBalance() public view override returns (Balance memory totalBalance) {
+        uint256 sum = 0;
+        for (uint256 i = 0; i < state.balances.length; i++) {
+            sum += state.balances[i];
+        }
+        totalBalance.amount = sum;
+        totalBalance.data = "";
+        return totalBalance;
+    }
+
+    function getZeroBalance() public pure override returns (Balance memory) {
+        return Balance({amount: 0, data: ""});
     }
 }

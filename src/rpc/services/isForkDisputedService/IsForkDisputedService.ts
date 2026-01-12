@@ -1,4 +1,4 @@
-import { ARpcService } from "@/rpc";
+import ARpcService from "@/rpc/ARpcService";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 import { ChannelId, ForkId } from "@/types/types";
 import ATransport from "@/transport/ATransport";
@@ -65,7 +65,7 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
                 for (const peerAddress of snapshotAddresses) {
                     if (
                         this.didPeerAddressAcknowledgeDisputedFork(
-                            peerAddress,
+                            peerAddress.toString(),
                             forkId
                         )
                     ) {

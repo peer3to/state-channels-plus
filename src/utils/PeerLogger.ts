@@ -1,8 +1,9 @@
-import winston from "winston";
-
+import type winston from "winston";
+import { config, isNodeRuntime } from "./config";
+import { Address } from "@/types/types";
 export interface LoggerContext {
     peerId?: number;
-    peerAddress?: string;
+    peerAddress?: Address;
     component?: string;
     [key: string]: any; // Allow additional metadata properties
 }
@@ -36,72 +37,273 @@ const Colors = {
     TIMESTAMP: "\x1b[90m" // Gray for timestamps
 } as const;
 
-export type Logger = winston.Logger;
+export type Logger = {
+    level?: string;
+    debug: (message: any, meta?: any, ...args: any[]) => void;
+    info: (message: any, meta?: any, ...args: any[]) => void;
+    warn: (message: any, meta?: any, ...args: any[]) => void;
+    error: (message: any, meta?: any, ...args: any[]) => void;
+    verbose: (message: any, meta?: any, ...args: any[]) => void;
+    child: (context: LoggerContext) => Logger;
+    clear?: () => void;
+    close?: () => void;
+};
 
-const peerColorFormat = winston.format.printf(
-    ({
-        timestamp,
-        level,
-        message,
-        peerId,
-        peerAddress,
-        component,
-        ...meta
-    }) => {
-        let prefix = "";
+class BrowserLogger implements Logger {
+    public level?: string;
+    private context: LoggerContext;
 
-        // Timestamp
-        if (timestamp) {
-            const timeValue =
-                typeof timestamp === "bigint"
-                    ? Number(timestamp)
-                    : (timestamp as string | number | Date);
-            const time = new Date(timeValue).toLocaleTimeString("en-US", {
-                hour12: false,
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit"
-            });
-            prefix += `${Colors.TIMESTAMP}[${time}]${Colors.RESET}`;
+    constructor(context: LoggerContext = {}, level?: string) {
+        this.context = context;
+        this.level = level;
+    }
+
+    public child(context: LoggerContext): Logger {
+        return new BrowserLogger(
+            { ...this.context, ...(context || {}) },
+            this.level
+        );
+    }
+
+    private isPlainObject(value: unknown): value is Record<string, any> {
+        if (!value || typeof value !== "object") return false;
+        if (Array.isArray(value)) return false;
+        const proto = Object.getPrototypeOf(value);
+        return proto === Object.prototype || proto === null;
+    }
+
+    private formatTime(): string {
+        return new Date().toLocaleTimeString("en-US", {
+            hour12: false,
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit"
+        });
+    }
+
+    private levelCss(level: string): string {
+        // Browser consoles don't interpret ANSI escapes; use CSS instead.
+        switch (level) {
+            case "error":
+                return "color: #dc2626; font-weight: 700";
+            case "warn":
+                return "color: #f97316; font-weight: 700";
+            case "info":
+                return "color: #22c55e; font-weight: 700";
+            case "debug":
+                return "color: #f59e0b; font-weight: 700";
+            case "verbose":
+                return "color: #a855f7; font-weight: 700";
+            default:
+                return "color: #f59e0b; font-weight: 700";
+        }
+    }
+
+    private peerCss(peerId: number): string {
+        // Keep a rotating palette similar to the node logger.
+        const palette = [
+            "#22d3ee", // cyan
+            "#fbbf24", // yellow
+            "#e879f9", // magenta
+            "#4ade80", // green
+            "#60a5fa", // blue
+            "#f87171", // red
+            "#67e8f9", // bright cyan
+            "#f0abfc" // bright magenta
+        ];
+        return `color: ${palette[Math.abs(peerId) % palette.length]}; font-weight: 600`;
+    }
+
+    private peerCssFromAddress(peerAddress: string): string {
+        // Deterministic fallback when peerId is not available.
+        // (Browser consoles don't support ANSI; we use CSS colors via %c.)
+        const palette = [
+            "#22d3ee", // cyan
+            "#fbbf24", // yellow
+            "#e879f9", // magenta
+            "#4ade80", // green
+            "#60a5fa", // blue
+            "#f87171", // red
+            "#67e8f9", // bright cyan
+            "#f0abfc" // bright magenta
+        ];
+
+        let hash = 0;
+        for (let i = 0; i < peerAddress.length; i++) {
+            hash = (hash * 31 + peerAddress.charCodeAt(i)) | 0;
         }
 
-        // Log level with color
-        prefix += `${Colors.LEVEL[level as keyof typeof Colors.LEVEL] || Colors.LEVEL.debug}[${level.toUpperCase()}]${Colors.RESET}`;
+        const idx = Math.abs(hash) % palette.length;
+        return `color: ${palette[idx]}; font-weight: 600`;
+    }
 
-        // Peer context
-        if (peerId == null) {
-            prefix += `${Colors.RESET}`;
-        } else {
-            const peerColor = Colors.PEER[Number(peerId) % Colors.PEER.length];
-            prefix += `${peerColor}[Peer ${peerId}]${Colors.RESET}`;
-            if (peerAddress && typeof peerAddress === "string") {
-                prefix += `${peerColor}[${peerAddress.slice(0, 8)}...]${Colors.RESET}`;
+    private safeJson(value: any): string {
+        return JSON.stringify(value, (_key, v) =>
+            typeof v === "bigint" ? v.toString() : v
+        );
+    }
+
+    private fmt(level: string, message: any, meta?: any): any[] {
+        const extra = this.isPlainObject(meta) ? meta : undefined;
+        const merged = extra
+            ? { ...this.context, ...extra }
+            : { ...this.context };
+
+        const time = this.formatTime();
+        const levelUpper = level.toUpperCase();
+
+        const parts: string[] = [];
+        const styles: string[] = [];
+        const push = (text: string, style: string) => {
+            parts.push(`%c${text}`);
+            styles.push(style);
+        };
+
+        // Timestamp
+        push(`[${time}]`, "color: #9ca3af");
+
+        // Level
+        push(`[${levelUpper}]`, this.levelCss(level));
+
+        // Peer
+        const peerId = merged.peerId;
+        const peerAddress = merged.peerAddress;
+        if (typeof peerAddress === "string" && peerAddress.length > 0) {
+            const peerStyle =
+                peerId != null
+                    ? this.peerCss(Number(peerId))
+                    : this.peerCssFromAddress(peerAddress);
+
+            if (peerId != null) {
+                push(`[Peer ${peerId}]`, peerStyle);
             }
+            push(`[${peerAddress.slice(0, 8)}...]`, peerStyle);
         }
 
         // Component
-        if (component)
-            prefix += `${Colors.COMPONENT}[${component}]${Colors.RESET}`;
+        if (merged.component) {
+            push(
+                `[${String(merged.component)}]`,
+                "color: #9ca3af; opacity: 0.85"
+            );
+        }
 
-        // Metadata - handle BigInt values
-        const metaStr =
-            Object.keys(meta).length > 0
-                ? ` ${JSON.stringify(meta, (key, value) => {
-                      if (typeof value === "bigint") {
-                          return value.toString();
-                      }
-                      return value;
-                  })}`
-                : "";
-        return `${prefix} ${message}${metaStr}`;
+        // Meta (like node formatter: exclude the common context keys)
+        const metaForInline: Record<string, any> = { ...merged };
+        delete metaForInline.peerId;
+        delete metaForInline.peerAddress;
+        delete metaForInline.component;
+
+        const hasMeta = Object.keys(metaForInline).length > 0;
+        const metaStr = hasMeta ? ` ${this.safeJson(metaForInline)}` : "";
+
+        // Reset style after prefix so message is default console color.
+        parts.push(`%c`);
+        styles.push("");
+
+        const prefix = `${parts.join("")}${metaStr}`;
+        return extra
+            ? [prefix, ...styles, message, extra]
+            : [prefix, ...styles, message];
     }
-);
+
+    public debug(message: any, meta?: any, ...args: any[]): void {
+        // eslint-disable-next-line no-console
+        console.debug(...this.fmt("debug", message, meta), ...args);
+    }
+    public info(message: any, meta?: any, ...args: any[]): void {
+        // eslint-disable-next-line no-console
+        console.info(...this.fmt("info", message, meta), ...args);
+    }
+    public warn(message: any, meta?: any, ...args: any[]): void {
+        // eslint-disable-next-line no-console
+        console.warn(...this.fmt("warn", message, meta), ...args);
+    }
+    public error(message: any, meta?: any, ...args: any[]): void {
+        // eslint-disable-next-line no-console
+        console.error(...this.fmt("error", message, meta), ...args);
+    }
+    public verbose(message: any, meta?: any, ...args: any[]): void {
+        // eslint-disable-next-line no-console
+        console.debug(...this.fmt("verbose", message, meta), ...args);
+    }
+}
+
+const peerColorFormat = (winstonImpl: typeof import("winston")) =>
+    winstonImpl.format.printf(
+        ({
+            timestamp,
+            level,
+            message,
+            peerId,
+            peerAddress,
+            component,
+            ...meta
+        }) => {
+            let prefix = "";
+
+            // Timestamp
+            if (timestamp) {
+                const timeValue =
+                    typeof timestamp === "bigint"
+                        ? Number(timestamp)
+                        : (timestamp as string | number | Date);
+                const time = new Date(timeValue).toLocaleTimeString("en-US", {
+                    hour12: false,
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit"
+                });
+                prefix += `${Colors.TIMESTAMP}[${time}]${Colors.RESET}`;
+            }
+
+            // Log level with color
+            prefix += `${Colors.LEVEL[level as keyof typeof Colors.LEVEL] || Colors.LEVEL.debug}[${level.toUpperCase()}]${Colors.RESET}`;
+
+            // Peer context
+            if (peerId == null) {
+                prefix += `${Colors.RESET}`;
+            } else {
+                const peerColor =
+                    Colors.PEER[Number(peerId) % Colors.PEER.length];
+                prefix += `${peerColor}[Peer ${peerId}]${Colors.RESET}`;
+                if (peerAddress && typeof peerAddress === "string") {
+                    prefix += `${peerColor}[${peerAddress.slice(0, 8)}...]${Colors.RESET}`;
+                }
+            }
+
+            // Component
+            if (component)
+                prefix += `${Colors.COMPONENT}[${component}]${Colors.RESET}`;
+
+            // Metadata - handle BigInt values
+            const metaStr =
+                Object.keys(meta).length > 0
+                    ? ` ${JSON.stringify(meta, (key, value) => {
+                          if (typeof value === "bigint") {
+                              return value.toString();
+                          }
+                          return value;
+                      })}`
+                    : "";
+            return `${prefix} ${message}${metaStr}`;
+        }
+    );
 
 // Global singleton Winston logger to prevent multiple process event listeners
-let globalLogger: winston.Logger | null = null;
+let globalLogger: Logger | null = null;
 
-function getGlobalLogger(): winston.Logger {
+function getGlobalLogger(): Logger {
     if (!globalLogger) {
+        if (!isNodeRuntime()) {
+            globalLogger = new BrowserLogger({}, config.LOG_LEVEL);
+            return globalLogger;
+        }
+
+        // Lazy-load winston only in Node runtimes.
+
+        const winstonImpl = require("winston") as typeof import("winston");
+
         // Define custom log levels with numerical priorities
         const customLevels = {
             levels: {
@@ -116,7 +318,7 @@ function getGlobalLogger(): winston.Logger {
         const logLevel = PeerLogger.parseLogLevelFromArgs();
         const excludedTags = PeerLogger.parseExcludedTagsFromArgs();
 
-        const tagFilter = winston.format((info) => {
+        const tagFilter = winstonImpl.format((info) => {
             const tagsToCheck: string[] = [];
 
             if (typeof info.component === "string") {
@@ -136,20 +338,20 @@ function getGlobalLogger(): winston.Logger {
 
         // Create the single global logger with exception/rejection handling
         const transports: winston.transport[] = [
-            new winston.transports.Console({
+            new winstonImpl.transports.Console({
                 handleExceptions: true,
                 handleRejections: true
             })
         ];
 
-        globalLogger = winston.createLogger({
+        globalLogger = winstonImpl.createLogger({
             levels: customLevels.levels,
             level: logLevel,
-            format: winston.format.combine(
+            format: winstonImpl.format.combine(
                 tagFilter(),
-                winston.format.timestamp(),
-                winston.format.errors({ stack: true }),
-                peerColorFormat
+                winstonImpl.format.timestamp(),
+                winstonImpl.format.errors({ stack: true }),
+                peerColorFormat(winstonImpl)
             ),
             transports,
             exitOnError: false
@@ -159,7 +361,7 @@ function getGlobalLogger(): winston.Logger {
 }
 
 class PeerLogger {
-    private logger: winston.Logger;
+    private logger: Logger;
 
     constructor(level: string | undefined, context: LoggerContext = {}) {
         const globalLogger = getGlobalLogger();
@@ -176,8 +378,8 @@ class PeerLogger {
     }
 
     public cleanup(): void {
-        this.logger.clear();
-        this.logger.close();
+        this.logger.clear?.();
+        this.logger.close?.();
     }
 
     private log(
@@ -222,19 +424,21 @@ class PeerLogger {
         this.log("error", message, context, ...args);
     }
 
-    public child(context: LoggerContext): winston.Logger {
+    public child(context: LoggerContext): Logger {
         return this.logger.child(context);
     }
 
-    public static parseLogLevelFromArgs(args: string[] = process.argv): string {
+    public static parseLogLevelFromArgs(
+        args: string[] = isNodeRuntime() ? (process as any).argv : []
+    ): string {
         const validLevels = ["verbose", "debug", "info", "warn", "error"];
         let logLevel = "info";
 
         if (
-            process.env.LOG_LEVEL &&
-            validLevels.includes(process.env.LOG_LEVEL.toLowerCase())
+            config.LOG_LEVEL &&
+            validLevels.includes(config.LOG_LEVEL.toLowerCase())
         ) {
-            logLevel = process.env.LOG_LEVEL.toLowerCase();
+            logLevel = config.LOG_LEVEL.toLowerCase();
         }
 
         const flags = ["--verbose", "--debug", "--info", "--warn", "--error"];
@@ -249,7 +453,7 @@ class PeerLogger {
     }
 
     public static parseExcludedTagsFromArgs(
-        args: string[] = process.argv
+        args: string[] = isNodeRuntime() ? (process as any).argv : []
     ): Set<string> {
         const excludedTags: Set<string> = new Set();
         const normalize = (tag: string) => tag.trim().toLowerCase();
@@ -263,8 +467,8 @@ class PeerLogger {
                 .forEach((tag) => excludedTags.add(tag));
         };
 
-        addTags(process.env.LOG_EXCLUDE_TAGS);
-        addTags(process.env.EXCLUDE_LOG_TAGS);
+        addTags(config.LOG_EXCLUDE_TAGS);
+        addTags(config.EXCLUDE_LOG_TAGS);
 
         const flagIndex = args.findIndex((arg) => arg === "--exclude-tags");
         if (flagIndex !== -1) {
@@ -283,7 +487,7 @@ class PeerLogger {
 // Exports
 
 // Create a logger instance with the given context
-export const createLogger = (context: LoggerContext = {}): winston.Logger => {
+export const createLogger = (context: LoggerContext = {}): Logger => {
     // Use the global singleton logger and create a child with the provided context
     const globalLogger = getGlobalLogger();
     return globalLogger.child(context);

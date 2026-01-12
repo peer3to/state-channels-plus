@@ -76,7 +76,7 @@ import AValidationStrategy from "./validationStrategy/AValidationStrategy";
 import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
 import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidationStrategy";
 
-import { DEBUG_STATE_MANAGER } from "@/utils/config";
+import { config } from "@/utils/config";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
@@ -100,7 +100,7 @@ class StateManager {
     timeConfig: TimeConfig;
     channelId: ChannelId = NULL;
     mutex: Mutex = new Mutex();
-    self = DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
+    self = config.DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
     isDisposed: boolean = false;
     validationService: ValidationService;
     disputeValidationService: DisputeValidationService;
@@ -584,7 +584,6 @@ class StateManager {
         }
 
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();
-        this.p2pEventHooks.onTurn?.(nextToWrite);
 
         const nextTransactionCnt = this.storage.blocks.getNextBlockHeight(
             this.forkId
@@ -609,6 +608,9 @@ class StateManager {
             0,
             "queueProcessing"
         );
+
+        this.p2pEventHooks.onSetState?.();
+        this.p2pEventHooks.onTurn?.(nextToWrite);
     }
 
     public async setGenesisState(
@@ -935,7 +937,6 @@ class StateManager {
         tx: TransactionStruct
     ): Promise<BlockConfirmationStruct> {
         await this.mutex.lock();
-        const forkId = this.forkId;
         const message = await this.logPlayTransaction(tx);
         try {
             if (!this.validationService.isChannelOpen(this.forkId)) {

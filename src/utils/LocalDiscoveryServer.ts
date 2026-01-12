@@ -34,9 +34,14 @@ type DiscoveryInfo = {
  *    - Connects directly to other Peers upon receiving announcements.
  */
 export class LocalDiscoveryServer {
-    private static logger: Logger = createLogger({
-        component: "LocalDiscovery"
-    });
+    private static _logger?: Logger;
+
+    private static get logger(): Logger {
+        if (!this._logger) {
+            this._logger = createLogger({ component: "LocalDiscovery" });
+        }
+        return this._logger;
+    }
     // --- Registry State ---
     private static discoveryServer: WebSocketServer | null = null;
     private static discoveryPort: number | null = null;
@@ -497,7 +502,7 @@ export class LocalDiscoveryServer {
                         }
                     }
                 }
-            } catch (_err) {
+            } catch {
                 // Ignore malformed messages
                 this.logger.warn("Malformed registration message", {
                     mode: "registry",
@@ -755,7 +760,7 @@ export class LocalDiscoveryServer {
                 ...logBase,
                 myChannelId
             });
-        } catch (_err) {
+        } catch {
             // Ignore malformed messages
             this.logger.warn("Malformed peer announcement", {
                 mode: "peer",

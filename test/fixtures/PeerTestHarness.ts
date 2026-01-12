@@ -67,6 +67,7 @@ import DisputeManager, {
 
 export interface TestPeer<
     T extends AStateMachine,
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
 > {
     index: number;
@@ -111,7 +112,10 @@ export interface EventSpies {
 /**
  * Options for configuring the test harness
  */
-export interface HarnessOptions<TFactories extends RpcServiceFactoryMap = {}> {
+export interface HarnessOptions<
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+    TFactories extends RpcServiceFactoryMap = {}
+> {
     timeConfig?: Partial<TimeConfig>;
     channelId?: string;
     initialBalance?: number;
@@ -134,6 +138,7 @@ export type AssertAllPeersInSyncOptions = {
 
 export type CreateAndResolveDisputeResult<
     T extends AStateMachine,
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
 > = {
     originalForkId: ForkId;
@@ -145,6 +150,7 @@ export type CreateAndResolveDisputeResult<
 
 export type CreateAndResolveForkResult<
     T extends AStateMachine,
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
 > = {
     originalForkId: ForkId;
@@ -177,6 +183,7 @@ type BuildJoinChannelRequestArgs = {
  */
 export class PeerTestHarness<
     T extends AStateMachine,
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
 > {
     public peers: TestPeer<T, TFactories>[] = [];
@@ -185,7 +192,7 @@ export class PeerTestHarness<
     public channelId!: ChannelId;
     private options!: Required<HarnessOptions<TFactories>>;
     public activeForkId?: ForkId;
-    private harnessConfig!: Config;
+    private harnessConfig!: Partial<Config>;
     private logger: Logger;
     private syncCoordinator!: SyncCoordinator;
     private autoTimeAdvanceInterval?: NodeJS.Timeout;
@@ -201,22 +208,26 @@ export class PeerTestHarness<
                 return Number(this);
             };
         }
+        createConfig(); // Ensure config is initialized -> load env for tests
         this.logger = createLogger({ component: "TestHarness" });
         this.connectionBarrier = new EventBarrier(this.logger);
         this.eventCountsBarrier = new EventBarrier(this.logger);
     }
 
-    async setup<const TNewFactories extends RpcServiceFactoryMap = {}>(
+    async setup<
+        // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+        const TNewFactories extends RpcServiceFactoryMap = {}
+    >(
         numPeers: number,
         options?: HarnessOptions<TNewFactories>
     ): Promise<void> {
         if (numPeers < 2 || numPeers > 10) {
             throw new Error("Number of peers must be between 2 and 10");
         }
-        this.harnessConfig = createConfig({
+        this.harnessConfig = {
             ...testConfig,
             ...(options?.configOverrides || {})
-        });
+        };
         this.options = {
             timeConfig: options?.timeConfig || {},
             channelId:
@@ -372,11 +383,11 @@ export class PeerTestHarness<
         };
 
         const hooks: P2pEventHooks = {
-            onConnection: (addr: Address) => {
+            onConnection: (addr: Address, isChannelOpened: boolean) => {
                 PeerLogger.verbose(`Connection established with ${addr}`, {
                     component: "P2pEventHooks"
                 });
-                eventSpies.onConnection?.(addr);
+                eventSpies.onConnection?.(addr, isChannelOpened);
                 this.connectionBarrier.signal();
                 this.eventCountsBarrier.signal();
             },
@@ -439,13 +450,16 @@ export class PeerTestHarness<
             this.sharedDeployTx,
             this.channelManager,
             mathInstance,
-            hooks,
-            index, // Pass peer index for logging
-            PeerLogger,
-            this.options.rpcServiceFactories
+            {
+                peerId: index,
+                peerLogger: PeerLogger,
+                p2pEventHooks: hooks,
+                rpcServiceFactories: this.options.rpcServiceFactories,
+                config: this.harnessConfig
+            }
         );
 
-        const peer: TestPeer<any, TFactories> = {
+        const peer: TestPeer<T, TFactories> = {
             index,
             signer,
             address,
@@ -467,7 +481,7 @@ export class PeerTestHarness<
     private wrapEventHandlerWithSpies(peer: TestPeer<T, TFactories>): void {
         const eventHandler = peer.stateManager.eventHandler;
         const spies = peer.eventSpies;
-        const harness = this;
+        const eventCountsBarrier = this.eventCountsBarrier;
 
         // Create a proxy that intercepts EventHandler method calls and calls both the spy and original method
         const eventHandlerProxy = new Proxy(eventHandler, {
@@ -483,7 +497,7 @@ export class PeerTestHarness<
 
                         // Then call the original method
                         Reflect.apply(originalMethod, target, args);
-                        return harness.eventCountsBarrier.signal();
+                        return eventCountsBarrier.signal();
                     };
                 }
 
@@ -707,7 +721,7 @@ export class PeerTestHarness<
                         );
                         return false;
                     }
-                } catch (error) {
+                } catch {
                     // If we can't get participants yet, keep waiting
                     return false;
                 }
@@ -1124,7 +1138,7 @@ export class PeerTestHarness<
         return this.peers.map((p) => p.address);
     }
 
-    getConfig(): Config {
+    getConfig(): Partial<Config> {
         return this.harnessConfig;
     }
 
@@ -1193,7 +1207,7 @@ export class PeerTestHarness<
                             const participants =
                                 await peer.stateManager.diamondStateMachine.getParticipants();
                             return `Peer ${i}: ${participants.length} participants`;
-                        } catch (err) {
+                        } catch {
                             return `Peer ${i}: error getting participants`;
                         }
                     })
@@ -1676,9 +1690,7 @@ export class PeerTestHarness<
                 const peerAddress = transport.peerAddress
                     ? transport.peerAddress
                     : profile?.evmAddress
-                      ? requestingPeer.stateManager.p2pManager.profileManager.normalizeEvmAddress(
-                            profile.evmAddress
-                        )
+                      ? profile.evmAddress.toString()
                       : undefined;
                 if (!peerAddress) return false;
 

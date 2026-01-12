@@ -5,12 +5,10 @@ import SpectateService, {
     SyncPayload,
     SyncRequest
 } from "./SpectateService";
-import { ChannelId, Timestamp } from "@/types/types";
+import { ChannelId } from "@/types/types";
 import Clock from "@/Clock";
 import { Codec, hash, Type } from "@/utils";
 import { Block } from "@/models";
-import { Status } from "@/types";
-import { BlockStruct } from "@/index";
 
 class SpectateServiceRpcMethods extends ARpcMethods {
     service: SpectateService;
@@ -60,7 +58,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
         channelId: ChannelId,
         syncPayload: SyncPayload
     ) {
-        this.service.logger.debug(`Syncpayload received`, { syncPayload });
+        this.service.logger.debug(`Sync payload received`, { syncPayload });
         const senderTransport = this.senderTransport;
         const peerAddress = senderTransport.peerAddress;
         if (!peerAddress) {

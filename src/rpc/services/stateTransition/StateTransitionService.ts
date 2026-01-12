@@ -1,6 +1,4 @@
-import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-
-import { ARpcService, MainRpcService } from "@/rpc";
+import ARpcService from "@/rpc/ARpcService";
 import type P2PManager from "@/P2PManager";
 import StateTransitionRpcMethods from "./StateTransitionRpcMethods";
 import { ATransport } from "@/transport";

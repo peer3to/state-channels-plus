@@ -1,9 +1,6 @@
 export { default as InitHandshakeService } from "./initHandshake/InitHandshakeService";
 export { default as InitHandshakeRpcMethods } from "./initHandshake/InitHandshakeRpcMethods";
 
-export { default as DHTDiscoveryService } from "./DHTDiscovery/DHTDiscoveryService";
-export { default as DHTDiscoveryRpcMethods } from "./DHTDiscovery/DHTDiscoveryRpcMethods";
-
 export { default as WebRTCSetupService } from "./WebRTCSetup/WebRTCSetupService";
 export { default as WebRTCSetupRpcMethods } from "./WebRTCSetup/WebRTCSetupRpcMethods";
 
@@ -16,8 +13,10 @@ export { default as SpectateRpcMethods } from "./spectate/SpectateRpcMethods";
 export { default as IsForkDisputedService } from "./isForkDisputedService/IsForkDisputedService";
 export { default as IsForkDisputedRpcMethods } from "./isForkDisputedService/IsForkDisputedRpcMethods";
 
-export { default as JoinChannelService } from "./joinChannel/JoinChannelService";
-export { default as JoinChannelRpcMethods } from "./joinChannel/JoinChannelRpcMethods";
-
-export { default as TESTJoinChannelService } from "./TESTJoinChannel/TESTJoinChannelService";
-export { default as TESTJoinChannelRpcMethods } from "./TESTJoinChannel/TESTJoinChannelRpcMethods";
+export { default as OpenChannelNegotiationService } from "./openChannelNegotiation/OpenChannelNegotiationService";
+export { default as OpenChannelNegotiationRpcMethods } from "./openChannelNegotiation/OpenChannelNegotiationRpcMethods";
+export type {
+    OpenChannelNegotiationFactories,
+    OpenChannelNegotiationP2PManager
+} from "./openChannelNegotiation/OpenChannelNegotiationRpcMethods";
+export * from "./openChannelNegotiation/OpenChannelNegotiationHelpers";

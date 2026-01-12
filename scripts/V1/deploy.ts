@@ -20,6 +20,7 @@ import UtilityFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamo
 import { StateChannelManagerProxy } from "@typechain-types/index";
 import { Artifact } from "hardhat/types";
 import { Address } from "@ethereumjs/util";
+import { config } from "@/utils/config";
 
 const facetArtifacts = [
     DisputeManagerFacetArtifact,
@@ -36,6 +37,25 @@ export type DeploymentResult = {
     signer: Signer;
 };
 
+function logDeployed(
+    address: string,
+    params: {
+        contractName?: string;
+        gasUsed?: bigint;
+    }
+): void {
+    const name = params.contractName ?? "<unknown-contract>";
+    if (params.gasUsed != null) {
+        if (!config.DEBUG_LOCAL_TRANSPORT)
+            console.log(
+                `Deployed ${name} at ${address} gasUsed=${params.gasUsed.toString()}`
+            );
+        return;
+    }
+    if (!config.DEBUG_LOCAL_TRANSPORT)
+        console.log(`Deployed ${name} at ${address}`);
+}
+
 export async function deployArtifact<T>(
     artifact: Artifact,
     signer: Signer,
@@ -45,15 +65,26 @@ export async function deployArtifact<T>(
     }
 ): Promise<{ address: string; contract: T }> {
     const linkedArtifact = linkLibraries(artifact, options?.libs || {});
-    const factory = new ContractFactory(
-        artifact.abi,
-        linkedArtifact.bytecode,
-        signer
+
+    const factory = new ContractFactory(artifact.abi, linkedArtifact.bytecode);
+    const deployTx = await factory.getDeployTransaction(
+        ...(options?.args || [])
     );
 
-    const contract = await factory.deploy(...(options?.args || []));
-    await contract.waitForDeployment();
-    const address = await contract.getAddress();
+    const sentTx = await signer.sendTransaction(deployTx);
+    const receipt = await sentTx.wait();
+
+    const address = receipt?.contractAddress;
+    if (!address) {
+        throw new Error(
+            `Deployment failed: missing contractAddress in receipt for ${artifact.contractName}`
+        );
+    }
+    logDeployed(address, {
+        contractName: artifact.contractName,
+        gasUsed: receipt.gasUsed
+    });
+    const contract = new ethers.Contract(address, artifact.abi, signer as any);
     return { address, contract: contract as unknown as T };
 }
 
@@ -78,7 +109,7 @@ async function deployArtifactLocal(
     return deployLocalFromTx(deployTx, evm);
 }
 
-async function deployFacets(
+export async function deployFacets(
     signer: Signer,
     libs: Record<string, string> = {}
 ): Promise<string[]> {
@@ -91,7 +122,7 @@ async function deployFacets(
     );
 }
 
-async function deployFacetsLocal(
+export async function deployFacetsLocal(
     evm: EVM,
     signer: Signer,
     libs: Record<string, string> = {}
@@ -137,7 +168,7 @@ export async function deploy(
 ): Promise<{ address: string; contract: StateChannelManagerProxy }> {
     const facetAddresses = await deployFacets(signer);
     const timeConfig = getTimeConfig(timeConfigOverrides);
-    return deployArtifact<StateChannelManagerProxy>(
+    return await deployArtifact<StateChannelManagerProxy>(
         StateChannelManagerProxyArtifact,
         signer,
         {

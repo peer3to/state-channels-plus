@@ -33,10 +33,7 @@ class WebRTCSetupRpcMethods extends ARpcMethods {
             };
             connection.ondatachannel = (event: any) => {
                 console.log("WebRTC - onOfferWebRTC - ondatachannel");
-                const webRTCTransport = new WebRTCTransport(
-                    event.channel,
-                    this.p2pManager
-                );
+                new WebRTCTransport(event.channel, this.p2pManager);
             };
             this.service.connectionMap.set(peerAddress, connection);
             const offer = JSON.parse(serializedOffer);
