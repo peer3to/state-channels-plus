@@ -468,7 +468,7 @@ describe("ForkIdToMaxHeightMap", () => {
                     transactionCnt: height
                 })
             })
-        }).blockStruct;
+        });
 
         // `factory.block()` returns a `Block` model (already backed by an encoded `BlockStruct`).
         // Use its confirmation struct directly rather than trying to ABI-encode the class instance.
