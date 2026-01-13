@@ -255,7 +255,7 @@ contract UtilityFacet {
         Dispute memory dispute,
         DisputeAuditingData memory disputeAuditingData,
         bool auditingDataIntegrityVerified
-    ) public pure returns (bool) {
+    ) public view returns (bool) {
         if (auditingDataIntegrityVerified) {
             if (dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData))) {
                 return false;
@@ -345,7 +345,7 @@ contract UtilityFacet {
         bytes32 forkId,
         SnapshotData memory thresholdSnapshotData,
         MilestoneProof memory milestone
-    ) public pure returns (bool isFinal, bytes32 finalizedSnapshotHash) {
+    ) public view returns (bool isFinal, bytes32 finalizedSnapshotHash) {
         address[] memory expectedParticipants = thresholdSnapshotData.participants;
         address[] memory thresholdSet = new address[](expectedParticipants.length);
         uint256 thresholdCount = 0;
@@ -421,7 +421,7 @@ contract UtilityFacet {
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         SnapshotData memory thresholdSnapshotData
-    ) public pure returns (bool isValid, bytes memory lastBlockEncoded) {
+    ) public view returns (bool isValid, bytes memory lastBlockEncoded) {
         SnapshotData memory snapshotData = thresholdSnapshotData;
         lastBlockEncoded = "";
 
