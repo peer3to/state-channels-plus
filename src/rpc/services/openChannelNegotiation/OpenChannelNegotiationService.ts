@@ -247,7 +247,8 @@ export default class OpenChannelNegotiationService extends ARpcService<
                 {
                     encodedOpenChannel,
                     signatures: [lowerSignature, signature.toString()]
-                }
+                },
+                { gasLimit: 5_000_000 }
             );
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);

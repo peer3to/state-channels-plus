@@ -40,6 +40,7 @@ class HolepunchRelay {
             // console.log("HolepunchRelay - swarm ", this.swarm);
             ws.onopen = () => {
                 console.log("Relayer connected", relayerUrl);
+                this.updateCallback();
             };
             ws.onclose = () => {
                 console.log("Relayer disconnected", relayerUrl);
@@ -50,8 +51,6 @@ class HolepunchRelay {
                 this.removeAndConnectToRelayer(relayerUrl);
             };
             console.log("HolepunchRelay - set onError", relayerUrl);
-
-            this.updateCallback();
         } catch (e) {
             console.log(
                 "Error connecting to relayer - ",
