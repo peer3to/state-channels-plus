@@ -13,7 +13,6 @@ import { TimeConfig } from "@/types";
 import { BalanceEthersType, MessageEthersType } from "@/types/ethers";
 import {
     DebugProxy,
-    decodeErrorProxy,
     Codec,
     createLogger,
     Logger,
@@ -416,9 +415,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         // Sync clock to DLT
         await Clock.init(signer.provider!);
-        deployedStateChannelContractInstance = decodeErrorProxy(
-            deployedStateChannelContractInstance
-        ) as StateChannelManagerProxy;
 
         // Connect signer to state channel contract
         deployedStateChannelContractInstance =

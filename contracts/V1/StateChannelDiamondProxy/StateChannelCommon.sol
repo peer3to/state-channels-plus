@@ -61,12 +61,12 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function getOnChainThresholdSet(bytes32 channelId) public view virtual returns (address[] memory) {
-        return UtilityFacet(utilityFacetAddress).subtractAddressArrays(
-            UtilityFacet(utilityFacetAddress).concatAddressArrays(
-                getSnapshotParticipants(channelId), getPendingParticipants(channelId)
-            ),
-            getOnChainSlashedParticipants(channelId)
-        );
+        return UtilityFacet(utilityFacetAddress)
+            .subtractAddressArrays(
+                UtilityFacet(utilityFacetAddress)
+                    .concatAddressArrays(getSnapshotParticipants(channelId), getPendingParticipants(channelId)),
+                getOnChainSlashedParticipants(channelId)
+            );
     }
 
     function getGenesisTimestamp(bytes32 channelId, bytes32 originForkId, bytes32 forkId)
@@ -287,8 +287,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             for (uint256 j = 0; j < inboundMessageBlocks[i].messages.length; j++) {
                 bool success = stateMachineImplementation.processInboundMessage(inboundMessageBlocks[i].messages[j]);
                 require(success, ErrorDisputeStateMachineInboundProcessingFailed());
-                newTotalDeposits =
-                    stateMachineImplementation.addBalance(newTotalDeposits, inboundMessageBlocks[i].messages[j].balance);
+                newTotalDeposits = stateMachineImplementation.addBalance(
+                    newTotalDeposits, inboundMessageBlocks[i].messages[j].balance
+                );
             }
         }
         encodedModifiedState = stateMachineImplementation.getState();
@@ -374,8 +375,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         uint256 reductionTimestamp
     ) internal {
         (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
-        require(isExpired, ErrorDisputeKillPeriodNotExpired());
-        require(disputeWindow.reducedResult.forkId == bytes32(0), ErrorDisputeAlreadyReduced());
+        require(isExpired, RaceConditionDisputeKillPeriodNotExpired());
+        require(disputeWindow.reducedResult.forkId == bytes32(0), RaceConditionDisputeAlreadyReduced());
         disputeWindow.reducedResult.forkId = reducedForkId;
         disputeWindow.reducedResult.timestamp = reductionTimestamp;
         disputeWindow.reducedResult.reducer = msg.sender; //calling function should check that msg.sender is part of channel 'can participate'

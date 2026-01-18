@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { ethers } from "ethers";
-import { isCustomEvmError, decodeErrorProxy } from "@/utils/evmErrorHandler";
+import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { ethers as hre } from "hardhat";
 import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
 import * as factory from "@test/factory";
@@ -36,7 +36,7 @@ describe("artifacts loading", () => {
 describe("ContractCaller and ContractErrors", () => {
     it("should decode  contract errors correctly", async () => {
         const testCases = [
-            "ErrorJoinChannelExpired",
+            "RaceConditionJoinChannelExpired",
             "ErrorDisputeAlreadyPosted",
             "ErrorBlockCalldataAlreadyPosted"
         ];
@@ -48,20 +48,21 @@ describe("ContractCaller and ContractErrors", () => {
             );
             const errorData = fullHash.slice(0, 10); // 0x + 8 hex chars = 4 bytes
 
-            const mockContract = decodeErrorProxy({
+            const mockContract = {
                 testMethod: async () => {
                     const error = new Error("Contract call failed");
                     (error as any).data = errorData;
                     throw error;
                 }
-            });
+            };
 
             try {
                 await mockContract.testMethod();
                 expect.fail(`Expected ${errorName} to be thrown`);
             } catch (error: any) {
-                expect(isCustomEvmError(error)).to.be.true;
-                expect(error.errorDescription.name).to.equal(errorName);
+                const customError = tryDecodeCustomError(error);
+                expect(customError).to.not.be.null;
+                expect(customError!.errorDescription.name).to.equal(errorName);
             }
         }
     });
@@ -70,17 +71,17 @@ describe("ContractCaller and ContractErrors", () => {
         const regularError = new Error("Out of gas");
 
         // Create a mock contract object that throws a regular error
-        const mockContract = decodeErrorProxy({
+        const mockContract = {
             testMethod: async () => {
                 throw regularError;
             }
-        });
-
+        };
         try {
             await mockContract.testMethod();
             expect.fail("Expected error to be thrown");
         } catch (error: any) {
-            expect(isCustomEvmError(error)).to.be.false;
+            const customError = tryDecodeCustomError(error);
+            expect(customError).to.equal(null);
             expect(error.message).to.equal("Out of gas");
         }
     });
@@ -91,7 +92,7 @@ describe("ContractCaller and ContractErrors", () => {
 
         beforeEach(async () => {
             const contracts = await deployMathChannelProxyFixture(hre);
-            mathChannelManager = decodeErrorProxy(contracts.mathChannelManager);
+            mathChannelManager = contracts.mathChannelManager;
             const signers = await hre.getSigners();
             testSigner = signers[0];
         });
@@ -133,14 +134,15 @@ describe("ContractCaller and ContractErrors", () => {
                     "Expected ErrorBlockCalldataMsgSenderNotBlockAuthor to be thrown"
                 );
             } catch (error: any) {
-                expect(isCustomEvmError(error)).to.be.true;
-                expect(error.errorDescription.name).to.equal(
+                const customError = tryDecodeCustomError(error);
+                expect(customError).to.not.be.null;
+                expect(customError!.errorDescription.name).to.equal(
                     "ErrorBlockCalldataMsgSenderNotBlockAuthor"
                 );
             }
         });
 
-        it("should handle ErrorBlockCalldataTimestampTooLate custom error", async () => {
+        it("should handle RaceConditionBlockCalldataTimestampTooLate custom error", async () => {
             const signedBlock = factory.signedBlock();
 
             // Set maxTimestamp to be in the past (error case)
@@ -153,12 +155,13 @@ describe("ContractCaller and ContractErrors", () => {
                     maxTimestamp
                 );
                 expect.fail(
-                    "Expected ErrorBlockCalldataTimestampTooLate to be thrown"
+                    "Expected RaceConditionBlockCalldataTimestampTooLate to be thrown"
                 );
             } catch (error: any) {
-                expect(isCustomEvmError(error)).to.be.true;
-                expect(error.errorDescription.name).to.equal(
-                    "ErrorBlockCalldataTimestampTooLate"
+                const customError = tryDecodeCustomError(error);
+                expect(customError).to.not.be.null;
+                expect(customError!.errorDescription.name).to.equal(
+                    "RaceConditionBlockCalldataTimestampTooLate"
                 );
             }
         });
@@ -186,8 +189,9 @@ describe("ContractCaller and ContractErrors", () => {
                     "Expected ErrorBlockCalldataAlreadyPosted to be thrown"
                 );
             } catch (error: any) {
-                expect(isCustomEvmError(error)).to.be.true;
-                expect(error.errorDescription.name).to.equal(
+                const customError = tryDecodeCustomError(error);
+                expect(customError).to.not.be.null;
+                expect(customError!.errorDescription.name).to.equal(
                     "ErrorBlockCalldataAlreadyPosted"
                 );
             }

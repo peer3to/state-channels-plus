@@ -3,7 +3,7 @@ import { expect } from "chai";
 import { EVM } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
 import { ContractExecuter } from "@/evm";
-import { isCustomEvmError } from "@/utils/evmErrorHandler";
+import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import {
     getSimpleNumberStorageDeploymentTransaction,
     getSimpleNumberStorageFactory
@@ -141,11 +141,14 @@ describe("ContractExecuter", function () {
             expect.fail("Expected the function to revert");
         } catch (error: any) {
             // custom error
-            expect(isCustomEvmError(error)).to.be.true;
-            expect(error.errorDescription.name).to.equal("Error");
-            expect(error.errorDescription.args).to.have.length(1);
-            expect(error.errorDescription.args[0]).to.equal(errorMessage);
-            expect(error.originalError.message).to.equal(
+            const customError = tryDecodeCustomError(error);
+            expect(customError).to.not.be.null;
+            expect(customError!.errorDescription.name).to.equal("Error");
+            expect(customError!.errorDescription.args).to.have.length(1);
+            expect(customError!.errorDescription.args[0]).to.equal(
+                errorMessage
+            );
+            expect(customError!.originalError.message).to.equal(
                 "EVM execution failed: revert"
             );
         }

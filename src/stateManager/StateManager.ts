@@ -36,7 +36,7 @@ import StateChannelEventListener from "@/StateChannelEventListener";
 import ValidationService from "./ValidationService";
 import Storage from "@/storage";
 import { EventHandler } from "@/eventHandlers/EventHandler";
-import { decodeCustomError } from "@/utils/evmErrorHandler";
+import { tryHandleEvmError } from "@/utils/evmErrorHandler";
 
 // Event handlers and processors
 import P2pEventHooks from "@/P2pEventHooks";
@@ -51,7 +51,6 @@ import {
     Codec,
     Type,
     hash,
-    isCustomEvmError,
     difference,
     Logger,
     createEthersResultProxy
@@ -79,6 +78,7 @@ import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidat
 import { config } from "@/utils/config";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
+import { TransactionResponse } from "ethers";
 
 const NULL = "0x00";
 const LOG_TAG = "[STATE MANAGER]";
@@ -422,6 +422,10 @@ class StateManager {
             forkId,
             reducedOutput
         );
+        let txResponse: TransactionResponse;
+        this.logger.debug(
+            `Submitting reduction transaction for fork ${forkId}`
+        );
         this.stateChannelManagerContract
             .reduceAndFinalize(
                 disputes,
@@ -429,34 +433,25 @@ class StateManager {
                 reduceData.encodedStateMachineState,
                 reduceData.inboundMessageBlocks
             )
-            .then((tx) => tx.wait())
-            .catch((error) => {
-                try {
-                    const decodedError = decodeCustomError(error.data)!;
+            .then((tx) => {
+                txResponse = tx;
+                return tx.wait();
+            })
+            .catch(async (error) => {
+                const success = await tryHandleEvmError(error, {
+                    tx: txResponse!,
+                    logger: this.logger,
+                    handlers: {
+                        RaceConditionDisputeAlreadyReduced: () => {
+                            this.logger.debug(
+                                `Reduction already completed by another peer - RaceConditionDisputeAlreadyReduced`
+                            );
+                        }
+                    },
+                    signer: this.signer
+                });
 
-                    if (decodedError.name === "ErrorDisputeAlreadyReduced") {
-                        this.logger.debug(
-                            `Reduction already completed by another peer: ${decodedError.name}`
-                        );
-                        return;
-                    }
-                    if (decodedError.name === "ErrorCantParticipateInDispute") {
-                        this.logger.debug(
-                            `Cannot participate in dispute: ${decodedError.name} (slashed on chain)`
-                        );
-                        return;
-                    } else {
-                        throw error;
-                    }
-                } catch (error) {
-                    this.logger.error("Error decoding custom error", {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error)
-                    });
-                    throw error;
-                }
+                if (!success) throw error;
             });
 
         try {
@@ -490,19 +485,9 @@ class StateManager {
                 outboundMessageBlock
             );
         } catch (error) {
-            if (isCustomEvmError(error)) {
-                this.logger.error(
-                    "CustomError computing reduced snapshot data",
-                    {
-                        errorDescription: error.errorDescription
-                    }
-                );
-            } else {
-                this.logger.error("Error computing reduced snapshot data", {
-                    error:
-                        error instanceof Error ? error.message : String(error)
-                });
-            }
+            this.logger.error("Error computing reduced snapshot data", {
+                error: error instanceof Error ? error.message : String(error)
+            });
             throw error;
         }
     }
@@ -861,29 +846,15 @@ class StateManager {
             // success - no disconnect
             return true;
         } catch (error) {
-            if (isCustomEvmError(error)) {
-                this.logger.error("onBlockConfirmation - error", {
-                    strategy: (strategy as any)?.constructor?.name,
-                    channelId: this.channelId,
-                    blockHash: ethers.keccak256(
-                        blockConfirmation.signedBlock.encodedBlock
-                    ),
-                    errorDescription: error.errorDescription,
-                    errorName: error.name,
-                    errorMessage: error.message
-                });
-            } else {
-                this.logger.error("onBlockConfirmation - error", {
-                    strategy: (strategy as any)?.constructor?.name,
-                    channelId: this.channelId,
-                    blockHash: ethers.keccak256(
-                        blockConfirmation.signedBlock.encodedBlock
-                    ),
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                    stack: error instanceof Error ? error.stack : undefined
-                });
-            }
+            this.logger.error("onBlockConfirmation - error", {
+                strategy: (strategy as any)?.constructor?.name,
+                channelId: this.channelId,
+                blockHash: ethers.keccak256(
+                    blockConfirmation.signedBlock.encodedBlock
+                ),
+                error: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined
+            });
             throw error;
         } finally {
             this.mutex.unlock();
@@ -1067,18 +1038,12 @@ class StateManager {
                 .postBlockCalldata(block.signedBlock, maxTimestamp)
                 .then((txResponse) => txResponse.wait())
                 .catch((error) => {
-                    if (isCustomEvmError(error)) {
-                        this.logger.warn("Error posting block on chain", {
-                            errorDescription: error.errorDescription
-                        });
-                    } else {
-                        this.logger.warn("Error posting block on chain", {
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : String(error)
-                        });
-                    }
+                    this.logger.warn("Error posting block on chain", {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error)
+                    });
                 });
         }
     }
@@ -1121,18 +1086,12 @@ class StateManager {
                         );
                     await txResponse.wait();
                 } catch (error) {
-                    if (isCustomEvmError(error)) {
-                        this.logger.error("Error posting state snapshot", {
-                            errorDescription: error.errorDescription
-                        });
-                    } else {
-                        this.logger.error("Error posting state snapshot", {
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : String(error)
-                        });
-                    }
+                    this.logger.error("Error posting state snapshot", {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error)
+                    });
                     throw error;
                 }
             } else {
@@ -1216,18 +1175,11 @@ class StateManager {
                     await this.stateChannelManagerContract.multicall(callData);
                 await txResponse.wait();
             } catch (error) {
-                if (isCustomEvmError(error)) {
-                    this.logger.error("Error posting state snapshot", {
-                        errorDescription: error.errorDescription
-                    });
-                } else {
-                    this.logger.error("Error posting state snapshot", {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error)
-                    });
-                }
+                this.logger.error("Error posting state snapshot", {
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                });
+
                 throw error;
             }
         } else {
@@ -1501,8 +1453,9 @@ class StateManager {
                 );
 
                 // Reduce and finalize on-chain to obtain the reduced fork id
+                let txResponse: TransactionResponse;
                 try {
-                    const txResponse =
+                    txResponse =
                         await this.stateChannelManagerContract.reduceAndFinalize(
                             disputes,
                             reduceData.latestStateSnapshot,
@@ -1519,13 +1472,24 @@ class StateManager {
                         }
                     );
                 } catch (error) {
-                    if (
-                        isCustomEvmError(error) &&
-                        error.errorDescription.name !==
-                            "ErrorDisputeAlreadyReduced"
-                    ) {
-                        throw error; // Re-throw other errors
-                    }
+                    const success = await tryHandleEvmError(error, {
+                        tx: txResponse!,
+                        logger: this.logger,
+                        handlers: {
+                            RaceConditionDisputeAlreadyReduced: () => {
+                                // no-op == success
+                                this.logger.debug(
+                                    "prepareUpdateStateSnapshotFork - reduceAndFinalize alredy reduced",
+                                    {
+                                        forkId: currentForkId,
+                                        txHash: txResponse.hash
+                                    }
+                                );
+                            }
+                        },
+                        signer: this.signer
+                    });
+                    if (!success) throw error;
                 }
 
                 // Read canonical reduced result from chain and traverse
