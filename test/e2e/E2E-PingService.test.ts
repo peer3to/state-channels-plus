@@ -20,15 +20,15 @@ class PingService extends ARpcService<PingRpcMethods, PingPongP2PManager> {
     public guardFailureCount = 0;
     public receivedPingNonces: string[] = [];
     public receivedPongNonces: string[] = [];
+    private readonly onGuardFailure?: () => void;
 
-    constructor(
-        p2pManager: PingPongP2PManager,
-        private readonly onGuardFailure?: () => void
-    ) {
+    constructor(p2pManager: PingPongP2PManager, onGuardFailure?: () => void) {
         super(
             p2pManager,
             p2pManager.stateManager.logger.child({ module: "PingService" })
         );
+
+        this.onGuardFailure = onGuardFailure;
 
         this.guards = [
             new HandshakeCompletedGuard(this, {
@@ -46,11 +46,11 @@ class PingService extends ARpcService<PingRpcMethods, PingPongP2PManager> {
 }
 
 class PingRpcMethods extends ARpcMethods<PingPongP2PManager> {
-    constructor(
-        transport: ATransport,
-        private readonly service: PingService
-    ) {
+    private readonly service: PingService;
+
+    constructor(transport: ATransport, service: PingService) {
         super(transport, service.p2pManager);
+        this.service = service;
     }
 
     public async ping(nonce: string) {
@@ -86,11 +86,11 @@ class RelayService extends ARpcService<RelayRpcMethods, PingPongP2PManager> {
 }
 
 class RelayRpcMethods extends ARpcMethods<PingPongP2PManager> {
-    constructor(
-        transport: ATransport,
-        private readonly service: RelayService
-    ) {
+    private readonly service: RelayService;
+
+    constructor(transport: ATransport, service: RelayService) {
         super(transport, service.p2pManager);
+        this.service = service;
     }
 
     public async recordPing(nonce: string) {
