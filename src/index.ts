@@ -8,7 +8,8 @@ import {
     SignatureUtils,
     Type,
     config,
-    getChecksumAddress
+    getChecksumAddress,
+    createEthersResultProxy
 } from "@/utils";
 
 import ARpcMethods from "@/rpc/ARpcMethods";
@@ -43,7 +44,8 @@ export {
     HandshakeCompletedGuard,
     defineRpcServices,
     ATransport,
-    getChecksumAddress
+    getChecksumAddress,
+    createEthersResultProxy
 };
 
 export * from "../typechain-types";
