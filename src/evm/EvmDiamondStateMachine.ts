@@ -481,19 +481,14 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             stateManager.p2pManager.p2pSigner
         ) as T;
 
-        const wrappedP2pContractInstance =
-            createEthersResultProxy(p2pContractInstance);
-
         // Set P2P contract instance on P2P manager
-        evmDiamondStateMachine.setP2pContractInstance(
-            wrappedP2pContractInstance
-        );
+        evmDiamondStateMachine.setP2pContractInstance(p2pContractInstance);
 
         const typedP2pSigner = stateManager.p2pManager
             .p2pSigner as unknown as P2pSigner<TFactories>;
 
         return new P2pInstance<T, TFactories>(
-            wrappedP2pContractInstance,
+            p2pContractInstance,
             typedP2pSigner
         );
     }
