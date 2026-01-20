@@ -2,7 +2,6 @@ import { EVM, ExecResult } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
 import { ethers } from "ethers";
 import { Bytes } from "@/types/types";
-import { decodeErrorProxy } from "@/utils/evmErrorHandler";
 import Clock from "@/Clock";
 
 export default class ContractExecuter {
@@ -12,8 +11,6 @@ export default class ContractExecuter {
     constructor(evm: EVM, contractAddress: Address) {
         this.evm = evm;
         this.contractAddress = contractAddress;
-
-        return decodeErrorProxy(this);
     }
 
     getContractAddress(): Address {

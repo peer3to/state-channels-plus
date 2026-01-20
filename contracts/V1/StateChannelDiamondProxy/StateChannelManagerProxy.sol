@@ -72,7 +72,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
      */
     function postBlockCalldata(SignedBlock memory signedBlock, uint256 maxTimestamp) public override {
         //Time is the only race condition we need to take into account
-        require(block.timestamp <= maxTimestamp, ErrorBlockCalldataTimestampTooLate());
+        require(block.timestamp <= maxTimestamp, RaceConditionBlockCalldataTimestampTooLate());
         bytes32 commitment = keccak256(abi.encode(signedBlock, block.timestamp));
         Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
 
@@ -100,7 +100,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     function open(OpenChannelConfirmation calldata openChannelConfirmation) public virtual override {
         OpenChannel memory openChannelData = abi.decode(openChannelConfirmation.encodedOpenChannel, (OpenChannel));
         require(openChannelData.channelId != bytes32(0), ErrorInvalidJoinChannel());
-        require(!isChannelOpen(openChannelData.channelId), ErrorChannelAlreadyOpen());
+        require(!isChannelOpen(openChannelData.channelId), RaceConditionChannelAlreadyOpen());
 
         // set zero balance for on-chain deposits/withdrawals
         Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
@@ -113,9 +113,12 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
             channelBalance.latestOutboundMessageBlockHeight = 0;
         }
         // verify threshold signature - must be from all participants - this is deterministic - no race condition on-chain
-        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            openChannelData.participants, openChannelConfirmation.encodedOpenChannel, openChannelConfirmation.signatures
-        );
+        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress)
+            .verifyThresholdSigned(
+                openChannelData.participants,
+                openChannelConfirmation.encodedOpenChannel,
+                openChannelConfirmation.signatures
+            );
         require(isValid, reason);
 
         JoinChannel[] memory joinChannels = new JoinChannel[](openChannelData.participants.length);
@@ -155,10 +158,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
         bytes32 forkId = keccak256(abi.encode(genesisSnapshotData));
         StateSnapshot memory genesisStateSnapshot = StateSnapshot({
-            snapshotData: genesisSnapshotData,
-            forkId: forkId,
-            blockHeight: 0,
-            timestamp: block.timestamp
+            snapshotData: genesisSnapshotData, forkId: forkId, blockHeight: 0, timestamp: block.timestamp
         });
 
         stateSnapshots[openChannelData.channelId] = genesisStateSnapshot;

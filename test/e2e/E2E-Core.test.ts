@@ -845,10 +845,10 @@ describe("E2E: Core Functionality", function () {
             await expect(txPromise).to.be.revertedWithCustomError(
                 {
                     interface: new hre.ethers.Interface([
-                        "error ErrorJoinChannelExpired()"
+                        "error RaceConditionJoinChannelExpired()"
                     ])
                 },
-                "ErrorJoinChannelExpired"
+                "RaceConditionJoinChannelExpired"
             );
         });
     });

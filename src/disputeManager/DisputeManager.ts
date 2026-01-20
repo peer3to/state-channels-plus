@@ -17,7 +17,6 @@ import {
     SignatureUtils,
     Mutex,
     difference,
-    isCustomEvmError,
     Logger
 } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
@@ -146,23 +145,13 @@ class DisputeManager {
                 dispute
             );
         } catch (error) {
-            if (isCustomEvmError(error)) {
-                this.logger.error("Error uploading dispute", {
-                    forkId,
-                    channelId: this.channelId,
-                    signerAddress: this.signerAddress,
-                    errorDescription: error.errorDescription,
-                    errorName: error.name
-                });
-            } else {
-                this.logger.error("Error uploading dispute", {
-                    forkId,
-                    channelId: this.channelId,
-                    signerAddress: this.signerAddress,
-                    error:
-                        error instanceof Error ? error.message : String(error)
-                });
-            }
+            this.logger.error("Error uploading dispute", {
+                forkId,
+                channelId: this.channelId,
+                signerAddress: this.signerAddress,
+                error: error instanceof Error ? error.message : String(error)
+            });
+
             this.storage.disputes.storeDisputedFork(forkId, false);
         } finally {
             this.mutex.unlock();
@@ -189,18 +178,10 @@ class DisputeManager {
                 });
             });
         } catch (error) {
-            if (isCustomEvmError(error)) {
-                this.logger.error("CustomError killing dispute", {
-                    forkId: dispute.input.forkId,
-                    errorDescription: error.errorDescription
-                });
-            } else {
-                this.logger.error("Error killing dispute", {
-                    forkId: dispute.input.forkId,
-                    error:
-                        error instanceof Error ? error.message : String(error)
-                });
-            }
+            this.logger.error("Error killing dispute", {
+                forkId: dispute.input.forkId,
+                error: error instanceof Error ? error.message : String(error)
+            });
         }
     }
 
