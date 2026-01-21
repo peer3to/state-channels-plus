@@ -201,7 +201,7 @@ class BrowserLogger implements Logger {
         parts.push(`%c`);
         styles.push("");
 
-        const prefix = `${parts.join("")}${metaStr}`;
+        const prefix = `${parts.join("")}`;
         return extra
             ? [prefix, ...styles, message, extra]
             : [prefix, ...styles, message];

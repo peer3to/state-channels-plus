@@ -1,47 +1,21 @@
 import ARpcService from "@/rpc/ARpcService";
-import {
-    Address,
-    ChannelId,
-    Timestamp,
-    Bytes,
-    Hash,
-    ForkId
-} from "@/types/types";
+import { Address, ChannelId, Timestamp, Hash, ForkId } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
-import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Codec, getChecksumAddress, Type } from "@/utils";
 import { ethers } from "ethers";
+import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import {
     StateSnapshotStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-
-import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import SpectateServiceRpcMethods from "./SpectateRpcMethods";
 import type P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { Status } from "@/types";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
-
-export interface DisputeWindowVerification {
-    disputeConfirmations: DisputeConfirmationStruct[];
-    forkId: Hash; // can deduct from disputes - don't need to include here
-    latestStateSnapshot: StateSnapshotStruct;
-    latestEncodedStateMachineState: Bytes;
-    inboundMessageBlocksAppliedInReduce: MessageBlockStruct[];
-    reducedForkId: Hash; // this is a hint, a soft commitment, so the verifier knows which dispute window to fetch on-chain, before running reduce and verifying
-}
-export interface SyncPayload {
-    disputeWindows: DisputeWindowVerification[];
-    latestForkGenesisSnapshot: StateSnapshotStruct;
-    stateProof: StateProofStruct;
-    milestoneSnapshots: StateSnapshotStruct[];
-    latestFinalizedEncodedState: Bytes;
-    outboundMessageBlocksUpToLatestGenesis: MessageBlockStruct[];
-    outboundMessageBlocksOfTheLatestFork: MessageBlockStruct[];
-}
+import { DisputeWindowVerification, SyncPayload } from "@/types";
 export interface SyncRequest {
     channelId: ChannelId;
     initTime: Timestamp;

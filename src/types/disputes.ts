@@ -58,6 +58,29 @@ export const DisputeConfirmationEthersType = `tuple(
         bytes[] signatures
 )`;
 
+// ---- Spectate sync payload types ----
+// These are ABI tuple definitions used for encoding/decoding spectate sync payloads
+// over RPC without relying on JSON serialization (which breaks on bigint).
+
+export const DisputeWindowVerificationEthersType = `tuple(
+    ${DisputeConfirmationEthersType}[] disputeConfirmations,
+    bytes32 forkId,
+    ${StateSnapshotEthersType} latestStateSnapshot,
+    bytes latestEncodedStateMachineState,
+    ${MessageBlockEthersType}[] inboundMessageBlocksAppliedInReduce,
+    bytes32 reducedForkId
+)`;
+
+export const SyncPayloadEthersType = `tuple(
+    ${DisputeWindowVerificationEthersType}[] disputeWindows,
+    ${StateSnapshotEthersType} latestForkGenesisSnapshot,
+    ${StateProofEthersType} stateProof,
+    ${StateSnapshotEthersType}[] milestoneSnapshots,
+    bytes latestFinalizedEncodedState,
+    ${MessageBlockEthersType}[] outboundMessageBlocksUpToLatestGenesis,
+    ${MessageBlockEthersType}[] outboundMessageBlocksOfTheLatestFork
+)`;
+
 export const BlockDoubleSignProofEthersType = `tuple(
     ${SignedBlockEthersType} block1,
     ${SignedBlockEthersType} block2

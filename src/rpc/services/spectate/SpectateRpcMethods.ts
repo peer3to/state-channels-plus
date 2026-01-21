@@ -1,14 +1,11 @@
 import ARpcMethods from "@/rpc/ARpcMethods";
 import { ATransport } from "@/transport";
-import SpectateService, {
-    DisputeWindowVerification,
-    SyncPayload,
-    SyncRequest
-} from "./SpectateService";
-import { ChannelId } from "@/types/types";
+import SpectateService, { SyncRequest } from "./SpectateService";
+import { Bytes, ChannelId } from "@/types";
 import Clock from "@/Clock";
 import { Codec, hash, Type } from "@/utils";
 import { Block } from "@/models";
+import type { DisputeWindowVerification } from "@/types";
 
 class SpectateServiceRpcMethods extends ARpcMethods {
     service: SpectateService;
@@ -47,18 +44,22 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             );
             return;
         }
+        const encodedSyncPayload = Codec.encode(syncPayload, Type.SyncPayload);
 
         this.service.logger.debug(`onSpectateRequest - done`);
         this.remoteRpc.spectateService
-            .onSpectateResponse(syncRequest.channelId, syncPayload)
+            .onSpectateResponse(syncRequest.channelId, encodedSyncPayload)
             .sendOne(peerAddress);
     }
 
     public async onSpectateResponse(
         channelId: ChannelId,
-        syncPayload: SyncPayload
+        encodedSyncPayload: Bytes
     ) {
-        this.service.logger.debug(`Sync payload received`, { syncPayload });
+        const syncPayload = Codec.decode(encodedSyncPayload, Type.SyncPayload);
+        this.service.logger.debug(`Sync payload received`, {
+            syncPayload
+        });
         const senderTransport = this.senderTransport;
         const peerAddress = senderTransport.peerAddress;
         if (!peerAddress) {

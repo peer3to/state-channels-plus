@@ -537,6 +537,7 @@ class StateManager {
         encodedState: Bytes,
         outboundMessageBlock?: MessageBlockStruct
     ): Promise<void> {
+        await this.mutex.lock();
         const normalizedTimestamp = Number(stateSnapshot.timestamp);
 
         // Persist state snapshot (as a model)
@@ -596,6 +597,7 @@ class StateManager {
 
         this.p2pEventHooks.onSetState?.();
         this.p2pEventHooks.onTurn?.(nextToWrite);
+        this.mutex.unlock();
     }
 
     public async setGenesisState(

@@ -111,7 +111,8 @@
     ".": {
       "import": "./dist/src/index.js",
       "default": "./dist/src/index.js"
-    }
+    },
+    "./contracts/*": "./contracts/*"
   },
   "description": "This is an SDK for creating scalable and resilient client side peer-to-peer (p2p) state channels for arbitrary state machines with shared security inherited from a distributed ledger (blockchain).",
   "bugs": {
