@@ -33,12 +33,15 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
      * Request all peers to acknowledge a disputed fork
      * This should be called when a dispute window is created on-chain
      */
-    public requestDisputeAcknowledgment(channelId: ChannelId, forkId: ForkId) {
+    public requestDisputeAcknowledgment(
+        channelId: ChannelId,
+        forkId: ForkId
+    ): boolean {
         if (this.disputedForks.has(forkId)) {
             this.logger.debug(
                 `Already requested all peers to acknowledge disputed fork ${forkId} - skipping...`
             );
-            return;
+            return false;
         }
         this.disputedForks.add(forkId);
         this.logger.debug(
@@ -84,6 +87,7 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
             2 * this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
             "isForkDisputedService:awaitingDisputeAcknowledgments"
         );
+        return true;
     }
 
     private didPeerAddressAcknowledgeDisputedFork(

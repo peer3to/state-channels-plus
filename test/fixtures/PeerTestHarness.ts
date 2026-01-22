@@ -93,6 +93,7 @@ export interface EventSpies {
     onSetState?: sinon.SinonSpy;
     onPostingCalldata?: sinon.SinonSpy;
     onPostedCalldata?: sinon.SinonSpy;
+    disputeStarted?: sinon.SinonSpy;
     onInitiatingDispute?: sinon.SinonSpy;
     onDisputeUpdate?: sinon.SinonSpy;
 
@@ -366,6 +367,7 @@ export class PeerTestHarness<
             onSetState: sinon.spy(),
             onPostingCalldata: sinon.spy(),
             onPostedCalldata: sinon.spy(),
+            disputeStarted: sinon.spy(),
             onInitiatingDispute: sinon.spy(),
             onDisputeUpdate: sinon.spy(),
 
@@ -421,6 +423,14 @@ export class PeerTestHarness<
                     component: "P2pEventHooks"
                 });
                 eventSpies.onPostedCalldata?.();
+                this.eventCountsBarrier.signal();
+            },
+            onDisputeStarted: (maxDuration: number) => {
+                PeerLogger.debug("Dispute started", {
+                    component: "P2pEventHooks",
+                    maxDuration
+                });
+                eventSpies.disputeStarted?.(maxDuration);
                 this.eventCountsBarrier.signal();
             },
             onInitiatingDispute: (

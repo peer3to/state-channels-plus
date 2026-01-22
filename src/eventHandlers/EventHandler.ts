@@ -176,10 +176,17 @@ export class EventHandler {
             return;
         }
 
-        this.stateManager.p2pManager.localRpc.isForkDisputedService.requestDisputeAcknowledgment(
-            channelId,
-            forkId
-        );
+        const isFirstOccurrence =
+            this.stateManager.p2pManager.localRpc.isForkDisputedService.requestDisputeAcknowledgment(
+                channelId,
+                forkId
+            );
+
+        if (isFirstOccurrence) {
+            this.p2pEventHooks.onDisputeStarted?.(
+                this.stateManager.timeConfig.evidenceTime * 3
+            );
+        }
 
         if (isFinal) {
             if (!disputeAuditingData) {

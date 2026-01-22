@@ -12,6 +12,7 @@ type P2pEventHooks = {
     onSetState?: () => void;
     onPostingCalldata?: () => void;
     onPostedCalldata?: () => void;
+    onDisputeStarted?: (maxDuration: number) => void;
     onInitiatingDispute?: (disputeHash: Hash, dispute: DisputeStruct) => void;
     onDisputeUpdate?: (dispute: DisputeStruct) => void;
     onCloseChannel?: (channelId: ChannelId) => void;
