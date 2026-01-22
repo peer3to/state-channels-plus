@@ -3,7 +3,12 @@ import { Address, ChannelId, Hash } from "./types/types";
 
 type P2pEventHooks = {
     onConnection?: (address: Address, isChannelOpened: boolean) => void;
-    onTurn?: (address: Address) => void;
+    onTurn?: (
+        address: Address,
+        turnTime: number,
+        agreementTime: number,
+        chainFallbackTime: number
+    ) => void;
     onSetState?: () => void;
     onPostingCalldata?: () => void;
     onPostedCalldata?: () => void;

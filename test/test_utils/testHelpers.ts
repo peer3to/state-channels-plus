@@ -165,7 +165,12 @@ export function getMathP2pEventHooks(
     myAddress: string
 ) {
     const hooks: P2pEventHooks = {
-        onTurn(address: AddressLike): void {
+        onTurn(
+            address: AddressLike,
+            _turnTime: number,
+            _agreementTime: number,
+            _chainFallbackTime: number
+        ): void {
             (address as string) == myAddress && onTurnCallback();
         }
     };

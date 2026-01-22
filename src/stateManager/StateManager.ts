@@ -577,6 +577,7 @@ class StateManager {
 
         let timeLost = Clock.getTimeInSeconds() - normalizedTimestamp;
         timeLost = timeLost < 0 ? 0 : timeLost; // if timestamp is in the future - no time is lost
+        const turnTime = this.timeConfig.p2pTime;
 
         this.timeoutManager.scheduleTask(
             () =>
@@ -596,7 +597,12 @@ class StateManager {
         );
 
         this.p2pEventHooks.onSetState?.();
-        this.p2pEventHooks.onTurn?.(nextToWrite);
+        this.p2pEventHooks.onTurn?.(
+            nextToWrite,
+            turnTime,
+            this.timeConfig.agreementTime,
+            this.timeConfig.chainFallbackTime
+        );
         this.mutex.unlock();
     }
 
@@ -2183,8 +2189,14 @@ class StateManager {
         // step 8 - success callback
         successCallback();
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();
+        const turnTime = this.timeConfig.p2pTime;
         // step 9 - Notify any event hooks
-        this.p2pEventHooks.onTurn?.(nextToWrite);
+        this.p2pEventHooks.onTurn?.(
+            nextToWrite,
+            turnTime,
+            this.timeConfig.agreementTime,
+            this.timeConfig.chainFallbackTime
+        );
 
         // step 10 - maybe post block on chain
         if (block.author === this.signerAddress) {

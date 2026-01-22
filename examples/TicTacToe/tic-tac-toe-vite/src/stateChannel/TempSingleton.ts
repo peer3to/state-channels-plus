@@ -111,14 +111,16 @@ class TempSingleton {
                         }
                     }
                 },
-                onTurn: async (address: AddressLike) => {
+                onTurn: async (
+                    address: AddressLike,
+                    turnTime: number,
+                    agreementTime: number,
+                    chainFallbackTime: number
+                ) => {
                     let timeConfig =
                         p2p.p2pSigner.p2pManager.stateManager.timeConfig;
-                    this.setTimer(timeConfig.p2pTime);
-                    this.setTimeRemaining([
-                        timeConfig.agreementTime,
-                        timeConfig.chainFallbackTime
-                    ]);
+                    this.setTimer(turnTime);
+                    this.setTimeRemaining([agreementTime, chainFallbackTime]);
                 },
                 onInitiatingDispute: async () => {
                     this.setNotificationText("Initiating Dispute on-chain!");

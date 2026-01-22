@@ -391,7 +391,12 @@ export class PeerTestHarness<
                 this.connectionBarrier.signal();
                 this.eventCountsBarrier.signal();
             },
-            onTurn: (addr: Address) => {
+            onTurn: (
+                addr: Address,
+                _turnTime: number,
+                _agreementTime: number,
+                _chainFallbackTime: number
+            ) => {
                 PeerLogger.verbose(`Turn received from ${addr}`, {
                     component: "P2pEventHooks"
                 });
