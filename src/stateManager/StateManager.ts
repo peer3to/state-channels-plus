@@ -2025,7 +2025,13 @@ class StateManager {
         }
 
         for (const messageBlock of inboundMessageBlocks) {
+            this.logger.debug(
+                `Applying inbound message block at height ${messageBlock.blockHeight} to state machine`
+            );
             for (const message of messageBlock.messages) {
+                this.logger.debug(
+                    `Processing inbound message of type ${message.messageType}`
+                );
                 const processed =
                     await this.diamondStateMachine.processInboundMessage(
                         message
