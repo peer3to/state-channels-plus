@@ -153,8 +153,14 @@ export default class ValidationService {
         const timeResult = await this.validateTimeLogic(block, strategy);
 
         if (timeResult !== BlockValidationResult.SUCCESS) {
-            this.logger.warn("validateBlockConfirmation - time logic", {
-                block
+            this.logger.warn("Time validation failed", {
+                validationResult: timeResult,
+                blockHeight: block.height
+            });
+            this.logger.debug("Time validation details", {
+                block,
+                validationResult: timeResult,
+                isFraud: timeResult === BlockValidationResult.DISPUTE
             });
             return timeResult;
         }

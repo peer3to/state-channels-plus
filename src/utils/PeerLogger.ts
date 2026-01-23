@@ -45,6 +45,8 @@ export type Logger = {
     error: (message: any, meta?: any, ...args: any[]) => void;
     verbose: (message: any, meta?: any, ...args: any[]) => void;
     child: (context: LoggerContext) => Logger;
+    group: (label?: string) => void;
+    groupEnd: () => void;
     clear?: () => void;
     close?: () => void;
 };
@@ -227,6 +229,18 @@ class BrowserLogger implements Logger {
         // eslint-disable-next-line no-console
         console.debug(...this.fmt("verbose", message, meta), ...args);
     }
+    public group(label?: string): void {
+        // eslint-disable-next-line no-console
+        if (label) {
+            console.group(label);
+        } else {
+            console.group();
+        }
+    }
+    public groupEnd(): void {
+        // eslint-disable-next-line no-console
+        console.groupEnd();
+    }
 }
 
 const peerColorFormat = (winstonImpl: typeof import("winston")) =>
@@ -344,7 +358,7 @@ function getGlobalLogger(): Logger {
             })
         ];
 
-        globalLogger = winstonImpl.createLogger({
+        const winstonLogger = winstonImpl.createLogger({
             levels: customLevels.levels,
             level: logLevel,
             format: winstonImpl.format.combine(
@@ -356,6 +370,23 @@ function getGlobalLogger(): Logger {
             transports,
             exitOnError: false
         });
+
+        // Wrap Winston logger to add grouping support
+        // Preserve all Winston methods and add grouping
+        globalLogger = Object.assign(winstonLogger, {
+            group: (label?: string) => {
+                // eslint-disable-next-line no-console
+                if (label) {
+                    console.group(label);
+                } else {
+                    console.group();
+                }
+            },
+            groupEnd: () => {
+                // eslint-disable-next-line no-console
+                console.groupEnd();
+            }
+        }) as Logger;
     }
     return globalLogger;
 }

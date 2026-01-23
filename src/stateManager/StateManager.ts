@@ -77,6 +77,7 @@ import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidat
 
 import { config } from "@/utils/config";
 import { TimeoutManager } from "@/utils/TimeoutManager";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 import { TransactionResponse } from "ethers";
 
@@ -1804,6 +1805,15 @@ class StateManager {
                 (previousBlock?.findSignature(participantAddress) as Bytes) ||
                 "0x"
         };
+
+        LoggerUtils.logTimeoutDetected(
+            this.logger,
+            participantAddress,
+            blockHeight,
+            isForced,
+            previousBlock?.author,
+            previousBlockProducerPostedCalldata
+        );
 
         // persist timeout locally
         this.storage.timeout.storeTimeout(forkId, timeout);

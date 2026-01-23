@@ -19,6 +19,7 @@ import {
     difference,
     Logger
 } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooks from "@/P2pEventHooks";
 import { Address, ChannelId, ForkId } from "../types/types";
 import { StateSnapshot } from "../models";
@@ -80,12 +81,19 @@ class DisputeManager {
         try {
             await this.mutex.lock();
             if (this.storage.disputes.didIDispute(forkId)) return;
+
             const {
                 dispute,
                 disputeConfirmation,
                 auditingData,
                 fraudProofsToApply
             } = await this.constructDispute(forkId);
+
+            LoggerUtils.logDisputeInitiated(
+                this.logger,
+                dispute,
+                fraudProofsToApply
+            );
 
             const pendingParticipants =
                 await this.stateChannelManagerContract.getPendingParticipants(

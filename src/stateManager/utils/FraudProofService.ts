@@ -35,10 +35,37 @@ export default class FraudProofService {
         this.logger = logger.child({ component: "FraudProofService" });
     }
 
+    private logFraudDetection({
+        fraudType,
+        reason,
+        block,
+        additionalFields
+    }: {
+        fraudType: string;
+        reason: string;
+        block: Block;
+        additionalFields?: Record<string, any>;
+    }): void {
+        this.logger.debug(`Fraud proof created: ${fraudType}`, {
+            reason,
+            blockHeight: block.height,
+            blockAuthor: block.author,
+            blockHash: block.hash,
+            ...additionalFields
+        });
+        console.trace(`Fraud detected: ${fraudType}`);
+    }
+
     /**
      * Create invalid state transition proof
      */
     createInvalidStateTransitionProof(block: Block): Hash {
+        this.logFraudDetection({
+            fraudType: "Invalid state transition",
+            reason: "Block author is not next leader OR state transition is invalid",
+            block
+        });
+
         let prevSignedBlock: SignedBlockStruct | undefined;
         let prevStateSnapshot: StateSnapshot;
         const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
@@ -78,6 +105,15 @@ export default class FraudProofService {
      * Create invalid timestamp proof
      */
     createInvalidTimestampProof(block: Block): Hash {
+        this.logFraudDetection({
+            fraudType: "Invalid timestamp",
+            reason: "Block timestamp is invalid or inconsistent with previous block",
+            block,
+            additionalFields: {
+                blockTimestamp: block.timestamp
+            }
+        });
+
         let prevSignedBlock: SignedBlockStruct | undefined;
         let prevStateSnapshot: StateSnapshot;
         const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
@@ -111,6 +147,16 @@ export default class FraudProofService {
     }
 
     createDoubleSignProof(conflictingBlock: Block, originalBlock: Block): Hash {
+        this.logFraudDetection({
+            fraudType: "Double sign",
+            reason: "Participant signed two conflicting blocks at same height",
+            block: conflictingBlock,
+            additionalFields: {
+                participant: originalBlock.signerAddress,
+                originalBlockAuthor: originalBlock.author
+            }
+        });
+
         const proof: BlockDoubleSignProofStruct = {
             block1: conflictingBlock.signedBlock,
             block2: originalBlock.signedBlock
@@ -122,6 +168,12 @@ export default class FraudProofService {
         });
     }
     createWrongGenesisProof(block: Block): Hash {
+        this.logFraudDetection({
+            fraudType: "Wrong genesis",
+            reason: "Block at height 0 doesn't link to correct genesis state",
+            block
+        });
+
         const proof: WrongGenesisProofStruct = {
             invalidBlock: block.signedBlock,
             genesisSnapshot: this.storage.stateSnapshots
@@ -139,6 +191,12 @@ export default class FraudProofService {
         block: Block,
         messageBlock: MessageBlockStruct
     ): Hash {
+        this.logFraudDetection({
+            fraudType: "Forged inbound message",
+            reason: "Block references invalid or forged inbound message block",
+            block
+        });
+
         const proof: ForgedInboundMessageBlockProofStruct = {
             invalidBlock: block.signedBlock,
             forgedInboundMessageBlock: messageBlock
@@ -161,11 +219,6 @@ export default class FraudProofService {
         };
 
         const proofHash = this.storage.fraudProofs.storeFraudProof(fraudProof);
-
-        this.logger.debug("Stored fraud proof", {
-            participant,
-            type: FraudProofType[proof.type]
-        });
 
         return proofHash;
     }
