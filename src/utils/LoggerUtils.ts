@@ -85,76 +85,139 @@ export class LoggerUtils {
     }
 
     // ====================================
-    // DATA FORMATTERS (for EventHandler)
+    // DISPUTE LOG DATA FUNCTIONS
     // ====================================
 
-    static getDisputeMessage(
+    static disputeAudited(
         dispute: DisputeStruct,
-        options?: {
-            auditingResult?: boolean;
-            killReason?: DisputeFraudProofType | string;
-            isEvidenceSubmission?: boolean;
-            evidenceSubmissionTimestamp?: number | bigint;
-            isFinal?: boolean;
-        }
+        success: boolean,
+        timestamp?: number | bigint
     ): {
         message: string;
         meta: Record<string, any>;
     } {
-        const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
-        const formattedHash = this.formatHash(disputeHash);
+        const disputeMeta = this.getDisputeMetadata(dispute);
         const timeoutInfo = this.getTimeoutInfo(dispute);
-        const onChainSlashes = dispute.input.onChainSlashes || [];
 
-        let message: string;
-        const meta: Record<string, any> = {
-            disputeHash: formattedHash,
-            disputer: dispute.input.disputer,
+        let meta: Record<string, any> = {
+            disputeHash: disputeMeta.formattedHash,
+            disputer: disputeMeta.disputer,
             onChainSlashes:
-                onChainSlashes.length > 0 ? onChainSlashes : undefined,
-            selfRemoval: dispute.input.selfRemoval || false
+                disputeMeta.onChainSlashes.length > 0
+                    ? disputeMeta.onChainSlashes
+                    : undefined,
+            selfRemoval: disputeMeta.selfRemoval,
+            auditingSuccessful: success
         };
 
-        // Add stage-specific metadata
-        if (options?.auditingResult !== undefined) {
-            meta.auditingSuccessful = options.auditingResult;
-        }
-        if (options?.killReason !== undefined) {
-            meta.killReason = this.formatKillReason(options.killReason);
-        }
-        if (
-            options?.isEvidenceSubmission &&
-            options.evidenceSubmissionTimestamp !== undefined
-        ) {
-            meta.evidenceSubmissionTimestamp = String(
-                options.evidenceSubmissionTimestamp
-            );
-        }
-        if (options?.isFinal !== undefined) {
-            meta.isFinal = options.isFinal;
+        if (timestamp !== undefined) {
+            meta.evidenceSubmissionTimestamp = String(timestamp);
         }
 
-        // Build message based on type
         if (timeoutInfo.isTimeout && timeoutInfo.timeoutInfo) {
-            const { participant, blockHeight, isForced } =
-                timeoutInfo.timeoutInfo;
+            const { participant, blockHeight } = timeoutInfo.timeoutInfo;
             const participantFormatted = this.formatHash(String(participant));
-            message = this.buildTimeoutMessage(
-                participantFormatted,
-                String(blockHeight),
-                options
-            );
-            meta.reason = "Timeout";
-            meta.timeoutParticipant = String(participant);
-            meta.timeoutBlockHeight = String(blockHeight);
-            meta.isForced = isForced;
-        } else {
-            message = this.buildDisputeMessage(formattedHash, options);
-            meta.reason = options?.killReason
-                ? this.formatKillReason(options.killReason)
-                : "Fraud detection";
+            const messagePrefix = success
+                ? "✅ TIMEOUT DISPUTE AUDITING SUCCESSFUL"
+                : "❌ TIMEOUT DISPUTE AUDITING FAILED";
+            const message = `${messagePrefix} - Participant ${participantFormatted} timed out at block ${String(blockHeight)}`;
+            meta = {
+                ...meta,
+                ...this.getTimeoutMetadata(timeoutInfo.timeoutInfo)
+            };
+            return { message, meta };
         }
 
+        const messagePrefix = success
+            ? "✅ DISPUTE AUDITING SUCCESSFUL"
+            : "❌ DISPUTE AUDITING FAILED";
+        const message = `${messagePrefix} - Hash: ${disputeMeta.formattedHash}`;
+        meta.reason = "Fraud detection";
+        return { message, meta };
+    }
+
+    static disputeKilled(
+        dispute: DisputeStruct,
+        killReason: DisputeFraudProofType | string | undefined,
+        timestamp?: number | bigint
+    ): {
+        message: string;
+        meta: Record<string, any>;
+    } {
+        const disputeMeta = this.getDisputeMetadata(dispute);
+        const timeoutInfo = this.getTimeoutInfo(dispute);
+        const killReasonStr = killReason
+            ? this.formatKillReason(killReason)
+            : undefined;
+
+        let meta: Record<string, any> = {
+            disputeHash: disputeMeta.formattedHash,
+            disputer: disputeMeta.disputer,
+            onChainSlashes:
+                disputeMeta.onChainSlashes.length > 0
+                    ? disputeMeta.onChainSlashes
+                    : undefined,
+            selfRemoval: disputeMeta.selfRemoval,
+            auditingSuccessful: false,
+            killReason: killReasonStr
+        };
+
+        if (timestamp !== undefined) {
+            meta.evidenceSubmissionTimestamp = String(timestamp);
+        }
+
+        if (timeoutInfo.isTimeout && timeoutInfo.timeoutInfo) {
+            const { participant, blockHeight } = timeoutInfo.timeoutInfo;
+            const participantFormatted = this.formatHash(String(participant));
+            const message = `💀 TIMEOUT DISPUTE KILLED - Participant ${participantFormatted} timed out at block ${String(blockHeight)}`;
+            meta = {
+                ...meta,
+                ...this.getTimeoutMetadata(timeoutInfo.timeoutInfo)
+            };
+            return { message, meta };
+        }
+
+        const message = killReasonStr
+            ? `💀 DISPUTE KILLED - Hash: ${disputeMeta.formattedHash} | Reason: ${killReasonStr}`
+            : `💀 DISPUTE KILLED - Hash: ${disputeMeta.formattedHash}`;
+        meta.reason = killReasonStr || "Fraud detection";
+        return { message, meta };
+    }
+
+    static disputeEvidenceSubmitted(
+        dispute: DisputeStruct,
+        timestamp: number | bigint
+    ): {
+        message: string;
+        meta: Record<string, any>;
+    } {
+        const disputeMeta = this.getDisputeMetadata(dispute);
+        const timeoutInfo = this.getTimeoutInfo(dispute);
+
+        let meta: Record<string, any> = {
+            disputeHash: disputeMeta.formattedHash,
+            disputer: disputeMeta.disputer,
+            onChainSlashes:
+                disputeMeta.onChainSlashes.length > 0
+                    ? disputeMeta.onChainSlashes
+                    : undefined,
+            selfRemoval: disputeMeta.selfRemoval,
+            evidenceSubmissionTimestamp: String(timestamp)
+        };
+
+        if (timeoutInfo.isTimeout && timeoutInfo.timeoutInfo) {
+            const { participant, blockHeight } = timeoutInfo.timeoutInfo;
+            const participantFormatted = this.formatHash(String(participant));
+            const message = `📝 TIMEOUT DISPUTE EVIDENCE SUBMITTED - Participant ${participantFormatted} timed out at block ${String(blockHeight)}`;
+            meta = {
+                ...meta,
+                ...this.getTimeoutMetadata(timeoutInfo.timeoutInfo)
+            };
+            return { message, meta };
+        }
+
+        const message = `📝 DISPUTE EVIDENCE SUBMITTED - Hash: ${disputeMeta.formattedHash}`;
+        meta.reason = "Fraud detection";
         return { message, meta };
     }
 
@@ -175,46 +238,39 @@ export class LoggerUtils {
         }
     }
 
-    static getDisputeAuditingLogData(
-        dispute: DisputeStruct,
-        isValid: boolean,
-        disputeCreationTimestamp: number | bigint,
-        isFinal: boolean
-    ): {
-        message: string;
-        meta: Record<string, any>;
-    } {
-        return this.getDisputeMessage(dispute, {
-            auditingResult: isValid,
-            isEvidenceSubmission: true,
-            evidenceSubmissionTimestamp: disputeCreationTimestamp,
-            isFinal: isFinal
-        });
-    }
-
-    static getDisputeKillLogData(
-        dispute: DisputeStruct,
-        disputeFraudProof: DisputeFraudProofStruct | undefined,
-        disputeCreationTimestamp: number | bigint,
-        isFinal: boolean
-    ): {
-        message: string;
-        meta: Record<string, any>;
-    } {
-        const killReason = this.getKillReasonFromFraudProof(disputeFraudProof);
-
-        return this.getDisputeMessage(dispute, {
-            auditingResult: false,
-            killReason: killReason,
-            isEvidenceSubmission: true,
-            evidenceSubmissionTimestamp: disputeCreationTimestamp,
-            isFinal: isFinal
-        });
-    }
-
     // ====================================
     // PRIVATE HELPERS
     // ====================================
+
+    private static getDisputeMetadata(dispute: DisputeStruct): {
+        formattedHash: string;
+        disputer: Address;
+        onChainSlashes: Address[];
+        selfRemoval: boolean;
+    } {
+        const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
+        const formattedHash = this.formatHash(disputeHash);
+        const onChainSlashes = dispute.input.onChainSlashes || [];
+        return {
+            formattedHash,
+            disputer: dispute.input.disputer,
+            onChainSlashes,
+            selfRemoval: dispute.input.selfRemoval || false
+        };
+    }
+
+    private static getTimeoutMetadata(timeoutInfo: {
+        participant: Address;
+        blockHeight: string | bigint | number;
+        isForced: boolean;
+    }): Record<string, any> {
+        return {
+            reason: "Timeout",
+            timeoutParticipant: String(timeoutInfo.participant),
+            timeoutBlockHeight: String(timeoutInfo.blockHeight),
+            isForced: timeoutInfo.isForced
+        };
+    }
 
     private static isTimeoutDispute(dispute: DisputeStruct): boolean {
         const timeout = dispute.input.timeout;
@@ -228,7 +284,6 @@ export class LoggerUtils {
             participant: Address;
             blockHeight: string | bigint | number;
             isForced: boolean;
-            previousBlockProducer?: Address;
         };
     } {
         if (!this.isTimeoutDispute(dispute)) {
@@ -236,20 +291,13 @@ export class LoggerUtils {
         }
 
         const timeout = dispute.input.timeout as TimeoutStruct;
-        const previousBlockProducer = timeout.previousBlockProducer;
-        const isNonZeroProducer =
-            previousBlockProducer &&
-            previousBlockProducer !== ethers.ZeroAddress;
 
         return {
             isTimeout: true,
             timeoutInfo: {
                 participant: timeout.participant,
                 blockHeight: timeout.blockHeight,
-                isForced: timeout.isForced,
-                previousBlockProducer: isNonZeroProducer
-                    ? previousBlockProducer
-                    : undefined
+                isForced: timeout.isForced
             }
         };
     }
@@ -260,53 +308,5 @@ export class LoggerUtils {
         return typeof killReason === "string"
             ? killReason
             : DisputeFraudProofType[killReason] || String(killReason);
-    }
-
-    private static buildTimeoutMessage(
-        participantFormatted: string,
-        blockHeightStr: string,
-        options?: {
-            killReason?: DisputeFraudProofType | string;
-            isEvidenceSubmission?: boolean;
-            auditingResult?: boolean;
-        }
-    ): string {
-        let messagePrefix = "⏱️ TIMEOUT DISPUTE";
-        if (options?.killReason !== undefined) {
-            messagePrefix = "💀 TIMEOUT DISPUTE KILLED";
-        } else if (options?.isEvidenceSubmission) {
-            messagePrefix = "📝 TIMEOUT DISPUTE EVIDENCE SUBMITTED";
-        } else if (options?.auditingResult === false) {
-            messagePrefix = "❌ TIMEOUT DISPUTE AUDITING FAILED";
-        } else if (options?.auditingResult === true) {
-            messagePrefix = "✅ TIMEOUT DISPUTE AUDITING SUCCESSFUL";
-        }
-        return `${messagePrefix} - Participant ${participantFormatted} timed out at block ${blockHeightStr}`;
-    }
-
-    private static buildDisputeMessage(
-        formattedHash: string,
-        options?: {
-            killReason?: DisputeFraudProofType | string;
-            isEvidenceSubmission?: boolean;
-            auditingResult?: boolean;
-        }
-    ): string {
-        let messagePrefix = "🚨 DISPUTE COMMITTED";
-        if (options?.killReason !== undefined) {
-            messagePrefix = "💀 DISPUTE KILLED";
-            const killReasonStr = this.formatKillReason(options.killReason);
-            return `${messagePrefix} - Hash: ${formattedHash} | Reason: ${killReasonStr}`;
-        } else if (options?.isEvidenceSubmission) {
-            messagePrefix = "📝 DISPUTE EVIDENCE SUBMITTED";
-            return `${messagePrefix} - Hash: ${formattedHash}`;
-        } else if (options?.auditingResult === false) {
-            messagePrefix = "❌ DISPUTE AUDITING FAILED";
-            return `${messagePrefix} - Hash: ${formattedHash}`;
-        } else if (options?.auditingResult === true) {
-            messagePrefix = "✅ DISPUTE AUDITING SUCCESSFUL";
-            return `${messagePrefix} - Hash: ${formattedHash}`;
-        }
-        return `${messagePrefix} - Hash: ${formattedHash}`;
     }
 }

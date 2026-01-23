@@ -230,7 +230,6 @@ class BrowserLogger implements Logger {
         console.debug(...this.fmt("verbose", message, meta), ...args);
     }
     public group(label?: string): void {
-        // eslint-disable-next-line no-console
         if (label) {
             console.group(label);
         } else {
@@ -375,7 +374,6 @@ function getGlobalLogger(): Logger {
         // Preserve all Winston methods and add grouping
         globalLogger = Object.assign(winstonLogger, {
             group: (label?: string) => {
-                // eslint-disable-next-line no-console
                 if (label) {
                     console.group(label);
                 } else {

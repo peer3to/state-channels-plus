@@ -153,11 +153,10 @@ export class EventHandler {
         const forkId = dispute.input.forkId;
 
         // Get initial message with evidence submission info
-        const { message, meta } = LoggerUtils.getDisputeMessage(dispute, {
-            isEvidenceSubmission: true,
-            evidenceSubmissionTimestamp: disputeCreationTimestamp,
-            isFinal: isFinal
-        });
+        const { message, meta } = LoggerUtils.disputeEvidenceSubmitted(
+            dispute,
+            disputeCreationTimestamp
+        );
 
         this.logger.group(`✅ Dispute received: ${meta.disputeHash}`);
         this.logger.info(message, {
@@ -230,11 +229,12 @@ export class EventHandler {
                 this.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
                     dispute
                 );
-            const { meta: killMeta } = LoggerUtils.getDisputeKillLogData(
+            const killReason =
+                LoggerUtils.getKillReasonFromFraudProof(disputeFraudProof);
+            const { meta: killMeta } = LoggerUtils.disputeKilled(
                 dispute,
-                disputeFraudProof,
-                disputeCreationTimestamp,
-                isFinal
+                killReason,
+                disputeCreationTimestamp
             );
 
             this.logger.warn("❌ Dispute auditing failed - killing dispute", {
@@ -252,11 +252,10 @@ export class EventHandler {
         }
 
         // Log successful auditing
-        const { meta: auditingMeta } = LoggerUtils.getDisputeAuditingLogData(
+        const { meta: auditingMeta } = LoggerUtils.disputeAudited(
             dispute,
             isValid,
-            disputeCreationTimestamp,
-            isFinal
+            disputeCreationTimestamp
         );
         this.logger.info("✅ Dispute auditing successful", {
             ...auditingMeta,
