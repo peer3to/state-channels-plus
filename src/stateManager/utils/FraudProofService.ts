@@ -41,7 +41,7 @@ export default class FraudProofService {
         block,
         additionalFields
     }: {
-        fraudType: string;
+        fraudType: FraudProofType;
         reason: string;
         block: Block;
         additionalFields?: Record<string, any>;
@@ -61,7 +61,7 @@ export default class FraudProofService {
      */
     createInvalidStateTransitionProof(block: Block): Hash {
         this.logFraudDetection({
-            fraudType: "Invalid state transition",
+            fraudType: FraudProofType.BlockInvalidStateTransition,
             reason: "Block author is not next leader OR state transition is invalid",
             block
         });
@@ -106,7 +106,7 @@ export default class FraudProofService {
      */
     createInvalidTimestampProof(block: Block): Hash {
         this.logFraudDetection({
-            fraudType: "Invalid timestamp",
+            fraudType: FraudProofType.InvalidTimestamp,
             reason: "Block timestamp is invalid or inconsistent with previous block",
             block,
             additionalFields: {
@@ -148,7 +148,7 @@ export default class FraudProofService {
 
     createDoubleSignProof(conflictingBlock: Block, originalBlock: Block): Hash {
         this.logFraudDetection({
-            fraudType: "Double sign",
+            fraudType: FraudProofType.BlockDoubleSign,
             reason: "Participant signed two conflicting blocks at same height",
             block: conflictingBlock,
             additionalFields: {
@@ -169,7 +169,7 @@ export default class FraudProofService {
     }
     createWrongGenesisProof(block: Block): Hash {
         this.logFraudDetection({
-            fraudType: "Wrong genesis",
+            fraudType: FraudProofType.WrongGenesis,
             reason: "Block at height 0 doesn't link to correct genesis state",
             block
         });
@@ -192,7 +192,7 @@ export default class FraudProofService {
         messageBlock: MessageBlockStruct
     ): Hash {
         this.logFraudDetection({
-            fraudType: "Forged inbound message",
+            fraudType: FraudProofType.ForgedInboundMessageBlock,
             reason: "Block references invalid or forged inbound message block",
             block
         });
