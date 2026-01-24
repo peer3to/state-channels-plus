@@ -16,6 +16,7 @@ import { Address, Hash } from "@/types/types";
 import { Logger } from "@/utils";
 import { Codec, FraudStruct } from "@/utils/Codec";
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 const createEmptySignedBlock = (): SignedBlockStruct => ({
     encodedBlock: "0x",
@@ -46,14 +47,19 @@ export default class FraudProofService {
         block: Block;
         additionalFields?: Record<string, any>;
     }): void {
-        this.logger.debug(`Fraud proof created: ${fraudType}`, {
+        const fraudTypeName = LoggerUtils.enumToString(
+            FraudProofType,
+            fraudType
+        );
+        this.logger.debug(`Fraud proof created: ${fraudTypeName}`, {
             reason,
             blockHeight: block.height,
             blockAuthor: block.author,
             blockHash: block.hash,
+            fraudType: fraudTypeName,
             ...additionalFields
         });
-        console.trace(`Fraud detected: ${fraudType}`);
+        console.trace(`Fraud detected: ${fraudTypeName}`);
     }
 
     /**

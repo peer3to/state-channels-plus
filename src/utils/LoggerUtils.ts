@@ -10,7 +10,12 @@ import { Codec, Type } from "./Codec";
 import { hash } from "@/utils";
 import { Address, Hash, ChannelId, ForkId } from "@/types/types";
 import { ethers } from "ethers";
-import { DisputeFraudProofType } from "@/types/sol-enums";
+import {
+    DisputeFraudProofType,
+    FraudProofType,
+    toSolidityFraudProofType,
+    toSolidityDisputeFraudProofType
+} from "@/types/sol-enums";
 import type { Logger } from "@/utils";
 import { TransportType } from "@/transport/TransportType";
 import ATransport from "@/transport/ATransport";
@@ -32,6 +37,27 @@ export class LoggerUtils {
         return `${hashStr.slice(0, 2 + prefixLength)}...${hashStr.slice(-suffixLength)}`;
     }
 
+    static enumToString<T extends Record<string, string | number>>(
+        enumObj: T,
+        value: number | bigint | T[keyof T]
+    ): string {
+        // If already a string (enum name), return it
+        if (typeof value === "string") {
+            return value;
+        }
+
+        const numValue =
+            typeof value === "bigint" ? Number(value) : Number(value);
+
+        // Look up enum name by numeric value
+        const result = (enumObj as unknown as Record<number, string | number>)[
+            numValue
+        ];
+        const enumName = typeof result === "string" ? result : undefined;
+
+        return enumName ?? `UNKNOWN(${numValue})`;
+    }
+
     // ====================================
     // LOGGING PATTERNS
     // ====================================
@@ -45,7 +71,11 @@ export class LoggerUtils {
         const formattedHash = this.formatHash(disputeHash);
         const fraudProofDetails = fraudProofs.map((fp) => ({
             participant: fp.participant,
-            proofType: fp.proofType
+            proofType: this.formatProofType(
+                typeof fp.proofType === "string"
+                    ? Number(fp.proofType)
+                    : fp.proofType
+            )
         }));
 
         logger.group(`🚨 Dispute: ${formattedHash}`);
@@ -430,6 +460,38 @@ export class LoggerUtils {
     ): string {
         return typeof killReason === "string"
             ? killReason
-            : DisputeFraudProofType[killReason] || String(killReason);
+            : this.enumToString(DisputeFraudProofType, killReason);
+    }
+
+    private static formatProofType(proofType: number | bigint): string {
+        const numValue =
+            typeof proofType === "bigint" ? Number(proofType) : proofType;
+
+        for (const key in FraudProofType) {
+            const enumValue =
+                FraudProofType[key as keyof typeof FraudProofType];
+            if (
+                typeof enumValue === "number" &&
+                toSolidityFraudProofType(enumValue) === numValue
+            ) {
+                return key;
+            }
+        }
+
+        for (const key in DisputeFraudProofType) {
+            const enumValue =
+                DisputeFraudProofType[
+                    key as keyof typeof DisputeFraudProofType
+                ];
+            if (
+                typeof enumValue === "number" &&
+                toSolidityDisputeFraudProofType(enumValue) === numValue
+            ) {
+                return key;
+            }
+        }
+
+        // Fallback
+        return `UNKNOWN(${numValue})`;
     }
 }

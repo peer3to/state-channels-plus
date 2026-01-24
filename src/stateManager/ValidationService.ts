@@ -154,12 +154,16 @@ export default class ValidationService {
 
         if (timeResult !== BlockValidationResult.SUCCESS) {
             this.logger.warn("Time validation failed", {
-                validationResult: timeResult,
+                validationResult:
+                    BlockValidationResult[timeResult] ??
+                    `UNKNOWN(${timeResult})`,
                 blockHeight: block.height
             });
             this.logger.debug("Time validation details", {
                 block,
-                validationResult: timeResult,
+                validationResult:
+                    BlockValidationResult[timeResult] ??
+                    `UNKNOWN(${timeResult})`,
                 isFraud: timeResult === BlockValidationResult.DISPUTE
             });
             return timeResult;

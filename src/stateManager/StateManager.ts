@@ -214,8 +214,8 @@ class StateManager {
     }
     public setStatus(status: Status) {
         this.logger.debug("Status changed", {
-            oldStatus: this.status,
-            newStatus: status
+            oldStatus: Status[this.status] ?? `UNKNOWN(${this.status})`,
+            newStatus: Status[status] ?? `UNKNOWN(${status})`
         });
         this.status = status;
     }
