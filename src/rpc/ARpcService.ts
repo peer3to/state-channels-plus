@@ -35,7 +35,10 @@ abstract class ARpcService<
         try {
             rpc_method[rpc.method](...rpc.params);
         } catch (e) {
-            console.log(e);
+            this.logger.error("Unhandled RPC handler exception", {
+                method: rpc.method,
+                error: e
+            });
             return false;
         }
         return true;
