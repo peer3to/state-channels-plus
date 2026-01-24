@@ -337,6 +337,53 @@ export default class ValidationService {
         block: Block,
         strategy: AValidationStrategy
     ): Promise<BlockValidationResult> {
+        const nowSeconds = Clock.getTimeInSeconds();
+
+        const logTimeFailure = (args: {
+            validationResult: BlockValidationResult;
+            checkType: "objective" | "subjective";
+            allowedSkewSeconds: number;
+            violatedRule: string;
+            previousTimestamp?: Timestamp;
+            previousOriginalTimestamp?: Timestamp;
+        }) => {
+            const blockTimestamp = block.timestamp;
+            const differenceSeconds = Math.abs(nowSeconds - blockTimestamp);
+            const excessSeconds = Math.max(
+                0,
+                differenceSeconds - args.allowedSkewSeconds
+            );
+            const validationResultString =
+                BlockValidationResult[args.validationResult] ??
+                `UNKNOWN(${args.validationResult})`;
+            const logData: Record<string, any> = {
+                checkType: args.checkType,
+                violatedRule: args.violatedRule,
+                validationResult: validationResultString,
+                blockHeight: block.height,
+                nowSeconds,
+                blockTimestamp,
+                differenceSeconds,
+                allowedSkewSeconds: args.allowedSkewSeconds,
+                excessSeconds
+            };
+            // Add previous timestamp context for objective checks
+            if (
+                args.checkType === "objective" &&
+                args.previousTimestamp !== undefined
+            ) {
+                logData.previousTimestamp = args.previousTimestamp;
+                if (args.previousOriginalTimestamp !== undefined) {
+                    logData.previousOriginalTimestamp =
+                        args.previousOriginalTimestamp;
+                }
+            }
+            this.logger.warn(
+                "Time validation failed – block timestamp outside allowed window",
+                logData
+            );
+        };
+
         // Calculate previousTimestamp
         let previousTimestamp: Timestamp;
         let previousOriginalTimestamp: Timestamp;
@@ -361,17 +408,26 @@ export default class ValidationService {
         // OBJECTIVE: isValidTimestamp check
 
         // Check if block timestamp is not in the past
-        const isTimestampInTheFuture =
-            block.timestamp - previousOriginalTimestamp >= 0;
+        const isNotInPast = block.timestamp - previousOriginalTimestamp >= 0;
 
         // Check if block timestamp is within P2P time window
         const isWithinP2PTimeWindow =
             block.timestamp - previousTimestamp <= this.timeConfig.p2pTime;
 
-        const isValidTimestamp =
-            isTimestampInTheFuture && isWithinP2PTimeWindow;
+        const isValidTimestamp = isNotInPast && isWithinP2PTimeWindow;
 
         if (!isValidTimestamp) {
+            // Determine which rule was violated
+            let violatedRule: string;
+            if (!isNotInPast) {
+                violatedRule = "timestamp >= previousOriginalTimestamp";
+            } else if (!isWithinP2PTimeWindow) {
+                violatedRule = "timestamp <= previousTimestamp + p2pTime";
+            } else {
+                violatedRule =
+                    "timestamp >= previousOriginalTimestamp && timestamp <= previousTimestamp + p2pTime";
+            }
+
             // if first block or previous block has on-chain timestamp -> we have all the data (best timestamp) -> safe to create a fraud proof
             if (
                 // first block
@@ -380,6 +436,14 @@ export default class ValidationService {
                 previousBlock.onChainTimestamp !== undefined
             ) {
                 // Already has best timestamp - persist InvalidTimestamp fraud proof
+                logTimeFailure({
+                    validationResult: BlockValidationResult.DISPUTE,
+                    checkType: "objective",
+                    allowedSkewSeconds: this.timeConfig.p2pTime,
+                    violatedRule,
+                    previousTimestamp,
+                    previousOriginalTimestamp
+                });
                 return await strategy.objectiveInvalidTimestampDetected(block);
             }
 
@@ -398,6 +462,15 @@ export default class ValidationService {
                 previousBlockOnChainTimestamp <= previousTimestamp
             ) {
                 // False - persist InvalidTimestamp fraud proof
+                // Re-check which rule was violated (previousTimestamp may have changed, but we already computed violatedRule above)
+                logTimeFailure({
+                    validationResult: BlockValidationResult.DISPUTE,
+                    checkType: "objective",
+                    allowedSkewSeconds: this.timeConfig.p2pTime,
+                    violatedRule,
+                    previousTimestamp,
+                    previousOriginalTimestamp
+                });
                 return await strategy.objectiveInvalidTimestampDetected(block);
             }
 
@@ -415,6 +488,15 @@ export default class ValidationService {
         // OBJECTIVE: Check if block was posted too late on-chain
         if (await this.isPostedOnChainTooLate(previousTimestamp, block)) {
             // Block posted too late - create InvalidTimestamp fraud proof
+            logTimeFailure({
+                validationResult: BlockValidationResult.DISPUTE,
+                checkType: "objective",
+                allowedSkewSeconds: this.timeConfig.p2pTime,
+                violatedRule:
+                    "onChainTimestamp <= previousTimestamp + p2pTime + agreementTime + chainFallbackTime",
+                previousTimestamp,
+                previousOriginalTimestamp
+            });
             return await strategy.objectiveInvalidTimestampDetected(block);
         }
 
@@ -423,10 +505,16 @@ export default class ValidationService {
 
         // SUBJECTIVE: hasOnChainTimestamp check
         const receivedWithinAgreementTime =
-            Math.abs(Clock.getTimeInSeconds() - block.timestamp) <=
+            Math.abs(nowSeconds - block.timestamp) <=
             this.timeConfig.agreementTime;
 
         if (!receivedWithinAgreementTime) {
+            logTimeFailure({
+                validationResult: BlockValidationResult.NOT_ENOUGH_TIME,
+                checkType: "subjective",
+                allowedSkewSeconds: this.timeConfig.agreementTime,
+                violatedRule: "abs(now - blockTimestamp) <= agreementTime"
+            });
             return await strategy.subjectiveInvalidTimestampDetected(block);
         }
 
