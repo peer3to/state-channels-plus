@@ -2,6 +2,8 @@ import type P2PManager from "@/P2PManager";
 import ATransport from "./ATransport";
 import WebSocket from "ws";
 import { TransportType } from "./TransportType";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+
 class LocalTransport extends ATransport {
     transportType = TransportType.HOLEPUNCH; // not holepunch, but probably doesn't matter for testing
     ws: WebSocket;
@@ -13,12 +15,24 @@ class LocalTransport extends ATransport {
         });
 
         // Ensure we clean up our transport when the underlying socket closes.
-        this.ws.on("close", () => {
+        this.ws.on("close", (code: number, reason: Buffer) => {
+            const closeReason = reason?.toString() || `code: ${code}`;
+            LoggerUtils.logTransportDisconnect(this, {
+                reason: `websocket closed: ${closeReason}`,
+                connectionState: "closed",
+                socketState: this.ws?.readyState
+            });
             this.close();
         });
 
         // Treat socket errors as a connection close for transport lifecycle.
-        this.ws.on("error", () => {
+        this.ws.on("error", (error: Error) => {
+            LoggerUtils.logTransportDisconnect(this, {
+                reason: "websocket error",
+                connectionState: "error",
+                socketState: this.ws?.readyState,
+                error
+            });
             this.close();
         });
     }

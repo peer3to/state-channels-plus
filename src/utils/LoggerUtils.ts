@@ -8,10 +8,12 @@ import {
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Codec, Type } from "./Codec";
 import { hash } from "@/utils";
-import { Address, Hash } from "@/types/types";
+import { Address, Hash, ChannelId, ForkId } from "@/types/types";
 import { ethers } from "ethers";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import type { Logger } from "@/utils";
+import { TransportType } from "@/transport/TransportType";
+import ATransport from "@/transport/ATransport";
 
 export class LoggerUtils {
     // ====================================
@@ -81,6 +83,127 @@ export class LoggerUtils {
             previousBlockProducerPostedCalldata
         });
         console.trace("Timeout detected - creating timeout dispute");
+        logger.groupEnd();
+    }
+
+    /**
+     * Convenience helper for logging transport disconnects.
+     * Extracts common metadata (peerAddress, channelId, forkId, transportType, logger) from transport.
+     * This is a thin wrapper around logPeerDisconnected() to reduce call-site boilerplate.
+     */
+    static logTransportDisconnect(
+        transport: ATransport,
+        details: {
+            reason: string;
+            connectionState?: string;
+            socketState?: string | number;
+            iceState?: string;
+            error?: Error | unknown;
+        }
+    ): void {
+        const profile =
+            transport.p2pManager.profileManager.getProfileByTransport(
+                transport
+            );
+        const peerAddress =
+            transport.peerAddress ||
+            profile?.getEvmAddress()?.toString() ||
+            "unknown";
+        const stateManager = transport.p2pManager.stateManager;
+        const logger = transport.p2pManager.logger;
+
+        // Normalize socketState to string if it's a number
+        const socketStateStr =
+            details.socketState !== undefined
+                ? typeof details.socketState === "string"
+                    ? details.socketState
+                    : String(details.socketState)
+                : undefined;
+
+        this.logPeerDisconnected(logger, {
+            transportType: transport.transportType,
+            reason: details.reason,
+            peerAddress,
+            channelId: stateManager.getChannelId(),
+            forkId: stateManager.forkId,
+            connectionState: details.connectionState,
+            socketState: socketStateStr,
+            iceState: details.iceState,
+            error: details.error
+        });
+    }
+
+    static logPeerDisconnected(
+        logger: Logger,
+        options: {
+            transportType: TransportType;
+            reason: string;
+            peerAddress?: string;
+            channelId?: ChannelId;
+            forkId?: ForkId;
+            connectionState?: string;
+            error?: Error | unknown;
+            socketState?: string;
+            iceState?: string;
+        }
+    ): void {
+        const {
+            transportType,
+            reason,
+            peerAddress,
+            channelId,
+            forkId,
+            connectionState,
+            error,
+            socketState,
+            iceState
+        } = options;
+
+        const transportTypeName = TransportType[transportType] || "UNKNOWN";
+        const peerFormatted = peerAddress
+            ? this.formatHash(peerAddress)
+            : "unknown";
+
+        logger.group("🔌 Peer disconnected");
+
+        logger.warn("Connection disconnected", {
+            transportType: transportTypeName,
+            reason,
+            peer: peerFormatted,
+            channelId: channelId || undefined,
+            forkId: forkId || undefined,
+            connectionState: connectionState || undefined
+        });
+
+        const debugDetails: Record<string, any> = {
+            peerFull: peerAddress || undefined,
+            transportType: transportTypeName,
+            reason,
+            channelId: channelId || undefined,
+            forkId: forkId || undefined,
+            connectionState: connectionState || undefined,
+            timestamp: Date.now()
+        };
+
+        if (socketState) {
+            debugDetails.socketState = socketState;
+        }
+
+        if (iceState) {
+            debugDetails.iceState = iceState;
+        }
+
+        if (error) {
+            debugDetails.error =
+                error instanceof Error ? error.message : String(error);
+            debugDetails.errorStack =
+                error instanceof Error ? error.stack : undefined;
+        }
+
+        logger.debug("Disconnect details", debugDetails);
+
+        console.trace("Disconnect stack trace");
+
         logger.groupEnd();
     }
 

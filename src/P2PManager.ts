@@ -16,6 +16,7 @@ import { isInstanceOfRpcService } from "./utils/ObjectChecks";
 import type ARpcService from "@/rpc/ARpcService";
 import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
 import type { RpcServiceFactoryMap, RpcServiceInstances } from "./rpc/registry";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 type LocalRpcRoot<TFactories extends RpcServiceFactoryMap> = MainRpcService &
     RpcServiceInstances<TFactories>;
@@ -140,20 +141,18 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
     }
 
     public disconnectConnection(transport: ATransport) {
-        const profile = this.profileManager.getProfileByTransport(transport);
-
-        try {
-            const disconnectedPeer =
-                transport.peerAddress || profile?.getEvmAddress() || "unknown";
-            const stack = new Error("Disconnecting connection").stack;
-            this.logger.warn("disconnectConnection", {
-                disconnectedPeer,
-                transportType: transport.transportType,
-                stack
-            });
-        } catch {
-            // ignore logging errors
+        if (!transport.isClosed) {
+            try {
+                LoggerUtils.logTransportDisconnect(transport, {
+                    reason: "disconnectConnection() called",
+                    connectionState: "disconnecting"
+                });
+            } catch {
+                // ignore logging errors
+            }
         }
+
+        const profile = this.profileManager.getProfileByTransport(transport);
 
         this.openConnections = this.openConnections.filter(
             (t) => t !== transport

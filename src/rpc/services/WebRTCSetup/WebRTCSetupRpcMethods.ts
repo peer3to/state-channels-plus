@@ -36,6 +36,8 @@ class WebRTCSetupRpcMethods extends ARpcMethods {
                 new WebRTCTransport(event.channel, this.p2pManager);
             };
             this.service.connectionMap.set(peerAddress, connection);
+
+            this.service.setupConnectionStateHandlers(connection, peerAddress);
             const offer = JSON.parse(serializedOffer);
             console.log("onOfferWebRTC - offer", offer);
             await connection.setRemoteDescription(offer);

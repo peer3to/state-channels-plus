@@ -2,6 +2,8 @@ import type P2PManager from "@/P2PManager";
 import ATransport from "./ATransport";
 import { Buffer } from "buffer";
 import { TransportType } from "./TransportType";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+
 class WebRTCTransport extends ATransport {
     transportType = TransportType.WEBRTC;
     webRTCChannel: any;
@@ -18,8 +20,54 @@ class WebRTCTransport extends ATransport {
         };
         this.webRTCChannel.onclose = () => {
             console.log("WebRTC Channel Closed");
+            const { connectionState, iceState } = this.getConnectionState();
+            LoggerUtils.logTransportDisconnect(this, {
+                reason: "data channel closed",
+                connectionState,
+                iceState
+            });
             this.close();
         };
+        this.webRTCChannel.onerror = (error: Error) => {
+            const { connectionState, iceState } = this.getConnectionState();
+            LoggerUtils.logTransportDisconnect(this, {
+                reason: "data channel error",
+                connectionState,
+                iceState,
+                error
+            });
+            this.close();
+        };
+    }
+
+    private getConnectionState(): {
+        connectionState: string;
+        iceState: string;
+    } {
+        const profile =
+            this.p2pManager.profileManager.getProfileByTransport(this);
+        const peerAddress =
+            this.peerAddress ||
+            profile?.getEvmAddress()?.toString() ||
+            "unknown";
+
+        let connectionState = "unknown";
+        let iceState = "unknown";
+        try {
+            const webRTCSetupService =
+                this.p2pManager.localRpc?.webRTCSetupService;
+            if (webRTCSetupService?.connectionMap) {
+                const connection =
+                    webRTCSetupService.connectionMap.get(peerAddress);
+                if (connection) {
+                    connectionState = connection.connectionState || "unknown";
+                    iceState = connection.iceConnectionState || "unknown";
+                }
+            }
+        } catch {
+            // Ignore errors accessing connection state
+        }
+        return { connectionState, iceState };
     }
     send(serializedRPC: string): void {
         console.log("WebRTC - SendingRPC", serializedRPC);
