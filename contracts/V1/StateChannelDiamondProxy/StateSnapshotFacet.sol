@@ -51,9 +51,13 @@ contract StateSnapshotFacet is StateChannelCommon {
 
         StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
         StateSnapshot memory newStateSnapshot = milestoneSnapshots[milestoneSnapshots.length - 1];
-
+        bool isGenesisSnapshotWithoutTimeCheck =
+            UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(currentStateSnapshot);
         require(currentStateSnapshot.forkId == newStateSnapshot.forkId, RaceConditionSnapshotForkMismatch());
-        require(newStateSnapshot.blockHeight > currentStateSnapshot.blockHeight, RaceConditionBlockHeightTooOld());
+        require(
+            newStateSnapshot.blockHeight > currentStateSnapshot.blockHeight || isGenesisSnapshotWithoutTimeCheck,
+            RaceConditionBlockHeightTooOld()
+        );
         require(
             _verifyMilestones(
                 currentStateSnapshot.forkId, milestoneProofs, milestoneSnapshots, currentStateSnapshot.snapshotData
@@ -103,8 +107,9 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot[] memory milestoneSnapshots,
         SnapshotData memory genesisSnapshotData
     ) internal view returns (bool) {
-        (bool isValid,) = UtilityFacet(utilityFacetAddress)
-            .verifyMilestones(forkId, milestoneProofs, milestoneSnapshots, genesisSnapshotData);
+        (bool isValid,) = UtilityFacet(utilityFacetAddress).verifyMilestones(
+            forkId, milestoneProofs, milestoneSnapshots, genesisSnapshotData
+        );
         return isValid;
     }
 

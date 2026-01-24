@@ -1839,7 +1839,7 @@ class StateManager {
         const latestBlock = this.storage.blocks.getLatestBlock(this.forkId);
 
         let previousTimestamp: Timestamp;
-
+        let previousRelativeTimestamp: Timestamp;
         if (!latestBlock) {
             // No blocks yet - check against genesis snapshot timestamp
             const genesisSnapshot =
@@ -1850,8 +1850,12 @@ class StateManager {
                 return; // No genesis snapshot yet, nothing to adjust against
             }
             previousTimestamp = genesisSnapshot.timestamp;
+            previousRelativeTimestamp = genesisSnapshot.timestamp;
         } else {
             previousTimestamp = latestBlock.timestamp;
+            previousRelativeTimestamp = latestBlock.getRelevantTimestamp(
+                tx.header.participant
+            );
         }
 
         if (Number(tx.header.timestamp) <= previousTimestamp) {
@@ -1860,10 +1864,10 @@ class StateManager {
 
         if (
             Number(tx.header.timestamp) >
-            previousTimestamp + this.timeConfig.p2pTime
+            previousRelativeTimestamp + this.timeConfig.p2pTime
         ) {
             tx.header.timestamp = BigInt(
-                previousTimestamp + this.timeConfig.p2pTime
+                previousRelativeTimestamp + this.timeConfig.p2pTime
             );
         }
     }

@@ -3,7 +3,7 @@ import { Address, ChannelId, Timestamp, Hash, ForkId } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
-import { Codec, getChecksumAddress, Type } from "@/utils";
+import { Codec, getChecksumAddress, tryDecodeCustomError, Type } from "@/utils";
 import { ethers } from "ethers";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import {
@@ -397,7 +397,13 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     calldata
                 );
             } catch (e) {
-                this.logger.debug(e);
+                const custom = tryDecodeCustomError(e);
+                this.logger.error(
+                    "Spectate multicall error",
+                    custom,
+                    calldata,
+                    e
+                );
                 return false;
             }
         }

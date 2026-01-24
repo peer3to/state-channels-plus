@@ -145,11 +145,45 @@ class BrowserLogger implements Logger {
         );
     }
 
-    private fmt(level: string, message: any, meta?: any): any[] {
-        const extra = this.isPlainObject(meta) ? meta : undefined;
-        const merged = extra
-            ? { ...this.context, ...extra }
-            : { ...this.context };
+    private logWithStack(
+        level: "debug" | "info" | "warn" | "error" | "verbose",
+        message: any,
+        meta?: any,
+        ...args: any[]
+    ): void {
+        const method = level === "verbose" ? "debug" : level;
+        const details = {
+            meta,
+            leftoverArgs: args
+        };
+
+        if (
+            console.groupCollapsed &&
+            level !== "debug" &&
+            level !== "verbose" // don't use groups for debug/verbose since group lables are always INFO...
+        ) {
+            // eslint-disable-next-line no-console
+            console.groupCollapsed(...this.fmt(level, message));
+            // eslint-disable-next-line no-console
+            console[method](details);
+            // eslint-disable-next-line no-console
+            console[method](new Error().stack);
+            // eslint-disable-next-line no-console
+            console.groupEnd();
+            return;
+        }
+
+        // Fallback when groups are not supported
+        // eslint-disable-next-line no-console
+        (console as any)[method](
+            ...this.fmt(level, message),
+            details,
+            new Error().stack
+        );
+    }
+
+    private fmt(level: string, message: any): any[] {
+        const merged = { ...this.context };
 
         const time = this.formatTime();
         const levelUpper = level.toUpperCase();
@@ -190,44 +224,33 @@ class BrowserLogger implements Logger {
             );
         }
 
-        // Meta (like node formatter: exclude the common context keys)
-        const metaForInline: Record<string, any> = { ...merged };
-        delete metaForInline.peerId;
-        delete metaForInline.peerAddress;
-        delete metaForInline.component;
-
-        const hasMeta = Object.keys(metaForInline).length > 0;
-        const metaStr = hasMeta ? ` ${this.safeJson(metaForInline)}` : "";
-
         // Reset style after prefix so message is default console color.
         parts.push(`%c`);
         styles.push("");
 
         const prefix = `${parts.join("")}`;
-        return extra
-            ? [prefix, ...styles, message, extra]
-            : [prefix, ...styles, message];
+        return [prefix, ...styles, message];
     }
 
     public debug(message: any, meta?: any, ...args: any[]): void {
         // eslint-disable-next-line no-console
-        console.debug(...this.fmt("debug", message, meta), ...args);
+        this.logWithStack("debug", message, meta, ...args);
     }
     public info(message: any, meta?: any, ...args: any[]): void {
         // eslint-disable-next-line no-console
-        console.info(...this.fmt("info", message, meta), ...args);
+        this.logWithStack("info", message, meta, ...args);
     }
     public warn(message: any, meta?: any, ...args: any[]): void {
         // eslint-disable-next-line no-console
-        console.warn(...this.fmt("warn", message, meta), ...args);
+        this.logWithStack("warn", message, meta, ...args);
     }
     public error(message: any, meta?: any, ...args: any[]): void {
         // eslint-disable-next-line no-console
-        console.error(...this.fmt("error", message, meta), ...args);
+        this.logWithStack("error", message, meta, ...args);
     }
     public verbose(message: any, meta?: any, ...args: any[]): void {
         // eslint-disable-next-line no-console
-        console.debug(...this.fmt("verbose", message, meta), ...args);
+        this.logWithStack("verbose", message, meta, ...args);
     }
     public group(label?: string): void {
         if (label) {
