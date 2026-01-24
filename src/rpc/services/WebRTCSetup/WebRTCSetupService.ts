@@ -36,10 +36,19 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
             ) {
                 const transport = this.findWebRTCTransport(peerAddress);
                 if (transport) {
+                    const reason =
+                        state === "failed"
+                            ? "WebRTC peer connection failed"
+                            : state === "closed"
+                              ? "WebRTC peer connection closed"
+                              : "WebRTC peer connection disconnected";
+
                     LoggerUtils.logTransportDisconnect(transport, {
-                        reason: `connection state: ${state}`,
+                        reason,
+                        initiator: "unknown",
                         connectionState: state,
-                        iceState
+                        iceState,
+                        logLevel: "info"
                     });
                 }
                 if (
@@ -64,10 +73,19 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
             ) {
                 const transport = this.findWebRTCTransport(peerAddress);
                 if (transport) {
+                    const reason =
+                        iceState === "failed"
+                            ? "WebRTC ICE connection failed"
+                            : iceState === "closed"
+                              ? "WebRTC ICE connection closed"
+                              : "WebRTC ICE connection disconnected";
+
                     LoggerUtils.logTransportDisconnect(transport, {
-                        reason: `ICE connection state: ${iceState}`,
+                        reason,
+                        initiator: "unknown",
                         connectionState,
-                        iceState
+                        iceState,
+                        logLevel: "info"
                     });
                 }
                 if (

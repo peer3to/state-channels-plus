@@ -60,7 +60,10 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         this.timeoutManager.scheduleTask(
             () => {
                 if (!this.didRespond(transport))
-                    this.p2pManager.disconnectConnection(transport);
+                    this.p2pManager.disconnectConnection(transport, {
+                        reason: "cascade after handshake response timeout",
+                        initiator: "local"
+                    });
             },
             this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
             "InitHandshakeService - initHandshake timeout"
@@ -167,7 +170,10 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
                     return;
                 }
 
-                this.p2pManager.disconnectConnection(transport);
+                this.p2pManager.disconnectConnection(transport, {
+                    reason: "cascade after handshake ack timeout",
+                    initiator: "local"
+                });
             },
             this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
             "InitHandshakeService - handshake ack timeout"

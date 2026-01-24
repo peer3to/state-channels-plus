@@ -18,9 +18,11 @@ class LocalTransport extends ATransport {
         this.ws.on("close", (code: number, reason: Buffer) => {
             const closeReason = reason?.toString() || `code: ${code}`;
             LoggerUtils.logTransportDisconnect(this, {
-                reason: `websocket closed: ${closeReason}`,
+                reason: `WebSocket connection closed: ${closeReason}`,
+                initiator: "unknown",
                 connectionState: "closed",
-                socketState: this.ws?.readyState
+                socketState: this.ws?.readyState,
+                logLevel: "info"
             });
             this.close();
         });
@@ -28,10 +30,12 @@ class LocalTransport extends ATransport {
         // Treat socket errors as a connection close for transport lifecycle.
         this.ws.on("error", (error: Error) => {
             LoggerUtils.logTransportDisconnect(this, {
-                reason: "websocket error",
+                reason: "WebSocket connection failed due to error",
+                initiator: "unknown",
                 connectionState: "error",
                 socketState: this.ws?.readyState,
-                error
+                error,
+                logLevel: "info"
             });
             this.close();
         });

@@ -14,46 +14,55 @@ class HolepunchTransport extends ATransport {
         p2pManager: P2PManager
     ) {
         super(p2pManager);
-        console.log("HOLEPUNCH TRANSPORT CREATED");
         this.holepunchSocket = holepunchSocket;
         this.holepunchPeerInfo = holepunchPeerInfo;
         this.holepunchSocket.on("data", async (data: any) => {
             if (data instanceof Uint8Array) {
                 data = Buffer.from(data);
             }
-            console.log("DATA RECEIVED", data);
             this.onMessage(data);
         });
         this.p2pManager.localRpc.initHandshakeService.initHandshake(this);
         this.holepunchSocket.on("close", () => {
             LoggerUtils.logTransportDisconnect(this, {
-                reason: "socket closed",
+                reason: "holepunch socket close event observed",
+                initiator: "unknown",
                 connectionState: "closed",
-                socketState: this.holepunchSocket?.readyState
+                socketState: this.holepunchSocket?.readyState,
+                logLevel: "info"
             });
             this.close();
         });
         this.holepunchSocket.on("error", (error: Error) => {
             LoggerUtils.logTransportDisconnect(this, {
-                reason: "socket error",
+                reason: "holepunch socket error observed",
+                initiator: "unknown",
                 connectionState: "error",
                 socketState: this.holepunchSocket?.readyState,
-                error
+                error,
+                logLevel: "info"
             });
             this.close();
         });
     }
     send(serializedRPC: string): void {
-        console.log("SENDING RPC", serializedRPC);
         this.holepunchSocket.write(serializedRPC);
     }
     onMessage(data: any): void {
         const serializedRPC = data.toString();
-        console.log("RECEIVED RPC", serializedRPC);
         this.p2pManager.onRpc(serializedRPC, this);
     }
+
+    private getPeerAddress(): string {
+        const profile =
+            this.p2pManager.profileManager.getProfileByTransport(this);
+        return (
+            this.peerAddress ||
+            profile?.getEvmAddress()?.toString() ||
+            "unknown"
+        );
+    }
     _close(): void {
-        console.log("closing holepunch socket");
         this.holepunchPeerInfo.ban(true);
         this.holepunchSocket.end();
 

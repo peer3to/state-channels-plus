@@ -2,6 +2,7 @@ import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
 import { Address } from "./types/types";
 import { getChecksumAddress } from "./utils";
+import { LoggerUtils } from "./utils/LoggerUtils";
 
 class ProfileManager {
     private mapTransportToProfile: WeakMap<ATransport, PeerProfile> =
@@ -47,6 +48,14 @@ class ProfileManager {
         if (!profile) return;
         const oldTransport = profile.getTransport();
         if (oldTransport) {
+            const logger = oldTransport.p2pManager.logger;
+            LoggerUtils.logTransportReplacement(
+                logger,
+                oldTransport,
+                newTransport,
+                profileAddress
+            );
+
             const stateManager = oldTransport.p2pManager.stateManager;
             stateManager.timeoutManager.scheduleTask(
                 () => {
@@ -54,7 +63,7 @@ class ProfileManager {
                     this.removeTransport(oldTransport);
                 },
                 stateManager.timeConfig.agreementTime * 1000,
-                "Transport update completed - disconnecting old transport"
+                "transport upgrade grace period elapsed – retiring old transport"
             );
         }
 

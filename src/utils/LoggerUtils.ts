@@ -88,7 +88,6 @@ export class LoggerUtils {
         logger.debug("Fraud proofs included", {
             fraudProofs: fraudProofDetails
         });
-        console.trace("Dispute initiated - validation failure detected");
         logger.groupEnd();
     }
 
@@ -112,8 +111,18 @@ export class LoggerUtils {
             previousBlockProducer,
             previousBlockProducerPostedCalldata
         });
-        console.trace("Timeout detected - creating timeout dispute");
         logger.groupEnd();
+    }
+
+    private static socketReadyStateToString(state: number | string): string {
+        if (typeof state === "string") return state;
+        const states: Record<number, string> = {
+            0: "CONNECTING",
+            1: "OPEN",
+            2: "CLOSING",
+            3: "CLOSED"
+        };
+        return states[state] ?? `UNKNOWN(${state})`;
     }
 
     /**
@@ -125,10 +134,12 @@ export class LoggerUtils {
         transport: ATransport,
         details: {
             reason: string;
+            initiator?: "local" | "remote" | "unknown";
             connectionState?: string;
             socketState?: string | number;
             iceState?: string;
             error?: Error | unknown;
+            logLevel?: "info" | "warn";
         }
     ): void {
         const profile =
@@ -145,22 +156,54 @@ export class LoggerUtils {
         // Normalize socketState to string if it's a number
         const socketStateStr =
             details.socketState !== undefined
-                ? typeof details.socketState === "string"
-                    ? details.socketState
-                    : String(details.socketState)
+                ? this.socketReadyStateToString(details.socketState)
                 : undefined;
 
         this.logPeerDisconnected(logger, {
             transportType: transport.transportType,
             reason: details.reason,
+            initiator: details.initiator || "unknown",
             peerAddress,
             channelId: stateManager.getChannelId(),
             forkId: stateManager.forkId,
             connectionState: details.connectionState,
             socketState: socketStateStr,
             iceState: details.iceState,
-            error: details.error
+            error: details.error,
+            logLevel: details.logLevel
         });
+    }
+
+    static logTransportReplacement(
+        logger: Logger,
+        oldTransport: ATransport,
+        newTransport: ATransport,
+        peerAddress: string
+    ): void {
+        const oldTransportType = this.enumToString(
+            TransportType,
+            oldTransport.transportType
+        );
+        const newTransportType = this.enumToString(
+            TransportType,
+            newTransport.transportType
+        );
+
+        logger.group("🔄 Transport upgrade");
+        logger.info("Replacing transport", {
+            oldTransportType,
+            newTransportType,
+            peerAddress: this.formatHash(peerAddress)
+        });
+        logger.debug("Transport replacement details", {
+            oldTransportType,
+            newTransportType,
+            peerAddressFull: peerAddress,
+            delayMs:
+                oldTransport.p2pManager.stateManager.timeConfig.agreementTime *
+                1000
+        });
+        logger.groupEnd();
     }
 
     static logPeerDisconnected(
@@ -168,6 +211,7 @@ export class LoggerUtils {
         options: {
             transportType: TransportType;
             reason: string;
+            initiator?: "local" | "remote" | "unknown";
             peerAddress?: string;
             channelId?: ChannelId;
             forkId?: ForkId;
@@ -175,40 +219,56 @@ export class LoggerUtils {
             error?: Error | unknown;
             socketState?: string;
             iceState?: string;
+            logLevel?: "info" | "warn";
         }
     ): void {
         const {
             transportType,
             reason,
+            initiator = "unknown",
             peerAddress,
             channelId,
             forkId,
             connectionState,
             error,
             socketState,
-            iceState
+            iceState,
+            logLevel
         } = options;
 
-        const transportTypeName = TransportType[transportType] || "UNKNOWN";
+        const transportTypeName = LoggerUtils.enumToString(
+            TransportType,
+            transportType
+        );
         const peerFormatted = peerAddress
             ? this.formatHash(peerAddress)
             : "unknown";
 
         logger.group("🔌 Peer disconnected");
 
-        logger.warn("Connection disconnected", {
-            transportType: transportTypeName,
-            reason,
-            peer: peerFormatted,
-            channelId: channelId || undefined,
-            forkId: forkId || undefined,
-            connectionState: connectionState || undefined
-        });
+        // Use INFO level for expected disconnects (e.g., WebRTC data channel close during lifecycle)
+        const shouldLogInfo = logLevel === "info";
+        if (shouldLogInfo) {
+            logger.info("Connection disconnected", {
+                transportType: transportTypeName,
+                reason,
+                initiator,
+                peer: peerFormatted
+            });
+        } else {
+            logger.warn("Connection disconnected", {
+                transportType: transportTypeName,
+                reason,
+                initiator,
+                peer: peerFormatted
+            });
+        }
 
         const debugDetails: Record<string, any> = {
             peerFull: peerAddress || undefined,
             transportType: transportTypeName,
             reason,
+            initiator,
             channelId: channelId || undefined,
             forkId: forkId || undefined,
             connectionState: connectionState || undefined,
@@ -231,8 +291,6 @@ export class LoggerUtils {
         }
 
         logger.debug("Disconnect details", debugDetails);
-
-        console.trace("Disconnect stack trace");
 
         logger.groupEnd();
     }

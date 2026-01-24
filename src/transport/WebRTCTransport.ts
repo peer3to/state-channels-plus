@@ -22,19 +22,23 @@ class WebRTCTransport extends ATransport {
             console.log("WebRTC Channel Closed");
             const { connectionState, iceState } = this.getConnectionState();
             LoggerUtils.logTransportDisconnect(this, {
-                reason: "data channel closed",
+                reason: "WebRTC data channel closed",
+                initiator: "unknown",
                 connectionState,
-                iceState
+                iceState,
+                logLevel: "info"
             });
             this.close();
         };
         this.webRTCChannel.onerror = (error: Error) => {
             const { connectionState, iceState } = this.getConnectionState();
             LoggerUtils.logTransportDisconnect(this, {
-                reason: "data channel error",
+                reason: "WebRTC data channel failed due to error",
+                initiator: "unknown",
                 connectionState,
                 iceState,
-                error
+                error,
+                logLevel: "info"
             });
             this.close();
         };
