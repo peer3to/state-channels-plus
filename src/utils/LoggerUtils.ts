@@ -7,7 +7,7 @@ import {
     FraudProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Codec, Type } from "./Codec";
-import { hash } from "@/utils";
+import { difference, hash } from "@/utils";
 import { Address, Hash, ChannelId, ForkId } from "@/types/types";
 import { ethers } from "ethers";
 import {
@@ -19,6 +19,8 @@ import {
 import type { Logger } from "@/utils";
 import { TransportType } from "@/transport/TransportType";
 import ATransport from "@/transport/ATransport";
+import { Block } from "@/models";
+import Storage from "@/storage";
 
 export class LoggerUtils {
     // ====================================
@@ -447,6 +449,23 @@ export class LoggerUtils {
         } else {
             return Number(proofType) as DisputeFraudProofType;
         }
+    }
+
+    static getBlockMetadata(block: Block, storage?: Storage) {
+        const thresholdAddresses = new Set<Address>(
+            storage?.getParticipants(block.coordinates) || []
+        );
+        const allSigners = block.allSignerAddresses;
+        const didntSign = difference(thresholdAddresses, allSigners);
+        return {
+            author: block.author,
+            blockHash: block.hash,
+            blockHeight: block.height,
+            timestamp: block.timestamp,
+            onChainTimestamp: block.onChainTimestamp,
+            allSigners: Array.from(allSigners),
+            didntSign: Array.from(didntSign)
+        };
     }
 
     // ====================================

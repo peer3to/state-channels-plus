@@ -36,7 +36,10 @@ import StateChannelEventListener from "@/StateChannelEventListener";
 import ValidationService from "./ValidationService";
 import Storage from "@/storage";
 import { EventHandler } from "@/eventHandlers/EventHandler";
-import { tryHandleEvmError } from "@/utils/evmErrorHandler";
+import {
+    tryDecodeCustomError,
+    tryHandleEvmError
+} from "@/utils/evmErrorHandler";
 
 // Event handlers and processors
 import P2pEventHooks from "@/P2pEventHooks";
@@ -1043,16 +1046,52 @@ class StateManager {
                 this.timeConfig.agreementTime +
                 this.timeConfig.chainFallbackTime;
 
+            const blockMetadata = LoggerUtils.getBlockMetadata(
+                block,
+                this.storage
+            );
+            const currentTime = Clock.getTimeInSeconds();
+            this.logger.info("Posting block calldata on-chain", {
+                block: blockMetadata,
+                maxTimestamp,
+                currentTime
+            });
+
+            let txResponse: TransactionResponse;
             this.stateChannelManagerContract
                 .postBlockCalldata(block.signedBlock, maxTimestamp)
-                .then((txResponse) => txResponse.wait())
-                .catch((error) => {
-                    this.logger.warn("Error posting block on chain", {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error)
+                .then((tx) => {
+                    txResponse = tx;
+                    return txResponse.wait();
+                })
+                .catch(async (error) => {
+                    const success = await tryHandleEvmError(error, {
+                        logger: this.logger,
+                        signer: this.signer,
+                        tx: txResponse!,
+                        handlers: {
+                            RaceConditionBlockCalldataTimestampTooLate: () => {
+                                const localErrorTimestamp =
+                                    Clock.getTimeInSeconds();
+                                this.logger.warn(
+                                    "RaceConditionBlockCalldataTimestampTooLate",
+                                    {
+                                        localErrorTimestamp,
+                                        maxTimestamp,
+                                        block: blockMetadata
+                                    }
+                                );
+                            }
+                        }
                     });
+                    //
+                    if (success) return;
+                    const custom = tryDecodeCustomError(error);
+                    this.logger.error(
+                        "Posting block calldata ERROR",
+                        custom,
+                        error
+                    );
                 });
         }
     }
