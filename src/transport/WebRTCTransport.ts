@@ -14,12 +14,11 @@ class WebRTCTransport extends ATransport {
             this.onMessage(event.data);
         };
         this.webRTCChannel.onopen = () => {
-            console.log("WebRTC Channel Opened");
+            this.p2pManager.logger.debug("WebRTC channel opened");
             this.p2pManager.localRpc.initHandshakeService.initHandshake(this);
             //TODO! update peerProfile and close old socket
         };
         this.webRTCChannel.onclose = () => {
-            console.log("WebRTC Channel Closed");
             const { connectionState, iceState } = this.getConnectionState();
             LoggerUtils.logTransportDisconnect(this, {
                 reason: "WebRTC data channel closed",
@@ -74,18 +73,22 @@ class WebRTCTransport extends ATransport {
         return { connectionState, iceState };
     }
     send(serializedRPC: string): void {
-        console.log("WebRTC - SendingRPC", serializedRPC);
+        this.p2pManager.logger.debug("Sending RPC over WebRTC", {
+            bytes: serializedRPC.length
+        });
         this.webRTCChannel.send(serializedRPC);
     }
     onMessage(data: any): void {
         if (data instanceof Uint8Array) data = Buffer.from(data);
         if (data instanceof Buffer) data = data.toString();
         const serializedRPC = data;
-        console.log("WebRTC - onMessage", serializedRPC);
+        this.p2pManager.logger.debug("Received RPC over WebRTC", {
+            bytes: serializedRPC.length
+        });
         this.p2pManager.onRpc(serializedRPC, this);
     }
     _close(): void {
-        console.log("closing webRTC channel");
+        this.p2pManager.logger.debug("Closing WebRTC channel");
         this.webRTCChannel.close();
     }
 }
