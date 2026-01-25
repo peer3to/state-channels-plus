@@ -38,15 +38,6 @@ import { LocalDiamondArtifact } from "@/utils/GeneratedArtifacts";
 
 import { createConfig, config, Config } from "@/utils/config";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
-import { isNodeRuntime } from "./EvmFactory";
-
-/**
- * Hardhat console.log event topic signature.
- * Hardhat's console.sol emits log events with this topic when console.log() is called.
- */
-const HARDHAT_CONSOLE_LOG_TOPIC = ethers.id("log(string)");
-const HARDHAT_ABI_CODER = ethers.AbiCoder.defaultAbiCoder();
-const solidityLogger = createLogger({ component: "Solidity" });
 
 /**
  * Manages peer-to-peer communication and state machines
@@ -101,10 +92,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     /**
      * Process logs from an EVM call and emit corresponding events.
      *
-     * Console.log handling strategy:
-     * - Node runtime: Ganache intercepts at opcode level (in setupGanacheConsoleLogHook),
-     * - Browser runtime: Decode Hardhat's log(string) events emitted by console.sol.
-     *
      * @param logs The log output from the EVM
      */
     public processLogs(logs?: any[]): void {
@@ -123,36 +110,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                         ...Object.values(event.args)
                     );
                 }
-            } catch (e) {
-                // Decode Hardhat console.log events.
-                // In browser: This is the primary path (Ganache hook not available).
-                // In Node: This is a fallback (Ganache hook intercepts console.log before it reaches here).
-                if (
-                    topics.length > 0 &&
-                    topics[0] === HARDHAT_CONSOLE_LOG_TOPIC
-                ) {
-                    try {
-                        const [msg] = HARDHAT_ABI_CODER.decode(
-                            ["string"],
-                            data
-                        );
-                        solidityLogger.info(String(msg));
-                        continue;
-                    } catch (decodeErr) {
-                        console.error(
-                            "Failed to decode Hardhat console log",
-                            decodeErr
-                        );
-                    }
-                }
-
-                // Only log parsing errors for non-console.log events
-                if (
-                    isNodeRuntime() ||
-                    topics[0] !== HARDHAT_CONSOLE_LOG_TOPIC
-                ) {
-                    console.error("Error parsing log", e);
-                }
+            } catch {
+                // Unknown log event - ignore silently
             }
         }
     }
