@@ -156,7 +156,7 @@ export async function consolePrecompile(
             const args = abiCoder.decode(handler.types, ethers.hexlify(data));
             // Format and log the message
             const message = handler.format(args);
-            solidityLogger.info(message);
+            solidityLogger.debug(message);
         }
     } catch {
         // If decoding fails, silently ignore
