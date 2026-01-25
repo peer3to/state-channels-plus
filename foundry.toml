@@ -5,6 +5,5 @@ libs = ['node_modules', 'lib']
 test = 'test'
 cache_path  = 'cache_forge'
 remappings = [
-    'hardhat/console.sol=@ganache/console.log/console.sol',
-    'console.sol=@ganache/console.log/console.sol'
+    
 ]

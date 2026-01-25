@@ -90,7 +90,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     }
 
     /**
-     * Process logs from an EVM call and emit corresponding events
+     * Process logs from an EVM call and emit corresponding events.
+     *
      * @param logs The log output from the EVM
      */
     public processLogs(logs?: any[]): void {
@@ -109,8 +110,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                         ...Object.values(event.args)
                     );
                 }
-            } catch (e) {
-                console.error("Error parsing log", e);
+            } catch {
+                // Unknown log event - ignore silently
             }
         }
     }
