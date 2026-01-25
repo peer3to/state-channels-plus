@@ -45,7 +45,7 @@ class HolepunchTransport extends ATransport {
             this.close();
         });
     }
-    send(serializedRPC: string): void {
+    _send(serializedRPC: string): void {
         this.holepunchSocket.write(serializedRPC);
     }
     onMessage(data: any): void {

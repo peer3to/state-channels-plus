@@ -1,7 +1,7 @@
 import type P2PManager from "../P2PManager";
 import ATransport from "../transport/ATransport";
 import { Address } from "../types/types";
-import Rpc, { serializeRpc } from "./Rpc";
+import Rpc from "./Rpc";
 
 class RpcHandler {
     rpc: Rpc;
@@ -12,34 +12,31 @@ class RpcHandler {
     }
 
     public broadcast() {
-        this.p2pManager.broadcastRpc(serializeRpc(this.rpc));
+        this.p2pManager.broadcastRpc(this.rpc);
     }
 
     public sendOne(transport: ATransport): void;
     public sendOne(address: Address): void;
     public sendOne(target: ATransport | Address) {
-        const payload = serializeRpc(this.rpc);
-
         if (target instanceof ATransport) {
-            target.send(payload);
+            target.send(this.rpc);
             return;
         }
 
         const transport =
             this.p2pManager.profileManager.getTransportByEvmAddress(target);
         if (!transport) return;
-        transport.send(payload);
+        transport.send(this.rpc);
     }
 
     public sendMultiple(transports: ATransport[]): void;
     public sendMultiple(addresses: Address[]): void;
     public sendMultiple(targets: ATransport[] | Address[]) {
-        const payload = serializeRpc(this.rpc);
         if (targets.length === 0) return;
 
         if (targets[0] instanceof ATransport) {
             (targets as ATransport[]).forEach((transport) => {
-                transport.send(payload);
+                transport.send(this.rpc);
             });
             return;
         }
@@ -50,7 +47,7 @@ class RpcHandler {
                     address
                 );
             if (!transport) return;
-            transport.send(payload);
+            transport.send(this.rpc);
         });
     }
 }

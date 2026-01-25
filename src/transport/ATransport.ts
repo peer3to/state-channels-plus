@@ -1,5 +1,6 @@
 import P2PManager from "@/P2PManager";
 import { TransportType } from "./TransportType";
+import Rpc, { serializeRpc } from "@/rpc/Rpc";
 
 abstract class ATransport {
     abstract transportType: TransportType;
@@ -11,7 +12,7 @@ abstract class ATransport {
         this.p2pManager = p2pManager;
     }
 
-    abstract send(serializedRPC: string): void;
+    abstract _send(serializedRPC: string): void;
     abstract onMessage(data: any): void;
     protected abstract _close(): void;
 
@@ -21,6 +22,16 @@ abstract class ATransport {
             this.p2pManager.disconnectConnection(this);
             this._close();
         }
+    }
+
+    send(rpc: Rpc): void {
+        this.p2pManager.logger.verbose("Sending RPC", {
+            transportType: TransportType[this.transportType],
+            peerAddress: this.peerAddress,
+            rpc
+        });
+        const serializedRPC = serializeRpc(rpc);
+        this._send(serializedRPC);
     }
 }
 export default ATransport;

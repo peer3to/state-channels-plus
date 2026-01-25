@@ -37,7 +37,7 @@ class WebRTCTransport extends ATransport {
                 connectionState,
                 iceState,
                 error,
-                logLevel: "info"
+                logLevel: "warn"
             });
             this.close();
         };
@@ -72,7 +72,7 @@ class WebRTCTransport extends ATransport {
         }
         return { connectionState, iceState };
     }
-    send(serializedRPC: string): void {
+    _send(serializedRPC: string): void {
         this.p2pManager.logger.debug("Sending RPC over WebRTC", {
             bytes: serializedRPC.length
         });

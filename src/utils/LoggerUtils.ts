@@ -224,77 +224,12 @@ export class LoggerUtils {
             logLevel?: "info" | "warn";
         }
     ): void {
-        const {
-            transportType,
-            reason,
-            initiator = "unknown",
-            peerAddress,
-            channelId,
-            forkId,
-            connectionState,
-            error,
-            socketState,
-            iceState,
-            logLevel
-        } = options;
+        const transportType = TransportType[options.transportType];
 
-        const transportTypeName = LoggerUtils.enumToString(
-            TransportType,
+        logger[options.logLevel || "warn"]("🔌 Peer disconnected", {
+            ...options,
             transportType
-        );
-        const peerFormatted = peerAddress
-            ? this.formatHash(peerAddress)
-            : "unknown";
-
-        logger.group("🔌 Peer disconnected");
-
-        // Use INFO level for expected disconnects (e.g., WebRTC data channel close during lifecycle)
-        const shouldLogInfo = logLevel === "info";
-        if (shouldLogInfo) {
-            logger.info("Connection disconnected", {
-                transportType: transportTypeName,
-                reason,
-                initiator,
-                peer: peerFormatted
-            });
-        } else {
-            logger.warn("Connection disconnected", {
-                transportType: transportTypeName,
-                reason,
-                initiator,
-                peer: peerFormatted
-            });
-        }
-
-        const debugDetails: Record<string, any> = {
-            peerFull: peerAddress || undefined,
-            transportType: transportTypeName,
-            reason,
-            initiator,
-            channelId: channelId || undefined,
-            forkId: forkId || undefined,
-            connectionState: connectionState || undefined,
-            timestamp: Date.now()
-        };
-
-        if (socketState) {
-            debugDetails.socketState = socketState;
-        }
-
-        if (iceState) {
-            debugDetails.iceState = iceState;
-        }
-
-        if (error) {
-            debugDetails.error =
-                error instanceof Error ? error.message : String(error);
-            debugDetails.errorStack =
-                error instanceof Error ? error.stack : undefined;
-        }
-
-        logger.debug("Disconnect details", debugDetails);
-
-        logger.groupEnd();
+        });
     }
 
     // ====================================
@@ -464,7 +399,8 @@ export class LoggerUtils {
             timestamp: block.timestamp,
             onChainTimestamp: block.onChainTimestamp,
             allSigners: Array.from(allSigners),
-            didntSign: Array.from(didntSign)
+            didntSign: Array.from(didntSign),
+            numberOfInboundMessageBlocks: block.messageBlocks.length
         };
     }
 

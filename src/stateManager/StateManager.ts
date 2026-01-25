@@ -720,8 +720,9 @@ class StateManager {
                             strategy: (strategy as any)?.constructor?.name,
                             validationResult:
                                 BlockValidationResult[validationResult],
-                            blockHash: ethers.keccak256(
-                                blockConfirmation.signedBlock.encodedBlock
+                            block: LoggerUtils.getBlockMetadata(
+                                block,
+                                this.storage
                             )
                         }
                     );
@@ -748,7 +749,7 @@ class StateManager {
                 this.logger.warn("onBlockConfirmation - broken inbound chain", {
                     strategy: (strategy as any)?.constructor?.name,
                     validationResult: BlockValidationResult[validationResult],
-                    block
+                    block: LoggerUtils.getBlockMetadata(block, this.storage)
                 });
                 return await strategy.interpretFinalValidationResult(
                     validationResult
@@ -770,7 +771,7 @@ class StateManager {
                         strategy: (strategy as any)?.constructor?.name,
                         validationResult:
                             BlockValidationResult[validationResult],
-                        block
+                        block: LoggerUtils.getBlockMetadata(block, this.storage)
                     }
                 );
                 return await strategy.interpretFinalValidationResult(
@@ -795,7 +796,7 @@ class StateManager {
                         strategy: (strategy as any)?.constructor?.name,
                         validationResult:
                             BlockValidationResult[validationResult],
-                        block
+                        block: LoggerUtils.getBlockMetadata(block, this.storage)
                     }
                 );
                 return await strategy.interpretFinalValidationResult(
@@ -836,7 +837,7 @@ class StateManager {
                         strategy: (strategy as any)?.constructor?.name,
                         validationResult:
                             BlockValidationResult[validationResult],
-                        block
+                        block: LoggerUtils.getBlockMetadata(block, this.storage)
                     }
                 );
                 return await strategy.interpretFinalValidationResult(
@@ -854,7 +855,14 @@ class StateManager {
                 participantChanges,
                 outboundMessageBlock
             );
-
+            const blockMeta = LoggerUtils.getBlockMetadata(block, this.storage);
+            this.logger.info(
+                `onBlockConfirmation - success - ${blockMeta.blockHeight}`,
+                {
+                    strategy: (strategy as any)?.constructor?.name,
+                    block: blockMeta
+                }
+            );
             // success - no disconnect
             return true;
         } catch (error) {
@@ -904,7 +912,7 @@ class StateManager {
         const latestStoredHeight = latestBlock?.height ?? null;
         const nextStoredHeight = this.storage.blocks.getNextBlockHeight(forkId);
         const message =
-            `playTransaction: ` +
+            `playTransaction start: ` +
             ` - myAddress: ${String(this.signerAddress)}` +
             ` - nextToWrite: ${String(nextToWrite)}` +
             ` - txHeight: ${txHeight}` +
@@ -1015,6 +1023,13 @@ class StateManager {
                 outboundMessageBlock
             );
 
+            const blockMeta = LoggerUtils.getBlockMetadata(block, this.storage);
+            this.logger.info(
+                `playTransaction - success - ${blockMeta.blockHeight}`,
+                {
+                    block: blockMeta
+                }
+            );
             return block.blockConfirmationStruct;
         } finally {
             this.mutex.unlock();
@@ -2201,6 +2216,9 @@ class StateManager {
         if (await this.shouldSignBlock(block)) {
             // Sign the block and add our signature to confirmation signatures
             const signature = await block.sign(this.signer);
+            this.logger.debug("Signing block", {
+                block: LoggerUtils.getBlockMetadata(block)
+            });
             block.expandSignatures([signature]);
         }
         // always broadcast if participating
@@ -2247,9 +2265,18 @@ class StateManager {
 
         // step 8 - success callback
         successCallback();
+
+        // step 9 - potentially change status
+        if (this.status === Status.SYNCED) {
+            const participants =
+                await this.diamondStateMachine.getParticipants();
+            const isParticipant = participants.includes(this.signerAddress);
+            if (isParticipant) this.setStatus(Status.PARTICIPATING);
+        }
+
+        // step 10 - Notify any event hooks
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();
         const turnTime = this.timeConfig.p2pTime;
-        // step 9 - Notify any event hooks
         this.p2pEventHooks.onTurn?.(
             nextToWrite,
             turnTime,
@@ -2257,7 +2284,7 @@ class StateManager {
             this.timeConfig.chainFallbackTime
         );
 
-        // step 10 - maybe post block on chain
+        // step 11 - maybe post block on chain
         if (block.author === this.signerAddress) {
             this.timeoutManager.scheduleTask(
                 () => {
@@ -2268,7 +2295,7 @@ class StateManager {
             );
         }
 
-        // step 11 - schedule a timeout check for the next participant
+        // step 12 - schedule a timeout check for the next participant
 
         this.timeoutManager.scheduleTask(
             () =>
@@ -2280,7 +2307,7 @@ class StateManager {
             this.getTimeoutWaitTimeSeconds() * 1000,
             "participantTimeout"
         );
-        // step 12 - try execute from queue
+        // step 13 - try execute from queue
         this.timeoutManager.scheduleTask(
             () => this.tryExecuteFromQueue(),
             0,

@@ -1,6 +1,6 @@
 import IOnMessage from "@/IOnMessage";
 import type StateManager from "@/stateManager";
-import { deserializeRpc } from "@/rpc/Rpc";
+import Rpc, { deserializeRpc } from "@/rpc/Rpc";
 import MainRpcService from "@/rpc/MainRpcService";
 import { P2pSigner } from "@/evm";
 import { ATransport, TransportType } from "@/transport";
@@ -84,21 +84,26 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         await this.holepunch.dispose();
         this.disconnectAll();
     }
-    public broadcastRpc(serializedRPC: string) {
+    public broadcastRpc(rpc: Rpc) {
         const debugConnections = this.openConnections.map((transport) => {
             return {
                 transportType: transport.transportType,
                 peerAddress: transport.peerAddress
             };
         });
-        this.logger.debug("broadcastRpc", { serializedRPC, debugConnections });
+        this.logger.debug("broadcastRpc", { rpc, debugConnections });
         for (const transport of this.openConnections) {
-            transport.send(serializedRPC);
+            transport.send(rpc);
         }
     }
     public onRpc(serializedRpc: string, transport: ATransport) {
         try {
             const rpc = deserializeRpc(serializedRpc);
+            this.logger.verbose("onRpc", {
+                rpc,
+                transportType: TransportType[transport.transportType],
+                peerAddress: transport.peerAddress
+            });
             if (!rpc) {
                 this.disconnectConnection(transport, {
                     reason: "cascade after failed to deserialize RPC message",

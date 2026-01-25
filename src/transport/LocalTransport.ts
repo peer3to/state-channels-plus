@@ -40,7 +40,7 @@ class LocalTransport extends ATransport {
             this.close();
         });
     }
-    send(serializedRPC: string): void {
+    _send(serializedRPC: string): void {
         this.ws.send(serializedRPC);
     }
     onMessage(data: any): void {

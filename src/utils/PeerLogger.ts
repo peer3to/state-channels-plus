@@ -153,8 +153,8 @@ class BrowserLogger implements Logger {
     ): void {
         const method = level === "verbose" ? "debug" : level;
         const details = {
-            meta,
-            leftoverArgs: args
+            args,
+            meta
         };
 
         if (
