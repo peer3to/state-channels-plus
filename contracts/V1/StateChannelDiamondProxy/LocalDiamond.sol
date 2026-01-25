@@ -346,23 +346,21 @@ contract LocalDiamond is StateChannelManagerProxy {
     // ========== Override for debugging - Browser compatible console logs ==========
 
     function isBlockAuthentic(SignedBlock memory _block) public view override returns (bool) {
-        console.log("========================================");
-        console.log("***LocalDiamond isBlockAuthentic CALLED ***");
-        console.log("========================================");
-
         // try decode block
         bytes memory data = abi.encodeCall(this.decodeBlock, (_block.encodedBlock));
         (bool success, bytes memory encodedBlock) = address(this).staticcall(data);
         if (!success) {
+            console.log("isBlockAuthentic - false - 1");
             return false;
         }
         Block memory decodedBlock = abi.decode(encodedBlock, (Block));
         (address signer, bool isValid) =
             UtilityFacet(utilityFacetAddress).retrieveSignerAddress(encodedBlock, _block.signature);
         if (signer != decodedBlock.transaction.header.participant || !isValid) {
+            console.log("isBlockAuthentic - false - 2");
             return false;
         }
-
+        console.log("isBlockAuthentic - true");
         return true;
     }
 }
