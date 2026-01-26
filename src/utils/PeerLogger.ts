@@ -1,6 +1,7 @@
 import type winston from "winston";
 import { config, isNodeRuntime } from "./config";
 import { Address } from "@/types/types";
+import { setupCrashHandler, CrashUploadConfig } from "./logging/CrashHandler";
 export interface LoggerContext {
     peerId?: number;
     peerAddress?: Address;
@@ -47,22 +48,74 @@ export type Logger = {
     child: (context: LoggerContext) => Logger;
     clear?: () => void;
     close?: () => void;
+    // For crash handler
+    getAllLogs?: () => any[];
+    clearLogs?: () => void;
 };
 
 class BrowserLogger implements Logger {
     public level?: string;
     private context: LoggerContext;
+    private logs: Array<{ entry: any; size: number }> = [];
+    private currentSize: number = 0;
+    private maxSize: number;
+    private enableMemoryStorage: boolean;
 
-    constructor(context: LoggerContext = {}, level?: string) {
+    constructor(
+        context: LoggerContext = {},
+        level?: string,
+        enableMemoryStorage: boolean = false
+    ) {
         this.context = context;
         this.level = level;
+        this.enableMemoryStorage = enableMemoryStorage;
+        this.maxSize = (config.CRASH_LOG_MAX_SIZE_MB || 10) * 1024 * 1024;
     }
 
     public child(context: LoggerContext): Logger {
         return new BrowserLogger(
             { ...this.context, ...(context || {}) },
-            this.level
+            this.level,
+            this.enableMemoryStorage
         );
+    }
+
+    private storeLog(level: string, message: any, meta?: any): void {
+        if (!this.enableMemoryStorage) return;
+
+        const logEntry = {
+            ts: Date.now(),
+            level,
+            message: typeof message === "string" ? message : String(message),
+            component: this.context.component,
+            ...this.context,
+            ...(meta && typeof meta === "object" ? meta : {})
+        };
+
+        // Use replacer to handle BigInt serialization
+        const entrySize =
+            JSON.stringify(logEntry, (_key, v) =>
+                typeof v === "bigint" ? v.toString() : v
+            ).length * 2;
+        this.logs.push({ entry: logEntry, size: entrySize });
+        this.currentSize += entrySize;
+
+        // Maintain circular buffer
+        while (this.currentSize > this.maxSize && this.logs.length > 0) {
+            const removed = this.logs.shift();
+            if (removed) {
+                this.currentSize -= removed.size;
+            }
+        }
+    }
+
+    public getAllLogs(): any[] {
+        return this.logs.map((item) => item.entry);
+    }
+
+    public clearLogs(): void {
+        this.logs = [];
+        this.currentSize = 0;
     }
 
     private isPlainObject(value: unknown): value is Record<string, any> {
@@ -208,22 +261,27 @@ class BrowserLogger implements Logger {
     }
 
     public debug(message: any, meta?: any, ...args: any[]): void {
+        this.storeLog("debug", message, meta);
         // eslint-disable-next-line no-console
         console.debug(...this.fmt("debug", message, meta), ...args);
     }
     public info(message: any, meta?: any, ...args: any[]): void {
+        this.storeLog("info", message, meta);
         // eslint-disable-next-line no-console
         console.info(...this.fmt("info", message, meta), ...args);
     }
     public warn(message: any, meta?: any, ...args: any[]): void {
+        this.storeLog("warn", message, meta);
         // eslint-disable-next-line no-console
         console.warn(...this.fmt("warn", message, meta), ...args);
     }
     public error(message: any, meta?: any, ...args: any[]): void {
+        this.storeLog("error", message, meta);
         // eslint-disable-next-line no-console
         console.error(...this.fmt("error", message, meta), ...args);
     }
     public verbose(message: any, meta?: any, ...args: any[]): void {
+        this.storeLog("verbose", message, meta);
         // eslint-disable-next-line no-console
         console.debug(...this.fmt("verbose", message, meta), ...args);
     }
@@ -296,11 +354,37 @@ let globalLogger: Logger | null = null;
 function getGlobalLogger(): Logger {
     if (!globalLogger) {
         if (!isNodeRuntime()) {
-            globalLogger = new BrowserLogger({}, config.LOG_LEVEL);
+            globalLogger = new BrowserLogger(
+                {},
+                config.LOG_LEVEL,
+                config.ENABLE_CRASH_LOG_COLLECTION
+            );
+            // Set up crash handler for browser
+            if (
+                config.ENABLE_CRASH_LOG_COLLECTION &&
+                config.CRASH_LOG_UPLOAD_ENDPOINT
+            ) {
+                const crashConfig: CrashUploadConfig = {
+                    enabled: true,
+                    uploadEndpoint: config.CRASH_LOG_UPLOAD_ENDPOINT,
+                    apiToken: config.CRASH_LOG_API_TOKEN || "",
+                    prefix: "crash-"
+                };
+                setupCrashHandler(globalLogger, crashConfig);
+            }
             return globalLogger;
         }
 
         // Lazy-load winston only in Node runtimes.
+        if (!isNodeRuntime()) {
+            // Fallback to browser logger if somehow we got here
+            globalLogger = new BrowserLogger(
+                {},
+                config.LOG_LEVEL,
+                config.ENABLE_CRASH_LOG_COLLECTION
+            );
+            return globalLogger;
+        }
 
         const winstonImpl = require("winston") as typeof import("winston");
 
@@ -339,12 +423,14 @@ function getGlobalLogger(): Logger {
         // Create the single global logger with exception/rejection handling
         const transports: winston.transport[] = [
             new winstonImpl.transports.Console({
-                handleExceptions: true,
-                handleRejections: true
+                handleExceptions: false, // We handle this via crash handler
+                handleRejections: false // We handle this via crash handler
             })
         ];
 
-        globalLogger = winstonImpl.createLogger({
+        // Note: MemoryTransport is browser-only and handled separately in BrowserLogger
+
+        const winstonLogger = winstonImpl.createLogger({
             levels: customLevels.levels,
             level: logLevel,
             format: winstonImpl.format.combine(
@@ -356,6 +442,19 @@ function getGlobalLogger(): Logger {
             transports,
             exitOnError: false
         });
+
+        // Set up crash handler if enabled
+        if (config.ENABLE_CRASH_LOG_COLLECTION) {
+            const crashConfig: CrashUploadConfig = {
+                enabled: true,
+                uploadEndpoint: config.CRASH_LOG_UPLOAD_ENDPOINT || "",
+                apiToken: config.CRASH_LOG_API_TOKEN || "",
+                prefix: "crash-"
+            };
+            setupCrashHandler(winstonLogger, crashConfig);
+        }
+
+        globalLogger = winstonLogger;
     }
     return globalLogger;
 }

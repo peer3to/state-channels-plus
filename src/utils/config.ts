@@ -12,6 +12,11 @@ export interface Config {
     LOG_EXCLUDE_TAGS: string;
     EXCLUDE_LOG_TAGS: string;
     HOLEPUNCH_RELAYER_URLS: string[];
+    // Crash log collection
+    ENABLE_CRASH_LOG_COLLECTION: boolean;
+    CRASH_LOG_UPLOAD_ENDPOINT: string;
+    CRASH_LOG_API_TOKEN: string;
+    CRASH_LOG_MAX_SIZE_MB: number;
 }
 
 const DEFAULT_CONFIG: Config = {
@@ -25,7 +30,12 @@ const DEFAULT_CONFIG: Config = {
     LOG_LEVEL: "info",
     LOG_EXCLUDE_TAGS: "",
     EXCLUDE_LOG_TAGS: "",
-    HOLEPUNCH_RELAYER_URLS: []
+    HOLEPUNCH_RELAYER_URLS: [],
+    // Crash log collection defaults - enabled by default with localhost endpoint
+    ENABLE_CRASH_LOG_COLLECTION: true,
+    CRASH_LOG_UPLOAD_ENDPOINT: "http://localhost:3001",
+    CRASH_LOG_API_TOKEN: "",
+    CRASH_LOG_MAX_SIZE_MB: 10
 };
 
 export function isNodeRuntime() {

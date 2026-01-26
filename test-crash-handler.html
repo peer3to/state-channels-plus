@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crash Handler Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        h1 { color: #4ec9b0; }
+        h2 { color: #569cd6; margin-top: 30px; }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #1177bb;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border-left: 4px solid #569cd6;
+            background: #252526;
+        }
+        .success { border-left-color: #4ec9b0; }
+        .error { border-left-color: #f48771; }
+        .warning { border-left-color: #dcdcaa; }
+        pre {
+            background: #252526;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            border: 1px solid #3e3e42;
+        }
+        .log-output {
+            height: 300px;
+            overflow-y: auto;
+            background: #1e1e1e;
+            border: 1px solid #3e3e42;
+            padding: 10px;
+            margin: 10px 0;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin: 2px 0;
+            padding: 2px 5px;
+        }
+        .log-error { color: #f48771; }
+        .log-warn { color: #dcdcaa; }
+        .log-info { color: #4ec9b0; }
+        .log-debug { color: #569cd6; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Crash Handler Test Page</h1>
+    
+    <div class="status">
+        <strong>Status:</strong> <span id="status">Initializing...</span>
+    </div>
+
+    <h2>📝 Test Controls</h2>
+    <div>
+        <button onclick="testLoggerError()">Test logger.error()</button>
+        <button onclick="testChildLoggerError()">Test child logger.error()</button>
+        <button onclick="testMultipleLogs()">Test Multiple Logs</button>
+        <button onclick="testWithBigInt()">Test with BigInt</button>
+        <button onclick="testThrowError()">Test Throw Error (window.error)</button>
+        <button onclick="testUnhandledRejection()">Test Unhandled Rejection</button>
+        <button onclick="clearLogs()">Clear Console</button>
+    </div>
+
+    <h2>📊 Configuration</h2>
+    <div>
+        <label>
+            <input type="checkbox" id="enableCrashLogs" checked> Enable Crash Log Collection
+        </label>
+        <br>
+        <label>
+            Server URL: <input type="text" id="serverUrl" value="http://localhost:3001" style="width: 300px; background: #3c3c3c; color: #d4d4d4; border: 1px solid #3e3e42; padding: 5px;">
+        </label>
+        <br>
+        <button onclick="reinitializeLogger()">Reinitialize Logger</button>
+    </div>
+
+    <h2>📺 Console Output</h2>
+    <div class="log-output" id="consoleOutput"></div>
+
+    <h2>📦 Memory Logs (will be sent on crash)</h2>
+    <button onclick="showMemoryLogs()">Show Current Memory Logs</button>
+    <pre id="memoryLogs">Click "Show Current Memory Logs" to view</pre>
+
+    <script type="module">
+        // Intercept console methods to display in UI
+        const consoleOutput = document.getElementById('consoleOutput');
+        const originalConsole = {
+            log: console.log,
+            error: console.error,
+            warn: console.warn,
+            info: console.info
+        };
+
+        function addLogEntry(level, ...args) {
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${level}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] [${level.toUpperCase()}] ${args.map(a => 
+                typeof a === 'object' ? JSON.stringify(a, (k, v) => typeof v === 'bigint' ? v.toString() : v, 2) : String(a)
+            ).join(' ')}`;
+            consoleOutput.appendChild(entry);
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        }
+
+        console.log = (...args) => { originalConsole.log(...args); addLogEntry('info', ...args); };
+        console.error = (...args) => { originalConsole.error(...args); addLogEntry('error', ...args); };
+        console.warn = (...args) => { originalConsole.warn(...args); addLogEntry('warn', ...args); };
+        console.info = (...args) => { originalConsole.info(...args); addLogEntry('info', ...args); };
+
+        window.clearLogs = () => {
+            consoleOutput.innerHTML = '';
+        };
+
+        // Import and initialize logger
+        let logger;
+        let childLogger;
+        
+        // Inline CrashHandler implementation for testing
+        async function compressLogs(logs) {
+            console.log("[CrashHandler] compressLogs: Starting compression", { logCount: logs.length });
+            const ndjson = logs.map((l) => JSON.stringify(l, (_key, v) => typeof v === "bigint" ? v.toString() : v)).join("\n");
+            console.log("[CrashHandler] compressLogs: NDJSON created", { size: ndjson.length });
+
+            if (typeof CompressionStream === "undefined") {
+                console.log("[CrashHandler] compressLogs: CompressionStream not available, using uncompressed");
+                return {
+                    blob: new Blob([ndjson], { type: "application/x-ndjson" }),
+                    isCompressed: false
+                };
+            }
+
+            console.log("[CrashHandler] compressLogs: Using CompressionStream (gzip)");
+            const stream = new Blob([ndjson]).stream().pipeThrough(new CompressionStream("gzip"));
+            const blob = await new Response(stream).blob();
+            console.log("[CrashHandler] compressLogs: Compression complete", { 
+                originalSize: ndjson.length, 
+                compressedSize: blob.size,
+                ratio: (blob.size / ndjson.length * 100).toFixed(2) + "%"
+            });
+            return { blob, isCompressed: true };
+        }
+
+        async function sendLogsToServer(compressionResult, config, errorInfo) {
+            console.log("[CrashHandler] sendLogsToServer: Starting send", {
+                endpoint: config.uploadEndpoint,
+                blobSize: compressionResult.blob.size,
+                isCompressed: compressionResult.isCompressed
+            });
+
+            const extension = compressionResult.isCompressed ? ".ndjson.gz" : ".ndjson";
+            const filename = `${config.prefix || "crash-"}${Date.now()}-${Math.random().toString(36).slice(2, 8)}${extension}`;
+            console.log("[CrashHandler] sendLogsToServer: Generated filename", { filename });
+
+            const metadata = {
+                timestamp: errorInfo.timestamp,
+                errorName: errorInfo.error.name,
+                errorMessage: errorInfo.error.message.slice(0, 200),
+                userAgent: errorInfo.userAgent?.slice(0, 100),
+                url: errorInfo.url?.split("?")[0]
+            };
+
+            const metadataHeader = btoa(JSON.stringify(metadata));
+            console.log("[CrashHandler] sendLogsToServer: Metadata prepared", metadata);
+
+            const headers = {
+                "Content-Type": "application/x-ndjson",
+                "X-Filename": filename,
+                "X-Metadata": metadataHeader
+            };
+
+            if (config.apiToken) {
+                headers["Authorization"] = `Bearer ${config.apiToken}`;
+                console.log("[CrashHandler] sendLogsToServer: API token included");
+            }
+
+            if (compressionResult.isCompressed) {
+                headers["Content-Encoding"] = "gzip";
+            }
+
+            console.log("[CrashHandler] sendLogsToServer: Sending fetch request", {
+                method: "POST",
+                url: config.uploadEndpoint,
+                headers: Object.keys(headers),
+                bodySize: compressionResult.blob.size
+            });
+
+            try {
+                const response = await fetch(config.uploadEndpoint, {
+                    method: "POST",
+                    headers,
+                    body: compressionResult.blob
+                });
+
+                console.log("[CrashHandler] sendLogsToServer: Response received", {
+                    status: response.status,
+                    statusText: response.statusText,
+                    ok: response.ok
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text().catch(() => "Unable to read response");
+                    console.error("[CrashHandler] sendLogsToServer: Request failed", {
+                        status: response.status,
+                        statusText: response.statusText,
+                        errorText
+                    });
+                    throw new Error(`Failed to send crash logs: ${response.status} ${response.statusText}`);
+                }
+
+                const responseData = await response.json().catch(() => ({}));
+                console.log("[CrashHandler] sendLogsToServer: Success!", responseData);
+            } catch (error) {
+                console.error("[CrashHandler] sendLogsToServer: Fetch error", error);
+                throw error;
+            }
+        }
+
+        class CrashHandlerState {
+            constructor() {
+                this.crashUploadInProgress = false;
+            }
+            tryStartUpload() {
+                if (this.crashUploadInProgress) {
+                    return false;
+                }
+                this.crashUploadInProgress = true;
+                return true;
+            }
+        }
+
+        async function handleCrashEvent(error, context, memoryTransport, crashUploadConfig, state) {
+            console.log("[CrashHandler] handleCrashEvent: Triggered", {
+                context,
+                errorName: error.name,
+                errorMessage: error.message
+            });
+
+            if (!state.tryStartUpload()) {
+                console.log("[CrashHandler] handleCrashEvent: Upload already in progress, skipping");
+                return;
+            }
+
+            console.log("[CrashHandler] handleCrashEvent: Starting upload process");
+
+            try {
+                const logs = memoryTransport.getAllLogs();
+                console.log("[CrashHandler] handleCrashEvent: Retrieved logs from memory", { logCount: logs.length });
+
+                const contextMessage = context === "error-log"
+                    ? `Error logged: ${error.message}`
+                    : `Uncaught ${context}: ${error.message}`;
+
+                logs.push({
+                    ts: Date.now(),
+                    level: "error",
+                    message: contextMessage,
+                    component: "CrashHandler",
+                    error: {
+                        name: error.name,
+                        message: error.message,
+                        stack: error.stack
+                    }
+                });
+                console.log("[CrashHandler] handleCrashEvent: Added crash entry to logs", { totalLogs: logs.length });
+
+                console.log("[CrashHandler] handleCrashEvent: Starting compression");
+                const compressionResult = await compressLogs(logs);
+
+                console.log("[CrashHandler] handleCrashEvent: Starting server upload");
+                await sendLogsToServer(compressionResult, crashUploadConfig, {
+                    error,
+                    timestamp: Date.now(),
+                    userAgent: typeof navigator !== "undefined" ? navigator.userAgent : undefined,
+                    url: typeof window !== "undefined" ? window.location.href : undefined
+                });
+
+                console.log("[CrashHandler] handleCrashEvent: Upload successful, clearing logs");
+                memoryTransport.clearLogs();
+                console.log("[CrashHandler] handleCrashEvent: Complete!");
+            } catch (sendError) {
+                console.error("[CrashHandler] handleCrashEvent: Failed to send crash logs:", sendError);
+                console.error("[CrashHandler] handleCrashEvent: Error details:", {
+                    name: sendError instanceof Error ? sendError.name : "Unknown",
+                    message: sendError instanceof Error ? sendError.message : String(sendError),
+                    stack: sendError instanceof Error ? sendError.stack : undefined
+                });
+            }
+        }
+
+        function setupCrashHandler(logger, config) {
+            console.log("[CrashHandler] setupCrashHandler called", {
+                loggerType: logger?.constructor?.name,
+                configEnabled: config.enabled,
+                hasUploadEndpoint: !!config.uploadEndpoint,
+                uploadEndpoint: config.uploadEndpoint
+            });
+
+            const memory = {
+                getAllLogs: () => logger.getAllLogs(),
+                clearLogs: () => logger.clearLogs()
+            };
+
+            console.log("[CrashHandler] Memory transport check", {
+                hasMemory: !!memory,
+                hasGetAllLogs: !!(memory?.getAllLogs),
+                hasClearLogs: !!(memory?.clearLogs)
+            });
+
+            const state = new CrashHandlerState();
+
+            if (!memory || !config.enabled) {
+                if (!memory) {
+                    console.warn("[CrashHandler] Memory transport not found, crash logs won't be collected");
+                }
+                if (!config.enabled) {
+                    console.warn("[CrashHandler] Crash log collection is disabled");
+                }
+                return;
+            }
+
+            if (!config.uploadEndpoint) {
+                console.warn("[CrashHandler] Upload endpoint not configured, crash logs won't be sent");
+                return;
+            }
+
+            console.log("[CrashHandler] Setting up crash handler - all checks passed");
+
+            const handle = (error, context) => handleCrashEvent(error, context, memory, config, state);
+
+            const loggerConstructor = logger.constructor;
+            const loggerName = loggerConstructor?.name || "";
+            const isBrowserLogger = loggerName === "BrowserLogger" || loggerName === "_BrowserLogger" || 
+                                   loggerName.includes("BrowserLogger") ||
+                                   (logger.getAllLogs && typeof logger.getAllLogs === "function" && 
+                                    logger.clearLogs && typeof logger.clearLogs === "function");
+
+            console.log("[CrashHandler] Determining interception strategy", {
+                loggerType: loggerName,
+                isBrowserLogger,
+                hasErrorMethod: typeof logger.error === "function",
+                hasGetAllLogs: typeof logger.getAllLogs === "function"
+            });
+
+            if (isBrowserLogger) {
+                const BrowserLoggerPrototype = loggerConstructor.prototype;
+                if (BrowserLoggerPrototype && !BrowserLoggerPrototype._crashHandlerInstalled) {
+                    const originalError = BrowserLoggerPrototype.error;
+                    BrowserLoggerPrototype.error = function (message, meta, ...args) {
+                        console.log("[CrashHandler] logger.error intercepted (prototype)", {
+                            message: typeof message === "string" ? message : "Non-string message",
+                            hasMeta: !!meta,
+                            loggerType: this.constructor.name,
+                            hasMemoryStorage: this.enableMemoryStorage
+                        });
+
+                        const result = originalError.call(this, message, meta, ...args);
+
+                        setTimeout(() => {
+                            const error = message instanceof Error 
+                                ? message 
+                                : new Error(typeof message === "string" ? message : "Error logged");
+                            console.log("[CrashHandler] Triggering handleCrashEvent from logger.error (prototype)");
+                            handle(error, "error-log");
+                        }, 0);
+
+                        return result;
+                    };
+                    BrowserLoggerPrototype._crashHandlerInstalled = true;
+                    console.log("[CrashHandler] ✅ Installed error interceptor at BrowserLogger prototype level");
+                } else {
+                    console.log("[CrashHandler] Error interceptor already installed on BrowserLogger prototype");
+                }
+            } else {
+                const originalError = logger.error.bind(logger);
+                logger.error = function (message, meta, ...args) {
+                    console.log("[CrashHandler] logger.error intercepted (instance)", {
+                        message: typeof message === "string" ? message : "Non-string message",
+                        hasMeta: !!meta
+                    });
+
+                    const result = originalError(message, meta, ...args);
+
+                    setTimeout(() => {
+                        const error = message instanceof Error 
+                            ? message 
+                            : new Error(typeof message === "string" ? message : "Error logged");
+                        console.log("[CrashHandler] Triggering handleCrashEvent from logger.error (instance)");
+                        handle(error, "error-log");
+                    }, 0);
+
+                    return result;
+                };
+                console.log("[CrashHandler] ✅ Installed error interceptor at logger instance level");
+            }
+
+            if (typeof window !== "undefined") {
+                window.addEventListener("error", (e) => {
+                    console.log("[CrashHandler] window.error event caught", {
+                        message: e.message,
+                        filename: e.filename,
+                        lineno: e.lineno,
+                        colno: e.colno,
+                        hasError: !!e.error
+                    });
+                    if (e.error) {
+                        handle(e.error, "exception");
+                    }
+                });
+
+                window.addEventListener("unhandledrejection", (e) => {
+                    console.log("[CrashHandler] unhandledrejection event caught", {
+                        reason: e.reason instanceof Error ? e.reason.message : String(e.reason)
+                    });
+                    handle(
+                        e.reason instanceof Error
+                            ? e.reason
+                            : new Error(String(e.reason)),
+                        "rejection"
+                    );
+                });
+            }
+
+            return { handle };
+        }
+        
+        // Create BrowserLogger inline (simplified version for testing)
+        class BrowserLogger {
+            constructor(context = {}, level = 'debug', enableMemoryStorage = true) {
+                this.context = context;
+                this.level = level;
+                this.enableMemoryStorage = enableMemoryStorage;
+                this.logs = [];
+                this.currentSize = 0;
+                this.maxSize = 10 * 1024 * 1024;
+            }
+
+            child(context) {
+                return new BrowserLogger(
+                    { ...this.context, ...(context || {}) },
+                    this.level,
+                    this.enableMemoryStorage
+                );
+            }
+
+            storeLog(level, message, meta) {
+                if (!this.enableMemoryStorage) return;
+
+                const logEntry = {
+                    ts: Date.now(),
+                    level,
+                    message: typeof message === "string" ? message : String(message),
+                    component: this.context.component,
+                    ...this.context,
+                    ...(meta && typeof meta === "object" ? meta : {})
+                };
+
+                const entrySize = JSON.stringify(logEntry, (_key, v) =>
+                    typeof v === "bigint" ? v.toString() : v
+                ).length * 2;
+                
+                this.logs.push({ entry: logEntry, size: entrySize });
+                this.currentSize += entrySize;
+
+                while (this.currentSize > this.maxSize && this.logs.length > 0) {
+                    const removed = this.logs.shift();
+                    if (removed) {
+                        this.currentSize -= removed.size;
+                    }
+                }
+            }
+
+            getAllLogs() {
+                return this.logs.map((item) => item.entry);
+            }
+
+            clearLogs() {
+                this.logs = [];
+                this.currentSize = 0;
+            }
+
+            debug(message, meta, ...args) {
+                this.storeLog("debug", message, meta);
+                console.debug(`[DEBUG]`, message, meta, ...args);
+            }
+
+            info(message, meta, ...args) {
+                this.storeLog("info", message, meta);
+                console.info(`[INFO]`, message, meta, ...args);
+            }
+
+            warn(message, meta, ...args) {
+                this.storeLog("warn", message, meta);
+                console.warn(`[WARN]`, message, meta, ...args);
+            }
+
+            error(message, meta, ...args) {
+                this.storeLog("error", message, meta);
+                console.error(`[ERROR]`, message, meta, ...args);
+            }
+        }
+
+        window.BrowserLogger = BrowserLogger;
+
+        async function initializeLogger() {
+            const enableCrashLogs = document.getElementById('enableCrashLogs').checked;
+            const serverUrl = document.getElementById('serverUrl').value;
+
+            console.log('Initializing logger...', { enableCrashLogs, serverUrl });
+
+            // Create logger
+            logger = new BrowserLogger({}, 'debug', enableCrashLogs);
+            childLogger = logger.child({ component: 'ChildComponent', peerId: 123 });
+
+            // Set up crash handler (inline for testing)
+            if (enableCrashLogs && serverUrl) {
+                setupCrashHandler(logger, {
+                    enabled: true,
+                    uploadEndpoint: serverUrl,
+                    apiToken: '',
+                    prefix: 'test-crash-'
+                });
+            }
+
+            document.getElementById('status').textContent = enableCrashLogs 
+                ? `✅ Logger initialized with crash handler (${serverUrl})`
+                : '✅ Logger initialized without crash handler';
+            
+            console.log('Logger initialized successfully');
+        }
+
+        window.reinitializeLogger = initializeLogger;
+
+        window.testLoggerError = () => {
+            console.log('Testing logger.error()...');
+            logger.error('TEST ERROR: This is a test error from main logger', {
+                testData: 'some data',
+                timestamp: Date.now()
+            });
+        };
+
+        window.testChildLoggerError = () => {
+            console.log('Testing child logger.error()...');
+            childLogger.error('TEST ERROR: This is a test error from child logger', {
+                testData: 'child data',
+                timestamp: Date.now()
+            });
+        };
+
+        window.testMultipleLogs = () => {
+            console.log('Testing multiple logs...');
+            logger.info('Log 1: Info message');
+            logger.warn('Log 2: Warning message');
+            logger.debug('Log 3: Debug message');
+            logger.error('Log 4: ERROR - This should trigger crash handler', {
+                context: 'multiple logs test'
+            });
+        };
+
+        window.testWithBigInt = () => {
+            console.log('Testing with BigInt...');
+            logger.error('TEST ERROR with BigInt', {
+                bigIntValue: 123456789012345678901234567890n,
+                normalValue: 42,
+                timestamp: Date.now()
+            });
+        };
+
+        window.testThrowError = () => {
+            console.log('Testing throw error (window.error)...');
+            setTimeout(() => {
+                throw new Error('TEST: Uncaught exception for testing');
+            }, 100);
+        };
+
+        window.testUnhandledRejection = () => {
+            console.log('Testing unhandled rejection...');
+            Promise.reject(new Error('TEST: Unhandled rejection for testing'));
+        };
+
+        window.showMemoryLogs = () => {
+            const logs = logger.getAllLogs();
+            document.getElementById('memoryLogs').textContent = JSON.stringify(logs, null, 2);
+            console.log(`Memory contains ${logs.length} logs`);
+        };
+
+        // Initialize on load
+        initializeLogger().catch(err => {
+            document.getElementById('status').textContent = `❌ Failed to initialize: ${err.message}`;
+            console.error('Initialization error:', err);
+        });
+    </script>
+</body>
+</html>
