@@ -60,6 +60,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
         }
         const localTime = Clock.getTimeInSeconds();
         const rtt = localTime - challenge.initTime;
+        this.service.logger.info(`Handshake response RTT: ${rtt}`);
         if (rtt > this.p2pManager.stateManager.timeConfig.agreementTime) {
             this.p2pManager.disconnectConnection(this.senderTransport, {
                 reason: "cascade after handshake response RTT exceeds agreementTime",
@@ -85,7 +86,9 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             challengeHashBytes,
             signature
         );
-
+        this.service.logger.info(
+            `Handshake response signer address ${signerAddress} and RTT: ${rtt}`
+        );
         // Check if this peer is blacklisted
         if (this.p2pManager.isBlacklisted(signerAddress)) {
             this.service.logger.debug(

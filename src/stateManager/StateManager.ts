@@ -478,7 +478,7 @@ class StateManager {
             );
 
             // Update local state to the reduced fork
-            this.logger.debug(
+            this.logger.info(
                 `Reduction complete: transitioning to fork ${reducedForkId}`
             );
             this.setGenesisState(
@@ -489,7 +489,9 @@ class StateManager {
                 outboundMessageBlock
             );
         } catch (error) {
+            const custom = tryDecodeCustomError(error);
             this.logger.error("Error computing reduced snapshot data", {
+                custom,
                 error: error instanceof Error ? error.message : String(error)
             });
             throw error;
@@ -579,6 +581,8 @@ class StateManager {
             this.forkId
         );
 
+        this.logger.info("setLatestState - nextToWrite", { nextToWrite });
+
         let timeLost = Clock.getTimeInSeconds() - normalizedTimestamp;
         timeLost = timeLost < 0 ? 0 : timeLost; // if timestamp is in the future - no time is lost
         const turnTime = this.timeConfig.p2pTime;
@@ -618,10 +622,10 @@ class StateManager {
         outboundMessageBlock?: MessageBlockStruct
     ): Promise<void> {
         const normalizedGenesisTimestamp = Number(genesisTimestamp);
-        this.logger.verbose("Setting genesis state", {
+        this.logger.info("Setting genesis state", {
             forkId,
             genesisTimestamp: normalizedGenesisTimestamp,
-            participantCount: snapshotData.participants.length
+            participant: snapshotData.participants
         });
 
         // generate and store genesis snapshot
@@ -1104,7 +1108,7 @@ class StateManager {
                     const custom = tryDecodeCustomError(error);
                     this.logger.error(
                         "Posting block calldata ERROR",
-                        custom,
+                        custom, // tryHandleEvmError already logged the custom error if not null
                         error
                     );
                 });

@@ -6,10 +6,7 @@ import ATransport from "@/transport/ATransport";
 import { Codec, getChecksumAddress, tryDecodeCustomError, Type } from "@/utils";
 import { ethers } from "ethers";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import {
-    StateSnapshotStruct,
-    MessageBlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import SpectateServiceRpcMethods from "./SpectateRpcMethods";
 import type P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";

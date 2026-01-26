@@ -53,15 +53,6 @@ class HolepunchTransport extends ATransport {
         this.p2pManager.onRpc(serializedRPC, this);
     }
 
-    private getPeerAddress(): string {
-        const profile =
-            this.p2pManager.profileManager.getProfileByTransport(this);
-        return (
-            this.peerAddress ||
-            profile?.getEvmAddress()?.toString() ||
-            "unknown"
-        );
-    }
     _close(): void {
         this.holepunchPeerInfo.ban(true);
         this.holepunchSocket.end();
