@@ -18,10 +18,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             Math.abs(time - localTime) >
             this.p2pManager.stateManager.timeConfig.agreementTime
         ) {
-            this.p2pManager.disconnectConnection(this.senderTransport, {
-                reason: "cascade after handshake request time difference exceeds agreementTime",
-                initiator: "local"
-            });
+            this.p2pManager.disconnectConnection(this.senderTransport);
             this.service.logger.debug(
                 `onInitHandshakeRequest - time difference too big - time:${time} localTime:${localTime} diff:${
                     time - localTime
@@ -52,30 +49,21 @@ class InitHandshakeRpcMethods extends ARpcMethods {
         const challenge = this.service.getChallenge(this.senderTransport);
         this.service.mapTransportToChallenge.delete(this.senderTransport);
         if (!challenge) {
-            this.p2pManager.disconnectConnection(this.senderTransport, {
-                reason: "cascade after unsolicited handshake response (no challenge exists)",
-                initiator: "local"
-            });
+            this.p2pManager.disconnectConnection(this.senderTransport);
             return;
         }
         const localTime = Clock.getTimeInSeconds();
         const rtt = localTime - challenge.initTime;
         this.service.logger.info(`Handshake response RTT: ${rtt}`);
         if (rtt > this.p2pManager.stateManager.timeConfig.agreementTime) {
-            this.p2pManager.disconnectConnection(this.senderTransport, {
-                reason: "cascade after handshake response RTT exceeds agreementTime",
-                initiator: "local"
-            });
+            this.p2pManager.disconnectConnection(this.senderTransport);
             return;
         }
         if (
             Math.abs(responseTime - challenge.initTime) >
             this.p2pManager.stateManager.timeConfig.agreementTime
         ) {
-            this.p2pManager.disconnectConnection(this.senderTransport, {
-                reason: "cascade after handshake response time doesn't match init time",
-                initiator: "local"
-            });
+            this.p2pManager.disconnectConnection(this.senderTransport);
             return;
         }
         //verify signature
@@ -94,10 +82,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             this.service.logger.debug(
                 `Rejecting handshake from blacklisted peer: ${signerAddress}`
             );
-            this.p2pManager.disconnectConnection(this.senderTransport, {
-                reason: "cascade after peer is blacklisted",
-                initiator: "local"
-            });
+            this.p2pManager.disconnectConnection(this.senderTransport);
             return;
         }
 

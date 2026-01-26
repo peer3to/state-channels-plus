@@ -1,6 +1,7 @@
 import P2PManager from "@/P2PManager";
 import { TransportType } from "./TransportType";
 import Rpc, { serializeRpc } from "@/rpc/Rpc";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 abstract class ATransport {
     abstract transportType: TransportType;
@@ -16,8 +17,9 @@ abstract class ATransport {
     abstract onMessage(data: any): void;
     protected abstract _close(): void;
 
-    close(): void {
+    close(isExpected = false): void {
         if (!this.isClosed) {
+            LoggerUtils.logTransportDisconnect(this, isExpected);
             this.isClosed = true;
             this.p2pManager.disconnectConnection(this);
             this._close();

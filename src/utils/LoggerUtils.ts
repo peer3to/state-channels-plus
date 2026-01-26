@@ -8,7 +8,7 @@ import {
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Codec, Type } from "./Codec";
 import { difference, hash } from "@/utils";
-import { Address, Hash, ChannelId, ForkId } from "@/types/types";
+import { Address, Hash } from "@/types/types";
 import { ethers } from "ethers";
 import {
     DisputeFraudProofType,
@@ -116,17 +116,6 @@ export class LoggerUtils {
         logger.groupEnd();
     }
 
-    private static socketReadyStateToString(state: number | string): string {
-        if (typeof state === "string") return state;
-        const states: Record<number, string> = {
-            0: "CONNECTING",
-            1: "OPEN",
-            2: "CLOSING",
-            3: "CLOSED"
-        };
-        return states[state] ?? `UNKNOWN(${state})`;
-    }
-
     /**
      * Convenience helper for logging transport disconnects.
      * Extracts common metadata (peerAddress, channelId, forkId, transportType, logger) from transport.
@@ -134,45 +123,22 @@ export class LoggerUtils {
      */
     static logTransportDisconnect(
         transport: ATransport,
-        details: {
-            reason: string;
-            initiator?: "local" | "remote" | "unknown";
-            connectionState?: string;
-            socketState?: string | number;
-            iceState?: string;
-            error?: Error | unknown;
-            logLevel?: "info" | "warn";
-        }
+        isInfoLevel = false
     ): void {
-        const profile =
-            transport.p2pManager.profileManager.getProfileByTransport(
-                transport
-            );
-        const peerAddress =
-            transport.peerAddress ||
-            profile?.getEvmAddress()?.toString() ||
-            "unknown";
+        const peerAddress = transport.peerAddress || "unknown";
         const stateManager = transport.p2pManager.stateManager;
         const logger = transport.p2pManager.logger;
+        const transportType = TransportType[transport.transportType];
 
-        // Normalize socketState to string if it's a number
-        const socketStateStr =
-            details.socketState !== undefined
-                ? this.socketReadyStateToString(details.socketState)
-                : undefined;
-
-        this.logPeerDisconnected(logger, {
-            transportType: transport.transportType,
-            reason: details.reason,
-            initiator: details.initiator || "unknown",
-            peerAddress,
+        const logObj = {
+            transportType: peerAddress,
             channelId: stateManager.getChannelId(),
-            forkId: stateManager.forkId,
-            connectionState: details.connectionState,
-            socketState: socketStateStr,
-            iceState: details.iceState,
-            error: details.error,
-            logLevel: details.logLevel
+            forkId: stateManager.forkId
+        };
+
+        logger[isInfoLevel ? "info" : "warn"]("🔌 Peer disconnected", {
+            ...logObj,
+            transportType
         });
     }
 
@@ -206,30 +172,6 @@ export class LoggerUtils {
                 1000
         });
         logger.groupEnd();
-    }
-
-    static logPeerDisconnected(
-        logger: Logger,
-        options: {
-            transportType: TransportType;
-            reason: string;
-            initiator?: "local" | "remote" | "unknown";
-            peerAddress?: string;
-            channelId?: ChannelId;
-            forkId?: ForkId;
-            connectionState?: string;
-            error?: Error | unknown;
-            socketState?: string;
-            iceState?: string;
-            logLevel?: "info" | "warn";
-        }
-    ): void {
-        const transportType = TransportType[options.transportType];
-
-        logger[options.logLevel || "warn"]("🔌 Peer disconnected", {
-            ...options,
-            transportType
-        });
     }
 
     // ====================================

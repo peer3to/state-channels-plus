@@ -2,7 +2,6 @@ import type P2PManager from "@/P2PManager";
 import ATransport from "./ATransport";
 import { Buffer } from "buffer";
 import { TransportType } from "./TransportType";
-import { LoggerUtils } from "@/utils/LoggerUtils";
 
 class HolepunchTransport extends ATransport {
     transportType = TransportType.HOLEPUNCH;
@@ -24,23 +23,12 @@ class HolepunchTransport extends ATransport {
         });
         this.p2pManager.localRpc.initHandshakeService.initHandshake(this);
         this.holepunchSocket.on("close", () => {
-            LoggerUtils.logTransportDisconnect(this, {
-                reason: "holepunch socket close event observed",
-                initiator: "unknown",
-                connectionState: "closed",
-                socketState: this.holepunchSocket?.readyState,
-                logLevel: "info"
-            });
             this.close();
         });
         this.holepunchSocket.on("error", (error: Error) => {
-            LoggerUtils.logTransportDisconnect(this, {
-                reason: "holepunch socket error observed",
-                initiator: "unknown",
-                connectionState: "error",
+            this.p2pManager.logger.error("Holepunch socket error", {
                 socketState: this.holepunchSocket?.readyState,
-                error,
-                logLevel: "info"
+                error
             });
             this.close();
         });
