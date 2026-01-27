@@ -157,4 +157,16 @@ export class NodeLogger implements Logger {
             console.debug(formatted, ...args);
         }
     }
+
+    public group(label?: string): void {
+        if (label) {
+            console.group(label);
+        } else {
+            console.group();
+        }
+    }
+
+    public groupEnd(): void {
+        console.groupEnd();
+    }
 }

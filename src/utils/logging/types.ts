@@ -15,6 +15,8 @@ export type Logger = {
     error: (message: any, meta?: any, ...args: any[]) => void;
     verbose: (message: any, meta?: any, ...args: any[]) => void;
     child: (context: LoggerContext) => Logger;
+    group: (label?: string) => void;
+    groupEnd: () => void;
     clear?: () => void;
     close?: () => void;
     // For crash handler
