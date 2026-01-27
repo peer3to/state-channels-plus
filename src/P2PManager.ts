@@ -1,6 +1,6 @@
 import IOnMessage from "@/IOnMessage";
 import type StateManager from "@/stateManager";
-import { deserializeRpc } from "@/rpc/Rpc";
+import Rpc, { deserializeRpc } from "@/rpc/Rpc";
 import MainRpcService from "@/rpc/MainRpcService";
 import { P2pSigner } from "@/evm";
 import { ATransport, TransportType } from "@/transport";
@@ -84,33 +84,32 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         await this.holepunch.dispose();
         this.disconnectAll();
     }
-    public broadcastRpc(serializedRPC: string) {
+    public broadcastRpc(rpc: Rpc) {
         const debugConnections = this.openConnections.map((transport) => {
             return {
                 transportType: transport.transportType,
                 peerAddress: transport.peerAddress
             };
         });
-        this.logger.debug("broadcastRpc", { serializedRPC, debugConnections });
+        this.logger.debug("broadcastRpc", { rpc, debugConnections });
         for (const transport of this.openConnections) {
-            transport.send(serializedRPC);
+            transport.send(rpc);
         }
     }
     public onRpc(serializedRpc: string, transport: ATransport) {
         try {
             const rpc = deserializeRpc(serializedRpc);
+            this.logger.verbose("onRpc", {
+                rpc,
+                transportType: TransportType[transport.transportType],
+                peerAddress: transport.peerAddress
+            });
             if (!rpc) {
-                this.disconnectConnection(transport, {
-                    reason: "cascade after failed to deserialize RPC message",
-                    initiator: "local"
-                });
+                this.disconnectConnection(transport);
                 return;
             }
             if (!isInstanceOfRpcService(this.localRpc, rpc.service)) {
-                this.disconnectConnection(transport, {
-                    reason: "cascade after RPC service not found",
-                    initiator: "local"
-                });
+                this.disconnectConnection(transport);
                 return;
             }
             const service = this.localRpc[
@@ -118,18 +117,11 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
             ] as unknown as ARpcService<any>;
             const success = service.runRPC(rpc, transport);
             if (!success) {
-                this.disconnectConnection(transport, {
-                    reason: "cascade after RPC execution failed",
-                    initiator: "local"
-                });
+                this.disconnectConnection(transport);
                 return;
             }
         } catch (e) {
-            this.disconnectConnection(transport, {
-                reason: "cascade after exception during RPC processing",
-                initiator: "local",
-                error: e
-            });
+            this.disconnectConnection(transport);
             console.error(e);
         }
     }
@@ -153,29 +145,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         }
     }
 
-    public disconnectConnection(
-        transport: ATransport,
-        details?: {
-            reason?: string;
-            initiator?: "local" | "remote" | "unknown";
-            error?: Error | unknown;
-        }
-    ) {
-        if (!transport.isClosed) {
-            try {
-                LoggerUtils.logTransportDisconnect(transport, {
-                    reason:
-                        details?.reason ||
-                        "local code closed connection: disconnectConnection() called without context",
-                    initiator: details?.initiator || "local",
-                    error: details?.error,
-                    logLevel: "info"
-                });
-            } catch {
-                // ignore logging errors
-            }
-        }
-
+    public disconnectConnection(transport: ATransport) {
         const profile = this.profileManager.getProfileByTransport(transport);
 
         this.openConnections = this.openConnections.filter(
@@ -193,12 +163,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
     public disconnectAndBlacklistPeer(transport: ATransport, cause?: string) {
         this.profileManager.getProfileByTransport(transport)?.blacklist();
 
-        this.disconnectConnection(transport, {
-            reason: cause
-                ? `cascade after ${cause}`
-                : "cascade after peer blacklisted",
-            initiator: "local"
-        });
+        this.disconnectConnection(transport);
     }
 
     public disconnectAndBlacklistPeerByEvmAddress(
@@ -210,12 +175,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         profile.blacklist();
         const transport = profile.getTransport();
         if (!transport) return;
-        this.disconnectConnection(transport, {
-            reason: cause
-                ? `cascade after ${cause}`
-                : "cascade after peer blacklisted",
-            initiator: "local"
-        });
+        this.disconnectConnection(transport);
     }
 
     public isBlacklisted(evmAddress: Address): boolean {
@@ -227,12 +187,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
 
     public disconnectAll(cause?: string) {
         for (const transport of this.openConnections) {
-            this.disconnectConnection(transport, {
-                reason: cause
-                    ? `cascade after ${cause}`
-                    : "cascade after disconnectAll() called",
-                initiator: "local"
-            });
+            this.disconnectConnection(transport);
         }
     }
 

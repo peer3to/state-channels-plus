@@ -34,28 +34,11 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
                 state === "failed" ||
                 state === "closed"
             ) {
+                this.logger.warn(`WebRTC connection state changed: ${state}`, {
+                    iceState
+                });
                 const transport = this.findWebRTCTransport(peerAddress);
                 if (transport) {
-                    const reason =
-                        state === "failed"
-                            ? "WebRTC peer connection failed"
-                            : state === "closed"
-                              ? "WebRTC peer connection closed"
-                              : "WebRTC peer connection disconnected";
-
-                    LoggerUtils.logTransportDisconnect(transport, {
-                        reason,
-                        initiator: "unknown",
-                        connectionState: state,
-                        iceState,
-                        logLevel: "info"
-                    });
-                }
-                if (
-                    (state === "failed" || state === "closed") &&
-                    transport &&
-                    !transport.isClosed
-                ) {
                     transport.close();
                 }
             }
@@ -71,28 +54,15 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
                 iceState === "failed" ||
                 iceState === "closed"
             ) {
+                this.logger.warn(
+                    `WebRTC IceConnection state changed: ${iceState}`,
+                    {
+                        iceState,
+                        connectionState
+                    }
+                );
                 const transport = this.findWebRTCTransport(peerAddress);
                 if (transport) {
-                    const reason =
-                        iceState === "failed"
-                            ? "WebRTC ICE connection failed"
-                            : iceState === "closed"
-                              ? "WebRTC ICE connection closed"
-                              : "WebRTC ICE connection disconnected";
-
-                    LoggerUtils.logTransportDisconnect(transport, {
-                        reason,
-                        initiator: "unknown",
-                        connectionState,
-                        iceState,
-                        logLevel: "info"
-                    });
-                }
-                if (
-                    (iceState === "failed" || iceState === "closed") &&
-                    transport &&
-                    !transport.isClosed
-                ) {
                     transport.close();
                 }
             }

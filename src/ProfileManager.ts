@@ -60,7 +60,7 @@ class ProfileManager {
             stateManager.timeoutManager.scheduleTask(
                 () => {
                     // allow agreementTime for everyone to update transport and start using new one, before closing this one
-                    this.removeTransport(oldTransport);
+                    this.removeTransport(oldTransport, true);
                 },
                 stateManager.timeConfig.agreementTime * 1000,
                 "transport upgrade grace period elapsed – retiring old transport"
@@ -73,11 +73,11 @@ class ProfileManager {
         profile.setTransport(newTransport);
         this.mapTransportToProfile.set(newTransport, profile);
     }
-    public removeTransport(transport: ATransport) {
+    public removeTransport(transport: ATransport, isUpgraded = false) {
         const profile = this.mapTransportToProfile.get(transport);
         if (!profile) return;
         this.mapTransportToProfile.delete(transport);
-        transport.close();
+        transport.close(isUpgraded);
     }
     public getProfileByTransport(
         transport: ATransport

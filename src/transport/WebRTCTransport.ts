@@ -2,7 +2,6 @@ import type P2PManager from "@/P2PManager";
 import ATransport from "./ATransport";
 import { Buffer } from "buffer";
 import { TransportType } from "./TransportType";
-import { LoggerUtils } from "@/utils/LoggerUtils";
 
 class WebRTCTransport extends ATransport {
     transportType = TransportType.WEBRTC;
@@ -19,25 +18,13 @@ class WebRTCTransport extends ATransport {
             //TODO! update peerProfile and close old socket
         };
         this.webRTCChannel.onclose = () => {
-            const { connectionState, iceState } = this.getConnectionState();
-            LoggerUtils.logTransportDisconnect(this, {
-                reason: "WebRTC data channel closed",
-                initiator: "unknown",
-                connectionState,
-                iceState,
-                logLevel: "info"
-            });
             this.close();
         };
         this.webRTCChannel.onerror = (error: Error) => {
-            const { connectionState, iceState } = this.getConnectionState();
-            LoggerUtils.logTransportDisconnect(this, {
-                reason: "WebRTC data channel failed due to error",
-                initiator: "unknown",
+            const connectionState = this.getConnectionState();
+            this.p2pManager.logger.error("WebRTC channel error", {
                 connectionState,
-                iceState,
-                error,
-                logLevel: "info"
+                error
             });
             this.close();
         };
@@ -72,7 +59,7 @@ class WebRTCTransport extends ATransport {
         }
         return { connectionState, iceState };
     }
-    send(serializedRPC: string): void {
+    _send(serializedRPC: string): void {
         this.p2pManager.logger.debug("Sending RPC over WebRTC", {
             bytes: serializedRPC.length
         });

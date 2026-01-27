@@ -7,8 +7,8 @@ import {
     FraudProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Codec, Type } from "./Codec";
-import { hash } from "@/utils";
-import { Address, Hash, ChannelId, ForkId } from "@/types/types";
+import { difference, hash } from "@/utils";
+import { Address, Hash } from "@/types/types";
 import { ethers } from "ethers";
 import {
     DisputeFraudProofType,
@@ -19,6 +19,8 @@ import {
 import type { Logger } from "@/utils";
 import { TransportType } from "@/transport/TransportType";
 import ATransport from "@/transport/ATransport";
+import { Block } from "@/models";
+import Storage from "@/storage";
 
 export class LoggerUtils {
     // ====================================
@@ -114,17 +116,6 @@ export class LoggerUtils {
         logger.groupEnd();
     }
 
-    private static socketReadyStateToString(state: number | string): string {
-        if (typeof state === "string") return state;
-        const states: Record<number, string> = {
-            0: "CONNECTING",
-            1: "OPEN",
-            2: "CLOSING",
-            3: "CLOSED"
-        };
-        return states[state] ?? `UNKNOWN(${state})`;
-    }
-
     /**
      * Convenience helper for logging transport disconnects.
      * Extracts common metadata (peerAddress, channelId, forkId, transportType, logger) from transport.
@@ -132,45 +123,22 @@ export class LoggerUtils {
      */
     static logTransportDisconnect(
         transport: ATransport,
-        details: {
-            reason: string;
-            initiator?: "local" | "remote" | "unknown";
-            connectionState?: string;
-            socketState?: string | number;
-            iceState?: string;
-            error?: Error | unknown;
-            logLevel?: "info" | "warn";
-        }
+        isInfoLevel = false
     ): void {
-        const profile =
-            transport.p2pManager.profileManager.getProfileByTransport(
-                transport
-            );
-        const peerAddress =
-            transport.peerAddress ||
-            profile?.getEvmAddress()?.toString() ||
-            "unknown";
+        const peerAddress = transport.peerAddress || "unknown";
         const stateManager = transport.p2pManager.stateManager;
         const logger = transport.p2pManager.logger;
+        const transportType = TransportType[transport.transportType];
 
-        // Normalize socketState to string if it's a number
-        const socketStateStr =
-            details.socketState !== undefined
-                ? this.socketReadyStateToString(details.socketState)
-                : undefined;
-
-        this.logPeerDisconnected(logger, {
-            transportType: transport.transportType,
-            reason: details.reason,
-            initiator: details.initiator || "unknown",
-            peerAddress,
+        const logObj = {
+            transportType: peerAddress,
             channelId: stateManager.getChannelId(),
-            forkId: stateManager.forkId,
-            connectionState: details.connectionState,
-            socketState: socketStateStr,
-            iceState: details.iceState,
-            error: details.error,
-            logLevel: details.logLevel
+            forkId: stateManager.forkId
+        };
+
+        logger[isInfoLevel ? "info" : "warn"]("🔌 Peer disconnected", {
+            ...logObj,
+            transportType
         });
     }
 
@@ -203,95 +171,6 @@ export class LoggerUtils {
                 oldTransport.p2pManager.stateManager.timeConfig.agreementTime *
                 1000
         });
-        logger.groupEnd();
-    }
-
-    static logPeerDisconnected(
-        logger: Logger,
-        options: {
-            transportType: TransportType;
-            reason: string;
-            initiator?: "local" | "remote" | "unknown";
-            peerAddress?: string;
-            channelId?: ChannelId;
-            forkId?: ForkId;
-            connectionState?: string;
-            error?: Error | unknown;
-            socketState?: string;
-            iceState?: string;
-            logLevel?: "info" | "warn";
-        }
-    ): void {
-        const {
-            transportType,
-            reason,
-            initiator = "unknown",
-            peerAddress,
-            channelId,
-            forkId,
-            connectionState,
-            error,
-            socketState,
-            iceState,
-            logLevel
-        } = options;
-
-        const transportTypeName = LoggerUtils.enumToString(
-            TransportType,
-            transportType
-        );
-        const peerFormatted = peerAddress
-            ? this.formatHash(peerAddress)
-            : "unknown";
-
-        logger.group("🔌 Peer disconnected");
-
-        // Use INFO level for expected disconnects (e.g., WebRTC data channel close during lifecycle)
-        const shouldLogInfo = logLevel === "info";
-        if (shouldLogInfo) {
-            logger.info("Connection disconnected", {
-                transportType: transportTypeName,
-                reason,
-                initiator,
-                peer: peerFormatted
-            });
-        } else {
-            logger.warn("Connection disconnected", {
-                transportType: transportTypeName,
-                reason,
-                initiator,
-                peer: peerFormatted
-            });
-        }
-
-        const debugDetails: Record<string, any> = {
-            peerFull: peerAddress || undefined,
-            transportType: transportTypeName,
-            reason,
-            initiator,
-            channelId: channelId || undefined,
-            forkId: forkId || undefined,
-            connectionState: connectionState || undefined,
-            timestamp: Date.now()
-        };
-
-        if (socketState) {
-            debugDetails.socketState = socketState;
-        }
-
-        if (iceState) {
-            debugDetails.iceState = iceState;
-        }
-
-        if (error) {
-            debugDetails.error =
-                error instanceof Error ? error.message : String(error);
-            debugDetails.errorStack =
-                error instanceof Error ? error.stack : undefined;
-        }
-
-        logger.debug("Disconnect details", debugDetails);
-
         logger.groupEnd();
     }
 
@@ -447,6 +326,26 @@ export class LoggerUtils {
         } else {
             return Number(proofType) as DisputeFraudProofType;
         }
+    }
+
+    static getBlockMetadata(block: Block, storage?: Storage) {
+        const thresholdAddresses = new Set<Address>(
+            storage?.getParticipants(block.coordinates) || []
+        );
+        const allSigners = block.allSignerAddresses;
+        const allSignersSet =
+            allSigners instanceof Set ? allSigners : new Set(allSigners || []);
+        const didntSign = difference(thresholdAddresses, allSignersSet);
+        return {
+            author: block.author,
+            blockHash: block.hash,
+            blockHeight: block.height,
+            timestamp: block.timestamp,
+            onChainTimestamp: block.onChainTimestamp,
+            allSigners: Array.from(allSignersSet),
+            didntSign: Array.from(didntSign),
+            numberOfInboundMessageBlocks: block.messageBlocks?.length || 0
+        };
     }
 
     // ====================================

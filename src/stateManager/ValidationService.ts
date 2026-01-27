@@ -12,6 +12,7 @@ import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 import FraudProofService from "./utils/FraudProofService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
 import type StateManager from "@/stateManager";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
@@ -42,8 +43,9 @@ export default class ValidationService {
             block.channelId != this.stateManager.channelId
         ) {
             this.logger.warn("validateBlockConfirmation - wrong channel", {
-                blockHash: block.hash,
-                stateManagerChannelId: String(this.stateManager.channelId)
+                stateManagerChannelId: String(this.stateManager.channelId),
+                blockChannelId: String(block.channelId),
+                block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
             return await strategy.wrongChannel(block);
         }
@@ -51,7 +53,8 @@ export default class ValidationService {
         // Check if channel is open
         if (!this.isChannelOpen(this.stateManager.forkId)) {
             this.logger.warn("validateBlockConfirmation - channel not opened", {
-                stateManagerForkId: String(this.stateManager.forkId)
+                stateManagerForkId: String(this.stateManager.forkId),
+                block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
             return await strategy.channelNotOpened(block);
         }
@@ -81,7 +84,7 @@ export default class ValidationService {
             this.logger.warn(
                 "validateBlockConfirmation - author is not participant",
                 {
-                    block
+                    block: LoggerUtils.getBlockMetadata(block, this.storage)
                 }
             );
             return await strategy.blockAuthorIsNotParticipant(block);
@@ -94,14 +97,14 @@ export default class ValidationService {
         );
         if (conflictResult !== BlockValidationResult.SUCCESS) {
             this.logger.warn("validateBlockConfirmation - conflicting block", {
-                block
+                block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
             return conflictResult;
         }
 
         if (await this.isDisputedFork(block.forkId, block.channelId)) {
             this.logger.warn("validateBlockConfirmation - fork disputed", {
-                block
+                block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
             return await strategy.blockForkIsDisputed(block, senderAddress);
         }
@@ -113,7 +116,7 @@ export default class ValidationService {
             this.logger.warn(
                 "validateBlockConfirmation - block is in the future",
                 {
-                    block
+                    block: LoggerUtils.getBlockMetadata(block, this.storage)
                 }
             );
             return await strategy.blockIsNotNextAndIsInTheFuture(
@@ -127,12 +130,12 @@ export default class ValidationService {
             // if first block -> wrong genesis fraud proof
             if (block.height === 0) {
                 this.logger.warn("validateBlockConfirmation - wrong genesis", {
-                    block
+                    block: LoggerUtils.getBlockMetadata(block, this.storage)
                 });
                 return await strategy.wrongGenesisDetected(block);
             }
             this.logger.warn("validateBlockConfirmation - block not linked", {
-                block
+                block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
             return await strategy.blockIsNotLinkedAndIsNotFirstBlock(block);
         }
@@ -143,7 +146,7 @@ export default class ValidationService {
             this.logger.warn(
                 "validateBlockConfirmation - unexpected next leader",
                 {
-                    block
+                    block: LoggerUtils.getBlockMetadata(block, this.storage)
                 }
             );
             return await strategy.invalidStateTransitionDetected(block);
@@ -211,7 +214,8 @@ export default class ValidationService {
 
             if (!areAllParticipants) {
                 this.logger.warn(
-                    "BlockConfirmation - checkDuplicateBlock - not all signers are participants"
+                    "BlockConfirmation - checkDuplicateBlock - not all signers are participants",
+                    { block: LoggerUtils.getBlockMetadata(block, this.storage) }
                 );
                 return await strategy.notAllSingersAreParticipants(block);
             }
@@ -258,7 +262,8 @@ export default class ValidationService {
 
             if (!areNewSignersParticipants) {
                 this.logger.warn(
-                    "BlockConfirmation - checkDuplicateBlock - not all new signers are participants"
+                    "BlockConfirmation - checkDuplicateBlock - not all new signers are participants",
+                    { block: LoggerUtils.getBlockMetadata(block, this.storage) }
                 );
                 return await strategy.notAllSingersAreParticipants(block);
             }
@@ -288,7 +293,7 @@ export default class ValidationService {
 
         if (conflictingBlock.author === block.author) {
             this.logger.warn("checkConflictingBlock - double sign detected", {
-                block
+                block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
             return await strategy.doubleSignDetected(conflictingBlock, block);
         }
@@ -298,7 +303,7 @@ export default class ValidationService {
             this.logger.warn(
                 "checkConflictingBlock - isLinked but conflict detected",
                 {
-                    block
+                    block: LoggerUtils.getBlockMetadata(block, this.storage)
                 }
             );
             return await strategy.invalidStateTransitionDetected(block);
@@ -307,7 +312,7 @@ export default class ValidationService {
         // if first block -> wrong genesis
         if (conflictingBlock.height === 0) {
             this.logger.warn("checkConflictingBlock - wrong genesis detected", {
-                block
+                block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
             return await strategy.wrongGenesisDetected(block);
         }
@@ -379,7 +384,7 @@ export default class ValidationService {
                 }
             }
             this.logger.warn(
-                "Time validation failed – block timestamp outside allowed window",
+                "Time validation failed - block timestamp outside allowed window",
                 logData
             );
         };
