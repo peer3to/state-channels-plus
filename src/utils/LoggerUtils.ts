@@ -333,16 +333,18 @@ export class LoggerUtils {
             storage?.getParticipants(block.coordinates) || []
         );
         const allSigners = block.allSignerAddresses;
-        const didntSign = difference(thresholdAddresses, allSigners);
+        const allSignersSet =
+            allSigners instanceof Set ? allSigners : new Set(allSigners || []);
+        const didntSign = difference(thresholdAddresses, allSignersSet);
         return {
             author: block.author,
             blockHash: block.hash,
             blockHeight: block.height,
             timestamp: block.timestamp,
             onChainTimestamp: block.onChainTimestamp,
-            allSigners: Array.from(allSigners),
+            allSigners: Array.from(allSignersSet),
             didntSign: Array.from(didntSign),
-            numberOfInboundMessageBlocks: block.messageBlocks.length
+            numberOfInboundMessageBlocks: block.messageBlocks?.length || 0
         };
     }
 
