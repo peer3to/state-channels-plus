@@ -640,11 +640,17 @@ describe("StateManager - Refactored", () => {
 
     describe("playTransaction - inbound messages", () => {
         it("applies pending inbound message blocks and records participant changes", async () => {
+            // Create a consistent wallet for signing
+            const testWallet = new ethers.Wallet(
+                "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            );
+            const testSignerAddress = testWallet.address as Address;
             const joiner = hexString(20) as Address;
+
             const builder = createDefaultBuilder().withGenesisSnapshot(
                 defaults.forkId,
                 {
-                    participants: [defaults.signerAddress],
+                    participants: [testSignerAddress],
                     latestInboundMessageBlockHash: defaults.emptyBlockHash,
                     latestInboundMessageBlockHeight: 0n,
                     totalDeposits: { amount: 0n, data: "0x" }
@@ -668,7 +674,8 @@ describe("StateManager - Refactored", () => {
                     }
                 },
                 p2pSigner: {
-                    signMessage: sinon.stub().resolves("0xsignature")
+                    signMessage: (message: string) =>
+                        testWallet.signMessage(message)
                 },
                 dispose: sinon.stub().resolves()
             } as any;
@@ -677,9 +684,9 @@ describe("StateManager - Refactored", () => {
             const getParticipantsStub = sinon
                 .stub()
                 .onCall(0)
-                .resolves([defaults.signerAddress])
+                .resolves([testSignerAddress])
                 .onCall(1)
-                .resolves([defaults.signerAddress, joiner]);
+                .resolves([testSignerAddress, joiner]);
             const processInboundMessageStub = sinon.stub().resolves(true);
             const addBalanceStub = sinon
                 .stub()
@@ -701,7 +708,7 @@ describe("StateManager - Refactored", () => {
                 getParticipants: getParticipantsStub,
                 processInboundMessage: processInboundMessageStub,
                 addBalance: addBalanceStub,
-                getNextToWrite: sinon.stub().resolves(defaults.signerAddress)
+                getNextToWrite: sinon.stub().resolves(testSignerAddress)
             } as any;
 
             const inboundBlock: MessageBlockStruct = {
@@ -725,7 +732,7 @@ describe("StateManager - Refactored", () => {
                     channelId: defaults.channelId,
                     forkId: defaults.forkId,
                     transactionCnt: 0n,
-                    participant: defaults.signerAddress,
+                    participant: testSignerAddress,
                     timestamp: BigInt(defaults.defaultTimestamp)
                 },
                 body: { encodedData: "0x", data: "0x" }

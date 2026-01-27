@@ -36,7 +36,10 @@ import StateChannelEventListener from "@/StateChannelEventListener";
 import ValidationService from "./ValidationService";
 import Storage from "@/storage";
 import { EventHandler } from "@/eventHandlers/EventHandler";
-import { tryHandleEvmError } from "@/utils/evmErrorHandler";
+import {
+    tryDecodeCustomError,
+    tryHandleEvmError
+} from "@/utils/evmErrorHandler";
 
 // Event handlers and processors
 import P2pEventHooks from "@/P2pEventHooks";
@@ -77,6 +80,7 @@ import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidat
 
 import { config } from "@/utils/config";
 import { TimeoutManager } from "@/utils/TimeoutManager";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 import { TransactionResponse } from "ethers";
 
@@ -213,8 +217,8 @@ class StateManager {
     }
     public setStatus(status: Status) {
         this.logger.debug("Status changed", {
-            oldStatus: this.status,
-            newStatus: status
+            oldStatus: Status[this.status] ?? `UNKNOWN(${this.status})`,
+            newStatus: Status[status] ?? `UNKNOWN(${status})`
         });
         this.status = status;
     }
@@ -474,7 +478,7 @@ class StateManager {
             );
 
             // Update local state to the reduced fork
-            this.logger.debug(
+            this.logger.info(
                 `Reduction complete: transitioning to fork ${reducedForkId}`
             );
             this.setGenesisState(
@@ -485,7 +489,9 @@ class StateManager {
                 outboundMessageBlock
             );
         } catch (error) {
+            const custom = tryDecodeCustomError(error);
             this.logger.error("Error computing reduced snapshot data", {
+                custom,
                 error: error instanceof Error ? error.message : String(error)
             });
             throw error;
@@ -575,6 +581,8 @@ class StateManager {
             this.forkId
         );
 
+        this.logger.info("setLatestState - nextToWrite", { nextToWrite });
+
         let timeLost = Clock.getTimeInSeconds() - normalizedTimestamp;
         timeLost = timeLost < 0 ? 0 : timeLost; // if timestamp is in the future - no time is lost
         const turnTime = this.timeConfig.p2pTime;
@@ -614,10 +622,10 @@ class StateManager {
         outboundMessageBlock?: MessageBlockStruct
     ): Promise<void> {
         const normalizedGenesisTimestamp = Number(genesisTimestamp);
-        this.logger.verbose("Setting genesis state", {
+        this.logger.info("Setting genesis state", {
             forkId,
             genesisTimestamp: normalizedGenesisTimestamp,
-            participantCount: snapshotData.participants.length
+            participant: snapshotData.participants
         });
 
         // generate and store genesis snapshot
@@ -716,8 +724,9 @@ class StateManager {
                             strategy: (strategy as any)?.constructor?.name,
                             validationResult:
                                 BlockValidationResult[validationResult],
-                            blockHash: ethers.keccak256(
-                                blockConfirmation.signedBlock.encodedBlock
+                            block: LoggerUtils.getBlockMetadata(
+                                block,
+                                this.storage
                             )
                         }
                     );
@@ -744,7 +753,7 @@ class StateManager {
                 this.logger.warn("onBlockConfirmation - broken inbound chain", {
                     strategy: (strategy as any)?.constructor?.name,
                     validationResult: BlockValidationResult[validationResult],
-                    block
+                    block: LoggerUtils.getBlockMetadata(block, this.storage)
                 });
                 return await strategy.interpretFinalValidationResult(
                     validationResult
@@ -766,7 +775,7 @@ class StateManager {
                         strategy: (strategy as any)?.constructor?.name,
                         validationResult:
                             BlockValidationResult[validationResult],
-                        block
+                        block: LoggerUtils.getBlockMetadata(block, this.storage)
                     }
                 );
                 return await strategy.interpretFinalValidationResult(
@@ -791,7 +800,7 @@ class StateManager {
                         strategy: (strategy as any)?.constructor?.name,
                         validationResult:
                             BlockValidationResult[validationResult],
-                        block
+                        block: LoggerUtils.getBlockMetadata(block, this.storage)
                     }
                 );
                 return await strategy.interpretFinalValidationResult(
@@ -832,7 +841,7 @@ class StateManager {
                         strategy: (strategy as any)?.constructor?.name,
                         validationResult:
                             BlockValidationResult[validationResult],
-                        block
+                        block: LoggerUtils.getBlockMetadata(block, this.storage)
                     }
                 );
                 return await strategy.interpretFinalValidationResult(
@@ -850,7 +859,14 @@ class StateManager {
                 participantChanges,
                 outboundMessageBlock
             );
-
+            const blockMeta = LoggerUtils.getBlockMetadata(block, this.storage);
+            this.logger.info(
+                `onBlockConfirmation - success - ${blockMeta.blockHeight}`,
+                {
+                    strategy: (strategy as any)?.constructor?.name,
+                    block: blockMeta
+                }
+            );
             // success - no disconnect
             return true;
         } catch (error) {
@@ -900,7 +916,7 @@ class StateManager {
         const latestStoredHeight = latestBlock?.height ?? null;
         const nextStoredHeight = this.storage.blocks.getNextBlockHeight(forkId);
         const message =
-            `playTransaction: ` +
+            `playTransaction start: ` +
             ` - myAddress: ${String(this.signerAddress)}` +
             ` - nextToWrite: ${String(nextToWrite)}` +
             ` - txHeight: ${txHeight}` +
@@ -1011,6 +1027,13 @@ class StateManager {
                 outboundMessageBlock
             );
 
+            const blockMeta = LoggerUtils.getBlockMetadata(block, this.storage);
+            this.logger.info(
+                `playTransaction - success - ${blockMeta.blockHeight}`,
+                {
+                    block: blockMeta
+                }
+            );
             return block.blockConfirmationStruct;
         } finally {
             this.mutex.unlock();
@@ -1042,16 +1065,52 @@ class StateManager {
                 this.timeConfig.agreementTime +
                 this.timeConfig.chainFallbackTime;
 
+            const blockMetadata = LoggerUtils.getBlockMetadata(
+                block,
+                this.storage
+            );
+            const currentTime = Clock.getTimeInSeconds();
+            this.logger.info("Posting block calldata on-chain", {
+                block: blockMetadata,
+                maxTimestamp,
+                currentTime
+            });
+
+            let txResponse: TransactionResponse;
             this.stateChannelManagerContract
                 .postBlockCalldata(block.signedBlock, maxTimestamp)
-                .then((txResponse) => txResponse.wait())
-                .catch((error) => {
-                    this.logger.warn("Error posting block on chain", {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error)
+                .then((tx) => {
+                    txResponse = tx;
+                    return txResponse.wait();
+                })
+                .catch(async (error) => {
+                    const success = await tryHandleEvmError(error, {
+                        logger: this.logger,
+                        signer: this.signer,
+                        tx: txResponse!,
+                        handlers: {
+                            RaceConditionBlockCalldataTimestampTooLate: () => {
+                                const localErrorTimestamp =
+                                    Clock.getTimeInSeconds();
+                                this.logger.warn(
+                                    "RaceConditionBlockCalldataTimestampTooLate",
+                                    {
+                                        localErrorTimestamp,
+                                        maxTimestamp,
+                                        block: blockMetadata
+                                    }
+                                );
+                            }
+                        }
                     });
+                    //
+                    if (success) return;
+                    const custom = tryDecodeCustomError(error);
+                    this.logger.error(
+                        "Posting block calldata ERROR",
+                        custom, // tryHandleEvmError already logged the custom error if not null
+                        error
+                    );
                 });
         }
     }
@@ -1805,6 +1864,15 @@ class StateManager {
                 "0x"
         };
 
+        LoggerUtils.logTimeoutDetected(
+            this.logger,
+            participantAddress,
+            blockHeight,
+            isForced,
+            previousBlock?.author,
+            previousBlockProducerPostedCalldata
+        );
+
         // persist timeout locally
         this.storage.timeout.storeTimeout(forkId, timeout);
 
@@ -1829,7 +1897,7 @@ class StateManager {
         const latestBlock = this.storage.blocks.getLatestBlock(this.forkId);
 
         let previousTimestamp: Timestamp;
-
+        let previousRelativeTimestamp: Timestamp;
         if (!latestBlock) {
             // No blocks yet - check against genesis snapshot timestamp
             const genesisSnapshot =
@@ -1840,8 +1908,12 @@ class StateManager {
                 return; // No genesis snapshot yet, nothing to adjust against
             }
             previousTimestamp = genesisSnapshot.timestamp;
+            previousRelativeTimestamp = genesisSnapshot.timestamp;
         } else {
             previousTimestamp = latestBlock.timestamp;
+            previousRelativeTimestamp = latestBlock.getRelevantTimestamp(
+                tx.header.participant
+            );
         }
 
         if (Number(tx.header.timestamp) <= previousTimestamp) {
@@ -1850,10 +1922,10 @@ class StateManager {
 
         if (
             Number(tx.header.timestamp) >
-            previousTimestamp + this.timeConfig.p2pTime
+            previousRelativeTimestamp + this.timeConfig.p2pTime
         ) {
             tx.header.timestamp = BigInt(
-                previousTimestamp + this.timeConfig.p2pTime
+                previousRelativeTimestamp + this.timeConfig.p2pTime
             );
         }
     }
@@ -2148,6 +2220,9 @@ class StateManager {
         if (await this.shouldSignBlock(block)) {
             // Sign the block and add our signature to confirmation signatures
             const signature = await block.sign(this.signer);
+            this.logger.debug("Signing block", {
+                block: LoggerUtils.getBlockMetadata(block)
+            });
             block.expandSignatures([signature]);
         }
         // always broadcast if participating
@@ -2194,9 +2269,18 @@ class StateManager {
 
         // step 8 - success callback
         successCallback();
+
+        // step 9 - potentially change status
+        if (this.status === Status.SYNCED) {
+            const participants =
+                await this.diamondStateMachine.getParticipants();
+            const isParticipant = participants.includes(this.signerAddress);
+            if (isParticipant) this.setStatus(Status.PARTICIPATING);
+        }
+
+        // step 10 - Notify any event hooks
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();
         const turnTime = this.timeConfig.p2pTime;
-        // step 9 - Notify any event hooks
         this.p2pEventHooks.onTurn?.(
             nextToWrite,
             turnTime,
@@ -2204,7 +2288,7 @@ class StateManager {
             this.timeConfig.chainFallbackTime
         );
 
-        // step 10 - maybe post block on chain
+        // step 11 - maybe post block on chain
         if (block.author === this.signerAddress) {
             this.timeoutManager.scheduleTask(
                 () => {
@@ -2215,7 +2299,7 @@ class StateManager {
             );
         }
 
-        // step 11 - schedule a timeout check for the next participant
+        // step 12 - schedule a timeout check for the next participant
 
         this.timeoutManager.scheduleTask(
             () =>
@@ -2227,7 +2311,7 @@ class StateManager {
             this.getTimeoutWaitTimeSeconds() * 1000,
             "participantTimeout"
         );
-        // step 12 - try execute from queue
+        // step 13 - try execute from queue
         this.timeoutManager.scheduleTask(
             () => this.tryExecuteFromQueue(),
             0,

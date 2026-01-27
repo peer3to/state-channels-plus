@@ -32,7 +32,7 @@ This will run a node on http://localhost:8545
 
 Alternatively, you can use [Anvil](https://book.getfoundry.sh/reference/anvil/) (Foundry) with a 2-second block time and gas settings that avoid needing funded accounts:
 ```shell
-anvil -b 2 --block-base-fee-per-gas 0 --disable-code-size-limit --disable-min-priority-fee --gas-price 0
+anvil -b 2 --block-base-fee-per-gas 0 --disable-code-size-limit --disable-min-priority-fee --gas-price 0 --max-persisted-states 10
 ```
 This will also run a node on http://localhost:8545
 

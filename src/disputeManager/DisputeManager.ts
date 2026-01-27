@@ -17,8 +17,10 @@ import {
     SignatureUtils,
     Mutex,
     difference,
-    Logger
+    Logger,
+    tryDecodeCustomError
 } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooks from "@/P2pEventHooks";
 import { Address, ChannelId, ForkId } from "../types/types";
 import { StateSnapshot } from "../models";
@@ -31,6 +33,7 @@ import {
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
 import { config } from "@/utils/config";
+import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export type ConstructDisputeResult = {
     dispute: DisputeStruct;
@@ -80,12 +83,19 @@ class DisputeManager {
         try {
             await this.mutex.lock();
             if (this.storage.disputes.didIDispute(forkId)) return;
+
             const {
                 dispute,
                 disputeConfirmation,
                 auditingData,
                 fraudProofsToApply
             } = await this.constructDispute(forkId);
+
+            LoggerUtils.logDisputeInitiated(
+                this.logger,
+                dispute,
+                fraudProofsToApply
+            );
 
             const pendingParticipants =
                 await this.stateChannelManagerContract.getPendingParticipants(
@@ -208,7 +218,19 @@ class DisputeManager {
                 Clock.getTimeInSeconds() // this is safe as long as our local clock isn't in front of the DLT clock
             ),
             this.diamondStateMachine.getParticipants()
-        ]);
+        ]).catch((error) => {
+            this.logger.error(
+                "Error constructing dispute - failed to get inputData",
+                {
+                    forkId,
+                    channelId: this.channelId,
+                    latestBlockHeight,
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                }
+            );
+            throw error;
+        });
         // onChainSlashes
         // this can be a subset of on-chain slashes, so we don't need to run any race condition checks
         let onChainSlashes = new Set<Address>(_onChainSlashes);
@@ -299,14 +321,29 @@ class DisputeManager {
             lastInboundMessageBlockHeight:
                 this.storage.inboundMessages.getLatestBlockHeight() || 0
         };
-
-        const outputSnapshotData =
-            await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
+        let outputSnapshotData: SnapshotDataStruct;
+        try {
+            outputSnapshotData =
+                await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
+                    disputeInput,
+                    auditingData.latestStateSnapshot,
+                    auditingData.latestStateStateMachineState,
+                    auditingData.inboundMessageBlocks
+                );
+        } catch (error) {
+            const custom = tryDecodeCustomError(error);
+            this.logger.error("Error computing dispute output snapshot data", {
+                forkId,
+                channelId: this.channelId,
                 disputeInput,
-                auditingData.latestStateSnapshot,
-                auditingData.latestStateStateMachineState,
-                auditingData.inboundMessageBlocks
-            );
+                inboundMessageBlocksLength:
+                    auditingData.inboundMessageBlocks.length,
+                custom,
+                error
+            });
+
+            throw error;
+        }
 
         const outputSnapshotDataHash = hash(
             Codec.encode(outputSnapshotData, Type.SnapshotData)
