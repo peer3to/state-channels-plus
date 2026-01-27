@@ -33,7 +33,7 @@ import {
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
 import { config } from "@/utils/config";
-import { SnapshotDataStruct } from "@typechain-types/contracts/V1/StateChannelManagerEvents";
+import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export type ConstructDisputeResult = {
     dispute: DisputeStruct;
