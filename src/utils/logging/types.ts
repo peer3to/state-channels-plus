@@ -20,6 +20,6 @@ export type Logger = {
     clear?: () => void;
     close?: () => void;
     // For crash handler
-    getAllLogs?: () => any[];
-    clearLogs?: () => void;
+    getAllLogs: () => any[];
+    clearLogs: () => void;
 };
