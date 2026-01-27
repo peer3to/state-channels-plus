@@ -1,5 +1,3 @@
-import winston from "winston";
-
 export interface CrashUploadConfig {
     enabled: boolean;
     uploadEndpoint: string; // Server endpoint to receive crash logs

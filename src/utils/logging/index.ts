@@ -1,3 +1,4 @@
-export { setupCrashHandler } from "./CrashHandler";
-export type { CrashUploadConfig } from "./CrashHandler";
-export { default as MemoryTransport } from "./transports/MemoryTransport";
+// Public API exports
+export { createLogger, PeerLogger as default } from "../PeerLogger";
+export type { Logger, LoggerContext } from "./types";
+export { PeerLogger } from "../PeerLogger";
