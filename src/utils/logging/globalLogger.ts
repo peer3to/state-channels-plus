@@ -7,7 +7,7 @@ import { BrowserLogger } from "./browser/BrowserLogger";
 // Global singleton logger to prevent multiple process event listeners
 let globalLogger: Logger | null = null;
 
-// Static helper functions (moved from PeerLogger to avoid circular dependency)
+// Static helper functions for parsing log configuration
 function parseLogLevelFromArgs(
     args: string[] = isNodeRuntime() ? (process as any).argv : []
 ): string {
@@ -114,5 +114,5 @@ export function getGlobalLogger(): Logger {
     return globalLogger;
 }
 
-// Export the static helper functions for use by PeerLogger
+// Export the static helper functions
 export { parseLogLevelFromArgs, parseExcludedTagsFromArgs };

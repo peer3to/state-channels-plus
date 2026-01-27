@@ -8,7 +8,7 @@ import ProfileManager from "@/ProfileManager";
 import Holepunch from "@/Holepunch";
 import { ethers } from "ethers";
 import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
-import type { Logger } from "@/utils/PeerLogger";
+import type { Logger } from "@/utils";
 import { Buffer } from "buffer";
 import { config } from "@/utils/config";
 import { Address } from "./types/types";

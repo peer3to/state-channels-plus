@@ -1,4 +1,4 @@
-import { Logger } from "./PeerLogger";
+import { Logger } from "./logging";
 
 export type EventBarrierOptions = {
     timeoutMs?: number;

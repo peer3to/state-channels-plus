@@ -1,7 +1,7 @@
 import { config } from "../../config";
 import { Logger, LoggerContext } from "../types";
 import { createLogStore } from "../logStore";
-import { isPlainObject, safeJson, formatTime } from "../formatUtils";
+import { formatTime } from "../formatUtils";
 import { BROWSER_PEER_COLORS, BROWSER_LEVEL_CSS } from "./colors";
 
 export class BrowserLogger implements Logger {

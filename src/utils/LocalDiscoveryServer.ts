@@ -3,7 +3,7 @@ import type P2PManager from "@/P2PManager";
 import { LocalTransport } from "@/transport";
 import { ChannelId } from "@/types/types";
 // Import directly to avoid circular dependency through the utils barrel
-import { createLogger, Logger } from "@/utils/PeerLogger";
+import { createLogger, Logger } from "@/utils";
 
 const MAX_PORT_RETRIES = 20;
 const LOCAL_WS_HOST = "127.0.0.1";
