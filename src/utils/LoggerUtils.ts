@@ -125,20 +125,11 @@ export class LoggerUtils {
         transport: ATransport,
         isInfoLevel = false
     ): void {
-        const peerAddress = transport.peerAddress || "unknown";
-        const stateManager = transport.p2pManager.stateManager;
+        const meta = this.getTransportMetadata(transport);
         const logger = transport.p2pManager.logger;
-        const transportType = TransportType[transport.transportType];
-
-        const logObj = {
-            transportType: peerAddress,
-            channelId: stateManager.getChannelId(),
-            forkId: stateManager.forkId
-        };
 
         logger[isInfoLevel ? "info" : "warn"]("🔌 Peer disconnected", {
-            ...logObj,
-            transportType
+            ...meta
         });
     }
 
@@ -328,6 +319,18 @@ export class LoggerUtils {
         }
     }
 
+    static getTransportMetadata(transport: ATransport) {
+        const peerAddress = transport.peerAddress || "unknown";
+        const stateManager = transport.p2pManager.stateManager;
+        const transportType = TransportType[transport.transportType];
+
+        return {
+            peerAddress,
+            transportType,
+            channelId: stateManager.getChannelId(),
+            forkId: stateManager.forkId
+        };
+    }
     static getBlockMetadata(block: Block, storage?: Storage) {
         const thresholdAddresses = new Set<Address>(
             storage?.getParticipants(block.coordinates) || []
@@ -344,7 +347,9 @@ export class LoggerUtils {
             onChainTimestamp: block.onChainTimestamp,
             allSigners: Array.from(allSignersSet),
             didntSign: Array.from(didntSign),
-            numberOfInboundMessageBlocks: block.messageBlocks?.length || 0
+            numberOfInboundMessageBlocks: block.messageBlocks.length || 0,
+            forkId: block.forkId,
+            channelId: block.channelId
         };
     }
 

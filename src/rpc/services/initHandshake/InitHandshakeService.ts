@@ -11,6 +11,7 @@ import { TimeoutManager } from "@/utils/TimeoutManager";
 import EventBarrier from "@/utils/EventBarrier";
 import { Status } from "@/types";
 import { getChecksumAddress } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 type ConnectionChallenge = {
     randomChallengeHash: string;
@@ -101,9 +102,25 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
     }
 
     public isHandshakeCompletedForTransport(transport: ATransport): boolean {
-        const profile =
-            this.p2pManager.profileManager.getProfileByTransport(transport);
-        return !!profile && profile.getIsHandshakeCompleted();
+        const address = transport.peerAddress;
+        let profile: PeerProfile | undefined;
+        if (address) {
+            // cover the case where the original transport is upgraded
+            profile =
+                this.p2pManager.profileManager.getProfileByEvmAddress(address);
+        } else {
+            profile =
+                this.p2pManager.profileManager.getProfileByTransport(transport);
+        }
+        const isCompleted = !!profile && profile.getIsHandshakeCompleted();
+
+        const transportMeta = LoggerUtils.getTransportMetadata(transport);
+        this.logger.debug(
+            `Checking if handshake completed for transport ${TransportType[transport.transportType]}`,
+            { ...transportMeta, isCompleted, profileExists: !!profile }
+        );
+
+        return isCompleted;
     }
 
     public async waitForHandshakeCompleted(
@@ -177,10 +194,15 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
     public maybeFinalizeHandshakeOnceFromTransport(transport: ATransport) {
         const verifiedPeerAddress =
             this.verifiedPeerAddressByTransport.get(transport);
+        const didReceiveAck = this.didReceiveAck(transport);
+        const remotePreferred = this.remotePreferredTransportMap.get(transport);
+        this.logger.debug(
+            `maybeFinalizeHandshakeOnceFromTransport called for transport ${TransportType[transport.transportType]}`,
+            { verifiedPeerAddress, didReceiveAck, remotePreferred }
+        );
+
         if (!verifiedPeerAddress) return;
         if (!this.didReceiveAck(transport)) return;
-
-        const remotePreferred = this.remotePreferredTransportMap.get(transport);
         if (remotePreferred === undefined) return;
 
         // Only create/update the profile once the handshake has fully completed.
@@ -243,6 +265,11 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         );
 
         // Allow guards to return early once handshake completes.
+        const transportMeta = LoggerUtils.getTransportMetadata(transport);
+        this.logger.debug(
+            `Signaling handshake completion for transport ${TransportType[transport.transportType]}`,
+            { ...transportMeta }
+        );
         void this.handshakeBarrier.signal();
     }
 }

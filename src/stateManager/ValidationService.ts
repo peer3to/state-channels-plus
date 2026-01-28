@@ -13,6 +13,7 @@ import FraudProofService from "./utils/FraudProofService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
 import type StateManager from "@/stateManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
 
 export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
@@ -43,6 +44,7 @@ export default class ValidationService {
             block.channelId != this.stateManager.channelId
         ) {
             this.logger.warn("validateBlockConfirmation - wrong channel", {
+                strategy: (strategy as any)?.constructor?.name,
                 stateManagerChannelId: String(this.stateManager.channelId),
                 blockChannelId: String(block.channelId),
                 block: LoggerUtils.getBlockMetadata(block, this.storage)
@@ -53,6 +55,7 @@ export default class ValidationService {
         // Check if channel is open
         if (!this.isChannelOpen(this.stateManager.forkId)) {
             this.logger.warn("validateBlockConfirmation - channel not opened", {
+                strategy: (strategy as any)?.constructor?.name,
                 stateManagerForkId: String(this.stateManager.forkId),
                 block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
@@ -84,6 +87,7 @@ export default class ValidationService {
             this.logger.warn(
                 "validateBlockConfirmation - author is not participant",
                 {
+                    strategy: (strategy as any)?.constructor?.name,
                     block: LoggerUtils.getBlockMetadata(block, this.storage)
                 }
             );
@@ -97,6 +101,7 @@ export default class ValidationService {
         );
         if (conflictResult !== BlockValidationResult.SUCCESS) {
             this.logger.warn("validateBlockConfirmation - conflicting block", {
+                strategy: (strategy as any)?.constructor?.name,
                 block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
             return conflictResult;
@@ -104,18 +109,22 @@ export default class ValidationService {
 
         if (await this.isDisputedFork(block.forkId, block.channelId)) {
             this.logger.warn("validateBlockConfirmation - fork disputed", {
+                strategy: (strategy as any)?.constructor?.name,
                 block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
             return await strategy.blockForkIsDisputed(block, senderAddress);
         }
 
         // isNext
-        if (
-            block.height > this.storage.blocks.getNextBlockHeight(block.forkId)
-        ) {
+        const expectedNextHeight = this.storage.blocks.getNextBlockHeight(
+            block.forkId
+        );
+        if (block.height > expectedNextHeight) {
             this.logger.warn(
                 "validateBlockConfirmation - block is in the future",
                 {
+                    strategy: (strategy as any)?.constructor?.name,
+                    expectedNextHeight,
                     block: LoggerUtils.getBlockMetadata(block, this.storage)
                 }
             );
@@ -130,11 +139,13 @@ export default class ValidationService {
             // if first block -> wrong genesis fraud proof
             if (block.height === 0) {
                 this.logger.warn("validateBlockConfirmation - wrong genesis", {
+                    strategy: (strategy as any)?.constructor?.name,
                     block: LoggerUtils.getBlockMetadata(block, this.storage)
                 });
                 return await strategy.wrongGenesisDetected(block);
             }
             this.logger.warn("validateBlockConfirmation - block not linked", {
+                strategy: (strategy as any)?.constructor?.name,
                 block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
             return await strategy.blockIsNotLinkedAndIsNotFirstBlock(block);
@@ -146,7 +157,11 @@ export default class ValidationService {
             this.logger.warn(
                 "validateBlockConfirmation - unexpected next leader",
                 {
-                    block: LoggerUtils.getBlockMetadata(block, this.storage)
+                    strategy: (strategy as any)?.constructor?.name,
+                    block: LoggerUtils.getBlockMetadata(block, this.storage),
+                    expectedNextLeader: nextLeader,
+                    expectedNextHeight,
+                    expectedForkId: this.stateManager.forkId
                 }
             );
             return await strategy.invalidStateTransitionDetected(block);
@@ -157,17 +172,11 @@ export default class ValidationService {
 
         if (timeResult !== BlockValidationResult.SUCCESS) {
             this.logger.warn("Time validation failed", {
+                strategy: (strategy as any)?.constructor?.name,
                 validationResult:
                     BlockValidationResult[timeResult] ??
                     `UNKNOWN(${timeResult})`,
                 blockHeight: block.height
-            });
-            this.logger.debug("Time validation details", {
-                block,
-                validationResult:
-                    BlockValidationResult[timeResult] ??
-                    `UNKNOWN(${timeResult})`,
-                isFraud: timeResult === BlockValidationResult.DISPUTE
             });
             return timeResult;
         }
@@ -513,7 +522,10 @@ export default class ValidationService {
             Math.abs(nowSeconds - block.timestamp) <=
             this.timeConfig.agreementTime;
 
-        if (!receivedWithinAgreementTime) {
+        if (
+            !receivedWithinAgreementTime &&
+            strategy instanceof BlockValidationStrategy
+        ) {
             logTimeFailure({
                 validationResult: BlockValidationResult.NOT_ENOUGH_TIME,
                 checkType: "subjective",
