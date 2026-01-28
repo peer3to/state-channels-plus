@@ -347,7 +347,7 @@ export class LoggerUtils {
             onChainTimestamp: block.onChainTimestamp,
             allSigners: Array.from(allSignersSet),
             didntSign: Array.from(didntSign),
-            numberOfInboundMessageBlocks: block.messageBlocks.length || 0,
+            numberOfInboundMessageBlocks: block.messageBlocks?.length ?? 0,
             forkId: block.forkId,
             channelId: block.channelId
         };
