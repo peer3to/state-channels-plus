@@ -419,14 +419,14 @@ class DisputeManager {
         }
 
         // latestStateStateMachineState
-        const latestStateStateMachineState =
+        let latestStateStateMachineState =
             this.storage.stateMachineStates.getStateMachineState(
                 latestStateSnapshot.stateMachineStateHash
             );
-        if (!latestStateStateMachineState)
-            throw new Error(
-                "getDisputeAuditingData - latestStateStateMachineState not found"
-            );
+        if (!latestStateStateMachineState) {
+            isPartial = true;
+            latestStateStateMachineState = ""; // not needed for verifyStateProof and if the dispute is honest, we'll catchup and have it later
+        }
 
         // inbound message blocks
         const inboundMessageBlocks =

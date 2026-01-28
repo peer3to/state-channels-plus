@@ -203,6 +203,14 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         channelBalance.latestInboundMessageBlockHeight = nextBlockHeight;
         channelBalance.totalDeposits = newTotalDeposits;
 
+        // Track pending participants for join messages
+        //TODO - just have a view function for pending participants that iterates inbound message blocks for join messages
+        for (uint256 i = 0; i < messageBlock.messages.length; i++) {
+            if (messageBlock.messages[i].messageType == MESSAGE_TYPE_JOIN) {
+                JoinChannel memory joinChannel = abi.decode(messageBlock.messages[i].data, (JoinChannel));
+                disputeData[channelId].pendingParticipants.push(joinChannel.participant);
+            }
+        }
         emit InboundMessagesProcessed(channelId, messageBlock);
     }
 
