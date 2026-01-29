@@ -168,6 +168,8 @@ class DisputeManager {
         }
     }
     public async killDispute(dispute: DisputeStruct): Promise<void> {
+        const disputeMeta = LoggerUtils.getDisputeMetadata(dispute);
+        const formattedHash = LoggerUtils.formatHash(disputeMeta.disputeHash);
         try {
             // a mutex is not needed since we observe and validate a dispute only once and create only 1 disputeFraudProof for it
             const disputeFraudProof =
@@ -181,15 +183,16 @@ class DisputeManager {
                 await this.stateChannelManagerContract.applyDisputeFraudProofs([
                     disputeFraudProof
                 ]);
-            txRespone.wait().then(() => {
-                this.logger.debug("Dispute killed successfully", {
-                    forkId: dispute.input.forkId,
-                    channelId: this.channelId
-                });
-            });
+
+            await txRespone.wait();
+            this.logger.info(
+                `✅ Dispute killed successfully: ${formattedHash}`
+            );
         } catch (error) {
-            this.logger.error("Error killing dispute", {
-                forkId: dispute.input.forkId,
+            const custom = tryDecodeCustomError(error);
+            this.logger.error(`❌ Error killing dispute ${formattedHash}`, {
+                disputeMeta,
+                custom,
                 error: error instanceof Error ? error.message : String(error)
             });
         }

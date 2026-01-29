@@ -153,7 +153,8 @@ class StateManager {
         this.stateChannelEventListener = new StateChannelEventListener(
             this.stateChannelManagerContract,
             this.eventHandler,
-            this.diamondStateMachine.localDiamondContract
+            this.diamondStateMachine.localDiamondContract,
+            logger
         );
         this.agreementManager = new AgreementManager(this.storage, this.logger);
         this.disputeManager = new DisputeManager(
@@ -1866,11 +1867,9 @@ class StateManager {
 
         LoggerUtils.logTimeoutDetected(
             this.logger,
-            participantAddress,
             blockHeight,
-            isForced,
-            previousBlock?.author,
-            previousBlockProducerPostedCalldata
+            previousBlockOrSnapshot,
+            timeout
         );
 
         // persist timeout locally
