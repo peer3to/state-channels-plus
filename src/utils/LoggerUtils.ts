@@ -1,7 +1,9 @@
 import {
     DisputeStruct,
     TimeoutStruct,
-    StateProofStruct
+    StateProofStruct,
+    DisputeInputStruct,
+    DisputeAuditingDataStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import {
     DisputeFraudProofStruct,
@@ -21,7 +23,10 @@ import { TransportType } from "@/transport/TransportType";
 import ATransport from "@/transport/ATransport";
 import { Block, StateSnapshot } from "@/models";
 import Storage from "@/storage";
-import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    MessageBlockStruct,
+    SnapshotDataStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 export class LoggerUtils {
     // ====================================
     // SIMPLE FORMATTERS
@@ -202,6 +207,21 @@ export class LoggerUtils {
         };
     }
 
+    static getMessageBlockMetadata(messageBlock: MessageBlockStruct) {
+        return {
+            blockHash: String(
+                hash(Codec.encode(messageBlock, Type.MessageBlock))
+            ),
+            blockHeight: Number(messageBlock.blockHeight),
+            timestamp: Number(messageBlock.timestamp),
+            messagesCount: messageBlock.messages.length,
+            totalBalance: {
+                amount: Number(messageBlock.totalBalance.amount),
+                data: String(messageBlock.totalBalance.data)
+            }
+        };
+    }
+
     static getStateProofMetadata(stateProof: StateProofStruct) {
         const milestones = stateProof.milestones.map(
             (milestone, milestoneIndex) => ({
@@ -229,25 +249,63 @@ export class LoggerUtils {
     }
 
     static getDisputeMetadata(dispute: DisputeStruct) {
-        const input = dispute.input;
         const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
         return {
             disputeHash,
-            channelId: String(input.channelId),
-            forkId: String(input.forkId),
-            latestStateSnapshotHash: String(input.latestStateSnapshotHash),
+            input: this.getDisputeInputMetadata(dispute.input),
+            outputSnapshotDataHash: String(dispute.outputSnapshotDataHash)
+        };
+    }
+
+    static getDisputeInputMetadata(disputeInput: DisputeInputStruct) {
+        return {
+            channelId: String(disputeInput.channelId),
+            forkId: String(disputeInput.forkId),
+            latestStateSnapshotHash: String(
+                disputeInput.latestStateSnapshotHash
+            ),
             latestInboundMessageBlockHash: String(
-                input.latestInboundMessageBlockHash
+                disputeInput.latestInboundMessageBlockHash
             ),
             lastInboundMessageBlockHeight: Number(
-                input.lastInboundMessageBlockHeight
+                disputeInput.lastInboundMessageBlockHeight
             ),
-            onChainSlashes: input.onChainSlashes.map((addr) => String(addr)),
-            disputeAuditingDataHash: String(input.disputeAuditingDataHash),
-            disputer: String(input.disputer),
-            selfRemoval: input.selfRemoval,
-            timeout: this.getTimeoutStructMetadata(input.timeout),
-            stateProof: this.getStateProofMetadata(input.stateProof)
+            onChainSlashes: disputeInput.onChainSlashes.map((addr) =>
+                String(addr)
+            ),
+            disputeAuditingDataHash: String(
+                disputeInput.disputeAuditingDataHash
+            ),
+            disputer: String(disputeInput.disputer),
+            selfRemoval: disputeInput.selfRemoval,
+            timeout: this.getTimeoutStructMetadata(disputeInput.timeout),
+            stateProof: this.getStateProofMetadata(disputeInput.stateProof)
+        };
+    }
+
+    static getAuditingMetadata(
+        auditingData: DisputeAuditingDataStruct
+    ): Record<string, any> {
+        return {
+            genesisStateSnapshotData: this.getSnapshotDataMetadata(
+                auditingData.genesisStateSnapshotData
+            ),
+            latestStateSnapshot: this.getSnapshotMetadata(
+                StateSnapshot.from(auditingData.latestStateSnapshot)
+            ),
+            milestoneSnapshots: auditingData.milestoneSnapshots.map(
+                (snapshot) =>
+                    this.getSnapshotMetadata(StateSnapshot.from(snapshot))
+            ),
+            latestStateStateMachineStateHash: String(
+                hash(auditingData.latestStateStateMachineState)
+            ),
+            inboundMessageBlocks: auditingData.inboundMessageBlocks.map(
+                (messageBlock) => this.getMessageBlockMetadata(messageBlock)
+            ),
+            outboundMessageBlocks: auditingData.outboundMessageBlocks.map(
+                (messageBlock) => this.getMessageBlockMetadata(messageBlock)
+            )
         };
     }
 

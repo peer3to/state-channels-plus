@@ -338,9 +338,8 @@ class DisputeManager {
             this.logger.error("Error computing dispute output snapshot data", {
                 forkId,
                 channelId: this.channelId,
-                disputeInput,
-                inboundMessageBlocksLength:
-                    auditingData.inboundMessageBlocks.length,
+                disputeInput: LoggerUtils.getDisputeInputMetadata(disputeInput),
+                auditingData: LoggerUtils.getAuditingMetadata(auditingData),
                 custom,
                 error
             });
