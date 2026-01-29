@@ -61,12 +61,12 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function getOnChainThresholdSet(bytes32 channelId) public view virtual returns (address[] memory) {
-        return UtilityFacet(utilityFacetAddress)
-            .subtractAddressArrays(
-                UtilityFacet(utilityFacetAddress)
-                    .concatAddressArrays(getSnapshotParticipants(channelId), getPendingParticipants(channelId)),
-                getOnChainSlashedParticipants(channelId)
-            );
+        return UtilityFacet(utilityFacetAddress).subtractAddressArrays(
+            UtilityFacet(utilityFacetAddress).concatAddressArrays(
+                getSnapshotParticipants(channelId), getPendingParticipants(channelId)
+            ),
+            getOnChainSlashedParticipants(channelId)
+        );
     }
 
     function getGenesisTimestamp(bytes32 channelId, bytes32 originForkId, bytes32 forkId)
@@ -237,7 +237,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return abi.decode(encodedBlock, (Block));
     }
 
-    function isBlockAuthentic(SignedBlock memory _block) public view returns (bool) {
+    function isBlockAuthentic(SignedBlock memory _block) public view virtual returns (bool) {
         // try decode block
         bytes memory data = abi.encodeCall(this.decodeBlock, (_block.encodedBlock));
         (bool success, bytes memory encodedBlock) = address(this).staticcall(data);
@@ -295,9 +295,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             for (uint256 j = 0; j < inboundMessageBlocks[i].messages.length; j++) {
                 bool success = stateMachineImplementation.processInboundMessage(inboundMessageBlocks[i].messages[j]);
                 require(success, ErrorDisputeStateMachineInboundProcessingFailed());
-                newTotalDeposits = stateMachineImplementation.addBalance(
-                    newTotalDeposits, inboundMessageBlocks[i].messages[j].balance
-                );
+                newTotalDeposits =
+                    stateMachineImplementation.addBalance(newTotalDeposits, inboundMessageBlocks[i].messages[j].balance);
             }
         }
         encodedModifiedState = stateMachineImplementation.getState();
