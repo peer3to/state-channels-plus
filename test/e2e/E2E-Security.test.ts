@@ -779,7 +779,7 @@ describe("E2E: Advanced Security", function () {
         // Arrange: peer submits dispute with tampered auditing data commitment
         // Act: tampered dispute is posted on-chain
         // Assert: validation rejects it, dispute is killed, fork stays unchanged
-        it("should reject dispute with incorrect auditing data commitment", async function () {
+        it.only("should reject dispute with incorrect auditing data commitment", async function () {
             // Peer 1 crafts and posts a tampered dispute
             const { dispute } = await harness!.postTamperedDispute(
                 1,
