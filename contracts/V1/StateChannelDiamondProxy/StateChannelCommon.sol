@@ -110,7 +110,35 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function getPendingParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
-        return disputeData[channelId].pendingParticipants;
+        address[] memory snapshotParticipants = getSnapshotParticipants(channelId);
+        address[] memory pendingParticipants = new address[](0);
+
+        bytes32 inboundHash = channelBalances[channelId].latestInboundMessageBlockHash;
+        while (inboundHash != bytes32(0)) {
+            MessageBlock storage inboundBlock = inboundMessageBlockMap[channelId][inboundHash];
+            // Stop at pruned / non-existent blocks (pruning deletes the snapshot head too)
+            if (inboundBlock.timestamp == 0 && inboundBlock.messages.length == 0) {
+                break;
+            }
+
+            for (uint256 i = 0; i < inboundBlock.messages.length; i++) {
+                if (inboundBlock.messages[i].messageType == MESSAGE_TYPE_JOIN) {
+                    JoinChannel memory joinChannel = abi.decode(inboundBlock.messages[i].data, (JoinChannel));
+                    if (
+                        !UtilityFacet(utilityFacetAddress).isAddressInArray(
+                            snapshotParticipants, joinChannel.participant
+                        )
+                    ) {
+                        pendingParticipants = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
+                            pendingParticipants, joinChannel.participant
+                        );
+                    }
+                }
+            }
+            inboundHash = inboundBlock.previousBlockHash;
+        }
+
+        return pendingParticipants;
     }
 
     function getStateSnapshot(bytes32 channelId) public view virtual returns (StateSnapshot memory) {
@@ -202,16 +230,23 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         channelBalance.latestInboundMessageBlockHash = blockHash;
         channelBalance.latestInboundMessageBlockHeight = nextBlockHeight;
         channelBalance.totalDeposits = newTotalDeposits;
-
-        // Track pending participants for join messages
-        //TODO - just have a view function for pending participants that iterates inbound message blocks for join messages
-        for (uint256 i = 0; i < messageBlock.messages.length; i++) {
-            if (messageBlock.messages[i].messageType == MESSAGE_TYPE_JOIN) {
-                JoinChannel memory joinChannel = abi.decode(messageBlock.messages[i].data, (JoinChannel));
-                disputeData[channelId].pendingParticipants.push(joinChannel.participant);
-            }
-        }
         emit InboundMessagesProcessed(channelId, messageBlock);
+    }
+
+    function _resolveTotalDeposits(bytes32 channelId, bytes32 blockHash) internal view returns (Balance memory) {
+        Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
+        if (blockHash == bytes32(0)) {
+            return zeroBalance;
+        }
+        MessageBlock storage inboundBlock = inboundMessageBlockMap[channelId][blockHash];
+        if (inboundBlock.timestamp == 0 && inboundBlock.messages.length == 0) {
+            StateSnapshot storage snapshot = stateSnapshots[channelId];
+            if (snapshot.snapshotData.latestInboundMessageBlockHash == blockHash) {
+                return snapshot.snapshotData.totalDeposits;
+            }
+            return zeroBalance;
+        }
+        return inboundBlock.totalBalance;
     }
 
     function hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash) public view virtual returns (bool) {
@@ -350,25 +385,14 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function _canParticipateInDisputes(bytes32 channelId, address participant) public view returns (bool) {
-        StateSnapshot storage stateSnapshot = stateSnapshots[channelId];
-        bool isParticipant = false;
-        //Check if normal participant
-        for (uint256 i = 0; i < stateSnapshot.snapshotData.participants.length; i++) {
-            if (stateSnapshot.snapshotData.participants[i] == participant) {
-                isParticipant = true;
-                break;
-            }
+        address[] memory snapshotParticipants = getSnapshotParticipants(channelId);
+        if (UtilityFacet(utilityFacetAddress).isAddressInArray(snapshotParticipants, participant)) {
+            return !isParticipantSlashedOnChain(channelId, participant);
         }
-        if (!isParticipant) {
-            //check pending participants
-            DisputeData storage _disputeData = disputeData[channelId];
-            for (uint256 i = 0; i < _disputeData.pendingParticipants.length; i++) {
-                if (_disputeData.pendingParticipants[i] == participant) {
-                    isParticipant = true;
-                    break;
-                }
-            }
-            if (!isParticipant) return false;
+
+        address[] memory pendingParticipants = getPendingParticipants(channelId);
+        if (!UtilityFacet(utilityFacetAddress).isAddressInArray(pendingParticipants, participant)) {
+            return false;
         }
 
         return !isParticipantSlashedOnChain(channelId, participant);
