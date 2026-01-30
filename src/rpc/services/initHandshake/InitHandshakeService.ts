@@ -103,15 +103,11 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
 
     public isHandshakeCompletedForTransport(transport: ATransport): boolean {
         const address = transport.peerAddress;
-        let profile: PeerProfile | undefined;
-        if (address) {
-            // cover the case where the original transport is upgraded
-            profile =
-                this.p2pManager.profileManager.getProfileByEvmAddress(address);
-        } else {
-            profile =
-                this.p2pManager.profileManager.getProfileByTransport(transport);
-        }
+        const profileManager = this.p2pManager.profileManager;
+        const profile = address
+            ? profileManager.getProfileByEvmAddress(address)
+            : profileManager.getProfileByTransport(transport);
+
         const isCompleted = !!profile && profile.getIsHandshakeCompleted();
 
         const transportMeta = LoggerUtils.getTransportMetadata(transport);
