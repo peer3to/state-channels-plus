@@ -9,6 +9,8 @@ export class BrowserLogger implements Logger {
     private context: LoggerContext;
     private logStore: ReturnType<typeof createLogStore>;
     private enableMemoryStorage: boolean;
+    private static sharedLogStore: ReturnType<typeof createLogStore> | null =
+        null;
 
     constructor(
         context: LoggerContext = {},
@@ -18,8 +20,16 @@ export class BrowserLogger implements Logger {
         this.context = context;
         this.level = level;
         this.enableMemoryStorage = enableMemoryStorage;
-        const maxSize = (config.CRASH_LOG_MAX_SIZE_MB || 10) * 1024 * 1024;
-        this.logStore = createLogStore(maxSize, enableMemoryStorage);
+
+        // Use shared logStore for all instances to ensure logs from child loggers are captured
+        if (!BrowserLogger.sharedLogStore) {
+            const maxSize = (config.CRASH_LOG_MAX_SIZE_MB || 10) * 1024 * 1024;
+            BrowserLogger.sharedLogStore = createLogStore(
+                maxSize,
+                enableMemoryStorage
+            );
+        }
+        this.logStore = BrowserLogger.sharedLogStore;
     }
 
     public child(context: LoggerContext): Logger {

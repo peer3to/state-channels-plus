@@ -1,4 +1,6 @@
 import { Logger } from "./types";
+import { encodePlainLog } from "./logEncoder";
+import { setLogObserver, StoredLog } from "./logStore";
 
 export interface CrashUploadConfig {
     enabled: boolean;
@@ -51,26 +53,16 @@ function generateGasSummary(logs: any[]): string {
     return summary;
 }
 
-function serializeLogsToNdjson(logs: unknown[]): string {
-    return logs
-        .map((l) =>
-            JSON.stringify(l, (_key, v) =>
-                typeof v === "bigint" ? v.toString() : v
-            )
-        )
-        .join("\n");
-}
-
 async function maybeCompress(
-    ndjson: string
+    json: string
 ): Promise<{ blob: Blob; contentEncoding?: "gzip" }> {
     if (typeof CompressionStream === "undefined") {
         return {
-            blob: new Blob([ndjson], { type: "application/x-ndjson" })
+            blob: new Blob([json], { type: "application/json" })
         };
     }
 
-    const stream = new Blob([ndjson])
+    const stream = new Blob([json])
         .stream()
         .pipeThrough(new CompressionStream("gzip"));
 
@@ -81,12 +73,7 @@ async function maybeCompress(
     };
 }
 
-async function uploadLogs(
-    { blob, contentEncoding }: { blob: Blob; contentEncoding?: "gzip" },
-    config: CrashUploadConfig,
-    logs: any[]
-): Promise<void> {
-    // Extract channel ID and peer address from logs
+function generateBaseFilename(logs: any[]): string {
     let channelId: string | undefined;
     let peerAddress: string | undefined;
 
@@ -97,14 +84,31 @@ async function uploadLogs(
         if (channelId && peerAddress) break;
     }
 
-    // Generate filename with channel ID and peer address
-    const extension = contentEncoding === "gzip" ? ".ndjson.gz" : ".ndjson";
-    const channelSuffix = channelId ? `-ch${channelId}` : "";
-    const peerSuffix = peerAddress ? `-${peerAddress.slice(0, 8)}` : "";
-    const filename = `${config.prefix || "crash-"}${Date.now()}${channelSuffix}${peerSuffix}-${Math.random().toString(36).slice(2, 8)}${extension}`;
+    const now = new Date();
+    const timestamp = now
+        .toISOString()
+        .replace(/[:.]/g, "-")
+        .replace("T", "-")
+        .slice(0, -5);
+    const channelSuffix = channelId ? `-ch_${channelId.slice(0, 8)}` : "";
+    const peerSuffix = peerAddress ? `-peer_${peerAddress.slice(2, 8)}` : "";
 
+    return `crash-${timestamp}${channelSuffix}${peerSuffix}`;
+}
+
+async function uploadFile(
+    blob: Blob,
+    filename: string,
+    config: CrashUploadConfig,
+    contentEncoding?: string
+): Promise<void> {
     const headers: Record<string, string> = {
-        "Content-Type": "application/x-ndjson",
+        "Content-Type":
+            contentEncoding === "gzip"
+                ? "application/gzip"
+                : filename.endsWith(".json")
+                  ? "application/json"
+                  : "text/plain",
         "X-Filename": filename
     };
 
@@ -142,49 +146,28 @@ async function handleCrash(
 
     try {
         const logs = logger.getAllLogs();
+        const baseFilename = generateBaseFilename(logs);
 
-        // Extract context information from logs
-        let channelId: string | undefined;
-        let peerAddress: string | undefined;
+        // Generate plain log and compress before upload
+        const plainLog = encodePlainLog(logs);
+        const { blob: plainLogBlob, contentEncoding } =
+            await maybeCompress(plainLog);
+        const plainLogFilename = contentEncoding
+            ? `${baseFilename}.log.gz`
+            : `${baseFilename}.log`;
 
-        for (let i = logs.length - 1; i >= Math.max(0, logs.length - 10); i--) {
-            const log = logs[i];
-            if (log.channelId) channelId = log.channelId;
-            if (log.peerAddress) peerAddress = log.peerAddress;
-            if (channelId && peerAddress) break;
-        }
-
-        // Generate gas summary
-        const gasSummary = generateGasSummary(logs);
-
-        // Add crash error as final log entry
-        const contextMessage =
-            context === "error-log"
-                ? `Error logged: ${error.message}`
-                : `Uncaught ${context}: ${error.message}`;
-
-        logs.push({
-            ts: Date.now(),
-            level: "error",
-            message: contextMessage,
-            component: "CrashHandler",
-            channelId,
-            peerAddress,
-            gasSummary,
-            error: {
-                name: error.name,
-                message: error.message,
-                stack: error.stack
-            }
-        });
-
-        const ndjson = serializeLogsToNdjson(logs);
-        const compressed = await maybeCompress(ndjson);
-        await uploadLogs(compressed, config, logs);
+        await uploadFile(
+            plainLogBlob,
+            plainLogFilename,
+            config,
+            contentEncoding
+        );
 
         logger.clearLogs();
     } catch (uploadError) {
         console.error("CrashHandler upload failed:", uploadError);
+    } finally {
+        crashUploadInProgress = false;
     }
 }
 
@@ -204,29 +187,17 @@ export function setupCrashHandler(
     const handle = (
         error: Error,
         context: "exception" | "rejection" | "error-log"
-    ) => handleCrash(error, context, logger, config);
+    ) => {
+        return handleCrash(error, context, logger, config);
+    };
 
-    // Intercept logger.error
-    if (typeof logger.error === "function") {
-        const originalError = logger.error.bind(logger);
-        logger.error = function (message: any, meta?: any, ...args: any[]) {
-            const result = originalError(message, meta, ...args);
-
-            setTimeout(() => {
-                const error =
-                    message instanceof Error
-                        ? message
-                        : new Error(
-                              typeof message === "string"
-                                  ? message
-                                  : "Error logged"
-                          );
-                handle(error, "error-log");
-            }, 0);
-
-            return result;
-        };
-    }
+    // Register log observer to trigger crash handling on error logs
+    setLogObserver((entry: StoredLog) => {
+        if (entry.level === "error") {
+            const error = new Error(entry.message);
+            handle(error, "error-log");
+        }
+    });
 
     // Browser global handlers
     if (typeof window !== "undefined") {

@@ -1,5 +1,23 @@
 import { LoggerContext } from "./types";
 
+export type StoredLog = {
+    ts: number;
+    level: string;
+    message: string;
+    component?: string;
+    peerId?: number;
+    peerAddress?: string;
+    [key: string]: any;
+};
+
+export type LogObserver = (entry: StoredLog) => void;
+
+let observer: LogObserver | null = null;
+
+export function setLogObserver(fn: LogObserver | null): void {
+    observer = fn;
+}
+
 // Shared log storage helper
 export function createLogStore(maxSize: number, enabled: boolean) {
     const logs: Array<{ entry: any; size: number }> = [];
@@ -14,7 +32,7 @@ export function createLogStore(maxSize: number, enabled: boolean) {
         ): void {
             if (!enabled) return;
 
-            const logEntry = {
+            const logEntry: StoredLog = {
                 ts: Date.now(),
                 level,
                 message:
@@ -31,6 +49,9 @@ export function createLogStore(maxSize: number, enabled: boolean) {
                 ).length * 2;
             logs.push({ entry: logEntry, size: entrySize });
             currentSize += entrySize;
+
+            // Notify observer
+            if (observer) observer(logEntry);
 
             // Maintain circular buffer
             while (currentSize > maxSize && logs.length > 0) {
