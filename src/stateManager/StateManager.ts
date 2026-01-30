@@ -153,7 +153,8 @@ class StateManager {
         this.stateChannelEventListener = new StateChannelEventListener(
             this.stateChannelManagerContract,
             this.eventHandler,
-            this.diamondStateMachine.localDiamondContract
+            this.diamondStateMachine.localDiamondContract,
+            logger
         );
         this.agreementManager = new AgreementManager(this.storage, this.logger);
         this.disputeManager = new DisputeManager(
@@ -685,7 +686,7 @@ class StateManager {
                 this.logger.warn(
                     "onBlockConfirmation - authentication failed",
                     {
-                        strategy: (strategy as any)?.constructor?.name,
+                        strategy: strategy.name,
                         validationResult:
                             BlockValidationResult[validationResult],
                         blockHash: ethers.keccak256(
@@ -721,7 +722,7 @@ class StateManager {
                     this.logger.warn(
                         "onBlockConfirmation - validateBlockConfirmation failed",
                         {
-                            strategy: (strategy as any)?.constructor?.name,
+                            strategy: strategy.name,
                             validationResult:
                                 BlockValidationResult[validationResult],
                             block: LoggerUtils.getBlockMetadata(
@@ -751,7 +752,7 @@ class StateManager {
                 validationResult =
                     await strategy.invalidStateTransitionDetected(block);
                 this.logger.warn("onBlockConfirmation - broken inbound chain", {
-                    strategy: (strategy as any)?.constructor?.name,
+                    strategy: strategy.name,
                     validationResult: BlockValidationResult[validationResult],
                     block: LoggerUtils.getBlockMetadata(block, this.storage)
                 });
@@ -772,7 +773,7 @@ class StateManager {
                 this.logger.warn(
                     "onBlockConfirmation - forged inbound message block",
                     {
-                        strategy: (strategy as any)?.constructor?.name,
+                        strategy: strategy.name,
                         validationResult:
                             BlockValidationResult[validationResult],
                         block: LoggerUtils.getBlockMetadata(block, this.storage)
@@ -797,7 +798,7 @@ class StateManager {
                 this.logger.warn(
                     "onBlockConfirmation - state transition failed",
                     {
-                        strategy: (strategy as any)?.constructor?.name,
+                        strategy: strategy.name,
                         validationResult:
                             BlockValidationResult[validationResult],
                         block: LoggerUtils.getBlockMetadata(block, this.storage)
@@ -838,7 +839,7 @@ class StateManager {
                 this.logger.warn(
                     "onBlockConfirmation - state snapshot hash mismatch",
                     {
-                        strategy: (strategy as any)?.constructor?.name,
+                        strategy: strategy.name,
                         validationResult:
                             BlockValidationResult[validationResult],
                         block: LoggerUtils.getBlockMetadata(block, this.storage)
@@ -863,7 +864,7 @@ class StateManager {
             this.logger.info(
                 `onBlockConfirmation - success - ${blockMeta.blockHeight}`,
                 {
-                    strategy: (strategy as any)?.constructor?.name,
+                    strategy: strategy.name,
                     block: blockMeta
                 }
             );
@@ -871,7 +872,7 @@ class StateManager {
             return true;
         } catch (error) {
             this.logger.error("onBlockConfirmation - error", {
-                strategy: (strategy as any)?.constructor?.name,
+                strategy: strategy.name,
                 channelId: this.channelId,
                 blockHash: ethers.keccak256(
                     blockConfirmation.signedBlock.encodedBlock
@@ -1866,11 +1867,9 @@ class StateManager {
 
         LoggerUtils.logTimeoutDetected(
             this.logger,
-            participantAddress,
             blockHeight,
-            isForced,
-            previousBlock?.author,
-            previousBlockProducerPostedCalldata
+            previousBlockOrSnapshot,
+            timeout
         );
 
         // persist timeout locally

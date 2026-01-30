@@ -146,16 +146,18 @@ contract DisputeManagerFacet is StateChannelCommon {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         DisputeData storage disputeData = disputeData[dispute.input.channelId];
         SnapshotData storage snapshotData = stateSnapshots[dispute.input.channelId].snapshotData;
-        uint256 thresholdCount = snapshotData.participants.length + disputeData.pendingParticipants.length
-            - disputeData.onChainSlashes.length;
+        uint256 pendingCount = getPendingParticipants(dispute.input.channelId).length;
+        uint256 thresholdCount = snapshotData.participants.length + pendingCount - disputeData.onChainSlashes.length;
         if (disputeConfirmation.signatures.length + 1 < thresholdCount) {
             return false;
         }
         address[] memory thresholdSet = getOnChainThresholdSet(dispute.input.channelId);
-        bytes[] memory signatures = UtilityFacet(utilityFacetAddress)
-            .insertBytesInByteArray(disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures);
-        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress)
-            .verifyThresholdSigned(thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures);
+        bytes[] memory signatures = UtilityFacet(utilityFacetAddress).insertBytesInByteArray(
+            disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures
+        );
+        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
+            thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures
+        );
         return isThresholdFinal;
     }
 
@@ -165,15 +167,12 @@ contract DisputeManagerFacet is StateChannelCommon {
         returns (bool isRequired)
     {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
-        DisputeData storage disputeData = disputeData[dispute.input.channelId];
-        if (disputeConfirmation.signatures.length < disputeData.pendingParticipants.length) return true;
+        address[] memory pendingParticipants = getPendingParticipants(dispute.input.channelId);
+        if (disputeConfirmation.signatures.length < pendingParticipants.length) return true;
 
-        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress)
-            .verifyThresholdSigned(
-                disputeData.pendingParticipants,
-                disputeConfirmation.signedDispute.encodedDispute,
-                disputeConfirmation.signatures
-            );
+        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
+            pendingParticipants, disputeConfirmation.signedDispute.encodedDispute, disputeConfirmation.signatures
+        );
         return !isThresholdFinal;
     }
 }

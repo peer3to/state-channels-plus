@@ -86,6 +86,7 @@ export class HandshakeCompletedGuard extends AGuard<ARpcService<ARpcMethods>> {
 
             const timeoutMs =
                 this.service.p2pManager.stateManager.timeConfig.agreementTime *
+                2 * // Allow 2 agreementTime intervals for the handshake to complete - less strict requirements
                 1000;
 
             void (async () => {
