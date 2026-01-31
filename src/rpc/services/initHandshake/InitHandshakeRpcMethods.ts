@@ -96,7 +96,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             preferredTransport
         );
 
-        this.service.maybeFinalizeHandshakeOnceFromTransport(
+        await this.service.maybeFinalizeHandshakeOnceFromTransport(
             this.senderTransport
         );
 
@@ -133,7 +133,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
         // Record it on the transport and apply it to the profile once available.
         this.service.markAcked(this.senderTransport);
 
-        this.service.maybeFinalizeHandshakeOnceFromTransport(
+        await this.service.maybeFinalizeHandshakeOnceFromTransport(
             this.senderTransport
         );
     }

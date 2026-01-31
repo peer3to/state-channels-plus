@@ -100,7 +100,8 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     function open(OpenChannelConfirmation calldata openChannelConfirmation) public virtual override {
         OpenChannel memory openChannelData = abi.decode(openChannelConfirmation.encodedOpenChannel, (OpenChannel));
         require(openChannelData.channelId != bytes32(0), ErrorInvalidJoinChannel());
-        require(!isChannelOpen(openChannelData.channelId), RaceConditionChannelAlreadyOpen());
+        (bool isOpen,) = isChannelOpen(openChannelData.channelId);
+        require(!isOpen, RaceConditionChannelAlreadyOpen());
 
         // set zero balance for on-chain deposits/withdrawals
         Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
@@ -394,8 +395,10 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return StateChannelCommon.hasInboundMessageBlock(channelId, messageBlockHash);
     }
 
-    function isChannelOpen(bytes32 channelId) public view override returns (bool) {
-        return stateSnapshots[channelId].snapshotData.participants.length > 0;
+    function isChannelOpen(bytes32 channelId) public view override returns (bool, StateSnapshot memory) {
+        StateSnapshot memory snapshot = stateSnapshots[channelId];
+        bool isOpen = snapshot.snapshotData.participants.length > 0;
+        return (isOpen, snapshot);
     }
 
     function isForkDisputed(bytes32 channelId, bytes32 forkId) public view override returns (bool) {

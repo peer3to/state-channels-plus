@@ -384,7 +384,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return false;
     }
 
-    function _canParticipateInDisputes(bytes32 channelId, address participant) public view returns (bool) {
+    function canParticipateInDisputes(bytes32 channelId, address participant) public view returns (bool) {
         address[] memory snapshotParticipants = getSnapshotParticipants(channelId);
         if (UtilityFacet(utilityFacetAddress).isAddressInArray(snapshotParticipants, participant)) {
             return !isParticipantSlashedOnChain(channelId, participant);

@@ -187,7 +187,9 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         );
     }
 
-    public maybeFinalizeHandshakeOnceFromTransport(transport: ATransport) {
+    public async maybeFinalizeHandshakeOnceFromTransport(
+        transport: ATransport
+    ) {
         const verifiedPeerAddress =
             this.verifiedPeerAddressByTransport.get(transport);
         const didReceiveAck = this.didReceiveAck(transport);
@@ -244,20 +246,32 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         }
 
         const stateManager = this.p2pManager.stateManager;
-        const isChannelOpened = stateManager.getStatus() === Status.OPENED;
-        if (isChannelOpened) {
-            this.logger.debug(
-                `Initiating sync after handshake with peer ${completedPeerAddress}`
+        const isChannelOpenedStatus =
+            stateManager.getStatus() === Status.OPENED;
+        const isPeerParticipant =
+            await stateManager.diamondStateMachine.localDiamondContract.canParticipateInDisputes(
+                stateManager.getChannelId(),
+                completedPeerAddress
             );
-            this.p2pManager.localRpc.spectateService.sync(
-                completedPeerAddress,
-                stateManager.getChannelId()
-            );
+        if (isChannelOpenedStatus) {
+            if (isPeerParticipant) {
+                this.logger.debug(
+                    `Initiating sync after handshake with peer ${completedPeerAddress}`
+                );
+                this.p2pManager.localRpc.spectateService.sync(
+                    completedPeerAddress,
+                    stateManager.getChannelId()
+                );
+            } else {
+                this.logger.debug(
+                    `Skipping sync after handshake with peer ${completedPeerAddress} - not a participant`
+                );
+            }
         }
 
         this.p2pManager.stateManager.p2pEventHooks.onConnection?.(
             completedPeerAddress,
-            isChannelOpened
+            isChannelOpenedStatus
         );
 
         // Allow guards to return early once handshake completes.

@@ -33,7 +33,7 @@ contract DisputeManagerFacet is StateChannelCommon {
     function commitToReducedResult(bytes32 channelId, bytes32 disputedForkId, bytes32 reducedForkId) public {
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputedForkId];
-        require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
+        require(canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
         _commitToDisputeReducedResult(channelId, disputeWindow, reducedForkId, block.timestamp);
     }
 
@@ -45,7 +45,7 @@ contract DisputeManagerFacet is StateChannelCommon {
     {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         require(msg.sender == dispute.input.disputer, ErrorDisputerNotMsgSender());
-        require(_canParticipateInDisputes(dispute.input.channelId, msg.sender), ErrorCantParticipateInDispute());
+        require(canParticipateInDisputes(dispute.input.channelId, msg.sender), ErrorCantParticipateInDispute());
 
         // race condition checks
         _disputeRaceConditionCheck(dispute);

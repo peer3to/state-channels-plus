@@ -6,7 +6,7 @@ import "./types/DisputeTypes.sol";
 abstract contract StateChannelManagerInterface {
     function open(OpenChannelConfirmation calldata openChannelConfirmation) public virtual;
 
-    function isChannelOpen(bytes32 channelId) public view virtual returns (bool);
+    function isChannelOpen(bytes32 channelId) public view virtual returns (bool, StateSnapshot memory);
 
     function getParticipants(bytes32 channelId) public virtual returns (address[] memory);
 

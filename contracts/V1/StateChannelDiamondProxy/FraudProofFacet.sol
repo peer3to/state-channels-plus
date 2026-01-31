@@ -21,7 +21,7 @@ contract FraudProofFacet is StateChannelCommon {
                     slashedParticipant = msg.sender;
                 }
                 // if in (participants || pendingParticipants) && !slashedOnChain
-                if (_canParticipateInDisputes(fraudProofVerificationContext.channelId, slashedParticipant)) {
+                if (canParticipateInDisputes(fraudProofVerificationContext.channelId, slashedParticipant)) {
                     addOnChainSlashedParticipant(fraudProofVerificationContext.channelId, slashedParticipant);
                 }
             }

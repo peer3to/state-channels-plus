@@ -240,9 +240,29 @@ class StateManager {
         }
 
         try {
-            const isOpen = await this.stateChannelManagerContract.isChannelOpen(
-                this.channelId
-            );
+            const [isOpen, snapshotStruct] =
+                await this.stateChannelManagerContract.isChannelOpen(
+                    this.channelId
+                );
+
+            if (isOpen) {
+                // Best-effort cache: store the latest on-chain snapshot in LocalDiamond
+                try {
+                    await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
+                        this.channelId,
+                        snapshotStruct
+                    );
+                    const snapshotMeta = LoggerUtils.getSnapshotMetadata(
+                        StateSnapshot.from(snapshotStruct)
+                    );
+                    this.logger.debug(
+                        "Cached on-chain snapshot in LocalDiamond",
+                        snapshotMeta
+                    );
+                } catch {
+                    // ignore caching errors
+                }
+            }
 
             if (!isOpen) {
                 this.setStatus(Status.NOT_OPENED);
