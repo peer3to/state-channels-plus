@@ -1,5 +1,6 @@
 // DevTools Console Log Replayer
 // Replays browser logs into console with native formatting
+// Uses Custom Formatters for level-based filtering + collapsible content
 
 let replayData = null;
 let isReplaying = false;
@@ -13,19 +14,137 @@ const CONSOLE_METHODS = {
     verbose: "debug"
 };
 
-// DevTools %c colors (header only) - match native DevTools exactly
-const LEVEL_COLORS = {
+// Colors for JsonML custom formatter (CSS style strings)
+const LEVEL_STYLES = {
     error: "color:#dc2626;font-weight:bold",
     warn: "color:#f97316;font-weight:bold",
     info: "color:#22c55e;font-weight:bold",
     debug: "color:#f59e0b;font-weight:bold",
     verbose: "color:#a855f7;font-weight:bold"
 };
-const HEADER_COLORS = {
+const HEADER_STYLES = {
     timestamp: "color:#9ca3af;font-weight:normal",
     peer: "color:#22d3ee;font-weight:bold",
-    component: "color:#60a5fa;font-weight:bold;opacity:0.8" // slightly muted like native DevTools
+    component: "color:#60a5fa;font-weight:bold;opacity:0.8",
+    message: "color:inherit;font-weight:normal"
 };
+
+// Marker symbol to identify our log entry objects
+const LOG_ENTRY_MARKER = Symbol.for("__replayLogEntry__");
+
+// Custom formatter for DevTools - enables filtering + collapsible content
+function installCustomFormatter() {
+    const formatter = {
+        header: function (obj) {
+            if (!obj || obj[LOG_ENTRY_MARKER] !== true) return null;
+
+            // Build JsonML for the header line
+            const elements = ["span", { style: "font-family: monospace" }];
+
+            // Timestamp
+            if (obj._time) {
+                elements.push([
+                    "span",
+                    { style: HEADER_STYLES.timestamp },
+                    "[" + obj._time + "] "
+                ]);
+            }
+
+            // Level
+            const levelStyle = LEVEL_STYLES[obj._level] || "color:inherit";
+            elements.push([
+                "span",
+                { style: levelStyle },
+                "[" + (obj._level || "log").toUpperCase() + "] "
+            ]);
+
+            // Peer address
+            if (obj._peerAddress) {
+                elements.push([
+                    "span",
+                    { style: HEADER_STYLES.peer },
+                    "[" + obj._peerAddress.slice(0, 8) + "…] "
+                ]);
+            }
+
+            // Component
+            if (obj._component) {
+                elements.push([
+                    "span",
+                    { style: HEADER_STYLES.component },
+                    "[" + obj._component + "] "
+                ]);
+            }
+
+            // Message
+            if (obj._message) {
+                elements.push([
+                    "span",
+                    { style: HEADER_STYLES.message },
+                    obj._message
+                ]);
+            }
+
+            return elements;
+        },
+
+        hasBody: function (obj) {
+            if (!obj || obj[LOG_ENTRY_MARKER] !== true) return false;
+            return obj._hasDetails || obj._hasError;
+        },
+
+        body: function (obj) {
+            if (!obj || obj[LOG_ENTRY_MARKER] !== true) return null;
+
+            const elements = ["div", { style: "margin-left: 16px" }];
+
+            // Details (args + meta)
+            if (obj._hasDetails) {
+                elements.push([
+                    "div",
+                    {},
+                    ["span", { style: "color:#888" }, "Details: "],
+                    ["object", { object: obj._details }]
+                ]);
+            }
+
+            // Error stack
+            if (obj._hasError) {
+                elements.push([
+                    "div",
+                    { style: "margin-top: 4px" },
+                    [
+                        "span",
+                        { style: "color:#dc2626;font-weight:bold" },
+                        "Stack trace:"
+                    ],
+                    [
+                        "div",
+                        {
+                            style: "white-space: pre-wrap; font-family: monospace; color: #888; margin-top: 2px"
+                        },
+                        obj._stack
+                    ]
+                ]);
+            }
+
+            return elements;
+        }
+    };
+
+    // Install the formatter
+    window.devtoolsFormatters = window.devtoolsFormatters || [];
+
+    // Remove any existing replay formatter
+    window.devtoolsFormatters = window.devtoolsFormatters.filter(
+        (f) => f._isReplayFormatter !== true
+    );
+
+    formatter._isReplayFormatter = true;
+    window.devtoolsFormatters.push(formatter);
+
+    return true;
+}
 
 // File handling
 document.addEventListener("DOMContentLoaded", function () {
@@ -153,17 +272,31 @@ async function startReplay() {
     replayButton.textContent = "Replaying...";
 
     try {
+        // Install custom formatter for level filtering + collapsible content
+        installCustomFormatter();
+
         console.clear();
-        console.log("Starting log replay...");
         console.log(
-            `Replaying ${replayData.logs.length} log entries from ${new Date(replayData.generatedAt).toLocaleString()}`
+            "%c[Log Replay] Starting replay...",
+            "color:#22c55e;font-weight:bold"
+        );
+        console.log(
+            `%c[Log Replay] ${replayData.logs.length} entries from ${new Date(replayData.generatedAt).toLocaleString()}`,
+            "color:#9ca3af"
+        );
+        console.log(
+            "%c[Log Replay] Tip: Enable 'Custom formatters' in DevTools Settings > Console for best results",
+            "color:#f59e0b"
         );
         console.log("");
 
         await replayLogs(replayData.logs, respectTiming);
 
         console.log("");
-        console.log("Replay completed");
+        console.log(
+            "%c[Log Replay] Completed",
+            "color:#22c55e;font-weight:bold"
+        );
 
         showStatus("Replay completed successfully", "success");
     } catch (error) {
@@ -200,91 +333,57 @@ async function replayLogs(logs, respectTiming) {
     }
 }
 
-function buildColoredHeader(entry) {
-    let headerStr = "";
-    const styles = [];
-    const t = entry.ts ? new Date(entry.ts) : null;
-    const time = t
-        ? t.toTimeString().slice(0, 8) +
-          "." +
-          String(t.getMilliseconds()).padStart(3, "0")
-        : "";
-
-    if (time) {
-        headerStr += "%c[" + time + "]";
-        styles.push(HEADER_COLORS.timestamp);
-    }
-    headerStr += " %c[" + (entry.level || "log").toUpperCase() + "]";
-    styles.push(LEVEL_COLORS[entry.level] || "color:inherit");
-
-    if (entry.peerAddress) {
-        headerStr += " %c[" + entry.peerAddress.slice(0, 8) + "…]";
-        styles.push(HEADER_COLORS.peer);
-    }
-    if (entry.component) {
-        headerStr += " %c[" + entry.component + "]";
-        styles.push(HEADER_COLORS.component);
-    }
-
-    return [headerStr, styles];
+function formatTimestamp(ts) {
+    const t = ts ? new Date(ts) : null;
+    if (!t) return "";
+    return (
+        t.toTimeString().slice(0, 8) +
+        "." +
+        String(t.getMilliseconds()).padStart(3, "0")
+    );
 }
 
 function replayLogEntry(entry) {
     const method = CONSOLE_METHODS[entry.level] || "log";
-    const [headerStr, headerStyles] = buildColoredHeader(entry);
-    const payloadArgs = entry.args ?? [];
+    const payloadArgs = Array.isArray(entry.args) ? entry.args.slice() : [];
 
-    // Create Error object if present
-    let errorObj;
-    if (entry.error) {
-        errorObj = new Error(entry.error.message || "Error");
-        if (entry.error.stack) errorObj.stack = entry.error.stack;
-    }
-
-    // Build the complete header including the message
-    // This should be: "[timestamp] [LEVEL] [peer] [component] message"
-    // Message uses default console text color (white in dark mode, black in light mode)
-    const MESSAGE_STYLE = "color:inherit;font-weight:normal";
-    let fullHeaderStr = headerStr;
-    let fullHeaderStyles = [...headerStyles];
-
-    // Add the message to the header with its own style so it's not component-colored
+    // Extract message from first arg
+    let message = "";
     if (payloadArgs.length > 0) {
-        const messageText = payloadArgs.map((a) => String(a)).join(" ");
-        fullHeaderStr += " %c" + messageText;
-        fullHeaderStyles.push(MESSAGE_STYLE);
+        message = String(payloadArgs.shift());
     }
 
-    // Determine what expandable content we have (only meta and errors)
-    const hasExpandableContent =
-        (entry.meta && Object.keys(entry.meta).length > 0) || errorObj;
-
-    if (hasExpandableContent) {
-        // Only create a group if there's actually expandable content (meta or error)
-        const groupMethod =
-            entry.level === "error" || entry.level === "warn"
-                ? "group" // expanded by default for errors/warnings
-                : "groupCollapsed"; // collapsed by default for info/debug/verbose
-
-        // Start group with the full header including message
-        console[groupMethod](fullHeaderStr, ...fullHeaderStyles);
-
-        // Add metadata object if it exists and has content
-        if (entry.meta && Object.keys(entry.meta).length > 0) {
-            console.log(entry.meta);
-        }
-
-        // Add error object for proper DevTools stack trace rendering
-        if (errorObj) {
-            console.error(errorObj);
-        }
-
-        // End the group
-        console.groupEnd();
-    } else {
-        // No expandable content - just emit a single log line
-        console[method](fullHeaderStr, ...fullHeaderStyles);
+    // Build details object (only if there's content)
+    const detailsObj = {};
+    if (payloadArgs.length > 0) {
+        detailsObj.args = payloadArgs;
     }
+    if (entry.meta && Object.keys(entry.meta).length > 0) {
+        detailsObj.meta = entry.meta;
+    }
+
+    const hasDetails = Object.keys(detailsObj).length > 0;
+    const hasError = entry.error && entry.error.stack;
+
+    // Create log entry object for custom formatter
+    // The custom formatter will render this with colored header + collapsible body
+    // Using console[method]() ensures DevTools filtering works!
+    const logEntryObj = {
+        [LOG_ENTRY_MARKER]: true,
+        _level: entry.level || "info",
+        _time: formatTimestamp(entry.ts),
+        _peerAddress: entry.peerAddress || "",
+        _component: entry.component || "",
+        _message: message,
+        _hasDetails: hasDetails,
+        _hasError: hasError,
+        _details: hasDetails ? detailsObj : null,
+        _stack: hasError ? entry.error.stack : null
+    };
+
+    // Log using the appropriate method - THIS IS KEY FOR FILTERING
+    // Custom formatter renders it nicely, but the method determines the level
+    console[method](logEntryObj);
 }
 
 function sleep(ms) {
