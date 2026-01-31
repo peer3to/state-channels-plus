@@ -26,20 +26,26 @@ export function encodePlainLog(logs: any[]): string {
             headerParts.push(`[${peerAddress.slice(0, 8)}…]`);
         }
 
-        lines.push(headerParts.join(" "));
+        // ---- header with message on same line ----------------------------------
 
-        // ---- message ------------------------------------------------------------
-
+        let headerLine = headerParts.join(" ");
         if (message !== undefined) {
-            lines.push(`  ${String(message)}`);
+            headerLine += ` ${String(message)}`;
         }
+        lines.push(headerLine);
 
-        // ---- stack trace (errors only, foldable) --------------------------------
+        // ---- stack trace (from log.error.stack or log.stack) --------------------
 
-        if (level === "ERROR" && log.stack) {
-            const stackLines = String(log.stack).split("\n");
+        const stack = log.error?.stack || log.stack;
+        if (stack) {
+            lines.push("  [Stack Trace]");
+            const stackLines = String(stack).split("\n");
             for (const line of stackLines) {
-                lines.push(`    ${line}`);
+                // Skip empty lines and the "Error" header if present
+                const trimmed = line.trim();
+                if (trimmed && trimmed !== "Error") {
+                    lines.push(`    ${trimmed}`);
+                }
             }
         }
 
@@ -53,8 +59,10 @@ export function encodePlainLog(logs: any[]): string {
         delete meta.peerId;
         delete meta.peerAddress;
         delete meta.stack;
+        delete meta.error; // Error is already shown as stack trace above
 
         if (Object.keys(meta).length > 0) {
+            lines.push("  [Meta]");
             const metaJson = JSON.stringify(
                 meta,
                 (_k, v) => (typeof v === "bigint" ? v.toString() : v),
