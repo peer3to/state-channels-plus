@@ -1,5 +1,6 @@
 import { Logger } from "./types";
 import { encodePlainLog } from "./logEncoder";
+import { encodeBrowserReplayLog } from "./encodeBrowserReplayLog";
 import { setLogObserver, StoredLog } from "./logStore";
 
 export interface CrashUploadConfig {
@@ -161,6 +162,17 @@ async function handleCrash(
             plainLogFilename,
             config,
             contentEncoding
+        );
+
+        // Generate and upload browser replay log (for DevTools replayer)
+        const browserReplayJson = encodeBrowserReplayLog(logs);
+        const browserReplayBlob = new Blob([browserReplayJson], {
+            type: "application/json"
+        });
+        await uploadFile(
+            browserReplayBlob,
+            `${baseFilename}.replay.json`,
+            config
         );
 
         logger.clearLogs();
