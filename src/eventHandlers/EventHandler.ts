@@ -9,7 +9,7 @@ import {
     DisputeConfirmationStruct,
     DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import StateManager from "@/stateManager";
+import type StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
 import {
     ChannelId,
@@ -22,9 +22,11 @@ import {
 import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Codec, hash, Logger, Type } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import { isEqual } from "lodash";
 import { ZeroHash } from "ethers";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
+import { Status } from "@/types";
 
 export class EventHandler {
     private logger: Logger;
@@ -89,6 +91,8 @@ export class EventHandler {
     private async handleChannelClose(channelId: ChannelId): Promise<void> {
         this.logger.info("Handling channel close", { channelId });
 
+        this.stateManager.setStatus(Status.NOT_OPENED);
+
         // Disconnect from all peers in this channel
         this.stateManager.p2pManager.disconnectAll();
 
@@ -147,17 +151,17 @@ export class EventHandler {
             Type.Dispute
         );
         const forkId = dispute.input.forkId;
-        const disputeHash = hash(
-            disputeConfirmation.signedDispute.encodedDispute
-        );
-        this.logger.debug("Dispute committed", {
-            channelId,
-            forkId,
-            disputeHash,
-            isFinal,
-            disputeCreationTimestamp,
-            isForced: dispute.input.timeout?.isForced
+
+        const disputeMeta = LoggerUtils.getDisputeMetadata(dispute);
+        const formattedHash = LoggerUtils.formatHash(disputeMeta.disputeHash);
+        this.logger.info(`✅ Dispute received: ${formattedHash}`, {
+            dispute: disputeMeta,
+            isFinal: isFinal,
+            disputeConfirmation,
+            windowCreationTimestamp,
+            auditingDataPosted: disputeAuditingData ? true : false
         });
+
         // sync LocalDiamond state
         await this.diamondStateMachine.localDiamondContract.onDisputeCommitted(
             channelId,
@@ -173,10 +177,17 @@ export class EventHandler {
             return;
         }
 
-        this.stateManager.p2pManager.localRpc.isForkDisputedService.requestDisputeAcknowledgment(
-            channelId,
-            forkId
-        );
+        const isFirstOccurrence =
+            this.stateManager.p2pManager.localRpc.isForkDisputedService.requestDisputeAcknowledgment(
+                channelId,
+                forkId
+            );
+
+        if (isFirstOccurrence) {
+            this.p2pEventHooks.onDisputeStarted?.(
+                this.stateManager.timeConfig.evidenceTime * 3
+            );
+        }
 
         if (isFinal) {
             if (!disputeAuditingData) {
@@ -205,7 +216,23 @@ export class EventHandler {
                 dispute,
                 disputeAuditingData
             );
+
         if (!isValid) {
+            const disputeFraudProof =
+                this.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                    dispute
+                );
+            const killReason = disputeFraudProof
+                ? LoggerUtils.getDisputeFraudProofMeta(disputeFraudProof)
+                : undefined;
+
+            this.logger.warn(
+                `❌ Dispute auditing failed - killing dispute ${formattedHash}`,
+                {
+                    killReason
+                }
+            );
+
             // TODO - do a multicall here
             await Promise.all([
                 this.stateManager.disputeManager.killDispute(dispute),
@@ -213,6 +240,9 @@ export class EventHandler {
             ]);
             return;
         }
+
+        this.logger.info(`✅ Dispute auditing successful ${formattedHash}`);
+
         this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
 
         // this is like success - TODO - consider moving this to DisputeStrategy.success
@@ -239,12 +269,10 @@ export class EventHandler {
         dispute: DisputeStruct
     ): Promise<boolean> {
         // Create our own dispute
-        const {
-            dispute: ourDispute,
-            disputeConfirmation: ourDisputeConfirmation
-        } = await this.stateManager.disputeManager.constructDispute(
-            this.stateManager.latestForkId
-        );
+        const { dispute: ourDispute } =
+            await this.stateManager.disputeManager.constructDispute(
+                this.stateManager.latestForkId
+            );
 
         // Compare reduced disputes to see if we have more evidence
         const singleDisputeReduction =
@@ -388,6 +416,15 @@ export class EventHandler {
             forkId,
             disputer
         );
+
+        // Log dispute killed event
+        // Note: The kill reason is logged earlier when validation fails in onDisputeCommitted
+        this.logger.warn("💀 Dispute killed on-chain", {
+            forkId,
+            disputer: LoggerUtils.formatHash(disputer),
+            channelId
+        });
+
         // disconnect disputer
         this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
             disputer
@@ -437,7 +474,7 @@ export class EventHandler {
     ): Promise<boolean> {
         // TODO - extract this function since it's used in multiple places (e.g spectating RPC...)
         const disputeWindow = (
-            await this.diamondStateMachine.localDiamondContract.getDisputeWindows(
+            await this.stateManager.stateChannelManagerContract.getDisputeWindows(
                 channelId,
                 [forkId]
             )
@@ -475,7 +512,7 @@ export class EventHandler {
                 `StateMachineState not available for hash: ${latestSnapshot.snapshotData.stateMachineStateHash}`
             );
         const genesisSnapshot =
-            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
+            this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
         if (!genesisSnapshot)
             throw new Error(
                 `GenesisSnapshot not available for forkId: ${forkId}`
@@ -513,13 +550,13 @@ export class EventHandler {
     private async setForkIfLatestAndCurrent(
         forkId: ForkId,
         reducedForkId: ForkId,
-        reductionTimestamp: Timestamp
+        _reductionTimestamp: Timestamp
     ): Promise<void> {
         // enough for now - this will change later
         if (this.stateManager.forkId == forkId) {
             // Get the latest state snapshot - it should be reduced locally if not we'll reduce it on the spot
             const latestStateSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
+                this.storage.stateSnapshots.getGenesisSnapshotByForkId(
                     reducedForkId
                 );
             if (!latestStateSnapshot) {

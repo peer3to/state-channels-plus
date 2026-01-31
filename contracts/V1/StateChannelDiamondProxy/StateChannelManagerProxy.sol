@@ -72,7 +72,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
      */
     function postBlockCalldata(SignedBlock memory signedBlock, uint256 maxTimestamp) public override {
         //Time is the only race condition we need to take into account
-        require(block.timestamp <= maxTimestamp, ErrorBlockCalldataTimestampTooLate());
+        require(block.timestamp <= maxTimestamp, RaceConditionBlockCalldataTimestampTooLate());
         bytes32 commitment = keccak256(abi.encode(signedBlock, block.timestamp));
         Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
 
@@ -100,7 +100,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     function open(OpenChannelConfirmation calldata openChannelConfirmation) public virtual override {
         OpenChannel memory openChannelData = abi.decode(openChannelConfirmation.encodedOpenChannel, (OpenChannel));
         require(openChannelData.channelId != bytes32(0), ErrorInvalidJoinChannel());
-        require(!isChannelOpen(openChannelData.channelId), ErrorChannelAlreadyOpen());
+        require(!isChannelOpen(openChannelData.channelId), RaceConditionChannelAlreadyOpen());
 
         // set zero balance for on-chain deposits/withdrawals
         Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
@@ -265,7 +265,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         require(successfulJoinCount > 0, ErrorNoSuccessfulJoinChannel());
         // Resize the array to the number of successful joins - only ok for shrinking the array
         // TODO - find other places in the code that shrink MEMORY arrays and do the same - better than to allocate more space
-        assembly {
+        assembly ("memory-safe") {
             mstore(filteredJoinChannels, successfulJoinCount)
         }
 
@@ -410,7 +410,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
             (bool success, bytes memory result) = address(this).delegatecall(calls[i]);
             if (!success) {
                 // Bubble up the revert reason
-                assembly {
+                assembly ("memory-safe") {
                     revert(add(result, 32), mload(result))
                 }
             }
@@ -496,10 +496,15 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     // ********** private/internal functions **********
 
-    function isKillPeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool, uint256) {
+    function isKillPeriodExpired(bytes32 channelId, bytes32 forkId)
+        public
+        view
+        returns (bool isKillPeriodExpired, uint256 killPeriodEnd, uint256 blockTimestamp)
+    {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
-        return _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        (isKillPeriodExpired, killPeriodEnd) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        return (isKillPeriodExpired, killPeriodEnd, block.timestamp);
     }
 
     function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {
@@ -543,7 +548,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         // Perform the low-level call with a gas limit
         (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall(data);
         if (!success) {
-            assembly {
+            assembly ("memory-safe") {
                 revert(add(returnData, 0x20), mload(returnData))
             }
         }

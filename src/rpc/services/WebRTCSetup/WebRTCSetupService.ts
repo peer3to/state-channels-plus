@@ -1,13 +1,73 @@
-import { ARpcService, MainRpcService } from "@/rpc";
+import ARpcService from "@/rpc/ARpcService";
 //@ts-ignore
 import { RTCPeerConnection } from "get-webrtc";
 import WebRTCTransport from "@/transport/WebRTCTransport";
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import WebRTCSetupRpcMethods from "./WebRTCSetupRpcMethods";
-import { ATransport } from "@/transport";
+import { ATransport, TransportType } from "@/transport";
+import { HandshakeCompletedGuard } from "@/rpc/guards";
+import { getChecksumAddress } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
     connectionMap: Map<string, RTCPeerConnection> = new Map();
+
+    private findWebRTCTransport(peerAddress: string): ATransport | undefined {
+        return this.p2pManager.openConnections.find(
+            (t) =>
+                t.peerAddress === peerAddress &&
+                t.transportType === TransportType.WEBRTC
+        );
+    }
+
+    public setupConnectionStateHandlers(
+        connection: RTCPeerConnection,
+        peerAddress: string
+    ): void {
+        // Handle connection state changes
+        connection.onconnectionstatechange = () => {
+            const state = connection.connectionState;
+            const iceState = connection.iceConnectionState;
+
+            if (
+                state === "disconnected" ||
+                state === "failed" ||
+                state === "closed"
+            ) {
+                this.logger.warn(`WebRTC connection state changed: ${state}`, {
+                    iceState
+                });
+                const transport = this.findWebRTCTransport(peerAddress);
+                if (transport) {
+                    transport.close();
+                }
+            }
+        };
+
+        // Handle ICE connection state changes
+        connection.oniceconnectionstatechange = () => {
+            const iceState = connection.iceConnectionState;
+            const connectionState = connection.connectionState;
+
+            if (
+                iceState === "disconnected" ||
+                iceState === "failed" ||
+                iceState === "closed"
+            ) {
+                this.logger.warn(
+                    `WebRTC IceConnection state changed: ${iceState}`,
+                    {
+                        iceState,
+                        connectionState
+                    }
+                );
+                const transport = this.findWebRTCTransport(peerAddress);
+                if (transport) {
+                    transport.close();
+                }
+            }
+        };
+    }
 
     constructor(p2pManager: P2PManager) {
         super(
@@ -16,6 +76,7 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
                 module: "WebRTCSetupService"
             })
         );
+        this.guards = [new HandshakeCompletedGuard(this)];
     }
 
     public createRPCMethods(transport: ATransport): WebRTCSetupRpcMethods {
@@ -29,10 +90,15 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
             this.logger.debug("initiateWebRTC");
             const connection = new RTCPeerConnection();
             const channel = connection.createDataChannel("webRTC-DataChannel");
-            const webRTCTransport = new WebRTCTransport(
-                channel,
-                this.p2pManager
-            );
+            new WebRTCTransport(channel, this.p2pManager);
+            const profileManager = this.p2pManager.profileManager;
+            let adr =
+                profileManager.getProfileByTransport(transport)?.evmAddress;
+            if (!adr) {
+                this.logger.error("initiateWebRTC - no EVM address");
+                return;
+            }
+            adr = getChecksumAddress(adr);
 
             // Handle ICE candidates
             connection.onicecandidate = (event: any) => {
@@ -40,23 +106,20 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
                     const serializedCandidate = JSON.stringify(event.candidate);
                     this.remoteRpc.webRTCSetupService
                         .onIceCandidate(serializedCandidate)
-                        .sendOne(transport);
+                        .sendOne(adr);
                 }
             };
 
+            // Setup connection state handlers
+            this.setupConnectionStateHandlers(connection, adr);
+
             const offer = await connection.createOffer();
             connection.setLocalDescription(offer);
-            const adr =
-                this.p2pManager.profileManager.getProfileByTransport(
-                    transport
-                )?.evmAddress;
-            if (!adr)
-                return this.logger.debug("initiateWebRTC - no EVM address");
-            this.connectionMap.set(adr.toString(), connection);
+            this.connectionMap.set(adr, connection);
             const serializedOffer = JSON.stringify(offer);
             this.remoteRpc.webRTCSetupService
                 .onOfferWebRTC(serializedOffer)
-                .sendOne(transport);
+                .sendOne(adr);
         } catch (e) {
             this.logger.debug("initiateWebRTC - error", e);
         }

@@ -7,7 +7,8 @@ const config: Partial<Config> = {
     DEBUG_P2P_MANAGER: false,
     DEBUG_RPC: false,
     DEBUG_CHANNEL_CONTRACT: false,
-    DEBUG_LOCAL_TRANSPORT: false
+    DEBUG_LOCAL_TRANSPORT: true,
+    HOLEPUNCH_RELAYER_URLS: ["wss://dht1-relay.leet.ar:49443"]
 };
 
 export default config;

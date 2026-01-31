@@ -85,9 +85,6 @@ describe("Universal Deployment", () => {
                 deployer
             );
 
-            const channelId = ethers.keccak256(
-                ethers.toUtf8Bytes("test-channel")
-            );
             const openChannelData = ["0x"];
             const signatures = ["0x"];
             const openChannelConfirmation: OpenChannelConfirmationStruct = {

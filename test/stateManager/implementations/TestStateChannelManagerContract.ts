@@ -189,10 +189,12 @@ export class TestStateChannelManagerContract {
                     )
                 );
             }
-            return Promise.resolve([
-                config.exists ? config.reducedFork : null,
-                config.exists
-            ]);
+            // Return an object that mimics ethers Result with named properties
+            return Promise.resolve({
+                reducedForkId: config.exists ? config.reducedFork : null,
+                timestamp: 0n,
+                reducer: "0x0000000000000000000000000000000000000000"
+            });
         });
         return this;
     }

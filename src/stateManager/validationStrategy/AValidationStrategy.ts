@@ -4,9 +4,12 @@ import {
     BlockConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import ATransport from "@/transport/ATransport";
 
 export default abstract class AValidationStrategy {
+    public get name(): string {
+        return this.constructor.name;
+    }
+
     public abstract interpretFinalValidationResult(
         blockValidationResult: BlockValidationResult
     ): Promise<boolean>;
@@ -61,12 +64,12 @@ export default abstract class AValidationStrategy {
 
     public abstract blockForkIsDisputed(
         block: Block,
-        senderTransport?: ATransport
+        senderAddress?: string
     ): Promise<BlockValidationResult>;
 
     public abstract blockIsNotNextAndIsInTheFuture(
         block: Block,
-        senderTransport?: ATransport
+        senderAddress?: string
     ): Promise<BlockValidationResult>;
 
     public abstract blockIsNotLinkedAndIsNotFirstBlock(

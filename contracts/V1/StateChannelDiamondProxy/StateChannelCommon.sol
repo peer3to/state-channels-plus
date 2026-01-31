@@ -76,12 +76,21 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[originForkId];
-        timestamp = disputeWindow.evidence.lastEvidenceSubmissionTimestamp + getEvidenceTime();
-        (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
-        if (!isExpired) {
-            return (false, timestamp);
+        if (disputeWindow.evidence.creationTimestamp == 0) {
+            StateSnapshot memory currentOnChainSnapshot = stateSnapshots[channelId];
+            if (
+                currentOnChainSnapshot.forkId == forkId
+                    && UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
+            ) {
+                return (true, currentOnChainSnapshot.timestamp);
+            }
+            return (false, 0);
         }
-        if (timestamp == 0) {
+        (bool isExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        if (!isExpired) {
+            return (false, killPeriodEnd);
+        }
+        if (killPeriodEnd == 0) {
             // Dispute window doesn't exist
             StateSnapshot memory currentOnChainSnapshot = stateSnapshots[channelId];
             // check if current on-chain snapshot.fork == forkId
@@ -91,9 +100,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             ) {
                 return (true, currentOnChainSnapshot.timestamp);
             }
-            return (false, timestamp);
+            return (false, killPeriodEnd);
         }
-        return (true, timestamp);
+        return (true, killPeriodEnd);
     }
 
     function getSnapshotParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
@@ -101,11 +110,43 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function getPendingParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
-        return disputeData[channelId].pendingParticipants;
+        address[] memory snapshotParticipants = getSnapshotParticipants(channelId);
+        address[] memory pendingParticipants = new address[](0);
+
+        bytes32 inboundHash = channelBalances[channelId].latestInboundMessageBlockHash;
+        while (inboundHash != bytes32(0)) {
+            MessageBlock storage inboundBlock = inboundMessageBlockMap[channelId][inboundHash];
+            // Stop at pruned / non-existent blocks (pruning deletes the snapshot head too)
+            if (inboundBlock.timestamp == 0 && inboundBlock.messages.length == 0) {
+                break;
+            }
+
+            for (uint256 i = 0; i < inboundBlock.messages.length; i++) {
+                if (inboundBlock.messages[i].messageType == MESSAGE_TYPE_JOIN) {
+                    JoinChannel memory joinChannel = abi.decode(inboundBlock.messages[i].data, (JoinChannel));
+                    if (
+                        !UtilityFacet(utilityFacetAddress).isAddressInArray(
+                            snapshotParticipants, joinChannel.participant
+                        )
+                    ) {
+                        pendingParticipants = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
+                            pendingParticipants, joinChannel.participant
+                        );
+                    }
+                }
+            }
+            inboundHash = inboundBlock.previousBlockHash;
+        }
+
+        return pendingParticipants;
     }
 
     function getStateSnapshot(bytes32 channelId) public view virtual returns (StateSnapshot memory) {
         return stateSnapshots[channelId];
+    }
+
+    function getChannelBalance(bytes32 channelId) public view virtual returns (ChannelBalance memory) {
+        return channelBalances[channelId];
     }
 
     function getStateMachineParticipants(bytes memory encodedState) public virtual returns (address[] memory) {
@@ -189,8 +230,23 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         channelBalance.latestInboundMessageBlockHash = blockHash;
         channelBalance.latestInboundMessageBlockHeight = nextBlockHeight;
         channelBalance.totalDeposits = newTotalDeposits;
-
         emit InboundMessagesProcessed(channelId, messageBlock);
+    }
+
+    function _resolveTotalDeposits(bytes32 channelId, bytes32 blockHash) internal view returns (Balance memory) {
+        Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
+        if (blockHash == bytes32(0)) {
+            return zeroBalance;
+        }
+        MessageBlock storage inboundBlock = inboundMessageBlockMap[channelId][blockHash];
+        if (inboundBlock.timestamp == 0 && inboundBlock.messages.length == 0) {
+            StateSnapshot storage snapshot = stateSnapshots[channelId];
+            if (snapshot.snapshotData.latestInboundMessageBlockHash == blockHash) {
+                return snapshot.snapshotData.totalDeposits;
+            }
+            return zeroBalance;
+        }
+        return inboundBlock.totalBalance;
     }
 
     function hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash) public view virtual returns (bool) {
@@ -216,7 +272,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return abi.decode(encodedBlock, (Block));
     }
 
-    function isBlockAuthentic(SignedBlock memory _block) public view returns (bool) {
+    function isBlockAuthentic(SignedBlock memory _block) public view virtual returns (bool) {
         // try decode block
         bytes memory data = abi.encodeCall(this.decodeBlock, (_block.encodedBlock));
         (bool success, bytes memory encodedBlock) = address(this).staticcall(data);
@@ -329,25 +385,14 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function _canParticipateInDisputes(bytes32 channelId, address participant) public view returns (bool) {
-        StateSnapshot storage stateSnapshot = stateSnapshots[channelId];
-        bool isParticipant = false;
-        //Check if normal participant
-        for (uint256 i = 0; i < stateSnapshot.snapshotData.participants.length; i++) {
-            if (stateSnapshot.snapshotData.participants[i] == participant) {
-                isParticipant = true;
-                break;
-            }
+        address[] memory snapshotParticipants = getSnapshotParticipants(channelId);
+        if (UtilityFacet(utilityFacetAddress).isAddressInArray(snapshotParticipants, participant)) {
+            return !isParticipantSlashedOnChain(channelId, participant);
         }
-        if (!isParticipant) {
-            //check pending participants
-            DisputeData storage _disputeData = disputeData[channelId];
-            for (uint256 i = 0; i < _disputeData.pendingParticipants.length; i++) {
-                if (_disputeData.pendingParticipants[i] == participant) {
-                    isParticipant = true;
-                    break;
-                }
-            }
-            if (!isParticipant) return false;
+
+        address[] memory pendingParticipants = getPendingParticipants(channelId);
+        if (!UtilityFacet(utilityFacetAddress).isAddressInArray(pendingParticipants, participant)) {
+            return false;
         }
 
         return !isParticipantSlashedOnChain(channelId, participant);
@@ -361,8 +406,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         uint256 reductionTimestamp
     ) internal {
         (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
-        require(isExpired, ErrorDisputeKillPeriodNotExpired());
-        require(disputeWindow.reducedResult.forkId == bytes32(0), ErrorDisputeAlreadyReduced());
+        require(isExpired, RaceConditionDisputeKillPeriodNotExpired());
+        require(disputeWindow.reducedResult.forkId == bytes32(0), RaceConditionDisputeAlreadyReduced());
         disputeWindow.reducedResult.forkId = reducedForkId;
         disputeWindow.reducedResult.timestamp = reductionTimestamp;
         disputeWindow.reducedResult.reducer = msg.sender; //calling function should check that msg.sender is part of channel 'can participate'

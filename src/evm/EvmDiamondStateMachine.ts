@@ -13,7 +13,6 @@ import { TimeConfig } from "@/types";
 import { BalanceEthersType, MessageEthersType } from "@/types/ethers";
 import {
     DebugProxy,
-    decodeErrorProxy,
     Codec,
     createLogger,
     Logger,
@@ -22,6 +21,7 @@ import {
 import P2pEventHooks from "@/P2pEventHooks";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { P2pInstance, ContractExecuter } from "@/evm";
+import P2pSigner from "./P2pSigner";
 import { Address, Bytes } from "@/types/types";
 import {
     BalanceStruct,
@@ -36,7 +36,8 @@ import {
 import LocalDiamondSigner from "./LocalDiamondSigner";
 import { LocalDiamondArtifact } from "@/utils/GeneratedArtifacts";
 
-import { DEBUG_CHANNEL_CONTRACT } from "@/utils/config";
+import { createConfig, config, Config } from "@/utils/config";
+import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
 /**
  * Manages peer-to-peer communication and state machines
@@ -89,7 +90,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     }
 
     /**
-     * Process logs from an EVM call and emit corresponding events
+     * Process logs from an EVM call and emit corresponding events.
+     *
      * @param logs The log output from the EVM
      */
     public processLogs(logs?: any[]): void {
@@ -108,8 +110,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                         ...Object.values(event.args)
                     );
                 }
-            } catch (e) {
-                console.error("Error parsing log", e);
+            } catch {
+                // Unknown log event - ignore silently
             }
         }
     }
@@ -130,11 +132,13 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                     hexResult
                 );
             return {
-                success: true,
+                success: Boolean(success),
                 successCallback: () => this.processLogs(result.logs),
-                outboundMessages: outboundMessages as MessageStruct[]
+                outboundMessages: Codec.ethersResultToObjectRecursive(
+                    outboundMessages as ethers.Result
+                ) as unknown as MessageStruct[]
             };
-        } catch (error) {
+        } catch {
             return {
                 success: false,
                 successCallback: () => {},
@@ -261,6 +265,25 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
     }
 
+    async areBalancesEqual(
+        balance1: BalanceStruct,
+        balance2: BalanceStruct
+    ): Promise<boolean> {
+        const callData = this.getEncodedCalldata("areBalancesEqual", [
+            balance1,
+            balance2
+        ]);
+
+        try {
+            return Codec.decodeEvmResult<boolean>(
+                await this.stateMachineContractExecuter.executeCall(callData),
+                "bool"
+            );
+        } catch (error) {
+            throw this.createContextError("areBalancesEqual", error);
+        }
+    }
+
     async processInboundMessage(message: MessageStruct): Promise<boolean> {
         const callData = this.getEncodedCalldata("processInboundMessage", [
             message
@@ -366,28 +389,40 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
      * @param timeConfigOverride Optional time configuration override for testing
      * @returns Promise with the created P2P interaction object
      */
-    public static async p2pSetup<T extends AStateMachineContract>(
+    public static async p2pSetup<
+        T extends AStateMachineContract,
+        // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+        TFactories extends RpcServiceFactoryMap = {}
+    >(
         signer: Signer,
         deployStateMachineTx: any,
         deployedStateChannelContractInstance: StateChannelManagerProxy,
         stateMachineContractInstance: T,
-        p2pEventHooks?: P2pEventHooks,
-        peerId?: number,
-        peerLogger?: Logger
-    ): Promise<P2pInstance<T>> {
+        options?: {
+            p2pEventHooks?: P2pEventHooks;
+            peerId?: number;
+            peerLogger?: Logger;
+            rpcServiceFactories?: TFactories;
+            config?: Partial<Config>;
+        }
+    ): Promise<P2pInstance<T, TFactories>> {
+        // Initialize SDK config for this runtime (intended to be called once).
+        createConfig(options?.config);
+
+        const p2pEventHooks = options?.p2pEventHooks;
+        const pid = options?.peerId;
+        const peerLogger = options?.peerLogger;
+        const rpcServiceFactories = options?.rpcServiceFactories;
+
         // Sync clock to DLT
         await Clock.init(signer.provider!);
-        deployedStateChannelContractInstance = decodeErrorProxy(
-            deployedStateChannelContractInstance
-        ) as StateChannelManagerProxy;
 
         // Connect signer to state channel contract
         deployedStateChannelContractInstance =
             await deployedStateChannelContractInstance.connect(signer);
 
         // Apply debug proxy if enabled
-
-        if (DEBUG_CHANNEL_CONTRACT) {
+        if (config.DEBUG_CHANNEL_CONTRACT) {
             deployedStateChannelContractInstance = DebugProxy.createProxy(
                 deployedStateChannelContractInstance
             );
@@ -419,7 +454,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const logger =
             peerLogger ||
             createLogger({
-                peerId,
+                peerId: pid,
                 peerAddress: signerAddress
             });
 
@@ -431,7 +466,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             timeConfig,
             p2pEventHooks || {},
             storage,
-            logger
+            logger,
+            rpcServiceFactories
         );
 
         // Set state manager on P2P communication manager
@@ -445,9 +481,12 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         // Set P2P contract instance on P2P manager
         evmDiamondStateMachine.setP2pContractInstance(p2pContractInstance);
 
-        return new P2pInstance(
+        const typedP2pSigner = stateManager.p2pManager
+            .p2pSigner as unknown as P2pSigner<TFactories>;
+
+        return new P2pInstance<T, TFactories>(
             p2pContractInstance,
-            stateManager.p2pManager.p2pSigner
+            typedP2pSigner
         );
     }
 }

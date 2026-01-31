@@ -3,6 +3,7 @@ import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
 import { ChannelId } from "@/types/types";
 
 import { EventHandler } from "@/eventHandlers/EventHandler";
+import type { Logger } from "@/utils";
 
 //TODO - made a PR to ethers.js to fix Deferred Topic Filter
 
@@ -10,6 +11,7 @@ class StateChannelEventListener {
     stateChannelManagerContract: StateChannelManagerProxy;
     eventHandler: EventHandler;
     localDiamondContract: LocalDiamond;
+    private logger: Logger;
     filters: Record<
         string,
         { filter: any; listener: (logObj: any) => Promise<void> }
@@ -18,11 +20,13 @@ class StateChannelEventListener {
     constructor(
         stateChannelManagerContract: StateChannelManagerProxy,
         eventHandler: EventHandler,
-        localDiamondContract: LocalDiamond
+        localDiamondContract: LocalDiamond,
+        logger: Logger
     ) {
         this.stateChannelManagerContract = stateChannelManagerContract;
         this.eventHandler = eventHandler;
         this.localDiamondContract = localDiamondContract;
+        this.logger = logger.child({ component: "EventListener" });
     }
 
     private async setListener(
@@ -37,8 +41,15 @@ class StateChannelEventListener {
             );
         }
         const filter = filterFactory();
-        await this.stateChannelManagerContract.on(filter, handler);
-        this.filters[key] = { filter, listener: handler };
+        const wrappedHandler = async (logObj: any) => {
+            this.logger.info("On-chain event received", {
+                event: key,
+                args: logObj?.args
+            });
+            return handler(logObj);
+        };
+        await this.stateChannelManagerContract.on(filter, wrappedHandler);
+        this.filters[key] = { filter, listener: wrappedHandler };
     }
 
     //Mark resources for garbage collection
@@ -169,7 +180,7 @@ class StateChannelEventListener {
             handler: (logObj: any) => {
                 const {
                     channelId,
-                    dispute,
+                    disputeConfirmation,
                     disputeCreationTimestamp,
                     isFinal,
                     windowCreationTimestamp,
@@ -177,7 +188,7 @@ class StateChannelEventListener {
                 } = logObj.args;
                 return this.eventHandler.onDisputeCommitted(
                     channelId,
-                    dispute,
+                    disputeConfirmation,
                     Number(disputeCreationTimestamp),
                     isFinal,
                     Number(windowCreationTimestamp),

@@ -7,7 +7,6 @@ import { ATransport } from "@/transport";
 import IsForkDisputedService from "@/rpc/services/isForkDisputedService/IsForkDisputedService";
 import { ethers } from "ethers";
 import Clock from "@/Clock";
-import { LocalDiscoveryServer } from "@/utils/LocalDiscoveryServer";
 
 describe("E2E: RPC Services", function () {
     let harness: PeerTestHarness<MathStateMachine>;
@@ -123,7 +122,11 @@ describe("E2E: RPC Services", function () {
             service: IsForkDisputedService,
             transport: ATransport,
             forkId: ForkId
-        ) => service.didIAcknowledgeDisputedFork(transport, forkId);
+        ) => {
+            const peerAddress = transport.peerAddress;
+            if (!peerAddress) return false;
+            return service.didIAcknowledgeDisputedFork(peerAddress, forkId);
+        };
 
         const waitForMyAcknowledgement = async (
             service: IsForkDisputedService,
@@ -204,9 +207,12 @@ describe("E2E: RPC Services", function () {
                 buildingPeer
             );
 
+            const buildingPeerAddress =
+                buildingPeerTransport.peerAddress ?? buildingPeer.address;
+
             expect(
                 requestingPeerService.didPeerAcknowledgeDisputedFork(
-                    buildingPeerTransport,
+                    buildingPeerAddress,
                     harness.activeForkId!
                 )
             ).to.be.true;
@@ -223,7 +229,7 @@ describe("E2E: RPC Services", function () {
 
             await requestingPeer.stateManager.blockValidationStrategy.blockForkIsDisputed(
                 buildingLatestBlock!,
-                buildingPeerTransport
+                buildingPeerAddress
             );
             // Assert - 1 connection should be dropped
             const assertion = await harness.waitForCondition(
@@ -292,9 +298,12 @@ describe("E2E: RPC Services", function () {
                 receivingPeer
             );
 
+            const receivingPeerAddress =
+                requestingTransport.peerAddress ?? receivingPeer.address;
+
             const initiallyAcknowledged =
                 requestingPeerService.didPeerAcknowledgeDisputedFork(
-                    requestingTransport,
+                    receivingPeerAddress,
                     harness.activeForkId!
                 );
             expect(initiallyAcknowledged).to.be.false;
@@ -307,7 +316,7 @@ describe("E2E: RPC Services", function () {
             // Wait for receiving peer to acknowledge back
             await harness.waitForCondition(() => {
                 return requestingPeerService.didPeerAcknowledgeDisputedFork(
-                    requestingTransport,
+                    receivingPeerAddress,
                     harness.activeForkId!
                 );
             }, 5000);
@@ -324,7 +333,7 @@ describe("E2E: RPC Services", function () {
             // Assert - Receiving peer still acknowledges (no duplicate processing issues)
             expect(
                 requestingPeerService.didPeerAcknowledgeDisputedFork(
-                    requestingTransport,
+                    receivingPeerAddress,
                     harness.activeForkId!
                 )
             ).to.be.true;
@@ -345,23 +354,26 @@ describe("E2E: RPC Services", function () {
                 requestingPeer
             );
 
+            const requestingPeerAddress =
+                transport.peerAddress ?? requestingPeer.address;
+
             expect(
                 respondingPeerService.didIAcknowledgeDisputedFork(
-                    transport,
+                    requestingPeerAddress,
                     harness.activeForkId!
                 )
             ).to.be.false;
 
             // Act - First response
             await respondingPeerService.respondToDisputeAcknowledgment(
-                transport,
+                requestingPeerAddress,
                 requestingPeer.stateManager.channelId,
                 harness.activeForkId!
             );
 
             expect(
                 respondingPeerService.didIAcknowledgeDisputedFork(
-                    transport,
+                    requestingPeerAddress,
                     harness.activeForkId!
                 )
             ).to.be.true;
@@ -372,7 +384,7 @@ describe("E2E: RPC Services", function () {
 
             // Act - Second response (duplicate, should trigger disconnection)
             await respondingPeerService.respondToDisputeAcknowledgment(
-                transport,
+                requestingPeerAddress,
                 requestingPeer.stateManager.channelId,
                 harness.activeForkId!
             );
@@ -618,9 +630,9 @@ describe("E2E: RPC Services", function () {
                 .true;
 
             const newPeer = harness.peers[2];
-            LocalDiscoveryServer.connectToPeers(
-                newPeer.stateManager.p2pManager,
-                harness.channelId?.toString()
+
+            await newPeer.stateManager.p2pManager.tryOpenConnectionToChannel(
+                harness.channelId!.toString()
             );
 
             await harness.waitForCondition(
@@ -664,9 +676,8 @@ describe("E2E: RPC Services", function () {
             );
 
             const newPeer = harness.peers[2];
-            LocalDiscoveryServer.connectToPeers(
-                newPeer.stateManager.p2pManager,
-                harness.channelId?.toString()
+            await newPeer.stateManager.p2pManager.tryOpenConnectionToChannel(
+                harness.channelId!.toString()
             );
 
             await harness.waitForCondition(
@@ -719,9 +730,8 @@ describe("E2E: RPC Services", function () {
             );
 
             const newPeer = harness.peers[2];
-            LocalDiscoveryServer.connectToPeers(
-                newPeer.stateManager.p2pManager,
-                harness.channelId?.toString()
+            await newPeer.stateManager.p2pManager.tryOpenConnectionToChannel(
+                harness.channelId!.toString()
             );
 
             await harness.waitForCondition(
@@ -1015,13 +1025,13 @@ describe("E2E: RPC Services", function () {
                     respondingPeer.stateManager.p2pManager.preferredTransport
                 );
 
-            // Assert
+            // Assert - still 0, the connection is established after ack
             expect(
                 await harness.waitForCondition(
                     () =>
                         connectionsBefore -
                             harness.getConnectionCount(initiatingPeer.index) ===
-                        1,
+                        0,
                     5000
                 )
             ).to.be.true;
@@ -1050,13 +1060,10 @@ describe("E2E: RPC Services", function () {
             initiatingPeer.stateManager.p2pManager.disconnectConnection(
                 transport
             );
-            initiatingPeer.stateManager.p2pManager.openConnections.push(
-                transport
-            );
 
-            const connectionsBefore = harness.getConnectionCount(
-                initiatingPeer.index
-            );
+            // Ensure we start from a clean state; manager doesn't consider this a connection
+            // until handshake finalizes. We'll assert the handshake timeout closes the transport.
+            transport.isClosed = false;
 
             // Act
             const initHandshakeService =
@@ -1069,18 +1076,13 @@ describe("E2E: RPC Services", function () {
 
             const timeoutMs =
                 initiatingPeer.stateManager.timeConfig.agreementTime * 1000;
-            await harness.waitForCondition(() => {
-                return (
-                    harness.getConnectionCount(initiatingPeer.index) <
-                    connectionsBefore
-                );
-            }, timeoutMs + 1000);
+            await harness.waitForCondition(
+                () => transport.isClosed,
+                timeoutMs + 1000
+            );
 
             // Assert
-            const connectionsAfter = harness.getConnectionCount(
-                initiatingPeer.index
-            );
-            expect(connectionsAfter).to.be.lessThan(connectionsBefore);
+            expect(transport.isClosed).to.equal(true);
         });
 
         // Arrange: Setup channel, connect peers, complete initial handshake

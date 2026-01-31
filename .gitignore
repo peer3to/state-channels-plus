@@ -17,9 +17,21 @@ typechain-types
 ./wake
 
 .nyc_output
+
 peer3.config.json
+
 
 # foundry stuff
 lib
 out
 cache_forge
+
+temp
+logs
+
+# generated files
+src/types/sol-enums.ts
+src/utils/GeneratedArtifacts.ts
+
+# TypeScript incremental build info
+*.tsbuildinfo

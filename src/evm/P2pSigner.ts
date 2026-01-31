@@ -1,35 +1,28 @@
 import { ethers, Signer, TransactionResponse } from "ethers";
 
-import {
-    JoinChannelStruct,
-    SignedJoinChannelStruct,
-    TransactionStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
-import P2PManager from "@/P2PManager";
-import { Codec, Type } from "@/utils";
-import { Address, Amount, Bytes, Timestamp } from "@/types/types";
+import type P2PManager from "@/P2PManager";
+import type { RpcServiceFactoryMap } from "@/rpc/registry";
+import { Address, Bytes } from "@/types/types";
+import { Status } from "@/types";
 
-class P2pSigner implements Signer {
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
+    implements Signer
+{
     signer: Signer;
     signerAddress: Address;
     provider: ethers.Provider | null;
-    p2pManager: P2PManager;
+    p2pManager: P2PManager<TFactories>;
 
     //local profile
     isLeader: boolean;
 
-    //TODO! TEST
-    jc: JoinChannelStruct | undefined;
-    signedJc: any;
-    setJc(jc: JoinChannelStruct, signedJc: any) {
-        this.jc = jc;
-        this.signedJc = signedJc;
-    }
     constructor(
         signer: Signer,
         signerAddress: Address,
-        p2pManager: P2PManager
+        p2pManager: P2PManager<TFactories>
     ) {
         this.signer = signer;
         this.signerAddress = signerAddress;
@@ -132,8 +125,12 @@ class P2pSigner implements Signer {
         return this.isLeader;
     }
 
-    public connectToChannel(channelId: Bytes) {
+    public async connectToChannel(channelId: Bytes) {
         this.setChannelId(channelId);
+
+        // Update status to NOT_OPENED/OPENED as soon as we know the channelId.
+        await this.p2pManager.stateManager.refreshOpenedStatusFromChain();
+
         return this.p2pManager.tryOpenConnectionToChannel(channelId.toString());
     }
 
@@ -141,38 +138,8 @@ class P2pSigner implements Signer {
         this.p2pManager.disconnectAll();
     }
 
-    public async joinChannel(
-        channelId: Bytes,
-        amount: Amount,
-        deadlineTimestamp: Timestamp,
-        data: Bytes
-    ) {
-        const joinChannelRequest: JoinChannelStruct = {
-            channelId,
-            participant: this.signerAddress,
-            balance: {
-                amount,
-                data
-            },
-            deadlineTimestamp
-        };
-
-        // Encode and sign the request
-        const encodedJoinChannel = Codec.encode(
-            joinChannelRequest,
-            Type.JoinChannel
-        );
-        const signedJoinChannel: SignedJoinChannelStruct = {
-            encodedJoinChannel: encodedJoinChannel,
-            signature: await this.signMessage(encodedJoinChannel)
-        };
-
-        // Store locally before broadcasting ?
-
-        // Broadcast the request
-        this.p2pManager.remoteRpc.joinChannelService
-            .onJoinChannelRequest(signedJoinChannel)
-            .broadcast();
+    public getChannelStatus(): Promise<Status> {
+        return this.p2pManager.stateManager.getChannelStatus();
     }
 }
 

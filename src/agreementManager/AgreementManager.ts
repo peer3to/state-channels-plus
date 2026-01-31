@@ -31,7 +31,7 @@ class AgreementManager {
         private storage: Storage,
         private logger: Logger
     ) {
-        this.logger = logger.child({ module: "AgreementManager" });
+        this.logger = logger.child({ component: "AgreementManager" });
     }
 
     public getLatestSignedBlockByParticipant(
@@ -82,7 +82,7 @@ class AgreementManager {
         blockHeight: BlockHeight
     ): Promise<StateProofStruct> {
         const genesisSnapshot =
-            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
+            this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
         if (!genesisSnapshot) {
             throw new Error("Fork not found");
         }
@@ -132,7 +132,6 @@ class AgreementManager {
             blockIterator,
             currentSnapshot
         );
-
         if (milestone) {
             milestones.push(milestone);
             const newSnapshot = this.getSnapshotFromMilestone(milestone);
@@ -383,9 +382,7 @@ class AgreementManager {
         ) {
             // Genesis state case - use the genesis snapshot for this fork
             const genesisSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                    forkId
-                );
+                this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
             if (!genesisSnapshot) {
                 throw new Error(`No genesis snapshot found for fork ${forkId}`);
             }

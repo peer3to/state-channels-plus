@@ -7,9 +7,8 @@ import {
 import AValidationStrategy from "./AValidationStrategy";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import DisputeManager from "@/disputeManager";
-import ATransport from "@/transport/ATransport";
 import { Logger } from "@/utils";
 
 export default class BlockValidationStrategy extends AValidationStrategy {
@@ -56,7 +55,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         }
     }
     public async authenticateBlockFailed(
-        block: BlockConfirmationStruct
+        _block: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
         return BlockValidationResult.DISCONNECT;
     }
@@ -99,7 +98,10 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         conflictingBlock: Block,
         block: Block
     ): Promise<BlockValidationResult> {
-        // DOUBLE SIGN
+        this.logger.warn("Double sign detected", {
+            participant: block.signerAddress,
+            blockHeight: block.height
+        });
         this.fraudProofService.createDoubleSignProof(conflictingBlock, block);
         await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
@@ -107,6 +109,10 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     public async invalidStateTransitionDetected(
         block: Block
     ): Promise<BlockValidationResult> {
+        this.logger.warn("Invalid state transition detected", {
+            blockAuthor: block.author,
+            blockHeight: block.height
+        });
         this.fraudProofService.createInvalidStateTransitionProof(block);
         await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
@@ -114,6 +120,10 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     public async wrongGenesisDetected(
         block: Block
     ): Promise<BlockValidationResult> {
+        this.logger.warn("Wrong genesis detected", {
+            blockAuthor: block.author,
+            blockHeight: block.height
+        });
         this.fraudProofService.createWrongGenesisProof(block);
         await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
@@ -122,6 +132,10 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         block: Block,
         messageBlock: MessageBlockStruct
     ): Promise<BlockValidationResult> {
+        this.logger.warn("Forged inbound message detected", {
+            blockAuthor: block.author,
+            blockHeight: block.height
+        });
         this.fraudProofService.createForgedInboundMessageBlockProof(
             block,
             messageBlock
@@ -136,20 +150,20 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     }
     public async blockForkIsDisputed(
         block: Block,
-        senderTransport?: ATransport
+        senderAddress?: string
     ): Promise<BlockValidationResult> {
-        // Check if peer has already acknowledged this disputed fork
+        // If we know who sent this, and they already acknowledged the dispute,
+        // disconnect/blacklist them for building on a disputed fork.
         if (
-            senderTransport &&
+            senderAddress &&
             this.p2pManager.localRpc.isForkDisputedService.didPeerAcknowledgeDisputedFork(
-                senderTransport,
+                senderAddress,
                 block.forkId
             )
         ) {
-            console.log(
-                `Peer is building on acknowledged disputed fork ${block.forkId}, disconnecting`
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                senderAddress
             );
-            this.p2pManager.disconnectAndBlacklistPeer(senderTransport);
             return BlockValidationResult.DISCONNECT;
         }
 
@@ -159,12 +173,12 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     }
     public async blockIsNotNextAndIsInTheFuture(
         block: Block,
-        senderTransport?: ATransport
+        senderAddress?: string
     ): Promise<BlockValidationResult> {
         // not ready
-        if (senderTransport)
+        if (senderAddress)
             this.p2pManager.localRpc.spectateService.sync(
-                senderTransport,
+                senderAddress,
                 block.channelId,
                 block.forkId,
                 block.height
@@ -180,6 +194,10 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     public async objectiveInvalidTimestampDetected(
         block: Block
     ): Promise<BlockValidationResult> {
+        this.logger.warn("Invalid timestamp detected", {
+            blockAuthor: block.author,
+            blockHeight: block.height
+        });
         this.fraudProofService.createInvalidTimestampProof(block);
         await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;

@@ -1,45 +1,29 @@
 import { EVM, EVMOpts } from "@ethereumjs/evm";
-import { maybeGetLogs } from "@ganache/console.log";
-import { Buffer } from "buffer";
-import { createLogger, Logger } from "@/utils";
+import { Address } from "@ethereumjs/util";
+import { CONSOLE_ADDRESS, consolePrecompile } from "./ConsolePrecompile";
 
-const solidityLogger: Logger = createLogger({ component: "Solidity" });
-
-export interface EvmFactoryOptions extends EVMOpts {
-    enableConsoleLog?: boolean;
-}
+export interface EvmFactoryOptions extends EVMOpts {}
 
 export async function createEvm(options: EvmFactoryOptions = {}): Promise<EVM> {
-    const { enableConsoleLog = true } = options;
+    const consoleAddress = Address.fromString(CONSOLE_ADDRESS);
 
-    const evm = await EVM.create(options);
+    const existingPrecompiles: any[] = Array.isArray(options.customPrecompiles)
+        ? [...options.customPrecompiles]
+        : [];
+    const customPrecompiles = [
+        ...existingPrecompiles,
+        {
+            address: consoleAddress,
+            function: consolePrecompile
+        }
+    ];
 
-    if (enableConsoleLog) {
-        setupConsoleLogHook(evm);
-    }
+    const evm = await EVM.create({
+        ...options,
+        customPrecompiles
+    });
 
     return evm;
-}
-
-export function setupConsoleLogHook(evm: EVM): void {
-    const log = solidityLogger;
-
-    evm.events.on("step", (event) => {
-        // Convert Uint8Array to Buffer for @ganache/console.log compatibility
-        const adaptedEvent = {
-            opcode: event.opcode,
-            stack: event.stack,
-            memory: Buffer.from(event.memory)
-        };
-        const logs = maybeGetLogs(adaptedEvent);
-        if (logs) {
-            // Format logs as a single message string
-            const message = logs
-                .map((v) => (typeof v === "bigint" ? v.toString() : String(v)))
-                .join(" ");
-            log.info(message);
-        }
-    });
 }
 
 export default createEvm;

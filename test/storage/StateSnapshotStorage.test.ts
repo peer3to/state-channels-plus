@@ -45,8 +45,8 @@ describe("StateSnapshotStorage", () => {
                 );
 
                 // Should be  added to genesis mapping
-                const genesisStored = storage.getGenesisSnapshotDataByForkId(
-                    genesisStateSnapshot.forkId
+                const genesisStored = storage.getGenesisSnapshotByForkId(
+                    genesisStateSnapshot.forkID
                 );
                 expect(genesisStored?.toStruct()).to.deep.equal(
                     genesisStateSnapshot.toStruct()
@@ -82,8 +82,8 @@ describe("StateSnapshotStorage", () => {
                 );
 
                 // Should be  added to genesis mapping
-                const genesisStored = storage.getGenesisSnapshotDataByForkId(
-                    genesisStateSnapshot.forkId
+                const genesisStored = storage.getGenesisSnapshotByForkId(
+                    genesisStateSnapshot.forkID
                 );
                 expect(genesisStored?.toStruct()).to.deep.equal(
                     genesisStateSnapshot.toStruct()
@@ -110,8 +110,8 @@ describe("StateSnapshotStorage", () => {
         });
 
         it("should get genesis snapshot by forkId", () => {
-            const result = storage.getGenesisSnapshotDataByForkId(
-                genesisStateSnapshot.forkId
+            const result = storage.getGenesisSnapshotByForkId(
+                genesisStateSnapshot.forkID
             );
             expect(result?.toStruct()).to.deep.equal(
                 genesisStateSnapshot.toStruct()
@@ -120,8 +120,8 @@ describe("StateSnapshotStorage", () => {
 
         it("should return undefined for non-existent genesis forkId", () => {
             const nonExistentForkId = ethers.hexlify(ethers.randomBytes(32));
-            expect(storage.getGenesisSnapshotDataByForkId(nonExistentForkId)).to
-                .be.undefined;
+            expect(storage.getGenesisSnapshotByForkId(nonExistentForkId)).to.be
+                .undefined;
         });
     });
 
@@ -136,8 +136,8 @@ describe("StateSnapshotStorage", () => {
             storage.storeStateSnapshot(stateSnapshot);
 
             // Should not be in genesis mapping
-            const genesisStored = storage.getGenesisSnapshotDataByForkId(
-                stateSnapshot.forkId
+            const genesisStored = storage.getGenesisSnapshotByForkId(
+                stateSnapshot.forkID
             );
             expect(genesisStored).to.be.undefined;
         });

@@ -217,7 +217,7 @@ describe("StateChannelManagerProxy", function () {
                 .map((log) => {
                     try {
                         return mathChannelManager.interface.parseLog(log);
-                    } catch (error) {
+                    } catch {
                         return null;
                     }
                 })
@@ -339,10 +339,10 @@ describe("StateChannelManagerProxy", function () {
             await expect(res).to.be.revertedWithCustomError(
                 {
                     interface: new ethers.Interface([
-                        "error ErrorChannelAlreadyOpen()"
+                        "error RaceConditionChannelAlreadyOpen()"
                     ])
                 },
-                "ErrorChannelAlreadyOpen"
+                "RaceConditionChannelAlreadyOpen"
             );
         });
 
@@ -449,10 +449,10 @@ describe("StateChannelManagerProxy", function () {
             await expect(res).to.be.revertedWithCustomError(
                 {
                     interface: new ethers.Interface([
-                        "error ErrorJoinChannelExpired()"
+                        "error RaceConditionJoinChannelExpired()"
                     ])
                 },
-                "ErrorJoinChannelExpired"
+                "RaceConditionJoinChannelExpired"
             );
         });
     });

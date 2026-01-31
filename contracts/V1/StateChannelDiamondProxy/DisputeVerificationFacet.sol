@@ -6,6 +6,7 @@ import "./Errors.sol";
 import "./utils/DisputeUtils.sol";
 import "./utils/BlockUtils.sol";
 import "./UtilityFacet.sol";
+import "hardhat/console.sol";
 
 contract DisputeVerificationFacet is StateChannelCommon {
     function computeDisputeOutputSnapshotData(
@@ -63,7 +64,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
             // ***** setup / first run *****
             if (maxSlashCount == 0) {
-                maxSlashCount = snapshotData.participants.length + disputeData.pendingParticipants.length;
+                maxSlashCount =
+                    snapshotData.participants.length + getPendingParticipants(dispute.input.channelId).length;
                 slashParticipants = new address[](maxSlashCount);
 
                 //populate initially with on-chain slashes up to the dispute window expiration timestamp
@@ -449,25 +451,32 @@ contract DisputeVerificationFacet is StateChannelCommon {
         bytes memory encodedStateMachineState
     ) public returns (bool) {
         ChannelBalance storage channelBalance = channelBalances[channelId];
-        Balance memory onChainDeposits =
-            inboundMessageBlockMap[channelId][snapshotData.latestInboundMessageBlockHash].totalBalance;
+        console.log("BALANCE 1");
+        Balance memory onChainDeposits = _resolveTotalDeposits(channelId, snapshotData.latestInboundMessageBlockHash);
         Balance memory onChainWithdrawals = channelBalance.totalWithdrawals;
         if (snapshotData.stateMachineStateHash != keccak256(encodedStateMachineState)) return false;
+        console.log("BALANCE 2");
         //on-chain deposits have to match latestState deposits since deposits only happen on-chain
         if (!stateMachineImplementation.areBalancesEqual(snapshotData.totalDeposits, onChainDeposits)) return false;
+        console.log("BALANCE 3");
         //total withdrawals >= on-chain withdrawals since on-chain withdrawals are already processed
         if (stateMachineImplementation.isBalanceLesserThan(snapshotData.totalWithdrawals, onChainWithdrawals)) {
             return false;
         }
+        console.log("BALANCE 4");
         stateMachineImplementation.setState(encodedStateMachineState);
         Balance memory stateMachineBalance = stateMachineImplementation.getTotalStateBalance(); // The state is already set
         // totalDeposits == totalWithdrawals + stateMachineBalance
+        console.log("BALANCE 4.1 - snapshotData.totalDeposits:", snapshotData.totalDeposits.amount);
+        console.log("BALANCE 4.2 - stateMachineBalance:", stateMachineBalance.amount);
+        console.log("BALANCE 4.3 - snapshotData.totalWithdrawals:", snapshotData.totalWithdrawals.amount);
         if (
             !stateMachineImplementation.areBalancesEqual(
                 snapshotData.totalDeposits,
                 stateMachineImplementation.addBalance(snapshotData.totalWithdrawals, stateMachineBalance)
             )
         ) return false;
+        console.log("BALANCE 5");
         return true;
     }
 

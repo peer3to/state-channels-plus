@@ -22,7 +22,7 @@ export const createJoinChannelTestObject = (
     let currentTime = 0;
     try {
         currentTime = Clock.getTimeInSeconds();
-    } catch (e) {
+    } catch {
         currentTime = Math.floor(Date.now() / 1000);
     }
     const jc: JoinChannelStruct = {
@@ -52,7 +52,7 @@ export const createOpenChannelTestObject = (
     let currentTime = 0;
     try {
         currentTime = Clock.getTimeInSeconds();
-    } catch (e) {
+    } catch {
         currentTime = Math.floor(Date.now() / 1000);
     }
 
@@ -165,7 +165,12 @@ export function getMathP2pEventHooks(
     myAddress: string
 ) {
     const hooks: P2pEventHooks = {
-        onTurn(address: AddressLike): void {
+        onTurn(
+            address: AddressLike,
+            _turnTime: number,
+            _agreementTime: number,
+            _chainFallbackTime: number
+        ): void {
             (address as string) == myAddress && onTurnCallback();
         }
     };

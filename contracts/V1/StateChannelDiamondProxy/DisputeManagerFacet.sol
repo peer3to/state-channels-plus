@@ -56,7 +56,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         DisputeWindow storage disputeWindow = disputeWindowMap[forkId];
         bool isThresholdFinal = _isDisputeThresholdFinal(disputeConfirmation);
         if (!isAuditingCalldataProvided && !isThresholdFinal) {
-            require(!_isAuditingCalldataRequired(disputeConfirmation), ErrorDisputeAuditingRequired());
+            require(!_isAuditingCalldataRequired(disputeConfirmation), RaceConditionDisputeAuditingRequired());
         }
 
         //check if dispute window is created/opened for the disputed fork, otherwise create/open it
@@ -67,7 +67,9 @@ contract DisputeManagerFacet is StateChannelCommon {
             disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp; // kill period recalculated from here
             disputeData.disputedForks.push(forkId); // add the disputed fork to the list
         } else {
-            require(!_isEvidencePeriodExpired(disputeWindow, getEvidenceTime()), ErrorDisputeEvidencePeriodExpired());
+            require(
+                !_isEvidencePeriodExpired(disputeWindow, getEvidenceTime()), RaceConditionDisputeEvidencePeriodExpired()
+            );
             require(!_hadParticipantPostedEvidence(disputeWindow, dispute.input.disputer), ErrorDisputeAlreadyPosted());
             disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp; // kill period recalculated from here
         }
@@ -115,7 +117,7 @@ contract DisputeManagerFacet is StateChannelCommon {
                 dispute.input.timeout.participant
             );
             if (found) {
-                revert ErrorDisputeTimeoutCalldataPosted();
+                revert RaceConditionDisputeTimeoutCalldataPosted();
             }
 
             //check if previous block producer posted blockCalldata and if the expectation matches
@@ -127,11 +129,11 @@ contract DisputeManagerFacet is StateChannelCommon {
                     dispute.input.timeout.previousBlockProducer
                 );
                 if (found != dispute.input.timeout.previousBlockProducerPostedCalldata) {
-                    revert ErrorDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch();
+                    revert RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch();
                 }
             }
             if (block.timestamp < dispute.input.timeout.minTimeStamp) {
-                revert ErrorDisputeTimeoutNotMinTimestamp();
+                revert RaceConditionDisputeTimeoutNotMinTimestamp();
             }
         }
     }
@@ -144,8 +146,8 @@ contract DisputeManagerFacet is StateChannelCommon {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         DisputeData storage disputeData = disputeData[dispute.input.channelId];
         SnapshotData storage snapshotData = stateSnapshots[dispute.input.channelId].snapshotData;
-        uint256 thresholdCount = snapshotData.participants.length + disputeData.pendingParticipants.length
-            - disputeData.onChainSlashes.length;
+        uint256 pendingCount = getPendingParticipants(dispute.input.channelId).length;
+        uint256 thresholdCount = snapshotData.participants.length + pendingCount - disputeData.onChainSlashes.length;
         if (disputeConfirmation.signatures.length + 1 < thresholdCount) {
             return false;
         }
@@ -165,13 +167,11 @@ contract DisputeManagerFacet is StateChannelCommon {
         returns (bool isRequired)
     {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
-        DisputeData storage disputeData = disputeData[dispute.input.channelId];
-        if (disputeConfirmation.signatures.length < disputeData.pendingParticipants.length) return true;
+        address[] memory pendingParticipants = getPendingParticipants(dispute.input.channelId);
+        if (disputeConfirmation.signatures.length < pendingParticipants.length) return true;
 
         (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            disputeData.pendingParticipants,
-            disputeConfirmation.signedDispute.encodedDispute,
-            disputeConfirmation.signatures
+            pendingParticipants, disputeConfirmation.signedDispute.encodedDispute, disputeConfirmation.signatures
         );
         return !isThresholdFinal;
     }

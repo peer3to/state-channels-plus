@@ -11,7 +11,7 @@ export async function waitFor(
             if (result) {
                 return;
             }
-        } catch (error) {
+        } catch {
             // Continue polling even if condition throws
         }
 

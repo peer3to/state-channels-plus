@@ -90,14 +90,6 @@ contract LocalDiamond is StateChannelManagerProxy {
         channelBalance.latestInboundMessageBlockHash = blockHash;
         channelBalance.latestInboundMessageBlockHeight = messageBlock.blockHeight;
         channelBalance.totalDeposits = messageBlock.totalBalance;
-
-        // Track pending participants for join messages
-        for (uint256 i = 0; i < messageBlock.messages.length; i++) {
-            if (messageBlock.messages[i].messageType == MESSAGE_TYPE_JOIN) {
-                JoinChannel memory joinChannel = abi.decode(messageBlock.messages[i].data, (JoinChannel));
-                disputeData[channelId].pendingParticipants.push(joinChannel.participant);
-            }
-        }
     }
 
     // Called by BlockCalldataPosted event
@@ -144,10 +136,7 @@ contract LocalDiamond is StateChannelManagerProxy {
             disputeWindow.reducedResult.reducer = dispute.input.disputer;
 
             // When final, clear all previous commitments then add the final one
-            delete disputeData[channelId]
-                .disputeWindowMap[forkId]
-                .evidence
-                .disputeCommitments;
+            delete disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments;
         }
 
         disputeWindow.evidence.disputeCommitments.push(commitment);
@@ -194,15 +183,14 @@ contract LocalDiamond is StateChannelManagerProxy {
         // Clear dispute data
         DisputeData storage disputeData = disputeData[channelId];
         delete disputeData.onChainSlashes;
-        delete disputeData.pendingParticipants;
         mapping(bytes32 => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
         for (uint256 i = 0; i < disputeData.disputedForks.length; i++) {
             delete disputeWindowMap[disputeData.disputedForks[i]];
         }
         delete disputeData.disputedForks;
 
-        // Clear old inbound message blocks (keep head referenced by snapshot)
-        bytes32 keyToDelete = inboundMessageBlockMap[channelId][latestInboundMessageBlockHash].previousBlockHash;
+        // Clear old inbound message blocks (prune the snapshot head too)
+        bytes32 keyToDelete = latestInboundMessageBlockHash;
         while (keyToDelete != bytes32(0)) {
             bytes32 nextKeyToDelete = inboundMessageBlockMap[channelId][keyToDelete].previousBlockHash;
             delete inboundMessageBlockMap[channelId][keyToDelete];
@@ -254,7 +242,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: getGasLimit()}(data);
 
         if (!success) {
-            assembly {
+            assembly ("memory-safe") {
                 revert(add(returnData, 0x20), mload(returnData))
             }
         }
@@ -294,7 +282,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         // Perform the low-level call with a gas limit
         (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: getGasLimit()}(data);
         if (!success) {
-            assembly {
+            assembly ("memory-safe") {
                 revert(add(returnData, 0x20), mload(returnData))
             }
         }
@@ -313,12 +301,14 @@ contract LocalDiamond is StateChannelManagerProxy {
     }
 
     function verifyMilestones(
+        bytes32 forkId,
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         SnapshotData memory genesisSnapshotData
     ) public view returns (bool isValid, bytes memory lastBlockEncoded) {
-        return
-            UtilityFacet(utilityFacetAddress).verifyMilestones(milestoneProofs, milestoneSnapshots, genesisSnapshotData);
+        return UtilityFacet(utilityFacetAddress).verifyMilestones(
+            forkId, milestoneProofs, milestoneSnapshots, genesisSnapshotData
+        );
     }
 
     function getLatestBlockFromStateProof(StateProof memory stateProof)
@@ -339,5 +329,26 @@ contract LocalDiamond is StateChannelManagerProxy {
         returns (BlockConfirmation[] memory)
     {
         return _getUnfinalizedBlockConfirmationsFromStateProof(stateProof);
+    }
+
+    // ========== Override for debugging - Browser compatible console logs ==========
+
+    function isBlockAuthentic(SignedBlock memory _block) public view override returns (bool) {
+        // try decode block
+        bytes memory data = abi.encodeCall(this.decodeBlock, (_block.encodedBlock));
+        (bool success, bytes memory encodedBlock) = address(this).staticcall(data);
+        if (!success) {
+            console.log("isBlockAuthentic - false - 1");
+            return false;
+        }
+        Block memory decodedBlock = abi.decode(encodedBlock, (Block));
+        (address signer, bool isValid) =
+            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(encodedBlock, _block.signature);
+        if (signer != decodedBlock.transaction.header.participant || !isValid) {
+            console.log("isBlockAuthentic - false - 2");
+            return false;
+        }
+        console.log("isBlockAuthentic - true");
+        return true;
     }
 }

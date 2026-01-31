@@ -17,9 +17,10 @@ import {
     SignatureUtils,
     Mutex,
     difference,
-    isCustomEvmError,
-    Logger
+    Logger,
+    tryDecodeCustomError
 } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooks from "@/P2pEventHooks";
 import { Address, ChannelId, ForkId } from "../types/types";
 import { StateSnapshot } from "../models";
@@ -31,8 +32,17 @@ import {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Clock from "../Clock";
 import { BytesLike } from "ethers";
-import { DEBUG_DISPUTE_HANDLER } from "@/utils/config";
+import { config } from "@/utils/config";
+import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
+export type ConstructDisputeResult = {
+    dispute: DisputeStruct;
+    disputeConfirmation: DisputeConfirmationStruct;
+    auditingData: DisputeAuditingDataStruct;
+    fraudProofsToApply: FraudProofStruct[];
+};
+
+const DEFAULT_GAS_LIMIT = 5000000;
 class DisputeManager {
     signer: ethers.Signer;
     signerAddress: Address;
@@ -40,7 +50,7 @@ class DisputeManager {
     stateChannelManagerContract: StateChannelManagerProxy;
     channelId: ChannelId;
     p2pEventHooks: P2pEventHooks;
-    self = DEBUG_DISPUTE_HANDLER ? DebugProxy.createProxy(this) : this;
+    self = config.DEBUG_DISPUTE_HANDLER ? DebugProxy.createProxy(this) : this;
     storage: Storage;
     diamondStateMachine: ADiamondStateMachine;
     mutex: Mutex = new Mutex();
@@ -73,12 +83,19 @@ class DisputeManager {
         try {
             await this.mutex.lock();
             if (this.storage.disputes.didIDispute(forkId)) return;
+
             const {
                 dispute,
                 disputeConfirmation,
                 auditingData,
                 fraudProofsToApply
             } = await this.constructDispute(forkId);
+
+            LoggerUtils.logDisputeInitiated(
+                this.logger,
+                dispute,
+                fraudProofsToApply
+            );
 
             const pendingParticipants =
                 await this.stateChannelManagerContract.getPendingParticipants(
@@ -126,7 +143,8 @@ class DisputeManager {
                     );
                 } else {
                     await this.stateChannelManagerContract.uploadDispute(
-                        disputeConfirmation
+                        disputeConfirmation,
+                        { gasLimit: DEFAULT_GAS_LIMIT }
                     );
                 }
             }
@@ -137,29 +155,21 @@ class DisputeManager {
                 dispute
             );
         } catch (error) {
-            if (isCustomEvmError(error)) {
-                this.logger.error("Error uploading dispute", {
-                    forkId,
-                    channelId: this.channelId,
-                    signerAddress: this.signerAddress,
-                    errorDescription: error.errorDescription,
-                    errorName: error.name
-                });
-            } else {
-                this.logger.error("Error uploading dispute", {
-                    forkId,
-                    channelId: this.channelId,
-                    signerAddress: this.signerAddress,
-                    error:
-                        error instanceof Error ? error.message : String(error)
-                });
-            }
+            this.logger.error("Error uploading dispute", {
+                forkId,
+                channelId: this.channelId,
+                signerAddress: this.signerAddress,
+                error: error instanceof Error ? error.message : String(error)
+            });
+
             this.storage.disputes.storeDisputedFork(forkId, false);
         } finally {
             this.mutex.unlock();
         }
     }
     public async killDispute(dispute: DisputeStruct): Promise<void> {
+        const disputeMeta = LoggerUtils.getDisputeMetadata(dispute);
+        const formattedHash = LoggerUtils.formatHash(disputeMeta.disputeHash);
         try {
             // a mutex is not needed since we observe and validate a dispute only once and create only 1 disputeFraudProof for it
             const disputeFraudProof =
@@ -173,33 +183,24 @@ class DisputeManager {
                 await this.stateChannelManagerContract.applyDisputeFraudProofs([
                     disputeFraudProof
                 ]);
-            txRespone.wait().then(() => {
-                this.logger.debug("Dispute killed successfully", {
-                    forkId: dispute.input.forkId,
-                    channelId: this.channelId
-                });
-            });
+
+            await txRespone.wait();
+            this.logger.info(
+                `✅ Dispute killed successfully: ${formattedHash}`
+            );
         } catch (error) {
-            if (isCustomEvmError(error)) {
-                this.logger.error("CustomError killing dispute", {
-                    forkId: dispute.input.forkId,
-                    errorDescription: error.errorDescription
-                });
-            } else {
-                this.logger.error("Error killing dispute", {
-                    forkId: dispute.input.forkId,
-                    error:
-                        error instanceof Error ? error.message : String(error)
-                });
-            }
+            const custom = tryDecodeCustomError(error);
+            this.logger.error(`❌ Error killing dispute ${formattedHash}`, {
+                disputeMeta,
+                custom,
+                error: error instanceof Error ? error.message : String(error)
+            });
         }
     }
-    public async constructDispute(forkId: ForkId): Promise<{
-        dispute: DisputeStruct;
-        disputeConfirmation: DisputeConfirmationStruct;
-        auditingData: DisputeAuditingDataStruct;
-        fraudProofsToApply: FraudProofStruct[];
-    }> {
+
+    public async constructDispute(
+        forkId: ForkId
+    ): Promise<ConstructDisputeResult> {
         const latestBlockHeight =
             this.storage.blocks.getNextBlockHeight(forkId) - 1;
 
@@ -220,7 +221,19 @@ class DisputeManager {
                 Clock.getTimeInSeconds() // this is safe as long as our local clock isn't in front of the DLT clock
             ),
             this.diamondStateMachine.getParticipants()
-        ]);
+        ]).catch((error) => {
+            this.logger.error(
+                "Error constructing dispute - failed to get inputData",
+                {
+                    forkId,
+                    channelId: this.channelId,
+                    latestBlockHeight,
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                }
+            );
+            throw error;
+        });
         // onChainSlashes
         // this can be a subset of on-chain slashes, so we don't need to run any race condition checks
         let onChainSlashes = new Set<Address>(_onChainSlashes);
@@ -311,14 +324,28 @@ class DisputeManager {
             lastInboundMessageBlockHeight:
                 this.storage.inboundMessages.getLatestBlockHeight() || 0
         };
+        let outputSnapshotData: SnapshotDataStruct;
+        try {
+            outputSnapshotData =
+                await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
+                    disputeInput,
+                    auditingData.latestStateSnapshot,
+                    auditingData.latestStateStateMachineState,
+                    auditingData.inboundMessageBlocks
+                );
+        } catch (error) {
+            const custom = tryDecodeCustomError(error);
+            this.logger.error("Error computing dispute output snapshot data", {
+                forkId,
+                channelId: this.channelId,
+                disputeInput: LoggerUtils.getDisputeInputMetadata(disputeInput),
+                auditingData: LoggerUtils.getAuditingMetadata(auditingData),
+                custom,
+                error
+            });
 
-        const outputSnapshotData =
-            await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
-                disputeInput,
-                auditingData.latestStateSnapshot,
-                auditingData.latestStateStateMachineState,
-                auditingData.inboundMessageBlocks
-            );
+            throw error;
+        }
 
         const outputSnapshotDataHash = hash(
             Codec.encode(outputSnapshotData, Type.SnapshotData)
@@ -360,7 +387,7 @@ class DisputeManager {
         let isPartial = false;
         // genesisStateSnapshot
         const genesisStateSnapshot =
-            this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(forkId);
+            this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
         if (!genesisStateSnapshot)
             throw new Error(
                 "getDisputeAuditingData - genesisStateSnapshot not found"
@@ -394,14 +421,14 @@ class DisputeManager {
         }
 
         // latestStateStateMachineState
-        const latestStateStateMachineState =
+        let latestStateStateMachineState =
             this.storage.stateMachineStates.getStateMachineState(
                 latestStateSnapshot.stateMachineStateHash
             );
-        if (!latestStateStateMachineState)
-            throw new Error(
-                "getDisputeAuditingData - latestStateStateMachineState not found"
-            );
+        if (!latestStateStateMachineState) {
+            isPartial = true;
+            latestStateStateMachineState = ""; // not needed for verifyStateProof and if the dispute is honest, we'll catchup and have it later
+        }
 
         // inbound message blocks
         const inboundMessageBlocks =

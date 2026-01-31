@@ -2,10 +2,11 @@
 import Hyperswarm from "hyperswarm";
 //@ts-ignore
 //@ts-ignore
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import { HolepunchTransport, TransportType } from "@/transport";
 import { Buffer } from "buffer";
 import HolepunchRelay from "@/HolepunchRelay";
+import { config } from "@/utils/config";
 
 class Holepunch {
     swarm: any;
@@ -15,32 +16,29 @@ class Holepunch {
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
         const setup = () => {
-            // console.log("Holepunch - setup - swarm", this.swarm);
             this.swarm.removeAllListeners(["connection"]); // since hyperwarm is injected into the runtime, creating a new Holepunch object still holds the same refrence to hyperwarm
             this.swarm.on("connection", (socket: any, info: any) => {
-                console.log("new connection", ++this.connectionCount);
-                console.log("PeerInfo", info);
-                console.trace();
+                this.p2pManager.logger.info("New holepunch peer connection", {
+                    connectionCount: ++this.connectionCount,
+                    transportType: "HOLEPUNCH"
+                });
+                this.p2pManager.logger.debug("Holepunch peer info", {
+                    peerInfo: info
+                });
                 new HolepunchTransport(socket, info, this.p2pManager);
             });
             this.rejoinTopics();
         };
-        // console.log(typeof global == "undefined");
-        // console.log("global", global);
+
         // @ts-ignore
         if (typeof window != "undefined") {
-            console.log("window.Hyperswarm");
+            this.p2pManager.logger.info("Using browser Hyperswarm relay");
             p2pManager.preferredTransport = TransportType.WEBRTC;
-            const relayerUrls = [
-                "wss://sigma8solution.com/dht-relay/",
-                "wss://dht1-relay.leet.ar:49443"
-            ];
+            const relayerUrls = config.HOLEPUNCH_RELAYER_URLS;
             const relayerUpdateCallback = () => {
                 const swarm = HolepunchRelay.getInstance().getSwarm();
-                // console.log("Holepunch - callback - swarm", swarm);
                 // @ts-ignore
                 this.swarm = window.Hyperswarm || swarm;
-                // console.log("Holepunch - callback - this.swarm", this.swarm);
                 setup();
             };
             HolepunchRelay.init(relayerUrls, relayerUpdateCallback);
@@ -56,28 +54,34 @@ class Holepunch {
     }
     public async join(topic: Buffer) {
         this.topics.push(topic);
-        const discovery = this.swarm.join(topic, {
+        this.swarm.join(topic, {
             server: true,
             client: true
         });
-        console.log("joined topic", topic);
+        this.p2pManager.logger.debug("Joined holepunch topic", {
+            topic: topic.toString("hex")
+        });
         return;
     }
 
     private rejoinTopics() {
         for (const topic of this.topics) {
-            const discovery = this.swarm.join(topic, {
+            this.swarm.join(topic, {
                 server: true,
                 client: true
             });
-            console.log("joined topic", topic);
+            this.p2pManager.logger.debug("Joined holepunch topic", {
+                topic: topic.toString("hex")
+            });
         }
     }
 
     private leaveTopics() {
         for (const topic of this.topics) {
             this.swarm.leave(topic);
-            console.log("LEFT TOPIC", topic);
+            this.p2pManager.logger.debug("Left holepunch topic", {
+                topic: topic.toString("hex")
+            });
         }
         this.topics = [];
     }

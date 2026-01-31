@@ -61,6 +61,8 @@ import {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Bytes, Timestamp } from "@/types/types";
 import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
+import { SyncPayloadEthersType } from "@/types";
+import type { SyncPayload } from "@/types";
 import { ExecResult } from "@ethereumjs/evm";
 import {
     DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksStruct,
@@ -118,7 +120,8 @@ type StructType =
     | ExitChannelBlockStruct
     | ExitChannelStruct
     | DisputeAuditingDataStruct
-    | MessageBlockStruct;
+    | MessageBlockStruct
+    | SyncPayload;
 
 // Enum for better autocomplete and type safety
 export enum Type {
@@ -135,7 +138,8 @@ export enum Type {
     ExitChannelBlock,
     ExitChannel,
     DisputeAuditingData,
-    MessageBlock
+    MessageBlock,
+    SyncPayload
 }
 
 export class Codec {
@@ -157,6 +161,7 @@ export class Codec {
         [Type.ExitChannel, ExitChannelEthersType],
         [Type.DisputeAuditingData, DisputeAuditingDataEthersType],
         [Type.MessageBlock, MessageBlockEthersType],
+        [Type.SyncPayload, SyncPayloadEthersType],
         // Fraud proofs
         [FraudProofType.BlockDoubleSign, BlockDoubleSignProofEthersType],
         [
@@ -287,6 +292,7 @@ export class Codec {
         encoded: Bytes,
         type: Type.SnapshotData
     ): SnapshotDataStruct;
+    public static decode(encoded: Bytes, type: Type.SyncPayload): SyncPayload;
     public static decode(
         encoded: Bytes,
         type: Type.JoinChannelBlock
@@ -326,7 +332,7 @@ export class Codec {
                 cnt++;
             }
             if (cnt == 0) obj = result.toArray();
-        } catch (e) {
+        } catch {
             obj = result.toArray();
         }
         for (const key in obj) {

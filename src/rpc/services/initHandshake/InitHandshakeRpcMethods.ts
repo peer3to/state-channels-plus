@@ -4,7 +4,6 @@ import { ATransport, TransportType } from "@/transport";
 import { Hash, Signature, Timestamp } from "@/types/types";
 import { ethers } from "ethers";
 import InitHandshakeService from "./InitHandshakeService";
-import PeerProfile from "@/PeerProfile";
 
 class InitHandshakeRpcMethods extends ARpcMethods {
     service: InitHandshakeService;
@@ -39,6 +38,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
                 this.p2pManager.preferredTransport
             )
             .sendOne(this.senderTransport);
+        this.service.ensureHandshakeAckTimeoutScheduled(this.senderTransport);
     }
 
     public async onInitHandshakeResponse(
@@ -54,6 +54,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
         }
         const localTime = Clock.getTimeInSeconds();
         const rtt = localTime - challenge.initTime;
+        this.service.logger.info(`Handshake response RTT: ${rtt}`);
         if (rtt > this.p2pManager.stateManager.timeConfig.agreementTime) {
             this.p2pManager.disconnectConnection(this.senderTransport);
             return;
@@ -73,7 +74,9 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             challengeHashBytes,
             signature
         );
-
+        this.service.logger.info(
+            `Handshake response signer address ${signerAddress} and RTT: ${rtt}`
+        );
         // Check if this peer is blacklisted
         if (this.p2pManager.isBlacklisted(signerAddress)) {
             this.service.logger.debug(
@@ -83,37 +86,24 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             return;
         }
 
-        const normalizedAddress = signerAddress.toLowerCase();
-        this.senderTransport.peerAddress = normalizedAddress;
-
-        let profile =
-            this.p2pManager.profileManager.getProfileByEvmAddress(
-                signerAddress
-            );
-        if (!profile) {
-            profile = new PeerProfile(this.senderTransport, signerAddress);
-            this.p2pManager.profileManager.registerProfile(profile);
-        } else {
-            this.p2pManager.profileManager.updateTransport(
-                profile.getEvmAddress().toString(),
-                this.senderTransport
-            );
-        }
-        profile.setIsHandshakeCompleted(true);
-        if (
-            (preferredTransport === TransportType.WEBRTC ||
-                this.p2pManager.preferredTransport === TransportType.WEBRTC) &&
-            this.senderTransport.transportType != TransportType.WEBRTC &&
-            this.p2pManager.p2pSigner.signerAddress < signerAddress
-        ) {
-            this.p2pManager.localRpc.webRTCSetupService.initiateWebRTC(
-                this.senderTransport
-            );
-        }
-
-        this.p2pManager.stateManager.p2pEventHooks.onConnection?.(
+        this.service.recordVerifiedPeerAddress(
+            this.senderTransport,
             signerAddress
         );
+
+        this.service.setRemotePreferredTransport(
+            this.senderTransport,
+            preferredTransport
+        );
+
+        this.service.maybeFinalizeHandshakeOnceFromTransport(
+            this.senderTransport
+        );
+
+        // Inform the remote that we've authenticated them.
+        this.remoteRpc.initHandshakeService
+            .onInitHandshakeAck()
+            .sendOne(this.senderTransport);
         //TODO! TEST!!
         // this.rpcProxy
         //     .onSignJoinChannelTEST(
@@ -121,6 +111,31 @@ class InitHandshakeRpcMethods extends ARpcMethods {
         //         this.p2pManager.p2pSigner.signedJc.signature
         //     )
         //     .broadcast();
+
+        // Ensure we have a timeout path in case ack gets lost.
+        this.service.ensureHandshakeAckTimeoutScheduled(this.senderTransport);
+    }
+
+    /**
+     * Sent after a peer verifies our handshake response. We only treat the handshake
+     * as complete once we have both: (1) verified the remote, and (2) received this ack.
+     */
+    public async onInitHandshakeAck() {
+        if (this.service.didReceiveAck(this.senderTransport)) {
+            this.p2pManager.disconnectAndBlacklistPeer(
+                this.senderTransport,
+                "protocol violation: duplicate handshake ack"
+            );
+            return;
+        }
+
+        // Ack may arrive before we have verified the remote (simultaneous initiation).
+        // Record it on the transport and apply it to the profile once available.
+        this.service.markAcked(this.senderTransport);
+
+        this.service.maybeFinalizeHandshakeOnceFromTransport(
+            this.senderTransport
+        );
     }
 }
 

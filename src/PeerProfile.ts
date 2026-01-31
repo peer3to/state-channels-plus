@@ -8,7 +8,7 @@ class PeerProfile {
     hpAddress: string | undefined;
     isLeader: boolean;
     isBlackListed: boolean;
-    isHandshakeCompleted = false;
+    private isHandshakeCompleted = false;
     constructor(
         transport: ATransport,
         evmAddress: Address,

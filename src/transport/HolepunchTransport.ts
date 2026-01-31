@@ -1,48 +1,50 @@
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import ATransport from "./ATransport";
 import { Buffer } from "buffer";
 import { TransportType } from "./TransportType";
+
 class HolepunchTransport extends ATransport {
     transportType = TransportType.HOLEPUNCH;
     holepunchSocket: any;
     holepunchPeerInfo: any;
-    p2pManager: P2PManager;
     constructor(
         holepunchSocket: any,
         holepunchPeerInfo: any,
         p2pManager: P2PManager
     ) {
-        super();
-        console.log("HOLEPUNCH TRANSPORT CREATED");
+        super(p2pManager);
         this.holepunchSocket = holepunchSocket;
         this.holepunchPeerInfo = holepunchPeerInfo;
-        this.p2pManager = p2pManager;
         this.holepunchSocket.on("data", async (data: any) => {
             if (data instanceof Uint8Array) {
                 data = Buffer.from(data);
             }
-            console.log("DATA RECEIVED", data);
             this.onMessage(data);
         });
-        this.p2pManager.addConnection(this);
+        this.p2pManager.localRpc.initHandshakeService.initHandshake(this);
         this.holepunchSocket.on("close", () => {
             this.close();
         });
+        this.holepunchSocket.on("error", (error: Error) => {
+            this.p2pManager.logger.error("Holepunch socket error", {
+                socketState: this.holepunchSocket?.readyState,
+                error
+            });
+            this.close();
+        });
     }
-    send(serializedRPC: string): void {
-        console.log("SENDING RPC", serializedRPC);
+    _send(serializedRPC: string): void {
         this.holepunchSocket.write(serializedRPC);
     }
     onMessage(data: any): void {
         const serializedRPC = data.toString();
-        console.log("RECEIVED RPC", serializedRPC);
         this.p2pManager.onRpc(serializedRPC, this);
     }
+
     _close(): void {
-        console.log("closing holepunch socket");
         this.holepunchPeerInfo.ban(true);
         this.holepunchSocket.end();
-        this.p2pManager.disconnectConnection(this);
+
         //TODO! unban if transports are empty
 
         // setTimeout(() => {

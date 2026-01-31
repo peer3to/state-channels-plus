@@ -2,11 +2,17 @@ import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes"
 import { Address, ChannelId, Hash } from "./types/types";
 
 type P2pEventHooks = {
-    onConnection?: (address: Address) => void;
-    onTurn?: (address: Address) => void;
+    onConnection?: (address: Address, isChannelOpened: boolean) => void;
+    onTurn?: (
+        address: Address,
+        turnTime: number,
+        agreementTime: number,
+        chainFallbackTime: number
+    ) => void;
     onSetState?: () => void;
     onPostingCalldata?: () => void;
     onPostedCalldata?: () => void;
+    onDisputeStarted?: (maxDuration: number) => void;
     onInitiatingDispute?: (disputeHash: Hash, dispute: DisputeStruct) => void;
     onDisputeUpdate?: (dispute: DisputeStruct) => void;
     onCloseChannel?: (channelId: ChannelId) => void;

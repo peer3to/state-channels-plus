@@ -1,10 +1,30 @@
-import { ErrorDescription, ethers } from "ethers";
+import { ErrorDescription, Signer, ethers } from "ethers";
 import { errorAbis } from "./GeneratedArtifacts";
-import { Bytes } from "@/types/types";
+import { TransactionResponse } from "ethers";
+import { Logger } from "./PeerLogger";
+
+export type RaceConditionErrorName =
+    | "RaceConditionChannelAlreadyOpen"
+    | "RaceConditionBlockCalldataTimestampTooLate"
+    | "RaceConditionSnapshotForkMismatch"
+    | "RaceConditionBlockHeightTooOld"
+    | "RaceConditionJoinChannelExpired"
+    | "RaceConditionDisputeEvidencePeriodExpired"
+    | "RaceConditionDisputeKillPeriodNotExpired"
+    | "RaceConditionDisputeAlreadyReduced"
+    | "RaceConditionDisputeAuditingRequired"
+    | "RaceConditionDisputeTimeoutCalldataPosted"
+    | "RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch"
+    | "RaceConditionDisputeTimeoutNotMinTimestamp"
+    | "RaceConditionUnexpectedBlockCalldataPosted"
+    | "RaceConditionGenesisTimestampNotAvailable";
+
+export type RaceConditionErrorHandlers = Partial<
+    Record<RaceConditionErrorName, () => void>
+>;
 
 // interface for parsing errors
 const errorInterface = new ethers.Interface(errorAbis);
-
 export class CustomEvmError extends Error {
     public readonly errorDescription: ErrorDescription;
     public readonly isCustomError = true;
@@ -20,74 +40,93 @@ export class CustomEvmError extends Error {
     }
 }
 
-export function decodeCustomError(errorData: Bytes): ErrorDescription | null {
+export function tryDecodeCustomError(error: any): CustomEvmError | null {
+    if (isCustomEvmError(error)) {
+        return error;
+    }
+    let errorData = error.data || error.error?.data || null;
+    if (!errorData && error.execResult?.returnValue)
+        errorData = ethers.hexlify(error.execResult.returnValue);
+
     if (!errorData || errorData.length < 10) return null;
 
-    return errorInterface.parseError(errorData);
+    const errorDescription = errorInterface.parseError(errorData);
+    if (!errorDescription) return null;
+    return new CustomEvmError(errorDescription, error);
 }
 
 export function isCustomEvmError(error: any): error is CustomEvmError {
     return !!error && error.isCustomError === true;
 }
 
-export function decodeErrorProxy<T extends object>(contract: T) {
-    return new Proxy(contract, {
-        get(target, prop, receiver) {
-            const originalProperty = Reflect.get(target, prop, receiver);
+export type HandleEvmErrorOptions = {
+    tx?: TransactionResponse;
+    logger?: Logger;
+    handlers?: RaceConditionErrorHandlers;
+    signer?: Signer;
+};
 
-            if (typeof originalProperty !== "function") {
-                return originalProperty;
-            }
+export async function tryHandleEvmError(
+    error: any,
+    options: HandleEvmErrorOptions = {}
+): Promise<boolean> {
+    return _tryHandleEvmError(error, options, 0);
+}
 
-            const isAsync =
-                originalProperty.constructor.name === "AsyncFunction";
+async function _tryHandleEvmError(
+    error: any,
+    options: HandleEvmErrorOptions,
+    recursionDepth: number = 0
+): Promise<boolean> {
+    const { tx, logger, handlers, signer } = options;
+    if (!error) return false;
 
-            if (isAsync) {
-                // Wrap async functions with error handling
-                return async function (...args: any[]) {
-                    try {
-                        return await Reflect.apply(
-                            originalProperty,
-                            target,
-                            args
-                        );
-                    } catch (error: any) {
-                        const errorData = error.data
-                            ? error.data
-                            : error.execResult?.returnValue
-                              ? ethers.hexlify(error.execResult.returnValue)
-                              : null;
+    const customError = tryDecodeCustomError(error);
 
-                        const customError = decodeCustomError(errorData);
-
-                        if (customError) {
-                            throw new CustomEvmError(customError, error);
-                        }
-
-                        throw error;
-                    }
-                };
-            }
-            // For synchronous functions, wrap with sync error handling
-            return function (...args: any[]) {
-                try {
-                    return Reflect.apply(originalProperty, target, args);
-                } catch (error: any) {
-                    const errorData = error.data
-                        ? error.data
-                        : error.execResult?.returnValue
-                          ? ethers.hexlify(error.execResult.returnValue)
-                          : null;
-
-                    const customError = decodeCustomError(errorData);
-
-                    if (customError) {
-                        throw new CustomEvmError(customError, error);
-                    }
-
-                    throw error;
-                }
-            };
+    if (customError) {
+        const handler =
+            handlers?.[customError.name as keyof RaceConditionErrorHandlers];
+        if (handler) {
+            logger?.info(`Handling custom EVM error: ${customError.name}`);
+            handler();
+            return true;
         }
+        // unhandled custom error
+        logger?.error("Unhandled custom EVM error", {
+            name: customError.name,
+            args: customError.errorDescription.args,
+            txHash: tx?.hash
+        });
+        return false;
+    }
+
+    // tx.wait() path | tx exists but revert data missing
+    if (tx && !recursionDepth && signer) {
+        try {
+            logger?.info(
+                "tryHandleEvmError - preflight and retrying transaction"
+            );
+            // This peforms a preflight call and then resends the transaction if the preflight succeeds otehrwise reverts with error data
+            const txResponse = await signer.sendTransaction({
+                to: tx.to!,
+                from: tx.from,
+                data: tx.data!,
+                value: tx.value
+            });
+            logger?.info("tryHandleEvmError - sendTransaction succeeded");
+            await txResponse.wait();
+            logger?.info("tryHandleEvmError - wait succeeded");
+            return true;
+        } catch (callError) {
+            // if call reverts, do nothing here
+            return _tryHandleEvmError(callError, options, recursionDepth + 1);
+        }
+    }
+
+    // not a custom error
+    logger?.error("Non-custom EVM error encountered", {
+        error: error,
+        txHash: tx?.hash
     });
+    return false;
 }

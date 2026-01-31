@@ -13,7 +13,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import DisputeManager from "@/disputeManager";
 import AgreementManager from "@/agreementManager";
-import StateManager from "./StateManager";
+import type StateManager from "./StateManager";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 
 export default class DisputeValidationService {
@@ -127,15 +127,14 @@ export default class DisputeValidationService {
                 disputeAuditingData
             );
             return false;
-        } else {
-            // this is the easy case where we just need to create an invalidStateProof Dispute Fraud Proof
-            this.disputeFraudProofService.createDisputeInvalidStateProofWithoutAuditingDataIntegrityVerified(
-                dispute,
-                disputeAuditingData
-            );
-            // still a TODO - but EASY
-            return false;
         }
+        // this is the easy case where we just need to create an invalidStateProof Dispute Fraud Proof
+        this.disputeFraudProofService.createDisputeInvalidStateProofWithoutAuditingDataIntegrityVerified(
+            dispute,
+            disputeAuditingData
+        );
+        // still a TODO - but EASY
+        return false;
     }
     private async continueValidationWithVerifiedDisputeAuditingDataCommitment(
         dispute: DisputeStruct,

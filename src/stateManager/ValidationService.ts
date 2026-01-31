@@ -11,11 +11,13 @@ import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
-import StateManager from "@/stateManager";
-import ATransport from "@/transport/ATransport";
+import type StateManager from "@/stateManager";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
 
 export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
+    private readonly logger: Logger;
     constructor(
         private readonly storage: Storage,
         private readonly diamondStateMachine: ADiamondStateMachine,
@@ -24,37 +26,46 @@ export default class ValidationService {
         private readonly stateManager: StateManager,
         logger: Logger
     ) {
-        const childLogger = logger.child({ component: "ValidationService" });
+        this.logger = logger.child({ component: "ValidationService" });
         this.fraudProofService = new FraudProofService(
             this.storage,
-            childLogger
+            this.logger
         );
     }
 
     async validateBlockConfirmation(
         block: Block,
         strategy: AValidationStrategy,
-        senderTransport?: ATransport
+        senderAddress?: string
     ): Promise<BlockValidationResult> {
-        const forkId = block.forkId;
-        const channelId = block.channelId;
-
         // Check is correct channel
         if (
             !this.stateManager.channelId ||
             block.channelId != this.stateManager.channelId
-        )
+        ) {
+            this.logger.warn("validateBlockConfirmation - wrong channel", {
+                strategy: strategy.name,
+                stateManagerChannelId: String(this.stateManager.channelId),
+                blockChannelId: String(block.channelId),
+                block: LoggerUtils.getBlockMetadata(block, this.storage)
+            });
             return await strategy.wrongChannel(block);
+        }
 
         // Check if channel is open
         if (!this.isChannelOpen(this.stateManager.forkId)) {
+            this.logger.warn("validateBlockConfirmation - channel not opened", {
+                strategy: strategy.name,
+                stateManagerForkId: String(this.stateManager.forkId),
+                block: LoggerUtils.getBlockMetadata(block, this.storage)
+            });
             return await strategy.channelNotOpened(block);
         }
 
         //  Get participants
         const participants = await this.getParticipants(
             block.coordinates,
-            channelId
+            block.channelId
         );
 
         // Check duplicate blocks
@@ -65,11 +76,21 @@ export default class ValidationService {
         );
 
         if (duplicateResult !== BlockValidationResult.SUCCESS) {
+            // this.logger.warn("validateBlockConfirmation - duplicate block", {
+            //     block
+            // });
             return duplicateResult;
         }
 
         // Author is a participant
         if (!participants.has(block.author)) {
+            this.logger.warn(
+                "validateBlockConfirmation - author is not participant",
+                {
+                    strategy: strategy.name,
+                    block: LoggerUtils.getBlockMetadata(block, this.storage)
+                }
+            );
             return await strategy.blockAuthorIsNotParticipant(block);
         }
 
@@ -79,36 +100,86 @@ export default class ValidationService {
             strategy
         );
         if (conflictResult !== BlockValidationResult.SUCCESS) {
+            this.logger.warn("validateBlockConfirmation - conflicting block", {
+                strategy: strategy.name,
+                block: LoggerUtils.getBlockMetadata(block, this.storage)
+            });
             return conflictResult;
         }
 
-        if (await this.isDisputedFork(block.forkId, channelId)) {
-            return await strategy.blockForkIsDisputed(block, senderTransport);
+        if (await this.isDisputedFork(block.forkId, block.channelId)) {
+            this.logger.warn("validateBlockConfirmation - fork disputed", {
+                strategy: strategy.name,
+                block: LoggerUtils.getBlockMetadata(block, this.storage)
+            });
+            return await strategy.blockForkIsDisputed(block, senderAddress);
         }
 
         // isNext
-        if (block.height > this.storage.blocks.getNextBlockHeight(forkId)) {
-            return await strategy.blockIsNotNextAndIsInTheFuture(block);
+        const expectedNextHeight = this.storage.blocks.getNextBlockHeight(
+            block.forkId
+        );
+        if (block.height > expectedNextHeight) {
+            this.logger.warn(
+                "validateBlockConfirmation - block is in the future",
+                {
+                    strategy: strategy.name,
+                    expectedNextHeight,
+                    block: LoggerUtils.getBlockMetadata(block, this.storage)
+                }
+            );
+            return await strategy.blockIsNotNextAndIsInTheFuture(
+                block,
+                senderAddress
+            );
         }
 
         // Is linked
         if (!this.isLinked(block)) {
             // if first block -> wrong genesis fraud proof
             if (block.height === 0) {
+                this.logger.warn("validateBlockConfirmation - wrong genesis", {
+                    strategy: strategy.name,
+                    block: LoggerUtils.getBlockMetadata(block, this.storage)
+                });
                 return await strategy.wrongGenesisDetected(block);
             }
+            this.logger.warn("validateBlockConfirmation - block not linked", {
+                strategy: strategy.name,
+                block: LoggerUtils.getBlockMetadata(block, this.storage)
+            });
             return await strategy.blockIsNotLinkedAndIsNotFirstBlock(block);
         }
 
         // isNextLeader
         const nextLeader = await this.diamondStateMachine.getNextToWrite();
         if (nextLeader !== block.author) {
+            this.logger.warn(
+                "validateBlockConfirmation - unexpected next leader",
+                {
+                    strategy: strategy.name,
+                    block: LoggerUtils.getBlockMetadata(block, this.storage),
+                    expectedNextLeader: nextLeader,
+                    expectedNextHeight,
+                    expectedForkId: this.stateManager.forkId
+                }
+            );
             return await strategy.invalidStateTransitionDetected(block);
         }
 
         // Time logic
         const timeResult = await this.validateTimeLogic(block, strategy);
 
+        if (timeResult !== BlockValidationResult.SUCCESS) {
+            this.logger.warn("Time validation failed", {
+                strategy: strategy.name,
+                validationResult:
+                    BlockValidationResult[timeResult] ??
+                    `UNKNOWN(${timeResult})`,
+                blockHeight: block.height
+            });
+            return timeResult;
+        }
         return timeResult;
     }
 
@@ -124,9 +195,7 @@ export default class ValidationService {
         const { forkId, height } = block.coordinates;
         if (height === 0) {
             const genesisSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotDataByForkId(
-                    forkId
-                );
+                this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
 
             return genesisSnapshot?.hash === block.previousBlockHash;
         }
@@ -153,6 +222,10 @@ export default class ValidationService {
             const areAllParticipants = isSubset(signerAddresses, participants);
 
             if (!areAllParticipants) {
+                this.logger.warn(
+                    "BlockConfirmation - checkDuplicateBlock - not all signers are participants",
+                    { block: LoggerUtils.getBlockMetadata(block, this.storage) }
+                );
                 return await strategy.notAllSingersAreParticipants(block);
             }
 
@@ -197,6 +270,10 @@ export default class ValidationService {
             );
 
             if (!areNewSignersParticipants) {
+                this.logger.warn(
+                    "BlockConfirmation - checkDuplicateBlock - not all new signers are participants",
+                    { block: LoggerUtils.getBlockMetadata(block, this.storage) }
+                );
                 return await strategy.notAllSingersAreParticipants(block);
             }
 
@@ -224,16 +301,28 @@ export default class ValidationService {
         const conflictingBlock = maybePreExistingBlock;
 
         if (conflictingBlock.author === block.author) {
+            this.logger.warn("checkConflictingBlock - double sign detected", {
+                block: LoggerUtils.getBlockMetadata(block, this.storage)
+            });
             return await strategy.doubleSignDetected(conflictingBlock, block);
         }
 
         // If not linked we can't slash since the peer could have been building on the wrong 'reality' since someone performed a double sign
         if (this.isLinked(block)) {
+            this.logger.warn(
+                "checkConflictingBlock - isLinked but conflict detected",
+                {
+                    block: LoggerUtils.getBlockMetadata(block, this.storage)
+                }
+            );
             return await strategy.invalidStateTransitionDetected(block);
         }
 
         // if first block -> wrong genesis
         if (conflictingBlock.height === 0) {
+            this.logger.warn("checkConflictingBlock - wrong genesis detected", {
+                block: LoggerUtils.getBlockMetadata(block, this.storage)
+            });
             return await strategy.wrongGenesisDetected(block);
         }
 
@@ -262,6 +351,53 @@ export default class ValidationService {
         block: Block,
         strategy: AValidationStrategy
     ): Promise<BlockValidationResult> {
+        const nowSeconds = Clock.getTimeInSeconds();
+
+        const logTimeFailure = (args: {
+            validationResult: BlockValidationResult;
+            checkType: "objective" | "subjective";
+            allowedSkewSeconds: number;
+            violatedRule: string;
+            previousTimestamp?: Timestamp;
+            previousOriginalTimestamp?: Timestamp;
+        }) => {
+            const blockTimestamp = block.timestamp;
+            const differenceSeconds = Math.abs(nowSeconds - blockTimestamp);
+            const excessSeconds = Math.max(
+                0,
+                differenceSeconds - args.allowedSkewSeconds
+            );
+            const validationResultString =
+                BlockValidationResult[args.validationResult] ??
+                `UNKNOWN(${args.validationResult})`;
+            const logData: Record<string, any> = {
+                checkType: args.checkType,
+                violatedRule: args.violatedRule,
+                validationResult: validationResultString,
+                blockHeight: block.height,
+                nowSeconds,
+                blockTimestamp,
+                differenceSeconds,
+                allowedSkewSeconds: args.allowedSkewSeconds,
+                excessSeconds
+            };
+            // Add previous timestamp context for objective checks
+            if (
+                args.checkType === "objective" &&
+                args.previousTimestamp !== undefined
+            ) {
+                logData.previousTimestamp = args.previousTimestamp;
+                if (args.previousOriginalTimestamp !== undefined) {
+                    logData.previousOriginalTimestamp =
+                        args.previousOriginalTimestamp;
+                }
+            }
+            this.logger.warn(
+                "Time validation failed - block timestamp outside allowed window",
+                logData
+            );
+        };
+
         // Calculate previousTimestamp
         let previousTimestamp: Timestamp;
         let previousOriginalTimestamp: Timestamp;
@@ -286,17 +422,26 @@ export default class ValidationService {
         // OBJECTIVE: isValidTimestamp check
 
         // Check if block timestamp is not in the past
-        const isTimestampInTheFuture =
-            block.timestamp - previousOriginalTimestamp >= 0;
+        const isNotInPast = block.timestamp - previousOriginalTimestamp >= 0;
 
         // Check if block timestamp is within P2P time window
         const isWithinP2PTimeWindow =
             block.timestamp - previousTimestamp <= this.timeConfig.p2pTime;
 
-        const isValidTimestamp =
-            isTimestampInTheFuture && isWithinP2PTimeWindow;
+        const isValidTimestamp = isNotInPast && isWithinP2PTimeWindow;
 
         if (!isValidTimestamp) {
+            // Determine which rule was violated
+            let violatedRule: string;
+            if (!isNotInPast) {
+                violatedRule = "timestamp >= previousOriginalTimestamp";
+            } else if (!isWithinP2PTimeWindow) {
+                violatedRule = "timestamp <= previousTimestamp + p2pTime";
+            } else {
+                violatedRule =
+                    "timestamp >= previousOriginalTimestamp && timestamp <= previousTimestamp + p2pTime";
+            }
+
             // if first block or previous block has on-chain timestamp -> we have all the data (best timestamp) -> safe to create a fraud proof
             if (
                 // first block
@@ -305,6 +450,14 @@ export default class ValidationService {
                 previousBlock.onChainTimestamp !== undefined
             ) {
                 // Already has best timestamp - persist InvalidTimestamp fraud proof
+                logTimeFailure({
+                    validationResult: BlockValidationResult.DISPUTE,
+                    checkType: "objective",
+                    allowedSkewSeconds: this.timeConfig.p2pTime,
+                    violatedRule,
+                    previousTimestamp,
+                    previousOriginalTimestamp
+                });
                 return await strategy.objectiveInvalidTimestampDetected(block);
             }
 
@@ -323,6 +476,15 @@ export default class ValidationService {
                 previousBlockOnChainTimestamp <= previousTimestamp
             ) {
                 // False - persist InvalidTimestamp fraud proof
+                // Re-check which rule was violated (previousTimestamp may have changed, but we already computed violatedRule above)
+                logTimeFailure({
+                    validationResult: BlockValidationResult.DISPUTE,
+                    checkType: "objective",
+                    allowedSkewSeconds: this.timeConfig.p2pTime,
+                    violatedRule,
+                    previousTimestamp,
+                    previousOriginalTimestamp
+                });
                 return await strategy.objectiveInvalidTimestampDetected(block);
             }
 
@@ -340,6 +502,15 @@ export default class ValidationService {
         // OBJECTIVE: Check if block was posted too late on-chain
         if (await this.isPostedOnChainTooLate(previousTimestamp, block)) {
             // Block posted too late - create InvalidTimestamp fraud proof
+            logTimeFailure({
+                validationResult: BlockValidationResult.DISPUTE,
+                checkType: "objective",
+                allowedSkewSeconds: this.timeConfig.p2pTime,
+                violatedRule:
+                    "onChainTimestamp <= previousTimestamp + p2pTime + agreementTime + chainFallbackTime",
+                previousTimestamp,
+                previousOriginalTimestamp
+            });
             return await strategy.objectiveInvalidTimestampDetected(block);
         }
 
@@ -348,10 +519,19 @@ export default class ValidationService {
 
         // SUBJECTIVE: hasOnChainTimestamp check
         const receivedWithinAgreementTime =
-            Math.abs(Clock.getTimeInSeconds() - block.timestamp) <=
+            Math.abs(nowSeconds - block.timestamp) <=
             this.timeConfig.agreementTime;
 
-        if (!receivedWithinAgreementTime) {
+        if (
+            !receivedWithinAgreementTime &&
+            strategy instanceof BlockValidationStrategy
+        ) {
+            logTimeFailure({
+                validationResult: BlockValidationResult.NOT_ENOUGH_TIME,
+                checkType: "subjective",
+                allowedSkewSeconds: this.timeConfig.agreementTime,
+                violatedRule: "abs(now - blockTimestamp) <= agreementTime"
+            });
             return await strategy.subjectiveInvalidTimestampDetected(block);
         }
 

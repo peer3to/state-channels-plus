@@ -3,6 +3,7 @@ pragma solidity ^0.8.8;
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "../types/DisputeTypes.sol";
 import "./Errors.sol";
+import "hardhat/console.sol";
 
 contract UtilityFacet {
     /**
@@ -254,7 +255,7 @@ contract UtilityFacet {
         Dispute memory dispute,
         DisputeAuditingData memory disputeAuditingData,
         bool auditingDataIntegrityVerified
-    ) public pure returns (bool) {
+    ) public view returns (bool) {
         if (auditingDataIntegrityVerified) {
             if (dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData))) {
                 return false;
@@ -266,15 +267,12 @@ contract UtilityFacet {
             );
         }
 
-        bytes32 latestSnapshotDataHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData));
-        bytes32 latestSnapshotHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot));
-
         if (dispute.input.stateProof.milestones.length != 0 && dispute.input.stateProof.signedBlocks.length != 0) {
             return false;
         }
-
         // Milestone checking
         (bool isValid, bytes memory lastBlockEncoded) = verifyMilestones(
+            dispute.input.forkId,
             dispute.input.stateProof.milestones,
             disputeAuditingData.milestoneSnapshots,
             disputeAuditingData.genesisStateSnapshotData
@@ -286,6 +284,9 @@ contract UtilityFacet {
         if (lastBlockEncoded.length == 0) {
             if (dispute.input.stateProof.signedBlocks.length == 0) {
                 // no blocks at all => genesis == latest
+                bytes32 latestSnapshotDataHash =
+                    keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData));
+                bytes32 latestSnapshotHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot));
                 if (auditingDataIntegrityVerified) {
                     if (
                         dispute.input.forkId != latestSnapshotDataHash
@@ -300,12 +301,18 @@ contract UtilityFacet {
                 }
             } else {
                 //check if signedBlocks are linked, signed and built on genesis
-                if (!_areSignedBlocksLinkedAndVerified(dispute.input.stateProof.signedBlocks, dispute.input.forkId)) {
+                // HACK:Pass bytes32(0) to skip "linked to genesis" check for the first block
+                // propsoed solution:  convert first block's `previousBlockHash`  = forkId = keccak256(abi.encode(genesisSnapshotData))
+
+                bool linkedAndVerified =
+                    _areSignedBlocksLinkedAndVerified(dispute.input.stateProof.signedBlocks, bytes32(0));
+                if (!linkedAndVerified) {
                     return false;
                 }
 
                 Block memory lastBlock = abi.decode(
-                    dispute.input.stateProof.signedBlocks[dispute.input.stateProof.signedBlocks.length - 1].encodedBlock,
+                    dispute.input.stateProof
+                    .signedBlocks[dispute.input.stateProof.signedBlocks.length - 1].encodedBlock,
                     (Block)
                 );
                 //check if lastBlock commits to the latestStateSnapshot
@@ -335,13 +342,12 @@ contract UtilityFacet {
         return true;
     }
 
-    function _isMilestoneFinal(SnapshotData memory genesisSnapshotData, MilestoneProof memory milestone)
-        public
-        pure
-        returns (bool isFinal, bytes32 finalizedSnapshotHash)
-    {
-        bytes32 genesisForkId = keccak256(abi.encode(genesisSnapshotData));
-        address[] memory expectedParticipants = genesisSnapshotData.participants;
+    function _isMilestoneFinal(
+        bytes32 forkId,
+        SnapshotData memory thresholdSnapshotData,
+        MilestoneProof memory milestone
+    ) public view returns (bool isFinal, bytes32 finalizedSnapshotHash) {
+        address[] memory expectedParticipants = thresholdSnapshotData.participants;
         address[] memory thresholdSet = new address[](expectedParticipants.length);
         uint256 thresholdCount = 0;
         bytes memory previousEncodedBlock;
@@ -349,16 +355,25 @@ contract UtilityFacet {
         Block memory currentBlock;
         address adr;
         bool isValid;
+        console.log("_isMilestoneFinal: forkId");
+        console.logBytes32(forkId);
+        console.log("_isMilestoneFinal: expectedParticipants", expectedParticipants.length);
+        console.log("_isMilestoneFinal: confirmations", milestone.blockConfirmations.length);
         if (milestone.blockConfirmations.length == 0) {
             return (false, bytes32(0));
         }
         for (uint256 i = 0; i < milestone.blockConfirmations.length; i++) {
             currentBlockConfirmation = milestone.blockConfirmations[i];
             currentBlock = abi.decode(currentBlockConfirmation.signedBlock.encodedBlock, (Block));
-            if (currentBlock.transaction.header.forkId != genesisForkId) return (false, bytes32(0));
+            if (currentBlock.transaction.header.forkId != forkId) {
+                console.log("_isMilestoneFinal: fail forkId mismatch at i", i);
+                console.logBytes32(currentBlock.transaction.header.forkId);
+                return (false, bytes32(0));
+            }
             //check linked
             if (i != 0) {
                 if (currentBlock.previousBlockHash != keccak256(previousEncodedBlock)) {
+                    console.log("_isMilestoneFinal: fail not linked at i", i);
                     return (false, bytes32(0));
                 }
             } else {
@@ -369,10 +384,14 @@ contract UtilityFacet {
                 currentBlockConfirmation.signedBlock.encodedBlock, currentBlockConfirmation.signedBlock.signature
             );
             if (!isValid || adr != currentBlock.transaction.header.participant) {
+                console.log("_isMilestoneFinal: fail invalid author signature at i", i);
                 return (false, bytes32(0));
             }
             bool isParticipant = isAddressInArray(expectedParticipants, adr);
-            if (!isParticipant) return (false, bytes32(0));
+            if (!isParticipant) {
+                console.log("_isMilestoneFinal: fail author not participant at i", i);
+                return (false, bytes32(0));
+            }
 
             thresholdCount = tryInsertAddressInThresholdSet(adr, thresholdSet, thresholdCount, expectedParticipants);
             for (uint256 j = 0; j < currentBlockConfirmation.signatures.length; j++) {
@@ -380,36 +399,50 @@ contract UtilityFacet {
                     currentBlockConfirmation.signedBlock.encodedBlock, currentBlockConfirmation.signatures[j]
                 );
                 if (!isValid) {
+                    console.log("_isMilestoneFinal: fail invalid confirmation signature at i", i);
                     return (false, bytes32(0));
                 }
                 isParticipant = isAddressInArray(expectedParticipants, adr);
-                if (!isParticipant) return (false, bytes32(0));
+                if (!isParticipant) {
+                    console.log("_isMilestoneFinal: fail confirmer not participant at i", i);
+                    return (false, bytes32(0));
+                }
                 thresholdCount = tryInsertAddressInThresholdSet(adr, thresholdSet, thresholdCount, expectedParticipants);
             }
             previousEncodedBlock = currentBlockConfirmation.signedBlock.encodedBlock;
         }
 
+        console.log("_isMilestoneFinal: thresholdCount", thresholdCount);
         return (thresholdCount == expectedParticipants.length, finalizedSnapshotHash);
     }
 
     /// @dev Verifies ForkMilestoneBlock along with BlockConfirmations and taking into account Virtual Voting
     function verifyMilestones(
+        bytes32 forkId,
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
-        SnapshotData memory genesisSnapshotData
-    ) public pure returns (bool isValid, bytes memory lastBlockEncoded) {
-        SnapshotData memory snapshotData = genesisSnapshotData;
+        SnapshotData memory thresholdSnapshotData
+    ) public view returns (bool isValid, bytes memory lastBlockEncoded) {
+        SnapshotData memory snapshotData = thresholdSnapshotData;
         lastBlockEncoded = "";
+
+        console.log("verifyMilestones: milestones", milestoneProofs.length);
+        console.log("verifyMilestones: snapshots", milestoneSnapshots.length);
 
         // For K milestones, K-1 snapshots are needed to prove the last milestone is final, but for cleaner code we include the K-th snapshot too, even though it doesn't have to be used
         if (milestoneProofs.length != milestoneSnapshots.length) {
+            console.log("verifyMilestones: fail length mismatch");
             return (false, lastBlockEncoded);
         }
 
         for (uint256 i = 0; i < milestoneProofs.length; i++) {
             MilestoneProof memory milestone = milestoneProofs[i];
-            (bool isFinal, bytes32 finalizedSnapshotHash) = _isMilestoneFinal(snapshotData, milestone);
+            console.log("verifyMilestones: i", i);
+            console.log("verifyMilestones: expectedParticipants", snapshotData.participants.length);
+            console.log("verifyMilestones: confirmations", milestone.blockConfirmations.length);
+            (bool isFinal, bytes32 finalizedSnapshotHash) = _isMilestoneFinal(forkId, snapshotData, milestone);
             if (!isFinal) {
+                console.log("verifyMilestones: fail milestone not final at i", i);
                 return (false, lastBlockEncoded);
             }
             // isFinal - since this runs in isolation now (not atomically with auditing where everything is checked), revert the transaction if the disputer didn't provide the correct snapshot
@@ -421,7 +454,7 @@ contract UtilityFacet {
             snapshotData = milestoneSnapshots[i].snapshotData;
             if (i == milestoneProofs.length - 1 && milestone.blockConfirmations.length > 0) {
                 lastBlockEncoded =
-                    milestone.blockConfirmations[milestone.blockConfirmations.length - 1].signedBlock.encodedBlock;
+                milestone.blockConfirmations[milestone.blockConfirmations.length - 1].signedBlock.encodedBlock;
             }
         }
         return (true, lastBlockEncoded);

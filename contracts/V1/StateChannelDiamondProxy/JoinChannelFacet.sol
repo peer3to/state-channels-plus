@@ -18,7 +18,7 @@ contract JoinChannelFacet is StateChannelCommon {
         require(channelId != bytes32(0), ErrorInvalidChannelId());
 
         // Check deadline
-        require(jc.deadlineTimestamp >= block.timestamp, ErrorJoinChannelExpired());
+        require(jc.deadlineTimestamp >= block.timestamp, RaceConditionJoinChannelExpired());
 
         //verify original signature
         (address retrievedAddress, bool isValidSignature) =

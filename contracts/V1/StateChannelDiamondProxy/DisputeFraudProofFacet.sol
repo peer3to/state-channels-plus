@@ -73,7 +73,19 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (proofType == DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof) {
             return _handleDisputeInvalidBlockInStateProofApplyFraudProof;
         }
-        revert ErrorInvalidFraudProofType();
+        return _handleInvalidDisputeFraudProofType;
+    }
+
+    function _valid(address adr) internal pure returns (address) {
+        return adr;
+    }
+
+    function _invalid() internal pure returns (address) {
+        return address(0);
+    }
+
+    function _handleInvalidDisputeFraudProofType(bytes memory, Dispute memory) internal pure returns (address) {
+        return _invalid();
     }
 
     function _handleDisputeNotLatestState(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -86,28 +98,28 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
 
         // Check newBlock same channelId
-        if (!_areDisputeAndBlockSameChannel(dispute, newerBlock)) revert();
+        if (!_areDisputeAndBlockSameChannel(dispute, newerBlock)) return _invalid();
         // Check newBlock same forkId
-        if (!_areDisputeAndBlockSameFork(dispute, newerBlock)) revert();
+        if (!_areDisputeAndBlockSameFork(dispute, newerBlock)) return _invalid();
 
         if (hasBlock) {
             // Check latestBlock and newerBlock same channelId
-            if (!_areBlocksSameChannel(newerBlock, latestBlock)) revert();
+            if (!_areBlocksSameChannel(newerBlock, latestBlock)) return _invalid();
 
             // Check latestBlock and newerBlock same forkId
-            if (!_areBlocksSameFork(newerBlock, latestBlock)) revert();
+            if (!_areBlocksSameFork(newerBlock, latestBlock)) return _invalid();
 
             // Check is block newer
-            if (_getBlockHeight(newerBlock) <= _getBlockHeight(latestBlock)) revert();
+            if (_getBlockHeight(newerBlock) <= _getBlockHeight(latestBlock)) return _invalid();
         }
         // if !hasBlock -> latestState should be genesis state -> if the disputer signed any block this proof is valid
 
         // Check signature
         (address retrievedAddress, bool isValid) =
             UtilityFacet(utilityFacetAddress).retrieveSignerAddress(proof.encodedBlock, proof.signature);
-        if (retrievedAddress != dispute.input.disputer || !isValid) revert();
+        if (retrievedAddress != dispute.input.disputer || !isValid) return _invalid();
 
-        return dispute.input.disputer;
+        return _valid(dispute.input.disputer);
     }
 
     function _handleDisputeInvalidOutputState(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -116,15 +128,15 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     {
         DisputeInvalidOutputState memory proof = abi.decode(encodedFraudProof, (DisputeInvalidOutputState));
         // Requires correct auditing data
-        require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
+        if (!_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
 
         bytes memory result = _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(DisputeVerificationFacet.isDisputeOutputCorrect, (dispute, proof.auditingData))
         );
         bool isValid = abi.decode(result, (bool));
-        if (!isValid) return dispute.input.disputer; // slash the disputer
-        return address(0); // all good - the calling context may decide to slash the caller
+        if (!isValid) return _valid(dispute.input.disputer);
+        return _invalid();
     }
 
     function _handleDisputeInvalidStateProofWithoutAuditingDataIntegrityVerified(
@@ -136,8 +148,8 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
         bool isValid = UtilityFacet(utilityFacetAddress).verifyStateProof(dispute, proof.auditingData, false);
 
-        if (!isValid) return dispute.input.disputer; // slash the disputer
-        return address(0); // all good - the calling context may decide to slash the caller
+        if (!isValid) return _valid(dispute.input.disputer);
+        return _invalid();
     }
 
     function _handleDisputeInvalidStateProofWithAuditingDataIntegrityVerified(
@@ -147,11 +159,11 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         DisputeInvalidStateProofWithAuditingDataIntegrityVerified memory proof =
             abi.decode(encodedFraudProof, (DisputeInvalidStateProofWithAuditingDataIntegrityVerified));
         // Requires correct auditing data
-        require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
+        if (!_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
 
         bool isValid = UtilityFacet(utilityFacetAddress).verifyStateProof(dispute, proof.auditingData, true);
-        if (!isValid) return dispute.input.disputer; // slash the disputer
-        return address(0); // all good - the calling context may decide to slash the caller
+        if (!isValid) return _valid(dispute.input.disputer);
+        return _invalid();
     }
 
     function _handleDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks(
@@ -162,7 +174,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             encodedFraudProof, (DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks)
         );
         // Expect commitment to be invalid/junk
-        if (_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return address(0); // the calling context may decide to slash the caller
+        if (_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
 
         bytes memory result = _delegatecall(
             disputeVerificationFacetAddress,
@@ -170,13 +182,13 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             abi.encodeCall(DisputeVerificationFacet.isCorrectAuditingData, (dispute, proof.auditingData))
         );
         bool isValid = abi.decode(result, (bool));
-        if (!isValid) return address(0); // the calling context may decide to slash the caller
+        if (!isValid) return _invalid();
 
         isValid = UtilityFacet(utilityFacetAddress).verifyStateProof(dispute, proof.auditingData, false);
-        if (!isValid) return address(0); // the calling context may decide to slash the caller
+        if (!isValid) return _invalid();
 
         // dispute.input.auditingDataHash is junk, stateProof is valid and auditingData is correct
-        return dispute.input.disputer; // slash the disputer
+        return _valid(dispute.input.disputer);
     }
 
     function _handleDisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified(
@@ -186,15 +198,15 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified memory proof =
             abi.decode(encodedFraudProof, (DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified));
         // Requires correct auditing data
-        require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
+        if (!_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
 
         bytes memory result = _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(DisputeVerificationFacet.isCorrectAuditingData, (dispute, proof.auditingData))
         );
         bool isValid = abi.decode(result, (bool));
-        if (!isValid) return dispute.input.disputer; // slash the disputer
-        return address(0); // all good - the calling context may decide to slash the caller
+        if (!isValid) return _valid(dispute.input.disputer);
+        return _invalid();
     }
 
     function _handleDisputeInvalidBalanceInvariant(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -204,7 +216,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified memory proof =
             abi.decode(encodedFraudProof, (DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified));
         // Requires correct auditing data
-        require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
+        if (!_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
 
         bytes32 channelId = dispute.input.channelId;
         SnapshotData memory latestSnapshotData = proof.auditingData.latestStateSnapshot.snapshotData;
@@ -217,8 +229,8 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             )
         );
         bool isValid = abi.decode(result, (bool));
-        if (!isValid) return dispute.input.disputer; // slash the disputer
-        return address(0); // all good - the calling context may decide to slash the caller
+        if (!isValid) return _valid(dispute.input.disputer);
+        return _invalid();
     }
 
     function _handleDisputeOnChainSlashesNotSubset(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -227,7 +239,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     {
         DisputeOnChainSlashesNotSubset memory proof = abi.decode(encodedFraudProof, (DisputeOnChainSlashesNotSubset));
         // Requires correct auditing data
-        require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
+        if (!_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
 
         uint256 timestamp = StateChannelManagerProxy(address(this)).getDisputeWindowCreationTimestamp(
             dispute.input.channelId, dispute.input.forkId
@@ -243,10 +255,10 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                     break;
                 }
             }
-            if (!found) return dispute.input.disputer;
+            if (!found) return _valid(dispute.input.disputer);
         }
 
-        return address(0); // the calling context may decide to slash the caller
+        return _invalid();
     }
 
     function _handleTimeoutThreshold(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -255,26 +267,26 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     {
         TimeoutThreshold memory proof = abi.decode(encodedFraudProof, (TimeoutThreshold));
         // Requires correct auditing data
-        require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
+        if (!_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
 
         // check is timeout set
-        if (dispute.input.timeout.participant == address(0)) return address(0); // the calling context may decide to slash the caller
+        if (dispute.input.timeout.participant == address(0)) return _invalid();
 
         SignedBlock memory signedBlock = proof.thresholdBlock.signedBlock;
         bytes memory encodedBlock = signedBlock.encodedBlock;
         Block memory thresholdBlock = abi.decode(encodedBlock, (Block));
 
         // Check channelId
-        if (!_areDisputeAndBlockSameChannel(dispute, thresholdBlock)) return address(0); // the calling context may decide to slash the caller
+        if (!_areDisputeAndBlockSameChannel(dispute, thresholdBlock)) return _invalid();
 
         // Check forkId
-        if (!_areDisputeAndBlockSameFork(dispute, thresholdBlock)) return address(0); // the calling context may decide to slash the caller
+        if (!_areDisputeAndBlockSameFork(dispute, thresholdBlock)) return _invalid();
 
         // Check timeout == thresholdBlock
-        if (dispute.input.timeout.blockHeight != _getBlockHeight(thresholdBlock)) return address(0); // the calling context may decide to slash the caller
+        if (dispute.input.timeout.blockHeight != _getBlockHeight(thresholdBlock)) return _invalid();
 
         // Check is block author the participant being timed-out
-        if (dispute.input.timeout.participant != thresholdBlock.transaction.header.participant) return address(0); // the calling context may decide to slash the caller
+        if (dispute.input.timeout.participant != thresholdBlock.transaction.header.participant) return _invalid();
 
         //check threshold
         address[] memory thresholdParticipants = proof.auditingData.latestStateSnapshot.snapshotData.participants;
@@ -283,9 +295,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         );
         (bool isValid,) =
             UtilityFacet(utilityFacetAddress).verifyThresholdSigned(thresholdParticipants, encodedBlock, signatures);
-        if (!isValid) return address(0); // the calling context may decide to slash the caller
+        if (!isValid) return _invalid();
 
-        return dispute.input.disputer;
+        return _valid(dispute.input.disputer);
     }
 
     function _handleTimeoutNotLinkedToLatestState(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -294,15 +306,15 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         // check is timeout set
-        if (dispute.input.timeout.participant == address(0)) return address(0); // the calling context may decide to slash the caller
+        if (dispute.input.timeout.participant == address(0)) return _invalid();
 
         (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
         uint256 expectedTimeoutHeight = hasBlock ? latestBlock.transaction.header.transactionCnt + 1 : 0;
 
         // check timeout height
-        if (dispute.input.timeout.blockHeight == expectedTimeoutHeight) return address(0); // the calling context may decide to slash the caller
+        if (dispute.input.timeout.blockHeight == expectedTimeoutHeight) return _invalid();
 
-        return dispute.input.disputer;
+        return _valid(dispute.input.disputer);
     }
 
     function _handleTimeoutParticipantNotNext(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -311,17 +323,17 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     {
         TimeoutParticipantNotNext memory proof = abi.decode(encodedFraudProof, (TimeoutParticipantNotNext));
         // Requires correct auditing data
-        require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
+        if (!_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
 
         // check is timeout set
-        if (dispute.input.timeout.participant == address(0)) return address(0); // the calling context may decide to slash the caller
+        if (dispute.input.timeout.participant == address(0)) return _invalid();
 
         stateMachineImplementation.setState(proof.auditingData.latestStateStateMachineState);
         address nextAuthor = stateMachineImplementation.getNextToWrite();
 
         // check is next author timed-out
-        if (dispute.input.timeout.participant == nextAuthor) return address(0);
-        return dispute.input.disputer;
+        if (dispute.input.timeout.participant == nextAuthor) return _invalid();
+        return _valid(dispute.input.disputer);
     }
 
     function _handleTimeoutTooEarly(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -330,10 +342,10 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     {
         TimeoutTooEarly memory proof = abi.decode(encodedFraudProof, (TimeoutTooEarly));
         // Requires correct auditing data
-        require(_checkDisputeAuditingDataCommitment(dispute, proof.auditingData), ErrorAuditingDataHashMismatch());
+        if (!_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
 
         // check is timeout set
-        if (dispute.input.timeout.participant == address(0)) return address(0); // the calling context may decide to slash the caller
+        if (dispute.input.timeout.participant == address(0)) return _invalid();
 
         uint256 timeoutTimestamp = StateChannelManagerProxy(address(this)).getDisputeWindowCreationTimestamp(
             dispute.input.channelId, dispute.input.forkId
@@ -346,7 +358,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (!hasBlock) {
             // genesis
             (bool hasGenesis, uint256 genesisTimestamp) = getGenesisTimestamp(channelId, originForkId, forkId);
-            require(hasGenesis, ErrorGenesisTimestampNotAvailable());
+            require(hasGenesis, RaceConditionGenesisTimestampNotAvailable());
             previousTimestamp = genesisTimestamp;
         } else {
             // at least 1 block exists
@@ -367,18 +379,17 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 (bool found, bytes32 commitment) = getBlockCallDataCommitment(channelId, forkId, blockHeight, author);
                 if (found) {
                     // check is the caller aware of race condition
-                    require(proof.previousBlockOnChainTimestamp != 0, ErrorUnexpectedBlockCalldataPosted());
+                    require(proof.previousBlockOnChainTimestamp != 0, RaceConditionUnexpectedBlockCalldataPosted());
                     bytes32 _commitment = keccak256(abi.encode(latestSignedBlock, proof.previousBlockOnChainTimestamp));
-                    if (commitment != _commitment) return address(0); // the calling context may decide to slash the caller
-
+                    if (commitment != _commitment) return _invalid();
                     else previousTimestamp = proof.previousBlockOnChainTimestamp;
                 }
             }
         }
         if (timeoutTimestamp <= previousTimestamp + getP2pTime() + getAgreementTime() + getChainFallbackTime()) {
-            return dispute.input.disputer;
+            return _valid(dispute.input.disputer);
         }
-        return address(0); // the calling context may decide to slash the caller
+        return _invalid();
     }
 
     function _handleTimeoutCalldataPosted(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -391,22 +402,19 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         StateSnapshot memory latestStateSnapshot = timeoutCalldataPostedProof.auditingData.latestStateSnapshot;
 
         // Requires correct auditing data
-        require(
-            _checkDisputeAuditingDataCommitment(dispute, timeoutCalldataPostedProof.auditingData),
-            ErrorAuditingDataHashMismatch()
-        );
+        if (!_checkDisputeAuditingDataCommitment(dispute, timeoutCalldataPostedProof.auditingData)) return _invalid();
 
         // Check channelId
-        if (!_areDisputeAndBlockSameChannel(dispute, _block)) return address(0); // the calling context may decide to slash the caller
+        if (!_areDisputeAndBlockSameChannel(dispute, _block)) return _invalid();
 
         // Check forkId
-        if (!_areDisputeAndBlockSameFork(dispute, _block)) return address(0); // the calling context may decide to slash the caller
+        if (!_areDisputeAndBlockSameFork(dispute, _block)) return _invalid();
 
         // Check timeout == postedBlock
-        if (dispute.input.timeout.blockHeight != _getBlockHeight(_block)) return address(0); // the calling context may decide to slash the caller
+        if (dispute.input.timeout.blockHeight != _getBlockHeight(_block)) return _invalid();
 
         // Check timeout participant == block author
-        if (dispute.input.timeout.participant != _getBlockAuthor(_block)) return address(0); // the calling context may decide to slash the caller
+        if (dispute.input.timeout.participant != _getBlockAuthor(_block)) return _invalid();
 
         // Check block calldata posted
         (bool isFound, bytes32 commitment) = getBlockCallDataCommitment(
@@ -415,9 +423,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             dispute.input.timeout.blockHeight,
             dispute.input.timeout.participant
         );
-        if (!isFound) return address(0); // the calling context may decide to slash the caller
+        if (!isFound) return _invalid();
         bytes32 _commitment = keccak256(abi.encode(postedBlock, timeoutCalldataPostedProof.onChainTimestamp));
-        if (commitment != _commitment) return address(0); // the calling context may decide to slash the caller
+        if (commitment != _commitment) return _invalid();
 
         // get previousTimestamp
         (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
@@ -427,7 +435,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             bytes32 originForkId = timeoutCalldataPostedProof.auditingData.genesisStateSnapshotData.originForkId;
             (bool hasGenesis, uint256 genesisTimestamp) =
                 getGenesisTimestamp(dispute.input.channelId, originForkId, dispute.input.forkId);
-            require(hasGenesis, ErrorGenesisTimestampNotAvailable());
+            require(hasGenesis, RaceConditionGenesisTimestampNotAvailable());
             previousTimestamp = genesisTimestamp;
         } else {
             // check is calldata posted and if block is the same as stateProof latest block
@@ -442,7 +450,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 previousTimestamp = latestBlock.transaction.header.timestamp;
             } else {
                 if (timeoutCalldataPostedProof.previousBlockOnChainTimestamp == 0) {
-                    revert ErrorUnexpectedBlockCalldataPosted();
+                    revert RaceConditionUnexpectedBlockCalldataPosted();
                 }
 
                 bytes32 _previousBlockCommitment = keccak256(
@@ -451,7 +459,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                         timeoutCalldataPostedProof.previousBlockOnChainTimestamp
                     )
                 );
-                if (previousBlockCommitment != _previousBlockCommitment) return address(0); // the calling context may decide to slash the caller
+                if (previousBlockCommitment != _previousBlockCommitment) return _invalid();
                 if (
                     keccak256(abi.encode(latestBlock))
                         == keccak256(timeoutCalldataPostedProof.previousBlockcalldata.encodedBlock)
@@ -469,7 +477,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 > previousTimestamp + getP2pTime() + getAgreementTime() + getChainFallbackTime()
         ) {
             // invalid onChainTimestamp
-            return address(0); // the calling context may decide to slash the caller
+            return _invalid();
         }
         // make sure we can do the STF - it's a valid block
         bool isSuccess;
@@ -482,7 +490,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             _block.transaction
         );
         if (!isSuccess) {
-            return address(0); // the calling context may decide to slash the caller
+            return _invalid();
         }
 
         Balance memory updatedTotalWithdrawals = latestStateSnapshot.snapshotData.totalWithdrawals;
@@ -525,9 +533,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         });
 
         if (_block.stateSnapshotHash != keccak256(abi.encode(recomputedSnapshot))) {
-            return address(0); // the calling context may decide to slash the caller
+            return _invalid();
         }
-        return dispute.input.disputer;
+        return _valid(dispute.input.disputer);
     }
 
     function _handleDisputeInvalidBlockInStateProofApplyFraudProof(
@@ -550,35 +558,35 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 abi.decode(fraudProof.encodedProof, (BlockInvalidStateTransitionProof));
             bytes32 blockHash = keccak256(abi.encode(_proof.invalidBlock));
             if (blockHash != invalidStateProofBlockHash) {
-                return address(0); // the calling context may decide to slash the caller
+                return _invalid();
             }
         } else if (fraudProof.proofType == FraudProofType.WrongGenesis) {
             WrongGenesisProof memory _proof = abi.decode(fraudProof.encodedProof, (WrongGenesisProof));
             bytes32 blockHash = keccak256(abi.encode(_proof.invalidBlock));
             if (blockHash != invalidStateProofBlockHash) {
-                return address(0); // the calling context may decide to slash the caller
+                return _invalid();
             }
         } else if (fraudProof.proofType == FraudProofType.InvalidTimestamp) {
             InvalidTimestampProof memory _proof = abi.decode(fraudProof.encodedProof, (InvalidTimestampProof));
             bytes32 blockHash = keccak256(abi.encode(_proof.invalidBlock));
             if (blockHash != invalidStateProofBlockHash) {
-                return address(0); // the calling context may decide to slash the caller
+                return _invalid();
             }
         } else if (fraudProof.proofType == FraudProofType.ForgedInboundMessageBlock) {
             ForgedInboundMessageBlockProof memory _proof =
                 abi.decode(fraudProof.encodedProof, (ForgedInboundMessageBlockProof));
             bytes32 blockHash = keccak256(abi.encode(_proof.invalidBlock));
             if (blockHash != invalidStateProofBlockHash) {
-                return address(0); // the calling context may decide to slash the caller
+                return _invalid();
             }
         } else {
             // FraudProofs like DoubleSign don't prove the stateProof is invalid or has double blocks, so it's a valid dispute, it just leaks information for the participant to be slashed regularly
-            revert ErrorInvalidFraudProofType();
+            return _invalid();
         }
 
         address adr = runFraudProof(fraudProof, dispute);
-        if (adr != address(0)) return dispute.input.disputer; // slash the disputer
-        return address(0); // all good - the calling context may decide to slash the caller
+        if (adr != address(0)) return _valid(dispute.input.disputer);
+        return _invalid();
     }
 
     function _checkDisputeAuditingDataCommitment(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)

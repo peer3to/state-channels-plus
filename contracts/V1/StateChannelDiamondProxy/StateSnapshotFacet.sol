@@ -12,7 +12,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         bytes32 channelId,
         StateSnapshot memory newStateSnapshot,
         MessageBlock[] memory outboundMessageBlocks
-    ) external onlySelf {
+    ) external {
         StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
         DisputeData storage disputeData = disputeData[channelId];
         bytes32 targetForkId = newStateSnapshot.forkId;
@@ -46,16 +46,22 @@ contract StateSnapshotFacet is StateChannelCommon {
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         MessageBlock[] memory outboundMessageBlocks
-    ) external onlySelf {
+    ) external {
         require(milestoneSnapshots.length > 0, ErrorSnapshotsNotProvided());
 
         StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
         StateSnapshot memory newStateSnapshot = milestoneSnapshots[milestoneSnapshots.length - 1];
-
-        require(currentStateSnapshot.forkId == newStateSnapshot.forkId, ErrorSnapshotForkMismatch());
-        require(newStateSnapshot.blockHeight > currentStateSnapshot.blockHeight, ErrorBlockHeightTooOld());
+        bool isGenesisSnapshotWithoutTimeCheck =
+            UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(currentStateSnapshot);
+        require(currentStateSnapshot.forkId == newStateSnapshot.forkId, RaceConditionSnapshotForkMismatch());
         require(
-            _verifyMilestones(milestoneProofs, milestoneSnapshots, currentStateSnapshot.snapshotData),
+            newStateSnapshot.blockHeight > currentStateSnapshot.blockHeight || isGenesisSnapshotWithoutTimeCheck,
+            RaceConditionBlockHeightTooOld()
+        );
+        require(
+            _verifyMilestones(
+                currentStateSnapshot.forkId, milestoneProofs, milestoneSnapshots, currentStateSnapshot.snapshotData
+            ),
             ErrorInvalidStateProof()
         );
 
@@ -96,12 +102,14 @@ contract StateSnapshotFacet is StateChannelCommon {
     }
 
     function _verifyMilestones(
+        bytes32 forkId,
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
         SnapshotData memory genesisSnapshotData
     ) internal view returns (bool) {
-        (bool isValid,) =
-            UtilityFacet(utilityFacetAddress).verifyMilestones(milestoneProofs, milestoneSnapshots, genesisSnapshotData);
+        (bool isValid,) = UtilityFacet(utilityFacetAddress).verifyMilestones(
+            forkId, milestoneProofs, milestoneSnapshots, genesisSnapshotData
+        );
         return isValid;
     }
 
@@ -143,7 +151,6 @@ contract StateSnapshotFacet is StateChannelCommon {
     function _clearDisputeData(bytes32 channelId) internal {
         DisputeData storage disputeData = disputeData[channelId];
         delete disputeData.onChainSlashes; //TODO! Check should we clear this since things happen in 'parallel' now
-        delete disputeData.pendingParticipants;
         mapping(bytes32 => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
         for (uint256 i = 0; i < disputeData.disputedForks.length; i++) {
             delete disputeWindowMap[disputeData.disputedForks[i]];
@@ -152,29 +159,13 @@ contract StateSnapshotFacet is StateChannelCommon {
     }
 
     function _clearOldInboundMessageBlocks(bytes32 channelId, bytes32 snapshotLatestInboundMessageBlockHash) internal {
-        // start from the previous block hash (keep the snapshot head for reference)
-        bytes32 keyToDelete = inboundMessageBlockMap[channelId][snapshotLatestInboundMessageBlockHash].previousBlockHash;
+        // start from the snapshot head (prune it too) and walk backwards
+        bytes32 keyToDelete = snapshotLatestInboundMessageBlockHash;
         bytes32 prev;
         while (keyToDelete != bytes32(0)) {
             prev = inboundMessageBlockMap[channelId][keyToDelete].previousBlockHash;
             delete inboundMessageBlockMap[channelId][keyToDelete];
             keyToDelete = prev;
         }
-    }
-
-    function _resolveTotalDeposits(bytes32 channelId, bytes32 blockHash) internal view returns (Balance memory) {
-        Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
-        if (blockHash == bytes32(0)) {
-            return zeroBalance;
-        }
-        MessageBlock storage inboundBlock = inboundMessageBlockMap[channelId][blockHash];
-        if (inboundBlock.timestamp == 0) {
-            StateSnapshot storage snapshot = stateSnapshots[channelId];
-            if (snapshot.snapshotData.latestInboundMessageBlockHash == blockHash) {
-                return snapshot.snapshotData.totalDeposits;
-            }
-            return zeroBalance;
-        }
-        return inboundBlock.totalBalance;
     }
 }

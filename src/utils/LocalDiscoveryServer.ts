@@ -1,9 +1,16 @@
 import WebSocket, { WebSocketServer, AddressInfo } from "ws";
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import { LocalTransport } from "@/transport";
 import { ChannelId } from "@/types/types";
+// Import directly to avoid circular dependency through the utils barrel
+import { createLogger, Logger } from "@/utils/PeerLogger";
 
 const MAX_PORT_RETRIES = 20;
+const LOCAL_WS_HOST = "127.0.0.1";
+const WS_CONNECT_TIMEOUT_MS = 750;
+const REGISTRY_CONNECT_MAX_RETRIES = 10;
+
+type DiscoveryMode = "registry" | "peer";
 
 type Port = number;
 
@@ -27,6 +34,14 @@ type DiscoveryInfo = {
  *    - Connects directly to other Peers upon receiving announcements.
  */
 export class LocalDiscoveryServer {
+    private static _logger?: Logger;
+
+    private static get logger(): Logger {
+        if (!this._logger) {
+            this._logger = createLogger({ component: "LocalDiscovery" });
+        }
+        return this._logger;
+    }
     // --- Registry State ---
     private static discoveryServer: WebSocketServer | null = null;
     private static discoveryPort: number | null = null;
@@ -50,32 +65,167 @@ export class LocalDiscoveryServer {
     /** Retry count per peerPort */
     private static _peerRetryCount: Map<number, number> = new Map();
 
+    /** Prevent reconnect loops during/after cleanup */
+    private static _cleanupRequested: boolean = false;
+
     private constructor() {}
+
+    private static createOutboundWebSocket(options: {
+        url: string;
+        purpose: "registry" | "peer";
+        connectTimeoutMs?: number;
+        log: Record<string, unknown>;
+        onOpen: (ws: WebSocket, openedAtMs: number) => void;
+        onMessage?: (ws: WebSocket, message: Buffer) => void;
+        onClose?: (ws: WebSocket, code: number, reason: Buffer) => void;
+        onError?: (ws: WebSocket, err: Error) => void;
+        onConnectFailure: (
+            reason: string,
+            details?: Record<string, unknown>
+        ) => void;
+    }): WebSocket {
+        const {
+            url,
+            purpose,
+            connectTimeoutMs = WS_CONNECT_TIMEOUT_MS,
+            log,
+            onOpen,
+            onMessage,
+            onClose,
+            onError,
+            onConnectFailure
+        } = options;
+
+        const startMs = Date.now();
+        let opened = false;
+        let connectFailureHandled = false;
+
+        this.logger.debug("WebSocket dial", {
+            ...log,
+            url,
+            purpose,
+            timeoutMs: connectTimeoutMs
+        });
+
+        const ws = new WebSocket(url);
+
+        const failOnce = (
+            reason: string,
+            details?: Record<string, unknown>
+        ) => {
+            if (opened || connectFailureHandled) {
+                return;
+            }
+            connectFailureHandled = true;
+            onConnectFailure(reason, details);
+        };
+
+        const connectTimeoutId = setTimeout(() => {
+            if (opened || this._cleanupRequested) {
+                return;
+            }
+
+            // Force an event if the OS/socket stack never errors.
+            try {
+                ws.terminate();
+            } catch {
+                // ignore
+            }
+
+            failOnce("timeout", {
+                durationMs: Date.now() - startMs
+            });
+        }, connectTimeoutMs);
+
+        ws.on("open", () => {
+            opened = true;
+            clearTimeout(connectTimeoutId);
+            onOpen(ws, Date.now());
+        });
+
+        ws.on("message", (message: Buffer) => {
+            if (onMessage) {
+                onMessage(ws, message);
+            }
+        });
+
+        ws.on("close", (code: number, reason: Buffer) => {
+            clearTimeout(connectTimeoutId);
+
+            // If we never opened, treat it as a connect failure.
+            if (!opened && !this._cleanupRequested) {
+                failOnce("close", {
+                    code,
+                    reason: reason?.toString?.() || "",
+                    durationMs: Date.now() - startMs
+                });
+            }
+
+            if (onClose) {
+                onClose(ws, code, reason);
+            }
+        });
+
+        ws.on("error", (err: Error) => {
+            clearTimeout(connectTimeoutId);
+
+            // ws sometimes emits error without ever opening; treat as connect failure.
+            if (!opened && !this._cleanupRequested) {
+                failOnce("error", {
+                    message: err?.message,
+                    durationMs: Date.now() - startMs
+                });
+            }
+
+            if (onError) {
+                onError(ws, err);
+            }
+        });
+
+        return ws;
+    }
 
     private static createServer(options: {
         port: number;
+        mode: DiscoveryMode;
+        myPeerAddress?: string;
         onConnection?: (ws: WebSocket) => void;
         onError?: (err: Error) => void;
     }): { server: WebSocketServer; connections: Set<WebSocket> } {
-        const { port, onConnection, onError } = options;
+        const { port, onConnection, onError, mode, myPeerAddress } = options;
 
         const server = new WebSocketServer({ port });
         const connections = new Set<WebSocket>();
 
         this.serverConnections.set(server, connections);
 
+        this.logger.debug("Server created", {
+            mode,
+            port,
+            ...(myPeerAddress ? { myPeerAddress } : {})
+        });
+
         // Register connection handler
         server.on("connection", (ws: WebSocket) => {
+            this.logger.debug(`New connection established to ${mode}`, {
+                ...(myPeerAddress ? { myPeerAddress } : {})
+            });
             connections.add(ws);
 
             // Clean up on close
             ws.on("close", () => {
+                this.logger.debug(`Connection closed to ${mode}`, {
+                    ...(myPeerAddress ? { myPeerAddress } : {})
+                });
                 connections.delete(ws);
             });
 
             // Swallow per-socket errors
             ws.on("error", () => {
                 // Silent per-socket error handling
+                this.logger.error(`Connection error to ${mode}`, {
+                    ...(myPeerAddress ? { myPeerAddress } : {})
+                });
             });
 
             // Call custom connection handler if provided
@@ -86,6 +236,12 @@ export class LocalDiscoveryServer {
 
         // Register error handler
         server.on("error", (err: Error) => {
+            this.logger.warn("Server error", {
+                mode,
+                port,
+                ...(myPeerAddress ? { myPeerAddress } : {}),
+                message: err.message
+            });
             if (onError) {
                 onError(err);
             }
@@ -98,13 +254,13 @@ export class LocalDiscoveryServer {
      * Wraps createServer with retry logic.
      * Retries port binding on EADDRINUSE.
      */
-    private static async createServerWithRetry(
-        options: {
-            port?: number;
-            onConnection?: (ws: WebSocket) => void;
-            onError?: (err: Error) => void;
-        } = {}
-    ): Promise<{
+    private static async createServerWithRetry(options: {
+        port?: number;
+        mode: DiscoveryMode;
+        myPeerAddress?: string;
+        onConnection?: (ws: WebSocket) => void;
+        onError?: (err: Error) => void;
+    }): Promise<{
         server: WebSocketServer;
         connections: Set<WebSocket>;
         port: number;
@@ -128,6 +284,8 @@ export class LocalDiscoveryServer {
             try {
                 result = this.createServer({
                     port,
+                    mode: options.mode,
+                    myPeerAddress: options.myPeerAddress,
                     onConnection: options.onConnection,
                     onError: (err: Error) => {
                         if (serverReady && options.onError) {
@@ -139,7 +297,24 @@ export class LocalDiscoveryServer {
                 await this.waitForServerReady(result.server);
                 serverReady = true;
 
+                this.logger.debug("Server ready", {
+                    mode: options.mode,
+                    requestedPort: port,
+                    ...(options.myPeerAddress
+                        ? { myPeerAddress: options.myPeerAddress }
+                        : {})
+                });
+
                 const resolvedPort = this.getServerPort(result.server);
+                this.logger.debug("Server bound", {
+                    mode: options.mode,
+                    requestedPort: port,
+                    resolvedPort,
+                    ...(options.myPeerAddress
+                        ? { myPeerAddress: options.myPeerAddress }
+                        : {}),
+                    attempt
+                });
                 return { ...result, port: resolvedPort };
             } catch (error: any) {
                 lastError = error;
@@ -148,8 +323,26 @@ export class LocalDiscoveryServer {
                     await this.closeServer(result.server);
                 }
 
+                this.logger.warn("Server bind failed", {
+                    mode: options.mode,
+                    requestedPort: port,
+                    attempt,
+                    ...(options.myPeerAddress
+                        ? { myPeerAddress: options.myPeerAddress }
+                        : {}),
+                    message: error?.message
+                });
+
                 if (!this.isPortConflictError(error)) {
                     // Non-port error, rethrow immediately
+                    this.logger.error("Non-retryable server error", {
+                        mode: options.mode,
+                        requestedPort: port,
+                        ...(options.myPeerAddress
+                            ? { myPeerAddress: options.myPeerAddress }
+                            : {}),
+                        message: error?.message
+                    });
                     throw error;
                 }
                 // Port conflict, try again
@@ -163,7 +356,6 @@ export class LocalDiscoveryServer {
     }
 
     private static isPortConflictError(error: any): boolean {
-        console.log("isPortConflictError", error);
         const errorCode = error?.code;
         const errorMessage = error?.message ?? "";
 
@@ -230,11 +422,14 @@ export class LocalDiscoveryServer {
             return false; // Already started
         }
 
+        this._cleanupRequested = false;
+
         let lastError: Error | null = null;
         const maxRetries = 30;
 
         try {
             const { server, port } = await this.createServerWithRetry({
+                mode: "registry",
                 onConnection: (ws: WebSocket) => {
                     this.handleIncomingRegistration(ws);
                 },
@@ -246,9 +441,18 @@ export class LocalDiscoveryServer {
             this.discoveryServer = server;
             this.discoveryPort = port;
 
+            this.logger.debug("Discovery server started", {
+                mode: "registry",
+                registryPort: port
+            });
+
             return true;
         } catch (err: any) {
             lastError = err;
+            this.logger.error("Discovery server start failed", {
+                mode: "registry",
+                message: err?.message
+            });
         }
 
         throw new Error(
@@ -272,6 +476,13 @@ export class LocalDiscoveryServer {
                     message.toString()
                 ) as DiscoveryInfo;
 
+                this.logger.debug("Registration received", {
+                    mode: "registry",
+                    port,
+                    channelId,
+                    totalPeers: this.registeredPeers.length + 1
+                });
+
                 // Append to discovery list
                 this.registeredPeers.push({ port, channelId });
 
@@ -291,8 +502,12 @@ export class LocalDiscoveryServer {
                         }
                     }
                 }
-            } catch (_err) {
+            } catch {
                 // Ignore malformed messages
+                this.logger.warn("Malformed registration message", {
+                    mode: "registry",
+                    raw: message.toString()
+                });
             }
         });
     }
@@ -307,21 +522,42 @@ export class LocalDiscoveryServer {
      */
     public static async connectToPeers(
         p2pManager: P2PManager,
-        channelId?: string
+        channelId: ChannelId,
+        myPeerAddress: string
     ): Promise<void> {
+        const peerLog = {
+            mode: "peer" as const,
+            channelId,
+            myPeerAddress
+        };
+
         // 1. Start PeerServer (Listens for incoming connections)
         const { server, port } = await this.createServerWithRetry({
+            mode: "peer",
+            myPeerAddress,
             onConnection: (ws: WebSocket) => {
                 // Accepted a direct connection from another peer
                 const lt = new LocalTransport(ws, p2pManager);
-                p2pManager.addConnection(lt);
+                p2pManager.localRpc.initHandshakeService.initHandshake(lt);
+                this.logger.debug("Inbound peer connection accepted", {
+                    ...peerLog,
+                    myPeerPort: port
+                });
             },
             onError: (err: Error) => {
                 const errorCode = (err as any)?.code;
                 if (errorCode === "EADDRINUSE") {
-                    console.warn(`Port ${port} became in use after creation`);
+                    this.logger.warn("Peer server port became in use", {
+                        ...peerLog,
+                        myPeerPort: port,
+                        message: err.message
+                    });
                 } else {
-                    console.error("WebSocketServer error:", err.message);
+                    this.logger.error("Peer server error", {
+                        ...peerLog,
+                        myPeerPort: port,
+                        message: err.message
+                    });
                 }
             }
         });
@@ -329,40 +565,127 @@ export class LocalDiscoveryServer {
         this.peerServers.add(server);
         this._peerDiscoveryState.set(server, new Set<number>());
 
+        this.logger.info("Peer server started", {
+            ...peerLog,
+            myPeerPort: port
+        });
+
         // 2. Connect to Registry
         if (!this.discoveryPort) {
             throw new Error(
                 "Discovery server not started. Call tryStart() before connectToPeers()."
             );
         }
-        const discoveryWs = new WebSocket(
-            `ws://localhost:${this.discoveryPort}`
-        );
-        this.activeDiscoveryConnections.add(discoveryWs);
+        const registryPort = this.discoveryPort;
+        const registryUrl = `ws://${LOCAL_WS_HOST}:${registryPort}`;
 
-        discoveryWs.on("open", () => {
-            // Announce ourselves: {port, channelId}
-            discoveryWs.send(JSON.stringify({ port, channelId }));
-        });
+        const connectRegistry = (attempt: number) => {
+            if (this._cleanupRequested) {
+                return;
+            }
+            if (!this.discoveryPort) {
+                this.logger.warn(
+                    "Discovery server port missing; cannot connect",
+                    {
+                        ...peerLog,
+                        myPeerPort: port,
+                        registryPort: this.discoveryPort
+                    }
+                );
+                return;
+            }
 
-        discoveryWs.on("close", () => {
-            this.activeDiscoveryConnections.delete(discoveryWs);
-        });
+            if (attempt > REGISTRY_CONNECT_MAX_RETRIES) {
+                this.logger.error(
+                    "Discovery registry connect retries exhausted",
+                    {
+                        ...peerLog,
+                        myPeerPort: port,
+                        registryPort: this.discoveryPort,
+                        attempts: attempt - 1
+                    }
+                );
+                return;
+            }
 
-        discoveryWs.on("error", (_err: Error) => {
-            this.activeDiscoveryConnections.delete(discoveryWs);
-        });
+            const log = {
+                ...peerLog,
+                myPeerPort: port,
+                registryPort: this.discoveryPort,
+                attempt
+            };
 
-        // 3. Handle Registry Announcements
-        discoveryWs.on("message", (message: Buffer) => {
-            this.handlePeerAnnouncement(
-                message.toString(),
-                server,
-                port,
-                p2pManager,
-                channelId
-            );
-        });
+            const discoveryWs = this.createOutboundWebSocket({
+                url: registryUrl,
+                purpose: "registry",
+                log,
+                onOpen: (ws) => {
+                    // Announce ourselves: {port, channelId}
+                    ws.send(JSON.stringify({ port, channelId }));
+                    this.logger.debug("Connected to discovery registry", {
+                        ...peerLog,
+                        registryPort: this.discoveryPort,
+                        myPeerPort: port,
+                        attempt
+                    });
+                },
+                onMessage: (_ws, message: Buffer) => {
+                    const msg = message.toString();
+                    this.handlePeerAnnouncement(
+                        msg,
+                        server,
+                        port,
+                        p2pManager,
+                        channelId,
+                        myPeerAddress
+                    );
+                    this.logger.debug("Discovery announcement received", {
+                        ...peerLog,
+                        myPeerPort: port,
+                        msg
+                    });
+                },
+                onClose: () => {
+                    this.activeDiscoveryConnections.delete(discoveryWs);
+                    this.logger.debug("Discovery connection closed", {
+                        ...peerLog,
+                        registryPort: this.discoveryPort,
+                        myPeerPort: port
+                    });
+                },
+                onError: (_ws, err: Error) => {
+                    // Note: connect failures are handled via onConnectFailure; this is for post-open errors.
+                    this.logger.warn("Discovery connection error", {
+                        ...peerLog,
+                        registryPort: this.discoveryPort,
+                        myPeerPort: port,
+                        message: err?.message
+                    });
+                },
+                onConnectFailure: (reason, details) => {
+                    this.activeDiscoveryConnections.delete(discoveryWs);
+                    this.logger.warn(
+                        "Discovery registry connect failed; retrying",
+                        {
+                            ...peerLog,
+                            myPeerPort: port,
+                            registryPort: this.discoveryPort,
+                            attempt,
+                            reason,
+                            ...(details ?? {})
+                        }
+                    );
+                    setTimeout(
+                        () => connectRegistry(attempt + 1),
+                        Math.min(100 * attempt, 1000)
+                    );
+                }
+            });
+
+            this.activeDiscoveryConnections.add(discoveryWs);
+        };
+
+        connectRegistry(1);
     }
 
     /**
@@ -377,30 +700,72 @@ export class LocalDiscoveryServer {
         myServer: WebSocketServer,
         myPort: Port,
         p2pManager: P2PManager,
-        myChannelId?: ChannelId
+        myChannelId: ChannelId,
+        myPeerAddress: string
     ): void {
         try {
             const { port: peerPort, channelId: peerChannelId } = JSON.parse(
                 msg
             ) as DiscoveryInfo;
 
+            const logBase = {
+                mode: "peer" as const,
+                myPeerAddress,
+                myPeerPort: myPort,
+                peerPort,
+                peerChannelId
+            };
+
             // Deduplication: Check if we already know this peer
             const seenPorts = this._peerDiscoveryState.get(myServer);
             if (!seenPorts || seenPorts.has(peerPort)) {
+                this.logger.debug("Announcement ignored (seen)", {
+                    ...logBase
+                });
                 return;
             }
             seenPorts.add(peerPort);
 
             // Connection Rule: Only connect if THEIR port is HIGHER.
             // (Matches channelId if specified)
-            if (
-                peerPort > myPort &&
-                (!myChannelId || myChannelId === peerChannelId)
-            ) {
-                this.connectToSinglePeer(peerPort, p2pManager, myChannelId);
+            const channelMatches = myChannelId === peerChannelId;
+
+            if (!channelMatches) {
+                this.logger.debug("Announcement ignored (channel mismatch)", {
+                    ...logBase,
+                    myChannelId
+                });
+                return;
             }
-        } catch (_err) {
+
+            if (peerPort <= myPort) {
+                this.logger.debug(
+                    "Announcement ignored (peer will connect to us)",
+                    {
+                        ...logBase,
+                        myChannelId
+                    }
+                );
+                return;
+            }
+
+            this.connectToSinglePeer(
+                peerPort,
+                p2pManager,
+                myChannelId,
+                myPeerAddress,
+                myPort
+            );
+            this.logger.debug("Connecting to announced peer", {
+                ...logBase,
+                myChannelId
+            });
+        } catch {
             // Ignore malformed messages
+            this.logger.warn("Malformed peer announcement", {
+                mode: "peer",
+                raw: msg
+            });
         }
     }
 
@@ -411,36 +776,107 @@ export class LocalDiscoveryServer {
     private static connectToSinglePeer(
         peerPort: Port,
         p2pManager: P2PManager,
-        channelId?: ChannelId
+        channelId: ChannelId,
+        myPeerAddress: string,
+        myPeerPort: Port
     ): void {
         const maxRetries = 3;
         const retryCount = this._peerRetryCount.get(peerPort) || 0;
 
         if (retryCount >= maxRetries) {
+            this.logger.warn("Max peer connection retries reached", {
+                mode: "peer",
+                peerPort,
+                channelId,
+                attempts: retryCount
+            });
             return;
         }
 
-        // Direct peer-to-peer connection
-        const ws = new WebSocket(`ws://localhost:${peerPort}`);
+        const attempt = retryCount + 1;
+        const peerUrl = `ws://${LOCAL_WS_HOST}:${peerPort}`;
 
-        ws.on("open", () => {
-            // Successful direct connection
-            const lt = new LocalTransport(ws, p2pManager);
-            p2pManager.addConnection(lt);
-            this._peerRetryCount.delete(peerPort);
+        const log = {
+            mode: "peer" as const,
+            myPeerAddress,
+            myPeerPort,
+            peerPort,
+            channelId,
+            attempt
+        };
+
+        let retryScheduled = false;
+
+        this.createOutboundWebSocket({
+            url: peerUrl,
+            purpose: "peer",
+            log,
+            onOpen: (ws) => {
+                // Successful direct connection
+                const lt = new LocalTransport(ws, p2pManager);
+                p2pManager.localRpc.initHandshakeService.initHandshake(lt);
+                this._peerRetryCount.delete(peerPort);
+                this.logger.info("Connected to peer", {
+                    ...log
+                });
+            },
+            onClose: (_ws, code: number, reason: Buffer) => {
+                // If it closes after open, LocalTransport will handle lifecycle.
+                this.logger.debug("Peer connection closed", {
+                    mode: "peer",
+                    myPeerAddress,
+                    myPeerPort,
+                    peerPort,
+                    channelId,
+                    code,
+                    reason: reason?.toString?.() || ""
+                });
+            },
+            onError: (_ws, err: Error) => {
+                // Post-open errors are noisy but useful in debug.
+                this.logger.debug("Peer connection error", {
+                    mode: "peer",
+                    myPeerAddress,
+                    myPeerPort,
+                    peerPort,
+                    channelId,
+                    message: err?.message
+                });
+            },
+            onConnectFailure: (reason, details) => {
+                if (retryScheduled || this._cleanupRequested) {
+                    return;
+                }
+                retryScheduled = true;
+
+                // Retry with backoff
+                this._peerRetryCount.set(peerPort, attempt);
+                this.logger.warn("Peer connection failed; retrying", {
+                    ...log,
+                    reason,
+                    ...(details ?? {})
+                });
+
+                setTimeout(
+                    () =>
+                        this.connectToSinglePeer(
+                            peerPort,
+                            p2pManager,
+                            channelId,
+                            myPeerAddress,
+                            myPeerPort
+                        ),
+                    100 * attempt
+                );
+            }
         });
 
-        ws.on("error", (_err: Error) => {
-            // Retry with backoff
-            this._peerRetryCount.set(peerPort, retryCount + 1);
-            setTimeout(
-                () => this.connectToSinglePeer(peerPort, p2pManager, channelId),
-                100 * (retryCount + 1)
-            );
-        });
+        // If we never open and never fail, the helper will time out.
+        // If we do open, we keep the ws alive for LocalTransport.
     }
 
     public static async cleanup(): Promise<void> {
+        this._cleanupRequested = true;
         const closePromises: Promise<void>[] = [];
 
         // 1. Close all peer servers
@@ -460,9 +896,16 @@ export class LocalDiscoveryServer {
         }
         this.peerServers.clear();
 
+        this.logger.debug("Peer servers closing", {
+            mode: "peer",
+            count: closePromises.length
+        });
+
         // 2. Close all discovery connections (outgoing from peers)
         this.activeDiscoveryConnections.forEach((ws) => ws.terminate());
         this.activeDiscoveryConnections.clear();
+
+        this.logger.debug("Discovery connections terminated", { mode: "peer" });
 
         // 3. Close the central discovery server
         if (this.discoveryServer) {
@@ -478,13 +921,20 @@ export class LocalDiscoveryServer {
                     });
                 })
             );
+            this.logger.debug("Discovery server closing", { mode: "registry" });
         }
 
         // 4. Clear internal state
         this._peerRetryCount.clear();
         this.registeredPeers = [];
 
+        this.logger.debug("LocalDiscovery cleanup complete", {
+            mode: "registry"
+        });
+
         // Wait for everything to close
         await Promise.all(closePromises);
+
+        this._cleanupRequested = false;
     }
 }

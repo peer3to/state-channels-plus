@@ -1,4 +1,5 @@
 export * from "./BarrierLocal";
+export * from "./EventBarrier";
 export * from "./DebugProxy";
 export * from "./DeepCopyProxy";
 export * from "./DeployUtils";
@@ -16,3 +17,4 @@ export * from "./hash";
 export * from "./evmErrorHandler";
 export * from "./PeerLogger";
 export * from "./EthersResultProxy";
+export * from "./address";
