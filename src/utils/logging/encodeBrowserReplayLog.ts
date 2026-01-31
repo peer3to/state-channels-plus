@@ -89,18 +89,19 @@ function normalizeLevel(level: any): BrowserReplayEntry["level"] {
 }
 
 function extractArgs(log: any): unknown[] {
-    // If original log has args, use them
-    if (log.args && Array.isArray(log.args)) {
-        return log.args;
-    }
+    const result: unknown[] = [];
 
-    // Else if message exists, push message as first arg
+    // Always start with message as first arg if it exists
     if (log.message !== undefined) {
-        return [log.message];
+        result.push(log.message);
     }
 
-    // Else empty args
-    return [];
+    // Then append additional args if they exist
+    if (log.args && Array.isArray(log.args)) {
+        result.push(...log.args);
+    }
+
+    return result;
 }
 
 function extractError(
@@ -108,13 +109,11 @@ function extractError(
 ): { message?: string; stack?: string } | undefined {
     let errorInfo: { message?: string; stack?: string } | undefined;
 
-    // Check for stack property
-    if (log.stack) {
+    if (typeof log.stack === "string") {
         errorInfo = errorInfo || {};
-        errorInfo.stack = String(log.stack);
+        errorInfo.stack = log.stack;
     }
 
-    // Check for Error-like objects in various places
     const errorLike = findErrorLike(log);
     if (errorLike) {
         errorInfo = errorInfo || {};
@@ -123,6 +122,21 @@ function extractError(
         }
         if (errorLike.stack && !errorInfo.stack) {
             errorInfo.stack = String(errorLike.stack);
+        }
+    }
+
+    if (Array.isArray(log.args)) {
+        for (const arg of log.args) {
+            if (arg instanceof Error) {
+                errorInfo = errorInfo || {};
+                if (arg.message && !errorInfo.message) {
+                    errorInfo.message = arg.message;
+                }
+                if (arg.stack && !errorInfo.stack) {
+                    errorInfo.stack = arg.stack;
+                }
+                break;
+            }
         }
     }
 
