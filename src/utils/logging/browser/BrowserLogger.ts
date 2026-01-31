@@ -44,15 +44,13 @@ export class BrowserLogger implements Logger {
         level: string,
         message: any,
         meta?: any,
-        error?: Error,
-        ...args: any[]
+        error?: Error
     ): void {
         const enhancedMeta = { ...meta };
         if (error) {
-            enhancedMeta.error = error;
-        }
-        if (args && args.length > 0) {
-            enhancedMeta.args = args;
+            enhancedMeta.args = enhancedMeta.args
+                ? [...enhancedMeta.args, error]
+                : [error];
         }
         this.logStore.store(level, message, this.context, enhancedMeta);
     }
@@ -185,27 +183,27 @@ export class BrowserLogger implements Logger {
     public debug(message: any, meta?: any, ...args: any[]): void {
         // eslint-disable-next-line no-console
         const stackError = this.logWithStack("debug", message, meta, ...args);
-        this.storeLog("debug", message, meta, stackError, ...args);
+        this.storeLog("debug", message, meta, stackError);
     }
     public info(message: any, meta?: any, ...args: any[]): void {
         // eslint-disable-next-line no-console
         const stackError = this.logWithStack("info", message, meta, ...args);
-        this.storeLog("info", message, meta, stackError, ...args);
+        this.storeLog("info", message, meta, stackError);
     }
     public warn(message: any, meta?: any, ...args: any[]): void {
         // eslint-disable-next-line no-console
         const stackError = this.logWithStack("warn", message, meta, ...args);
-        this.storeLog("warn", message, meta, stackError, ...args);
+        this.storeLog("warn", message, meta, stackError);
     }
     public error(message: any, meta?: any, ...args: any[]): void {
         // eslint-disable-next-line no-console
         const stackError = this.logWithStack("error", message, meta, ...args);
-        this.storeLog("error", message, meta, stackError, ...args);
+        this.storeLog("error", message, meta, stackError);
     }
     public verbose(message: any, meta?: any, ...args: any[]): void {
         // eslint-disable-next-line no-console
         const stackError = this.logWithStack("verbose", message, meta, ...args);
-        this.storeLog("verbose", message, meta, stackError, ...args);
+        this.storeLog("verbose", message, meta, stackError);
     }
     public group(label?: string): void {
         if (label) {
