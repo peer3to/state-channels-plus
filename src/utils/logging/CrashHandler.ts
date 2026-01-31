@@ -10,6 +10,8 @@ export interface CrashUploadConfig {
     prefix?: string;
 }
 
+const POST_ERROR_TIMEOUT_MS = 2000;
+
 let crashUploadInProgress = false;
 
 function generateGasSummary(logs: any[]): string {
@@ -205,10 +207,15 @@ export function setupCrashHandler(
 
     // Register log observer to trigger crash handling on error logs
     setLogObserver((entry: StoredLog) => {
-        if (entry.level === "error") {
-            const error = new Error(entry.message);
+        if (entry.level !== "error") return;
+        if (crashUploadInProgress) return;
+
+        const error = new Error(entry.message);
+
+        // Delay crash handling to capture post-error logs (stack, follow-ups)
+        setTimeout(() => {
             handle(error, "error-log");
-        }
+        }, POST_ERROR_TIMEOUT_MS);
     });
 
     // Browser global handlers
