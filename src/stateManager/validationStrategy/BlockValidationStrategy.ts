@@ -98,7 +98,10 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         conflictingBlock: Block,
         block: Block
     ): Promise<BlockValidationResult> {
-        // DOUBLE SIGN
+        this.logger.warn("Double sign detected", {
+            participant: block.signerAddress,
+            blockHeight: block.height
+        });
         this.fraudProofService.createDoubleSignProof(conflictingBlock, block);
         await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
@@ -106,6 +109,10 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     public async invalidStateTransitionDetected(
         block: Block
     ): Promise<BlockValidationResult> {
+        this.logger.warn("Invalid state transition detected", {
+            blockAuthor: block.author,
+            blockHeight: block.height
+        });
         this.fraudProofService.createInvalidStateTransitionProof(block);
         await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
@@ -113,6 +120,10 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     public async wrongGenesisDetected(
         block: Block
     ): Promise<BlockValidationResult> {
+        this.logger.warn("Wrong genesis detected", {
+            blockAuthor: block.author,
+            blockHeight: block.height
+        });
         this.fraudProofService.createWrongGenesisProof(block);
         await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
@@ -121,6 +132,10 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         block: Block,
         messageBlock: MessageBlockStruct
     ): Promise<BlockValidationResult> {
+        this.logger.warn("Forged inbound message detected", {
+            blockAuthor: block.author,
+            blockHeight: block.height
+        });
         this.fraudProofService.createForgedInboundMessageBlockProof(
             block,
             messageBlock
@@ -179,6 +194,10 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     public async objectiveInvalidTimestampDetected(
         block: Block
     ): Promise<BlockValidationResult> {
+        this.logger.warn("Invalid timestamp detected", {
+            blockAuthor: block.author,
+            blockHeight: block.height
+        });
         this.fraudProofService.createInvalidTimestampProof(block);
         await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;

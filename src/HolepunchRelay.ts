@@ -4,10 +4,12 @@ import Hyperswarm from "hyperswarm";
 import DHT from "@hyperswarm/dht-relay";
 //@ts-ignore
 import Stream from "@hyperswarm/dht-relay/ws";
+import { createLogger, Logger } from "@/utils";
 class HolepunchRelay {
     relayerUrls: string[];
     updateCallback: Function;
     swarm: any;
+    logger: Logger;
 
     private static instance: HolepunchRelay;
 
@@ -29,7 +31,9 @@ class HolepunchRelay {
 
     private connectToRelayer(): void {
         const relayerUrl = this.pickRandomRelayer();
-        console.log("HolepunchRelay - Connecting to relayer", relayerUrl);
+        this.logger.info("Connecting to holepunch relayer", {
+            relayerUrl
+        });
         if (!relayerUrl) return;
         try {
             const ws = new WebSocket(relayerUrl);
@@ -37,28 +41,31 @@ class HolepunchRelay {
             this.swarm = new Hyperswarm({
                 dht: dht
             });
-            // console.log("HolepunchRelay - swarm ", this.swarm);
             ws.onopen = () => {
-                console.log("Relayer connected", relayerUrl);
+                this.logger.info("Holepunch relayer connected", {
+                    relayerUrl
+                });
             };
             ws.onclose = () => {
-                console.log("Relayer disconnected", relayerUrl);
+                this.logger.warn("Holepunch relayer disconnected", {
+                    relayerUrl
+                });
                 this.removeAndConnectToRelayer(relayerUrl);
             };
             ws.onerror = (error) => {
-                console.log("Relayer error", error);
+                this.logger.warn("Holepunch relayer error", {
+                    relayerUrl,
+                    error
+                });
                 this.removeAndConnectToRelayer(relayerUrl);
             };
-            console.log("HolepunchRelay - set onError", relayerUrl);
 
             this.updateCallback();
         } catch (e) {
-            console.log(
-                "Error connecting to relayer - ",
+            this.logger.error("Failed to connect to holepunch relayer", {
                 relayerUrl,
-                " - error - ",
-                e
-            );
+                error: e
+            });
             this.removeAndConnectToRelayer(relayerUrl);
         }
     }
@@ -66,6 +73,7 @@ class HolepunchRelay {
     private constructor(relayerUrls: string[], updateCallback: Function) {
         this.relayerUrls = relayerUrls;
         this.updateCallback = updateCallback;
+        this.logger = createLogger({ component: "HolepunchRelay" });
     }
 
     private pickRandomRelayer(): string | undefined {
@@ -78,8 +86,10 @@ class HolepunchRelay {
         const index = this.relayerUrls.indexOf(relayerUrl);
         if (index === -1) return false;
         const deletedRelayer = this.relayerUrls.splice(index, 1);
-        console.log("Removed relayer", deletedRelayer);
-        console.log("Current relayers", this.relayerUrls);
+        this.logger.debug("Removed holepunch relayer", {
+            removed: deletedRelayer,
+            remaining: this.relayerUrls
+        });
         return true;
     }
 

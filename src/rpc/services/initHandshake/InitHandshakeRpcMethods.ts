@@ -54,6 +54,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
         }
         const localTime = Clock.getTimeInSeconds();
         const rtt = localTime - challenge.initTime;
+        this.service.logger.info(`Handshake response RTT: ${rtt}`);
         if (rtt > this.p2pManager.stateManager.timeConfig.agreementTime) {
             this.p2pManager.disconnectConnection(this.senderTransport);
             return;
@@ -73,7 +74,9 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             challengeHashBytes,
             signature
         );
-
+        this.service.logger.info(
+            `Handshake response signer address ${signerAddress} and RTT: ${rtt}`
+        );
         // Check if this peer is blacklisted
         if (this.p2pManager.isBlacklisted(signerAddress)) {
             this.service.logger.debug(
@@ -119,7 +122,10 @@ class InitHandshakeRpcMethods extends ARpcMethods {
      */
     public async onInitHandshakeAck() {
         if (this.service.didReceiveAck(this.senderTransport)) {
-            this.p2pManager.disconnectAndBlacklistPeer(this.senderTransport);
+            this.p2pManager.disconnectAndBlacklistPeer(
+                this.senderTransport,
+                "protocol violation: duplicate handshake ack"
+            );
             return;
         }
 

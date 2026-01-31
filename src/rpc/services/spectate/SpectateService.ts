@@ -3,13 +3,10 @@ import { Address, ChannelId, Timestamp, Hash, ForkId } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
-import { Codec, getChecksumAddress, Type } from "@/utils";
+import { Codec, getChecksumAddress, tryDecodeCustomError, Type } from "@/utils";
 import { ethers } from "ethers";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import {
-    StateSnapshotStruct,
-    MessageBlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import SpectateServiceRpcMethods from "./SpectateRpcMethods";
 import type P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
@@ -397,7 +394,13 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     calldata
                 );
             } catch (e) {
-                this.logger.debug(e);
+                const custom = tryDecodeCustomError(e);
+                this.logger.error(
+                    "Spectate multicall error",
+                    custom,
+                    calldata,
+                    e
+                );
                 return false;
             }
         }
@@ -420,7 +423,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const localLatestHeight = localLatestBlock?.height ?? -1;
 
         if (localLatestHeight >= finalizedHeight) {
-            this.logger.warn(
+            this.logger.info(
                 "Skipping sync payload persistence: local storage is already ahead of latest finalized snapshot",
                 {
                     finalizedForkId,

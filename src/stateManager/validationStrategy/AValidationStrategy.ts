@@ -6,6 +6,10 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export default abstract class AValidationStrategy {
+    public get name(): string {
+        return this.constructor.name;
+    }
+
     public abstract interpretFinalValidationResult(
         blockValidationResult: BlockValidationResult
     ): Promise<boolean>;

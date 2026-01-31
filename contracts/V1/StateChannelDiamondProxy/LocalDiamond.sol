@@ -90,14 +90,6 @@ contract LocalDiamond is StateChannelManagerProxy {
         channelBalance.latestInboundMessageBlockHash = blockHash;
         channelBalance.latestInboundMessageBlockHeight = messageBlock.blockHeight;
         channelBalance.totalDeposits = messageBlock.totalBalance;
-
-        // Track pending participants for join messages
-        for (uint256 i = 0; i < messageBlock.messages.length; i++) {
-            if (messageBlock.messages[i].messageType == MESSAGE_TYPE_JOIN) {
-                JoinChannel memory joinChannel = abi.decode(messageBlock.messages[i].data, (JoinChannel));
-                disputeData[channelId].pendingParticipants.push(joinChannel.participant);
-            }
-        }
     }
 
     // Called by BlockCalldataPosted event
@@ -144,10 +136,7 @@ contract LocalDiamond is StateChannelManagerProxy {
             disputeWindow.reducedResult.reducer = dispute.input.disputer;
 
             // When final, clear all previous commitments then add the final one
-            delete disputeData[channelId]
-                .disputeWindowMap[forkId]
-                .evidence
-                .disputeCommitments;
+            delete disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments;
         }
 
         disputeWindow.evidence.disputeCommitments.push(commitment);
@@ -194,15 +183,14 @@ contract LocalDiamond is StateChannelManagerProxy {
         // Clear dispute data
         DisputeData storage disputeData = disputeData[channelId];
         delete disputeData.onChainSlashes;
-        delete disputeData.pendingParticipants;
         mapping(bytes32 => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
         for (uint256 i = 0; i < disputeData.disputedForks.length; i++) {
             delete disputeWindowMap[disputeData.disputedForks[i]];
         }
         delete disputeData.disputedForks;
 
-        // Clear old inbound message blocks (keep head referenced by snapshot)
-        bytes32 keyToDelete = inboundMessageBlockMap[channelId][latestInboundMessageBlockHash].previousBlockHash;
+        // Clear old inbound message blocks (prune the snapshot head too)
+        bytes32 keyToDelete = latestInboundMessageBlockHash;
         while (keyToDelete != bytes32(0)) {
             bytes32 nextKeyToDelete = inboundMessageBlockMap[channelId][keyToDelete].previousBlockHash;
             delete inboundMessageBlockMap[channelId][keyToDelete];
@@ -254,7 +242,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: getGasLimit()}(data);
 
         if (!success) {
-            assembly {
+            assembly ("memory-safe") {
                 revert(add(returnData, 0x20), mload(returnData))
             }
         }
@@ -294,7 +282,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         // Perform the low-level call with a gas limit
         (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: getGasLimit()}(data);
         if (!success) {
-            assembly {
+            assembly ("memory-safe") {
                 revert(add(returnData, 0x20), mload(returnData))
             }
         }

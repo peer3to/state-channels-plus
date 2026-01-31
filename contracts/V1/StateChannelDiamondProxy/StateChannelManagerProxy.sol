@@ -265,7 +265,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         require(successfulJoinCount > 0, ErrorNoSuccessfulJoinChannel());
         // Resize the array to the number of successful joins - only ok for shrinking the array
         // TODO - find other places in the code that shrink MEMORY arrays and do the same - better than to allocate more space
-        assembly {
+        assembly ("memory-safe") {
             mstore(filteredJoinChannels, successfulJoinCount)
         }
 
@@ -410,7 +410,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
             (bool success, bytes memory result) = address(this).delegatecall(calls[i]);
             if (!success) {
                 // Bubble up the revert reason
-                assembly {
+                assembly ("memory-safe") {
                     revert(add(result, 32), mload(result))
                 }
             }
@@ -548,7 +548,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         // Perform the low-level call with a gas limit
         (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall(data);
         if (!success) {
-            assembly {
+            assembly ("memory-safe") {
                 revert(add(returnData, 0x20), mload(returnData))
             }
         }

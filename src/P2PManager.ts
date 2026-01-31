@@ -1,6 +1,6 @@
 import IOnMessage from "@/IOnMessage";
 import type StateManager from "@/stateManager";
-import { deserializeRpc } from "@/rpc/Rpc";
+import Rpc, { deserializeRpc } from "@/rpc/Rpc";
 import MainRpcService from "@/rpc/MainRpcService";
 import { P2pSigner } from "@/evm";
 import { ATransport, TransportType } from "@/transport";
@@ -16,6 +16,7 @@ import { isInstanceOfRpcService } from "./utils/ObjectChecks";
 import type ARpcService from "@/rpc/ARpcService";
 import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
 import type { RpcServiceFactoryMap, RpcServiceInstances } from "./rpc/registry";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 type LocalRpcRoot<TFactories extends RpcServiceFactoryMap> = MainRpcService &
     RpcServiceInstances<TFactories>;
@@ -83,21 +84,26 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         await this.holepunch.dispose();
         this.disconnectAll();
     }
-    public broadcastRpc(serializedRPC: string) {
+    public broadcastRpc(rpc: Rpc) {
         const debugConnections = this.openConnections.map((transport) => {
             return {
                 transportType: transport.transportType,
                 peerAddress: transport.peerAddress
             };
         });
-        this.logger.debug("broadcastRpc", { serializedRPC, debugConnections });
+        this.logger.debug("broadcastRpc", { rpc, debugConnections });
         for (const transport of this.openConnections) {
-            transport.send(serializedRPC);
+            transport.send(rpc);
         }
     }
     public onRpc(serializedRpc: string, transport: ATransport) {
         try {
             const rpc = deserializeRpc(serializedRpc);
+            this.logger.verbose("onRpc", {
+                rpc,
+                transportType: TransportType[transport.transportType],
+                peerAddress: transport.peerAddress
+            });
             if (!rpc) {
                 this.disconnectConnection(transport);
                 return;
@@ -142,19 +148,6 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
     public disconnectConnection(transport: ATransport) {
         const profile = this.profileManager.getProfileByTransport(transport);
 
-        try {
-            const disconnectedPeer =
-                transport.peerAddress || profile?.getEvmAddress() || "unknown";
-            const stack = new Error("Disconnecting connection").stack;
-            this.logger.warn("disconnectConnection", {
-                disconnectedPeer,
-                transportType: transport.transportType,
-                stack
-            });
-        } catch {
-            // ignore logging errors
-        }
-
         this.openConnections = this.openConnections.filter(
             (t) => t !== transport
         );
@@ -167,13 +160,16 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         }
     }
 
-    public disconnectAndBlacklistPeer(transport: ATransport) {
+    public disconnectAndBlacklistPeer(transport: ATransport, cause?: string) {
         this.profileManager.getProfileByTransport(transport)?.blacklist();
 
         this.disconnectConnection(transport);
     }
 
-    public disconnectAndBlacklistPeerByEvmAddress(evmAddress: Address) {
+    public disconnectAndBlacklistPeerByEvmAddress(
+        evmAddress: Address,
+        cause?: string
+    ) {
         const profile = this.profileManager.getProfileByEvmAddress(evmAddress);
         if (!profile) return;
         profile.blacklist();
@@ -189,7 +185,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         );
     }
 
-    public disconnectAll() {
+    public disconnectAll(cause?: string) {
         for (const transport of this.openConnections) {
             this.disconnectConnection(transport);
         }

@@ -22,6 +22,7 @@ import {
 import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Codec, hash, Logger, Type } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import { isEqual } from "lodash";
 import { ZeroHash } from "ethers";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
@@ -150,17 +151,17 @@ export class EventHandler {
             Type.Dispute
         );
         const forkId = dispute.input.forkId;
-        const disputeHash = hash(
-            disputeConfirmation.signedDispute.encodedDispute
-        );
-        this.logger.debug("Dispute committed", {
-            channelId,
-            forkId,
-            disputeHash,
-            isFinal,
-            disputeCreationTimestamp,
-            isForced: dispute.input.timeout?.isForced
+
+        const disputeMeta = LoggerUtils.getDisputeMetadata(dispute);
+        const formattedHash = LoggerUtils.formatHash(disputeMeta.disputeHash);
+        this.logger.info(`✅ Dispute received: ${formattedHash}`, {
+            dispute: disputeMeta,
+            isFinal: isFinal,
+            disputeConfirmation,
+            windowCreationTimestamp,
+            auditingDataPosted: disputeAuditingData ? true : false
         });
+
         // sync LocalDiamond state
         await this.diamondStateMachine.localDiamondContract.onDisputeCommitted(
             channelId,
@@ -215,7 +216,23 @@ export class EventHandler {
                 dispute,
                 disputeAuditingData
             );
+
         if (!isValid) {
+            const disputeFraudProof =
+                this.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                    dispute
+                );
+            const killReason = disputeFraudProof
+                ? LoggerUtils.getDisputeFraudProofMeta(disputeFraudProof)
+                : undefined;
+
+            this.logger.warn(
+                `❌ Dispute auditing failed - killing dispute ${formattedHash}`,
+                {
+                    killReason
+                }
+            );
+
             // TODO - do a multicall here
             await Promise.all([
                 this.stateManager.disputeManager.killDispute(dispute),
@@ -223,6 +240,9 @@ export class EventHandler {
             ]);
             return;
         }
+
+        this.logger.info(`✅ Dispute auditing successful ${formattedHash}`);
+
         this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
 
         // this is like success - TODO - consider moving this to DisputeStrategy.success
@@ -396,6 +416,15 @@ export class EventHandler {
             forkId,
             disputer
         );
+
+        // Log dispute killed event
+        // Note: The kill reason is logged earlier when validation fails in onDisputeCommitted
+        this.logger.warn("💀 Dispute killed on-chain", {
+            forkId,
+            disputer: LoggerUtils.formatHash(disputer),
+            channelId
+        });
+
         // disconnect disputer
         this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
             disputer

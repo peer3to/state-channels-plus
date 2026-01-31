@@ -64,7 +64,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
             // ***** setup / first run *****
             if (maxSlashCount == 0) {
-                maxSlashCount = snapshotData.participants.length + disputeData.pendingParticipants.length;
+                maxSlashCount =
+                    snapshotData.participants.length + getPendingParticipants(dispute.input.channelId).length;
                 slashParticipants = new address[](maxSlashCount);
 
                 //populate initially with on-chain slashes up to the dispute window expiration timestamp
@@ -451,8 +452,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
     ) public returns (bool) {
         ChannelBalance storage channelBalance = channelBalances[channelId];
         console.log("BALANCE 1");
-        Balance memory onChainDeposits =
-            inboundMessageBlockMap[channelId][snapshotData.latestInboundMessageBlockHash].totalBalance;
+        Balance memory onChainDeposits = _resolveTotalDeposits(channelId, snapshotData.latestInboundMessageBlockHash);
         Balance memory onChainWithdrawals = channelBalance.totalWithdrawals;
         if (snapshotData.stateMachineStateHash != keccak256(encodedStateMachineState)) return false;
         console.log("BALANCE 2");

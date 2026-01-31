@@ -2,6 +2,7 @@ import type P2PManager from "@/P2PManager";
 import ATransport from "./ATransport";
 import WebSocket from "ws";
 import { TransportType } from "./TransportType";
+
 class LocalTransport extends ATransport {
     transportType = TransportType.HOLEPUNCH; // not holepunch, but probably doesn't matter for testing
     ws: WebSocket;
@@ -13,16 +14,20 @@ class LocalTransport extends ATransport {
         });
 
         // Ensure we clean up our transport when the underlying socket closes.
-        this.ws.on("close", () => {
+        this.ws.on("close", (code: number, reason: Buffer) => {
             this.close();
         });
 
         // Treat socket errors as a connection close for transport lifecycle.
-        this.ws.on("error", () => {
+        this.ws.on("error", (error: Error) => {
+            this.p2pManager.logger.error("LocalTransport WebSocket error", {
+                socketState: this.ws?.readyState,
+                error
+            });
             this.close();
         });
     }
-    send(serializedRPC: string): void {
+    _send(serializedRPC: string): void {
         this.ws.send(serializedRPC);
     }
     onMessage(data: any): void {

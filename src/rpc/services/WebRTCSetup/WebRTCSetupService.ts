@@ -4,12 +4,70 @@ import { RTCPeerConnection } from "get-webrtc";
 import WebRTCTransport from "@/transport/WebRTCTransport";
 import type P2PManager from "@/P2PManager";
 import WebRTCSetupRpcMethods from "./WebRTCSetupRpcMethods";
-import { ATransport } from "@/transport";
+import { ATransport, TransportType } from "@/transport";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 import { getChecksumAddress } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
     connectionMap: Map<string, RTCPeerConnection> = new Map();
+
+    private findWebRTCTransport(peerAddress: string): ATransport | undefined {
+        return this.p2pManager.openConnections.find(
+            (t) =>
+                t.peerAddress === peerAddress &&
+                t.transportType === TransportType.WEBRTC
+        );
+    }
+
+    public setupConnectionStateHandlers(
+        connection: RTCPeerConnection,
+        peerAddress: string
+    ): void {
+        // Handle connection state changes
+        connection.onconnectionstatechange = () => {
+            const state = connection.connectionState;
+            const iceState = connection.iceConnectionState;
+
+            if (
+                state === "disconnected" ||
+                state === "failed" ||
+                state === "closed"
+            ) {
+                this.logger.warn(`WebRTC connection state changed: ${state}`, {
+                    iceState
+                });
+                const transport = this.findWebRTCTransport(peerAddress);
+                if (transport) {
+                    transport.close();
+                }
+            }
+        };
+
+        // Handle ICE connection state changes
+        connection.oniceconnectionstatechange = () => {
+            const iceState = connection.iceConnectionState;
+            const connectionState = connection.connectionState;
+
+            if (
+                iceState === "disconnected" ||
+                iceState === "failed" ||
+                iceState === "closed"
+            ) {
+                this.logger.warn(
+                    `WebRTC IceConnection state changed: ${iceState}`,
+                    {
+                        iceState,
+                        connectionState
+                    }
+                );
+                const transport = this.findWebRTCTransport(peerAddress);
+                if (transport) {
+                    transport.close();
+                }
+            }
+        };
+    }
 
     constructor(p2pManager: P2PManager) {
         super(
@@ -51,6 +109,9 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
                         .sendOne(adr);
                 }
             };
+
+            // Setup connection state handlers
+            this.setupConnectionStateHandlers(connection, adr);
 
             const offer = await connection.createOffer();
             connection.setLocalDescription(offer);
