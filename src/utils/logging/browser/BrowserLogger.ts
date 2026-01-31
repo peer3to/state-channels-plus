@@ -40,8 +40,21 @@ export class BrowserLogger implements Logger {
         );
     }
 
-    private storeLog(level: string, message: any, meta?: any): void {
-        this.logStore.store(level, message, this.context, meta);
+    private storeLog(
+        level: string,
+        message: any,
+        meta?: any,
+        error?: Error,
+        ...args: any[]
+    ): void {
+        const enhancedMeta = { ...meta };
+        if (error) {
+            enhancedMeta.error = error;
+        }
+        if (args && args.length > 0) {
+            enhancedMeta.args = args;
+        }
+        this.logStore.store(level, message, this.context, enhancedMeta);
     }
 
     public getAllLogs(): any[] {
@@ -82,12 +95,15 @@ export class BrowserLogger implements Logger {
         message: any,
         meta?: any,
         ...args: any[]
-    ): void {
+    ): Error {
         const method = level === "verbose" ? "debug" : level;
         const details = {
             args,
             meta
         };
+
+        // Create Error object to capture stack trace
+        const stackError = new Error();
 
         if (
             console.groupCollapsed &&
@@ -99,10 +115,10 @@ export class BrowserLogger implements Logger {
             // eslint-disable-next-line no-console
             console[method](details);
             // eslint-disable-next-line no-console
-            console[method](new Error().stack);
+            console[method](stackError.stack);
             // eslint-disable-next-line no-console
             console.groupEnd();
-            return;
+            return stackError;
         }
 
         // Fallback when groups are not supported
@@ -110,8 +126,10 @@ export class BrowserLogger implements Logger {
         (console as any)[method](
             ...this.fmt(level, message),
             details,
-            new Error().stack
+            stackError.stack
         );
+
+        return stackError;
     }
 
     private fmt(level: string, message: any): any[] {
@@ -165,29 +183,29 @@ export class BrowserLogger implements Logger {
     }
 
     public debug(message: any, meta?: any, ...args: any[]): void {
-        this.storeLog("debug", message, meta);
         // eslint-disable-next-line no-console
-        this.logWithStack("debug", message, meta, ...args);
+        const stackError = this.logWithStack("debug", message, meta, ...args);
+        this.storeLog("debug", message, meta, stackError, ...args);
     }
     public info(message: any, meta?: any, ...args: any[]): void {
-        this.storeLog("info", message, meta);
         // eslint-disable-next-line no-console
-        this.logWithStack("info", message, meta, ...args);
+        const stackError = this.logWithStack("info", message, meta, ...args);
+        this.storeLog("info", message, meta, stackError, ...args);
     }
     public warn(message: any, meta?: any, ...args: any[]): void {
-        this.storeLog("warn", message, meta);
         // eslint-disable-next-line no-console
-        this.logWithStack("warn", message, meta, ...args);
+        const stackError = this.logWithStack("warn", message, meta, ...args);
+        this.storeLog("warn", message, meta, stackError, ...args);
     }
     public error(message: any, meta?: any, ...args: any[]): void {
-        this.storeLog("error", message, meta);
         // eslint-disable-next-line no-console
-        this.logWithStack("error", message, meta, ...args);
+        const stackError = this.logWithStack("error", message, meta, ...args);
+        this.storeLog("error", message, meta, stackError, ...args);
     }
     public verbose(message: any, meta?: any, ...args: any[]): void {
-        this.storeLog("verbose", message, meta);
         // eslint-disable-next-line no-console
-        this.logWithStack("verbose", message, meta, ...args);
+        const stackError = this.logWithStack("verbose", message, meta, ...args);
+        this.storeLog("verbose", message, meta, stackError, ...args);
     }
     public group(label?: string): void {
         if (label) {
