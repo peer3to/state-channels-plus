@@ -1,219 +1,252 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DevTools Console Log Replayer</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background: #f5f5f5;
-        }
-        
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
-        }
-        
-        .subtitle {
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 16px;
-        }
-        
-        .file-input-area {
-            border: 2px dashed #ddd;
-            border-radius: 8px;
-            padding: 40px;
-            text-align: center;
-            margin-bottom: 20px;
-            transition: border-color 0.3s;
-        }
-        
-        .file-input-area:hover {
-            border-color: #007acc;
-        }
-        
-        .file-input-area.dragover {
-            border-color: #007acc;
-            background-color: #f0f8ff;
-        }
-        
-        #fileInput {
-            display: none;
-        }
-        
-        .file-button {
-            background: #007acc;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 16px;
-            margin-bottom: 10px;
-        }
-        
-        .file-button:hover {
-            background: #005a9e;
-        }
-        
-        .controls {
-            display: flex;
-            gap: 15px;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-        
-        .control-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        label {
-            font-weight: 500;
-            color: #333;
-        }
-        
-        input[type="checkbox"] {
-            transform: scale(1.2);
-        }
-        
-        .replay-button {
-            background: #28a745;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 500;
-        }
-        
-        .replay-button:hover {
-            background: #218838;
-        }
-        
-        .replay-button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-        
-        .status {
-            padding: 15px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-            font-weight: 500;
-        }
-        
-        .status.info {
-            background: #e7f3ff;
-            color: #0066cc;
-            border: 1px solid #b3d9ff;
-        }
-        
-        .status.success {
-            background: #e8f5e8;
-            color: #2d5a2d;
-            border: 1px solid #b3d9b3;
-        }
-        
-        .status.error {
-            background: #ffe6e6;
-            color: #cc0000;
-            border: 1px solid #ffb3b3;
-        }
-        
-        .file-info {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-        }
-        
-        .file-info h3 {
-            margin: 0 0 10px 0;
-            color: #333;
-        }
-        
-        .file-info p {
-            margin: 5px 0;
-            color: #666;
-        }
-        
-        .instructions {
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
-            padding: 15px;
-            border-radius: 6px;
-            margin-top: 20px;
-        }
-        
-        .instructions h3 {
-            margin: 0 0 10px 0;
-            color: #856404;
-        }
-        
-        .instructions p {
-            margin: 5px 0;
-            color: #856404;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🔥 DevTools Console Log Replayer</h1>
-        <p class="subtitle">Replay browser logs directly into DevTools console with native formatting</p>
-        
-        <div class="file-input-area" id="fileInputArea">
-            <button class="file-button" onclick="document.getElementById('fileInput').click()">
-                Choose Replay File
-            </button>
-            <p>or drag and drop a .json replay file here</p>
-            <input type="file" id="fileInput" accept=".json" />
-        </div>
-        
-        <div class="controls" style="display: none;" id="controls">
-            <div class="control-group">
-                <input type="checkbox" id="respectTiming" />
-                <label for="respectTiming">Respect original timing</label>
-            </div>
-            <button class="replay-button" id="replayButton" onclick="startReplay()">
-                Start Replay
-            </button>
-        </div>
-        
-        <div id="status"></div>
-        <div id="fileInfo" style="display: none;"></div>
-        
-        <div class="instructions">
-            <h3>📋 Instructions</h3>
-            <p><strong>1.</strong> Open DevTools (F12) → Settings (gear icon) → Console → Enable "Custom formatters"</p>
-            <p><strong>2.</strong> Go to the Console tab</p>
-            <p><strong>3.</strong> Load a browser replay log file (.json format)</p>
-            <p><strong>4.</strong> Click "Start Replay" to see logs appear in the console</p>
-            <p><strong>5.</strong> Use DevTools level filters (Errors, Warnings, Info, Verbose) to filter logs</p>
-        </div>
-        
-        <div class="instructions" style="background: #e7f3ff; border-color: #b3d9ff;">
-            <h3>⚙️ Required: Enable Custom Formatters</h3>
-            <p>For proper log rendering with collapsible details AND level filtering:</p>
-            <p>DevTools → Settings (⚙️) → Preferences → Console → ✅ Enable custom formatters</p>
-        </div>
-    </div>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>DevTools Console Log Replayer</title>
+        <style>
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    sans-serif;
+                margin: 0;
+                padding: 20px;
+                background: #f5f5f5;
+            }
 
-    <script src="replay.js"></script>
-</body>
+            .container {
+                max-width: 800px;
+                margin: 0 auto;
+                background: white;
+                padding: 30px;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            }
+
+            h1 {
+                color: #333;
+                margin-bottom: 10px;
+            }
+
+            .subtitle {
+                color: #666;
+                margin-bottom: 30px;
+                font-size: 16px;
+            }
+
+            .file-input-area {
+                border: 2px dashed #ddd;
+                border-radius: 8px;
+                padding: 40px;
+                text-align: center;
+                margin-bottom: 20px;
+                transition: border-color 0.3s;
+            }
+
+            .file-input-area:hover {
+                border-color: #007acc;
+            }
+
+            .file-input-area.dragover {
+                border-color: #007acc;
+                background-color: #f0f8ff;
+            }
+
+            #fileInput {
+                display: none;
+            }
+
+            .file-button {
+                background: #007acc;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 16px;
+                margin-bottom: 10px;
+            }
+
+            .file-button:hover {
+                background: #005a9e;
+            }
+
+            .controls {
+                display: flex;
+                gap: 15px;
+                align-items: center;
+                margin-bottom: 20px;
+            }
+
+            .control-group {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            label {
+                font-weight: 500;
+                color: #333;
+            }
+
+            input[type="checkbox"] {
+                transform: scale(1.2);
+            }
+
+            .replay-button {
+                background: #28a745;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 16px;
+                font-weight: 500;
+            }
+
+            .replay-button:hover {
+                background: #218838;
+            }
+
+            .replay-button:disabled {
+                background: #ccc;
+                cursor: not-allowed;
+            }
+
+            .status {
+                padding: 15px;
+                border-radius: 6px;
+                margin-bottom: 20px;
+                font-weight: 500;
+            }
+
+            .status.info {
+                background: #e7f3ff;
+                color: #0066cc;
+                border: 1px solid #b3d9ff;
+            }
+
+            .status.success {
+                background: #e8f5e8;
+                color: #2d5a2d;
+                border: 1px solid #b3d9b3;
+            }
+
+            .status.error {
+                background: #ffe6e6;
+                color: #cc0000;
+                border: 1px solid #ffb3b3;
+            }
+
+            .file-info {
+                background: #f8f9fa;
+                padding: 15px;
+                border-radius: 6px;
+                margin-bottom: 20px;
+            }
+
+            .file-info h3 {
+                margin: 0 0 10px 0;
+                color: #333;
+            }
+
+            .file-info p {
+                margin: 5px 0;
+                color: #666;
+            }
+
+            .instructions {
+                background: #fff3cd;
+                border: 1px solid #ffeaa7;
+                padding: 15px;
+                border-radius: 6px;
+                margin-top: 20px;
+            }
+
+            .instructions h3 {
+                margin: 0 0 10px 0;
+                color: #856404;
+            }
+
+            .instructions p {
+                margin: 5px 0;
+                color: #856404;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🔥 DevTools Console Log Replayer</h1>
+            <p class="subtitle">
+                Replay browser logs directly into DevTools console with native
+                formatting
+            </p>
+
+            <div class="file-input-area" id="fileInputArea">
+                <button
+                    class="file-button"
+                    onclick="document.getElementById('fileInput').click()"
+                >
+                    Choose Replay File
+                </button>
+                <p>or drag and drop a .json replay file here</p>
+                <input type="file" id="fileInput" accept=".json" />
+            </div>
+
+            <div class="controls" style="display: none" id="controls">
+                <div class="control-group">
+                    <input type="checkbox" id="respectTiming" />
+                    <label for="respectTiming">Respect original timing</label>
+                </div>
+                <button
+                    class="replay-button"
+                    id="replayButton"
+                    onclick="startReplay()"
+                >
+                    Start Replay
+                </button>
+            </div>
+
+            <div id="status"></div>
+            <div id="fileInfo" style="display: none"></div>
+
+            <div class="instructions">
+                <h3>📋 Instructions</h3>
+                <p>
+                    <strong>1.</strong> Open DevTools (F12) → Settings (gear
+                    icon) → Console → Enable "Custom formatters"
+                </p>
+                <p><strong>2.</strong> Go to the Console tab</p>
+                <p>
+                    <strong>3.</strong> Load a browser replay log file (.json
+                    format)
+                </p>
+                <p>
+                    <strong>4.</strong> Click "Start Replay" to see logs appear
+                    in the console
+                </p>
+                <p>
+                    <strong>5.</strong> Use DevTools level filters (Errors,
+                    Warnings, Info, Verbose) to filter logs
+                </p>
+            </div>
+
+            <div
+                class="instructions"
+                style="background: #e7f3ff; border-color: #b3d9ff"
+            >
+                <h3>⚙️ Required: Enable Custom Formatters</h3>
+                <p>
+                    For proper log rendering with collapsible details AND level
+                    filtering:
+                </p>
+                <p>
+                    DevTools → Settings (⚙️) → Preferences → Console → ✅ Enable
+                    custom formatters
+                </p>
+            </div>
+        </div>
+
+        <script src="replay.js"></script>
+    </body>
 </html>
