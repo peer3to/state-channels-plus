@@ -8,9 +8,9 @@ import {
 import { NodeLogUploader } from "../LogUploader";
 import type { LogUploaderOptions } from "../LogUploader";
 import type { LogStore } from "../logStore";
-import { safeJson } from "../formatUtils";
 import { Colors } from "./colors";
 import { config, isNodeRuntime } from "../../config";
+import { inspect } from "util";
 
 export class NodeLogger extends Logger {
     private excludedTags: Set<string>;
@@ -85,8 +85,8 @@ export class NodeLogger extends Logger {
         prefix += `${Colors.LEVEL[level as keyof typeof Colors.LEVEL] || Colors.LEVEL.debug}[${levelUpper}]${Colors.RESET}`;
 
         // Peer context
-        const peerId = logEntry.context.peerId;
-        const peerAddress = logEntry.context.peerAddress;
+        const peerId = logEntry.sharedContext.peerId;
+        const peerAddress = logEntry.sharedContext.peerAddress;
         if (peerId == null) {
             prefix += `${Colors.RESET}`;
         } else {
@@ -104,11 +104,15 @@ export class NodeLogger extends Logger {
         return `${prefix} ${logEntry.message}`;
     }
     private formatMeta(logEntry: LogEntry): string {
-        // Meta (exclude the common context keys)
-        const metaForInline: Record<string, any> = { ...logEntry.meta };
-
-        const hasMeta = Object.keys(metaForInline).length > 0;
-        const metaStr = hasMeta ? ` ${safeJson(metaForInline)}` : "";
+        const hasMeta = logEntry.meta.length > 0;
+        const metaStr = hasMeta
+            ? inspect(logEntry.meta, {
+                  depth: null,
+                  colors: true,
+                  maxArrayLength: null,
+                  breakLength: 80
+              })
+            : "";
         return metaStr;
     }
     protected write(logEntry: LogEntry): void {

@@ -111,8 +111,8 @@ export class BrowserLogger extends Logger {
         push(`[${levelUpper}]`, this.levelCss(logEntry.level));
 
         // Peer
-        const peerId = logEntry.context.peerId;
-        const peerAddress = logEntry.context.peerAddress;
+        const peerId = logEntry.sharedContext.peerId;
+        const peerAddress = logEntry.sharedContext.peerAddress;
         if (typeof peerAddress === "string" && peerAddress.length > 0) {
             const peerStyle =
                 peerId != null

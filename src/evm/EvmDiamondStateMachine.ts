@@ -422,10 +422,13 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         const logger =
             peerLogger ||
-            createLogger({
-                peerId: pid,
-                peerAddress: signerAddress
-            });
+            createLogger(
+                {
+                    peerId: pid,
+                    peerAddress: signerAddress
+                },
+                { component: "ClientApp" }
+            );
 
         // Sync clock to DLT
         await Clock.init(signer.provider!);
@@ -492,7 +495,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         return new P2pInstance<T, TFactories>(
             p2pContractInstance,
-            typedP2pSigner
+            typedP2pSigner,
+            logger
         );
     }
 }

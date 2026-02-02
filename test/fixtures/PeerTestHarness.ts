@@ -352,10 +352,13 @@ export class PeerTestHarness<
     private async createPeer(index: number, signer: Signer): Promise<void> {
         const address = await signer.getAddress();
 
-        const PeerLogger = createLogger({
-            peerId: index,
-            peerAddress: address
-        });
+        const PeerLogger = createLogger(
+            {
+                peerId: index,
+                peerAddress: address
+            },
+            { component: `PeerTestHarness` }
+        );
 
         this.logger.debug(`Creating peer ${index} at ${address}`);
 
