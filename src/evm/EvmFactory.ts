@@ -1,27 +1,21 @@
 import { EVM, EVMOpts } from "@ethereumjs/evm";
 import { Buffer } from "buffer";
-import { createLogger, isNodeRuntime } from "@/utils";
+import { isNodeRuntime } from "@/utils";
+import type { Logger } from "@/utils";
 
 export interface EvmFactoryOptions extends EVMOpts {
-    enableConsoleLog?: boolean;
+    logger?: Logger;
 }
 
 export async function createEvm(options: EvmFactoryOptions = {}): Promise<EVM> {
-    // Console.log decoding depends on Node-oriented deps; default it off in browsers.
-    const { enableConsoleLog = isNodeRuntime() } = options;
-
     const evm = await EVM.create(options);
-
-    if (enableConsoleLog) {
-        setupConsoleLogHook(evm);
-    }
+    setupConsoleLogHook(evm, options.logger);
 
     return evm;
 }
 
-export function setupConsoleLogHook(evm: EVM): void {
-    const log = createLogger({ component: "Solidity" });
-
+export function setupConsoleLogHook(evm: EVM, _logger?: Logger): void {
+    const logger = _logger?.child({ component: "Solidity" });
     if (!isNodeRuntime()) return;
 
     // Lazy-load to avoid pulling Node-only deps into browser runtime evaluation.
@@ -41,7 +35,7 @@ export function setupConsoleLogHook(evm: EVM): void {
                             typeof v === "bigint" ? v.toString() : String(v)
                         )
                         .join(" ");
-                    log.info(message);
+                    logger?.info(message);
                 }
             });
         })

@@ -5,7 +5,7 @@
  * Receives compressed crash logs and saves them to disk
  */
 
-const http = require("http");
+const express = require("express");
 const fs = require("fs").promises;
 const path = require("path");
 
@@ -13,181 +13,163 @@ const PORT = process.env.CRASH_LOG_SERVER_PORT || 3001;
 const LOG_DIR =
     process.env.CRASH_LOG_DIR || path.join(process.cwd(), "crash-logs");
 
-// Ensure log directory exists
-async function ensureLogDir() {
-    try {
-        await fs.mkdir(LOG_DIR, { recursive: true });
-        console.log(`[CrashLogServer] Log directory: ${LOG_DIR}`);
-    } catch (err) {
-        console.error(`[CrashLogServer] Failed to create log directory:`, err);
-        process.exit(1);
-    }
+const app = express();
+const channelDirCache = new Map();
+
+app.use(express.json());
+
+function formatTimestamp() {
+    const now = new Date();
+    const pad = (n, len = 2) => String(n).padStart(len, "0");
+    const day = pad(now.getDate());
+    const month = pad(now.getMonth() + 1);
+    const year = now.getFullYear();
+    const hours = pad(now.getHours());
+    const minutes = pad(now.getMinutes());
+    const seconds = pad(now.getSeconds());
+    return `${day}-${month}-${year}#${hours}:${minutes}:${seconds}`;
 }
 
-const server = http.createServer(async (req, res) => {
-    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    console.log(`[CrashLogServer] [${requestId}] Request received`, {
-        method: req.method,
-        url: req.url,
-        headers: {
-            "content-type": req.headers["content-type"],
-            "content-encoding": req.headers["content-encoding"],
-            "x-filename": req.headers["x-filename"],
-            "x-metadata": req.headers["x-metadata"] ? "present" : "missing"
+async function ensureLogDir() {
+    await fs.mkdir(LOG_DIR, { recursive: true });
+}
+
+async function listChannelDirs() {
+    await ensureLogDir();
+    const entries = await fs.readdir(LOG_DIR, { withFileTypes: true });
+    return entries.filter((d) => d.isDirectory()).map((d) => d.name);
+}
+
+async function resolveChannelDir(channelId) {
+    if (channelDirCache.has(channelId)) {
+        const cached = channelDirCache.get(channelId);
+        try {
+            await fs.access(cached);
+            return cached;
+        } catch {
+            channelDirCache.delete(channelId);
         }
-    });
-
-    // CORS headers for browser requests
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.setHeader(
-        "Access-Control-Allow-Headers",
-        "Content-Type, Content-Encoding, Authorization, X-Filename, X-Metadata"
-    );
-
-    // Handle preflight
-    if (req.method === "OPTIONS") {
-        console.log(
-            `[CrashLogServer] [${requestId}] OPTIONS preflight request`
-        );
-        res.writeHead(200);
-        res.end();
-        return;
     }
 
-    // Only accept POST requests
-    if (req.method !== "POST") {
-        console.log(
-            `[CrashLogServer] [${requestId}] Method not allowed: ${req.method}`
+    const dirs = await listChannelDirs();
+    const matching = dirs.filter((d) => d.startsWith(`${channelId}_`));
+    if (matching.length > 0) {
+        const withStats = await Promise.all(
+            matching.map(async (dir) => {
+                const full = path.join(LOG_DIR, dir);
+                const stat = await fs.stat(full);
+                return { dir, full, mtime: stat.mtimeMs };
+            })
         );
-        res.writeHead(405, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Method not allowed" }));
-        return;
+        withStats.sort((a, b) => b.mtime - a.mtime);
+        channelDirCache.set(channelId, withStats[0].full);
+        return withStats[0].full;
     }
 
-    console.log(`[CrashLogServer] [${requestId}] Processing POST request`);
+    const created = path.join(LOG_DIR, `${channelId}_${formatTimestamp()}`);
+    await fs.mkdir(created, { recursive: true });
+    channelDirCache.set(channelId, created);
+    return created;
+}
 
-    try {
-        // Get filename from header or generate one
-        const filename =
-            req.headers["x-filename"] ||
-            `crash-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.ndjson.gz`;
-        console.log(`[CrashLogServer] [${requestId}] Filename: ${filename}`);
+function sanitizeSegment(value) {
+    return String(value).replace(/[\/]/g, "_");
+}
 
-        // Get metadata if provided
-        const metadataHeader = req.headers["x-metadata"];
-        let metadata = null;
-        if (metadataHeader) {
-            try {
-                metadata = JSON.parse(
-                    Buffer.from(metadataHeader, "base64").toString()
-                );
-                console.log(
-                    `[CrashLogServer] [${requestId}] Metadata parsed:`,
-                    {
-                        errorName: metadata.errorName,
-                        errorMessage: metadata.errorMessage?.substring(0, 50),
-                        timestamp: metadata.timestamp
-                            ? new Date(metadata.timestamp).toISOString()
-                            : "missing"
-                    }
-                );
-            } catch (err) {
-                console.warn(
-                    `[CrashLogServer] [${requestId}] Failed to parse metadata:`,
-                    err
-                );
+app.post(
+    "/logs/upload",
+    express.raw({ type: "*/*", limit: "50mb" }),
+    async (req, res) => {
+        try {
+            const { channelId, peerAddress, compressedLogs } = req.body || {};
+
+            if (!channelId || !peerAddress || !compressedLogs) {
+                res.status(400).json({
+                    error: "Incorrect request data"
+                });
+                return;
             }
-        } else {
-            console.log(
-                `[CrashLogServer] [${requestId}] No metadata header provided`
-            );
-        }
 
-        // Read request body
-        console.log(`[CrashLogServer] [${requestId}] Reading request body...`);
-        const chunks = [];
-        let totalSize = 0;
-        for await (const chunk of req) {
-            chunks.push(chunk);
-            totalSize += chunk.length;
-            if (chunks.length % 100 === 0) {
-                console.log(
-                    `[CrashLogServer] [${requestId}] Received ${chunks.length} chunks, ${totalSize} bytes so far`
-                );
-            }
-        }
-        const buffer = Buffer.concat(chunks);
-        console.log(
-            `[CrashLogServer] [${requestId}] Body read complete: ${buffer.length} bytes (${chunks.length} chunks)`
-        );
+            const channelDir = await resolveChannelDir(channelId);
+            const timestamp = formatTimestamp();
+            const safePeer = sanitizeSegment(peerAddress);
+            const filename = `${timestamp}_${safePeer}`;
+            const filepath = path.join(channelDir, filename);
 
-        // Save to file
-        const filepath = path.join(LOG_DIR, filename);
-        console.log(
-            `[CrashLogServer] [${requestId}] Writing to file: ${filepath}`
-        );
-        await fs.writeFile(filepath, buffer);
-        console.log(
-            `[CrashLogServer] [${requestId}] File written successfully`
-        );
+            const buffer = Buffer.from(compressedLogs, "base64");
+            await fs.writeFile(filepath, buffer);
 
-        console.log(
-            `[CrashLogServer] [${requestId}] ✅ Saved crash log: ${filepath} (${buffer.length} bytes)`
-        );
-        if (metadata) {
-            console.log(`[CrashLogServer] [${requestId}] Metadata:`, {
-                errorName: metadata.errorName,
-                errorMessage: metadata.errorMessage?.substring(0, 50),
-                timestamp: new Date(metadata.timestamp).toISOString(),
-                userAgent: metadata.userAgent?.substring(0, 50),
-                url: metadata.url
+            res.status(200).json({
+                success: true,
+                channelId,
+                peerAddress,
+                filename
             });
+        } catch (err) {
+            console.error("[CrashLogServer] Upload failed:", err);
+            res.status(500).json({ error: "Internal server error" });
+        }
+    }
+);
+
+app.get("/logs/index", async (_req, res) => {
+    try {
+        const dirs = await listChannelDirs();
+        const response = {};
+
+        for (const dir of dirs) {
+            const channelId = dir.split("_")[0];
+            const fullDir = path.join(LOG_DIR, dir);
+            const files = await fs.readdir(fullDir);
+            const peers = new Set();
+
+            for (const file of files) {
+                const parts = file.split("_");
+                if (parts.length < 2) continue;
+                const peer = parts.slice(1).join("_");
+                peers.add(peer);
+            }
+
+            if (!response[channelId]) {
+                response[channelId] = [];
+            }
+            response[channelId].push(...Array.from(peers));
         }
 
-        // Respond with success
-        const response = {
-            success: true,
-            filename,
-            size: buffer.length,
-            requestId
-        };
-        console.log(
-            `[CrashLogServer] [${requestId}] Sending success response:`,
-            response
-        );
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(response));
-        console.log(
-            `[CrashLogServer] [${requestId}] ✅ Request completed successfully`
-        );
+        res.status(200).json(response);
     } catch (err) {
-        console.error(
-            `[CrashLogServer] [${requestId}] ❌ Error processing request:`,
-            err
-        );
-        console.error(
-            `[CrashLogServer] [${requestId}] Error stack:`,
-            err.stack
-        );
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Internal server error", requestId }));
+        console.error("[CrashLogServer] Index failed:", err);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+app.get("/logs/:channelId/:peerAddress", async (req, res) => {
+    try {
+        const { channelId, peerAddress } = req.params;
+        const channelDir = await resolveChannelDir(channelId);
+        const files = await fs.readdir(channelDir);
+        const safePeer = sanitizeSegment(peerAddress);
+        const target = files.find((f) => f.endsWith(`_${safePeer}`));
+
+        if (!target) {
+            res.status(404).json({ error: "Log not found" });
+            return;
+        }
+
+        const filepath = path.join(channelDir, target);
+        res.sendFile(filepath);
+    } catch (err) {
+        console.error("[CrashLogServer] Retrieve failed:", err);
+        res.status(500).json({ error: "Internal server error" });
     }
 });
 
 async function start() {
     await ensureLogDir();
-
-    server.listen(PORT, () => {
+    app.listen(PORT, () => {
         console.log(
             `[CrashLogServer] Server running on http://localhost:${PORT}`
         );
-        console.log(`[CrashLogServer] Ready to receive crash logs`);
-    });
-
-    server.on("error", (err) => {
-        console.error("[CrashLogServer] Server error:", err);
-        process.exit(1);
     });
 }
 

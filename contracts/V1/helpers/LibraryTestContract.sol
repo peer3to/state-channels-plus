@@ -11,7 +11,7 @@ contract LibraryTestContract {
     // Fallback function that forwards all calls to the library
     fallback() external {
         address implementation = libraryAddress;
-        assembly {
+        assembly ("memory-safe") {
             // Copy call data into memory
             calldatacopy(0, 0, calldatasize())
 

@@ -55,11 +55,11 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     public async authenticateBlockFailed(
         _block: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
-        this.disconnect("protocol violation: block authentication failed");
+        this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
     public async wrongChannel(_block: Block): Promise<BlockValidationResult> {
-        this.disconnect("protocol violation: wrong channel");
+        this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
     public async channelNotOpened(
@@ -72,7 +72,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     public async notAllSingersAreParticipants(
         _block: Block
     ): Promise<BlockValidationResult> {
-        this.disconnect("protocol violation: not all signers are participants");
+        this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
     public async noNewSignaturesOnExistingBlock(
@@ -93,55 +93,39 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     public async blockAuthorIsNotParticipant(
         _block: Block
     ): Promise<BlockValidationResult> {
-        this.disconnect("protocol violation: block author is not participant");
+        this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
     public async doubleSignDetected(
         _conflictingBlock: Block,
         block: Block
     ): Promise<BlockValidationResult> {
-        this.disconnect("protocol violation: double sign detected", {
-            blockHash: block.hash
-        });
+        this.disconnect();
         return BlockValidationResult.DISPUTE;
     }
     public async invalidStateTransitionDetected(
         block: Block
     ): Promise<BlockValidationResult> {
-        this.disconnect(
-            "protocol violation: invalid state transition detected",
-            {
-                blockHash: block.hash
-            }
-        );
+        this.disconnect();
         return BlockValidationResult.DISPUTE;
     }
     public async wrongGenesisDetected(
         block: Block
     ): Promise<BlockValidationResult> {
-        this.disconnect("protocol violation: wrong genesis detected", {
-            blockHash: block.hash
-        });
+        this.disconnect();
         return BlockValidationResult.DISPUTE;
     }
     public async forgedInboundMessageBlockDetected(
         block: Block,
         _messageBlock: MessageBlockStruct
     ): Promise<BlockValidationResult> {
-        this.disconnect(
-            "protocol violation: forged inbound message block detected",
-            {
-                blockHash: block.hash
-            }
-        );
+        this.disconnect();
         return BlockValidationResult.DISPUTE;
     }
     public async conflictingButNotLinkedBlockDetected(
         _block: Block
     ): Promise<BlockValidationResult> {
-        this.disconnect(
-            "protocol violation: conflicting but not linked block detected"
-        );
+        this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
     public async blockForkIsDisputed(
@@ -162,20 +146,13 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     public async blockIsNotLinkedAndIsNotFirstBlock(
         _block: Block
     ): Promise<BlockValidationResult> {
-        this.disconnect(
-            "protocol violation: block is not linked and is not first block"
-        );
+        this.disconnect();
         return BlockValidationResult.DISCONNECT;
     }
     public async objectiveInvalidTimestampDetected(
         block: Block
     ): Promise<BlockValidationResult> {
-        this.disconnect(
-            "protocol violation: objective invalid timestamp detected",
-            {
-                blockHash: block.hash
-            }
-        );
+        this.disconnect();
         return BlockValidationResult.DISPUTE;
     }
     public async subjectiveInvalidTimestampDetected(
@@ -184,15 +161,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.NOT_ENOUGH_TIME;
     }
 
-    private disconnect(cause: string, context?: Record<string, any>) {
-        this.logger.warn(
-            "🔥 Disconnect triggered intentionally by protocol violation",
-            {
-                cause,
-                ...(context || {})
-            }
-        );
-        console.trace("Disconnect root cause");
-        this.p2pManager.disconnectAll(cause);
+    private disconnect() {
+        this.p2pManager.disconnectAll();
     }
 }

@@ -327,13 +327,17 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         deployStateMachineTx: ContractDeployTransaction,
         contractInterface: ethers.Interface,
         signer: Signer,
-        timeConfig: TimeConfig
+        timeConfig: TimeConfig,
+        logger?: Logger
     ): Promise<{
         evmDiamondStateMachine: EvmDiamondStateMachine;
         deploymentResult: DeploymentResult;
     }> {
         // since this is local deployment, we can allow unlimited contract size
-        const evm = await createEvm({ allowUnlimitedContractSize: true });
+        const evm = await createEvm({
+            allowUnlimitedContractSize: true,
+            logger
+        });
 
         const stateMachineAddress = await deployLocalFromTx(
             deployStateMachineTx,
@@ -413,6 +417,16 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const peerLogger = options?.peerLogger;
         const rpcServiceFactories = options?.rpcServiceFactories;
 
+        // Resolve signer address early for logger context
+        const signerAddress = await signer.getAddress();
+
+        const logger =
+            peerLogger ||
+            createLogger({
+                peerId: pid,
+                peerAddress: signerAddress
+            });
+
         // Sync clock to DLT
         await Clock.init(signer.provider!);
 
@@ -444,18 +458,11 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                 deployStateMachineTx,
                 stateMachineContractInstance.interface,
                 signer,
-                timeConfig
+                timeConfig,
+                logger
             );
 
-        const signerAddress = await signer.getAddress();
         const storage = new Storage();
-
-        const logger =
-            peerLogger ||
-            createLogger({
-                peerId: pid,
-                peerAddress: signerAddress
-            });
 
         const stateManager = new StateManager(
             signer,

@@ -16,7 +16,6 @@ import { isInstanceOfRpcService } from "./utils/ObjectChecks";
 import type ARpcService from "@/rpc/ARpcService";
 import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
 import type { RpcServiceFactoryMap, RpcServiceInstances } from "./rpc/registry";
-import { LoggerUtils } from "@/utils/LoggerUtils";
 
 type LocalRpcRoot<TFactories extends RpcServiceFactoryMap> = MainRpcService &
     RpcServiceInstances<TFactories>;
@@ -48,6 +47,9 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
     ) {
         this.stateManager = stateManager;
         this.logger = stateManager.logger.child({ component: "P2PManager" });
+        if (config.DEBUG_LOCAL_TRANSPORT) {
+            LocalDiscoveryServer.setLogger(this.logger);
+        }
         this.p2pSigner = new P2pSigner(
             signer,
             stateManager.signerAddress,
@@ -166,10 +168,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         this.disconnectConnection(transport);
     }
 
-    public disconnectAndBlacklistPeerByEvmAddress(
-        evmAddress: Address,
-        cause?: string
-    ) {
+    public disconnectAndBlacklistPeerByEvmAddress(evmAddress: Address) {
         const profile = this.profileManager.getProfileByEvmAddress(evmAddress);
         if (!profile) return;
         profile.blacklist();
@@ -185,7 +184,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         );
     }
 
-    public disconnectAll(cause?: string) {
+    public disconnectAll() {
         for (const transport of this.openConnections) {
             this.disconnectConnection(transport);
         }

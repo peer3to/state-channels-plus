@@ -15,7 +15,10 @@ import {
 describe("ValidationService - Progressive Validation Tests", () => {
     let validationService: ValidationService;
     let mockSetup: MockSetup;
-    const testLogger = createLogger({ component: "ValidationService.test" });
+    const testLogger = createLogger(
+        {},
+        { component: "ValidationService.test" }
+    );
 
     beforeEach(() => {
         sinon.restore();

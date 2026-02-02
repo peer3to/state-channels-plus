@@ -1,79 +1,85 @@
-export function encodePlainLog(logs: any[]): string {
-    const lines: string[] = [];
+import { LogEntry, LogLevel } from "./Logger";
+import { Buffer } from "buffer";
+import { compressSync, decompressSync, strToU8, strFromU8 } from "fflate";
 
-    for (const log of logs) {
-        const timestamp = new Date(log.ts).toISOString();
-        const level = String(log.level).toUpperCase();
-        const message = log.message;
-        const component = log.component;
-        const peerId = log.peerId;
-        const peerAddress = log.peerAddress;
+export function encodeLogs(logs: LogEntry[]): string {
+    return JSON.stringify(logs.map((log) => encodeLogEntry(log)));
+}
 
-        // ---- header -------------------------------------------------------------
+export function decodeLogs(encodedLogs: string): LogEntry[] {
+    const parsed = JSON.parse(encodedLogs) as string[] | null;
 
-        const headerParts: string[] = [];
-        headerParts.push(`[${timestamp}]`);
-        headerParts.push(`[${level}]`);
+    if (!parsed || !Array.isArray(parsed))
+        throw new Error("Failed to deserialize log entries");
 
-        if (component) {
-            headerParts.push(`[${component}]`);
+    return parsed.map((encodedLog) => decodeLogEntry(encodedLog));
+}
+
+export function encodeLogEntry(logEntry: LogEntry): string {
+    return JSON.stringify(logEntry, (_key, value) => {
+        if (typeof value === "bigint") {
+            return value.toString();
         }
-
-        if (peerAddress) {
-            if (peerId != null) {
-                headerParts.push(`[peer ${peerId}]`);
-            }
-            headerParts.push(`[${peerAddress.slice(0, 8)}…]`);
+        if (value instanceof Error) {
+            return {
+                message: value.message,
+                stack: value.stack
+            };
         }
-
-        // ---- header with message on same line ----------------------------------
-
-        let headerLine = headerParts.join(" ");
-        if (message !== undefined) {
-            headerLine += ` ${String(message)}`;
+        if (
+            typeof value === "object" &&
+            value &&
+            (value as { message?: string; stack?: string }).message &&
+            (value as { message?: string; stack?: string }).stack
+        ) {
+            return {
+                message: (value as { message?: string }).message,
+                stack: (value as { stack?: string }).stack
+            };
         }
-        lines.push(headerLine);
+        return value;
+    });
+}
 
-        // ---- stack trace (from log.error.stack or log.stack) --------------------
+export function decodeLogEntry(encodedLogEntry: string): LogEntry {
+    const parsed = JSON.parse(encodedLogEntry) as Partial<LogEntry> | null;
 
-        const stack = log.error?.stack || log.stack;
-        if (stack) {
-            lines.push("  [Stack Trace]");
-            const stackLines = String(stack).split("\n");
-            for (const line of stackLines) {
-                // Skip empty lines and the "Error" header if present
-                const trimmed = line.trim();
-                if (trimmed && trimmed !== "Error") {
-                    lines.push(`    ${trimmed}`);
-                }
-            }
-        }
+    if (!parsed || typeof parsed !== "object")
+        throw new Error("Failed to deserialize log entry");
 
-        // ---- metadata (foldable JSON) -------------------------------------------
-
-        const meta: Record<string, any> = { ...log };
-        delete meta.ts;
-        delete meta.level;
-        delete meta.message;
-        delete meta.component;
-        delete meta.peerId;
-        delete meta.peerAddress;
-        delete meta.stack;
-        delete meta.error; // Error is already shown as stack trace above
-
-        if (Object.keys(meta).length > 0) {
-            lines.push("  [Meta]");
-            const metaJson = JSON.stringify(
-                meta,
-                (_k, v) => (typeof v === "bigint" ? v.toString() : v),
-                2
-            );
-
-            for (const line of metaJson.split("\n")) {
-                lines.push(`    ${line}`);
-            }
-        }
+    const { time, level, context, message, meta, stack } = parsed;
+    if (
+        typeof time !== "string" ||
+        !time ||
+        typeof level !== "string" ||
+        !level ||
+        !context ||
+        typeof context !== "object" ||
+        typeof message !== "string" ||
+        !meta ||
+        typeof meta !== "object" ||
+        typeof stack !== "string"
+    ) {
+        throw new Error("Failed to deserialize log entry");
     }
 
-    return lines.join("\n") + "\n";
+    return {
+        time,
+        level: level as LogLevel,
+        context,
+        message,
+        meta: meta as object,
+        stack
+    };
+}
+
+export function compressToBase64(json: string) {
+    const compressed = compressSync(strToU8(json));
+    return Buffer.from(compressed).toString("base64");
+}
+
+export function decompressFromBase64(compressedLogs: string): string {
+    const bytes = Uint8Array.from(Buffer.from(compressedLogs, "base64"));
+    const unzipped = decompressSync(bytes);
+    return strFromU8(unzipped);
 }

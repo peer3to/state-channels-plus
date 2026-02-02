@@ -1,69 +1,51 @@
-import { config } from "../../config";
-import { Logger, LoggerContext } from "../types";
-import { createLogStore } from "../logStore";
-import { formatTime } from "../formatUtils";
+import {
+    LogEntry,
+    Logger,
+    ExclusiveLoggerContext,
+    LogLevel,
+    SharedLoggerContext
+} from "../Logger";
+import { BrowserLogUploader } from "../LogUploader";
+import type { LogUploaderOptions } from "../LogUploader";
+import type { LogStore } from "../logStore";
 import { BROWSER_PEER_COLORS, BROWSER_LEVEL_CSS } from "./colors";
 
-export class BrowserLogger implements Logger {
-    public level?: string;
-    private context: LoggerContext;
-    private logStore: ReturnType<typeof createLogStore>;
-    private enableMemoryStorage: boolean;
-    private static sharedLogStore: ReturnType<typeof createLogStore> | null =
-        null;
-
+export class BrowserLogger extends Logger {
     constructor(
-        context: LoggerContext = {},
-        level?: string,
-        enableMemoryStorage: boolean = false
+        context: ExclusiveLoggerContext = {},
+        sharedContext: SharedLoggerContext,
+        level: LogLevel | undefined,
+        logStore: LogStore,
+        logUploaderOptions?: LogUploaderOptions
     ) {
-        this.context = context;
-        this.level = level;
-        this.enableMemoryStorage = enableMemoryStorage;
+        const logUploader =
+            logUploaderOptions?.logUploader ||
+            (logUploaderOptions?.logUploaderConfig
+                ? new BrowserLogUploader(
+                      logStore,
+                      logUploaderOptions.logUploaderConfig,
+                      context,
+                      sharedContext,
+                      logUploaderOptions.attachErrorListener ?? true
+                  )
+                : undefined);
 
-        // Use shared logStore for all instances to ensure logs from child loggers are captured
-        if (!BrowserLogger.sharedLogStore) {
-            const maxSize = (config.CRASH_LOG_MAX_SIZE_MB || 10) * 1024 * 1024;
-            BrowserLogger.sharedLogStore = createLogStore(
-                maxSize,
-                enableMemoryStorage
-            );
-        }
-        this.logStore = BrowserLogger.sharedLogStore;
+        super(context, sharedContext, level, logStore, logUploader);
     }
 
-    public child(context: LoggerContext): Logger {
+    protected createChild(context: ExclusiveLoggerContext): Logger {
         return new BrowserLogger(
-            { ...this.context, ...(context || {}) },
+            context,
+            this.sharedContext,
             this.level,
-            this.enableMemoryStorage
+            this.logStore,
+            {
+                logUploader: this.logUploader
+            }
         );
     }
 
-    private storeLog(
-        level: string,
-        message: any,
-        meta?: any,
-        error?: Error
-    ): void {
-        const enhancedMeta = { ...meta };
-        if (error) {
-            enhancedMeta.args = enhancedMeta.args
-                ? [...enhancedMeta.args, error]
-                : [error];
-        }
-        this.logStore.store(level, message, this.context, enhancedMeta);
-    }
-
-    public getAllLogs(): any[] {
-        return this.logStore.getAllLogs();
-    }
-
-    public clearLogs(): void {
-        this.logStore.clearLogs();
-    }
-
-    private levelCss(level: string): string {
+    private levelCss(level: LogLevel): string {
         // Browser consoles don't interpret ANSI escapes; use CSS instead.
         return BROWSER_LEVEL_CSS[level] ?? BROWSER_LEVEL_CSS.debug;
     }
@@ -88,20 +70,9 @@ export class BrowserLogger implements Logger {
         return `color: ${palette[idx]}; font-weight: 600`;
     }
 
-    private logWithStack(
-        level: "debug" | "info" | "warn" | "error" | "verbose",
-        message: any,
-        meta?: any,
-        ...args: any[]
-    ): Error {
+    protected write(logEntry: LogEntry) {
+        const { level, meta } = logEntry;
         const method = level === "verbose" ? "debug" : level;
-        const details = {
-            args,
-            meta
-        };
-
-        // Create Error object to capture stack trace
-        const stackError = new Error();
 
         if (
             console.groupCollapsed &&
@@ -109,33 +80,23 @@ export class BrowserLogger implements Logger {
             level !== "verbose" // don't use groups for debug/verbose since group labels are always INFO...
         ) {
             // eslint-disable-next-line no-console
-            console.groupCollapsed(...this.fmt(level, message));
+            console.groupCollapsed(...this.fmt(logEntry));
             // eslint-disable-next-line no-console
-            console[method](details);
+            console[method](meta);
             // eslint-disable-next-line no-console
-            console[method](stackError.stack);
+            console[method](logEntry.stack);
             // eslint-disable-next-line no-console
             console.groupEnd();
-            return stackError;
+            return;
         }
 
         // Fallback when groups are not supported
         // eslint-disable-next-line no-console
-        (console as any)[method](
-            ...this.fmt(level, message),
-            details,
-            stackError.stack
-        );
-
-        return stackError;
+        (console as any)[method](...this.fmt(logEntry), meta, logEntry.stack);
     }
 
-    private fmt(level: string, message: any): any[] {
-        const merged = { ...this.context };
-
-        const time = formatTime();
-        const levelUpper = level.toUpperCase();
-
+    private fmt(logEntry: LogEntry): any[] {
+        const levelUpper = logEntry.level.toUpperCase();
         const parts: string[] = [];
         const styles: string[] = [];
         const push = (text: string, style: string) => {
@@ -144,14 +105,14 @@ export class BrowserLogger implements Logger {
         };
 
         // Timestamp
-        push(`[${time}]`, "color: #9ca3af");
+        push(`[${logEntry.time}]`, "color: #9ca3af");
 
         // Level
-        push(`[${levelUpper}]`, this.levelCss(level));
+        push(`[${levelUpper}]`, this.levelCss(logEntry.level));
 
         // Peer
-        const peerId = merged.peerId;
-        const peerAddress = merged.peerAddress;
+        const peerId = logEntry.context.peerId;
+        const peerAddress = logEntry.context.peerAddress;
         if (typeof peerAddress === "string" && peerAddress.length > 0) {
             const peerStyle =
                 peerId != null
@@ -165,9 +126,9 @@ export class BrowserLogger implements Logger {
         }
 
         // Component
-        if (merged.component) {
+        if (logEntry.context.component) {
             push(
-                `[${String(merged.component)}]`,
+                `[${String(logEntry.context.component)}]`,
                 "color: #9ca3af; opacity: 0.85"
             );
         }
@@ -177,34 +138,9 @@ export class BrowserLogger implements Logger {
         styles.push("");
 
         const prefix = `${parts.join("")}`;
-        return [prefix, ...styles, message];
+        return [prefix, ...styles, logEntry.message];
     }
 
-    public debug(message: any, meta?: any, ...args: any[]): void {
-        // eslint-disable-next-line no-console
-        const stackError = this.logWithStack("debug", message, meta, ...args);
-        this.storeLog("debug", message, meta, stackError);
-    }
-    public info(message: any, meta?: any, ...args: any[]): void {
-        // eslint-disable-next-line no-console
-        const stackError = this.logWithStack("info", message, meta, ...args);
-        this.storeLog("info", message, meta, stackError);
-    }
-    public warn(message: any, meta?: any, ...args: any[]): void {
-        // eslint-disable-next-line no-console
-        const stackError = this.logWithStack("warn", message, meta, ...args);
-        this.storeLog("warn", message, meta, stackError);
-    }
-    public error(message: any, meta?: any, ...args: any[]): void {
-        // eslint-disable-next-line no-console
-        const stackError = this.logWithStack("error", message, meta, ...args);
-        this.storeLog("error", message, meta, stackError);
-    }
-    public verbose(message: any, meta?: any, ...args: any[]): void {
-        // eslint-disable-next-line no-console
-        const stackError = this.logWithStack("verbose", message, meta, ...args);
-        this.storeLog("verbose", message, meta, stackError);
-    }
     public group(label?: string): void {
         if (label) {
             console.group(label);

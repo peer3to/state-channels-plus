@@ -8,7 +8,12 @@ const config: Partial<Config> = {
     DEBUG_RPC: false,
     DEBUG_CHANNEL_CONTRACT: false,
     DEBUG_LOCAL_TRANSPORT: true,
-    HOLEPUNCH_RELAYER_URLS: ["wss://dht1-relay.leet.ar:49443"]
+    HOLEPUNCH_RELAYER_URLS: ["wss://dht1-relay.leet.ar:49443"],
+    // Crash log collection
+    ENABLE_CRASH_LOG_COLLECTION: false,
+    CRASH_LOG_UPLOAD_ENDPOINT: "http://localhost:3001/logs/upload",
+    // CRASH_LOG_API_TOKEN: "",
+    CRASH_LOG_MAX_SIZE_MB: 5
 };
 
 export default config;
