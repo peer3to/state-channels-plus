@@ -1,6 +1,7 @@
 import peer3Config from "../../peer3.config";
+import { LogLevel } from "./logging/Logger";
 
-export interface Config {
+export type Config = {
     PROVIDER_URL: string;
     DEBUG_STATE_MANAGER: boolean;
     DEBUG_DISPUTE_HANDLER: boolean;
@@ -8,7 +9,7 @@ export interface Config {
     DEBUG_RPC: boolean;
     DEBUG_CHANNEL_CONTRACT: boolean;
     DEBUG_LOCAL_TRANSPORT: boolean;
-    LOG_LEVEL: string;
+    LOG_LEVEL: LogLevel;
     LOG_EXCLUDE_TAGS: string;
     EXCLUDE_LOG_TAGS: string;
     HOLEPUNCH_RELAYER_URLS: string[];
@@ -17,7 +18,7 @@ export interface Config {
     CRASH_LOG_UPLOAD_ENDPOINT: string;
     CRASH_LOG_API_TOKEN: string;
     CRASH_LOG_MAX_SIZE_MB: number;
-}
+};
 
 const DEFAULT_CONFIG: Config = {
     PROVIDER_URL: "http://localhost:8545",

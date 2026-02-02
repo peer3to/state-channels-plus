@@ -210,7 +210,8 @@ export class PeerTestHarness<
             };
         }
         createConfig(); // Ensure config is initialized -> load env for tests
-        this.logger = createLogger({ component: "TestHarness" });
+        this.logger = createLogger({}, { component: "TestHarness" });
+        LocalDiscoveryServer.setLogger(this.logger);
         this.connectionBarrier = new EventBarrier(this.logger);
         this.eventCountsBarrier = new EventBarrier(this.logger);
     }

@@ -1,40 +1,56 @@
-import { config } from "../../config";
-import { Logger, LoggerContext } from "../types";
-import { createLogStore } from "../logStore";
-import { isPlainObject, safeJson, formatTime } from "../formatUtils";
+import {
+    LogEntry,
+    Logger,
+    ExclusiveLoggerContext,
+    LogLevel,
+    SharedLoggerContext
+} from "../Logger";
+import { NodeLogUploader } from "../LogUploader";
+import type { LogUploaderOptions } from "../LogUploader";
+import type { LogStore } from "../logStore";
+import { safeJson } from "../formatUtils";
 import { Colors } from "./colors";
+import { config, isNodeRuntime } from "../../config";
 
-export class NodeLogger implements Logger {
-    public level?: string;
-    private context: LoggerContext;
-    private logStore: ReturnType<typeof createLogStore>;
+export class NodeLogger extends Logger {
     private excludedTags: Set<string>;
-    private enableMemoryStorage: boolean;
 
     constructor(
-        context: LoggerContext = {},
-        level?: string,
-        enableMemoryStorage: boolean = false,
+        context: ExclusiveLoggerContext = {},
+        sharedContext: SharedLoggerContext,
+        level: LogLevel | undefined,
+        logStore: LogStore,
+        logUploaderOptions?: LogUploaderOptions,
         excludedTags: Set<string> = new Set()
     ) {
-        this.context = context;
-        this.level = level;
-        this.enableMemoryStorage = enableMemoryStorage;
+        const logUploader =
+            logUploaderOptions?.logUploader ||
+            (logUploaderOptions?.logUploaderConfig
+                ? new NodeLogUploader(
+                      logStore,
+                      logUploaderOptions.logUploaderConfig,
+                      context,
+                      sharedContext,
+                      logUploaderOptions.attachErrorListener ?? true
+                  )
+                : undefined);
+
+        super(context, sharedContext, level, logStore, logUploader);
         this.excludedTags = excludedTags;
-        const maxSize = (config.CRASH_LOG_MAX_SIZE_MB || 10) * 1024 * 1024;
-        this.logStore = createLogStore(maxSize, enableMemoryStorage);
     }
 
-    public child(context: LoggerContext): Logger {
+    protected createChild(context: ExclusiveLoggerContext): Logger {
         return new NodeLogger(
-            { ...this.context, ...(context || {}) },
+            context,
+            this.sharedContext,
             this.level,
-            this.enableMemoryStorage,
+            this.logStore,
+            { logUploader: this.logUploader },
             this.excludedTags
         );
     }
 
-    private shouldExcludeLog(context: LoggerContext): boolean {
+    private shouldExcludeLog(context: ExclusiveLoggerContext): boolean {
         const tagsToCheck: string[] = [];
 
         if (typeof context.component === "string") {
@@ -50,30 +66,14 @@ export class NodeLogger implements Logger {
         );
     }
 
-    private storeLog(level: string, message: any, meta?: any): void {
-        this.logStore.store(level, message, this.context, meta);
-    }
-
-    public getAllLogs(): any[] {
-        return this.logStore.getAllLogs();
-    }
-
-    public clearLogs(): void {
-        this.logStore.clearLogs();
-    }
-
-    private formatMessage(level: string, message: any, meta?: any): string {
-        const extra = isPlainObject(meta) ? meta : undefined;
-        const merged = extra
-            ? { ...this.context, ...extra }
-            : { ...this.context };
-
+    private formatMessage(logEntry: LogEntry): string {
         // Check if this log should be excluded
-        if (this.shouldExcludeLog(merged)) {
+        if (this.shouldExcludeLog(logEntry.context)) {
             return "";
         }
 
-        const time = formatTime();
+        const time = logEntry.time;
+        const level = logEntry.level;
         const levelUpper = level.toUpperCase();
 
         let prefix = "";
@@ -85,8 +85,8 @@ export class NodeLogger implements Logger {
         prefix += `${Colors.LEVEL[level as keyof typeof Colors.LEVEL] || Colors.LEVEL.debug}[${levelUpper}]${Colors.RESET}`;
 
         // Peer context
-        const peerId = merged.peerId;
-        const peerAddress = merged.peerAddress;
+        const peerId = logEntry.context.peerId;
+        const peerAddress = logEntry.context.peerAddress;
         if (peerId == null) {
             prefix += `${Colors.RESET}`;
         } else {
@@ -98,64 +98,47 @@ export class NodeLogger implements Logger {
         }
 
         // Component
-        if (merged.component)
-            prefix += `${Colors.COMPONENT}[${merged.component}]${Colors.RESET}`;
+        if (logEntry.context.component)
+            prefix += `${Colors.COMPONENT}[${logEntry.context.component}]${Colors.RESET}`;
 
+        return `${prefix} ${logEntry.message}`;
+    }
+    private formatMeta(logEntry: LogEntry): string {
         // Meta (exclude the common context keys)
-        const metaForInline: Record<string, any> = { ...merged };
-        delete metaForInline.peerId;
-        delete metaForInline.peerAddress;
-        delete metaForInline.component;
+        const metaForInline: Record<string, any> = { ...logEntry.meta };
 
         const hasMeta = Object.keys(metaForInline).length > 0;
         const metaStr = hasMeta ? ` ${safeJson(metaForInline)}` : "";
-
-        return `${prefix} ${message}${metaStr}`;
+        return metaStr;
     }
-
-    public debug(message: any, meta?: any, ...args: any[]): void {
-        this.storeLog("debug", message, meta);
-        const formatted = this.formatMessage("debug", message, meta);
-        if (formatted) {
+    protected write(logEntry: LogEntry): void {
+        const { level } = logEntry;
+        const method = level === "verbose" ? "debug" : level;
+        const formattedMessage = this.formatMessage(logEntry);
+        const formattedMeta = this.formatMeta(logEntry);
+        if (
+            console.groupCollapsed &&
+            level !== "debug" &&
+            level !== "verbose" // don't use groups for debug/verbose since group labels are always INFO...
+        ) {
             // eslint-disable-next-line no-console
-            console.debug(formatted, ...args);
-        }
-    }
-
-    public info(message: any, meta?: any, ...args: any[]): void {
-        this.storeLog("info", message, meta);
-        const formatted = this.formatMessage("info", message, meta);
-        if (formatted) {
+            console.groupCollapsed(formattedMessage);
             // eslint-disable-next-line no-console
-            console.info(formatted, ...args);
-        }
-    }
-
-    public warn(message: any, meta?: any, ...args: any[]): void {
-        this.storeLog("warn", message, meta);
-        const formatted = this.formatMessage("warn", message, meta);
-        if (formatted) {
+            console[method](formattedMeta);
             // eslint-disable-next-line no-console
-            console.warn(formatted, ...args);
-        }
-    }
-
-    public error(message: any, meta?: any, ...args: any[]): void {
-        this.storeLog("error", message, meta);
-        const formatted = this.formatMessage("error", message, meta);
-        if (formatted) {
+            console[method](logEntry.stack);
             // eslint-disable-next-line no-console
-            console.error(formatted, ...args);
+            console.groupEnd();
+            return;
         }
-    }
 
-    public verbose(message: any, meta?: any, ...args: any[]): void {
-        this.storeLog("verbose", message, meta);
-        const formatted = this.formatMessage("verbose", message, meta);
-        if (formatted) {
-            // eslint-disable-next-line no-console
-            console.debug(formatted, ...args);
-        }
+        // Fallback when groups are not supported
+        // eslint-disable-next-line no-console
+        (console as any)[method](
+            formattedMessage,
+            formattedMeta,
+            logEntry.stack
+        );
     }
 
     public group(label?: string): void {
@@ -168,5 +151,66 @@ export class NodeLogger implements Logger {
 
     public groupEnd(): void {
         console.groupEnd();
+    }
+
+    public static parseLogLevelFromArgs(
+        args: string[] = isNodeRuntime() ? (process as any).argv : []
+    ): LogLevel {
+        const validLevels: LogLevel[] = [
+            "verbose",
+            "debug",
+            "info",
+            "warn",
+            "error"
+        ];
+        let logLevel: LogLevel = "info";
+
+        if (
+            config.LOG_LEVEL &&
+            validLevels.includes(config.LOG_LEVEL.toLowerCase() as LogLevel)
+        ) {
+            logLevel = config.LOG_LEVEL.toLowerCase() as LogLevel;
+        }
+
+        const flags = ["--verbose", "--debug", "--info", "--warn", "--error"];
+        for (const flag of flags) {
+            if (args.includes(flag)) {
+                logLevel = flag.substring(2) as LogLevel;
+                break;
+            }
+        }
+
+        return logLevel;
+    }
+
+    public static parseExcludedTagsFromArgs(
+        args: string[] = isNodeRuntime() ? (process as any).argv : []
+    ): Set<string> {
+        const excludedTags: Set<string> = new Set();
+        const normalize = (tag: string) => tag.trim().toLowerCase();
+
+        const addTags = (value?: string) => {
+            if (!value) return;
+            value
+                .split(/[,\s]+/)
+                .map(normalize)
+                .filter(Boolean)
+                .forEach((tag) => excludedTags.add(tag));
+        };
+
+        addTags(config.LOG_EXCLUDE_TAGS);
+        addTags(config.EXCLUDE_LOG_TAGS);
+
+        const flagIndex = args.findIndex((arg) => arg === "--exclude-tags");
+        if (flagIndex !== -1) {
+            addTags(args[flagIndex + 1]);
+        }
+
+        const eqFlag = args.find((arg) => arg.startsWith("--exclude-tags="));
+        if (eqFlag) {
+            addTags(eqFlag.split("=", 2)[1]);
+        }
+
+        return excludedTags;
     }
 }

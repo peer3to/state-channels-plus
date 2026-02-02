@@ -261,6 +261,7 @@ class StateManager {
     public setChannelId(channelId: ChannelId) {
         this.logger.verbose("Setting channel ID", { channelId });
         this.channelId = channelId;
+        this.logger.updateSharedContext({ channelId: String(channelId) });
         this.stateChannelEventListener.setChannelId(channelId);
         this.disputeManager.setChannelId(channelId);
     }
