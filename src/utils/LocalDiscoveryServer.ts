@@ -3,7 +3,7 @@ import type P2PManager from "@/P2PManager";
 import { LocalTransport } from "@/transport";
 import { ChannelId } from "@/types/types";
 // Import directly to avoid circular dependency through the utils barrel
-import { createLogger, Logger } from "@/utils/PeerLogger";
+import { Logger } from "@/utils";
 
 const MAX_PORT_RETRIES = 20;
 const LOCAL_WS_HOST = "127.0.0.1";
@@ -36,9 +36,13 @@ type DiscoveryInfo = {
 export class LocalDiscoveryServer {
     private static _logger?: Logger;
 
+    public static setLogger(logger: Logger): void {
+        this._logger = logger.child({ component: "LocalDiscovery" });
+    }
+
     private static get logger(): Logger {
         if (!this._logger) {
-            this._logger = createLogger({ component: "LocalDiscovery" });
+            throw new Error("LocalDiscoveryServer logger not initialized");
         }
         return this._logger;
     }

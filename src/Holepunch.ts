@@ -41,7 +41,11 @@ class Holepunch {
                 this.swarm = window.Hyperswarm || swarm;
                 setup();
             };
-            HolepunchRelay.init(relayerUrls, relayerUpdateCallback);
+            HolepunchRelay.init(
+                relayerUrls,
+                relayerUpdateCallback,
+                this.p2pManager.logger
+            );
         } else {
             // @ts-ignore
             this.swarm = global.Hyperswarm || new Hyperswarm();

@@ -62,7 +62,10 @@ export class StateManagerTestBuilder {
 
     constructor() {
         // Initialize test implementations for external dependencies
-        this.logger = createLogger({ component: "StateManagerTestBuilder" });
+        this.logger = createLogger(
+            {},
+            { component: "StateManagerTestBuilder" }
+        );
         this.testContract = new TestStateChannelManagerContract();
         this.mockP2pEventHooks = { onTurn: () => {} };
         this.agreementManager = new TestAgreementManager(
@@ -223,7 +226,7 @@ export class StateManagerTestBuilder {
             this.timeConfig,
             this.mockP2pEventHooks as any,
             this.storage as any,
-            createLogger({ component: "StateManager" })
+            createLogger({}, { component: "StateManager" })
         );
 
         // Configure it

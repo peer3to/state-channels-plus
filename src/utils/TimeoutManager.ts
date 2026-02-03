@@ -1,4 +1,4 @@
-import { Logger } from "./PeerLogger";
+import { Logger } from "./logging";
 
 export class TimeoutManager {
     private timeouts: Set<NodeJS.Timeout> = new Set();

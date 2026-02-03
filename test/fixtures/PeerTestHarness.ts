@@ -210,7 +210,8 @@ export class PeerTestHarness<
             };
         }
         createConfig(); // Ensure config is initialized -> load env for tests
-        this.logger = createLogger({ component: "TestHarness" });
+        this.logger = createLogger({}, { component: "TestHarness" });
+        LocalDiscoveryServer.setLogger(this.logger);
         this.connectionBarrier = new EventBarrier(this.logger);
         this.eventCountsBarrier = new EventBarrier(this.logger);
     }
@@ -351,10 +352,13 @@ export class PeerTestHarness<
     private async createPeer(index: number, signer: Signer): Promise<void> {
         const address = await signer.getAddress();
 
-        const PeerLogger = createLogger({
-            peerId: index,
-            peerAddress: address
-        });
+        const PeerLogger = createLogger(
+            {
+                peerId: index,
+                peerAddress: address
+            },
+            { component: `PeerTestHarness` }
+        );
 
         this.logger.debug(`Creating peer ${index} at ${address}`);
 

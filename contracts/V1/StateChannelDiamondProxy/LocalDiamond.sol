@@ -52,7 +52,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         bytes32 channelId,
         StateSnapshot calldata stateSnapshot,
         bytes calldata /* encodedState */
-    ) external {
+    )
+        external
+    {
         console.log("onChannelOpened");
         // Store the genesis state snapshot
         stateSnapshots[channelId] = stateSnapshot;
@@ -101,10 +103,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 timestamp
     ) external {
         Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
-        blockCalldataCommitments[channelId][sender][_block.transaction.header.forkId][_block
-            .transaction
-            .header
-            .transactionCnt] = commitmentHash;
+        blockCalldataCommitments[
+            channelId
+        ][sender][_block.transaction.header.forkId][_block.transaction.header.transactionCnt] = commitmentHash;
     }
 
     // Called by DisputeCommitted event
@@ -256,9 +257,8 @@ contract LocalDiamond is StateChannelManagerProxy {
         returns (bool)
     {
         // The underlying function is pure, so no need for a delegatecall
-        return DisputeVerificationFacet(disputeVerificationFacetAddress).checkDisputeAuditingDataCommitment(
-            dispute, disputeAuditingData
-        );
+        return DisputeVerificationFacet(disputeVerificationFacetAddress)
+            .checkDisputeAuditingDataCommitment(dispute, disputeAuditingData);
     }
 
     function isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
@@ -267,9 +267,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         returns (bool)
     {
         // The underlying function is pure, so no need for a delegatecall
-        return DisputeVerificationFacet(disputeVerificationFacetAddress).isCorrectAuditingData(
-            dispute, disputeAuditingData
-        );
+        return
+            DisputeVerificationFacet(disputeVerificationFacetAddress)
+                .isCorrectAuditingData(dispute, disputeAuditingData);
     }
 
     function isDisputeOutputCorrect(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
@@ -295,9 +295,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         bool auditingDataIntegrityVerified
     ) public view returns (bool) {
         // The underlying function is pure, so no need for a delegatecall
-        return UtilityFacet(utilityFacetAddress).verifyStateProof(
-            dispute, disputeAuditingData, auditingDataIntegrityVerified
-        );
+        return
+            UtilityFacet(utilityFacetAddress)
+                .verifyStateProof(dispute, disputeAuditingData, auditingDataIntegrityVerified);
     }
 
     function verifyMilestones(
@@ -306,9 +306,8 @@ contract LocalDiamond is StateChannelManagerProxy {
         StateSnapshot[] memory milestoneSnapshots,
         SnapshotData memory genesisSnapshotData
     ) public view returns (bool isValid, bytes memory lastBlockEncoded) {
-        return UtilityFacet(utilityFacetAddress).verifyMilestones(
-            forkId, milestoneProofs, milestoneSnapshots, genesisSnapshotData
-        );
+        return UtilityFacet(utilityFacetAddress)
+            .verifyMilestones(forkId, milestoneProofs, milestoneSnapshots, genesisSnapshotData);
     }
 
     function getLatestBlockFromStateProof(StateProof memory stateProof)
