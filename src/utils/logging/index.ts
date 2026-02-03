@@ -10,8 +10,10 @@ import type { LogUploader } from "./LogUploader";
 import { LogUploaderConfig } from "./LogUploader";
 import { NodeLogger } from "./node/NodeLogger";
 import { BrowserLogger } from "./browser/BrowserLogger";
+import { decodeLogs, decompressFromBase64 } from "./logEncoder";
 
 export type { Logger, ExclusiveLoggerContext, SharedLoggerContext };
+export { decodeLogs, decompressFromBase64 };
 
 export type CreateLoggerOptions = {
     level?: LogLevel;
@@ -45,7 +47,7 @@ export const createLogger = (
         return new BrowserLogger(
             exclusiveContext,
             sharedContext,
-            options.level ?? config.LOG_LEVEL,
+            options.level ?? (config.LOG_LEVEL as LogLevel),
             logStore,
             {
                 logUploaderConfig,

@@ -10,7 +10,6 @@ import type { LogUploaderOptions } from "../LogUploader";
 import type { LogStore } from "../logStore";
 import { Colors } from "./colors";
 import { config, isNodeRuntime } from "../../config";
-import { inspect } from "util";
 
 export class NodeLogger extends Logger {
     private excludedTags: Set<string>;
@@ -103,15 +102,18 @@ export class NodeLogger extends Logger {
 
         return `${prefix} ${logEntry.message}`;
     }
-    private formatMeta(logEntry: LogEntry): string {
+    private formatMeta(logEntry: LogEntry): any {
         const hasMeta = logEntry.meta.length > 0;
+        const inspectFn = getInspect();
         const metaStr = hasMeta
-            ? inspect(logEntry.meta, {
-                  depth: null,
-                  colors: true,
-                  maxArrayLength: null,
-                  breakLength: 80
-              })
+            ? inspectFn
+                ? inspectFn(logEntry.meta, {
+                      depth: null,
+                      colors: true,
+                      maxArrayLength: null,
+                      breakLength: 80
+                  })
+                : logEntry.meta
             : "";
         return metaStr;
     }
@@ -216,5 +218,25 @@ export class NodeLogger extends Logger {
         }
 
         return excludedTags;
+    }
+}
+
+// ******* Bundler safe sync dynamic import of util.inspect that runs only in nodejs ********
+
+let cachedInspect: ((value: any, options?: any) => string) | undefined;
+
+function getInspect(): ((value: any, options?: any) => string) | undefined {
+    if (cachedInspect) return cachedInspect;
+    if (!isNodeRuntime()) return undefined;
+    try {
+        // Use eval to avoid bundlers injecting require in browser builds.
+        // eslint-disable-next-line @typescript-eslint/no-implied-eval
+        const req =
+            typeof require === "function" ? require : (0, eval)("require");
+        const util = req("util");
+        cachedInspect = util.inspect;
+        return cachedInspect;
+    } catch {
+        return undefined;
     }
 }

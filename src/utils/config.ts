@@ -1,5 +1,4 @@
 import peer3Config from "../../peer3.config";
-import { LogLevel } from "./logging/Logger";
 
 export type Config = {
     PROVIDER_URL: string;
@@ -9,7 +8,7 @@ export type Config = {
     DEBUG_RPC: boolean;
     DEBUG_CHANNEL_CONTRACT: boolean;
     DEBUG_LOCAL_TRANSPORT: boolean;
-    LOG_LEVEL: LogLevel;
+    LOG_LEVEL: string;
     LOG_EXCLUDE_TAGS: string;
     EXCLUDE_LOG_TAGS: string;
     HOLEPUNCH_RELAYER_URLS: string[];
