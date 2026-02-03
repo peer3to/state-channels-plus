@@ -423,7 +423,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const localLatestHeight = localLatestBlock?.height ?? -1;
 
         if (localLatestHeight >= finalizedHeight) {
-            this.logger.warn(
+            this.logger.info(
                 "Skipping sync payload persistence: local storage is already ahead of latest finalized snapshot",
                 {
                     finalizedForkId,

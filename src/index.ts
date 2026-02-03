@@ -46,6 +46,8 @@ export {
     getChecksumAddress
 };
 
+export * from "@/utils/logging";
+
 export * from "../typechain-types";
 export * as DataTypes from "../typechain-types/contracts/V1/types/DataTypes";
 export * as DisputeTypes from "../typechain-types/contracts/V1/types/DisputeTypes";

@@ -96,8 +96,7 @@ app.post(
             const filename = `${timestamp}_${safePeer}`;
             const filepath = path.join(channelDir, filename);
 
-            const buffer = Buffer.from(compressedLogs, "base64");
-            await fs.writeFile(filepath, buffer);
+            await fs.writeFile(filepath, compressedLogs, "utf8");
 
             res.status(200).json({
                 success: true,
@@ -157,7 +156,9 @@ app.get("/logs/:channelId/:peerAddress", async (req, res) => {
         }
 
         const filepath = path.join(channelDir, target);
-        res.sendFile(filepath);
+        const base64 = await fs.readFile(filepath, "utf8");
+        res.setHeader("Content-Type", "text/plain");
+        res.send(base64);
     } catch (err) {
         console.error("[CrashLogServer] Retrieve failed:", err);
         res.status(500).json({ error: "Internal server error" });

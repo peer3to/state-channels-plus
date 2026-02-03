@@ -22,7 +22,7 @@ class WebRTCTransport extends ATransport {
         };
         this.webRTCChannel.onerror = (error: Error) => {
             const connectionState = this.getConnectionState();
-            this.p2pManager.logger.error("WebRTC channel error", {
+            this.p2pManager.logger.debug("WebRTC channel error", {
                 connectionState,
                 error
             });

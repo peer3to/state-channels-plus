@@ -8,7 +8,6 @@ import {
 import { NodeLogUploader } from "../LogUploader";
 import type { LogUploaderOptions } from "../LogUploader";
 import type { LogStore } from "../logStore";
-import { safeJson } from "../formatUtils";
 import { Colors } from "./colors";
 import { config, isNodeRuntime } from "../../config";
 
@@ -85,8 +84,8 @@ export class NodeLogger extends Logger {
         prefix += `${Colors.LEVEL[level as keyof typeof Colors.LEVEL] || Colors.LEVEL.debug}[${levelUpper}]${Colors.RESET}`;
 
         // Peer context
-        const peerId = logEntry.context.peerId;
-        const peerAddress = logEntry.context.peerAddress;
+        const peerId = logEntry.sharedContext.peerId;
+        const peerAddress = logEntry.sharedContext.peerAddress;
         if (peerId == null) {
             prefix += `${Colors.RESET}`;
         } else {
@@ -103,12 +102,19 @@ export class NodeLogger extends Logger {
 
         return `${prefix} ${logEntry.message}`;
     }
-    private formatMeta(logEntry: LogEntry): string {
-        // Meta (exclude the common context keys)
-        const metaForInline: Record<string, any> = { ...logEntry.meta };
-
-        const hasMeta = Object.keys(metaForInline).length > 0;
-        const metaStr = hasMeta ? ` ${safeJson(metaForInline)}` : "";
+    private formatMeta(logEntry: LogEntry): any {
+        const hasMeta = logEntry.meta.length > 0;
+        const inspectFn = getInspect();
+        const metaStr = hasMeta
+            ? inspectFn
+                ? inspectFn(logEntry.meta, {
+                      depth: null,
+                      colors: true,
+                      maxArrayLength: null,
+                      breakLength: 80
+                  })
+                : logEntry.meta
+            : "";
         return metaStr;
     }
     protected write(logEntry: LogEntry): void {
@@ -212,5 +218,25 @@ export class NodeLogger extends Logger {
         }
 
         return excludedTags;
+    }
+}
+
+// ******* Bundler safe sync dynamic import of util.inspect that runs only in nodejs ********
+
+let cachedInspect: ((value: any, options?: any) => string) | undefined;
+
+function getInspect(): ((value: any, options?: any) => string) | undefined {
+    if (cachedInspect) return cachedInspect;
+    if (!isNodeRuntime()) return undefined;
+    try {
+        // Use eval to avoid bundlers injecting require in browser builds.
+        // eslint-disable-next-line @typescript-eslint/no-implied-eval
+        const req =
+            typeof require === "function" ? require : (0, eval)("require");
+        const util = req("util");
+        cachedInspect = util.inspect;
+        return cachedInspect;
+    } catch {
+        return undefined;
     }
 }

@@ -22,8 +22,9 @@ export type LogEntry = {
     time: string;
     level: LogLevel;
     context: ExclusiveLoggerContext;
+    sharedContext: SharedLoggerContext;
     message: string;
-    meta: object; // Additional metadata
+    meta: any[]; // Additional metadata
     stack: string;
 };
 
@@ -74,9 +75,8 @@ export abstract class Logger {
             level,
             message,
             context: this.context,
-            meta: {
-                ...meta
-            },
+            sharedContext: this.sharedContext,
+            meta: meta,
             stack
         };
         this.write(logEntry);

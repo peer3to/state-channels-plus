@@ -8,9 +8,7 @@ export function encodeLogs(logs: LogEntry[]): string {
 
 export function decodeLogs(encodedLogs: string): LogEntry[] {
     const parsed = JSON.parse(encodedLogs) as string[] | null;
-
-    if (!parsed || !Array.isArray(parsed))
-        throw new Error("Failed to deserialize log entries");
+    if (!parsed) throw new Error("Failed to deserialize log entries");
 
     return parsed.map((encodedLog) => decodeLogEntry(encodedLog));
 }
@@ -20,34 +18,17 @@ export function encodeLogEntry(logEntry: LogEntry): string {
         if (typeof value === "bigint") {
             return value.toString();
         }
-        if (value instanceof Error) {
-            return {
-                message: value.message,
-                stack: value.stack
-            };
-        }
-        if (
-            typeof value === "object" &&
-            value &&
-            (value as { message?: string; stack?: string }).message &&
-            (value as { message?: string; stack?: string }).stack
-        ) {
-            return {
-                message: (value as { message?: string }).message,
-                stack: (value as { stack?: string }).stack
-            };
-        }
         return value;
     });
 }
 
 export function decodeLogEntry(encodedLogEntry: string): LogEntry {
     const parsed = JSON.parse(encodedLogEntry) as Partial<LogEntry> | null;
-
     if (!parsed || typeof parsed !== "object")
         throw new Error("Failed to deserialize log entry");
 
-    const { time, level, context, message, meta, stack } = parsed;
+    const { time, level, context, sharedContext, message, meta, stack } =
+        parsed;
     if (
         typeof time !== "string" ||
         !time ||
@@ -55,20 +36,23 @@ export function decodeLogEntry(encodedLogEntry: string): LogEntry {
         !level ||
         !context ||
         typeof context !== "object" ||
+        !sharedContext ||
+        typeof sharedContext !== "object" ||
         typeof message !== "string" ||
         !meta ||
-        typeof meta !== "object" ||
+        !Array.isArray(meta) ||
         typeof stack !== "string"
     ) {
-        throw new Error("Failed to deserialize log entry");
+        throw new Error("Failed to deserialize log entry - invalid fields");
     }
 
     return {
         time,
         level: level as LogLevel,
         context,
+        sharedContext,
         message,
-        meta: meta as object,
+        meta,
         stack
     };
 }
