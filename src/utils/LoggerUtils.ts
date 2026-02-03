@@ -1,6 +1,9 @@
 import {
     DisputeStruct,
-    TimeoutStruct
+    TimeoutStruct,
+    StateProofStruct,
+    DisputeInputStruct,
+    DisputeAuditingDataStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import {
     DisputeFraudProofStruct,
@@ -8,8 +11,7 @@ import {
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Codec, Type } from "./Codec";
 import { difference, hash } from "@/utils";
-import { Address, Hash } from "@/types/types";
-import { ethers } from "ethers";
+import { Address, BlockOrSnapshot, Hash } from "@/types/types";
 import {
     DisputeFraudProofType,
     FraudProofType,
@@ -19,9 +21,12 @@ import {
 import type { Logger } from "@/utils";
 import { TransportType } from "@/transport/TransportType";
 import ATransport from "@/transport/ATransport";
-import { Block } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 import Storage from "@/storage";
-
+import {
+    MessageBlockStruct,
+    SnapshotDataStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 export class LoggerUtils {
     // ====================================
     // SIMPLE FORMATTERS
@@ -71,49 +76,30 @@ export class LoggerUtils {
     ): void {
         const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
         const formattedHash = this.formatHash(disputeHash);
-        const fraudProofDetails = fraudProofs.map((fp) => ({
-            participant: fp.participant,
-            proofType: this.formatProofType(
-                typeof fp.proofType === "string"
-                    ? Number(fp.proofType)
-                    : fp.proofType
-            )
-        }));
+        const fraudProofDetails = this.getFraudProofMetadata(fraudProofs);
 
-        logger.group(`🚨 Dispute: ${formattedHash}`);
-        logger.warn("Dispute initiated", {
-            disputeHash: formattedHash,
-            disputer: dispute.input.disputer,
-            fraudProofsCount: fraudProofs.length,
-            selfRemoval: dispute.input.selfRemoval || false
-        });
-        logger.debug("Fraud proofs included", {
+        logger.warn(`🚨 Dispute: ${formattedHash}`, {
+            dispute: this.getDisputeMetadata(dispute),
             fraudProofs: fraudProofDetails
         });
-        logger.groupEnd();
     }
 
     static logTimeoutDetected(
         logger: Logger,
-        participant: Address,
         blockHeight: number,
-        isForced: boolean,
-        previousBlockProducer?: Address,
-        previousBlockProducerPostedCalldata?: boolean
+        previousBlockOrSnapshot: BlockOrSnapshot,
+        timeoutStruct: TimeoutStruct
     ): void {
-        logger.group(`⏱️ Timeout @ block ${blockHeight}`);
-        logger.warn("Timeout detected", {
-            participant: this.formatHash(String(participant)),
-            isForced
+        const block = previousBlockOrSnapshot.block
+            ? this.getBlockMetadata(previousBlockOrSnapshot.block)
+            : undefined;
+        const snapshot = previousBlockOrSnapshot.stateSnapshot
+            ? this.getSnapshotMetadata(previousBlockOrSnapshot.stateSnapshot)
+            : undefined;
+        logger.warn(`⏱️ Timeout @ block ${blockHeight}`, {
+            timeoutStruct: this.getTimeoutStructMetadata(timeoutStruct),
+            previousBlockOrSnapshot: block || snapshot
         });
-        logger.debug("Timeout details", {
-            participantFull: String(participant),
-            blockHeight,
-            isForced,
-            previousBlockProducer,
-            previousBlockProducerPostedCalldata
-        });
-        logger.groupEnd();
     }
 
     /**
@@ -125,20 +111,11 @@ export class LoggerUtils {
         transport: ATransport,
         isInfoLevel = false
     ): void {
-        const peerAddress = transport.peerAddress || "unknown";
-        const stateManager = transport.p2pManager.stateManager;
+        const meta = this.getTransportMetadata(transport);
         const logger = transport.p2pManager.logger;
-        const transportType = TransportType[transport.transportType];
-
-        const logObj = {
-            transportType: peerAddress,
-            channelId: stateManager.getChannelId(),
-            forkId: stateManager.forkId
-        };
 
         logger[isInfoLevel ? "info" : "warn"]("🔌 Peer disconnected", {
-            ...logObj,
-            transportType
+            ...meta
         });
     }
 
@@ -148,186 +125,25 @@ export class LoggerUtils {
         newTransport: ATransport,
         peerAddress: string
     ): void {
-        const oldTransportType = this.enumToString(
-            TransportType,
-            oldTransport.transportType
-        );
-        const newTransportType = this.enumToString(
-            TransportType,
-            newTransport.transportType
-        );
-
-        logger.group("🔄 Transport upgrade");
-        logger.info("Replacing transport", {
-            oldTransportType,
-            newTransportType,
+        logger.info("🔄 Transport upgrade", {
+            oldTransport: this.getTransportMetadata(oldTransport),
+            newTransport: this.getTransportMetadata(newTransport),
             peerAddress: this.formatHash(peerAddress)
         });
-        logger.debug("Transport replacement details", {
-            oldTransportType,
-            newTransportType,
-            peerAddressFull: peerAddress,
-            delayMs:
-                oldTransport.p2pManager.stateManager.timeConfig.agreementTime *
-                1000
-        });
-        logger.groupEnd();
     }
 
-    // ====================================
-    // DISPUTE LOG DATA FUNCTIONS
-    // ====================================
+    static getTransportMetadata(transport: ATransport) {
+        const peerAddress = transport.peerAddress || "unknown";
+        const stateManager = transport.p2pManager.stateManager;
+        const transportType = TransportType[transport.transportType];
 
-    static disputeAudited(
-        dispute: DisputeStruct,
-        success: boolean,
-        timestamp?: number | bigint
-    ): {
-        message: string;
-        meta: Record<string, any>;
-    } {
-        const disputeMeta = this.getDisputeMetadata(dispute);
-        const timeoutInfo = this.getTimeoutInfo(dispute);
-
-        let meta: Record<string, any> = {
-            disputeHash: disputeMeta.formattedHash,
-            disputer: disputeMeta.disputer,
-            onChainSlashes:
-                disputeMeta.onChainSlashes.length > 0
-                    ? disputeMeta.onChainSlashes
-                    : undefined,
-            selfRemoval: disputeMeta.selfRemoval,
-            auditingSuccessful: success
+        return {
+            peerAddress,
+            transportType,
+            channelId: stateManager.getChannelId(),
+            forkId: stateManager.forkId.toString()
         };
-
-        if (timestamp !== undefined) {
-            meta.evidenceSubmissionTimestamp = String(timestamp);
-        }
-
-        if (timeoutInfo.isTimeout && timeoutInfo.timeoutInfo) {
-            const { participant, blockHeight } = timeoutInfo.timeoutInfo;
-            const participantFormatted = this.formatHash(String(participant));
-            const messagePrefix = success
-                ? "✅ TIMEOUT DISPUTE AUDITING SUCCESSFUL"
-                : "❌ TIMEOUT DISPUTE AUDITING FAILED";
-            const message = `${messagePrefix} - Participant ${participantFormatted} timed out at block ${String(blockHeight)}`;
-            meta = {
-                ...meta,
-                ...this.getTimeoutMetadata(timeoutInfo.timeoutInfo)
-            };
-            return { message, meta };
-        }
-
-        const messagePrefix = success
-            ? "✅ DISPUTE AUDITING SUCCESSFUL"
-            : "❌ DISPUTE AUDITING FAILED";
-        const message = `${messagePrefix} - Hash: ${disputeMeta.formattedHash}`;
-        meta.reason = "Fraud detection";
-        return { message, meta };
     }
-
-    static disputeKilled(
-        dispute: DisputeStruct,
-        killReason: DisputeFraudProofType | string | undefined,
-        timestamp?: number | bigint
-    ): {
-        message: string;
-        meta: Record<string, any>;
-    } {
-        const disputeMeta = this.getDisputeMetadata(dispute);
-        const timeoutInfo = this.getTimeoutInfo(dispute);
-        const killReasonStr = killReason
-            ? this.formatKillReason(killReason)
-            : undefined;
-
-        let meta: Record<string, any> = {
-            disputeHash: disputeMeta.formattedHash,
-            disputer: disputeMeta.disputer,
-            onChainSlashes:
-                disputeMeta.onChainSlashes.length > 0
-                    ? disputeMeta.onChainSlashes
-                    : undefined,
-            selfRemoval: disputeMeta.selfRemoval,
-            auditingSuccessful: false,
-            killReason: killReasonStr
-        };
-
-        if (timestamp !== undefined) {
-            meta.evidenceSubmissionTimestamp = String(timestamp);
-        }
-
-        if (timeoutInfo.isTimeout && timeoutInfo.timeoutInfo) {
-            const { participant, blockHeight } = timeoutInfo.timeoutInfo;
-            const participantFormatted = this.formatHash(String(participant));
-            const message = `💀 TIMEOUT DISPUTE KILLED - Participant ${participantFormatted} timed out at block ${String(blockHeight)}`;
-            meta = {
-                ...meta,
-                ...this.getTimeoutMetadata(timeoutInfo.timeoutInfo)
-            };
-            return { message, meta };
-        }
-
-        const message = killReasonStr
-            ? `💀 DISPUTE KILLED - Hash: ${disputeMeta.formattedHash} | Reason: ${killReasonStr}`
-            : `💀 DISPUTE KILLED - Hash: ${disputeMeta.formattedHash}`;
-        meta.reason = killReasonStr || "Fraud detection";
-        return { message, meta };
-    }
-
-    static disputeEvidenceSubmitted(
-        dispute: DisputeStruct,
-        timestamp: number | bigint
-    ): {
-        message: string;
-        meta: Record<string, any>;
-    } {
-        const disputeMeta = this.getDisputeMetadata(dispute);
-        const timeoutInfo = this.getTimeoutInfo(dispute);
-
-        let meta: Record<string, any> = {
-            disputeHash: disputeMeta.formattedHash,
-            disputer: disputeMeta.disputer,
-            onChainSlashes:
-                disputeMeta.onChainSlashes.length > 0
-                    ? disputeMeta.onChainSlashes
-                    : undefined,
-            selfRemoval: disputeMeta.selfRemoval,
-            evidenceSubmissionTimestamp: String(timestamp)
-        };
-
-        if (timeoutInfo.isTimeout && timeoutInfo.timeoutInfo) {
-            const { participant, blockHeight } = timeoutInfo.timeoutInfo;
-            const participantFormatted = this.formatHash(String(participant));
-            const message = `📝 TIMEOUT DISPUTE EVIDENCE SUBMITTED - Participant ${participantFormatted} timed out at block ${String(blockHeight)}`;
-            meta = {
-                ...meta,
-                ...this.getTimeoutMetadata(timeoutInfo.timeoutInfo)
-            };
-            return { message, meta };
-        }
-
-        const message = `📝 DISPUTE EVIDENCE SUBMITTED - Hash: ${disputeMeta.formattedHash}`;
-        meta.reason = "Fraud detection";
-        return { message, meta };
-    }
-
-    static getKillReasonFromFraudProof(
-        disputeFraudProof: DisputeFraudProofStruct | undefined
-    ): DisputeFraudProofType | undefined {
-        if (!disputeFraudProof) {
-            return undefined;
-        }
-
-        const proofType = disputeFraudProof.proofType;
-        if (typeof proofType === "bigint") {
-            return Number(proofType) as DisputeFraudProofType;
-        } else if (typeof proofType === "number") {
-            return proofType as DisputeFraudProofType;
-        } else {
-            return Number(proofType) as DisputeFraudProofType;
-        }
-    }
-
     static getBlockMetadata(block: Block, storage?: Storage) {
         const thresholdAddresses = new Set<Address>(
             storage?.getParticipants(block.coordinates) || []
@@ -337,87 +153,216 @@ export class LoggerUtils {
             allSigners instanceof Set ? allSigners : new Set(allSigners || []);
         const didntSign = difference(thresholdAddresses, allSignersSet);
         return {
-            author: block.author,
-            blockHash: block.hash,
+            author: String(block.author),
+            blockHash: String(block.hash),
             blockHeight: block.height,
             timestamp: block.timestamp,
             onChainTimestamp: block.onChainTimestamp,
             allSigners: Array.from(allSignersSet),
             didntSign: Array.from(didntSign),
-            numberOfInboundMessageBlocks: block.messageBlocks?.length || 0
+            numberOfInboundMessageBlocks: block.messageBlocks?.length ?? 0,
+            forkId: String(block.forkId),
+            channelId: String(block.channelId)
         };
     }
 
-    // ====================================
-    // PRIVATE HELPERS
-    // ====================================
-
-    private static getDisputeMetadata(dispute: DisputeStruct): {
-        formattedHash: string;
-        disputer: Address;
-        onChainSlashes: Address[];
-        selfRemoval: boolean;
-    } {
-        const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
-        const formattedHash = this.formatHash(disputeHash);
-        const onChainSlashes = dispute.input.onChainSlashes || [];
+    static getSnapshotMetadata(stateSnapshot: StateSnapshot) {
         return {
-            formattedHash,
-            disputer: dispute.input.disputer,
-            onChainSlashes,
-            selfRemoval: dispute.input.selfRemoval || false
+            blockHeight: stateSnapshot.blockHeight,
+            timestamp: stateSnapshot.timestamp,
+            isGenesis: stateSnapshot.isGenesis,
+            forkId: String(stateSnapshot.forkID),
+            stateSnapshotHash: String(stateSnapshot.hash),
+            snapshotData: this.getSnapshotDataMetadata(
+                stateSnapshot.snapshotData
+            )
         };
     }
 
-    private static getTimeoutMetadata(timeoutInfo: {
-        participant: Address;
-        blockHeight: string | bigint | number;
-        isForced: boolean;
-    }): Record<string, any> {
+    static getSnapshotDataMetadata(snapshotData: SnapshotDataStruct) {
         return {
-            reason: "Timeout",
-            timeoutParticipant: String(timeoutInfo.participant),
-            timeoutBlockHeight: String(timeoutInfo.blockHeight),
-            isForced: timeoutInfo.isForced
-        };
-    }
-
-    private static isTimeoutDispute(dispute: DisputeStruct): boolean {
-        const timeout = dispute.input.timeout;
-        if (!timeout) return false;
-        return timeout.participant !== ethers.ZeroAddress;
-    }
-
-    private static getTimeoutInfo(dispute: DisputeStruct): {
-        isTimeout: boolean;
-        timeoutInfo?: {
-            participant: Address;
-            blockHeight: string | bigint | number;
-            isForced: boolean;
-        };
-    } {
-        if (!this.isTimeoutDispute(dispute)) {
-            return { isTimeout: false };
-        }
-
-        const timeout = dispute.input.timeout as TimeoutStruct;
-
-        return {
-            isTimeout: true,
-            timeoutInfo: {
-                participant: timeout.participant,
-                blockHeight: timeout.blockHeight,
-                isForced: timeout.isForced
+            originForkId: String(snapshotData.originForkId),
+            stateMachineStateHash: String(snapshotData.stateMachineStateHash),
+            participants: snapshotData.participants.map((p) => String(p)),
+            latestInboundMessageBlockHash: String(
+                snapshotData.latestInboundMessageBlockHash
+            ),
+            latestInboundMessageBlockHeight: Number(
+                snapshotData.latestInboundMessageBlockHeight ?? 0n
+            ),
+            latestOutboundMessageBlockHash: String(
+                snapshotData.latestOutboundMessageBlockHash
+            ),
+            latestOutboundMessageBlockHeight: Number(
+                snapshotData.latestOutboundMessageBlockHeight ?? 0n
+            ),
+            totalDeposits: {
+                amount: Number(snapshotData.totalDeposits.amount),
+                data: String(snapshotData.totalDeposits.data)
+            },
+            totalWithdrawals: {
+                amount: Number(snapshotData.totalWithdrawals.amount),
+                data: String(snapshotData.totalWithdrawals.data)
             }
         };
     }
 
-    private static formatKillReason(
-        killReason: DisputeFraudProofType | string
-    ): string {
-        return typeof killReason === "string"
-            ? killReason
-            : this.enumToString(DisputeFraudProofType, killReason);
+    static getMessageBlockMetadata(messageBlock: MessageBlockStruct) {
+        return {
+            blockHash: String(
+                hash(Codec.encode(messageBlock, Type.MessageBlock))
+            ),
+            blockHeight: Number(messageBlock.blockHeight),
+            timestamp: Number(messageBlock.timestamp),
+            messagesCount: messageBlock.messages.length,
+            totalBalance: {
+                amount: Number(messageBlock.totalBalance.amount),
+                data: String(messageBlock.totalBalance.data)
+            }
+        };
+    }
+
+    static getStateProofMetadata(stateProof: StateProofStruct) {
+        const milestones = stateProof.milestones.map(
+            (milestone, milestoneIndex) => ({
+                milestoneIndex,
+                confirmationsCount: milestone.blockConfirmations.length,
+                confirmations: milestone.blockConfirmations.map(
+                    (confirmation) =>
+                        this.getBlockMetadata(
+                            Block.fromBlockConfirmation(confirmation)
+                        )
+                )
+            })
+        );
+
+        const signedBlocks = stateProof.signedBlocks.map((signedBlock) =>
+            this.getBlockMetadata(Block.fromSignedBlock(signedBlock))
+        );
+
+        return {
+            milestonesCount: stateProof.milestones.length,
+            signedBlocksCount: stateProof.signedBlocks.length,
+            milestones,
+            signedBlocks
+        };
+    }
+
+    static getDisputeMetadata(dispute: DisputeStruct) {
+        const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
+        return {
+            disputeHash,
+            input: this.getDisputeInputMetadata(dispute.input),
+            outputSnapshotDataHash: String(dispute.outputSnapshotDataHash)
+        };
+    }
+
+    static getDisputeInputMetadata(disputeInput: DisputeInputStruct) {
+        return {
+            channelId: String(disputeInput.channelId),
+            forkId: String(disputeInput.forkId),
+            latestStateSnapshotHash: String(
+                disputeInput.latestStateSnapshotHash
+            ),
+            latestInboundMessageBlockHash: String(
+                disputeInput.latestInboundMessageBlockHash
+            ),
+            lastInboundMessageBlockHeight: Number(
+                disputeInput.lastInboundMessageBlockHeight
+            ),
+            onChainSlashes: disputeInput.onChainSlashes.map((addr) =>
+                String(addr)
+            ),
+            disputeAuditingDataHash: String(
+                disputeInput.disputeAuditingDataHash
+            ),
+            disputer: String(disputeInput.disputer),
+            selfRemoval: disputeInput.selfRemoval,
+            timeout: this.getTimeoutStructMetadata(disputeInput.timeout),
+            stateProof: this.getStateProofMetadata(disputeInput.stateProof)
+        };
+    }
+
+    static getAuditingMetadata(
+        auditingData: DisputeAuditingDataStruct
+    ): Record<string, any> {
+        return {
+            genesisStateSnapshotData: this.getSnapshotDataMetadata(
+                auditingData.genesisStateSnapshotData
+            ),
+            latestStateSnapshot: this.getSnapshotMetadata(
+                StateSnapshot.from(auditingData.latestStateSnapshot)
+            ),
+            milestoneSnapshots: auditingData.milestoneSnapshots.map(
+                (snapshot) =>
+                    this.getSnapshotMetadata(StateSnapshot.from(snapshot))
+            ),
+            latestStateStateMachineStateHash: String(
+                hash(auditingData.latestStateStateMachineState)
+            ),
+            inboundMessageBlocks: auditingData.inboundMessageBlocks.map(
+                (messageBlock) => this.getMessageBlockMetadata(messageBlock)
+            ),
+            outboundMessageBlocks: auditingData.outboundMessageBlocks.map(
+                (messageBlock) => this.getMessageBlockMetadata(messageBlock)
+            )
+        };
+    }
+
+    static getTimeoutStructMetadata(timeout: TimeoutStruct) {
+        return {
+            timeoutParticipant: String(timeout.participant),
+            timeoutBlockHeight: Number(timeout.blockHeight),
+            minTimeStamp: Number(timeout.minTimeStamp),
+            isForced: timeout.isForced,
+            previousBlockProducer: String(timeout.previousBlockProducer),
+            previousBlockProducerPostedCalldata:
+                timeout.previousBlockProducerPostedCalldata,
+            participantSignatureOnPreviousBlock: String(
+                timeout.participantSignatureOnPreviousBlock
+            )
+        };
+    }
+
+    static getDisputeFraudProofMeta(
+        disputeFraudProof: DisputeFraudProofStruct
+    ) {
+        let resolvedKillReason: DisputeFraudProofType | string | undefined;
+        const proofType = disputeFraudProof.proofType;
+        if (typeof proofType === "bigint") {
+            resolvedKillReason = Number(proofType) as DisputeFraudProofType;
+        } else if (typeof proofType === "number") {
+            resolvedKillReason = proofType as DisputeFraudProofType;
+        } else {
+            resolvedKillReason = Number(proofType) as DisputeFraudProofType;
+        }
+
+        const killReasonStr =
+            resolvedKillReason === undefined
+                ? undefined
+                : typeof resolvedKillReason === "string"
+                  ? resolvedKillReason
+                  : this.enumToString(
+                        DisputeFraudProofType,
+                        resolvedKillReason
+                    );
+
+        return {
+            killReason: killReasonStr,
+            participant: String(disputeFraudProof.participant),
+            dispute: this.getDisputeMetadata(disputeFraudProof.dispute)
+        };
+    }
+
+    static getFraudProofMetadata(fraudProofs: FraudProofStruct[]) {
+        return fraudProofs.map((fp) => ({
+            participant: fp.participant,
+            proofType: this.formatProofType(
+                typeof fp.proofType === "string"
+                    ? Number(fp.proofType)
+                    : fp.proofType
+            )
+        }));
     }
 
     private static formatProofType(proofType: number | bigint): string {

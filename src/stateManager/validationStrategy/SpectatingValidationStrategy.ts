@@ -137,9 +137,16 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     }
     public async blockIsNotNextAndIsInTheFuture(
         block: Block,
-        _senderAddress?: string
+        senderAddress?: string
     ): Promise<BlockValidationResult> {
         // not ready
+        if (senderAddress)
+            this.p2pManager.localRpc.spectateService.sync(
+                senderAddress,
+                block.channelId,
+                block.forkId,
+                block.height
+            );
         this.storage.queues.queueBlock(block);
         return BlockValidationResult.NOT_READY;
     }

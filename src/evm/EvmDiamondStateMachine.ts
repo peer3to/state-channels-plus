@@ -90,7 +90,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     }
 
     /**
-     * Process logs from an EVM call and emit corresponding events
+     * Process logs from an EVM call and emit corresponding events.
+     *
      * @param logs The log output from the EVM
      */
     public processLogs(logs?: any[]): void {
@@ -109,8 +110,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                         ...Object.values(event.args)
                     );
                 }
-            } catch (e) {
-                console.error("Error parsing log", e);
+            } catch {
+                // Unknown log event - ignore silently
             }
         }
     }
@@ -328,16 +329,18 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         contractInterface: ethers.Interface,
         signer: Signer,
         timeConfig: TimeConfig,
-        logger?: Logger
+        logger: Logger
     ): Promise<{
         evmDiamondStateMachine: EvmDiamondStateMachine;
         deploymentResult: DeploymentResult;
     }> {
         // since this is local deployment, we can allow unlimited contract size
-        const evm = await createEvm({
-            allowUnlimitedContractSize: true,
+        const evm = await createEvm(
+            {
+                allowUnlimitedContractSize: true
+            },
             logger
-        });
+        );
 
         const stateMachineAddress = await deployLocalFromTx(
             deployStateMachineTx,

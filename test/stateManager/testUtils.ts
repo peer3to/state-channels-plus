@@ -5,6 +5,7 @@ import sinon from "sinon";
 import { ZeroHash } from "ethers";
 import Clock from "../../src/Clock";
 import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import BlockValidationStrategy from "../../src/stateManager/validationStrategy/BlockValidationStrategy";
 
 export const ValidationFailure = {
     // Time validation failures (step 10 - last)
@@ -578,7 +579,7 @@ export class MockSetup {
     }
 
     private createMockStrategy(): any {
-        return {
+        const strategy = {
             wrongChannel: sinon
                 .stub()
                 .resolves(BlockValidationResult.DISCONNECT),
@@ -628,6 +629,13 @@ export class MockSetup {
                 .stub()
                 .resolves(BlockValidationResult.NOT_ENOUGH_TIME)
         };
+
+        // ValidationService gates some subjective checks behind
+        // `strategy instanceof BlockValidationStrategy`.
+        // Our tests use a stubbed strategy object, so we attach the right prototype.
+        Object.setPrototypeOf(strategy, BlockValidationStrategy.prototype);
+
+        return strategy;
     }
 
     setupForSuccess(): void {

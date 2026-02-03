@@ -129,7 +129,6 @@ struct DisputeAuditingData {
 
 struct DisputeData {
     OnChainSlash[] onChainSlashes;
-    address[] pendingParticipants;
     mapping(bytes32 forkId => DisputeWindow) disputeWindowMap;
     bytes32[] disputedForks;
 }

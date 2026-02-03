@@ -152,23 +152,16 @@ export class EventHandler {
         );
         const forkId = dispute.input.forkId;
 
-        // Get initial message with evidence submission info
-        const { message, meta } = LoggerUtils.disputeEvidenceSubmitted(
-            dispute,
-            disputeCreationTimestamp
-        );
+        const disputeMeta = LoggerUtils.getDisputeMetadata(dispute);
+        const formattedHash = LoggerUtils.formatHash(disputeMeta.disputeHash);
+        this.logger.info(`✅ Dispute received: ${formattedHash}`, {
+            dispute: disputeMeta,
+            isFinal: isFinal,
+            disputeConfirmation,
+            windowCreationTimestamp,
+            auditingDataPosted: disputeAuditingData ? true : false
+        });
 
-        this.logger.group(`✅ Dispute received: ${meta.disputeHash}`);
-        this.logger.info(message, {
-            disputer: LoggerUtils.formatHash(meta.disputer),
-            isFinal: isFinal
-        });
-        this.logger.debug("Dispute committed details", {
-            ...meta,
-            disputeCreationTimestamp,
-            windowCreationTimestamp
-        });
-        this.logger.groupEnd();
         // sync LocalDiamond state
         await this.diamondStateMachine.localDiamondContract.onDisputeCommitted(
             channelId,
@@ -229,19 +222,16 @@ export class EventHandler {
                 this.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
                     dispute
                 );
-            const killReason =
-                LoggerUtils.getKillReasonFromFraudProof(disputeFraudProof);
-            const { meta: killMeta } = LoggerUtils.disputeKilled(
-                dispute,
-                killReason,
-                disputeCreationTimestamp
-            );
+            const killReason = disputeFraudProof
+                ? LoggerUtils.getDisputeFraudProofMeta(disputeFraudProof)
+                : undefined;
 
-            this.logger.warn("❌ Dispute auditing failed - killing dispute", {
-                ...killMeta,
-                disputeCreationTimestamp,
-                windowCreationTimestamp
-            });
+            this.logger.warn(
+                `❌ Dispute auditing failed - killing dispute ${formattedHash}`,
+                {
+                    killReason
+                }
+            );
 
             // TODO - do a multicall here
             await Promise.all([
@@ -251,17 +241,7 @@ export class EventHandler {
             return;
         }
 
-        // Log successful auditing
-        const { meta: auditingMeta } = LoggerUtils.disputeAudited(
-            dispute,
-            isValid,
-            disputeCreationTimestamp
-        );
-        this.logger.info("✅ Dispute auditing successful", {
-            ...auditingMeta,
-            disputeCreationTimestamp,
-            windowCreationTimestamp
-        });
+        this.logger.info(`✅ Dispute auditing successful ${formattedHash}`);
 
         this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
 

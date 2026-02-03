@@ -267,9 +267,6 @@ contract UtilityFacet {
             );
         }
 
-        bytes32 latestSnapshotDataHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData));
-        bytes32 latestSnapshotHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot));
-
         if (dispute.input.stateProof.milestones.length != 0 && dispute.input.stateProof.signedBlocks.length != 0) {
             return false;
         }
@@ -287,6 +284,9 @@ contract UtilityFacet {
         if (lastBlockEncoded.length == 0) {
             if (dispute.input.stateProof.signedBlocks.length == 0) {
                 // no blocks at all => genesis == latest
+                bytes32 latestSnapshotDataHash =
+                    keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData));
+                bytes32 latestSnapshotHash = keccak256(abi.encode(disputeAuditingData.latestStateSnapshot));
                 if (auditingDataIntegrityVerified) {
                     if (
                         dispute.input.forkId != latestSnapshotDataHash
@@ -311,7 +311,8 @@ contract UtilityFacet {
                 }
 
                 Block memory lastBlock = abi.decode(
-                    dispute.input.stateProof.signedBlocks[dispute.input.stateProof.signedBlocks.length - 1].encodedBlock,
+                    dispute.input.stateProof
+                    .signedBlocks[dispute.input.stateProof.signedBlocks.length - 1].encodedBlock,
                     (Block)
                 );
                 //check if lastBlock commits to the latestStateSnapshot
@@ -453,7 +454,7 @@ contract UtilityFacet {
             snapshotData = milestoneSnapshots[i].snapshotData;
             if (i == milestoneProofs.length - 1 && milestone.blockConfirmations.length > 0) {
                 lastBlockEncoded =
-                    milestone.blockConfirmations[milestone.blockConfirmations.length - 1].signedBlock.encodedBlock;
+                milestone.blockConfirmations[milestone.blockConfirmations.length - 1].signedBlock.encodedBlock;
             }
         }
         return (true, lastBlockEncoded);
