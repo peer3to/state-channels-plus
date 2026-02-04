@@ -16,7 +16,7 @@ export class TestAgreementManager extends AgreementManager {
     constructor(storage: Storage, logger?: Logger) {
         super(
             storage,
-            logger || createLogger({ component: "TestAgreementManager" })
+            logger || createLogger({}, { component: "TestAgreementManager" })
         );
     }
 

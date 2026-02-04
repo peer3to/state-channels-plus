@@ -4,7 +4,7 @@ import Hyperswarm from "hyperswarm";
 import DHT from "@hyperswarm/dht-relay";
 //@ts-ignore
 import Stream from "@hyperswarm/dht-relay/ws";
-import { createLogger, Logger } from "@/utils";
+import { Logger } from "@/utils";
 class HolepunchRelay {
     relayerUrls: string[];
     updateCallback: Function;
@@ -13,10 +13,15 @@ class HolepunchRelay {
 
     private static instance: HolepunchRelay;
 
-    public static init(relayerUrls: string[], updateCallback: Function) {
+    public static init(
+        relayerUrls: string[],
+        updateCallback: Function,
+        logger: Logger
+    ) {
         HolepunchRelay.instance = new HolepunchRelay(
             relayerUrls,
-            updateCallback
+            updateCallback,
+            logger
         );
         HolepunchRelay.instance.connectToRelayer();
     }
@@ -70,10 +75,14 @@ class HolepunchRelay {
         }
     }
 
-    private constructor(relayerUrls: string[], updateCallback: Function) {
+    private constructor(
+        relayerUrls: string[],
+        updateCallback: Function,
+        logger: Logger
+    ) {
         this.relayerUrls = relayerUrls;
         this.updateCallback = updateCallback;
-        this.logger = createLogger({ component: "HolepunchRelay" });
+        this.logger = logger.child({ component: "HolepunchRelay" });
     }
 
     private pickRandomRelayer(): string | undefined {

@@ -26,12 +26,10 @@ contract JoinChannelFacet is StateChannelCommon {
         require(jc.participant == retrievedAddress && isValidSignature, ErrorJoinChannelInvalidSignature());
 
         // Check threshold from existing participant set
-        address[] memory thresholdParticipants = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
-            getSnapshotParticipants(channelId), getPendingParticipants(channelId)
-        );
-        (bool isValid,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            thresholdParticipants, sjc.encodedJoinChannel, joinChannelConfirmation.signatures
-        );
+        address[] memory thresholdParticipants = UtilityFacet(utilityFacetAddress)
+            .concatAddressArraysNoDuplicates(getSnapshotParticipants(channelId), getPendingParticipants(channelId));
+        (bool isValid,) = UtilityFacet(utilityFacetAddress)
+            .verifyThresholdSigned(thresholdParticipants, sjc.encodedJoinChannel, joinChannelConfirmation.signatures);
         require(isValid, ErrorJoinChannelInvalidSignature());
 
         // Deposit funds

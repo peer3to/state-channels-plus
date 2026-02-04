@@ -152,12 +152,10 @@ contract DisputeManagerFacet is StateChannelCommon {
             return false;
         }
         address[] memory thresholdSet = getOnChainThresholdSet(dispute.input.channelId);
-        bytes[] memory signatures = UtilityFacet(utilityFacetAddress).insertBytesInByteArray(
-            disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures
-        );
-        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures
-        );
+        bytes[] memory signatures = UtilityFacet(utilityFacetAddress)
+            .insertBytesInByteArray(disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures);
+        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress)
+            .verifyThresholdSigned(thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures);
         return isThresholdFinal;
     }
 
@@ -170,9 +168,10 @@ contract DisputeManagerFacet is StateChannelCommon {
         address[] memory pendingParticipants = getPendingParticipants(dispute.input.channelId);
         if (disputeConfirmation.signatures.length < pendingParticipants.length) return true;
 
-        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            pendingParticipants, disputeConfirmation.signedDispute.encodedDispute, disputeConfirmation.signatures
-        );
+        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress)
+            .verifyThresholdSigned(
+                pendingParticipants, disputeConfirmation.signedDispute.encodedDispute, disputeConfirmation.signatures
+            );
         return !isThresholdFinal;
     }
 }

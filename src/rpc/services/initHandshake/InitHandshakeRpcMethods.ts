@@ -78,6 +78,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             `Handshake response signer address ${signerAddress} and RTT: ${rtt}`
         );
         // Check if this peer is blacklisted
+        // TODO - we destory the profile, so we wouldn't have this information
         if (this.p2pManager.isBlacklisted(signerAddress)) {
             this.service.logger.debug(
                 `Rejecting handshake from blacklisted peer: ${signerAddress}`
@@ -96,7 +97,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             preferredTransport
         );
 
-        await this.service.maybeFinalizeHandshakeOnceFromTransport(
+        this.service.maybeFinalizeHandshakeOnceFromTransport(
             this.senderTransport
         );
 
@@ -133,7 +134,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
         // Record it on the transport and apply it to the profile once available.
         this.service.markAcked(this.senderTransport);
 
-        await this.service.maybeFinalizeHandshakeOnceFromTransport(
+        this.service.maybeFinalizeHandshakeOnceFromTransport(
             this.senderTransport
         );
     }

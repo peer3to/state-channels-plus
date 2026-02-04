@@ -1,7 +1,7 @@
 import { ErrorDescription, Signer, ethers } from "ethers";
 import { errorAbis } from "./GeneratedArtifacts";
 import { TransactionResponse } from "ethers";
-import { Logger } from "./PeerLogger";
+import { Logger } from "./logging";
 
 export type RaceConditionErrorName =
     | "RaceConditionChannelAlreadyOpen"

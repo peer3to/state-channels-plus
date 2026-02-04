@@ -28,6 +28,7 @@ cache_forge
 
 temp
 logs
+crash-logs
 
 # generated files
 src/types/sol-enums.ts

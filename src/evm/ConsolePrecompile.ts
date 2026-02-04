@@ -1,6 +1,6 @@
 import { PrecompileInput } from "@ethereumjs/evm";
 import { ethers } from "ethers";
-import { createLogger } from "@/utils";
+import { Logger } from "@/utils";
 
 /**
  * Hardhat's console.log contract address.
@@ -12,7 +12,6 @@ import { createLogger } from "@/utils";
  */
 export const CONSOLE_ADDRESS = "0x000000000000000000636F6e736F6c652e6c6f67";
 
-const solidityLogger = createLogger({ component: "Solidity" });
 const abiCoder = ethers.AbiCoder.defaultAbiCoder();
 
 type PrecompileResult = {
@@ -124,44 +123,50 @@ const CONSOLE_SELECTORS: Record<
     }
 };
 
-/**
- * Precompile implementation for console.log functionality.
- *
- * This intercepts STATICCALLs to the console address and decodes the ABI-encoded
- * function calls, then logs them using PeerLogger. This allows console.log() to
- * work in view functions without state modification errors.
- *
- * @param input Precompile input containing the calldata
- * @returns ExecResult (always succeeds with 0 gas and empty return)
- */
-export async function consolePrecompile(
-    input: PrecompileInput
-): Promise<PrecompileResult> {
-    const calldata = input.data;
+export function createConsolePrecompile(logger: Logger) {
+    const solidityLogger = logger.child({ component: "Solidity" });
+    /**
+     * Precompile implementation for console.log functionality.
+     *
+     * This intercepts STATICCALLs to the console address and decodes the ABI-encoded
+     * function calls, then logs them using PeerLogger. This allows console.log() to
+     * work in view functions without state modification errors.
+     *
+     * @param input Precompile input containing the calldata
+     * @returns ExecResult (always succeeds with 0 gas and empty return)
+     */
+    return async function consolePrecompile(
+        input: PrecompileInput
+    ): Promise<PrecompileResult> {
+        const calldata = input.data;
 
-    if (calldata.length < 4) {
-        // Invalid call - return success anyway (like Hardhat does)
-        return SUCCESS;
-    }
-
-    // Extract function selector (first 4 bytes)
-    const selectorBytes = calldata.slice(0, 4);
-    const selector = ethers.hexlify(selectorBytes);
-    const data = calldata.slice(4);
-
-    try {
-        const handler = CONSOLE_SELECTORS[selector];
-        if (handler) {
-            // Decode ABI-encoded parameters
-            const args = abiCoder.decode(handler.types, ethers.hexlify(data));
-            // Format and log the message
-            const message = handler.format(args);
-            solidityLogger.debug(message);
+        if (calldata.length < 4) {
+            // Invalid call - return success anyway (like Hardhat does)
+            return SUCCESS;
         }
-    } catch {
-        // If decoding fails, silently ignore
-    }
 
-    // Always return success with 0 gas
-    return SUCCESS;
+        // Extract function selector (first 4 bytes)
+        const selectorBytes = calldata.slice(0, 4);
+        const selector = ethers.hexlify(selectorBytes);
+        const data = calldata.slice(4);
+
+        try {
+            const handler = CONSOLE_SELECTORS[selector];
+            if (handler) {
+                // Decode ABI-encoded parameters
+                const args = abiCoder.decode(
+                    handler.types,
+                    ethers.hexlify(data)
+                );
+                // Format and log the message
+                const message = handler.format(args);
+                solidityLogger.debug(message);
+            }
+        } catch {
+            // If decoding fails, silently ignore
+        }
+
+        // Always return success with 0 gas
+        return SUCCESS;
+    };
 }

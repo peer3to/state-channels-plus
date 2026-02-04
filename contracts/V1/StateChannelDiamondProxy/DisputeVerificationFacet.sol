@@ -271,9 +271,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         address[] memory removals = reducedOutput.selfRemovals;
         if (reducedOutput.timeout.participant != address(0) && reducedOutput.slashedParticipants.length == 0) {
-            removals = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
-                removals, reducedOutput.timeout.participant
-            );
+            removals = UtilityFacet(utilityFacetAddress)
+                .insertIntoAddressArrayNoDuplicates(removals, reducedOutput.timeout.participant);
         }
 
         DisputeOutputState memory outputState = generateDisputeOutputState(
@@ -470,12 +469,10 @@ contract DisputeVerificationFacet is StateChannelCommon {
         console.log("BALANCE 4.1 - snapshotData.totalDeposits:", snapshotData.totalDeposits.amount);
         console.log("BALANCE 4.2 - stateMachineBalance:", stateMachineBalance.amount);
         console.log("BALANCE 4.3 - snapshotData.totalWithdrawals:", snapshotData.totalWithdrawals.amount);
-        if (
-            !stateMachineImplementation.areBalancesEqual(
+        if (!stateMachineImplementation.areBalancesEqual(
                 snapshotData.totalDeposits,
                 stateMachineImplementation.addBalance(snapshotData.totalWithdrawals, stateMachineBalance)
-            )
-        ) return false;
+            )) return false;
         console.log("BALANCE 5");
         return true;
     }
@@ -567,10 +564,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
         (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
         if (
             hasBlock
-                && (
-                    latestBlock.stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))
-                        || latestBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash
-                )
+                && (latestBlock.stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))
+                    || latestBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash)
         ) {
             return false;
         }

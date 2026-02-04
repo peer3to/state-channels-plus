@@ -1,10 +1,14 @@
 import { EVM, EVMOpts } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
-import { CONSOLE_ADDRESS, consolePrecompile } from "./ConsolePrecompile";
+import { CONSOLE_ADDRESS, createConsolePrecompile } from "./ConsolePrecompile";
+import { Logger } from "@/utils";
 
 export interface EvmFactoryOptions extends EVMOpts {}
 
-export async function createEvm(options: EvmFactoryOptions = {}): Promise<EVM> {
+export async function createEvm(
+    options: EvmFactoryOptions = {},
+    logger: Logger
+): Promise<EVM> {
     const consoleAddress = Address.fromString(CONSOLE_ADDRESS);
 
     const existingPrecompiles: any[] = Array.isArray(options.customPrecompiles)
@@ -14,7 +18,7 @@ export async function createEvm(options: EvmFactoryOptions = {}): Promise<EVM> {
         ...existingPrecompiles,
         {
             address: consoleAddress,
-            function: consolePrecompile
+            function: createConsolePrecompile(logger)
         }
     ];
 

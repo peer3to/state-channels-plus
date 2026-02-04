@@ -2,6 +2,7 @@ import P2pSigner from "./P2pSigner";
 import { AStateMachine } from "@typechain-types";
 import P2pEventHooks from "@/P2pEventHooks";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
+import { Logger } from "@/utils";
 
 export default class P2pInstance<
     T extends AStateMachine,
@@ -10,10 +11,16 @@ export default class P2pInstance<
 > {
     p2pContractInstance: T;
     p2pSigner: P2pSigner<TFactories>;
+    logger: Logger;
 
-    constructor(p2pContractInstance: T, p2pSigner: P2pSigner<TFactories>) {
+    constructor(
+        p2pContractInstance: T,
+        p2pSigner: P2pSigner<TFactories>,
+        logger: Logger
+    ) {
         this.p2pContractInstance = p2pContractInstance;
         this.p2pSigner = p2pSigner;
+        this.logger = logger;
     }
 
     public dispose() {
