@@ -28,9 +28,12 @@ export class Sync {
     /**
      * Wait for a specific subset of peers to synchronize
      */
-    static waitForPeers(peerIndices: number[]) {
+    static waitForPeers(peerIndices: number[], options?: { timeout?: number }) {
         return new HarnessBlock(async (harness) => {
-            await harness.syncActions.waitForSync({ peerIndices });
+            await harness.syncActions.waitForSync({
+                peerIndices,
+                timeout: options?.timeout
+            });
             return harness;
         });
     }

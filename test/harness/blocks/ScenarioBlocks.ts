@@ -54,7 +54,7 @@ export class Scenario {
         return HarnessBlock.compose(
             Lifecycle.setup(peerCount, options),
             Lifecycle.openChannel(),
-            Scenario.peersWrite(transitionCount)
+            Scenario.advanceState(transitionCount)
         );
     }
 
@@ -63,9 +63,10 @@ export class Scenario {
     // ========================================
 
     /**
-     * N peers write blocks in sequence
+     * Advance state by N sequential writes (next peers in turn)
+     * Simple state progression without control over specific peers or values
      */
-    static peersWrite(count: number) {
+    static advanceState(count: number) {
         return new HarnessBlock(async (harness) => {
             for (let i = 0; i < count; i++) {
                 await harness.transitionActions.submitNext((contract) =>
@@ -90,9 +91,10 @@ export class Scenario {
     }
 
     /**
-     * Specific peer writes a block (out-of-order authoring)
+     * Specific peer writes a block (out-of-order authoring with control)
+     * Use this when you need to specify peer, value, or waitForPeers options
      */
-    static peerWrites(options: {
+    static peerWrite(options: {
         peer: number;
         value?: number;
         waitForPeers?: number[];
@@ -112,6 +114,17 @@ export class Scenario {
 
             return harness;
         });
+    }
+
+    /**
+     * @deprecated Use peerWrite() instead (singular)
+     */
+    static peerWrites(options: {
+        peer: number;
+        value?: number;
+        waitForPeers?: number[];
+    }) {
+        return Scenario.peerWrite(options);
     }
 
     /**
@@ -248,7 +261,7 @@ export class Scenario {
         return HarnessBlock.compose(
             Scenario.emptyChannel(3, options),
             Assert.participantCount(3),
-            Scenario.peersWrite(initialTransitions),
+            Scenario.advanceState(initialTransitions),
             Lifecycle.addPeer(),
             Event.waitUntilEventOccurs("onConnection", 5000),
             Sync.wait({ timeout: 5000 })

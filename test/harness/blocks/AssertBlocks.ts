@@ -25,42 +25,6 @@ export class Assert {
     }
 
     /**
-     * Assert dispute was initiated by specific peers
-     */
-    static disputeInitiatedBy(peerIndices: number[], timeout: number = 5000) {
-        return new HarnessBlock(async (harness) => {
-            await harness.assertActions.disputeInitiatedBy(
-                peerIndices,
-                timeout
-            );
-            return harness;
-        });
-    }
-
-    /**
-     * Assert dispute was committed on-chain by all peers
-     */
-    static disputeCommitted(timeout: number = 5000, expectedCount: number = 2) {
-        return new HarnessBlock(async (harness) => {
-            await harness.assertActions.disputeCommitted(
-                timeout,
-                expectedCount
-            );
-            return harness;
-        });
-    }
-
-    /**
-     * Assert calldata was posted to chain
-     */
-    static calldataPosted(peerIndex: number, timeout: number = 3000) {
-        return new HarnessBlock(async (harness) => {
-            await harness.assertActions.calldataPosted(peerIndex, timeout);
-            return harness;
-        });
-    }
-
-    /**
      * Assert block height matches expected value
      */
     static blockHeight(expectedHeight: number) {
@@ -76,6 +40,19 @@ export class Assert {
     static peerOutOfSync(peerIndex: number) {
         return new HarnessBlock(async (harness) => {
             await harness.assertActions.peerOutOfSync(peerIndex);
+            return harness;
+        });
+    }
+
+    /**
+     * Assert dispute was committed on-chain by all peers
+     */
+    static disputeCommitted(timeout: number = 5000, expectedCount: number = 2) {
+        return new HarnessBlock(async (harness) => {
+            await harness.assertActions.disputeCommitted(
+                timeout,
+                expectedCount
+            );
             return harness;
         });
     }
@@ -729,6 +706,151 @@ export class Assert {
 
             (harness as any)[`snapshotCount_${contextKey}`] = count;
 
+            return harness;
+        });
+    }
+
+    /**
+     * Assert specific peers initiated disputes
+     */
+    static disputeInitiatedBy(options: {
+        peers: number[];
+        expectedCountPerPeer?: number;
+        timeoutMs?: number;
+    }) {
+        return new HarnessBlock(async (harness) => {
+            await harness.assertActions.disputeInitiatedByPeers(options);
+            return harness;
+        });
+    }
+
+    /**
+     * Assert specific peers did NOT initiate disputes
+     */
+    static didNotInitiateDispute(options: { peers: number[] }) {
+        return new HarnessBlock(async (harness) => {
+            for (const peerId of options.peers) {
+                const actualCount = harness.eventActions.getEventCallCount(
+                    peerId,
+                    "onInitiatingDispute"
+                );
+                if (actualCount > 0) {
+                    throw new Error(
+                        `Expected peer ${peerId} to NOT initiate disputes, but initiated ${actualCount}`
+                    );
+                }
+            }
+            return harness;
+        });
+    }
+
+    /**
+     * Assert all peers committed the dispute
+     */
+    static disputeCommittedByAll(options?: {
+        expectedCountPerPeer?: number;
+        timeoutMs?: number;
+    }) {
+        return new HarnessBlock(async (harness) => {
+            await harness.assertActions.disputeCommittedByAll(options);
+            return harness;
+        });
+    }
+
+    /**
+     * Assert event was called specific times total across all peers
+     */
+    static totalEventCount(options: {
+        event: keyof import("@test/fixtures/PeerTestHarness").EventSpies;
+        expectedTotal: number;
+    }) {
+        return new HarnessBlock(async (harness) => {
+            harness.eventActions.assertEventHandlerCalledTotalTimes(
+                options.event,
+                options.expectedTotal
+            );
+            return harness;
+        });
+    }
+
+    /**
+     * Assert event count for a specific peer
+     */
+    static peerEventCount(options: {
+        peer: number;
+        event: keyof import("@test/fixtures/PeerTestHarness").EventSpies;
+        expectedCount: number;
+    }) {
+        return new HarnessBlock(async (harness) => {
+            const actualCount = harness.eventActions.getEventCallCount(
+                options.peer,
+                options.event
+            );
+            if (actualCount !== options.expectedCount) {
+                throw new Error(
+                    `Expected peer ${options.peer} event ${String(options.event)} to be called ${options.expectedCount} times, but was called ${actualCount} times`
+                );
+            }
+            return harness;
+        });
+    }
+
+    /**
+     * Assert no disputes occurred (neither initiated nor committed)
+     */
+    static noDisputes() {
+        return new HarnessBlock(async (harness) => {
+            harness.assertActions.assertNoDisputes();
+            return harness;
+        });
+    }
+
+    /**
+     * Assert no calldata was posted
+     */
+    static noCalldataPosted() {
+        return new HarnessBlock(async (harness) => {
+            harness.assertActions.assertNoCalldataPosted();
+            return harness;
+        });
+    }
+
+    /**
+     * Assert calldata was posted by any peer
+     *
+     * ```
+     */
+    static calldataPosted(options?: { timeoutMs?: number }) {
+        return new HarnessBlock(async (harness) => {
+            await harness.assertActions.calldataPostedByAny(options);
+            return harness;
+        });
+    }
+
+    /**
+     * Assert honest peers initiated disputes
+     *
+     */
+    static honestPeersInitiateDispute(options?: {
+        timeoutMs?: number;
+        expectedCountPerPeer?: number;
+    }) {
+        return new HarnessBlock(async (harness) => {
+            await harness.assertActions.honestPeersInitiateDispute(options);
+            return harness;
+        });
+    }
+
+    /**
+     * Assert all peers committed disputes
+     *
+     */
+    static disputeCommittedByAllPeers(options?: {
+        expectedCountPerPeer?: number;
+        timeoutMs?: number;
+    }) {
+        return new HarnessBlock(async (harness) => {
+            await harness.assertActions.disputeCommittedByAll(options);
             return harness;
         });
     }

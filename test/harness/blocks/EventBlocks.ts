@@ -164,172 +164,6 @@ export class Event {
         });
     }
 
-    // ============================================================================
-    // ASSERTION METHODS (Verification, not synchronization)
-    // These check state and throw descriptive errors on mismatch
-    // ============================================================================
-
-    /**
-     * Assert specific peers initiated disputes
-     *
-     * Checks the CURRENT state without waiting.
-     *
-     * @example
-     * ```ts
-     * const harness = await ScenarioRunner.execute(
-     *     Scenario.twoBlocks(),
-     *     Byzantine.doubleSignFrom(1),
-     *     Event.waitUntilDisputeInitiatedBy({ peers: [0, 2] }),
-     *     Event.assertDidNotInitiateDispute({ peers: [1] })  // Byzantine didn't
-     * );
-     * ```
-     */
-    static assertDisputeInitiatedBy(options: {
-        peers: number[];
-        expectedCountPerPeer?: number;
-    }) {
-        const { peers, expectedCountPerPeer = 1 } = options;
-        return new HarnessBlock(async (harness) => {
-            for (const peerId of peers) {
-                const actualCount = harness.eventActions.getEventCallCount(
-                    peerId,
-                    "onInitiatingDispute"
-                );
-                if (actualCount < expectedCountPerPeer) {
-                    throw new Error(
-                        `Expected peer ${peerId} to initiate ${expectedCountPerPeer} disputes, but only initiated ${actualCount}`
-                    );
-                }
-            }
-            return harness;
-        });
-    }
-
-    /**
-     * Assert specific peers did NOT initiate disputes
-     *
-     * @example
-     * ```ts
-     * Event.assertDidNotInitiateDispute({ peers: [1] })  // Byzantine peer didn't initiate
-     * ```
-     */
-    static assertDidNotInitiateDispute(options: { peers: number[] }) {
-        return new HarnessBlock(async (harness) => {
-            for (const peerId of options.peers) {
-                const actualCount = harness.eventActions.getEventCallCount(
-                    peerId,
-                    "onInitiatingDispute"
-                );
-                if (actualCount > 0) {
-                    throw new Error(
-                        `Expected peer ${peerId} to NOT initiate disputes, but initiated ${actualCount}`
-                    );
-                }
-            }
-            return harness;
-        });
-    }
-
-    /**
-     * Assert all peers committed the dispute
-     *
-     * @example
-     * ```ts
-     * Event.assertDisputeCommittedByAll({ expectedCountPerPeer: 2 })
-     * ```
-     */
-    static assertDisputeCommittedByAll(options?: {
-        expectedCountPerPeer?: number;
-    }) {
-        const { expectedCountPerPeer = 1 } = options || {};
-        return new HarnessBlock(async (harness) => {
-            for (const peer of harness.peers) {
-                const actualCount = harness.eventActions.getEventCallCount(
-                    peer.index,
-                    "onDisputeCommitted"
-                );
-                if (actualCount < expectedCountPerPeer) {
-                    throw new Error(
-                        `Expected peer ${peer.index} to commit ${expectedCountPerPeer} disputes, but only committed ${actualCount}`
-                    );
-                }
-            }
-            return harness;
-        });
-    }
-
-    /**
-     * Assert event was called specific times total across all peers
-     *
-     * @example
-     * ```ts
-     * Event.assertTotalEventCount({
-     *     event: "onBlockApplied",
-     *     expectedTotal: 9
-     * })  // 3 peers × 3 blocks
-     * ```
-     */
-    static assertTotalEventCount(options: {
-        event: keyof EventSpies;
-        expectedTotal: number;
-    }) {
-        return new HarnessBlock(async (harness) => {
-            harness.eventActions.assertEventHandlerCalledTotalTimes(
-                options.event,
-                options.expectedTotal
-            );
-            return harness;
-        });
-    }
-
-    /**
-     * Assert event count for a specific peer
-     *
-     * @example
-     * ```ts
-     * Event.assertPeerEventCount({
-     *     peer: 0,
-     *     event: "onBlockApplied",
-     *     expectedCount: 3
-     * })
-     * ```
-     */
-    static assertPeerEventCount(options: {
-        peer: number;
-        event: keyof EventSpies;
-        expectedCount: number;
-    }) {
-        return new HarnessBlock(async (harness) => {
-            const actualCount = harness.eventActions.getEventCallCount(
-                options.peer,
-                options.event
-            );
-            if (actualCount !== options.expectedCount) {
-                throw new Error(
-                    `Expected peer ${options.peer} event ${String(options.event)} to be called ${options.expectedCount} times, but was called ${actualCount} times`
-                );
-            }
-            return harness;
-        });
-    }
-
-    /**
-     * Reset event spy history (clear all counters)
-     *
-     * Useful for:
-     * - Starting fresh before a byzantine action
-     * - Isolating event counts for specific test sections
-     *
-     * @example
-     * ```ts
-     * const harness = await ScenarioRunner.execute(
-     *     Scenario.twoBlocks(),
-     *     Event.reset(),  // Clear previous history
-     *     Byzantine.doubleSignFrom(1),
-     *     Event.waitForAllPeers("onInitiatingDispute", 1)
-     * );
-     * ```
-     */
     /**
      * Reset event spy counters (clear event history)
      *
@@ -607,101 +441,7 @@ export class Event {
     }
 
     /**
-     * Assert no disputes occurred (neither initiated nor committed)
-     *
-     * @example
-     * ```ts
-     * const harness = await ScenarioRunner.execute(
-     *     Scenario.activeChannel(3, 2),
-     *     Scenario.peersWrite(10),
-     *     Event.assertNoDisputes()
-     * );
-     * ```
-     */
-    static assertNoDisputes() {
-        return new HarnessBlock(async (harness) => {
-            const totalInitiated = harness.peers.reduce((sum, peer) => {
-                return (
-                    sum +
-                    harness.eventActions.getEventCallCount(
-                        peer.index,
-                        "onInitiatingDispute"
-                    )
-                );
-            }, 0);
-
-            const totalCommitted = harness.peers.reduce((sum, peer) => {
-                return (
-                    sum +
-                    harness.eventActions.getEventCallCount(
-                        peer.index,
-                        "onDisputeCommitted"
-                    )
-                );
-            }, 0);
-
-            if (totalInitiated > 0) {
-                throw new Error(
-                    `Expected no disputes to be initiated, but ${totalInitiated} were initiated`
-                );
-            }
-
-            if (totalCommitted > 0) {
-                throw new Error(
-                    `Expected no disputes to be committed, but ${totalCommitted} were committed`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
-     * Assert no calldata was posted
-     *
-     * @example
-     * ```ts
-     * const harness = await ScenarioRunner.execute(
-     *     Scenario.threePeersTwoBlocks(),
-     *     Scenario.peersWrite(1),
-     *     Event.assertNoCalldataPosted()  // Happy path, no timeouts
-     * );
-     * ```
-     */
-    static assertNoCalldataPosted() {
-        return new HarnessBlock(async (harness) => {
-            const totalPosted = harness.peers.reduce((sum, peer) => {
-                return (
-                    sum +
-                    harness.eventActions.getEventCallCount(
-                        peer.index,
-                        "onPostedCalldata"
-                    )
-                );
-            }, 0);
-
-            const totalBlockCalldata = harness.peers.reduce((sum, peer) => {
-                return (
-                    sum +
-                    harness.eventActions.getEventCallCount(
-                        peer.index,
-                        "onBlockCalldataPosted"
-                    )
-                );
-            }, 0);
-
-            if (totalPosted > 0 || totalBlockCalldata > 0) {
-                throw new Error(
-                    `Expected no calldata to be posted, but onPostedCalldata: ${totalPosted}, onBlockCalldataPosted: ${totalBlockCalldata}`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
-     * Wait for a specific peer to initiate N disputes
+     * Wait for fork to change from original fork for specific honest peers
      *
      * Used in scenarios where we expect a peer to detect multiple frauds
      * (e.g., one peer's invalid block AND another peer's tampered dispute).
@@ -724,11 +464,50 @@ export class Event {
         const { timeoutMs = 10000 } = options || {};
 
         return new HarnessBlock(async (harness) => {
+            // #region agent log
+            fetch(
+                "http://127.0.0.1:7243/ingest/f9b76b10-324c-4d55-bfc2-8a7f8284883e",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        location: "EventBlocks.ts:467",
+                        message: "waitForPeerDisputes: starting wait",
+                        data: { peerIndex, minCount, timeoutMs },
+                        timestamp: Date.now(),
+                        sessionId: "debug-session",
+                        hypothesisId: "H3"
+                    })
+                }
+            ).catch(() => {});
+            // #endregion
             const condition = () => {
                 const count = harness.eventActions.getEventCallCount(
                     peerIndex,
                     "onInitiatingDispute"
                 );
+                // #region agent log
+                fetch(
+                    "http://127.0.0.1:7243/ingest/f9b76b10-324c-4d55-bfc2-8a7f8284883e",
+                    {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            location: "EventBlocks.ts:477",
+                            message: "waitForPeerDisputes: condition check",
+                            data: {
+                                peerIndex,
+                                count,
+                                minCount,
+                                satisfied: count >= minCount
+                            },
+                            timestamp: Date.now(),
+                            sessionId: "debug-session",
+                            hypothesisId: "H3"
+                        })
+                    }
+                ).catch(() => {});
+                // #endregion
                 return count >= minCount;
             };
 
@@ -736,6 +515,25 @@ export class Event {
                 timeoutMs,
                 timeoutMessage: `Peer ${peerIndex} did not initiate ${minCount} disputes within ${timeoutMs}ms`
             });
+
+            // #region agent log
+            fetch(
+                "http://127.0.0.1:7243/ingest/f9b76b10-324c-4d55-bfc2-8a7f8284883e",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        location: "EventBlocks.ts:490",
+                        message:
+                            "waitForPeerDisputes: wait completed successfully",
+                        data: { peerIndex, minCount },
+                        timestamp: Date.now(),
+                        sessionId: "debug-session",
+                        hypothesisId: "H3"
+                    })
+                }
+            ).catch(() => {});
+            // #endregion
 
             return harness;
         });

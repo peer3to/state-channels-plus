@@ -248,4 +248,212 @@ export class AssertActions {
             return false;
         }
     }
+
+    /**
+     * Assert specific peers initiated disputes with custom expected count
+     */
+    async disputeInitiatedByPeers(options: {
+        peers: number[];
+        expectedCountPerPeer?: number;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const { peers, expectedCountPerPeer = 1, timeoutMs = 5000 } = options;
+
+        const condition = () => {
+            return peers.every(
+                (peerId) =>
+                    this.harness.eventActions.getEventCallCount(
+                        peerId,
+                        "onInitiatingDispute"
+                    ) >= expectedCountPerPeer
+            );
+        };
+
+        // Check immediately
+        if (condition()) {
+            return;
+        }
+
+        // Use event barrier
+        await this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs,
+            timeoutMessage: `Peers ${peers.join(", ")} did not initiate ${expectedCountPerPeer} disputes within ${timeoutMs}ms`
+        });
+    }
+
+    /**
+     * Assert all peers committed disputes with expected count per peer
+     */
+    async disputeCommittedByAll(options?: {
+        expectedCountPerPeer?: number;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const { expectedCountPerPeer = 1, timeoutMs = 5000 } = options || {};
+
+        const condition = () => {
+            return this.harness.peers.every(
+                (peer) =>
+                    this.harness.eventActions.getEventCallCount(
+                        peer.index,
+                        "onDisputeCommitted"
+                    ) >= expectedCountPerPeer
+            );
+        };
+
+        // Check immediately
+        if (condition()) {
+            return;
+        }
+
+        // Use event barrier
+        await this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs,
+            timeoutMessage: `All peers did not commit ${expectedCountPerPeer} disputes within ${timeoutMs}ms`
+        });
+    }
+
+    /**
+     * Assert honest peers initiated disputes
+     * Uses honest peer indices from harness context (set by Byzantine blocks)
+     */
+    async honestPeersInitiateDispute(options?: {
+        timeoutMs?: number;
+        expectedCountPerPeer?: number;
+    }): Promise<void> {
+        const { timeoutMs = 5000, expectedCountPerPeer = 1 } = options || {};
+
+        // Get malicious peer index (set by Byzantine blocks)
+        const maliciousPeerIndex = (this.harness as any).lastMaliciousPeerIndex;
+        if (maliciousPeerIndex === undefined) {
+            throw new Error(
+                "No malicious peer index found. This should be used after a Byzantine attack block."
+            );
+        }
+
+        // Get honest peers (all except malicious)
+        const honestPeers = this.harness.peers
+            .filter((peer) => peer.index !== maliciousPeerIndex)
+            .map((peer) => peer.index);
+
+        const condition = () => {
+            return honestPeers.every(
+                (peerId) =>
+                    this.harness.eventActions.getEventCallCount(
+                        peerId,
+                        "onInitiatingDispute"
+                    ) >= expectedCountPerPeer
+            );
+        };
+
+        // Check immediately
+        if (condition()) {
+            return;
+        }
+
+        // Use event barrier
+        await this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs,
+            timeoutMessage: `Honest peers ${honestPeers.join(", ")} did not initiate ${expectedCountPerPeer} disputes within ${timeoutMs}ms`
+        });
+    }
+
+    /**
+     * Assert calldata was posted by any peer
+     */
+    async calldataPostedByAny(options?: { timeoutMs?: number }): Promise<void> {
+        const { timeoutMs = 5000 } = options || {};
+
+        const condition = () => {
+            return this.harness.peers.some(
+                (peer) =>
+                    this.harness.eventActions.getEventCallCount(
+                        peer.index,
+                        "onPostedCalldata"
+                    ) > 0 ||
+                    this.harness.eventActions.getEventCallCount(
+                        peer.index,
+                        "onBlockCalldataPosted"
+                    ) > 0
+            );
+        };
+
+        // Check immediately
+        if (condition()) {
+            return;
+        }
+
+        // Use event barrier
+        await this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs,
+            timeoutMessage: `No calldata was posted within ${timeoutMs}ms`
+        });
+    }
+
+    /**
+     * Assert no disputes occurred (neither initiated nor committed)
+     */
+    assertNoDisputes(): void {
+        const totalInitiated = this.harness.peers.reduce((sum, peer) => {
+            return (
+                sum +
+                this.harness.eventActions.getEventCallCount(
+                    peer.index,
+                    "onInitiatingDispute"
+                )
+            );
+        }, 0);
+
+        const totalCommitted = this.harness.peers.reduce((sum, peer) => {
+            return (
+                sum +
+                this.harness.eventActions.getEventCallCount(
+                    peer.index,
+                    "onDisputeCommitted"
+                )
+            );
+        }, 0);
+
+        if (totalInitiated > 0) {
+            throw new Error(
+                `Expected no disputes to be initiated, but ${totalInitiated} were initiated`
+            );
+        }
+
+        if (totalCommitted > 0) {
+            throw new Error(
+                `Expected no disputes to be committed, but ${totalCommitted} were committed`
+            );
+        }
+    }
+
+    /**
+     * Assert no calldata was posted
+     */
+    assertNoCalldataPosted(): void {
+        const totalPosted = this.harness.peers.reduce((sum, peer) => {
+            return (
+                sum +
+                this.harness.eventActions.getEventCallCount(
+                    peer.index,
+                    "onPostedCalldata"
+                )
+            );
+        }, 0);
+
+        const totalBlockCalldata = this.harness.peers.reduce((sum, peer) => {
+            return (
+                sum +
+                this.harness.eventActions.getEventCallCount(
+                    peer.index,
+                    "onBlockCalldataPosted"
+                )
+            );
+        }, 0);
+
+        if (totalPosted > 0 || totalBlockCalldata > 0) {
+            throw new Error(
+                `Expected no calldata to be posted, but onPostedCalldata: ${totalPosted}, onBlockCalldataPosted: ${totalBlockCalldata}`
+            );
+        }
+    }
 }

@@ -17,7 +17,7 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
             await ScenarioRunner.execute(
                 Scenario.activeChannel(3, 2),
                 Byzantine.doubleSignFrom(1), // Peer 1 double-signs
-                Assert.disputeInitiatedBy([0, 2]), // Peers 0,2 detect
+                Assert.disputeInitiatedBy({ peers: [0, 2] }), // Peers 0,2 detect
                 Assert.disputeCommitted()
             );
         });
@@ -26,7 +26,7 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
             await ScenarioRunner.execute(
                 Scenario.activeChannel(3, 2),
                 Byzantine.invalidTransitionFrom(2), // Peer 2 submits invalid
-                Assert.disputeInitiatedBy([0, 1]),
+                Assert.disputeInitiatedBy({ peers: [0, 1] }),
                 Assert.disputeCommitted(3)
             );
         });
@@ -36,7 +36,7 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
                 Scenario.activeChannel(3, 2),
                 Event.reset(),
                 Byzantine.forgedInboundMessageFromNext(),
-                Event.waitUntilHonestPeersInitiateDispute({ timeoutMs: 5000 }),
+                Assert.honestPeersInitiateDispute(),
                 Assert.disputeCommitted(3)
             );
         });
@@ -48,9 +48,8 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
                 Scenario.oneRound(3),
                 Event.reset(),
                 Byzantine.doubleSignFrom(2),
-                Event.waitUntilDisputeInitiatedBy({
-                    peers: [0, 1],
-                    timeoutMs: 5000
+                Assert.disputeInitiatedBy({
+                    peers: [0, 1]
                 }),
                 Assert.disputeCommitted()
             );
@@ -60,7 +59,7 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
             await ScenarioRunner.execute(
                 Scenario.activeChannel(4, 3),
                 Byzantine.doubleSignFrom(2), // Peer 2 attacks
-                Assert.disputeInitiatedBy([0, 1, 3]) // Others detect
+                Assert.disputeInitiatedBy({ peers: [0, 1, 3] }) // Others detect
             );
         });
     });
@@ -81,10 +80,10 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
 
                 Event.captureOriginalFork(),
                 Byzantine.invalidTransitionFromNext(),
-                Event.waitForAllPeers("onDisputeCommitted", 3, {
-                    timeoutMs: 5000
+                Assert.disputeCommittedByAllPeers({
+                    expectedCountPerPeer: 3
                 }),
-                Assert.forkChanged({ timeoutMs: 10000, minHonestPeers: 3 })
+                Assert.forkChanged({ minHonestPeers: 3 })
             );
         });
 
@@ -125,12 +124,10 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
 
                 // Wait: Dispute gets killed by validation
                 Event.waitForAllPeers("onDisputeKilled", 1, {
-                    timeoutMs: 3000,
                     mode: "atLeast"
                 }),
-
                 // Assert: Fraud proof stored and fork unchanged
-                Assert.fraudProofStored({ timeoutMs: 2000 }),
+                Assert.fraudProofStored(),
                 Assert.forkUnchanged()
             );
         });
@@ -147,7 +144,7 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
                 }),
 
                 // Assert: Fraud proof stored and fork unchanged
-                Assert.fraudProofStored({ timeoutMs: 3000 }),
+                Assert.fraudProofStored(),
                 Assert.forkUnchanged()
             );
         });
@@ -161,12 +158,10 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
 
                 // Wait: Dispute gets killed by validation
                 Event.waitForAllPeers("onDisputeKilled", 1, {
-                    timeoutMs: 3000,
                     mode: "atLeast"
                 }),
-
                 // Assert: Fraud proof stored and fork unchanged
-                Assert.fraudProofStored({ timeoutMs: 2000 }),
+                Assert.fraudProofStored(),
                 Assert.forkUnchanged()
             );
         });
@@ -180,12 +175,10 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
 
                 // Wait: Dispute gets killed by validation
                 Event.waitForAllPeers("onDisputeKilled", 1, {
-                    timeoutMs: 3000,
                     mode: "atLeast"
                 }),
-
                 // Assert: Fraud proof stored and fork unchanged
-                Assert.fraudProofStored({ timeoutMs: 2000 }),
+                Assert.fraudProofStored(),
                 Assert.forkUnchanged()
             );
         });
@@ -199,12 +192,10 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
 
                 // Wait: Dispute gets killed by validation
                 Event.waitForAllPeers("onDisputeKilled", 1, {
-                    timeoutMs: 3000,
                     mode: "atLeast"
                 }),
-
                 // Assert: Fraud proof stored and fork unchanged
-                Assert.fraudProofStored({ timeoutMs: 2000 }),
+                Assert.fraudProofStored(),
                 Assert.forkUnchanged()
             );
         });
@@ -237,7 +228,6 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
 
                 // Wait for snapshot update events
                 Event.waitForHonestPeers("onStateSnapshotUpdated", 1, {
-                    timeoutMs: 15000,
                     mode: "atLeast"
                 }),
 
@@ -280,7 +270,6 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
 
                 // Same assertions
                 Event.waitForHonestPeers("onStateSnapshotUpdated", 1, {
-                    timeoutMs: 15000,
                     mode: "atLeast"
                 }),
                 Assert.snapshotMatchesLocal({ peerIndex: 0 }),
@@ -296,19 +285,18 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
                 Scenario.peerWithUnbroadcastedBlock(1),
 
                 // Verify peer 1 is ahead (has the block that wasn't broadcast)
-                Assert.peerBlockHeightGreaterThan(1, 2, { timeoutMs: 5000 }),
+                Assert.peerBlockHeightGreaterThan(1, 2),
 
                 // Peer 0 submits invalid transition (triggers disputes)
                 Byzantine.invalidTransitionFrom(0),
 
                 // Wait for disputes to be committed
                 Event.waitForPeers("onDisputeCommitted", [1, 2], 2, {
-                    timeoutMs: 10000,
                     mode: "atLeast"
                 }),
 
                 // Peer 2 should sync the missing block via peer 1's dispute
-                Assert.peersHaveSameLatestBlock([1, 2], { timeoutMs: 5000 })
+                Assert.peersHaveSameLatestBlock([1, 2])
             );
         });
 
@@ -323,14 +311,12 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
 
                 // Wait for timeout dispute from peer 0 or 1
                 // Peer 2 will validate this dispute with isPartial = true
-                Event.waitForDisputeFromAnyPeer([0, 1], { timeoutMs: 10000 }),
+                Event.waitForDisputeFromAnyPeer([0, 1]),
 
                 // Verify peer 2 resynced via validStateProofButNotSynced
                 // When peer 2 validates the dispute with isPartial = true,
                 // it should sync by applying the signed blocks from the state proof
-                Assert.snapshotCountIncreased(2, "before_isolation", {
-                    timeoutMs: 5000
-                }),
+                Assert.snapshotCountIncreased(2, "before_isolation"),
 
                 // Cleanup: restore calldata handler
                 Byzantine.restoreCalldataHandler(2)
@@ -381,12 +367,10 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
                 // Peer 2 should initiate TWO disputes:
                 // 1. One for peer 1's invalid block
                 // 2. One for peer 0's tampered dispute
-                Event.waitForPeerDisputes(2, 2, { timeoutMs: 25000 }),
+                Event.waitForPeerDisputes(2, 2, { timeoutMs: 15000 }),
 
                 // Verify peer 2 stored fraud proof for peer 0's tampered dispute
-                Assert.fraudProofStoredForTamperedDispute(2, {
-                    timeoutMs: 2000
-                })
+                Assert.fraudProofStoredForTamperedDispute(2)
             );
         });
     });

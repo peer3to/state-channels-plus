@@ -115,10 +115,48 @@ export class Byzantine {
                 );
             }
 
+            // #region agent log
+            fetch(
+                "http://127.0.0.1:7243/ingest/f9b76b10-324c-4d55-bfc2-8a7f8284883e",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        location: "ByzantineBlocks.ts:121",
+                        message:
+                            "invalidTransitionFrom: about to call submitInvalidStateTransitionBlock",
+                        data: { peerIndex, forkId },
+                        timestamp: Date.now(),
+                        sessionId: "debug-session",
+                        hypothesisId: "H5"
+                    })
+                }
+            ).catch(() => {});
+            // #endregion
+
             await harness.byzantineActions.submitInvalidStateTransitionBlock(
                 peerIndex,
                 { forkId }
             );
+
+            // #region agent log
+            fetch(
+                "http://127.0.0.1:7243/ingest/f9b76b10-324c-4d55-bfc2-8a7f8284883e",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        location: "ByzantineBlocks.ts:133",
+                        message:
+                            "invalidTransitionFrom: submitInvalidStateTransitionBlock completed",
+                        data: { peerIndex, forkId },
+                        timestamp: Date.now(),
+                        sessionId: "debug-session",
+                        hypothesisId: "H5"
+                    })
+                }
+            ).catch(() => {});
+            // #endregion
 
             return harness;
         });
@@ -393,6 +431,92 @@ export class Byzantine {
     }
 
     /**
+     * Create and resolve a fork with full settlement control
+     *
+     * This block creates an invalid state transition dispute and waits for
+     * fork resolution with configurable timing for dispute commits and fork settlement.
+     *
+     * Unlike createAndResolveFork(), this provides:
+     * - Control over dispute commit timing (disputesCommittedTimeoutMs)
+     * - Control over fork settlement timing (forkSettleTimeoutMs)
+     * - More lenient dispute commit requirements (some peers may be slow)
+     *
+     * Architecture: Block -> Action (disputeOrchestrator.createAndResolveInvalidStateTransitionDispute) -> Imperative
+     *
+     * @param options.maliciousPeerIndex - Index of peer that will submit invalid transition
+     * @param options.honestPeerIndices - Optional explicit list of honest peer indices
+     * @param options.forkSettleTimeoutMs - How long to wait for fork to settle (default: 10000ms)
+     * @param options.disputesCommittedTimeoutMs - How long to wait for disputes to commit (default: 5000ms)
+     *
+     * @example
+     * ```ts
+     * await ScenarioRunner.execute(
+     *     Scenario.emptyChannel(5),
+     *     Scenario.advanceState(5),
+     *     Byzantine.createAndResolveForkWithSettlement({
+     *         maliciousPeerIndex: 2,
+     *         forkSettleTimeoutMs: 15000 // Wait longer for 5-peer scenario
+     *     }),
+     *     Transition.fromHonestPeersOnly(c => c.add(1))
+     * );
+     * ```
+     */
+    static createAndResolveForkWithSettlement(options: {
+        maliciousPeerIndex: number;
+        honestPeerIndices?: number[];
+        forkSettleTimeoutMs?: number;
+        disputesCommittedTimeoutMs?: number;
+    }) {
+        const {
+            maliciousPeerIndex,
+            honestPeerIndices,
+            forkSettleTimeoutMs = 10000,
+            disputesCommittedTimeoutMs = 5000
+        } = options;
+
+        return new HarnessBlock(async (harness) => {
+            const forkId = harness.activeForkId;
+            if (!forkId) {
+                throw new Error(
+                    "No active fork ID - channel must be opened first"
+                );
+            }
+
+            const totalPeers = harness.peers.length;
+            const honest =
+                honestPeerIndices ||
+                Array.from({ length: totalPeers }, (_, i) => i).filter(
+                    (i) => i !== maliciousPeerIndex
+                );
+
+            // Mark malicious peer context for later blocks
+            (harness as any).maliciousPeerIndex = maliciousPeerIndex;
+            (harness as any).honestPeerIndices = honest;
+
+            // Use disputeOrchestrator action to handle the complex workflow
+            const result =
+                await harness.disputeOrchestrator.createAndResolveInvalidStateTransitionDispute(
+                    maliciousPeerIndex,
+                    {
+                        forkId,
+                        honestPeerIndices: honest,
+                        forkSettleTimeoutMs,
+                        disputesCommittedTimeoutMs,
+                        resetEventSpies: true,
+                        disputesCommittedMode: "atLeast",
+                        assertMaliciousRemoved: false
+                    }
+                );
+
+            // Update active fork context
+            (harness as any).originalForkId = forkId;
+            harness.activeForkId = result.newForkId;
+
+            return harness;
+        });
+    }
+
+    /**
      * Setup tampered dispute construction interception for a peer
      */
     static interceptDisputeConstruction(options: {
@@ -402,10 +526,46 @@ export class Byzantine {
         const { peerIndex, tamperFn } = options;
 
         return new HarnessBlock(async (harness) => {
+            // #region agent log
+            fetch(
+                "http://127.0.0.1:7243/ingest/f9b76b10-324c-4d55-bfc2-8a7f8284883e",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        location: "ByzantineBlocks.ts:407",
+                        message:
+                            "interceptDisputeConstruction: setting up tampering",
+                        data: { peerIndex },
+                        timestamp: Date.now(),
+                        sessionId: "debug-session",
+                        hypothesisId: "H2"
+                    })
+                }
+            ).catch(() => {});
+            // #endregion
             const { dispute: tamperedDisputePromise, restore } =
                 harness.disputeOrchestrator.withConstructDisputeTampering(
                     peerIndex,
                     async (res) => {
+                        // #region agent log
+                        fetch(
+                            "http://127.0.0.1:7243/ingest/f9b76b10-324c-4d55-bfc2-8a7f8284883e",
+                            {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    location: "ByzantineBlocks.ts:416",
+                                    message:
+                                        "interceptDisputeConstruction: tamperFn callback invoked",
+                                    data: { peerIndex },
+                                    timestamp: Date.now(),
+                                    sessionId: "debug-session",
+                                    hypothesisId: "H2"
+                                })
+                            }
+                        ).catch(() => {});
+                        // #endregion
                         // Apply the tamper function
                         await tamperFn(res.dispute, res.disputeConfirmation);
 
@@ -427,6 +587,25 @@ export class Byzantine {
             // Store the promise and restore function
             (harness as any).tamperedDisputePromise = tamperedDisputePromise;
             (harness as any).restoreDisputeConstruction = restore;
+
+            // #region agent log
+            fetch(
+                "http://127.0.0.1:7243/ingest/f9b76b10-324c-4d55-bfc2-8a7f8284883e",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        location: "ByzantineBlocks.ts:444",
+                        message:
+                            "interceptDisputeConstruction: tampering setup complete",
+                        data: { peerIndex },
+                        timestamp: Date.now(),
+                        sessionId: "debug-session",
+                        hypothesisId: "H2"
+                    })
+                }
+            ).catch(() => {});
+            // #endregion
 
             return harness;
         });

@@ -12,7 +12,7 @@ describe("E2E: Core (V2 - High-Level DSL)", function () {
         it("should handle 10 consecutive blocks between 2 participants", async function () {
             await ScenarioRunner.execute(
                 Scenario.emptyChannel(2),
-                Scenario.peersWrite(10),
+                Scenario.advanceState(10),
                 Assert.allPeersInSync(),
                 Assert.blockHeight(9) // 10 blocks after genesis = height 9
             );
@@ -21,7 +21,7 @@ describe("E2E: Core (V2 - High-Level DSL)", function () {
         it("should handle 10 consecutive blocks between 3 participants", async function () {
             await ScenarioRunner.execute(
                 Scenario.emptyChannel(3),
-                Scenario.peersWrite(10),
+                Scenario.advanceState(10),
                 Assert.allPeersInSync(),
                 Assert.blockHeight(9)
             );
@@ -50,7 +50,7 @@ describe("E2E: Core (V2 - High-Level DSL)", function () {
         it("should execute a simple 3-peer scenario", async function () {
             await ScenarioRunner.execute(
                 Scenario.activeChannel(3, 2),
-                Scenario.peersWrite(1),
+                Scenario.advanceState(1),
                 Assert.allPeersInSync(),
                 Assert.blockHeight(2)
             );
@@ -60,7 +60,7 @@ describe("E2E: Core (V2 - High-Level DSL)", function () {
             // Start from a 4-peer channel with 5 blocks already
             await ScenarioRunner.execute(
                 Scenario.activeChannel(4, 5),
-                Scenario.peersWrite(1),
+                Scenario.advanceState(1),
                 Assert.allPeersInSync(),
                 Assert.blockHeight(5) // Was 4, added 1
             );
@@ -71,7 +71,7 @@ describe("E2E: Core (V2 - High-Level DSL)", function () {
         it("should handle various workflow operations", async function () {
             await ScenarioRunner.execute(
                 Scenario.emptyChannel(3),
-                Scenario.peersWrite(2),
+                Scenario.advanceState(2),
                 Scenario.addValue(10),
                 Assert.allPeersInSync(),
                 Assert.blockHeight(2) // Should have 3 transitions (height 2)

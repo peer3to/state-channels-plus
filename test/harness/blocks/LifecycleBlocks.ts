@@ -68,4 +68,32 @@ export class Lifecycle {
             return harness;
         });
     }
+
+    /**
+     * Manually trigger connection attempts for all peers
+     *
+     * Useful for tests that need precise control over connection timing,
+     * especially when using autoConnect: false.
+     *
+     * Architecture: Block -> uses harness.peers array directly (no action needed)
+     *
+     * @example
+     * ```ts
+     * await ScenarioRunner.execute(
+     *     Scenario.emptyChannel(2, { autoConnect: false }),
+     *     Lifecycle.triggerConnections(),
+     *     // ... test connection behavior
+     * );
+     * ```
+     */
+    static triggerConnections() {
+        return new HarnessBlock(async (harness) => {
+            for (const peer of harness.peers) {
+                peer.stateManager.p2pManager.tryOpenConnectionToChannel(
+                    harness.channelId!.toString()
+                );
+            }
+            return harness;
+        });
+    }
 }

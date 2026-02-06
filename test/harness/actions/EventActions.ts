@@ -23,7 +23,25 @@ export class EventActions {
         const peer = this.harness.peers[peerIndex];
         if (!peer) throw new Error(`Peer ${peerIndex} not found`);
         const spy = peer.eventSpies[eventName];
-        return spy ? spy.callCount : 0;
+        const count = spy ? spy.callCount : 0;
+        // #region agent log
+        fetch(
+            "http://127.0.0.1:7243/ingest/f9b76b10-324c-4d55-bfc2-8a7f8284883e",
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    location: "EventActions.ts:28",
+                    message: "getEventCallCount",
+                    data: { peerIndex, eventName, count },
+                    timestamp: Date.now(),
+                    sessionId: "debug-session",
+                    hypothesisId: "H3"
+                })
+            }
+        ).catch(() => {});
+        // #endregion
+        return count;
     }
 
     /**
@@ -129,10 +147,44 @@ export class EventActions {
         if (peerIndex !== undefined) {
             const peer = this.harness.peers[peerIndex];
             if (!peer) throw new Error(`Peer ${peerIndex} not found`);
+            // #region agent log
+            fetch(
+                "http://127.0.0.1:7243/ingest/f9b76b10-324c-4d55-bfc2-8a7f8284883e",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        location: "EventActions.ts:138",
+                        message: "resetEventSpies: single peer",
+                        data: { peerIndex },
+                        timestamp: Date.now(),
+                        sessionId: "debug-session",
+                        hypothesisId: "H4"
+                    })
+                }
+            ).catch(() => {});
+            // #endregion
             Object.values(peer.eventSpies).forEach((spy) =>
                 spy?.resetHistory()
             );
         } else {
+            // #region agent log
+            fetch(
+                "http://127.0.0.1:7243/ingest/f9b76b10-324c-4d55-bfc2-8a7f8284883e",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        location: "EventActions.ts:147",
+                        message: "resetEventSpies: all peers",
+                        data: { peerCount: this.harness.peers.length },
+                        timestamp: Date.now(),
+                        sessionId: "debug-session",
+                        hypothesisId: "H4"
+                    })
+                }
+            ).catch(() => {});
+            // #endregion
             this.harness.peers.forEach((peer) => {
                 Object.values(peer.eventSpies).forEach((spy) =>
                     spy?.resetHistory()
