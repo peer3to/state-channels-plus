@@ -55,7 +55,7 @@ export abstract class LogUploader {
             const peerAddress = this.sharedContext.peerAddress;
 
             if (!channelId || !peerAddress) {
-                throw new Error("Missing channelId or peerAddress");
+                return; // ignore
             }
 
             // Generate plain log and compress before upload

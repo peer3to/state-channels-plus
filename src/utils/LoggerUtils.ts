@@ -3,7 +3,9 @@ import {
     TimeoutStruct,
     StateProofStruct,
     DisputeInputStruct,
-    DisputeAuditingDataStruct
+    DisputeAuditingDataStruct,
+    ReduceOutputStruct,
+    BlockStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import {
     DisputeFraudProofStruct,
@@ -166,6 +168,23 @@ export class LoggerUtils {
         };
     }
 
+    static getBlockStructMetadata(blockStruct: BlockStruct) {
+        const header = blockStruct.transaction.header;
+        return {
+            author: String(header.participant),
+            blockHash: String(hash(Codec.encode(blockStruct, Type.Block))),
+            blockHeight: Number(header.transactionCnt),
+            timestamp: Number(header.timestamp),
+            forkId: String(header.forkId),
+            channelId: String(header.channelId),
+            stateSnapshotHash: String(blockStruct.stateSnapshotHash),
+            previousBlockHash: String(blockStruct.previousBlockHash),
+            messageBlocks: blockStruct.messageBlocks.map((messageBlock) =>
+                this.getMessageBlockMetadata(messageBlock)
+            )
+        };
+    }
+
     static getSnapshotMetadata(stateSnapshot: StateSnapshot) {
         return {
             blockHeight: stateSnapshot.blockHeight,
@@ -222,6 +241,23 @@ export class LoggerUtils {
         };
     }
 
+    static getReducedOutputMetadata(reducedOutput: ReduceOutputStruct) {
+        return {
+            latestBlock: this.getBlockStructMetadata(reducedOutput.latestBlock),
+            slashedParticipants: reducedOutput.slashedParticipants.map((addr) =>
+                String(addr)
+            ),
+            latestInboundMessageBlockHash: String(
+                reducedOutput.latestInboundMessageBlockHash
+            ),
+            latestInboundMessageBlockHeight: Number(
+                reducedOutput.latestInboundMessageBlockHeight
+            ),
+            timeout: this.getTimeoutStructMetadata(reducedOutput.timeout),
+            selfRemovals: reducedOutput.selfRemovals.map((addr) => String(addr))
+        };
+    }
+
     static getStateProofMetadata(stateProof: StateProofStruct) {
         const milestones = stateProof.milestones.map(
             (milestone, milestoneIndex) => ({
@@ -239,10 +275,16 @@ export class LoggerUtils {
         const signedBlocks = stateProof.signedBlocks.map((signedBlock) =>
             this.getBlockMetadata(Block.fromSignedBlock(signedBlock))
         );
-
+        const milestonesCount = milestones.length;
+        const signedBlocksCount = signedBlocks.length;
+        const latestBlockHeight =
+            milestones.at(-1)?.confirmations.at(-1)?.blockHeight ??
+            signedBlocks.at(-1)?.blockHeight ??
+            0;
         return {
-            milestonesCount: stateProof.milestones.length,
-            signedBlocksCount: stateProof.signedBlocks.length,
+            latestBlockHeight,
+            milestonesCount,
+            signedBlocksCount,
             milestones,
             signedBlocks
         };

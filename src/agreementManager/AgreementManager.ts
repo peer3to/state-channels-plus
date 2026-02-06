@@ -21,6 +21,7 @@ import { Logger } from "@/utils";
 import { ZeroHash } from "ethers";
 import { StateChannelManagerProxy } from "@typechain-types/index";
 import { ReduceData } from "@/types";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 /**
  * AgreementManager acts as a higher logic layer over storage
@@ -375,6 +376,10 @@ class AgreementManager {
         reducedOutput: ReduceOutputStruct
     ): Promise<ReduceData> {
         // reducedOutput latestStateSnapshot
+        this.logger.debug(
+            "ReduceOutput",
+            LoggerUtils.getReducedOutputMetadata(reducedOutput)
+        );
         let reducedLatestStateSnapshot: StateSnapshot;
         if (
             !reducedOutput.latestBlock ||
