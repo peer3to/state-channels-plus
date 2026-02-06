@@ -96,7 +96,7 @@ export class Transition {
         }
     ) {
         return new HarnessBlock(async (harness) => {
-            const honestIndices = (harness as any).honestPeerIndices;
+            const honestIndices = harness.context.honestPeerIndices;
             if (!honestIndices) {
                 throw new Error(
                     "honestPeerIndices not set - use Byzantine.createAndResolveFork first"
@@ -120,7 +120,7 @@ export class Transition {
         txFns: Array<(contract: any) => Promise<any>>
     ) {
         return new HarnessBlock(async (harness) => {
-            const honestIndices = (harness as any).honestPeerIndices;
+            const honestIndices = harness.context.honestPeerIndices;
             if (!honestIndices) {
                 throw new Error(
                     "honestPeerIndices not set - use Byzantine.createAndResolveFork first"

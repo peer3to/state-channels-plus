@@ -140,7 +140,8 @@ export class Byzantine {
             const maliciousPeer = await harness.stateQuery.getNextPeerToWrite();
 
             // Store malicious peer index on harness for use by Event/Assert blocks
-            (harness as any).lastMaliciousPeerIndex = maliciousPeer.index;
+            (harness.context as any).lastMaliciousPeerIndex =
+                maliciousPeer.index;
 
             // Submit invalid transition (action only, no waiting)
             await harness.byzantineActions.submitInvalidStateTransitionBlock(
@@ -189,7 +190,8 @@ export class Byzantine {
             const maliciousPeer = await harness.stateQuery.getNextPeerToWrite();
 
             // Store malicious peer index on harness for use by Event/Assert blocks
-            (harness as any).lastMaliciousPeerIndex = maliciousPeer.index;
+            (harness.context as any).lastMaliciousPeerIndex =
+                maliciousPeer.index;
 
             // Submit forged inbound message block (action only, no waiting)
             await harness.byzantineActions.submitForgedInboundMessageBlock(
@@ -336,7 +338,7 @@ export class Byzantine {
                 );
 
             // Store dispute for later assertions
-            (harness as any).lastTamperedDispute = dispute;
+            harness.context.lastTamperedDispute = dispute;
 
             return harness;
         });
@@ -345,9 +347,19 @@ export class Byzantine {
     // ========================================
     // COMPOSED SCENARIOS - High-level attack patterns
     // ========================================
+    // NOTE: These are meta-blocks that compose multiple primitive blocks.
+    // They represent complete attack scenarios rather than single Byzantine actions.
 
     /**
-     * Trigger invalid state transition from a malicious peer, wait for disputes, and resolve the fork
+     * META-BLOCK: Trigger invalid state transition from a malicious peer, wait for disputes, and resolve the fork
+     *
+     * This is a high-level composition block that orchestrates multiple primitive blocks
+     * to create a complete fork resolution scenario. It composes:
+     * - Context marking (malicious/honest peers)
+     * - Fork capture
+     * - Byzantine attack (invalid transition)
+     * - Event synchronization (dispute commits, fork change)
+     * - Context update
      */
     static createAndResolveFork(options: {
         maliciousPeerIndex: number;
@@ -393,10 +405,11 @@ export class Byzantine {
     }
 
     /**
-     * Create and resolve a fork with full settlement control
+     * META-BLOCK: Create and resolve a fork with full settlement control
      *
-     * This block creates an invalid state transition dispute and waits for
-     * fork resolution with configurable timing for dispute commits and fork settlement.
+     * This is a high-level composition block that creates an invalid state transition
+     * dispute and waits for fork resolution with configurable timing for dispute commits
+     * and fork settlement.
      *
      * Unlike createAndResolveFork(), this provides:
      * - Control over dispute commit timing (disputesCommittedTimeoutMs)
@@ -433,8 +446,8 @@ export class Byzantine {
                 );
 
             // Mark malicious peer context for later blocks
-            (harness as any).maliciousPeerIndex = maliciousPeerIndex;
-            (harness as any).honestPeerIndices = honest;
+            harness.context.maliciousPeerIndex = maliciousPeerIndex;
+            harness.context.honestPeerIndices = honest;
 
             // Use disputeOrchestrator action to handle the complex workflow
             const result =
@@ -452,7 +465,7 @@ export class Byzantine {
                 );
 
             // Update active fork context
-            (harness as any).originalForkId = forkId;
+            harness.context.originalForkId = forkId;
             harness.activeForkId = result.newForkId;
 
             return harness;
@@ -492,8 +505,8 @@ export class Byzantine {
                 );
 
             // Store the promise and restore function
-            (harness as any).tamperedDisputePromise = tamperedDisputePromise;
-            (harness as any).restoreDisputeConstruction = restore;
+            harness.context.tamperedDisputePromise = tamperedDisputePromise;
+            harness.context.restoreDisputeConstruction = restore;
 
             return harness;
         });

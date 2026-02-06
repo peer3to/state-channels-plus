@@ -75,4 +75,22 @@ export class RPCActions {
             forkId
         );
     }
+
+    /**
+     * Join a peer to the channel and wait for handshake completion
+     * Encapsulates both connection and handshake verification
+     */
+    async joinPeerToChannel(
+        newPeerIndex: number,
+        observingPeerIndex: number
+    ): Promise<void> {
+        const newPeer = this.harness.getPeer(newPeerIndex);
+        await newPeer.stateManager.p2pManager.tryOpenConnectionToChannel(
+            this.harness.channelId!.toString()
+        );
+        await this.waitForHandshakeCompleted(
+            observingPeerIndex,
+            newPeer.address
+        );
+    }
 }

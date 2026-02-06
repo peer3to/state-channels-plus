@@ -76,7 +76,7 @@ describe("E2E: Dispute Manager", function () {
 
                 Event.captureOriginalFork(),
                 Byzantine.invalidTransitionFromNext(),
-                Assert.disputeCommittedByAllPeers({
+                Assert.disputeCommittedByAll({
                     expectedCountPerPeer: 3
                 }),
                 Assert.forkChanged({ minHonestPeers: 3 })

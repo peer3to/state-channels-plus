@@ -71,27 +71,11 @@ export class Assert {
                 throw new Error("No active fork ID");
             }
 
-            const timeout =
-                harness.peers[
-                    peerToCheck
-                ].stateManager.storage.timeout.getTimeout(forkId);
-
-            if (!timeout) {
-                throw new Error(`No timeout found for fork ${forkId}`);
-            }
-
-            if (!timeout.isForced) {
-                throw new Error(
-                    `Expected timeout to be forced, but it was not`
-                );
-            }
-
-            if (timeout.participant !== harness.peers[participant].address) {
-                throw new Error(
-                    `Expected timeout participant to be peer ${participant} (${harness.peers[participant].address}), ` +
-                        `but was ${timeout.participant}`
-                );
-            }
+            harness.assertActions.assertTimeoutIsForced({
+                participant,
+                peerToCheck,
+                forkId
+            });
 
             return harness;
         });
@@ -111,21 +95,11 @@ export class Assert {
                 throw new Error("No active fork ID");
             }
 
-            const timeout =
-                harness.peers[
-                    peerToCheck
-                ].stateManager.storage.timeout.getTimeout(forkId);
-
-            if (!timeout) {
-                throw new Error(`No timeout found for fork ${forkId}`);
-            }
-
-            if (timeout.participant !== harness.peers[participant].address) {
-                throw new Error(
-                    `Expected timeout participant to be peer ${participant} (${harness.peers[participant].address}), ` +
-                        `but was ${timeout.participant}`
-                );
-            }
+            harness.assertActions.assertTimeoutExists({
+                participant,
+                peerToCheck,
+                forkId
+            });
 
             return harness;
         });
@@ -141,32 +115,18 @@ export class Assert {
         const { timeoutMs = 10000, minHonestPeers = 3 } = options || {};
 
         return new HarnessBlock(async (harness) => {
-            const originalForkId = (harness as any).originalForkId;
+            const originalForkId = harness.context.originalForkId;
             if (!originalForkId) {
                 throw new Error(
                     "No original fork ID captured. Use Event.captureOriginalFork() before this assertion."
                 );
             }
 
-            const { ZeroHash } = await import("ethers");
-            const forkChanged = await harness.waitForForkChange({
-                excludeForkIds: [originalForkId, ZeroHash],
-                timeoutMs
+            await harness.assertActions.assertForkChanged({
+                originalForkId,
+                timeoutMs,
+                minHonestPeers
             });
-
-            if (!forkChanged) {
-                // Additional check to provide better error message
-                const peerForks = harness.peers
-                    .map((p) => p.stateManager.forkId)
-                    .filter(
-                        (forkId) =>
-                            forkId !== ZeroHash && forkId !== originalForkId
-                    );
-                const peersOnNewFork = peerForks.length;
-                throw new Error(
-                    `Fork did not change within ${timeoutMs}ms. Expected at least ${minHonestPeers} peers on new fork, got ${peersOnNewFork}.`
-                );
-            }
 
             return harness;
         });
@@ -177,7 +137,7 @@ export class Assert {
      */
     static forkUnchanged() {
         return new HarnessBlock(async (harness) => {
-            const originalForkId = (harness as any).originalForkId;
+            const originalForkId = harness.context.originalForkId;
             if (!originalForkId) {
                 throw new Error(
                     "No original fork ID captured. Use Event.captureOriginalFork() before this assertion."
@@ -207,39 +167,17 @@ export class Assert {
         const { timeoutMs = 2000 } = options || {};
 
         return new HarnessBlock(async (harness) => {
-            const dispute = (harness as any).lastTamperedDispute;
+            const dispute = harness.context.lastTamperedDispute;
             if (!dispute) {
                 throw new Error(
                     "No tampered dispute found. Use Byzantine.tamperedDispute* blocks before this assertion."
                 );
             }
 
-            const condition = () => {
-                return harness.peers.every((peer) => {
-                    const proof =
-                        peer.stateManager.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
-                            dispute
-                        );
-                    return !!proof;
-                });
-            };
-
-            // Check immediately first
-            if (condition()) {
-                return harness;
-            }
-
-            // Use event barrier (fires on dispute/state events)
-            try {
-                await harness.eventCountsBarrier.waitFor(condition, {
-                    timeoutMs,
-                    timeoutMessage: `Fraud proof was not stored on all peers within ${timeoutMs}ms`
-                });
-            } catch (error) {
-                throw new Error(
-                    `Fraud proof was not stored on all peers within ${timeoutMs}ms`
-                );
-            }
+            await harness.assertActions.assertFraudProofStored({
+                dispute,
+                timeoutMs
+            });
 
             return harness;
         });
@@ -250,8 +188,7 @@ export class Assert {
      */
     static onlyHonestPeersInSync() {
         return new HarnessBlock(async (harness) => {
-            const honestIndices = (harness as any)
-                .honestPeerIndices as number[];
+            const honestIndices = harness.context.honestPeerIndices;
             if (!honestIndices) {
                 throw new Error(
                     "honestPeerIndices not set - use Byzantine.createAndResolveFork first"
@@ -271,8 +208,7 @@ export class Assert {
      */
     static maliciousPeerExcluded() {
         return new HarnessBlock(async (harness) => {
-            const maliciousIndex = (harness as any)
-                .maliciousPeerIndex as number;
+            const maliciousIndex = harness.context.maliciousPeerIndex;
             if (maliciousIndex === undefined) {
                 throw new Error(
                     "maliciousPeerIndex not set - use Byzantine.createAndResolveFork first"
@@ -440,7 +376,7 @@ export class Assert {
             let countBefore: number;
             if (contextKey) {
                 // Use named context key
-                countBefore = (harness as any)[`snapshotCount_${contextKey}`];
+                countBefore = harness.context[`snapshotCount_${contextKey}`];
                 if (countBefore === undefined) {
                     throw new Error(
                         `No baseline snapshot count found for key "${contextKey}". Use Assert.storeSnapshotCount() first.`
@@ -448,9 +384,8 @@ export class Assert {
                 }
             } else {
                 // Use default peer-based key
-                countBefore = (harness as any)[
-                    `peer${peerIndex}SnapshotCountBefore`
-                ];
+                countBefore =
+                    harness.context[`peer${peerIndex}SnapshotCountBefore`];
                 if (countBefore === undefined) {
                     throw new Error(
                         `No snapshot count captured for peer ${peerIndex}. Use Context.captureSnapshotCount() first.`
@@ -645,8 +580,8 @@ export class Assert {
         const { timeoutMs = 2000 } = options || {};
 
         return new HarnessBlock(async (harness) => {
-            const tamperedDisputePromise = (harness as any)
-                .tamperedDisputePromise;
+            const tamperedDisputePromise =
+                harness.context.tamperedDisputePromise;
             if (!tamperedDisputePromise) {
                 throw new Error(
                     "No tampered dispute promise found. Use Byzantine.interceptDisputeConstruction() first."
@@ -657,7 +592,7 @@ export class Assert {
             const tamperedDispute = await tamperedDisputePromise;
 
             // Restore the interception (cleanup)
-            const restore = (harness as any).restoreDisputeConstruction;
+            const restore = harness.context.restoreDisputeConstruction;
             if (restore) {
                 restore();
             }
@@ -704,7 +639,7 @@ export class Assert {
                 snapshotStorage.snapshotsByHash.keys()
             ).length;
 
-            (harness as any)[`snapshotCount_${contextKey}`] = count;
+            (harness.context as any)[`snapshotCount_${contextKey}`] = count;
 
             return harness;
         });
@@ -837,406 +772,6 @@ export class Assert {
     }) {
         return new HarnessBlock(async (harness) => {
             await harness.assertActions.honestPeersInitiateDispute(options);
-            return harness;
-        });
-    }
-
-    /**
-     * Assert all peers committed disputes
-     *
-     */
-    static disputeCommittedByAllPeers(options?: {
-        expectedCountPerPeer?: number;
-        timeoutMs?: number;
-    }) {
-        return new HarnessBlock(async (harness) => {
-            await harness.assertActions.disputeCommittedByAll(options);
-            return harness;
-        });
-    }
-
-    // =================================================================
-    // RPC-Specific Assertions
-    // =================================================================
-
-    /**
-     * Assert peer was disconnected (expects specific final connection count)
-     * Uses disconnectionBarrier for event-driven waiting
-     */
-    static peerDisconnectedFrom(options: {
-        peerIndex: number;
-        expectedFinalCount: number;
-        timeoutMs?: number;
-    }) {
-        const { peerIndex, expectedFinalCount, timeoutMs = 5000 } = options;
-
-        return new HarnessBlock(async (harness) => {
-            // Wait for connection count to reach expected final count
-            await harness.disconnectionBarrier.waitFor(
-                () =>
-                    harness.stateQuery.getConnectionCount(peerIndex) ===
-                    expectedFinalCount,
-                {
-                    timeoutMs,
-                    timeoutMessage: `Expected peer ${peerIndex} to have ${expectedFinalCount} connection(s) within ${timeoutMs}ms`
-                }
-            );
-
-            return harness;
-        });
-    }
-
-    /**
-     * Assert peer was disconnected (connection count decreased)
-     * Uses disconnectionBarrier for event-driven waiting
-     */
-    static peerDisconnected(options: {
-        peerIndex: number;
-        expectedDisconnections?: number;
-        timeoutMs?: number;
-    }) {
-        const {
-            peerIndex,
-            expectedDisconnections = 1,
-            timeoutMs = 5000
-        } = options;
-
-        return new HarnessBlock(async (harness) => {
-            const connectionsBefore =
-                harness.stateQuery.getConnectionCount(peerIndex);
-            const expectedCount = connectionsBefore - expectedDisconnections;
-
-            // Use disconnectionBarrier (event-driven) - signaled by onDisconnection hook
-            await harness.disconnectionBarrier.waitFor(
-                () =>
-                    harness.stateQuery.getConnectionCount(peerIndex) <=
-                    expectedCount,
-                {
-                    timeoutMs,
-                    timeoutMessage: `Expected peer ${peerIndex} to lose ${expectedDisconnections} connection(s) within ${timeoutMs}ms`
-                }
-            );
-
-            const connectionsAfter =
-                harness.stateQuery.getConnectionCount(peerIndex);
-            if (connectionsAfter > expectedCount) {
-                throw new Error(
-                    `Expected peer ${peerIndex} to lose ${expectedDisconnections} connection(s), ` +
-                        `but only lost ${connectionsBefore - connectionsAfter} ` +
-                        `(before: ${connectionsBefore}, after: ${connectionsAfter})`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
-     * Assert connection count matches expected
-     */
-    static connectionCount(peerIndex: number, expectedCount: number) {
-        return new HarnessBlock(async (harness) => {
-            const actualCount =
-                harness.stateQuery.getConnectionCount(peerIndex);
-
-            if (actualCount !== expectedCount) {
-                throw new Error(
-                    `Expected peer ${peerIndex} to have ${expectedCount} connections, ` +
-                        `but has ${actualCount}`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
-     * Assert dispute acknowledged by specific peer
-     */
-    static disputeAcknowledgedBy(options: {
-        requestingPeer: number;
-        respondingPeer: number;
-        forkId?: import("@/types/types").ForkId;
-    }) {
-        const { requestingPeer, respondingPeer, forkId } = options;
-
-        return new HarnessBlock(async (harness) => {
-            const activeForkId = forkId ?? harness.activeForkId;
-            if (!activeForkId) {
-                throw new Error("No active fork ID");
-            }
-
-            const requestingService =
-                harness.rpcActions.getIsForkDisputedService(requestingPeer);
-            const respondingPeerObj = harness.getPeer(respondingPeer);
-            const transport = await harness.stateQuery.waitForPeerTransport(
-                requestingPeer,
-                respondingPeer,
-                5000
-            );
-
-            const peerAddress =
-                transport.peerAddress ?? respondingPeerObj.address;
-            const acknowledged =
-                requestingService.didPeerAcknowledgeDisputedFork(
-                    peerAddress,
-                    activeForkId
-                );
-
-            if (!acknowledged) {
-                throw new Error(
-                    `Expected peer ${respondingPeer} to have acknowledged disputed fork ` +
-                        `${activeForkId} to peer ${requestingPeer}, but did not`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
-     * Assert all connected peers acknowledged dispute
-     */
-    static allPeersAcknowledgedDispute(options: {
-        requestingPeer: number;
-        forkId?: import("@/types/types").ForkId;
-        excludePeers?: number[];
-        timeoutMs?: number;
-    }) {
-        const {
-            requestingPeer,
-            forkId,
-            excludePeers = [],
-            timeoutMs = 5000
-        } = options;
-
-        return new HarnessBlock(async (harness) => {
-            const activeForkId = forkId ?? harness.activeForkId;
-            if (!activeForkId) {
-                throw new Error("No active fork ID");
-            }
-
-            const requestingService =
-                harness.rpcActions.getIsForkDisputedService(requestingPeer);
-
-            // Calculate expected number of acknowledging peers
-            const totalPeers = harness.peers.length;
-            const expectedAcknowledgments =
-                totalPeers - excludePeers.length - 1; // -1 for self
-
-            // Use rpcBarrier to wait for acknowledgments (event-driven)
-            // The barrier is signaled when onDisputeAcknowledgmentResponse is received
-            await harness.rpcBarrier.waitFor(
-                () => {
-                    const acknowledgedPeers = harness.peers
-                        .filter((_, i) => !excludePeers.includes(i))
-                        .filter((_, i) => i !== requestingPeer)
-                        .filter((p) =>
-                            requestingService.didPeerAcknowledgeDisputedFork(
-                                p.address,
-                                activeForkId
-                            )
-                        );
-
-                    return acknowledgedPeers.length >= expectedAcknowledgments;
-                },
-                {
-                    timeoutMs,
-                    timeoutMessage: `Not all peers acknowledged disputed fork ${activeForkId} to peer ${requestingPeer} within ${timeoutMs}ms`
-                }
-            );
-
-            return harness;
-        });
-    }
-
-    /**
-     * Assert handshake completed between two peers
-     */
-    static handshakeCompleted(options: { peer1: number; peer2: number }) {
-        const { peer1, peer2 } = options;
-
-        return new HarnessBlock(async (harness) => {
-            const peer2Obj = harness.getPeer(peer2);
-            const isCompleted = harness.rpcActions.isHandshakeCompleted(
-                peer1,
-                peer2Obj.address
-            );
-
-            if (!isCompleted) {
-                throw new Error(
-                    `Expected handshake to be completed between peer ${peer1} and peer ${peer2}, ` +
-                        `but it is not`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
-     * Assert handshake not completed
-     */
-    static handshakeNotCompleted(options: { peer1: number; peer2: number }) {
-        const { peer1, peer2 } = options;
-
-        return new HarnessBlock(async (harness) => {
-            const peer2Obj = harness.getPeer(peer2);
-            const isCompleted = harness.rpcActions.isHandshakeCompleted(
-                peer1,
-                peer2Obj.address
-            );
-
-            if (isCompleted) {
-                throw new Error(
-                    `Expected handshake NOT to be completed between peer ${peer1} and peer ${peer2}, ` +
-                        `but it is completed`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
-     * Assert duplicate dispute acknowledgment request is ignored (idempotent)
-     */
-    static duplicateDisputeRequestIgnored(options: {
-        peerIndex: number;
-        forkId?: import("@/types/types").ForkId;
-    }) {
-        const { peerIndex, forkId } = options;
-
-        return new HarnessBlock(async (harness) => {
-            const activeForkId = forkId ?? harness.activeForkId;
-            if (!activeForkId) {
-                throw new Error("No active fork ID");
-            }
-
-            const service =
-                harness.rpcActions.getIsForkDisputedService(peerIndex);
-            const disputedForksBefore = service.disputedForks.size;
-
-            // Try to request again
-            service.requestDisputeAcknowledgment(
-                harness.channelId!,
-                activeForkId
-            );
-
-            const disputedForksAfter = service.disputedForks.size;
-
-            if (disputedForksAfter !== disputedForksBefore) {
-                throw new Error(
-                    `Expected duplicate request to be ignored, but disputedForks changed ` +
-                        `from ${disputedForksBefore} to ${disputedForksAfter}`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
-     * Assert first acknowledgment was recorded
-     */
-    static firstAcknowledgmentRecorded(options: {
-        respondingPeer: number;
-        requestingPeer: number;
-        forkId?: import("@/types/types").ForkId;
-    }) {
-        const { respondingPeer, requestingPeer, forkId } = options;
-
-        return new HarnessBlock(async (harness) => {
-            const activeForkId = forkId ?? harness.activeForkId;
-            if (!activeForkId) {
-                throw new Error("No active fork ID");
-            }
-
-            const requestingPeerObj = harness.getPeer(requestingPeer);
-            const service =
-                harness.rpcActions.getIsForkDisputedService(respondingPeer);
-
-            const acknowledged = service.didIAcknowledgeDisputedFork(
-                requestingPeerObj.address,
-                activeForkId
-            );
-
-            if (!acknowledged) {
-                throw new Error(
-                    `Expected peer ${respondingPeer} to have acknowledged fork ${activeForkId} ` +
-                        `to peer ${requestingPeer}, but did not`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
-     * Assert transport is closed or gone after timeout
-     */
-    static transportClosedOrGone(options: {
-        fromPeer: number;
-        toPeer: number;
-    }) {
-        const { fromPeer, toPeer } = options;
-
-        return new HarnessBlock(async (harness) => {
-            const transport = await harness.stateQuery
-                .waitForPeerTransport(fromPeer, toPeer, 1000)
-                .catch(() => null);
-
-            // Transport should either be gone or closed
-            if (transport && !transport.isClosed) {
-                throw new Error(
-                    `Expected transport from peer ${fromPeer} to peer ${toPeer} ` +
-                        `to be closed, but it is still open`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
-     * Assert peer is blacklisted
-     */
-    static peerBlacklisted(options: {
-        ownerPeer: number;
-        blacklistedPeer: number;
-    }) {
-        const { ownerPeer, blacklistedPeer } = options;
-
-        return new HarnessBlock(async (harness) => {
-            const blacklistedPeerObj = harness.getPeer(blacklistedPeer);
-            const ownerPeerObj = harness.getPeer(ownerPeer);
-
-            const isBlacklisted =
-                ownerPeerObj.stateManager.p2pManager.isBlacklisted(
-                    blacklistedPeerObj.address
-                );
-
-            if (!isBlacklisted) {
-                throw new Error(
-                    `Expected peer ${blacklistedPeer} to be blacklisted by peer ${ownerPeer}, ` +
-                        `but it is not`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
-     * Assert all specified handshakes are completed
-     */
-    static allHandshakesCompleted(
-        handshakes: Array<{ peer1: number; peer2: number }>
-    ) {
-        return new HarnessBlock(async (harness) => {
-            for (const { peer1, peer2 } of handshakes) {
-                await Assert.handshakeCompleted({ peer1, peer2 }).run(harness);
-            }
             return harness;
         });
     }

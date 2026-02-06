@@ -259,6 +259,14 @@ export class AssertActions {
     }): Promise<void> {
         const { peers, expectedCountPerPeer = 1, timeoutMs = 5000 } = options;
 
+        const initialCounts = peers.map((p) => ({
+            peer: p,
+            count: this.harness.eventActions.getEventCallCount(
+                p,
+                "onInitiatingDispute"
+            )
+        }));
+
         const condition = () => {
             return peers.every(
                 (peerId) =>
@@ -279,6 +287,14 @@ export class AssertActions {
             timeoutMs,
             timeoutMessage: `Peers ${peers.join(", ")} did not initiate ${expectedCountPerPeer} disputes within ${timeoutMs}ms`
         });
+
+        const finalCounts = peers.map((p) => ({
+            peer: p,
+            count: this.harness.eventActions.getEventCallCount(
+                p,
+                "onInitiatingDispute"
+            )
+        }));
     }
 
     /**
@@ -323,7 +339,7 @@ export class AssertActions {
         const { timeoutMs = 5000, expectedCountPerPeer = 1 } = options || {};
 
         // Get malicious peer index (set by Byzantine blocks)
-        const maliciousPeerIndex = (this.harness as any).lastMaliciousPeerIndex;
+        const maliciousPeerIndex = this.harness.context.lastMaliciousPeerIndex;
         if (maliciousPeerIndex === undefined) {
             throw new Error(
                 "No malicious peer index found. This should be used after a Byzantine attack block."
@@ -453,6 +469,135 @@ export class AssertActions {
         if (totalPosted > 0 || totalBlockCalldata > 0) {
             throw new Error(
                 `Expected no calldata to be posted, but onPostedCalldata: ${totalPosted}, onBlockCalldataPosted: ${totalBlockCalldata}`
+            );
+        }
+    }
+
+    /**
+     * Assert timeout is forced for a specific participant
+     */
+    assertTimeoutIsForced(options: {
+        participant: number;
+        peerToCheck?: number;
+        forkId: ForkId;
+    }): void {
+        const { participant, peerToCheck = 0, forkId } = options;
+
+        const timeout =
+            this.harness.peers[
+                peerToCheck
+            ].stateManager.storage.timeout.getTimeout(forkId);
+
+        if (!timeout) {
+            throw new Error(`No timeout found for fork ${forkId}`);
+        }
+
+        if (!timeout.isForced) {
+            throw new Error(`Expected timeout to be forced, but it was not`);
+        }
+
+        if (timeout.participant !== this.harness.peers[participant].address) {
+            throw new Error(
+                `Expected timeout participant to be peer ${participant} (${this.harness.peers[participant].address}), ` +
+                    `but was ${timeout.participant}`
+            );
+        }
+    }
+
+    /**
+     * Assert timeout exists for a specific participant
+     */
+    assertTimeoutExists(options: {
+        participant: number;
+        peerToCheck?: number;
+        forkId: ForkId;
+    }): void {
+        const { participant, peerToCheck = 0, forkId } = options;
+
+        const timeout =
+            this.harness.peers[
+                peerToCheck
+            ].stateManager.storage.timeout.getTimeout(forkId);
+
+        if (!timeout) {
+            throw new Error(`No timeout found for fork ${forkId}`);
+        }
+
+        if (timeout.participant !== this.harness.peers[participant].address) {
+            throw new Error(
+                `Expected timeout participant to be peer ${participant} (${this.harness.peers[participant].address}), ` +
+                    `but was ${timeout.participant}`
+            );
+        }
+    }
+
+    /**
+     * Assert fork changed to a new fork after dispute resolution
+     */
+    async assertForkChanged(options: {
+        originalForkId: ForkId;
+        timeoutMs?: number;
+        minHonestPeers?: number;
+    }): Promise<void> {
+        const {
+            originalForkId,
+            timeoutMs = 10000,
+            minHonestPeers = 3
+        } = options;
+
+        const { ZeroHash } = await import("ethers");
+        const forkChanged = await this.harness.waitForForkChange({
+            excludeForkIds: [originalForkId, ZeroHash],
+            timeoutMs
+        });
+
+        if (!forkChanged) {
+            // Additional check to provide better error message
+            const peerForks = this.harness.peers
+                .map((p) => p.stateManager.forkId)
+                .filter(
+                    (forkId) => forkId !== ZeroHash && forkId !== originalForkId
+                );
+            const peersOnNewFork = peerForks.length;
+            throw new Error(
+                `Fork did not change within ${timeoutMs}ms. Expected at least ${minHonestPeers} peers on new fork, got ${peersOnNewFork}.`
+            );
+        }
+    }
+
+    /**
+     * Assert fraud proof was stored for a dispute
+     */
+    async assertFraudProofStored(options: {
+        dispute: any;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const { dispute, timeoutMs = 2000 } = options;
+
+        const condition = () => {
+            return this.harness.peers.every((peer) => {
+                const proof =
+                    peer.stateManager.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                        dispute
+                    );
+                return !!proof;
+            });
+        };
+
+        // Check immediately first
+        if (condition()) {
+            return;
+        }
+
+        // Use event barrier (fires on dispute/state events)
+        try {
+            await this.harness.eventCountsBarrier.waitFor(condition, {
+                timeoutMs,
+                timeoutMessage: `Fraud proof was not stored on all peers within ${timeoutMs}ms`
+            });
+        } catch (error) {
+            throw new Error(
+                `Fraud proof was not stored on all peers within ${timeoutMs}ms`
             );
         }
     }

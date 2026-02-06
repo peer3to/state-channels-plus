@@ -134,8 +134,7 @@ export class Event {
         }
     ) {
         return new HarnessBlock(async (harness) => {
-            const honestIndices = (harness as any)
-                .honestPeerIndices as number[];
+            const honestIndices = harness.context.honestPeerIndices;
             if (!honestIndices) {
                 throw new Error(
                     "honestPeerIndices not set - use Byzantine.createAndResolveFork first"
@@ -239,7 +238,7 @@ export class Event {
      */
     static captureOriginalFork() {
         return new HarnessBlock(async (harness) => {
-            (harness as any).originalForkId = harness.activeForkId;
+            harness.context.originalForkId = harness.activeForkId;
             return harness;
         });
     }
@@ -255,7 +254,7 @@ export class Event {
 
         return new HarnessBlock(async (harness) => {
             // Get malicious peer index (set by Byzantine blocks)
-            const maliciousPeerIndex = (harness as any).lastMaliciousPeerIndex;
+            const maliciousPeerIndex = harness.context.lastMaliciousPeerIndex;
             if (maliciousPeerIndex === undefined) {
                 throw new Error(
                     "No malicious peer index found. This block should be used after a Byzantine attack block."
@@ -413,7 +412,7 @@ export class Event {
         const { timeoutMs = 10000, honestPeerIndices } = options || {};
 
         return new HarnessBlock(async (harness) => {
-            const originalForkId = (harness as any).originalForkId;
+            const originalForkId = harness.context.originalForkId;
             if (!originalForkId) {
                 throw new Error(
                     "No original fork ID captured. Use Event.captureOriginalFork() before waiting for fork change."
@@ -422,7 +421,7 @@ export class Event {
 
             // Use provided honest peers or get from harness context
             const honest =
-                honestPeerIndices || (harness as any).honestPeerIndices;
+                honestPeerIndices || harness.context.honestPeerIndices;
             if (!honest || honest.length === 0) {
                 throw new Error(
                     "No honest peer indices provided and none found in harness context"

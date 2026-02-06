@@ -38,6 +38,7 @@ import { EventActions } from "@test/harness/actions/EventActions";
 import { StateQueryActions } from "@test/harness/actions/StateQueryActions";
 import { DisputeOrchestrator } from "@test/harness/actions/DisputeOrchestrator";
 import { RPCActions } from "@test/harness/actions/RPCActions";
+import { HarnessContext } from "@test/harness";
 
 export interface TestPeer<
     T extends AStateMachine,
@@ -185,6 +186,12 @@ export class PeerTestHarness<
     public logger: Logger;
     private syncCoordinator!: SyncCoordinator;
     private autoTimeAdvanceInterval?: NodeJS.Timeout;
+
+    /**
+     * Test context for cross-block state sharing
+     * Used by blocks to store and retrieve test-specific data (e.g., malicious peer index, fork IDs)
+     */
+    public context: HarnessContext = {};
 
     // barriers
     public connectionBarrier: EventBarrier;
@@ -635,6 +642,9 @@ export class PeerTestHarness<
         delete (this as any).originalForkId;
         delete (this as any).newForkId;
         delete (this as any).lastMaliciousPeerIndex;
+
+        // Fully reset the context object to ensure no properties leak between tests
+        this.context = {};
 
         // Cleanup discovery server and peer servers
         await LocalDiscoveryServer.cleanup();

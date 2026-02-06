@@ -71,9 +71,7 @@ export class ScenarioRunner {
      * Execute a sequence of blocks and return harness with cleanup callback.
      *
      */
-    static async executeWithCleanup(
-        ...blocks: HarnessBlock[]
-    ): Promise<{
+    static async executeWithCleanup(...blocks: HarnessBlock[]): Promise<{
         harness: PeerTestHarness<any, any>;
         cleanup: () => Promise<void>;
     }> {

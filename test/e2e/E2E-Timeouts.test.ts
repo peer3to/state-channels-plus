@@ -28,7 +28,8 @@ describe("E2E: Timeouts", function () {
 
                 Event.reset(),
                 Assert.disputeInitiatedBy({
-                    peers: [0, 1]
+                    peers: [0, 1],
+                    timeoutMs: 10000
                 }),
                 Assert.didNotInitiateDispute({ peers: [2] }),
                 Assert.disputeCommittedByAll({ expectedCountPerPeer: 1 }),
@@ -43,7 +44,8 @@ describe("E2E: Timeouts", function () {
 
                 Event.reset(),
                 Assert.disputeInitiatedBy({
-                    peers: [0, 1]
+                    peers: [0, 1],
+                    timeoutMs: 10000
                 })
             );
         });
@@ -75,7 +77,8 @@ describe("E2E: Timeouts", function () {
                 Byzantine.disconnect(1),
                 // Wait for timeout dispute from peers 0 and 2
                 Assert.disputeInitiatedBy({
-                    peers: [0, 2]
+                    peers: [0, 2],
+                    timeoutMs: 10000
                 })
             );
         });
@@ -93,7 +96,8 @@ describe("E2E: Timeouts", function () {
                 Event.waitUntilEventOccurs("onBlockCalldataPosted"),
                 // Assert forced timeout detection
                 Assert.disputeInitiatedBy({
-                    peers: [0, 1]
+                    peers: [0, 1],
+                    timeoutMs: 10000
                 }),
                 Assert.disputeCommittedByAll(),
                 // Assert it's a forced timeout
@@ -112,7 +116,8 @@ describe("E2E: Timeouts", function () {
                 Event.waitUntilEventOccurs("onBlockCalldataPosted"),
                 Event.reset(),
                 Assert.disputeInitiatedBy({
-                    peers: [1, 2]
+                    peers: [1, 2],
+                    timeoutMs: 10000
                 })
             );
         });

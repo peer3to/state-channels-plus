@@ -1,7 +1,7 @@
 import {
     ScenarioRunner,
     Scenario,
-    Assert,
+    AssertRPC,
     Event,
     RPC,
     PeerTestHarness,
@@ -33,7 +33,7 @@ describe("E2E: Init Handshake", function () {
                     observingPeerIndex: 0
                 }),
 
-                Assert.allHandshakesCompleted([
+                AssertRPC.allHandshakesCompleted([
                     { peer1: 0, peer2: 1 },
                     { peer1: 0, peer2: 2 }
                 ])
@@ -45,7 +45,7 @@ describe("E2E: Init Handshake", function () {
                 Scenario.emptyChannel(2, { autoConnect: true }),
                 Event.waitUntilEventOccurs("onConnection", 5000),
 
-                Assert.handshakeCompleted({ peer1: 0, peer2: 1 }),
+                AssertRPC.handshakeCompleted({ peer1: 0, peer2: 1 }),
 
                 // Clear and re-initiate handshake
                 RPC.clearHandshakeChallenge({
@@ -65,7 +65,7 @@ describe("E2E: Init Handshake", function () {
                 }),
 
                 // Handshake should still be completed, profile updated
-                Assert.handshakeCompleted({ peer1: 0, peer2: 1 })
+                AssertRPC.handshakeCompleted({ peer1: 0, peer2: 1 })
             );
         });
     });
@@ -90,7 +90,7 @@ describe("E2E: Init Handshake", function () {
                 }),
 
                 // Peer 1 should disconnect peer 2, leaving only connection to peer 0
-                Assert.peerDisconnectedFrom({
+                AssertRPC.peerDisconnectedFrom({
                     peerIndex: 1,
                     expectedFinalCount: 1
                 })
@@ -117,7 +117,7 @@ describe("E2E: Init Handshake", function () {
                 Time.wait(1500),
 
                 // Verify transport is closed by timeout mechanism
-                Assert.transportClosedOrGone({
+                AssertRPC.transportClosedOrGone({
                     fromPeer: 0,
                     toPeer: 1
                 })
@@ -148,7 +148,7 @@ describe("E2E: Init Handshake", function () {
                 }),
 
                 // Peer 0 should disconnect peer 2, leaving only connection to peer 1
-                Assert.peerDisconnectedFrom({
+                AssertRPC.peerDisconnectedFrom({
                     peerIndex: 0,
                     expectedFinalCount: 1
                 })
@@ -177,7 +177,7 @@ describe("E2E: Init Handshake", function () {
                 }),
 
                 // Peer 0 should disconnect peer 1, leaving 0 connections (only 2 peers)
-                Assert.peerDisconnectedFrom({
+                AssertRPC.peerDisconnectedFrom({
                     peerIndex: 0,
                     expectedFinalCount: 0
                 })
@@ -206,7 +206,7 @@ describe("E2E: Init Handshake", function () {
                     toPeer: 0
                 }),
 
-                Assert.peerDisconnected({
+                AssertRPC.peerDisconnected({
                     peerIndex: 0,
                     expectedDisconnections: 1
                 })
@@ -233,7 +233,7 @@ describe("E2E: Init Handshake", function () {
                 }),
 
                 // Peer 0 should disconnect peer 2, leaving only connection to peer 1
-                Assert.peerDisconnectedFrom({
+                AssertRPC.peerDisconnectedFrom({
                     peerIndex: 0,
                     expectedFinalCount: 1
                 })

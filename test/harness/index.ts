@@ -19,6 +19,7 @@ export { RPC } from "./blocks/RPCBlocks";
 export { Scenario } from "./blocks/ScenarioBlocks";
 export { Byzantine } from "./blocks/ByzantineBlocks";
 export { Assert } from "./blocks/AssertBlocks";
+export { AssertRPC } from "./blocks/AssertRPCBlocks";
 export { Event } from "./blocks/EventBlocks";
 export { Context } from "./blocks/ContextBlocks";
 

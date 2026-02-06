@@ -145,17 +145,10 @@ export class RPC {
         const { newPeerIndex, observingPeerIndex } = options;
 
         return new HarnessBlock(async (harness) => {
-            const newPeer = harness.peers[newPeerIndex];
-            await newPeer.stateManager.p2pManager.tryOpenConnectionToChannel(
-                harness.channelId!.toString()
+            await harness.rpcActions.joinPeerToChannel(
+                newPeerIndex,
+                observingPeerIndex
             );
-
-            // Wait for handshake using connectionBarrier (event-driven)
-            await harness.rpcActions.waitForHandshakeCompleted(
-                observingPeerIndex,
-                newPeer.address
-            );
-
             return harness;
         });
     }

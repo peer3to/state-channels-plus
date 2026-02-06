@@ -1,7 +1,7 @@
 import {
     ScenarioRunner,
     Scenario,
-    Assert,
+    AssertRPC,
     Event,
     RPC,
     PeerTestHarness,
@@ -30,7 +30,7 @@ describe("E2E: Is Fork Disputed", function () {
 
                 RPC.requestDisputeAcknowledgment({ peerIndex: 0 }),
 
-                Assert.allPeersAcknowledgedDispute({
+                AssertRPC.allPeersAcknowledgedDispute({
                     requestingPeer: 0,
                     excludePeers: [1]
                 })
@@ -47,7 +47,7 @@ describe("E2E: Is Fork Disputed", function () {
 
                 RPC.requestDisputeAcknowledgment({ peerIndex: 0 }),
 
-                Assert.allPeersAcknowledgedDispute({
+                AssertRPC.allPeersAcknowledgedDispute({
                     requestingPeer: 0,
                     excludePeers: [1]
                 })
@@ -65,16 +65,16 @@ describe("E2E: Is Fork Disputed", function () {
                 // First request
                 RPC.requestDisputeAcknowledgment({ peerIndex: 0 }),
 
-                Assert.allPeersAcknowledgedDispute({
+                AssertRPC.allPeersAcknowledgedDispute({
                     requestingPeer: 0,
                     excludePeers: [1]
                 }),
 
                 // Second request should be ignored (idempotent)
-                Assert.duplicateDisputeRequestIgnored({ peerIndex: 0 }),
+                AssertRPC.duplicateDisputeRequestIgnored({ peerIndex: 0 }),
 
                 // Should still have all acknowledgments
-                Assert.allPeersAcknowledgedDispute({
+                AssertRPC.allPeersAcknowledgedDispute({
                     requestingPeer: 0,
                     excludePeers: [1]
                 })
@@ -95,7 +95,7 @@ describe("E2E: Is Fork Disputed", function () {
                     requestingPeer: 2
                 }),
 
-                Assert.firstAcknowledgmentRecorded({
+                AssertRPC.firstAcknowledgmentRecorded({
                     respondingPeer: 0,
                     requestingPeer: 2
                 }),
@@ -107,7 +107,7 @@ describe("E2E: Is Fork Disputed", function () {
                 }),
 
                 // Peer 0 should disconnect peer 2 for duplicate response
-                Assert.peerDisconnectedFrom({
+                AssertRPC.peerDisconnectedFrom({
                     peerIndex: 0,
                     expectedFinalCount: 0 // Already disconnected from peer 1 (byzantine)
                 })
@@ -129,7 +129,7 @@ describe("E2E: Is Fork Disputed", function () {
                 Time.wait(2500),
 
                 // Peer 0 should have disconnected non-responding peers
-                Assert.peerDisconnectedFrom({
+                AssertRPC.peerDisconnectedFrom({
                     peerIndex: 0,
                     expectedFinalCount: 0 // Both peers timed out
                 })
@@ -148,7 +148,7 @@ describe("E2E: Is Fork Disputed", function () {
 
                 RPC.requestDisputeAcknowledgment({ peerIndex: 0 }),
 
-                Assert.allPeersAcknowledgedDispute({
+                AssertRPC.allPeersAcknowledgedDispute({
                     requestingPeer: 0,
                     excludePeers: [1]
                 }),
@@ -161,7 +161,7 @@ describe("E2E: Is Fork Disputed", function () {
                 // Peer 0 disconnects both peer 1 (byzantine) and peer 2 (building on disputed fork)
                 // Note: activeChannelWithDispute already causes peer 0 to disconnect peer 1
                 // So after disconnecting peer 2, peer 0 has 0 connections
-                Assert.peerDisconnectedFrom({
+                AssertRPC.peerDisconnectedFrom({
                     peerIndex: 0,
                     expectedFinalCount: 0
                 })
@@ -179,7 +179,7 @@ describe("E2E: Is Fork Disputed", function () {
                 }),
 
                 // Peer 1 should disconnect peer 0, leaving only 1 connection (to peer 2)
-                Assert.peerDisconnectedFrom({
+                AssertRPC.peerDisconnectedFrom({
                     peerIndex: 1,
                     expectedFinalCount: 1
                 })

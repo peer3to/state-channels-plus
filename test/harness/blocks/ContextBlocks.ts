@@ -25,8 +25,8 @@ export class Context {
                 );
 
             // Store for later use in assertions/transitions
-            (harness as any).honestPeerIndices = honest;
-            (harness as any).maliciousPeerIndex = maliciousPeerIndex;
+            harness.context.honestPeerIndices = honest;
+            harness.context.maliciousPeerIndex = maliciousPeerIndex;
 
             return harness;
         });
@@ -37,8 +37,7 @@ export class Context {
      */
     static updateActiveFork() {
         return new HarnessBlock(async (harness) => {
-            const honestIndices = (harness as any)
-                .honestPeerIndices as number[];
+            const honestIndices = harness.context.honestPeerIndices;
             if (!honestIndices || honestIndices.length === 0) {
                 throw new Error(
                     "honestPeerIndices not set - use Context.markMaliciousPeer first"
@@ -47,7 +46,7 @@ export class Context {
 
             const newForkId =
                 harness.peers[honestIndices[0]].stateManager.forkId;
-            (harness as any).newForkId = newForkId;
+            harness.context.newForkId = newForkId;
             harness.activeForkId = newForkId;
 
             return harness;
@@ -70,7 +69,8 @@ export class Context {
                 snapshotStorage.snapshotsByHash.keys()
             ).length;
 
-            (harness as any)[`peer${peerIndex}SnapshotCountBefore`] = count;
+            (harness.context as any)[`peer${peerIndex}SnapshotCountBefore`] =
+                count;
 
             return harness;
         });
