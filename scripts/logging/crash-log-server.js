@@ -6,6 +6,7 @@
  */
 
 const express = require("express");
+const cors = require("cors");
 const fs = require("fs").promises;
 const path = require("path");
 
@@ -16,6 +17,7 @@ const LOG_DIR =
 const app = express();
 const channelDirCache = new Map();
 
+app.use(cors());
 app.use(express.json());
 
 function formatTimestamp() {
