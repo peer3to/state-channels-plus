@@ -21,7 +21,6 @@ abstract class ATransport {
         if (!this.isClosed) {
             LoggerUtils.logTransportDisconnect(this, isExpected);
             this.isClosed = true;
-            this.p2pManager.disconnectConnection(this);
             this._close();
         }
     }

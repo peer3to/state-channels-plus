@@ -166,41 +166,7 @@ export class Event {
 
     /**
      * Reset event spy counters (clear event history)
-     *
-     * **When to use:**
-     * Call this AFTER setup blocks and BEFORE test actions when you want to:
-     * - Wait for events that happen AFTER this point (ignore setup events)
-     * - Assert exact event counts from a specific point forward
-     *
-     * **When NOT to use:**
-     * - Don't call at test start (counters start at zero)
-     * - Don't call if you're testing cumulative behavior across entire test
-     *
-     * **Why it's needed:**
-     * Event spies accumulate ALL events from channel open onwards.
-     * Setup operations (channel.open(), peersWrite(), etc.) trigger many events.
-     * Resetting lets you isolate events from your specific test action.
-     *
-     * @example
-     * ```ts
-     * // CORRECT: Reset after setup, before test action
-     * await ScenarioRunner.execute(
-     *     Scenario.timeoutChannel(3),
-     *     Scenario.peersWrite(2),      // Setup: generates events
-     *     Event.reset(),                // ← Clear setup events
-     *     Event.waitUntilDisputeInitiatedBy({ peers: [0, 1] })  // Wait for NEW disputes only
-     * );
-     * ```
-     *
-     * @example
-     * ```ts
-     * // WRONG: No reset, might count stale events
-     * await ScenarioRunner.execute(
-     *     Scenario.threePeersTwoBlocks(),  // This triggers onSetState, etc.
-     *     Byzantine.doubleSignFrom(1),
-     *     Event.waitForCounts("onSetState", [{ peerId: 0, expectedCount: 1 }])  // Might match setup events!
-     * );
-     * ```
+     
      */
     static reset(peerIndex?: number) {
         return new HarnessBlock(async (harness) => {
@@ -216,19 +182,6 @@ export class Event {
 
     /**
      * Wait until disputes have been initiated by specific peers (synchronization point)
-     *
-     * This waits for SPECIFIC peers to initiate disputes.
-     * Use this when you need to synchronize on particular peers initiating.
-     *
-     * @example
-     * ```ts
-     * const harness = await ScenarioRunner.execute(
-     *     Scenario.twoBlocks(),
-     *     Byzantine.doubleSignFrom(1),
-     *     Event.waitUntilDisputeInitiatedBy({ peers: [0, 2] }),  // Wait for honest peers
-     *     Event.assertDidNotInitiateDispute({ peers: [1] })  // Byzantine didn't initiate
-     * );
-     * ```
      */
     static waitUntilDisputeInitiatedBy(options: {
         peers: number[];
@@ -258,18 +211,6 @@ export class Event {
 
     /**
      * Wait until dispute is committed on-chain (synchronization point)
-     *
-     * This ONLY waits for commitment to happen, does NOT verify counts.
-     *
-     * @example
-     * ```ts
-     * const harness = await ScenarioRunner.execute(
-     *     Scenario.twoBlocks(),
-     *     Byzantine.invalidTransitionFrom(2),
-     *     Event.waitUntilDisputeCommitted(),
-     *     Assert.disputeCommitted()  // Verify all peers committed
-     * );
-     * ```
      */
     static waitUntilDisputeCommitted(timeoutMs: number = 5000) {
         return new HarnessBlock(async (harness) => {
@@ -295,19 +236,6 @@ export class Event {
 
     /**
      * Capture the current fork ID for later comparison
-     *
-     * Stores the current fork ID on the harness so that later blocks
-     * can compare against it (e.g., Assert.forkChanged()).
-     *
-     * @example
-     * ```ts
-     * await ScenarioRunner.execute(
-     *     Scenario.twoBlocks(),
-     *     Event.captureOriginalFork(),
-     *     Byzantine.invalidTransitionFromNext(),
-     *     Assert.forkChanged()
-     * );
-     * ```
      */
     static captureOriginalFork() {
         return new HarnessBlock(async (harness) => {
@@ -318,19 +246,6 @@ export class Event {
 
     /**
      * Wait until honest peers (all except last malicious peer) initiate dispute
-     *
-     * Use this after a Byzantine attack to wait for honest peers to detect it.
-     * Automatically excludes the last malicious peer that performed an attack.
-     *
-     * @example
-     * ```ts
-     * await ScenarioRunner.execute(
-     *     Scenario.activeChannel(3, 2),
-     *     Event.reset(),
-     *     Byzantine.forgedInboundMessageFromNext(),
-     *     Event.waitUntilHonestPeersInitiateDispute({ timeoutMs: 5000 })
-     * );
-     * ```
      */
     static waitUntilHonestPeersInitiateDispute(options?: {
         timeoutMs?: number;
@@ -373,14 +288,6 @@ export class Event {
 
     /**
      * Wait until calldata is posted by any peer (synchronization point)
-     *
-     * @example
-     * ```ts
-     * const harness = await ScenarioRunner.execute(
-     *     Scenario.timeoutTestChannel(3),
-     *     Byzantine.skipTurn(2),
-     *     Event.waitUntilCalldataPosted()
-     * );
      * ```
      */
     static waitUntilCalldataPosted(timeoutMs: number = 5000) {
@@ -410,11 +317,6 @@ export class Event {
 
     /**
      * Wait for a generic event to occur on any peer (synchronization point)
-     *
-     * @example
-     * ```ts
-     * Event.waitUntilEventOccurs("onBlockApplied")
-     * ```
      */
     static waitUntilEventOccurs(
         eventName: keyof EventSpies,
@@ -442,19 +344,7 @@ export class Event {
 
     /**
      * Wait for fork to change from original fork for specific honest peers
-     *
-     * Used in scenarios where we expect a peer to detect multiple frauds
-     * (e.g., one peer's invalid block AND another peer's tampered dispute).
-     *
-     * @example
-     * ```ts
-     * await ScenarioRunner.execute(
-     *     Byzantine.interceptDisputeConstruction({ peerIndex: 0, tamperFn: ... }),
-     *     Byzantine.invalidTransitionFrom(1),
-     *     Event.waitForPeerDisputes(2, 2, { timeoutMs: 25000 }), // Peer 2 files 2 disputes
-     *     Assert.fraudProofStoredForTamperedDispute(2)
-     * );
-     * ```
+     
      */
     static waitForPeerDisputes(
         peerIndex: number,
@@ -464,50 +354,11 @@ export class Event {
         const { timeoutMs = 10000 } = options || {};
 
         return new HarnessBlock(async (harness) => {
-            // #region agent log
-            fetch(
-                "http://127.0.0.1:7243/ingest/f9b76b10-324c-4d55-bfc2-8a7f8284883e",
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        location: "EventBlocks.ts:467",
-                        message: "waitForPeerDisputes: starting wait",
-                        data: { peerIndex, minCount, timeoutMs },
-                        timestamp: Date.now(),
-                        sessionId: "debug-session",
-                        hypothesisId: "H3"
-                    })
-                }
-            ).catch(() => {});
-            // #endregion
             const condition = () => {
                 const count = harness.eventActions.getEventCallCount(
                     peerIndex,
                     "onInitiatingDispute"
                 );
-                // #region agent log
-                fetch(
-                    "http://127.0.0.1:7243/ingest/f9b76b10-324c-4d55-bfc2-8a7f8284883e",
-                    {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            location: "EventBlocks.ts:477",
-                            message: "waitForPeerDisputes: condition check",
-                            data: {
-                                peerIndex,
-                                count,
-                                minCount,
-                                satisfied: count >= minCount
-                            },
-                            timestamp: Date.now(),
-                            sessionId: "debug-session",
-                            hypothesisId: "H3"
-                        })
-                    }
-                ).catch(() => {});
-                // #endregion
                 return count >= minCount;
             };
 
@@ -516,43 +367,12 @@ export class Event {
                 timeoutMessage: `Peer ${peerIndex} did not initiate ${minCount} disputes within ${timeoutMs}ms`
             });
 
-            // #region agent log
-            fetch(
-                "http://127.0.0.1:7243/ingest/f9b76b10-324c-4d55-bfc2-8a7f8284883e",
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        location: "EventBlocks.ts:490",
-                        message:
-                            "waitForPeerDisputes: wait completed successfully",
-                        data: { peerIndex, minCount },
-                        timestamp: Date.now(),
-                        sessionId: "debug-session",
-                        hypothesisId: "H3"
-                    })
-                }
-            ).catch(() => {});
-            // #endregion
-
             return harness;
         });
     }
 
     /**
      * Wait for at least one peer from a list to initiate a dispute
-     *
-     * Used in scenarios where we don't know which peer will file a dispute first,
-     * such as timeout disputes where any active peer might timeout the disconnected one.
-     *
-     * @example
-     * ```ts
-     * await ScenarioRunner.execute(
-     *     Network.timeout(2),
-     *     Transition.validWithoutPeer(2, c => c.add(100)),
-     *     Event.waitForDisputeFromAnyPeer([0, 1], { timeoutMs: 10000 })
-     * );
-     * ```
      */
     static waitForDisputeFromAnyPeer(
         peerIndices: number[],
@@ -585,24 +405,6 @@ export class Event {
 
     /**
      * Wait for fork to change from original fork for specific honest peers
-     *
-     * Waits for honest peers to move to a new fork after dispute resolution.
-     * Requires Event.captureOriginalFork() to be called first.
-     * Uses honest peer indices from harness context if available.
-     *
-     * @param options.timeoutMs - How long to wait (default: 10000ms)
-     * @param options.honestPeerIndices - Specific peer indices to check (uses harness context if not provided)
-     *
-     * @example
-     * ```ts
-     * await ScenarioRunner.execute(
-     *     Scenario.activeChannel(4, 2),
-     *     Event.captureOriginalFork(),
-     *     Byzantine.invalidTransitionFrom(2),
-     *     Event.waitForAllPeers("onDisputeCommitted", 3),
-     *     Event.waitForForkChange({ honestPeerIndices: [0, 1, 3] })
-     * );
-     * ```
      */
     static waitForForkChange(options?: {
         timeoutMs?: number;
@@ -649,4 +451,39 @@ export class Event {
     // LOW-LEVEL EVENT METHODS (for advanced usage and debugging)
     // Prefer high-level semantic methods above when possible
     // ============================================================================
+
+    /**
+     * Wait for connection/disconnection events
+     */
+    static waitForConnectionChange(options: {
+        peerIndex: number;
+        expectedChange: number;
+        timeoutMs?: number;
+    }) {
+        const { peerIndex, expectedChange, timeoutMs = 5000 } = options;
+
+        return new HarnessBlock(async (harness) => {
+            const initialCount =
+                harness.stateQuery.getConnectionCount(peerIndex);
+            const expectedCount = initialCount + expectedChange;
+
+            const success = await harness.waitForCondition(() => {
+                const currentCount =
+                    harness.stateQuery.getConnectionCount(peerIndex);
+                return currentCount === expectedCount;
+            }, timeoutMs);
+
+            if (!success) {
+                const finalCount =
+                    harness.stateQuery.getConnectionCount(peerIndex);
+                throw new Error(
+                    `Expected peer ${peerIndex} to have ${expectedCount} connections ` +
+                        `(change of ${expectedChange} from ${initialCount}), ` +
+                        `but has ${finalCount} after ${timeoutMs}ms`
+                );
+            }
+
+            return harness;
+        });
+    }
 }

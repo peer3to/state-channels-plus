@@ -13,6 +13,7 @@ export { Lifecycle } from "./blocks/LifecycleBlocks";
 export { Transition } from "./blocks/TransitionBlocks";
 export { Sync } from "./blocks/SyncBlocks";
 export { Time } from "./blocks/TimeBlocks";
+export { RPC } from "./blocks/RPCBlocks";
 
 // Layer 3: Scenario blocks (high-level composition)
 export { Scenario } from "./blocks/ScenarioBlocks";
@@ -29,6 +30,7 @@ export { SyncActions } from "./actions/SyncActions";
 export { DisputeOrchestrator } from "./actions/DisputeOrchestrator";
 export { AssertActions } from "./actions/AssertActions";
 export { ByzantineActions } from "./actions/ByzantineActions";
+export { RPCActions } from "./actions/RPCActions";
 
 // Re-export SyncCoordinator
 export {

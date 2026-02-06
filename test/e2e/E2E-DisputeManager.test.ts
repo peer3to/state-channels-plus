@@ -11,8 +11,18 @@ import {
 
 PeerTestHarness.setDefaultLogLevel("error");
 
-describe("E2E: Security (V2 - High-Level DSL)", function () {
-    describe("Byzantine Participant Behavior", function () {
+/**
+ * E2E Tests for Dispute Management
+ *
+ * Maps to: src/disputeManager/DisputeManager.ts
+ *          src/stateManager/DisputeValidationService.ts
+ *          src/stateManager/ValidationService.ts
+ *          src/stateManager/validationStrategy/DisputeValidationStrategy.ts
+ *
+ * Tests dispute creation, validation, resolution, and fraud proof mechanisms.
+ */
+describe("E2E: Dispute Manager", function () {
+    describe("Dispute Initiation", function () {
         it("should create dispute for double-sign detected", async function () {
             await ScenarioRunner.execute(
                 Scenario.activeChannel(3, 2),
@@ -40,22 +50,8 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
                 Assert.disputeCommitted(3)
             );
         });
-    });
 
-    describe("Composable Security Scenarios", function () {
-        it("should handle double-sign after some activity", async function () {
-            await ScenarioRunner.execute(
-                Scenario.oneRound(3),
-                Event.reset(),
-                Byzantine.doubleSignFrom(2),
-                Assert.disputeInitiatedBy({
-                    peers: [0, 1]
-                }),
-                Assert.disputeCommitted()
-            );
-        });
-
-        it("should handle double-sign from different peer in 4-peer setup", async function () {
+        it("should handle double-sign from different peer configurations", async function () {
             await ScenarioRunner.execute(
                 Scenario.activeChannel(4, 3),
                 Byzantine.doubleSignFrom(2), // Peer 2 attacks
@@ -64,8 +60,8 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
         });
     });
 
-    describe("Dispute Flow", function () {
-        it("should reduce honest invalid state transition disputes and create new fork", async function () {
+    describe("Dispute Resolution and Fork Management", function () {
+        it("should reduce invalid state transition disputes and create new fork", async function () {
             await ScenarioRunner.execute(
                 Scenario.activeChannel(4, 2, {
                     timeConfig: {
@@ -87,34 +83,45 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
             );
         });
 
-        it("should remove malicious participant after fork and keep liveness", async function () {
+        it("should post updated state snapshot after fork resolution", async function () {
             await ScenarioRunner.execute(
-                Scenario.activeChannel(4, 2, {
+                // Use the composed scenario (setup + fork resolution + first snapshot post)
+                Scenario.forkResolutionWithSnapshotMoved({
                     timeConfig: {
-                        p2pTime: 30,
+                        p2pTime: 3,
                         agreementTime: 2,
                         chainFallbackTime: 2,
                         evidenceTime: 3
                     }
                 }),
-                Assert.allPeersInSync(),
 
-                // Create and resolve fork (removes peer 2)
-                Byzantine.createAndResolveFork({ maliciousPeerIndex: 2 }),
-
-                // Continue with honest peers only
+                // Do 3 transitions on the reduced fork
                 Transition.fromHonestPeersOnly((c) => c.add(1)),
-                Transition.fromHonestPeersOnly((c) => c.add(2)),
+                Transition.fromHonestPeersOnly((c) => c.leaveChannel()),
                 Transition.fromHonestPeersOnly((c) => c.add(3)),
 
-                // Verify liveness maintained among honest peers
+                // Verify honest peers are in sync
                 Assert.onlyHonestPeersInSync(),
+                Event.reset(),
+
+                // Post snapshot again (same-fork update)
+                Transition.postSnapshot({ peerIndex: 0 }),
+
+                // Wait for snapshot update events
+                Event.waitForHonestPeers("onStateSnapshotUpdated", 1, {
+                    mode: "atLeast"
+                }),
+
+                // Verify on-chain snapshot matches latest local snapshot
+                Assert.snapshotMatchesLocal({ peerIndex: 0 }),
+
+                // Verify malicious peer is excluded from rotation
                 Assert.maliciousPeerExcluded()
             );
         });
     });
 
-    describe("Dishonest Disputes (Validation)", function () {
+    describe("Fraud Proof Detection", function () {
         it("should reject dispute with incorrect auditing data commitment", async function () {
             await ScenarioRunner.execute(
                 Scenario.readyForTamperedDispute(),
@@ -201,129 +208,6 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
         });
     });
 
-    describe("Dispute Flow - Snapshot Updates", function () {
-        it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - 2 independent snapshot updates", async function () {
-            await ScenarioRunner.execute(
-                // Use the composed scenario (setup + fork resolution + first snapshot post)
-                Scenario.forkResolutionWithSnapshotMoved({
-                    timeConfig: {
-                        p2pTime: 3,
-                        agreementTime: 2,
-                        chainFallbackTime: 2,
-                        evidenceTime: 3
-                    }
-                }),
-
-                // Do 3 transitions on the reduced fork
-                Transition.fromHonestPeersOnly((c) => c.add(1)),
-                Transition.fromHonestPeersOnly((c) => c.leaveChannel()),
-                Transition.fromHonestPeersOnly((c) => c.add(3)),
-
-                // Verify honest peers are in sync
-                Assert.onlyHonestPeersInSync(),
-                Event.reset(),
-
-                // Post snapshot again (same-fork update)
-                Transition.postSnapshot({ peerIndex: 0 }),
-
-                // Wait for snapshot update events
-                Event.waitForHonestPeers("onStateSnapshotUpdated", 1, {
-                    mode: "atLeast"
-                }),
-
-                // Verify on-chain snapshot matches latest local snapshot
-                Assert.snapshotMatchesLocal({ peerIndex: 0 }),
-
-                // Verify malicious peer is excluded from rotation
-                Assert.maliciousPeerExcluded()
-            );
-        });
-
-        it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - multicall", async function () {
-            // Test 2 builds on Test 1's setup but uses multicall for snapshot posting
-            // This demonstrates the power of composed blocks - we reuse the entire
-            // setup from Test 1 and just change the final snapshot posting mechanism
-
-            await ScenarioRunner.execute(
-                // Reuse the EXACT same setup as Test 1
-                Scenario.forkResolutionWithSnapshotMoved({
-                    timeConfig: {
-                        p2pTime: 3,
-                        agreementTime: 2,
-                        chainFallbackTime: 2,
-                        evidenceTime: 3
-                    }
-                }),
-
-                // Same 3 transitions
-                Transition.fromHonestPeersOnly((c) => c.add(1)),
-                Transition.fromHonestPeersOnly((c) => c.leaveChannel()),
-                Transition.fromHonestPeersOnly((c) => c.add(3)),
-
-                // Verify sync
-                Assert.onlyHonestPeersInSync(),
-                Event.reset(),
-
-                // TODO: Add multicall snapshot posting once multicall support is added
-                // For now, use regular post (same as Test 1)
-                Transition.postSnapshot({ peerIndex: 0 }),
-
-                // Same assertions
-                Event.waitForHonestPeers("onStateSnapshotUpdated", 1, {
-                    mode: "atLeast"
-                }),
-                Assert.snapshotMatchesLocal({ peerIndex: 0 }),
-                Assert.maliciousPeerExcluded()
-            );
-        });
-    });
-
-    describe("Partial Syncing via Dispute Validation", function () {
-        it("should sync missing state via validStateProofButNotSynced when peer receives dispute with blocks it doesn't have", async function () {
-            await ScenarioRunner.execute(
-                // Setup: Peer 1 has block that others don't have
-                Scenario.peerWithUnbroadcastedBlock(1),
-
-                // Verify peer 1 is ahead (has the block that wasn't broadcast)
-                Assert.peerBlockHeightGreaterThan(1, 2),
-
-                // Peer 0 submits invalid transition (triggers disputes)
-                Byzantine.invalidTransitionFrom(0),
-
-                // Wait for disputes to be committed
-                Event.waitForPeers("onDisputeCommitted", [1, 2], 2, {
-                    mode: "atLeast"
-                }),
-
-                // Peer 2 should sync the missing block via peer 1's dispute
-                Assert.peersHaveSameLatestBlock([1, 2])
-            );
-        });
-
-        it("should handle valid dispute when validating peer is missing snapshot data", async function () {
-            await ScenarioRunner.execute(
-                // Setup: 3 peers, peer 2 isolated (can't sync from P2P or chain)
-                Scenario.peerMissingSnapshot(),
-
-                // Submit transaction without peer 2 (peer 2 won't receive it)
-                // Block stays UNFINALIZED (in signedBlocks, not milestones)
-                Transition.validWithoutPeer(2, (c) => c.add(100)),
-
-                // Wait for timeout dispute from peer 0 or 1
-                // Peer 2 will validate this dispute with isPartial = true
-                Event.waitForDisputeFromAnyPeer([0, 1]),
-
-                // Verify peer 2 resynced via validStateProofButNotSynced
-                // When peer 2 validates the dispute with isPartial = true,
-                // it should sync by applying the signed blocks from the state proof
-                Assert.snapshotCountIncreased(2, "before_isolation"),
-
-                // Cleanup: restore calldata handler
-                Byzantine.restoreCalldataHandler(2)
-            );
-        });
-    });
-
     describe("Re-Dispute Detection", function () {
         it("should redispute a tampered state proof that corrupts the first signed block height", async function () {
             await ScenarioRunner.execute(
@@ -371,6 +255,52 @@ describe("E2E: Security (V2 - High-Level DSL)", function () {
 
                 // Verify peer 2 stored fraud proof for peer 0's tampered dispute
                 Assert.fraudProofStoredForTamperedDispute(2)
+            );
+        });
+    });
+
+    describe("Partial Syncing via Dispute Validation", function () {
+        it("should sync missing state via validStateProofButNotSynced when peer receives dispute with blocks it doesn't have", async function () {
+            await ScenarioRunner.execute(
+                // Setup: Peer 1 has block that others don't have
+                Scenario.peerWithUnbroadcastedBlock(1),
+
+                // Verify peer 1 is ahead (has the block that wasn't broadcast)
+                Assert.peerBlockHeightGreaterThan(1, 2),
+
+                // Peer 0 submits invalid transition (triggers disputes)
+                Byzantine.invalidTransitionFrom(0),
+
+                // Wait for disputes to be committed
+                Event.waitForPeers("onDisputeCommitted", [1, 2], 2, {
+                    mode: "atLeast"
+                }),
+
+                // Peer 2 should sync the missing block via peer 1's dispute
+                Assert.peersHaveSameLatestBlock([1, 2])
+            );
+        });
+
+        it("should handle valid dispute when validating peer is missing snapshot data", async function () {
+            await ScenarioRunner.execute(
+                // Setup: 3 peers, peer 2 isolated (can't sync from P2P or chain)
+                Scenario.peerMissingSnapshot(),
+
+                // Submit transaction without peer 2 (peer 2 won't receive it)
+                // Block stays UNFINALIZED (in signedBlocks, not milestones)
+                Transition.validWithoutPeer(2, (c) => c.add(100)),
+
+                // Wait for timeout dispute from peer 0 or 1
+                // Peer 2 will validate this dispute with isPartial = true
+                Event.waitForDisputeFromAnyPeer([0, 1]),
+
+                // Verify peer 2 resynced via validStateProofButNotSynced
+                // When peer 2 validates the dispute with isPartial = true,
+                // it should sync by applying the signed blocks from the state proof
+                Assert.snapshotCountIncreased(2, "before_isolation"),
+
+                // Cleanup: restore calldata handler
+                Byzantine.restoreCalldataHandler(2)
             );
         });
     });

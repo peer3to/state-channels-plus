@@ -149,6 +149,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
 
     public disconnectConnection(transport: ATransport) {
         const profile = this.profileManager.getProfileByTransport(transport);
+        const peerAddress = transport.peerAddress;
 
         this.openConnections = this.openConnections.filter(
             (t) => t !== transport
@@ -159,6 +160,11 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
             transport.close();
         } catch {
             // ignore
+        }
+
+        // Fire onDisconnection hook if peer address is available
+        if (peerAddress && this.stateManager.p2pEventHooks?.onDisconnection) {
+            this.stateManager.p2pEventHooks.onDisconnection(peerAddress);
         }
     }
 

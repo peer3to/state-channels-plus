@@ -307,4 +307,23 @@ export class Scenario {
             Event.reset()
         );
     }
+
+    /**
+     * Active channel with committed dispute from a byzantine peer
+     * Common setup for dispute-related RPC tests
+     */
+    static activeChannelWithDispute(options: {
+        numPeers: number;
+        numBlocks: number;
+        byzantinePeer: number;
+    }) {
+        const { numPeers, numBlocks, byzantinePeer } = options;
+
+        return HarnessBlock.compose(
+            Scenario.activeChannel(numPeers, numBlocks),
+            Byzantine.doubleSignFrom(byzantinePeer),
+            Assert.disputeCommitted(),
+            Event.reset()
+        );
+    }
 }

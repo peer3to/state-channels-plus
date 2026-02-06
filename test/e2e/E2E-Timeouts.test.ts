@@ -8,7 +8,17 @@ import {
 } from "@test/harness";
 
 PeerTestHarness.setDefaultLogLevel("error");
-describe("E2E: Timeouts (V2 - High-Level DSL)", function () {
+
+/**
+ * E2E Tests for Timeout Management
+ *
+ * Maps to: src/agreementManager/AgreementManager.ts
+ *          src/utils/TimeoutManager.ts
+ *          src/Clock.ts
+ *
+ * Tests timeout detection, forced timeouts, and network liveness during disconnections.
+ */
+describe("E2E: Timeouts", function () {
     describe("Basic Timeout Scenarios", function () {
         it("should handle timeout when next peer to write does not author a block", async function () {
             await ScenarioRunner.execute(

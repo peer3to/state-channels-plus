@@ -1,6 +1,6 @@
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
-import { BytesLike, Signer } from "ethers";
+import { Signer } from "ethers";
 import * as sinon from "sinon";
 import hre from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
@@ -11,32 +11,21 @@ import P2pEventHooks from "@/P2pEventHooks";
 import { AStateMachine, StateChannelManagerProxy } from "@typechain-types";
 import { ForkId, ChannelId, Address, Hash, Bytes } from "@/types/types";
 import { TimeConfig } from "@/types/time";
-import {
-    createOpenChannelTestObject,
-    createJoinChannelTestObject
-} from "@test/test_utils/testHelpers";
+
 import {
     createLogger,
     LocalDiscoveryServer,
     Logger,
-    SignatureUtils,
-    Codec,
-    Type,
     retry,
     EventBarrier,
     sleep
 } from "@/utils";
-import {
-    JoinChannelStruct,
-    OpenChannelStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import Clock from "@/Clock";
 import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
 import { deployFullStack } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
-import { ZeroHash } from "ethers";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
 import { ChannelActions } from "@test/harness/actions/ChannelActions";
@@ -48,6 +37,7 @@ import { ByzantineActions } from "@test/harness/actions/ByzantineActions";
 import { EventActions } from "@test/harness/actions/EventActions";
 import { StateQueryActions } from "@test/harness/actions/StateQueryActions";
 import { DisputeOrchestrator } from "@test/harness/actions/DisputeOrchestrator";
+import { RPCActions } from "@test/harness/actions/RPCActions";
 
 export interface TestPeer<
     T extends AStateMachine,
@@ -164,24 +154,6 @@ export type CreateAndResolveForkResult<
     honestPeers: Array<TestPeer<T, TFactories>>;
 };
 
-type BuildOpenChannelArgs = {
-    participantAddresses?: string[];
-    initialBalance?: number;
-    channelId?: string;
-    deadlineTimestamp?: number;
-};
-
-type BuildOpenChannelRequestArgs = BuildOpenChannelArgs & {
-    signerIndices?: number[];
-};
-
-type BuildJoinChannelRequestArgs = {
-    participantSigner: Signer;
-    channelId?: string;
-    deadlineTimestamp?: number;
-    thresholdSignerIndices?: number[] | "all";
-};
-
 /**
  * Main test harness for E2E peer-to-peer testing
  */
@@ -217,6 +189,8 @@ export class PeerTestHarness<
     // barriers
     public connectionBarrier: EventBarrier;
     public eventCountsBarrier: EventBarrier;
+    public rpcBarrier: EventBarrier;
+    public disconnectionBarrier: EventBarrier;
 
     // action instances
     public readonly channelActions!: ChannelActions;
@@ -228,6 +202,7 @@ export class PeerTestHarness<
     public readonly eventActions!: EventActions;
     public readonly stateQuery!: StateQueryActions;
     public readonly disputeOrchestrator!: DisputeOrchestrator;
+    public readonly rpcActions!: RPCActions;
 
     constructor() {
         // toJSON can't serialize BigInts, so we need to override it
@@ -243,29 +218,20 @@ export class PeerTestHarness<
         LocalDiscoveryServer.setLogger(this.logger);
         this.connectionBarrier = new EventBarrier(this.logger);
         this.eventCountsBarrier = new EventBarrier(this.logger);
+        this.rpcBarrier = new EventBarrier(this.logger);
+        this.disconnectionBarrier = new EventBarrier(this.logger);
 
         // Initialize action instances
-        (this as any).channelActions = new ChannelActions(this, this.logger);
-        (this as any).transitionActions = new TransitionActions(
-            this,
-            this.logger
-        );
-        (this as any).syncActions = new SyncActions(this, this.logger);
-        (this as any).networkController = new NetworkController(
-            this,
-            this.logger
-        );
-        (this as any).assertActions = new AssertActions(this, this.logger);
-        (this as any).byzantineActions = new ByzantineActions(
-            this,
-            this.logger
-        );
-        (this as any).eventActions = new EventActions(this, this.logger);
-        (this as any).stateQuery = new StateQueryActions(this, this.logger);
-        (this as any).disputeOrchestrator = new DisputeOrchestrator(
-            this,
-            this.logger
-        );
+        this.channelActions = new ChannelActions(this, this.logger);
+        this.transitionActions = new TransitionActions(this, this.logger);
+        this.syncActions = new SyncActions(this, this.logger);
+        this.networkController = new NetworkController(this, this.logger);
+        this.assertActions = new AssertActions(this, this.logger);
+        this.byzantineActions = new ByzantineActions(this, this.logger);
+        this.eventActions = new EventActions(this, this.logger);
+        this.stateQuery = new StateQueryActions(this, this.logger);
+        this.disputeOrchestrator = new DisputeOrchestrator(this, this.logger);
+        this.rpcActions = new RPCActions(this, this.logger);
     }
 
     async setup<
@@ -353,29 +319,6 @@ export class PeerTestHarness<
         return peer as TestPeer<T, TFactories>;
     }
 
-    private get forkId(): ForkId {
-        // Always prefer the latest fork ID observed on the peers; keep
-        // activeForkId in sync so callers that access it directly remain valid.
-        const currentPeerForkId = this.peers[0]?.stateManager?.forkId;
-
-        if (currentPeerForkId && currentPeerForkId !== ZeroHash) {
-            if (this.activeForkId !== currentPeerForkId) {
-                this.logger.debug(`Updating active forkId`, {
-                    from: this.activeForkId,
-                    to: currentPeerForkId
-                });
-                this.activeForkId = currentPeerForkId;
-            }
-            return currentPeerForkId;
-        }
-
-        if (this.activeForkId && this.activeForkId !== ZeroHash) {
-            return this.activeForkId;
-        }
-
-        throw new Error("Fork ID unavailable");
-    }
-
     private async deployContracts(): Promise<void> {
         const mathSMFactory =
             await hre.ethers.getContractFactory("MathStateMachine");
@@ -448,6 +391,13 @@ export class PeerTestHarness<
                 this.connectionBarrier.signal();
                 this.eventCountsBarrier.signal();
             },
+            onDisconnection: (addr: Address) => {
+                PeerLogger.verbose(`Disconnection from ${addr}`, {
+                    component: "P2pEventHooks"
+                });
+                this.disconnectionBarrier.signal();
+                this.eventCountsBarrier.signal();
+            },
             onTurn: (
                 addr: Address,
                 _turnTime: number,
@@ -507,6 +457,16 @@ export class PeerTestHarness<
                 });
                 eventSpies.onDisputeUpdate?.(dispute);
                 this.eventCountsBarrier.signal();
+            },
+            onDisputeAcknowledgment: (addr: Address) => {
+                PeerLogger.verbose(
+                    `Dispute acknowledgment received from ${addr}`,
+                    {
+                        component: "P2pEventHooks"
+                    }
+                );
+                this.rpcBarrier.signal();
+                this.eventCountsBarrier.signal();
             }
         };
 
@@ -540,6 +500,9 @@ export class PeerTestHarness<
             turnBarrier: peerTurnBarrier,
             logger: PeerLogger
         };
+
+        // Attach harness to stateManager for RPC barrier signaling
+        (peer.stateManager as any).testHarness = this;
 
         // Wrap EventHandler methods with spies (without replacing the original functionality)
         this.wrapEventHandlerWithSpies(peer);
@@ -579,119 +542,6 @@ export class PeerTestHarness<
         peer.stateManager.eventHandler = eventHandlerProxy;
         peer.stateManager.stateChannelEventListener.eventHandler =
             eventHandlerProxy;
-    }
-
-    private buildOpenChannelStruct(
-        args: BuildOpenChannelArgs = {}
-    ): OpenChannelStruct {
-        const participantAddresses =
-            args.participantAddresses ?? this.peers.map((p) => p.address);
-
-        const openChannel = createOpenChannelTestObject(participantAddresses, {
-            channelId: args.channelId ?? this.options.channelId,
-            initialBalance: args.initialBalance ?? this.options.initialBalance
-        });
-
-        if (args.deadlineTimestamp) {
-            openChannel.deadlineTimestamp = args.deadlineTimestamp;
-        }
-
-        return openChannel;
-    }
-
-    private async signOpenChannelStruct(
-        openChannel: OpenChannelStruct,
-        signerIndices?: number[]
-    ): Promise<BytesLike[]> {
-        const indices = signerIndices ?? this.peers.map((peer) => peer.index);
-        const signatures = await Promise.all(
-            indices.map((i) =>
-                SignatureUtils.signOpenChannel(
-                    openChannel,
-                    this.peers[i].signer
-                ).then((s) => s.signature as BytesLike)
-            )
-        );
-        return signatures;
-    }
-
-    /**
-     * Build an encoded open-channel request plus signatures without submitting it.
-     * Useful for tests that need to assert on failure cases (e.g., missing signatures).
-     */
-    async buildOpenChannelRequest(
-        args: BuildOpenChannelRequestArgs = {}
-    ): Promise<{
-        openChannel: OpenChannelStruct;
-        encodedOpenChannel: BytesLike;
-        signatures: BytesLike[];
-    }> {
-        await Clock.init(this.peers[0].signer.provider!);
-
-        const openChannel = this.buildOpenChannelStruct(args);
-        const signatures = await this.signOpenChannelStruct(
-            openChannel,
-            args.signerIndices
-        );
-
-        return {
-            openChannel,
-            encodedOpenChannel: Codec.encode(openChannel, Type.OpenChannel),
-            signatures
-        };
-    }
-
-    /**
-     * Build a join-channel confirmation and signatures without submitting it.
-     */
-    async buildJoinChannelRequest(args: BuildJoinChannelRequestArgs): Promise<{
-        joinChannel: JoinChannelStruct;
-        signedJoinChannel: { encodedJoinChannel: Bytes; signature: Bytes };
-        signatures: Bytes[];
-    }> {
-        const participantAddress = await args.participantSigner.getAddress();
-        const channelId =
-            args.channelId ||
-            this.channelId?.toString() ||
-            this.options.channelId;
-
-        const joinChannel = createJoinChannelTestObject(
-            participantAddress,
-            channelId
-        );
-
-        if (args.deadlineTimestamp) {
-            joinChannel.deadlineTimestamp = args.deadlineTimestamp;
-        }
-
-        const signedJoin = await SignatureUtils.signJoinChannel(
-            joinChannel,
-            args.participantSigner
-        );
-
-        const signerIndices =
-            args.thresholdSignerIndices === "all" ||
-            args.thresholdSignerIndices === undefined
-                ? this.peers.map((p) => p.index)
-                : args.thresholdSignerIndices;
-
-        const signatures = await Promise.all(
-            signerIndices.map((i) =>
-                SignatureUtils.signJoinChannel(
-                    joinChannel,
-                    this.peers[i].signer
-                ).then((s) => s.signature as Bytes)
-            )
-        );
-
-        return {
-            joinChannel,
-            signedJoinChannel: {
-                encodedJoinChannel: signedJoin.encoded as Bytes,
-                signature: signedJoin.signature as Bytes
-            },
-            signatures
-        };
     }
 
     // ===== PRIVATE HELPERS =====
