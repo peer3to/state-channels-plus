@@ -78,69 +78,6 @@ export class AssertRPC {
     }
 
     /**
-     * Assert connection count matches expected
-     */
-    static connectionCount(peerIndex: number, expectedCount: number) {
-        return new HarnessBlock(async (harness) => {
-            const actualCount =
-                harness.stateQuery.getConnectionCount(peerIndex);
-
-            if (actualCount !== expectedCount) {
-                throw new Error(
-                    `Expected peer ${peerIndex} to have ${expectedCount} connections, ` +
-                        `but has ${actualCount}`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
-     * Assert dispute acknowledged by specific peer
-     */
-    static disputeAcknowledgedBy(options: {
-        requestingPeer: number;
-        respondingPeer: number;
-        forkId?: import("@/types/types").ForkId;
-    }) {
-        const { requestingPeer, respondingPeer, forkId } = options;
-
-        return new HarnessBlock(async (harness) => {
-            const activeForkId = forkId ?? harness.activeForkId;
-            if (!activeForkId) {
-                throw new Error("No active fork ID");
-            }
-
-            const requestingService =
-                harness.rpcActions.getIsForkDisputedService(requestingPeer);
-            const respondingPeerObj = harness.getPeer(respondingPeer);
-            const transport = await harness.stateQuery.waitForPeerTransport(
-                requestingPeer,
-                respondingPeer,
-                5000
-            );
-
-            const peerAddress =
-                transport.peerAddress ?? respondingPeerObj.address;
-            const acknowledged =
-                requestingService.didPeerAcknowledgeDisputedFork(
-                    peerAddress,
-                    activeForkId
-                );
-
-            if (!acknowledged) {
-                throw new Error(
-                    `Expected peer ${respondingPeer} to have acknowledged disputed fork ` +
-                        `${activeForkId} to peer ${requestingPeer}, but did not`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
      * Assert all connected peers acknowledged dispute
      */
     static allPeersAcknowledgedDispute(options: {
@@ -213,30 +150,6 @@ export class AssertRPC {
                 throw new Error(
                     `Expected handshake to be completed between peer ${peer1} and peer ${peer2}, ` +
                         `but it is not`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
-     * Assert handshake not completed
-     */
-    static handshakeNotCompleted(options: { peer1: number; peer2: number }) {
-        const { peer1, peer2 } = options;
-
-        return new HarnessBlock(async (harness) => {
-            const peer2Obj = harness.getPeer(peer2);
-            const isCompleted = harness.rpcActions.isHandshakeCompleted(
-                peer1,
-                peer2Obj.address
-            );
-
-            if (isCompleted) {
-                throw new Error(
-                    `Expected handshake NOT to be completed between peer ${peer1} and peer ${peer2}, ` +
-                        `but it is completed`
                 );
             }
 
@@ -337,35 +250,6 @@ export class AssertRPC {
                 throw new Error(
                     `Expected transport from peer ${fromPeer} to peer ${toPeer} ` +
                         `to be closed, but it is still open`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
-     * Assert peer is blacklisted
-     */
-    static peerBlacklisted(options: {
-        ownerPeer: number;
-        blacklistedPeer: number;
-    }) {
-        const { ownerPeer, blacklistedPeer } = options;
-
-        return new HarnessBlock(async (harness) => {
-            const blacklistedPeerObj = harness.getPeer(blacklistedPeer);
-            const ownerPeerObj = harness.getPeer(ownerPeer);
-
-            const isBlacklisted =
-                ownerPeerObj.stateManager.p2pManager.isBlacklisted(
-                    blacklistedPeerObj.address
-                );
-
-            if (!isBlacklisted) {
-                throw new Error(
-                    `Expected peer ${blacklistedPeer} to be blacklisted by peer ${ownerPeer}, ` +
-                        `but it is not`
                 );
             }
 

@@ -52,27 +52,4 @@ export class Context {
             return harness;
         });
     }
-
-    /**
-     * Capture the current snapshot count for a specific peer
-     */
-    static captureSnapshotCount(peerIndex: number) {
-        return new HarnessBlock(async (harness) => {
-            const peer = harness.peers[peerIndex];
-            if (!peer) {
-                throw new Error(`Peer ${peerIndex} not found`);
-            }
-
-            const snapshotStorage = peer.stateManager.storage
-                .stateSnapshots as any;
-            const count = Array.from(
-                snapshotStorage.snapshotsByHash.keys()
-            ).length;
-
-            (harness.context as any)[`peer${peerIndex}SnapshotCountBefore`] =
-                count;
-
-            return harness;
-        });
-    }
 }

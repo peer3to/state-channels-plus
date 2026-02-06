@@ -22,7 +22,7 @@ describe("E2E: Timeouts", function () {
     describe("Basic Timeout Scenarios", function () {
         it("should handle timeout when next peer to write does not author a block", async function () {
             await ScenarioRunner.execute(
-                Scenario.timeoutChannel(3),
+                Scenario.timeoutSetup(3),
                 Scenario.advanceState(2), // Peers 0 and 1 take their turn
                 // Peer 2 should take turn but doesn't -> timeout triggers
 
@@ -39,7 +39,7 @@ describe("E2E: Timeouts", function () {
 
         it("should demonstrate timeout creates disputes", async function () {
             await ScenarioRunner.execute(
-                Scenario.timeoutChannel(3),
+                Scenario.timeoutSetup(3),
                 Scenario.advanceState(2), // First 2 peers take turn, 3rd doesn't
 
                 Event.reset(),
@@ -54,7 +54,7 @@ describe("E2E: Timeouts", function () {
     describe("Network Disconnection Timeouts", function () {
         it("should handle timeout when non-author peer disconnects (calldata posting)", async function () {
             await ScenarioRunner.execute(
-                Scenario.timeoutChannel(3),
+                Scenario.timeoutSetup(3),
                 Scenario.fullRound(), // All 3 peers write once
                 Event.reset(),
                 // Now it's peer 0's turn - disconnect peer 2 (non-author)
@@ -69,7 +69,7 @@ describe("E2E: Timeouts", function () {
 
         it("should handle timeout when author peer disconnects", async function () {
             await ScenarioRunner.execute(
-                Scenario.timeoutChannel(3),
+                Scenario.timeoutSetup(3),
                 Scenario.fullRound(), // Heights 0, 1, 2 - All 3 peers write once
                 Scenario.advanceState(1), // Height 3 - Peer 0 writes again
                 Event.reset(),
@@ -87,7 +87,7 @@ describe("E2E: Timeouts", function () {
     describe("Forced Timeout (Junk Calldata)", function () {
         it("should create forced timeout when peer posts junk calldata that is rejected", async function () {
             await ScenarioRunner.execute(
-                Scenario.timeoutChannel(3),
+                Scenario.timeoutSetup(3),
                 Scenario.advanceState(2), // Peers 0 and 1 write
                 Event.reset(),
                 // Peer 2 posts invalid calldata on-chain
@@ -108,7 +108,7 @@ describe("E2E: Timeouts", function () {
         it("should handle timeout when previous peer posted junk calldata and next peer doesn't author block", async function () {
             // Combined scenario: valid block + junk calldata + timeout
             await ScenarioRunner.execute(
-                Scenario.timeoutChannel(3),
+                Scenario.timeoutSetup(3),
                 Scenario.advanceState(2), // Peers 0 and 1 write
                 Scenario.peerWrite({ peer: 2 }), // Peer 2 writes valid block
                 Event.reset(),

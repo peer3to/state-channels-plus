@@ -47,7 +47,7 @@ export class RPCActions {
     /**
      * Wait for handshake to complete using connection barrier (event-driven)
      */
-    async waitForHandshakeCompleted(
+    private async waitForHandshakeCompleted(
         peerIndex: number,
         otherPeerAddress: Address,
         timeoutMs: number = 5000

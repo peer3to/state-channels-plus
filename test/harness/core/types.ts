@@ -127,4 +127,10 @@ export interface HarnessContext {
 
     /** Dynamic snapshot count storage for peers - indexed by peer index (set by Context blocks) */
     [key: `peer${number}SnapshotCountBefore`]: number;
+
+    /** Original calldata handler for peers - stored before stubbing (set by Byzantine.stubCalldataHandler) */
+    [key: `peer${number}OriginalCalldataHandler`]: any;
+
+    /** Original broadcast function for peers - stored before stubbing (set by Byzantine.stubBroadcast) */
+    [key: `peer${number}OriginalBroadcast`]: any;
 }

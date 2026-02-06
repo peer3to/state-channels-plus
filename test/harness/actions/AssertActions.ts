@@ -103,27 +103,6 @@ export class AssertActions {
         );
     }
 
-    async peerOutOfSync(peerIndex: number): Promise<void> {
-        const forkId = this.harness.activeForkId;
-        if (!forkId) {
-            throw new Error("No active fork ID");
-        }
-
-        const targetBlock =
-            this.harness.peers[
-                peerIndex
-            ].stateManager.storage.blocks.getLatestBlock(forkId);
-        const otherBlocks = this.harness.peers
-            .filter((_, i) => i !== peerIndex)
-            .map((p) => p.stateManager.storage.blocks.getLatestBlock(forkId));
-
-        const isDifferent = otherBlocks.some(
-            (block) => block?.hash !== targetBlock?.hash
-        );
-
-        expect(isDifferent).to.be.true;
-    }
-
     /**
      * Assert all peers are in sync (block hash and state match)
      */
@@ -183,73 +162,6 @@ export class AssertActions {
     }
 
     /**
-     * Verify all peers have acknowledged a disputed fork
-     */
-    async verifyAllPeersAcknowledged(
-        requestingPeerIndex: number,
-        forkId: ForkId,
-        timeoutMs: number = 5000,
-        excludePeerIndices: number[] = []
-    ): Promise<boolean> {
-        const requestingPeer = this.harness.getPeer(requestingPeerIndex);
-        const requestingPeerService =
-            requestingPeer.stateManager.p2pManager.localRpc
-                .isForkDisputedService;
-
-        const condition = () => {
-            const connections =
-                requestingPeer.stateManager.p2pManager.openConnections;
-
-            if (connections.length === 0) return false;
-
-            const allAcked = connections.every((transport) => {
-                const profile =
-                    requestingPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
-                        transport
-                    );
-                const peerIndex = this.harness.peers.findIndex(
-                    (p) => p.address === profile?.evmAddress
-                );
-
-                // Skip excluded peers
-                if (
-                    peerIndex !== -1 &&
-                    excludePeerIndices.includes(peerIndex)
-                ) {
-                    return true;
-                }
-
-                const peerAddress = transport.peerAddress
-                    ? transport.peerAddress
-                    : profile?.evmAddress
-                      ? profile.evmAddress.toString()
-                      : undefined;
-                if (!peerAddress) return false;
-
-                return requestingPeerService.didPeerAcknowledgeDisputedFork(
-                    peerAddress,
-                    forkId
-                );
-            });
-            return allAcked;
-        };
-
-        // Check immediately
-        if (condition()) return true;
-
-        // Use event barrier for efficient waiting (triggers on network/state events)
-        try {
-            await this.harness.eventCountsBarrier.waitFor(condition, {
-                timeoutMs,
-                timeoutMessage: `Not all peers acknowledged within ${timeoutMs}ms`
-            });
-            return true;
-        } catch {
-            return false;
-        }
-    }
-
-    /**
      * Assert specific peers initiated disputes with custom expected count
      */
     async disputeInitiatedByPeers(options: {
@@ -258,14 +170,6 @@ export class AssertActions {
         timeoutMs?: number;
     }): Promise<void> {
         const { peers, expectedCountPerPeer = 1, timeoutMs = 5000 } = options;
-
-        const initialCounts = peers.map((p) => ({
-            peer: p,
-            count: this.harness.eventActions.getEventCallCount(
-                p,
-                "onInitiatingDispute"
-            )
-        }));
 
         const condition = () => {
             return peers.every(
@@ -287,14 +191,6 @@ export class AssertActions {
             timeoutMs,
             timeoutMessage: `Peers ${peers.join(", ")} did not initiate ${expectedCountPerPeer} disputes within ${timeoutMs}ms`
         });
-
-        const finalCounts = peers.map((p) => ({
-            peer: p,
-            count: this.harness.eventActions.getEventCallCount(
-                p,
-                "onInitiatingDispute"
-            )
-        }));
     }
 
     /**
@@ -494,33 +390,6 @@ export class AssertActions {
 
         if (!timeout.isForced) {
             throw new Error(`Expected timeout to be forced, but it was not`);
-        }
-
-        if (timeout.participant !== this.harness.peers[participant].address) {
-            throw new Error(
-                `Expected timeout participant to be peer ${participant} (${this.harness.peers[participant].address}), ` +
-                    `but was ${timeout.participant}`
-            );
-        }
-    }
-
-    /**
-     * Assert timeout exists for a specific participant
-     */
-    assertTimeoutExists(options: {
-        participant: number;
-        peerToCheck?: number;
-        forkId: ForkId;
-    }): void {
-        const { participant, peerToCheck = 0, forkId } = options;
-
-        const timeout =
-            this.harness.peers[
-                peerToCheck
-            ].stateManager.storage.timeout.getTimeout(forkId);
-
-        if (!timeout) {
-            throw new Error(`No timeout found for fork ${forkId}`);
         }
 
         if (timeout.participant !== this.harness.peers[participant].address) {

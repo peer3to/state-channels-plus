@@ -3,8 +3,7 @@ import {
     Scenario,
     Assert,
     Transition,
-    PeerTestHarness,
-    Byzantine
+    PeerTestHarness
 } from "@test/harness";
 
 PeerTestHarness.setDefaultLogLevel("error");
@@ -61,7 +60,7 @@ describe("E2E: State Transitions", function () {
                 Assert.allPeersInSync(),
 
                 // Create and resolve fork (removes peer 2)
-                Byzantine.createAndResolveFork({ maliciousPeerIndex: 2 }),
+                Scenario.forkResolution({ maliciousPeerIndex: 2 }),
 
                 // Continue with honest peers only
                 Transition.fromHonestPeersOnly((c) => c.add(1)),

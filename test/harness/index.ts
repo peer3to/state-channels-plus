@@ -9,25 +9,24 @@ export {
 } from "./blocks/HarnessBlock";
 
 // Layer 2: Block namespaces (thin orchestration)
-export { Lifecycle } from "./blocks/LifecycleBlocks";
-export { Transition } from "./blocks/TransitionBlocks";
-export { Sync } from "./blocks/SyncBlocks";
-export { Time } from "./blocks/TimeBlocks";
-export { RPC } from "./blocks/RPCBlocks";
+export { Lifecycle } from "./blocks/Lifecycle";
+export { Transition } from "./blocks/Transition";
+export { Time } from "./blocks/Time";
+export { RPC } from "./blocks/RPC";
+export { Wait } from "./blocks/Wait";
 
 // Layer 3: Scenario blocks (high-level composition)
-export { Scenario } from "./blocks/ScenarioBlocks";
-export { Byzantine } from "./blocks/ByzantineBlocks";
-export { Assert } from "./blocks/AssertBlocks";
-export { AssertRPC } from "./blocks/AssertRPCBlocks";
-export { Event } from "./blocks/EventBlocks";
-export { Context } from "./blocks/ContextBlocks";
+export { Scenario } from "./blocks/Scenario";
+export { Byzantine } from "./blocks/Byzantine";
+export { Assert } from "./blocks/Assert";
+export { AssertRPC } from "./blocks/AssertRPC";
+export { Event } from "./blocks/Event";
+export { Context } from "./blocks/Context";
 
 // Action classes (for advanced usage)
 export { ChannelActions } from "./actions/ChannelActions";
 export { TransitionActions } from "./actions/TransitionActions";
 export { NetworkController } from "./actions/NetworkController";
-export { SyncActions } from "./actions/SyncActions";
 export { DisputeOrchestrator } from "./actions/DisputeOrchestrator";
 export { AssertActions } from "./actions/AssertActions";
 export { ByzantineActions } from "./actions/ByzantineActions";

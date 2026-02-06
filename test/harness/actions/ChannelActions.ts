@@ -29,36 +29,6 @@ export class ChannelActions {
         return this.submitOpenChannel(openChannel, signatures);
     }
 
-    /**
-     * Open a channel with specific signers
-     */
-    async openChannelWithSigners(
-        participantAddresses?: string[],
-        signerIndices: number[] | "all" = "all"
-    ): Promise<ForkId> {
-        let indices: number[];
-        if (signerIndices === "all") {
-            indices = this.harness.peers.map((peer: any) => peer.index);
-        } else {
-            indices = signerIndices;
-        }
-
-        this.logger.info(
-            `Opening channel with signers [${indices.join(", ")}]...`
-        );
-        await Clock.init(this.harness.peers[0].signer.provider!);
-
-        const openChannel = this.buildOpenChannelStruct({
-            participantAddresses
-        });
-        const signatures = await this.signOpenChannelStruct(
-            openChannel,
-            indices
-        );
-
-        return this.submitOpenChannel(openChannel, signatures);
-    }
-
     private buildOpenChannelStruct(
         args: { participantAddresses?: string[] } = {}
     ): OpenChannelStruct {

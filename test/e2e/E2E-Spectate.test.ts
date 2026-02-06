@@ -2,10 +2,9 @@ import {
     ScenarioRunner,
     Scenario,
     Assert,
-    Sync,
+    Wait,
     Event,
     Lifecycle,
-    Byzantine,
     Transition,
     PeerTestHarness
 } from "@test/harness";
@@ -145,7 +144,7 @@ describe("E2E: Spectate Service", function () {
                 Scenario.spectatorJoinedAndSynced(),
                 // Continue transitioning 3 more times with all 4 peers
                 Scenario.advanceState(3),
-                Sync.waitForPeers([0, 1, 2, 3], { timeout: 10000 }),
+                Wait.untilInSync([0, 1, 2, 3], { timeout: 10000 }),
                 Assert.peersInSync([0, 1, 2, 3]),
                 // Participant count should remain the same as initial (3)
                 // On-chain snapshot should still be on original fork
@@ -173,7 +172,7 @@ describe("E2E: Spectate Service", function () {
                 // Create and resolve invalid state transition dispute
                 // This will reduce the fork (remove peer 2)
                 // Using extended settlement timing for 5-peer scenario
-                Byzantine.createAndResolveForkWithSettlement({
+                Scenario.forkResolutionWithSettlement({
                     maliciousPeerIndex: 2,
                     forkSettleTimeoutMs: 15000,
                     disputesCommittedTimeoutMs: 10000
@@ -193,13 +192,13 @@ describe("E2E: Spectate Service", function () {
                 // Add a new peer (spectator) that must traverse forks
                 Lifecycle.addPeer(),
                 Event.waitUntilEventOccurs("onConnection", 5000),
-                Sync.waitForPeers([0, 1, 3, 4, 5]),
+                Wait.untilInSync([0, 1, 3, 4, 5]),
 
                 // Continue with 2 more transitions from honest peers
                 Transition.fromHonestPeersOnly((c) => c.add(2)),
-                Sync.waitForPeers([0, 1, 3, 4, 5]), // Include spectator in sync
+                Wait.untilInSync([0, 1, 3, 4, 5]), // Include spectator in sync
                 Transition.fromHonestPeersOnly((c) => c.add(2)),
-                Sync.waitForPeers([0, 1, 3, 4, 5]), // Include spectator in sync
+                Wait.untilInSync([0, 1, 3, 4, 5]), // Include spectator in sync
 
                 // Verify all peers are in sync
                 Assert.peersInSync([0, 1, 3, 4, 5]),

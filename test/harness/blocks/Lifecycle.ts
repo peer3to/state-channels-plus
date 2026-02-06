@@ -33,33 +33,6 @@ export class Lifecycle {
     }
 
     /**
-     * Open a channel with specific signers (for negative tests)
-     */
-    static openChannelWithSigners(
-        participantAddresses?: string[],
-        signerIndices: number[] | "all" = "all"
-    ) {
-        return new HarnessBlock(async (harness) => {
-            const forkId = await harness.channelActions.openChannelWithSigners(
-                participantAddresses,
-                signerIndices
-            );
-            harness.activeForkId = forkId;
-            return harness;
-        });
-    }
-
-    /**
-     * Connect all peers via P2P (usually automatic if autoConnect is true)
-     */
-    static connectAllPeers() {
-        return new HarnessBlock(async (harness) => {
-            await harness.networkController.connectAllPeers();
-            return harness;
-        });
-    }
-
-    /**
      * Add a new peer after the harness is already set up
      */
     static addPeer(signer?: Signer) {

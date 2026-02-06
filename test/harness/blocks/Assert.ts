@@ -35,16 +35,6 @@ export class Assert {
     }
 
     /**
-     * Assert a specific peer is out of sync with others
-     */
-    static peerOutOfSync(peerIndex: number) {
-        return new HarnessBlock(async (harness) => {
-            await harness.assertActions.peerOutOfSync(peerIndex);
-            return harness;
-        });
-    }
-
-    /**
      * Assert dispute was committed on-chain by all peers
      */
     static disputeCommitted(timeout: number = 5000, expectedCount: number = 2) {
@@ -72,30 +62,6 @@ export class Assert {
             }
 
             harness.assertActions.assertTimeoutIsForced({
-                participant,
-                peerToCheck,
-                forkId
-            });
-
-            return harness;
-        });
-    }
-
-    /**
-     * Assert timeout exists for a specific participant
-     */
-    static timeoutExists(options: {
-        participant: number;
-        peerToCheck?: number;
-    }) {
-        const { participant, peerToCheck = 0 } = options;
-        return new HarnessBlock(async (harness) => {
-            const forkId = harness.activeForkId;
-            if (!forkId) {
-                throw new Error("No active fork ID");
-            }
-
-            harness.assertActions.assertTimeoutExists({
                 participant,
                 peerToCheck,
                 forkId
@@ -191,7 +157,7 @@ export class Assert {
             const honestIndices = harness.context.honestPeerIndices;
             if (!honestIndices) {
                 throw new Error(
-                    "honestPeerIndices not set - use Byzantine.createAndResolveFork first"
+                    "honestPeerIndices not set - use Scenario.forkResolution() or Byzantine.createAndResolveFork() first"
                 );
             }
 
@@ -211,7 +177,7 @@ export class Assert {
             const maliciousIndex = harness.context.maliciousPeerIndex;
             if (maliciousIndex === undefined) {
                 throw new Error(
-                    "maliciousPeerIndex not set - use Byzantine.createAndResolveFork first"
+                    "maliciousPeerIndex not set - use Scenario.forkResolution() or Byzantine.createAndResolveFork() first"
                 );
             }
 
@@ -347,24 +313,15 @@ export class Assert {
     }
 
     /**
-     * Wait for peer's snapshot count to increase from captured baseline
+     * Wait for peer's snapshot count to increase from named checkpoint
+     * Uses Assert.storeSnapshotCount() to set the baseline checkpoint
      */
-    static snapshotCountIncreased(
+    static snapshotCountIncreasedSince(
         peerIndex: number,
-        contextKeyOrOptions?: string | { timeoutMs?: number },
+        checkpointName: string,
         options?: { timeoutMs?: number }
     ) {
-        // Handle overloaded parameters
-        let contextKey: string | undefined;
-        let timeoutMs: number;
-
-        if (typeof contextKeyOrOptions === "string") {
-            contextKey = contextKeyOrOptions;
-            timeoutMs = options?.timeoutMs || 5000;
-        } else {
-            contextKey = undefined;
-            timeoutMs = contextKeyOrOptions?.timeoutMs || 5000;
-        }
+        const { timeoutMs = 5000 } = options || {};
 
         return new HarnessBlock(async (harness) => {
             const peer = harness.peers[peerIndex];
@@ -372,25 +329,13 @@ export class Assert {
                 throw new Error(`Peer ${peerIndex} not found`);
             }
 
-            // Determine which baseline to use
-            let countBefore: number;
-            if (contextKey) {
-                // Use named context key
-                countBefore = harness.context[`snapshotCount_${contextKey}`];
-                if (countBefore === undefined) {
-                    throw new Error(
-                        `No baseline snapshot count found for key "${contextKey}". Use Assert.storeSnapshotCount() first.`
-                    );
-                }
-            } else {
-                // Use default peer-based key
-                countBefore =
-                    harness.context[`peer${peerIndex}SnapshotCountBefore`];
-                if (countBefore === undefined) {
-                    throw new Error(
-                        `No snapshot count captured for peer ${peerIndex}. Use Context.captureSnapshotCount() first.`
-                    );
-                }
+            // Use named context key
+            const countBefore =
+                harness.context[`snapshotCount_${checkpointName}`];
+            if (countBefore === undefined) {
+                throw new Error(
+                    `No baseline snapshot count found for checkpoint "${checkpointName}". Use Assert.storeSnapshotCount() first.`
+                );
             }
 
             const snapshotStorage = peer.stateManager.storage
@@ -418,11 +363,8 @@ export class Assert {
                 const countAfter = Array.from(
                     snapshotStorage.snapshotsByHash.keys()
                 ).length;
-                const contextInfo = contextKey
-                    ? ` (context: "${contextKey}")`
-                    : "";
                 throw new Error(
-                    `Peer ${peerIndex} snapshot count did not increase from baseline ${countBefore} within ${timeoutMs}ms${contextInfo}. ` +
+                    `Peer ${peerIndex} snapshot count did not increase from baseline ${countBefore} within ${timeoutMs}ms (checkpoint: "${checkpointName}"). ` +
                         `Current count: ${countAfter}`
                 );
             }
@@ -639,7 +581,7 @@ export class Assert {
                 snapshotStorage.snapshotsByHash.keys()
             ).length;
 
-            (harness.context as any)[`snapshotCount_${contextKey}`] = count;
+            harness.context[`snapshotCount_${contextKey}`] = count;
 
             return harness;
         });
@@ -688,44 +630,6 @@ export class Assert {
     }) {
         return new HarnessBlock(async (harness) => {
             await harness.assertActions.disputeCommittedByAll(options);
-            return harness;
-        });
-    }
-
-    /**
-     * Assert event was called specific times total across all peers
-     */
-    static totalEventCount(options: {
-        event: keyof import("@test/fixtures/PeerTestHarness").EventSpies;
-        expectedTotal: number;
-    }) {
-        return new HarnessBlock(async (harness) => {
-            harness.eventActions.assertEventHandlerCalledTotalTimes(
-                options.event,
-                options.expectedTotal
-            );
-            return harness;
-        });
-    }
-
-    /**
-     * Assert event count for a specific peer
-     */
-    static peerEventCount(options: {
-        peer: number;
-        event: keyof import("@test/fixtures/PeerTestHarness").EventSpies;
-        expectedCount: number;
-    }) {
-        return new HarnessBlock(async (harness) => {
-            const actualCount = harness.eventActions.getEventCallCount(
-                options.peer,
-                options.event
-            );
-            if (actualCount !== options.expectedCount) {
-                throw new Error(
-                    `Expected peer ${options.peer} event ${String(options.event)} to be called ${options.expectedCount} times, but was called ${actualCount} times`
-                );
-            }
             return harness;
         });
     }

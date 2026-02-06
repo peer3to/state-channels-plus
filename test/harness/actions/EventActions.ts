@@ -61,69 +61,6 @@ export class EventActions {
     }
 
     /**
-     * Get arguments from a specific event call
-     */
-    getEventArgs(
-        peerIndex: number,
-        eventName: keyof EventSpies,
-        callIndex: number = 0
-    ): any {
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) throw new Error(`Peer ${peerIndex} not found`);
-
-        const spy = peer.eventSpies[eventName];
-        if (!spy)
-            throw new Error(
-                `Event ${eventName} spy not found for peer ${peerIndex}`
-            );
-        if (callIndex >= spy.callCount) {
-            throw new Error(
-                `Event ${eventName} was only called ${spy.callCount} times, cannot get call ${callIndex}`
-            );
-        }
-        return spy.getCall(callIndex).args;
-    }
-
-    /**
-     * Assert that an event was called a minimum number of times for a peer
-     */
-    assertEventCalled(
-        peerIndex: number,
-        eventName: keyof EventSpies,
-        minTimes: number = 1
-    ): void {
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) throw new Error(`Peer ${peerIndex} not found`);
-
-        const spy = peer.eventSpies[eventName];
-        if (!spy)
-            throw new Error(
-                `Event ${eventName} spy not found for peer ${peerIndex}`
-            );
-        expect(spy.callCount).to.be.at.least(
-            minTimes,
-            `Event ${eventName} should have been called at least ${minTimes} times for peer ${peerIndex}`
-        );
-    }
-
-    /**
-     * Assert total event calls across all peers
-     */
-    assertEventHandlerCalledTotalTimes(
-        eventName: keyof EventSpies,
-        expectedTotalCalls: number
-    ): void {
-        const totalCalls = this.harness.peers.reduce((sum, peer) => {
-            return sum + this.getEventCallCount(peer.index, eventName);
-        }, 0);
-
-        expect(totalCalls).to.equal(
-            expectedTotalCalls,
-            `Expected ${eventName} to be called ${expectedTotalCalls} times total across all peers, but was called ${totalCalls} times`
-        );
-    }
-
-    /**
      * Reset event spy history for one peer or all peers
      */
     resetEventSpies(peerIndex?: number): void {

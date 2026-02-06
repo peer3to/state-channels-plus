@@ -50,20 +50,16 @@ export class StateQueryActions {
     /**
      * Get the state machine state hash for a peer
      */
-    async getStateMachineStateHash(peerIndex: number): Promise<string> {
-        try {
-            const peer = this.harness.peers[peerIndex];
-            if (!peer) return "peer_not_found";
+    private getStateMachineStateHash(peerIndex: number): string | null {
+        const peer = this.harness.peers[peerIndex];
+        if (!peer) throw new Error(`Peer ${peerIndex} not found`);
 
-            const latestBlock = peer.stateManager.storage.blocks.getLatestBlock(
-                this.harness.activeForkId!
-            );
-            if (!latestBlock) return "no_block";
+        const latestBlock = peer.stateManager.storage.blocks.getLatestBlock(
+            this.harness.activeForkId!
+        );
+        if (!latestBlock) return null;
 
-            return latestBlock.stateSnapshotHash?.toString() || "no_state_hash";
-        } catch (error) {
-            return `error: ${error}`;
-        }
+        return latestBlock.stateSnapshotHash?.toString() || null;
     }
 
     /**
@@ -83,7 +79,7 @@ export class StateQueryActions {
             );
             if (!nextPeer) {
                 // Enhanced error reporting
-                const stateHash = await this.getStateMachineStateHash(0);
+                const stateHash = this.getStateMachineStateHash(0);
                 const peerAddresses = this.harness.peers.map((p) => p.address);
 
                 const latestBlock =
@@ -106,7 +102,7 @@ export class StateQueryActions {
                 );
 
                 throw new Error(
-                    `No peer found with address ${nextAddress}. Available peers: ${peerAddresses.join(", ")}. ForkId: ${forkId}, StateHash: ${stateHash}, LatestBlockHeight: ${latestBlock?.height ?? "none"}. Participant states: ${participantStates.join(", ")}`
+                    `No peer found with address ${nextAddress}. Available peers: ${peerAddresses.join(", ")}. ForkId: ${forkId}, StateHash: ${stateHash ?? "none"}, LatestBlockHeight: ${latestBlock?.height ?? "none"}. Participant states: ${participantStates.join(", ")}`
                 );
             }
 
@@ -115,36 +111,6 @@ export class StateQueryActions {
             this.logger.error(`getNextPeerToWrite failed: ${error}`);
             throw error;
         }
-    }
-
-    /**
-     * Get transport connection between two peers
-     */
-    getPeerTransport(
-        fromPeerIndex: number,
-        toPeerIndex: number
-    ): ATransport | undefined {
-        const fromPeer = this.harness.getPeer(fromPeerIndex);
-        const toPeer = this.harness.getPeer(toPeerIndex);
-
-        const findTransport = (
-            sourcePeer: TestPeer<AStateMachine>,
-            targetAddress: string
-        ) =>
-            sourcePeer.stateManager.p2pManager.openConnections.find((t) => {
-                const profile =
-                    sourcePeer.stateManager.p2pManager.profileManager.getProfileByTransport(
-                        t
-                    );
-                return profile?.evmAddress === targetAddress;
-            });
-
-        const directTransport = findTransport(fromPeer, toPeer.address);
-        if (directTransport) {
-            return directTransport;
-        }
-
-        return findTransport(toPeer, fromPeer.address);
     }
 
     /**
@@ -215,16 +181,5 @@ export class StateQueryActions {
         return peer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
             evmAddress
         );
-    }
-
-    /**
-     * Get timeout struct for a fork
-     */
-    getTimeoutStruct(
-        peerIndex: number,
-        forkId: ForkId
-    ): TimeoutStruct | undefined {
-        const peer = this.harness.getPeer(peerIndex);
-        return peer.stateManager.storage.timeout.getTimeout(forkId);
     }
 }

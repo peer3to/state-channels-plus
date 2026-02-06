@@ -4,14 +4,6 @@ import { hash as fakeHash } from "@test/factory";
 import Clock from "@/Clock";
 import { ethers } from "ethers";
 
-/**
- * RPC namespace - Simple, single-responsibility blocks for RPC service testing
- *
- * Rules:
- * - NO complex scenarios or multi-step logic
- * - NO hidden assertions (tests must assert explicitly)
- * - Use connectionBarrier for event-driven waiting (NO waitForCondition)
- */
 export class RPC {
     // ==========================================
     // IsForkDisputed RPC - Basic Operations
@@ -361,37 +353,6 @@ export class RPC {
     }
 
     /**
-     * Blacklist a peer
-     */
-    static blacklistPeer(options: {
-        ownerPeer: number;
-        blacklistedPeer: number;
-    }) {
-        const { ownerPeer, blacklistedPeer } = options;
-
-        return new HarnessBlock(async (harness) => {
-            const blacklistedPeerObj = harness.getPeer(blacklistedPeer);
-            const ownerPeerObj = harness.getPeer(ownerPeer);
-
-            const profile = harness.stateQuery.getProfile(
-                ownerPeer,
-                blacklistedPeerObj.address
-            );
-
-            if (profile) {
-                profile.blacklist();
-            } else {
-                // If no profile exists, add to blacklist directly
-                ownerPeerObj.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                    blacklistedPeerObj.address
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
      * Send valid handshake response
      */
     static sendValidHandshakeResponse(options: {
@@ -455,38 +416,6 @@ export class RPC {
 
             // Just initiate without response - tests timeout behavior
             initService.initHandshake(transport);
-
-            return harness;
-        });
-    }
-
-    /**
-     * Initiate handshake then disconnect responding peer to prevent response
-     * Used to test timeout behavior
-     */
-    static initiateHandshakeThenPreventResponse(options: {
-        fromPeer: number;
-        toPeer: number;
-    }) {
-        const { fromPeer, toPeer } = options;
-
-        return new HarnessBlock(async (harness) => {
-            const respondingPeer = harness.getPeer(toPeer);
-            const transport = await harness.stateQuery.waitForPeerTransport(
-                fromPeer,
-                toPeer,
-                5000
-            );
-
-            // Initiate handshake
-            const initService =
-                harness.rpcActions.getInitHandshakeService(fromPeer);
-            initService.initHandshake(transport);
-
-            // Disconnect on responding peer side to prevent response
-            respondingPeer.stateManager.p2pManager.disconnectConnection(
-                transport
-            );
 
             return harness;
         });

@@ -30,7 +30,6 @@ import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
 import { ChannelActions } from "@test/harness/actions/ChannelActions";
 import { TransitionActions } from "@test/harness/actions/TransitionActions";
-import { SyncActions } from "@test/harness/actions/SyncActions";
 import { NetworkController } from "@test/harness/actions/NetworkController";
 import { AssertActions } from "@test/harness/actions/AssertActions";
 import { ByzantineActions } from "@test/harness/actions/ByzantineActions";
@@ -202,7 +201,6 @@ export class PeerTestHarness<
     // action instances
     public readonly channelActions!: ChannelActions;
     public readonly transitionActions!: TransitionActions;
-    public readonly syncActions!: SyncActions;
     public readonly networkController!: NetworkController;
     public readonly assertActions!: AssertActions;
     public readonly byzantineActions!: ByzantineActions;
@@ -231,7 +229,6 @@ export class PeerTestHarness<
         // Initialize action instances
         this.channelActions = new ChannelActions(this, this.logger);
         this.transitionActions = new TransitionActions(this, this.logger);
-        this.syncActions = new SyncActions(this, this.logger);
         this.networkController = new NetworkController(this, this.logger);
         this.assertActions = new AssertActions(this, this.logger);
         this.byzantineActions = new ByzantineActions(this, this.logger);

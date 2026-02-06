@@ -21,32 +21,6 @@ export class ByzantineActions {
         private logger: Logger
     ) {}
 
-    async skipTurn(peerIndex: number): Promise<void> {
-        this.harness.eventActions.resetEventSpies();
-
-        const nextPeer = await this.harness.stateQuery.getNextPeerToWrite();
-        if (nextPeer.index !== peerIndex) {
-            throw new Error(
-                `Expected peer ${peerIndex} to be next, but peer ${nextPeer.index} is next to write`
-            );
-        }
-
-        const disputeCreated =
-            await this.harness.eventActions.waitForEventCounts(
-                "onInitiatingDispute",
-                this.harness.peers
-                    .filter((_, i) => i !== peerIndex)
-                    .map((p) => ({ peerId: p.index, expectedCount: 1 })),
-                10000
-            );
-
-        if (!disputeCreated) {
-            throw new Error(
-                `Timeout dispute was not created after peer ${peerIndex} skipped turn`
-            );
-        }
-    }
-
     /**
      * Submit a double-signed block (two blocks at same height with different content)
      */

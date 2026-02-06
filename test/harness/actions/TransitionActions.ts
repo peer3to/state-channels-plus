@@ -1,6 +1,6 @@
 import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
 import { Logger } from "@/utils";
-import { SyncActions } from "./SyncActions";
+import SyncCoordinator from "@test/utils/SyncCoordinator";
 
 /**
  * Handles state transition operations on the state machine
@@ -35,6 +35,10 @@ export class TransitionActions {
         });
     }
 
+    async increment(value: number = 1) {
+        return this.submitNext((contract) => contract.add(value));
+    }
+
     /**
      * Submit a transaction from a specific peer
      */
@@ -54,42 +58,33 @@ export class TransitionActions {
         const result = await txFn(peer.p2pInstance.p2pContractInstance);
 
         if (options.waitForSync) {
-            const syncActions = new SyncActions(this.harness, this.logger);
-            await syncActions.waitForSync({
-                peerIndices: options.waitForPeers
-            });
+            const forkId = this.harness.activeForkId;
+            if (!forkId) {
+                throw new Error("No active fork ID - cannot wait for sync");
+            }
+
+            const syncCoordinator = new SyncCoordinator(this.logger);
+            await syncCoordinator.waitForPeersInSync(
+                this.harness.peers,
+                forkId,
+                {
+                    peerIndices: options.waitForPeers,
+                    eventBarrier: this.harness.eventCountsBarrier
+                }
+            );
         }
 
         return result;
     }
 
     private async getNextPeerToWrite(): Promise<TestPeer<any, any>> {
-        try {
-            const nextAddress =
-                await this.harness.peers[0].stateManager.diamondStateMachine.getNextToWrite();
-
-            this.logger.verbose(`getNextPeerToWrite returned: ${nextAddress}`);
-
-            const nextPeer = this.harness.peers.find(
-                (peer: any) => peer.address === nextAddress
-            );
-            if (!nextPeer) {
-                throw new Error(
-                    `No peer found with address ${nextAddress}. Available peers: ${this.harness.peers.map((p: any) => p.address).join(", ")}`
-                );
-            }
-
-            return nextPeer;
-        } catch (error) {
-            this.logger.error(`getNextPeerToWrite failed: ${error}`);
-            throw error;
-        }
+        return this.harness.stateQuery.getNextPeerToWrite();
     }
 
     /**
      * Wait for a peer to receive their turn
      */
-    async waitForTurn(
+    private async waitForTurn(
         peer: TestPeer<any, any>,
         timeoutMs = 3000
     ): Promise<void> {

@@ -297,7 +297,7 @@ describe("E2E: Dispute Manager", function () {
                 // Verify peer 2 resynced via validStateProofButNotSynced
                 // When peer 2 validates the dispute with isPartial = true,
                 // it should sync by applying the signed blocks from the state proof
-                Assert.snapshotCountIncreased(2, "before_isolation"),
+                Assert.snapshotCountIncreasedSince(2, "before_isolation"),
 
                 // Cleanup: restore calldata handler
                 Byzantine.restoreCalldataHandler(2)

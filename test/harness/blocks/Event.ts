@@ -6,54 +6,6 @@ import { EventSpies } from "@test/fixtures/PeerTestHarness";
  */
 export class Event {
     /**
-     * Wait for specific event counts across multiple peers
-     */
-    static waitForCounts(
-        eventName: keyof EventSpies,
-        expectedCounts: Array<{ peerId: number; expectedCount: number }>,
-        options?: {
-            timeoutMs?: number;
-            mode?: "exact" | "atLeast";
-        }
-    ) {
-        return new HarnessBlock(async (harness) => {
-            const success = await harness.eventActions.waitForEventCounts(
-                eventName,
-                expectedCounts,
-                options?.timeoutMs,
-                { mode: options?.mode }
-            );
-
-            if (!success) {
-                throw new Error(
-                    `Event ${String(eventName)} counts not reached: expected ${JSON.stringify(expectedCounts)}`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
-     * Wait for a single event count on one peer
-     */
-    static waitForCount(
-        eventName: keyof EventSpies,
-        peerId: number,
-        expectedCount: number,
-        options?: {
-            timeoutMs?: number;
-            mode?: "exact" | "atLeast";
-        }
-    ) {
-        return Event.waitForCounts(
-            eventName,
-            [{ peerId, expectedCount }],
-            options
-        );
-    }
-
-    /**
      * Wait for event count across all peers
      */
     static waitForAllPeers(
@@ -137,7 +89,7 @@ export class Event {
             const honestIndices = harness.context.honestPeerIndices;
             if (!honestIndices) {
                 throw new Error(
-                    "honestPeerIndices not set - use Byzantine.createAndResolveFork first"
+                    "honestPeerIndices not set - use Scenario.forkResolution() or Byzantine.createAndResolveFork() first"
                 );
             }
 
@@ -174,142 +126,12 @@ export class Event {
         });
     }
 
-    // ============================================================================
-    // HIGH-LEVEL SEMANTIC SYNCHRONIZATION METHODS
-    // These should be preferred in tests for clarity and readability
-    // ============================================================================
-
-    /**
-     * Wait until disputes have been initiated by specific peers (synchronization point)
-     */
-    static waitUntilDisputeInitiatedBy(options: {
-        peers: number[];
-        expectedCountPerPeer?: number;
-        timeoutMs?: number;
-    }) {
-        const { peers, expectedCountPerPeer = 1, timeoutMs = 5000 } = options;
-        return new HarnessBlock(async (harness) => {
-            const condition = () => {
-                return peers.every(
-                    (peerId) =>
-                        harness.eventActions.getEventCallCount(
-                            peerId,
-                            "onInitiatingDispute"
-                        ) >= expectedCountPerPeer
-                );
-            };
-
-            await harness.eventCountsBarrier.waitFor(condition, {
-                timeoutMs,
-                timeoutMessage: `Peers ${peers.join(", ")} did not initiate ${expectedCountPerPeer} disputes within ${timeoutMs}ms`
-            });
-
-            return harness;
-        });
-    }
-
-    /**
-     * Wait until dispute is committed on-chain (synchronization point)
-     */
-    static waitUntilDisputeCommitted(timeoutMs: number = 5000) {
-        return new HarnessBlock(async (harness) => {
-            // Wait for all peers to commit the dispute
-            const condition = () => {
-                return harness.peers.every(
-                    (peer) =>
-                        harness.eventActions.getEventCallCount(
-                            peer.index,
-                            "onDisputeCommitted"
-                        ) > 0
-                );
-            };
-
-            await harness.eventCountsBarrier.waitFor(condition, {
-                timeoutMs,
-                timeoutMessage: `Dispute was not committed by all peers within ${timeoutMs}ms`
-            });
-
-            return harness;
-        });
-    }
-
     /**
      * Capture the current fork ID for later comparison
      */
     static captureOriginalFork() {
         return new HarnessBlock(async (harness) => {
             harness.context.originalForkId = harness.activeForkId;
-            return harness;
-        });
-    }
-
-    /**
-     * Wait until honest peers (all except last malicious peer) initiate dispute
-     */
-    static waitUntilHonestPeersInitiateDispute(options?: {
-        timeoutMs?: number;
-        expectedCountPerPeer?: number;
-    }) {
-        const { timeoutMs = 5000, expectedCountPerPeer = 1 } = options || {};
-
-        return new HarnessBlock(async (harness) => {
-            // Get malicious peer index (set by Byzantine blocks)
-            const maliciousPeerIndex = harness.context.lastMaliciousPeerIndex;
-            if (maliciousPeerIndex === undefined) {
-                throw new Error(
-                    "No malicious peer index found. This block should be used after a Byzantine attack block."
-                );
-            }
-
-            // Get honest peers (all except malicious)
-            const honestPeers = harness.peers
-                .filter((peer) => peer.index !== maliciousPeerIndex)
-                .map((peer) => peer.index);
-
-            const condition = () => {
-                return honestPeers.every(
-                    (peerId) =>
-                        harness.eventActions.getEventCallCount(
-                            peerId,
-                            "onInitiatingDispute"
-                        ) >= expectedCountPerPeer
-                );
-            };
-
-            await harness.eventCountsBarrier.waitFor(condition, {
-                timeoutMs,
-                timeoutMessage: `Honest peers ${honestPeers.join(", ")} did not initiate ${expectedCountPerPeer} disputes within ${timeoutMs}ms`
-            });
-
-            return harness;
-        });
-    }
-
-    /**
-     * Wait until calldata is posted by any peer (synchronization point)
-     * ```
-     */
-    static waitUntilCalldataPosted(timeoutMs: number = 5000) {
-        return new HarnessBlock(async (harness) => {
-            const condition = () => {
-                return harness.peers.some(
-                    (peer) =>
-                        harness.eventActions.getEventCallCount(
-                            peer.index,
-                            "onPostedCalldata"
-                        ) > 0 ||
-                        harness.eventActions.getEventCallCount(
-                            peer.index,
-                            "onBlockCalldataPosted"
-                        ) > 0
-                );
-            };
-
-            await harness.eventCountsBarrier.waitFor(condition, {
-                timeoutMs,
-                timeoutMessage: `No calldata was posted within ${timeoutMs}ms`
-            });
-
             return harness;
         });
     }
@@ -439,46 +261,6 @@ export class Event {
             if (!forkChanged) {
                 throw new Error(
                     `Fork did not change within ${timeoutMs}ms. Expected ${honest.length} honest peers on new fork.`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    // ============================================================================
-    // LOW-LEVEL EVENT METHODS (for advanced usage and debugging)
-    // Prefer high-level semantic methods above when possible
-    // ============================================================================
-
-    /**
-     * Wait for connection/disconnection events
-     */
-    static waitForConnectionChange(options: {
-        peerIndex: number;
-        expectedChange: number;
-        timeoutMs?: number;
-    }) {
-        const { peerIndex, expectedChange, timeoutMs = 5000 } = options;
-
-        return new HarnessBlock(async (harness) => {
-            const initialCount =
-                harness.stateQuery.getConnectionCount(peerIndex);
-            const expectedCount = initialCount + expectedChange;
-
-            const success = await harness.waitForCondition(() => {
-                const currentCount =
-                    harness.stateQuery.getConnectionCount(peerIndex);
-                return currentCount === expectedCount;
-            }, timeoutMs);
-
-            if (!success) {
-                const finalCount =
-                    harness.stateQuery.getConnectionCount(peerIndex);
-                throw new Error(
-                    `Expected peer ${peerIndex} to have ${expectedCount} connections ` +
-                        `(change of ${expectedChange} from ${initialCount}), ` +
-                        `but has ${finalCount} after ${timeoutMs}ms`
                 );
             }
 
