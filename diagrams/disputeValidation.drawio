@@ -1,0 +1,125 @@
+<mxfile host="65bd71144e">
+    <diagram id="dispute-validation" name="Dispute Validation">
+        <mxGraphModel dx="487" dy="449" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="dv-frame" value="validateDispute()&lt;br&gt;DisputeValidationService" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="40" width="770" height="1020" as="geometry"/>
+                </mxCell>
+                <mxCell id="dv-start" value="Start" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.start_1;whiteSpace=wrap;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="340" y="60" width="90" height="45" as="geometry"/>
+                </mxCell>
+                <mxCell id="dv-load" value="Load inputs&lt;br&gt;(channelId, dispute, snapshot, fraudProof, auditingData)" style="rounded=1;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="200" y="130" width="370" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="dv-da-decision" value="Auditing data commitment&lt;br&gt;present on-chain?" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="300" y="225" width="170" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="dv-commitment-verify" value="Verify commitment&lt;br&gt;(commitment matches auditingData or reconstructed data)" style="rounded=1;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="140" y="360" width="330" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="dv-reconstruct" value="Reconstruct auditing data&lt;br&gt;(from partial data / DA)" style="rounded=1;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="480" y="360" width="250" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="dv-stateproof" value="verifyStateProof&lt;br&gt;(integrity + state proof checks)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="200" y="460" width="370" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="dv-synced-decision" value="State proof valid but&lt;br&gt;not synced / missing unfinalized blocks?" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="280" y="550" width="170" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="dv-sync" value="Sync unfinalized blocks&lt;br&gt;(replay confirmations with DisputeValidationStrategy)" style="rounded=1;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="160" y="695" width="300" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="dv-retry" value="Retry validateDispute()&lt;br&gt;(now with updated local state)" style="rounded=1;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="160" y="785" width="300" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="dv-stateful" value="Stateful validation checks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="200" y="875" width="370" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="dv-slashes" value="Verify slashes subset&lt;br&gt;(LocalDiamond; fallback to RPC if needed)" style="rounded=1;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="120" y="945" width="250" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="dv-balance" value="Balance invariant&lt;br&gt;(static-call LocalDiamond)" style="rounded=1;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="390" y="945" width="220" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="dv-latest" value="Latest-state check&lt;br&gt;(is latest snapshot / state)" style="rounded=1;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="120" y="1020" width="250" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="dv-timeout" value="Timeout checks&lt;br&gt;(dispute window, timestamps)" style="rounded=1;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="390" y="1020" width="220" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="dv-output" value="Final output correctness&lt;br&gt;(isCorrectAuditingData)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="200" y="1090" width="370" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="dv-end" value="Return (valid / invalid)" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.terminator;whiteSpace=wrap;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="300" y="1170" width="170" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="e1" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-start" target="dv-load" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e2" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-load" target="dv-da-decision" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e3" value="YES" style="edgeStyle=none;html=1;exitX=0.35;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-da-decision" target="dv-commitment-verify" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e4" value="NO" style="edgeStyle=none;html=1;exitX=0.65;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-da-decision" target="dv-reconstruct" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e5" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.35;entryY=0;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-commitment-verify" target="dv-stateproof" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e6" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.65;entryY=0;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-reconstruct" target="dv-stateproof" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e7" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-stateproof" target="dv-synced-decision" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e8" value="YES" style="edgeStyle=none;html=1;exitX=0.35;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-synced-decision" target="dv-sync" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e9" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-sync" target="dv-retry" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e10" value="NO" style="edgeStyle=none;html=1;exitX=0.65;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-synced-decision" target="dv-stateful" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e11" value="" style="edgeStyle=none;html=1;dashed=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-retry" target="dv-load" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="520" y="815"/>
+                            <mxPoint x="520" y="165"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e12" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-stateful" target="dv-slashes" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e13" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-slashes" target="dv-balance" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e14" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-balance" target="dv-timeout" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="500" y="1010"/>
+                            <mxPoint x="500" y="1020"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e15" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-slashes" target="dv-latest" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e16" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-latest" target="dv-timeout" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e17" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-timeout" target="dv-output" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e18" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="dv-frame" source="dv-output" target="dv-end" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
