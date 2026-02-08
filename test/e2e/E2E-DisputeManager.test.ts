@@ -37,7 +37,7 @@ describe("E2E: Dispute Manager", function () {
                 Scenario.activeChannel(3, 2),
                 Byzantine.invalidTransitionFrom(2), // Peer 2 submits invalid
                 Assert.disputeInitiatedBy({ peers: [0, 1] }),
-                Assert.disputeCommitted(3)
+                Assert.disputeCommitted(2)
             );
         });
 
@@ -47,7 +47,7 @@ describe("E2E: Dispute Manager", function () {
                 Event.reset(),
                 Byzantine.forgedInboundMessageFromNext(),
                 Assert.honestPeersInitiateDispute(),
-                Assert.disputeCommitted(3)
+                Assert.disputeCommitted(2)
             );
         });
 

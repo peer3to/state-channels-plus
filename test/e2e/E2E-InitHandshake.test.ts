@@ -206,9 +206,9 @@ describe("E2E: Init Handshake", function () {
                     toPeer: 0
                 }),
 
-                AssertRPC.peerDisconnected({
+                AssertRPC.peerDisconnectedFrom({
                     peerIndex: 0,
-                    expectedDisconnections: 1
+                    expectedFinalCount: 0
                 })
             );
         });
