@@ -444,7 +444,7 @@ class DisputeManager {
                 genesisStateSnapshot.snapshotData.latestOutboundMessageBlockHash
             );
 
-        return {
+        const auditingData = {
             isPartial,
             auditingData: {
                 genesisStateSnapshotData: genesisStateSnapshot.snapshotData,
@@ -457,6 +457,15 @@ class DisputeManager {
                 outboundMessageBlocks: outboundMessageBlocks
             }
         };
+        this.logger.verbose("Constructed auditing data for dispute", {
+            forkId,
+            channelId: this.channelId,
+            auditingData: LoggerUtils.getAuditingMetadata(
+                auditingData.auditingData
+            ),
+            isPartial
+        });
+        return auditingData;
     }
 
     private getEmptyTimeoutStruct(): TimeoutStruct {

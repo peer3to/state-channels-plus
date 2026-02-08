@@ -3,7 +3,7 @@ import { ethers } from "ethers";
 
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Storage from "@/storage";
-import { isSubset, Logger } from "@/utils";
+import { isSubset, Logger, tryDecodeCustomError } from "@/utils";
 import { Address, Signature } from "@/types/types";
 
 import DisputeFraudProofService from "./utils/DisputeFraudProofService";
@@ -15,6 +15,8 @@ import DisputeManager from "@/disputeManager";
 import AgreementManager from "@/agreementManager";
 import type StateManager from "./StateManager";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
+import { StateSnapshot } from "@/models";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 export default class DisputeValidationService {
     private readonly disputeFraudProofService: DisputeFraudProofService;
@@ -44,6 +46,19 @@ export default class DisputeValidationService {
         dispute: DisputeStruct,
         onChainDisputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<boolean> {
+        const isSynced = await this.isSyncedToStateProof(dispute);
+        if (!isSynced) {
+            this.logger.debug("Not synced to state proof for dispute", {
+                dispute: LoggerUtils.getDisputeMetadata(dispute),
+                nextBlockHeight: this.storage.blocks.getNextBlockHeight(
+                    dispute.input.forkId
+                )
+            });
+            //TODO - check long range milestone attack
+            const { shouldContinueVerification } = await this.trySync(dispute);
+            if (!shouldContinueVerification) return false;
+        }
+
         // Is Data Available (DA)
         if (onChainDisputeAuditingData) {
             const isValid =
@@ -60,26 +75,26 @@ export default class DisputeValidationService {
                 onChainDisputeAuditingData
             );
         }
-        // onChainDisputeAuditingData not available
+        return await this.tryReconstructAuditingData(dispute);
+    }
+
+    private async tryReconstructAuditingData(
+        dispute: DisputeStruct
+    ): Promise<boolean> {
         const { isPartial, auditingData } = this.disputeManager.getAuditingData(
             dispute.input.forkId,
             dispute.input.stateProof
         );
+
+        const isValidStateProofWithoutIntegrity =
+            await this.diamondStateMachine.localDiamondContract.verifyStateProof(
+                dispute,
+                auditingData,
+                false
+            );
+
         if (isPartial) {
-            // can not construct auditing data -> verifyStateProof with partial data
-            const isValidStateProof =
-                await this.diamondStateMachine.localDiamondContract.verifyStateProof(
-                    dispute,
-                    auditingData,
-                    false
-                );
-            if (isValidStateProof) {
-                // partial auditingData but valid stateProof -> try and sync and try again
-                return await this.validStateProofButNotSynced(
-                    dispute,
-                    onChainDisputeAuditingData
-                );
-            } else {
+            if (!isValidStateProofWithoutIntegrity) {
                 // partial auditingData and invalid stateProof
                 this.disputeFraudProofService.createDisputeInvalidStateProofWithoutAuditingDataIntegrityVerified(
                     dispute,
@@ -87,55 +102,42 @@ export default class DisputeValidationService {
                 );
                 return false;
             }
+            // valid stateProof but partial auditingData
+            const msg =
+                "DisputeValidation DATA MISSING - valid state proof, but not synced -> can not reconstruct auditing data to audit dispute";
+            this.logger.error(msg, { auditingData });
+            throw new Error(msg);
         }
-        // auditingData reconstructed in full
-        return await this.continueValidationAuditingDataConstructed(
+
+        const isValidCommitment =
+            await this.diamondStateMachine.localDiamondContract.checkDisputeAuditingDataCommitment(
+                dispute,
+                auditingData
+            );
+        if (!isValidCommitment) {
+            if (!isValidStateProofWithoutIntegrity) {
+                // full auditingData and invalid stateProof
+                this.disputeFraudProofService.createDisputeInvalidStateProofWithoutAuditingDataIntegrityVerified(
+                    dispute,
+                    auditingData
+                );
+                return false;
+            }
+            // stateProof is correct -> dispute.auditingDataHash is junk
+            this.disputeFraudProofService.createDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks(
+                dispute,
+                auditingData
+            );
+            return false;
+        }
+
+        // valid commitment
+        return await this.continueValidationWithVerifiedDisputeAuditingDataCommitment(
             dispute,
             auditingData
         );
     }
 
-    private async continueValidationAuditingDataConstructed(
-        dispute: DisputeStruct,
-        disputeAuditingData: DisputeAuditingDataStruct
-    ): Promise<boolean> {
-        if (
-            await this.diamondStateMachine.localDiamondContract.checkDisputeAuditingDataCommitment(
-                dispute,
-                disputeAuditingData
-            )
-        ) {
-            // continue down the happy path
-            return await this.continueValidationWithVerifiedDisputeAuditingDataCommitment(
-                dispute,
-                disputeAuditingData
-            );
-        }
-        // Full correct disputeAuditingData, but the commitment is junk or the stateProof is junk
-
-        // verifyStateProof
-        if (
-            await this.diamondStateMachine.localDiamondContract.verifyStateProof(
-                dispute,
-                disputeAuditingData,
-                false
-            )
-        ) {
-            // stateProof is correct -> dispute.auditingDataHash is junk
-            this.disputeFraudProofService.createDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks(
-                dispute,
-                disputeAuditingData
-            );
-            return false;
-        }
-        // this is the easy case where we just need to create an invalidStateProof Dispute Fraud Proof
-        this.disputeFraudProofService.createDisputeInvalidStateProofWithoutAuditingDataIntegrityVerified(
-            dispute,
-            disputeAuditingData
-        );
-        // still a TODO - but EASY
-        return false;
-    }
     private async continueValidationWithVerifiedDisputeAuditingDataCommitment(
         dispute: DisputeStruct,
         disputeAuditingData: DisputeAuditingDataStruct
@@ -180,10 +182,9 @@ export default class DisputeValidationService {
         );
     }
 
-    private async validStateProofButNotSynced(
-        dispute: DisputeStruct,
-        onChainDisputeAuditingData?: DisputeAuditingDataStruct
-    ): Promise<boolean> {
+    private async trySync(
+        dispute: DisputeStruct
+    ): Promise<{ shouldContinueVerification: boolean }> {
         const unfinalizedBlocks =
             await this.diamondStateMachine.localDiamondContract.getUnfinalizedBlockConfirmationsFromStateProof(
                 dispute.input.stateProof
@@ -204,10 +205,12 @@ export default class DisputeValidationService {
                     this.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
                         dispute
                     );
-                if (!disputeFraudProof)
-                    throw new Error(
-                        "Dispute Fraud Proof should be created in DisputeValidationStrategy"
+                if (!disputeFraudProof) {
+                    this.logger.warn(
+                        "No dispute fraud proof found after failed validation during trySync"
                     );
+                    return { shouldContinueVerification: true }; // couldn't deduct a dispute fraud proof to kill the dispute => continue with verification pipeline
+                }
                 try {
                     const txResponse =
                         await this.stateChannelManagerContract.applyDisputeFraudProofs(
@@ -215,17 +218,17 @@ export default class DisputeValidationService {
                         );
                     await txResponse.wait();
                 } catch (e) {
-                    //TODO - interpret custom error
+                    const custom = tryDecodeCustomError(e);
                     this.logger.error("Error applying dispute fraud proof:", {
-                        error: e
+                        error: e,
+                        custom
                     });
                 }
-                return false;
+                return { shouldContinueVerification: false };
             }
             index++;
         }
-        //TODO - if needed add an explicit check for recusion termination
-        return this.validateDispute(dispute, onChainDisputeAuditingData);
+        return { shouldContinueVerification: true };
     }
 
     private async stateProofAndAuditingDataAreValid(
@@ -281,7 +284,13 @@ export default class DisputeValidationService {
                 disputeAuditingData.latestStateStateMachineState
             );
         if (!balanceInvariantValid) {
-            this.logger.debug(`Balance invariant failed on local diamond`);
+            this.logger.debug(
+                `Balance invariant failed on local diamond while auditing dispute`,
+                {
+                    auditingData:
+                        LoggerUtils.getAuditingMetadata(disputeAuditingData)
+                }
+            );
 
             this.disputeFraudProofService.createDisputeInvalidBalanceInvariant(
                 dispute,
@@ -441,6 +450,33 @@ export default class DisputeValidationService {
             }
         }
 
+        return await this.verifyDisputeOutput(dispute, disputeAuditingData);
+    }
+
+    private async isSyncedToStateProof(
+        dispute: DisputeStruct
+    ): Promise<boolean> {
+        const [hasBlock, latestBlock] =
+            await this.diamondStateMachine.localDiamondContract.getLatestBlockFromStateProof(
+                dispute.input.stateProof
+            );
+        if (!hasBlock) {
+            // geneisis state
+            return !!this.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                dispute.input.forkId
+            );
+        }
+
+        return !!this.storage.blocks.getBlock(
+            dispute.input.forkId,
+            Number(latestBlock.transaction.header.transactionCnt)
+        );
+    }
+
+    private async verifyDisputeOutput(
+        dispute: DisputeStruct,
+        disputeAuditingData: DisputeAuditingDataStruct
+    ): Promise<boolean> {
         // verify dispute output
         const isCorrectDisputeOutput =
             await this.diamondStateMachine.localDiamondContract.isDisputeOutputCorrect.staticCall(
@@ -458,6 +494,31 @@ export default class DisputeValidationService {
         }
 
         // if we're here - it's all good
+
+        // check once more are we synced, since if we're not -> we have to persist parts of auditing data so we can reduce later
+        const isSynced = await this.isSyncedToStateProof(dispute);
+        if (!isSynced) {
+            // other peers are not cooperating with us, but the chain gave us enough data to verify the dispute
+            this.logger.warn(
+                "Dispute output is CORRECT, but not synced to state proof - persisting auditing data to be able to reduce - other peers are not cooperating and probably tried a long range attack",
+                {
+                    auditingData:
+                        LoggerUtils.getAuditingMetadata(disputeAuditingData)
+                }
+            );
+            const snapshot = StateSnapshot.from(
+                disputeAuditingData.latestStateSnapshot
+            );
+            this.storage.stateSnapshots.storeStateSnapshot(snapshot);
+            this.storage.stateMachineStates.storeStateMachineState(
+                disputeAuditingData.latestStateStateMachineState
+            );
+            for (const messageBlock of disputeAuditingData.outboundMessageBlocks) {
+                this.storage.inboundMessages.store(messageBlock, {
+                    justPersist: true
+                });
+            }
+        }
         return true;
     }
 }
