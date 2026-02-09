@@ -72,6 +72,7 @@ describe("E2E: Spectate Service", function () {
                 transport: ATransport
             ) => {
                 capturedPeer0Transport = capturedPeer0Transport ?? transport;
+                harness.eventCountsBarrier.signal();
                 return originalPeer0InitHandshake(transport);
             };
 
@@ -84,6 +85,7 @@ describe("E2E: Spectate Service", function () {
                 {
                     onFailure: () => {
                         rpcWasQueued = true;
+                        harness.eventCountsBarrier.signal();
                     }
                 }
             );
@@ -92,14 +94,17 @@ describe("E2E: Spectate Service", function () {
             // Start connections
             await Lifecycle.triggerConnections().run(harness);
 
-            // Wait for transport
-            await harness.waitForCondition(
+            // Wait for transport using event barrier
+            await harness.eventCountsBarrier.waitFor(
                 () => !!capturedPeer0Transport,
-                5000,
-                25
+                {
+                    timeoutMs: 5000,
+                    timeoutMessage: "Expected to capture peer0 transport"
+                }
             );
+
             if (!capturedPeer0Transport) {
-                throw new Error("Expected to capture peer0 transport");
+                throw new Error("Transport should be defined after waitFor");
             }
 
             // Ensure guard would block (handshake not complete)
@@ -120,7 +125,10 @@ describe("E2E: Spectate Service", function () {
                 .sendOne(capturedPeer0Transport);
 
             // Wait for guard to process
-            await harness.waitForCondition(() => rpcWasQueued, 2000, 25);
+            await harness.eventCountsBarrier.waitFor(() => rpcWasQueued, {
+                timeoutMs: 2000,
+                timeoutMessage: "Guard should have processed RPC"
+            });
 
             // Verify guard activated
             expect(rpcWasQueued).to.equal(

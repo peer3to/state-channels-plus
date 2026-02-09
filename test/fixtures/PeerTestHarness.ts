@@ -17,8 +17,7 @@ import {
     LocalDiscoveryServer,
     Logger,
     retry,
-    EventBarrier,
-    sleep
+    EventBarrier
 } from "@/utils";
 import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -659,26 +658,6 @@ export class PeerTestHarness<
 
     getConfig(): Partial<Config> {
         return this.harnessConfig;
-    }
-
-    /**
-     * Waits for a specific condition with timeout
-     */
-    async waitForCondition(
-        condition: () => boolean | Promise<boolean>,
-        timeoutMs: number = 10000,
-        pollIntervalMs: number = 100
-    ): Promise<boolean> {
-        const startTime = Date.now();
-
-        while (Date.now() - startTime < timeoutMs) {
-            if (await condition()) {
-                return true;
-            }
-            await sleep(pollIntervalMs);
-        }
-
-        return false;
     }
 
     async waitForForkChange(
