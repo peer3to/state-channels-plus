@@ -63,26 +63,6 @@ export class AssertActions {
         expect(disputeCommitted).to.be.true;
     }
 
-    async calldataPosted(
-        peerIndex: number,
-        timeout: number = 3000
-    ): Promise<void> {
-        const success = await this.harness.eventActions.waitForEventCounts(
-            "onPostingCalldata",
-            [{ peerId: peerIndex, expectedCount: 1 }],
-            timeout,
-            { mode: "atLeast" }
-        );
-
-        expect(success).to.be.true;
-        expect(
-            this.harness.eventActions.getEventCallCount(
-                peerIndex,
-                "onPostingCalldata"
-            )
-        ).to.be.at.least(1);
-    }
-
     async blockHeight(expectedHeight: number): Promise<void> {
         const forkId = this.harness.activeForkId;
         if (!forkId) {
