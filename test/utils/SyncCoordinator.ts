@@ -155,67 +155,6 @@ export class SyncCoordinator {
     }
 
     /**
-     * Assert all peers are in sync with state machine state validation
-     */
-    public assertAllInSync(
-        peers: TestPeer<any, any>[],
-        forkId: ForkId,
-        options: {
-            expectedState?: any;
-            peerIndices?: number[];
-        } = {}
-    ): void {
-        const { expectedState, peerIndices } = options;
-        const indicesToCheck =
-            peerIndices ?? Array.from({ length: peers.length }, (_, i) => i);
-
-        if (indicesToCheck.length < 2) {
-            throw new Error("Need at least 2 peers to check sync");
-        }
-
-        // Check block synchronization
-        const syncStatus = this.checkPeersInSync(peers, forkId, peerIndices);
-
-        if (!syncStatus.inSync) {
-            const details = syncStatus.syncDetails
-                .map(
-                    (d) =>
-                        `Peer ${d.peerIndex}: hash=${d.blockHash} height=${d.height}`
-                )
-                .join("; ");
-            throw new Error(`Peers not in sync - ${details}`);
-        }
-
-        // Check state machine state synchronization
-        const { expect } = require("chai");
-        const firstPeerIndex = indicesToCheck[0];
-        const firstPeerState = this.getStateMachineState(
-            peers[firstPeerIndex],
-            forkId.toString()
-        );
-
-        for (let i = 1; i < indicesToCheck.length; i++) {
-            const peerIndex = indicesToCheck[i];
-            const peerState = this.getStateMachineState(
-                peers[peerIndex],
-                forkId.toString()
-            );
-
-            expect(peerState).to.deep.equal(
-                firstPeerState,
-                `Peer ${peerIndex} state does not match Peer ${firstPeerIndex}`
-            );
-        }
-
-        if (expectedState !== undefined) {
-            expect(firstPeerState).to.deep.equal(
-                expectedState,
-                "Peer states do not match expected state"
-            );
-        }
-    }
-
-    /**
      * Get the current state machine state for a peer
      */
     private getStateMachineState(
