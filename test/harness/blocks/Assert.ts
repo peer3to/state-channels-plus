@@ -595,11 +595,10 @@ export class Assert {
      */
     static disputeInitiatedBy(options: {
         peers: number[];
-        expectedCountPerPeer?: number;
         timeoutMs?: number;
     }) {
         return new HarnessBlock(async (harness) => {
-            await harness.assertActions.disputeInitiatedByPeers(options);
+            await harness.assertActions.disputeInitiatedBy(options);
             return harness;
         });
     }

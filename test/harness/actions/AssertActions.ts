@@ -9,11 +9,13 @@ export class AssertActions {
         private logger: Logger
     ) {}
 
-    async disputeInitiatedBy(
-        peerIndices: number[],
-        timeout: number = 5000
-    ): Promise<void> {
-        const expectedCounts = peerIndices.map((peerId) => ({
+    async disputeInitiatedBy(options: {
+        peers: number[];
+        timeoutMs?: number;
+    }): Promise<void> {
+        const { peers, timeoutMs = 5000 } = options;
+
+        const expectedCounts = peers.map((peerId) => ({
             peerId,
             expectedCount: 1
         }));
@@ -22,15 +24,13 @@ export class AssertActions {
             await this.harness.eventActions.waitForEventCounts(
                 "onInitiatingDispute",
                 expectedCounts,
-                timeout
+                timeoutMs
             );
 
         expect(disputeCreated).to.be.true;
 
         const allPeerIndices = this.harness.peers.map((p) => p.index);
-        const nonInitiators = allPeerIndices.filter(
-            (i) => !peerIndices.includes(i)
-        );
+        const nonInitiators = allPeerIndices.filter((i) => !peers.includes(i));
 
         for (const peerIndex of nonInitiators) {
             const count = this.harness.eventActions.getEventCallCount(
@@ -139,38 +139,6 @@ export class AssertActions {
                 "State does not match expected state"
             );
         }
-    }
-
-    /**
-     * Assert specific peers initiated disputes with custom expected count
-     */
-    async disputeInitiatedByPeers(options: {
-        peers: number[];
-        expectedCountPerPeer?: number;
-        timeoutMs?: number;
-    }): Promise<void> {
-        const { peers, expectedCountPerPeer = 1, timeoutMs = 5000 } = options;
-
-        const condition = () => {
-            return peers.every(
-                (peerId) =>
-                    this.harness.eventActions.getEventCallCount(
-                        peerId,
-                        "onInitiatingDispute"
-                    ) >= expectedCountPerPeer
-            );
-        };
-
-        // Check immediately
-        if (condition()) {
-            return;
-        }
-
-        // Use event barrier
-        await this.harness.eventCountsBarrier.waitFor(condition, {
-            timeoutMs,
-            timeoutMessage: `Peers ${peers.join(", ")} did not initiate ${expectedCountPerPeer} disputes within ${timeoutMs}ms`
-        });
     }
 
     /**
