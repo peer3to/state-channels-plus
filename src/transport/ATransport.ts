@@ -22,9 +22,11 @@ abstract class ATransport {
         if (!this.isClosed) {
             LoggerUtils.logTransportDisconnect(this, isExpected);
             this.isClosed = true;
-            this.p2pManager.stateManager.p2pEventHooks?.onDisconnection?.(
-                this.peerAddress as Address
-            );
+            if (!isExpected) {
+                this.p2pManager.stateManager.p2pEventHooks?.onDisconnection?.(
+                    this.peerAddress as Address
+                );
+            }
             this.p2pManager.disconnectConnection(this);
             this._close();
         }
