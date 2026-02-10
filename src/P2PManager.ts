@@ -161,11 +161,6 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         } catch {
             // ignore
         }
-
-        // Fire onDisconnection hook if peer address is available
-        if (peerAddress && this.stateManager.p2pEventHooks?.onDisconnection) {
-            this.stateManager.p2pEventHooks.onDisconnection(peerAddress);
-        }
     }
 
     public disconnectAndBlacklistPeer(transport: ATransport, cause?: string) {
