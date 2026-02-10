@@ -3,6 +3,7 @@ import { Address, ChannelId, Hash } from "./types/types";
 
 type P2pEventHooks = {
     onConnection?: (address: Address, isChannelOpened: boolean) => void;
+    onDisconnection?: (address: Address) => void;
     onTurn?: (
         address: Address,
         turnTime: number,
@@ -16,6 +17,7 @@ type P2pEventHooks = {
     onInitiatingDispute?: (disputeHash: Hash, dispute: DisputeStruct) => void;
     onDisputeUpdate?: (dispute: DisputeStruct) => void;
     onCloseChannel?: (channelId: ChannelId) => void;
+    onDisputeAcknowledgment?: (address: Address) => void;
 };
 
 export default P2pEventHooks;

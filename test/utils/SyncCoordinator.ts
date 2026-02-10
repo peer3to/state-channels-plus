@@ -1,11 +1,17 @@
 import { ForkId, Address } from "@/types/types";
-import { Logger } from "@/utils";
+import { Logger, EventBarrier } from "@/utils";
+import { TestPeer } from "@test/fixtures/PeerTestHarness";
 
 export type WaitForPeersInSyncOptions = {
     timeout?: number;
     peerIndices?: number[];
+    eventBarrier?: EventBarrier;
 };
 
+/**
+ * Handles synchronization operations and assertions for test peers.
+ * Provides both async waiting and synchronous checking methods.
+ */
 export class SyncCoordinator {
     private logger: Logger;
 
@@ -19,25 +25,25 @@ export class SyncCoordinator {
     public async waitForPeersInSync(
         peers: Array<{ stateManager: any; address: Address }>,
         forkId: ForkId,
-        options: WaitForPeersInSyncOptions = {}
+        options: WaitForPeersInSyncOptions
     ): Promise<void> {
-        const { timeout, peerIndices } = options;
+        const { timeout, peerIndices, eventBarrier } = options;
         const timeoutMs = timeout ?? 8000;
         const indicesToCheck =
             peerIndices ?? Array.from({ length: peers.length }, (_, i) => i);
-        const startTime = Date.now();
 
         this.logger.verbose(
             `Waiting for ${indicesToCheck.length} peers to sync`,
             {
                 forkId,
                 timeout: timeoutMs,
-                peerIndices: peerIndices ? indicesToCheck : "all"
+                peerIndices: peerIndices ? indicesToCheck : "all",
+                useEventBarrier: !!eventBarrier
             }
         );
 
-        while (Date.now() - startTime < timeoutMs) {
-            if (indicesToCheck.length === 0) return;
+        const checkSync = () => {
+            if (indicesToCheck.length === 0) return true;
 
             const firstPeerIndex = indicesToCheck[0];
             const firstBlock =
@@ -45,39 +51,39 @@ export class SyncCoordinator {
                     firstPeerIndex
                 ].stateManager.storage.blocks.getLatestBlock(forkId);
 
-            if (firstBlock) {
-                let allSynced = true;
+            if (!firstBlock) return false;
 
-                for (let i = 1; i < indicesToCheck.length; i++) {
-                    const peerIndex = indicesToCheck[i];
-                    const peerBlock =
-                        peers[
-                            peerIndex
-                        ].stateManager.storage.blocks.getLatestBlock(forkId);
-                    if (
-                        !peerBlock ||
-                        peerBlock.hash !== firstBlock.hash ||
-                        peerBlock.height !== firstBlock.height
-                    ) {
-                        allSynced = false;
-                        break;
-                    }
-                }
-
-                if (allSynced) {
-                    this.logger.verbose(
-                        `${indicesToCheck.length} peers synchronized`,
-                        {
-                            blockHash: firstBlock.hash,
-                            height: firstBlock.height,
-                            peerIndices: indicesToCheck
-                        }
+            for (let i = 1; i < indicesToCheck.length; i++) {
+                const peerIndex = indicesToCheck[i];
+                const peerBlock =
+                    peers[peerIndex].stateManager.storage.blocks.getLatestBlock(
+                        forkId
                     );
-                    return;
+                if (
+                    !peerBlock ||
+                    peerBlock.hash !== firstBlock.hash ||
+                    peerBlock.height !== firstBlock.height
+                ) {
+                    return false;
                 }
             }
 
-            await this.sleep(50); // Check every 50ms
+            this.logger.verbose(`${indicesToCheck.length} peers synchronized`, {
+                blockHash: firstBlock.hash,
+                height: firstBlock.height,
+                peerIndices: indicesToCheck
+            });
+            return true;
+        };
+
+        try {
+            await eventBarrier!.waitFor(checkSync, {
+                timeoutMs,
+                timeoutMessage: `Peers failed to sync within ${timeoutMs}ms`
+            });
+            return;
+        } catch (error) {
+            // Fall through to error reporting
         }
 
         // Enhanced error reporting on timeout
@@ -94,6 +100,9 @@ export class SyncCoordinator {
         );
     }
 
+    /**
+     * Check if peers are currently in sync (no waiting)
+     */
     public checkPeersInSync(
         peers: Array<{ stateManager: any; address: Address }>,
         forkId: ForkId,
@@ -145,8 +154,29 @@ export class SyncCoordinator {
         return { inSync: allInSync, syncDetails };
     }
 
-    private sleep(ms: number): Promise<void> {
-        return new Promise((resolve) => setTimeout(resolve, ms));
+    /**
+     * Get the current state machine state for a peer
+     */
+    private getStateMachineState(
+        peer: TestPeer<any, any>,
+        forkId: string
+    ): any {
+        const latestBlock =
+            peer.stateManager.storage.blocks.getLatestBlock(forkId);
+
+        if (!latestBlock) {
+            const genesisSnapshot =
+                peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                    forkId
+                );
+            return genesisSnapshot ? "genesis" : null;
+        }
+
+        const stateSnapshot =
+            peer.stateManager.storage.stateSnapshots.getStateSnapshotByHash(
+                latestBlock.stateSnapshotHash
+            );
+        return stateSnapshot ? stateSnapshot.snapshotData : null;
     }
 }
 

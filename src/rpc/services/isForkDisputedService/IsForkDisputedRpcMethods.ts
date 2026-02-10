@@ -88,6 +88,11 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
 
         // Mark that this peer has acknowledged (from our perspective)
         this.service.peerAcknowledgesDisputedFork(peerAddress, forkId);
+
+        // Fire event hook for dispute acknowledgment
+        this.p2pManager.stateManager.p2pEventHooks?.onDisputeAcknowledgment?.(
+            peerAddress
+        );
     }
 }
 
