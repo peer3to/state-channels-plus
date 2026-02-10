@@ -2,6 +2,7 @@ import P2PManager from "@/P2PManager";
 import { TransportType } from "./TransportType";
 import Rpc, { serializeRpc } from "@/rpc/Rpc";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import { Address } from "@/types";
 
 abstract class ATransport {
     abstract transportType: TransportType;
@@ -21,6 +22,9 @@ abstract class ATransport {
         if (!this.isClosed) {
             LoggerUtils.logTransportDisconnect(this, isExpected);
             this.isClosed = true;
+            this.p2pManager.stateManager.p2pEventHooks?.onDisconnection?.(
+                this.peerAddress as Address
+            );
             this.p2pManager.disconnectConnection(this);
             this._close();
         }

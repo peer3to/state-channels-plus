@@ -149,7 +149,6 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
 
     public disconnectConnection(transport: ATransport) {
         const profile = this.profileManager.getProfileByTransport(transport);
-        const peerAddress = transport.peerAddress;
 
         this.openConnections = this.openConnections.filter(
             (t) => t !== transport
