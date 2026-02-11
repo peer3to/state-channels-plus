@@ -5,7 +5,6 @@ import { TestPeer } from "@test/fixtures/PeerTestHarness";
 export type WaitForPeersInSyncOptions = {
     timeout?: number;
     peerIndices?: number[];
-    eventBarrier?: EventBarrier;
 };
 
 /**
@@ -14,9 +13,11 @@ export type WaitForPeersInSyncOptions = {
  */
 export class SyncCoordinator {
     private logger: Logger;
+    private eventBarrier: EventBarrier;
 
-    constructor(logger: Logger) {
+    constructor(logger: Logger, eventBarrier: EventBarrier) {
         this.logger = logger.child({ component: "SyncCoordinator" });
+        this.eventBarrier = eventBarrier;
     }
 
     /**
@@ -27,7 +28,7 @@ export class SyncCoordinator {
         forkId: ForkId,
         options: WaitForPeersInSyncOptions
     ): Promise<void> {
-        const { timeout, peerIndices, eventBarrier } = options;
+        const { timeout, peerIndices } = options;
         const timeoutMs = timeout ?? 8000;
         const indicesToCheck =
             peerIndices ?? Array.from({ length: peers.length }, (_, i) => i);
@@ -38,7 +39,7 @@ export class SyncCoordinator {
                 forkId,
                 timeout: timeoutMs,
                 peerIndices: peerIndices ? indicesToCheck : "all",
-                useEventBarrier: !!eventBarrier
+                useEventBarrier: !!this.eventBarrier
             }
         );
 
@@ -77,7 +78,7 @@ export class SyncCoordinator {
         };
 
         try {
-            await eventBarrier!.waitFor(checkSync, {
+            await this.eventBarrier.waitFor(checkSync, {
                 timeoutMs,
                 timeoutMessage: `Peers failed to sync within ${timeoutMs}ms`
             });

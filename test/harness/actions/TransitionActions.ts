@@ -63,13 +63,11 @@ export class TransitionActions {
                 throw new Error("No active fork ID - cannot wait for sync");
             }
 
-            const syncCoordinator = new SyncCoordinator(this.logger);
-            await syncCoordinator.waitForPeersInSync(
+            await this.harness.syncCoordinator.waitForPeersInSync(
                 this.harness.peers,
                 forkId,
                 {
-                    peerIndices: options.waitForPeers,
-                    eventBarrier: this.harness.eventCountsBarrier
+                    peerIndices: options.waitForPeers
                 }
             );
         }

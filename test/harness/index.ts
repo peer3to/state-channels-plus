@@ -13,7 +13,6 @@ export { Lifecycle } from "./blocks/Lifecycle";
 export { Transition } from "./blocks/Transition";
 export { Time } from "./blocks/Time";
 export { RPC } from "./blocks/RPC";
-export { Wait } from "./blocks/Wait";
 
 // Layer 3: Scenario blocks (high-level composition)
 export { Scenario } from "./blocks/Scenario";
