@@ -88,7 +88,7 @@ export class Context {
             const channelBalance =
                 await harness.channelManager.getChannelBalance(
                     harness.channelId
-                );
+                )!;
 
             harness.context.lastMilestoneSnapshot = lastSnapshot;
             harness.context.expectedWithdrawalsDelta =

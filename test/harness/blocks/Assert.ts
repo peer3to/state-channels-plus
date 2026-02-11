@@ -541,9 +541,9 @@ export class Assert {
     }
 
     /**
-     * Assert that channel balance matches snapshot totalWithdrawals
+     * Assert that channel totalWithdrawals matches snapshot totalWithdrawals.
      */
-    static channelBalanceMatchesSnapshot(options?: { peerIndex?: number }) {
+    static channelWithdrawalsMatchSnapshot(options?: { peerIndex?: number }) {
         const { peerIndex = 0 } = options || {};
 
         return new HarnessBlock(async (harness) => {
@@ -569,7 +569,7 @@ export class Assert {
 
             if (!balancesMatch) {
                 throw new Error(
-                    "Channel balance totalWithdrawals does not match on-chain snapshot totalWithdrawals"
+                    "Channel totalWithdrawals does not match on-chain snapshot totalWithdrawals"
                 );
             }
 
@@ -611,11 +611,18 @@ export class Assert {
                 channelBalanceAfter.totalWithdrawals,
                 channelBalanceBefore.totalWithdrawals
             );
+            const expectedWithdrawalsDelta =
+                harness.context.expectedWithdrawalsDelta;
+            if (!expectedWithdrawalsDelta) {
+                throw new Error(
+                    "No expectedWithdrawalsDelta in context. Call Context.captureContextForSnapshotSameFork() first."
+                );
+            }
 
             // Compare
             const deltaMatches = await stateMachine.areBalancesEqual(
                 actualDelta,
-                harness.context.expectedWithdrawalsDelta
+                expectedWithdrawalsDelta
             );
 
             if (!deltaMatches) {

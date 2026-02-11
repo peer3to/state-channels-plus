@@ -178,7 +178,7 @@ describe("E2E: Spectate Service", function () {
                 // Create and resolve invalid state transition dispute
                 // This will reduce the fork (remove peer 2)
                 // Using extended settlement timing for 5-peer scenario
-                Scenario.forkResolutionWithSettlement({
+                Scenario.disputeWithReduction({
                     maliciousPeerIndex: 2,
                     forkSettleTimeoutMs: 15000,
                     disputesCommittedTimeoutMs: 10000

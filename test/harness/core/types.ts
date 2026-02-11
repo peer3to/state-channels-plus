@@ -9,6 +9,9 @@ import { ForkId, ChannelId } from "@/types/types";
 import { StateChannelManagerProxy } from "@typechain-types";
 import { Config } from "@/utils/config";
 import { TimeConfig } from "@/types/time";
+import { StateSnapshot } from "@/models";
+import { BalanceStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { ChannelBalanceStructOutput } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/StateChannelCommon";
 
 /**
  * Represents a single peer in the test environment
@@ -123,13 +126,13 @@ export interface HarnessContext {
     restoreDisputeConstruction?: () => void;
 
     /** last milestone snapshot before posting snapshot (set by Context.captureContextForSnapshotSameFork) */
-    lastMilestoneSnapshot?: any;
+    lastMilestoneSnapshot?: StateSnapshot;
 
     /** Channel balance before posting snapshot (set by Context.captureContextForSnapshotSameFork) */
-    channelBalanceBefore?: any;
+    channelBalanceBefore?: ChannelBalanceStructOutput;
 
     /** Expected withdrawals delta from prepared outbound messages (set by Context.captureContextForSnapshotSameFork) */
-    expectedWithdrawalsDelta?: any;
+    expectedWithdrawalsDelta?: BalanceStruct;
 
     /** Dynamic snapshot count storage for named contexts - indexed by context key (set by Assert.storeSnapshotCount) */
     [key: `snapshotCount_${string}`]: number;

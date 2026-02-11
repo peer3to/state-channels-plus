@@ -37,11 +37,11 @@ describe("E2E: State Snapshots", function () {
             Scenario.advanceState(1),
             Assert.allPeersInSync(),
             Event.reset(),
-            Assert.channelBalanceMatchesSnapshot(),
+            Assert.channelWithdrawalsMatchSnapshot(),
             // Prepare snapshot data and store in context for delta assertions
             Context.capturePrePostSnapshotContext(),
             Transition.postSnapshot(),
-            Assert.channelBalanceMatchesSnapshot(),
+            Assert.channelWithdrawalsMatchSnapshot(),
             Assert.withdrawalDeltaMatchesExpected(),
             Event.waitForAllPeers("onStateSnapshotUpdated", 1, {
                 mode: "atLeast"
@@ -62,14 +62,14 @@ describe("E2E: State Snapshots", function () {
             Assert.onlyHonestPeersInSync(),
             Event.reset(),
 
-            Assert.channelBalanceMatchesSnapshot(),
+            Assert.channelWithdrawalsMatchSnapshot(),
 
             // Prepare snapshot data and store in context for delta assertions
             Context.capturePrePostSnapshotContext(),
 
             Transition.postSnapshot(),
 
-            Assert.channelBalanceMatchesSnapshot(),
+            Assert.channelWithdrawalsMatchSnapshot(),
             Assert.withdrawalDeltaMatchesExpected(),
 
             Event.waitForHonestPeers("onStateSnapshotUpdated", 1, {
@@ -94,7 +94,7 @@ describe("E2E: State Snapshots", function () {
             Assert.onlyHonestPeersInSync(),
             Event.reset(),
 
-            Assert.channelBalanceMatchesSnapshot(),
+            Assert.channelWithdrawalsMatchSnapshot(),
 
             // Prepare snapshot data and store in context for delta assertions
             Context.capturePrePostSnapshotContext(),
@@ -102,7 +102,7 @@ describe("E2E: State Snapshots", function () {
             // Single postSnapshot triggers multicall (updateStateSnapshotFork + updateStateSnapshotSameFork)
             Transition.postSnapshot(),
 
-            Assert.channelBalanceMatchesSnapshot(),
+            Assert.channelWithdrawalsMatchSnapshot(),
             Assert.withdrawalDeltaMatchesExpected(),
 
             // Wait for honest peers to observe the event
