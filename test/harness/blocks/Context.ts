@@ -1,3 +1,5 @@
+import { StateSnapshot } from "@/models";
+import type StateManager from "@/stateManager";
 import { HarnessBlock } from "./HarnessBlock";
 
 /**
@@ -51,5 +53,75 @@ export class Context {
 
             return harness;
         });
+    }
+
+    static capturePrePostSnapshotContext(options?: { peerIndex?: number }) {
+        const { peerIndex = 0 } = options || {};
+
+        return new HarnessBlock(async (harness) => {
+            const forkId = harness.activeForkId;
+            if (!forkId) {
+                throw new Error("No active fork ID");
+            }
+
+            const peer = harness.peers[peerIndex];
+            if (!peer) {
+                throw new Error(`Peer ${peerIndex} not found`);
+            }
+
+            const lastSnapshot = (
+                await peer.stateManager.prepareUpdateSnapshotSameFork(forkId)
+            )?.milestoneSnapshots.at(-1);
+
+            const onChainSnapshotBefore = StateSnapshot.from(
+                await harness!.channelManager.getStateSnapshot(
+                    harness!.channelId
+                )
+            );
+
+            const expectedWithdrawalsDeltaBalance =
+                await Context.computeExpectedWithdrawalsDelta(
+                    peer,
+                    lastSnapshot!,
+                    onChainSnapshotBefore
+                );
+            const channelBalance =
+                await harness.channelManager.getChannelBalance(
+                    harness.channelId
+                );
+
+            harness.context.lastMilestoneSnapshot = lastSnapshot;
+            harness.context.expectedWithdrawalsDelta =
+                expectedWithdrawalsDeltaBalance;
+            harness.context.channelBalanceBefore = channelBalance;
+
+            return harness;
+        });
+    }
+
+    private static async computeExpectedWithdrawalsDelta(
+        peer: { stateManager: StateManager },
+        lastSnapshot: StateSnapshot,
+        onChainSnapshotBefore: StateSnapshot
+    ) {
+        const outboundMessageBlocksForDelta =
+            peer.stateManager.storage.outboundMessages.getMessageBlocksInRange(
+                lastSnapshot.snapshotData.latestOutboundMessageBlockHash,
+                onChainSnapshotBefore.snapshotData
+                    .latestOutboundMessageBlockHash
+            );
+
+        const stateMachine = peer.stateManager.diamondStateMachine;
+        const zeroBalance = await stateMachine.getZeroBalance();
+        let expectedWithdrawalsDeltaBalance = zeroBalance;
+        for (const outboundBlock of outboundMessageBlocksForDelta) {
+            for (const message of outboundBlock.messages) {
+                expectedWithdrawalsDeltaBalance = await stateMachine.addBalance(
+                    expectedWithdrawalsDeltaBalance,
+                    message.balance
+                );
+            }
+        }
+        return expectedWithdrawalsDeltaBalance;
     }
 }

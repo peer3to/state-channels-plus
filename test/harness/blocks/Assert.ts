@@ -540,6 +540,153 @@ export class Assert {
         });
     }
 
+    static wait(amount: number) {
+        return new HarnessBlock(async (harness) => {
+            await new Promise((resolve) => setTimeout(resolve, amount));
+            return harness;
+        });
+    }
+
+    /**
+     * Assert that channel balance matches snapshot totalWithdrawals
+     */
+    static channelBalanceMatchesSnapshot(options?: { peerIndex?: number }) {
+        const { peerIndex = 0 } = options || {};
+
+        return new HarnessBlock(async (harness) => {
+            const peer = harness.peers[peerIndex];
+            if (!peer) {
+                throw new Error(`Peer ${peerIndex} not found`);
+            }
+
+            const onChainSnapshot = StateSnapshot.from(
+                await harness.channelManager.getStateSnapshot(harness.channelId)
+            );
+
+            const channelBalance =
+                await harness.channelManager.getChannelBalance(
+                    harness.channelId
+                );
+
+            const stateMachine = peer.stateManager.diamondStateMachine;
+            const balancesMatch = await stateMachine.areBalancesEqual(
+                channelBalance.totalWithdrawals,
+                onChainSnapshot.snapshotData.totalWithdrawals
+            );
+
+            if (!balancesMatch) {
+                throw new Error(
+                    "Channel balance totalWithdrawals does not match on-chain snapshot totalWithdrawals"
+                );
+            }
+
+            return harness;
+        });
+    }
+
+    /**
+     * Assert that withdrawal delta matches expected from prepared snapshot data
+     * Requires Context.captureContextForSnapshotSameFork(), Context.storeChannelBalance(), and
+     * Context.storeExpectedWithdrawalsDelta() to be called before posting the snapshot.
+     */
+    static withdrawalDeltaMatchesExpected(options?: { peerIndex?: number }) {
+        const { peerIndex = 0 } = options || {};
+
+        return new HarnessBlock(async (harness) => {
+            const peer = harness.peers[peerIndex];
+            if (!peer) {
+                throw new Error(`Peer ${peerIndex} not found`);
+            }
+
+            const stateMachine = peer.stateManager.diamondStateMachine;
+
+            // Get channel balance before (from context) and after
+            const channelBalanceBefore = harness.context.channelBalanceBefore;
+            if (!channelBalanceBefore) {
+                throw new Error(
+                    "No channelBalanceBefore in context. Call Context.storeChannelBalance() before posting snapshot."
+                );
+            }
+            console.log(
+                `[ASSERT DEBUG] Channel balance before: ${channelBalanceBefore.totalWithdrawals}`
+            );
+
+            const channelBalanceAfter =
+                await harness.channelManager.getChannelBalance(
+                    harness.channelId
+                );
+
+            // Calculate actual delta
+            const actualDelta = await stateMachine.subtractBalance(
+                channelBalanceAfter.totalWithdrawals,
+                channelBalanceBefore.totalWithdrawals
+            );
+            console.log(`[ASSERT DEBUG] Actual delta: ${actualDelta.amount}`);
+            console.log(
+                `[ASSERT DEBUG] Expected delta: ${channelBalanceBefore.totalWithdrawals.amount}`
+            );
+
+            // Compare
+            const deltaMatches = await stateMachine.areBalancesEqual(
+                actualDelta,
+                harness.context.expectedWithdrawalsDelta
+            );
+
+            if (!deltaMatches) {
+                throw new Error(
+                    "Actual withdrawal delta does not match expected delta from outbound messages"
+                );
+            }
+
+            return harness;
+        });
+    }
+
+    static onChainBalanceMatchesSnapshot(options?: { peerIndex?: number }) {
+        const { peerIndex = 0 } = options || {};
+
+        return new HarnessBlock(async (harness) => {
+            const peer = harness.peers[peerIndex];
+            if (!peer) {
+                throw new Error(`Peer ${peerIndex} not found`);
+            }
+
+            const lastSnapshot = harness.context.lastMilestoneSnapshot;
+            if (!lastSnapshot) {
+                throw new Error(
+                    "No last milestone snapshot found in context. Call Context.captureContextForSnapshotSameFork() first."
+                );
+            }
+
+            const onChainSnapshot = StateSnapshot.from(
+                await harness.channelManager.getStateSnapshot(harness.channelId)
+            );
+
+            const stateMachine = peer.stateManager.diamondStateMachine;
+            const withdrawalsMatch = await stateMachine.areBalancesEqual(
+                onChainSnapshot.snapshotData.totalWithdrawals,
+                lastSnapshot.snapshotData.totalWithdrawals
+            );
+            if (!withdrawalsMatch) {
+                throw new Error(
+                    "On-chain totalWithdrawals does not match last milestone snapshot totalWithdrawals"
+                );
+            }
+
+            const depositsMatch = await stateMachine.areBalancesEqual(
+                onChainSnapshot.snapshotData.totalDeposits,
+                lastSnapshot.snapshotData.totalDeposits
+            );
+            if (!depositsMatch) {
+                throw new Error(
+                    "On-chain totalDeposits does not match last milestone snapshot totalDeposits"
+                );
+            }
+
+            return harness;
+        });
+    }
+
     /**
      * Assert fraud proof stored for the tampered dispute from interception
      */
