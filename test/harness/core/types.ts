@@ -122,13 +122,13 @@ export interface HarnessContext {
     /** Function to restore dispute construction after interception (set by Byzantine.interceptDisputeConstruction) */
     restoreDisputeConstruction?: () => void;
 
-    /** Prepared same-fork snapshot data (set by Context.captureContextForSnapshotSameFork) */
+    /** last milestone snapshot before posting snapshot (set by Context.captureContextForSnapshotSameFork) */
     lastMilestoneSnapshot?: any;
 
-    /** Channel balance before posting snapshot (set by Context.storeChannelBalance) */
+    /** Channel balance before posting snapshot (set by Context.captureContextForSnapshotSameFork) */
     channelBalanceBefore?: any;
 
-    /** Expected withdrawals delta from prepared outbound messages (set by Context.storeExpectedWithdrawalsDelta) */
+    /** Expected withdrawals delta from prepared outbound messages (set by Context.captureContextForSnapshotSameFork) */
     expectedWithdrawalsDelta?: any;
 
     /** Dynamic snapshot count storage for named contexts - indexed by context key (set by Assert.storeSnapshotCount) */
