@@ -1,4 +1,6 @@
 import { HarnessBlock } from "./HarnessBlock";
+import { StateSnapshot } from "@/models";
+import { expect } from "chai";
 
 /**
  * Semantic assertions for test verification
@@ -7,9 +9,10 @@ export class Assert {
     /**
      * Assert all peers are in sync with same block height and hash
      */
-    static allPeersInSync() {
+    static allPeersInSync(options?: { timeout?: number }) {
+        const { timeout = 10000 } = options || {};
         return new HarnessBlock(async (harness) => {
-            harness.assertActions.assertAllPeersInSync();
+            await harness.assertActions.assertAllPeersInSync({ timeout });
             return harness;
         });
     }
@@ -17,9 +20,13 @@ export class Assert {
     /**
      * Assert all specified peers are in sync
      */
-    static peersInSync(peerIndices: number[]) {
+    static peersInSync(peerIndices: number[], options?: { timeout?: number }) {
+        const { timeout = 10000 } = options || {};
         return new HarnessBlock(async (harness) => {
-            harness.assertActions.assertAllPeersInSync({ peerIndices });
+            await harness.assertActions.assertAllPeersInSync({
+                peerIndices,
+                timeout
+            });
             return harness;
         });
     }
@@ -164,7 +171,7 @@ export class Assert {
                 );
             }
 
-            harness.assertActions.assertAllPeersInSync({
+            await harness.assertActions.assertAllPeersInSync({
                 peerIndices: honestIndices
             });
 
@@ -207,9 +214,6 @@ export class Assert {
                 throw new Error("No fork ID specified and no active fork ID");
             }
 
-            const { default: StateSnapshot } = await import(
-                "@/models/StateSnapshot"
-            );
             const onChainSnapshot = StateSnapshot.from(
                 await harness.channelManager.getStateSnapshot(harness.channelId)
             );
@@ -245,10 +249,6 @@ export class Assert {
             if (!peer) {
                 throw new Error(`Peer ${peerIndex} not found`);
             }
-
-            const { default: StateSnapshot } = await import(
-                "@/models/StateSnapshot"
-            );
 
             // Get on-chain snapshot
             const onChainSnapshot = StateSnapshot.from(
@@ -498,17 +498,42 @@ export class Assert {
     /**
      * Assert participant count matches expected value
      */
-    static participantCount(expectedCount: number, peerIndex: number = 0) {
+    static participantCount({
+        expectedCount,
+        peerIndex = 0,
+        timeoutMs = 10000
+    }: {
+        expectedCount: number;
+        peerIndex?: number;
+        timeoutMs?: number;
+    }) {
         return new HarnessBlock(async (harness) => {
             const peer = harness.peers[peerIndex];
             if (!peer) {
                 throw new Error(`Peer ${peerIndex} not found`);
             }
 
-            const participants =
+            let participants =
                 await peer.stateManager.diamondStateMachine.getParticipants();
 
-            const { expect } = await import("chai");
+            if (participants.length === expectedCount) {
+                expect(participants.length).to.equal(expectedCount);
+                return harness;
+            }
+
+            const condition = async () => {
+                const currentParticipants =
+                    await peer.stateManager.diamondStateMachine.getParticipants();
+                return currentParticipants.length === expectedCount;
+            };
+
+            await harness.eventCountsBarrier.waitFor(condition, {
+                timeoutMs,
+                timeoutMessage: `Participant count did not reach ${expectedCount} within ${timeoutMs}ms for peer ${peerIndex}`
+            });
+
+            participants =
+                await peer.stateManager.diamondStateMachine.getParticipants();
             expect(participants.length).to.equal(expectedCount);
 
             return harness;

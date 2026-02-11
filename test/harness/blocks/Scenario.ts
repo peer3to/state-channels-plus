@@ -5,9 +5,7 @@ import { Assert } from "./Assert";
 import { Byzantine } from "./Byzantine";
 import { Transition } from "./Transition";
 import { Event } from "./Event";
-import { Wait } from "./Wait";
 import { Context } from "./Context";
-import { Time } from "./Time";
 
 /**
  * Scenario building blocks for common test patterns
@@ -215,11 +213,11 @@ export class Scenario {
     ) {
         return HarnessBlock.compose(
             Scenario.emptyChannel(3, options),
-            Assert.participantCount(3),
+            Assert.participantCount({ expectedCount: 3 }),
             Scenario.advanceState(initialTransitions),
-            Lifecycle.addPeer(),
-            Event.waitUntilEventOccurs("onConnection", 5000),
-            Wait.untilInSync(undefined, { timeout: 5000 })
+            Lifecycle.addPeer(), // Adds spectator at index 3
+            // Wait for all peers (including newly added spectator at index 3) to sync
+            Assert.peersInSync([0, 1, 2, 3])
         );
     }
 

@@ -182,7 +182,7 @@ export class PeerTestHarness<
     public activeForkId?: ForkId;
     private harnessConfig!: Partial<Config>;
     public logger: Logger;
-    private syncCoordinator!: SyncCoordinator;
+    public syncCoordinator!: SyncCoordinator;
     private autoTimeAdvanceInterval?: NodeJS.Timeout;
 
     /**
@@ -276,7 +276,10 @@ export class PeerTestHarness<
             LocalDiscoveryServer.setLogger(this.logger);
         }
 
-        this.syncCoordinator = new SyncCoordinator(this.logger);
+        this.syncCoordinator = new SyncCoordinator(
+            this.logger,
+            this.eventCountsBarrier
+        );
 
         await this.deployContracts();
         const signers = await hre.ethers.getSigners();

@@ -86,10 +86,14 @@ export class AssertActions {
     /**
      * Assert all peers are in sync (block hash and state match)
      */
-    assertAllPeersInSync(
-        options: { expectedState?: any; peerIndices?: number[] } = {}
-    ): void {
-        const { expectedState, peerIndices } = options;
+    async assertAllPeersInSync(
+        options: {
+            expectedState?: any;
+            peerIndices?: number[];
+            timeout?: number;
+        } = {}
+    ): Promise<void> {
+        const { expectedState, peerIndices, timeout = 10000 } = options;
         const indicesToCheck =
             peerIndices ??
             Array.from({ length: this.harness.peers.length }, (_, i) => i);
@@ -97,21 +101,20 @@ export class AssertActions {
         if (indicesToCheck.length < 2)
             throw new Error("Need at least 2 peers to check sync");
 
-        const syncStatus = this.harness["syncCoordinator"].checkPeersInSync(
-            this.harness.peers,
-            this.harness.activeForkId!,
-            peerIndices
-        );
-
-        if (!syncStatus.inSync) {
-            const details = syncStatus.syncDetails
-                .map(
-                    (d) =>
-                        `Peer ${d.peerIndex}: hash=${d.blockHash} height=${d.height}`
-                )
-                .join("; ");
-            throw new Error(`Peers not in sync - ${details}`);
+        const forkId = this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error("No active fork ID - cannot wait for sync");
         }
+
+        // Wait for peers to sync using the event barrier approach
+        await this.harness.syncCoordinator.waitForPeersInSync(
+            this.harness.peers,
+            forkId,
+            {
+                timeout,
+                peerIndices
+            }
+        );
 
         // Check state machine state synchronization
         const firstPeerIndex = indicesToCheck[0];

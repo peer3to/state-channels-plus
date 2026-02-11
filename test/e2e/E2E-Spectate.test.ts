@@ -2,7 +2,6 @@ import {
     ScenarioRunner,
     Scenario,
     Assert,
-    Wait,
     Event,
     Lifecycle,
     Transition,
@@ -152,11 +151,10 @@ describe("E2E: Spectate Service", function () {
                 Scenario.spectatorJoinedAndSynced(),
                 // Continue transitioning 3 more times with all 4 peers
                 Scenario.advanceState(3),
-                Wait.untilInSync([0, 1, 2, 3], { timeout: 10000 }),
                 Assert.peersInSync([0, 1, 2, 3]),
                 // Participant count should remain the same as initial (3)
                 // On-chain snapshot should still be on original fork
-                Assert.participantCount(3, 3), // Check on peer 3 (spectator)
+                Assert.participantCount({ expectedCount: 3, peerIndex: 3 }),
                 Assert.snapshotOnFork()
             );
         });
@@ -200,18 +198,49 @@ describe("E2E: Spectate Service", function () {
                 // Add a new peer (spectator) that must traverse forks
                 Lifecycle.addPeer(),
                 Event.waitUntilEventOccurs("onConnection", 5000),
-                Wait.untilInSync([0, 1, 3, 4, 5]),
+                Assert.peersInSync([0, 1, 3, 4, 5]),
 
                 // Continue with 2 more transitions from honest peers
                 Transition.fromHonestPeersOnly((c) => c.add(2)),
-                Wait.untilInSync([0, 1, 3, 4, 5]), // Include spectator in sync
+                Assert.peersInSync([0, 1, 3, 4, 5]), // Include spectator in sync
                 Transition.fromHonestPeersOnly((c) => c.add(2)),
-                Wait.untilInSync([0, 1, 3, 4, 5]), // Include spectator in sync
+                Assert.peersInSync([0, 1, 3, 4, 5]), // Include spectator in sync
 
                 // Verify all peers are in sync
                 Assert.peersInSync([0, 1, 3, 4, 5]),
-                Assert.participantCount(4, 5), // Check on peer 5 (spectator)
+                Assert.participantCount({ expectedCount: 4, peerIndex: 5 }), // Check on peer 5 (spectator)
                 Assert.snapshotOnFork()
+            );
+        });
+    });
+
+    describe("block height 0 spectating", function () {
+        it("should spectate successfully when joining at genesis state", async function () {
+            await ScenarioRunner.execute(
+                // Setup 2 peers but don't make any moves yet (stay at genesis)
+                Scenario.emptyChannel(2),
+                // Add a spectator to the genesis state
+                Lifecycle.addPeer(),
+                Assert.participantCount({ expectedCount: 2, peerIndex: 2 }),
+                Scenario.advanceState(1),
+                // Assert all peers including spectator synced with the new state
+                Assert.peersInSync([0, 1, 2]),
+                Assert.participantCount({ expectedCount: 2, peerIndex: 2 })
+            );
+        });
+
+        it("should spectate successfully when joining at block 0", async function () {
+            await ScenarioRunner.execute(
+                // Setup 2 peers but don't make any moves yet (stay at genesis)
+                Scenario.emptyChannel(2),
+
+                Scenario.advanceState(1),
+                Assert.peersInSync([0, 1]),
+                Lifecycle.addPeer(),
+                Assert.participantCount({ expectedCount: 2, peerIndex: 2 }),
+                // Assert all peers including spectator synced with the new state
+                Assert.peersInSync([0, 1, 2]),
+                Assert.participantCount({ expectedCount: 2, peerIndex: 2 })
             );
         });
     });
