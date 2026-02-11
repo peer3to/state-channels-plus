@@ -540,13 +540,6 @@ export class Assert {
         });
     }
 
-    static wait(amount: number) {
-        return new HarnessBlock(async (harness) => {
-            await new Promise((resolve) => setTimeout(resolve, amount));
-            return harness;
-        });
-    }
-
     /**
      * Assert that channel balance matches snapshot totalWithdrawals
      */
@@ -607,9 +600,6 @@ export class Assert {
                     "No channelBalanceBefore in context. Call Context.storeChannelBalance() before posting snapshot."
                 );
             }
-            console.log(
-                `[ASSERT DEBUG] Channel balance before: ${channelBalanceBefore.totalWithdrawals}`
-            );
 
             const channelBalanceAfter =
                 await harness.channelManager.getChannelBalance(
@@ -620,10 +610,6 @@ export class Assert {
             const actualDelta = await stateMachine.subtractBalance(
                 channelBalanceAfter.totalWithdrawals,
                 channelBalanceBefore.totalWithdrawals
-            );
-            console.log(`[ASSERT DEBUG] Actual delta: ${actualDelta.amount}`);
-            console.log(
-                `[ASSERT DEBUG] Expected delta: ${channelBalanceBefore.totalWithdrawals.amount}`
             );
 
             // Compare
