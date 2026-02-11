@@ -343,7 +343,7 @@ export class Scenario {
      * - Control over fork settlement timing (forkSettleTimeoutMs)
      * - More lenient dispute commit requirements (some peers may be slow)
      */
-    static forkResolutionWithSettlement(options: {
+    static disputeWithReduction(options: {
         maliciousPeerIndex: number;
         honestPeerIndices?: number[];
         forkSettleTimeoutMs?: number;

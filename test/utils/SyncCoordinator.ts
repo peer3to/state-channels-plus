@@ -1,6 +1,5 @@
 import { ForkId, Address } from "@/types/types";
 import { Logger, EventBarrier } from "@/utils";
-import { TestPeer } from "@test/fixtures/PeerTestHarness";
 
 export type WaitForPeersInSyncOptions = {
     timeout?: number;
@@ -153,31 +152,6 @@ export class SyncCoordinator {
         });
 
         return { inSync: allInSync, syncDetails };
-    }
-
-    /**
-     * Get the current state machine state for a peer
-     */
-    private getStateMachineState(
-        peer: TestPeer<any, any>,
-        forkId: string
-    ): any {
-        const latestBlock =
-            peer.stateManager.storage.blocks.getLatestBlock(forkId);
-
-        if (!latestBlock) {
-            const genesisSnapshot =
-                peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                    forkId
-                );
-            return genesisSnapshot ? "genesis" : null;
-        }
-
-        const stateSnapshot =
-            peer.stateManager.storage.stateSnapshots.getStateSnapshotByHash(
-                latestBlock.stateSnapshotHash
-            );
-        return stateSnapshot ? stateSnapshot.snapshotData : null;
     }
 }
 
