@@ -114,7 +114,10 @@ export class Scenario {
             Assert.allPeersInSync(),
             Event.reset(),
             Byzantine.stubBroadcast(peerIndex),
-            Transition.valid((c) => c.add(value), { waitForSync: false })
+            Transition.advanceState({
+                txFn: (c) => c.add(value),
+                waitForSync: false
+            })
         );
     }
 
@@ -150,7 +153,7 @@ export class Scenario {
             }),
             Byzantine.disconnect(3),
             // Do 1 transaction to build up signedBlocks for state proofs
-            Transition.valid((c) => c.add(1)),
+            Transition.advanceState({ txFn: (c) => c.add(1) }),
             Assert.peersInSync([0, 1, 2]),
             Event.reset()
         );

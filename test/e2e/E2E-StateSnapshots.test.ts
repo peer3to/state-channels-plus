@@ -33,7 +33,7 @@ describe("E2E: State Snapshots", function () {
 
             // Execute the 3 specific state transitions
             Transition.advanceState({ count: 1 }),
-            Transition.valid((c) => c.leaveChannel()),
+            Transition.advanceState({ txFn: (c) => c.leaveChannel() }),
             Transition.advanceState({ count: 1 }),
             Assert.allPeersInSync(),
             Event.reset(),

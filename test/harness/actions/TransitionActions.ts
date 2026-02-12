@@ -1,6 +1,11 @@
 import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
 import { Logger } from "@/utils";
-import SyncCoordinator from "@test/utils/SyncCoordinator";
+
+export type TransitionOptions = {
+    waitForSync?: boolean;
+    waitForPeers?: number[];
+    waitForTurn?: boolean;
+};
 
 /**
  * Handles state transition operations on the state machine
@@ -16,11 +21,7 @@ export class TransitionActions {
      */
     async submitNext(
         txFn: (contract: any) => Promise<any>,
-        options: {
-            waitForSync?: boolean;
-            waitForPeers?: number[];
-            waitForTurn?: boolean;
-        } = { waitForTurn: true, waitForSync: true }
+        options: TransitionOptions = { waitForTurn: true, waitForSync: true }
     ): Promise<void> {
         const nextPeer = await this.getNextPeerToWrite();
 
@@ -35,8 +36,8 @@ export class TransitionActions {
         });
     }
 
-    async increment(value: number = 1) {
-        return this.submitNext((contract) => contract.add(value));
+    async increment(value: number = 1, options?: TransitionOptions) {
+        return this.submitNext((contract) => contract.add(value), options);
     }
 
     /**
@@ -45,11 +46,7 @@ export class TransitionActions {
     async submit(
         peer: TestPeer<any, any>,
         txFn: (contract: any) => Promise<any>,
-        options: {
-            waitForSync?: boolean;
-            waitForPeers?: number[];
-            waitForTurn?: boolean;
-        } = { waitForSync: true }
+        options: TransitionOptions = { waitForSync: true }
     ): Promise<void> {
         if (options.waitForTurn) {
             await this.waitForTurn(peer);

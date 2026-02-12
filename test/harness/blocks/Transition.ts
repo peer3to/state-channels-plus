@@ -5,16 +5,42 @@ import { HarnessBlock } from "./HarnessBlock";
  */
 export class Transition {
     /**
-     * Advance state by N sequential writes or M full rounds
+     * Advance state by N sequential writes or M full rounds.
+     *
+     * By default this uses `increment()`. Provide `txFn` to run a custom
+     * transition per step.
      */
-    static advanceState(options?: { count?: number; rounds?: number }) {
+    static advanceState(options?: {
+        count?: number;
+        rounds?: number;
+        txFn?: (contract: any) => Promise<any>;
+        waitForSync?: boolean;
+        waitForPeers?: number[];
+        waitForTurn?: boolean;
+    }) {
         return new HarnessBlock(async (harness) => {
             const count = options?.count ?? 1;
             const total = options?.rounds
                 ? options.rounds * harness.peers.length
                 : count;
+            const transitionOptions = {
+                waitForSync: options?.waitForSync,
+                waitForPeers: options?.waitForPeers,
+                waitForTurn: options?.waitForTurn
+            };
+
+            if (options?.txFn) {
+                for (let i = 0; i < total; i++) {
+                    await harness.transitionActions.submitNext(
+                        options.txFn,
+                        transitionOptions
+                    );
+                }
+                return harness;
+            }
+
             for (let i = 0; i < total; i++) {
-                await harness.transitionActions.increment();
+                await harness.transitionActions.increment(1, transitionOptions);
             }
 
             return harness;
@@ -42,33 +68,6 @@ export class Transition {
                 { waitForPeers }
             );
 
-            return harness;
-        });
-    }
-
-    /**
-     * Execute a valid state transition from the next peer to write
-     *
-     * @example
-     * ```ts
-     * await ScenarioRunner.execute(
-     *     Setup.peers(3),
-     *     Channel.open(),
-     *     Transition.valid(c => c.add(1)),
-     *     Transition.valid(c => c.add(2))
-     * );
-     * ```
-     */
-    static valid(
-        txFn: (contract: any) => Promise<any>,
-        options?: {
-            waitForSync?: boolean;
-            waitForPeers?: number[];
-            waitForTurn?: boolean;
-        }
-    ) {
-        return new HarnessBlock(async (harness) => {
-            await harness.transitionActions.submitNext(txFn, options);
             return harness;
         });
     }
