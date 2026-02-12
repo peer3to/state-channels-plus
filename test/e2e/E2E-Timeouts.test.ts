@@ -23,7 +23,7 @@ describe("E2E: Timeouts", function () {
         it("should handle timeout when next peer to write does not author a block", async function () {
             await ScenarioRunner.execute(
                 Scenario.timeoutSetup(3),
-                Scenario.advanceState(2), // Peers 0 and 1 take their turn
+                Scenario.advanceState({ count: 2 }), // Peers 0 and 1 take their turn
                 // Peer 2 should take turn but doesn't -> timeout triggers
 
                 Event.reset(),
@@ -40,7 +40,7 @@ describe("E2E: Timeouts", function () {
         it("should demonstrate timeout creates disputes", async function () {
             await ScenarioRunner.execute(
                 Scenario.timeoutSetup(3),
-                Scenario.advanceState(2), // First 2 peers take turn, 3rd doesn't
+                Scenario.advanceState({ count: 2 }), // First 2 peers take turn, 3rd doesn't
 
                 Event.reset(),
                 Assert.disputeInitiatedBy({
@@ -55,13 +55,13 @@ describe("E2E: Timeouts", function () {
         it("should handle timeout when non-author peer disconnects (calldata posting)", async function () {
             await ScenarioRunner.execute(
                 Scenario.timeoutSetup(3),
-                Scenario.fullRound(), // All 3 peers write once
+                Scenario.advanceState({ rounds: 1 }), // All 3 peers write once
                 Event.reset(),
                 // Now it's peer 0's turn - disconnect peer 2 (non-author)
                 Byzantine.disconnect(2),
                 // Peer 0 authors but can't get peer 2's signature -> posts calldata
                 // Then peer 1 writes to test liveness
-                Scenario.advanceState(2), // Peers 0 and 1 write (peer 2 disconnected)
+                Scenario.advanceState({ count: 2 }), // Peers 0 and 1 write (peer 2 disconnected)
                 // Wait for calldata posting to happen during these writes
                 Assert.calldataPosted()
             );
@@ -70,8 +70,8 @@ describe("E2E: Timeouts", function () {
         it("should handle timeout when author peer disconnects", async function () {
             await ScenarioRunner.execute(
                 Scenario.timeoutSetup(3),
-                Scenario.fullRound(), // Heights 0, 1, 2 - All 3 peers write once
-                Scenario.advanceState(1), // Height 3 - Peer 0 writes again
+                Scenario.advanceState({ rounds: 1 }), // Heights 0, 1, 2 - All 3 peers write once
+                Scenario.advanceState({ count: 1 }), // Height 3 - Peer 0 writes again
                 Event.reset(),
                 // Now it's peer 1's turn - disconnect them (author peer)
                 Byzantine.disconnect(1),
@@ -88,7 +88,7 @@ describe("E2E: Timeouts", function () {
         it("should create forced timeout when peer posts junk calldata that is rejected", async function () {
             await ScenarioRunner.execute(
                 Scenario.timeoutSetup(3),
-                Scenario.advanceState(2), // Peers 0 and 1 write
+                Scenario.advanceState({ count: 2 }), // Peers 0 and 1 write
                 Event.reset(),
                 // Peer 2 posts invalid calldata on-chain
                 Byzantine.postJunkCalldata(2),
@@ -109,7 +109,7 @@ describe("E2E: Timeouts", function () {
             // Combined scenario: valid block + junk calldata + timeout
             await ScenarioRunner.execute(
                 Scenario.timeoutSetup(3),
-                Scenario.advanceState(2), // Peers 0 and 1 write
+                Scenario.advanceState({ count: 2 }), // Peers 0 and 1 write
                 Scenario.peerWrite({ peer: 2 }), // Peer 2 writes valid block
                 Event.reset(),
                 Byzantine.postJunkCalldata(2, { heightOffset: 0 }), // For current height
@@ -128,7 +128,7 @@ describe("E2E: Timeouts", function () {
             await ScenarioRunner.execute(
                 Scenario.startChannel(3, 2),
                 Byzantine.disconnect(2), // Peer 2 goes offline
-                Scenario.advanceState(1), // Should work with peers 0,1
+                Scenario.advanceState({ count: 1 }), // Should work with peers 0,1
                 Assert.peersInSync([0, 1]),
                 Assert.noDisputes()
             );

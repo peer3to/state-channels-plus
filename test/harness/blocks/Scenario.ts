@@ -43,7 +43,7 @@ export class Scenario {
         return HarnessBlock.compose(
             Lifecycle.setup(peerCount, options),
             Lifecycle.openChannel(),
-            Scenario.advanceState(transitionCount)
+            Scenario.advanceState({ count: transitionCount })
         );
     }
 
@@ -55,9 +55,13 @@ export class Scenario {
      * Advance state by N sequential writes (next peers in turn)
      * Simple state progression without control over specific peers or values
      */
-    static advanceState(count: number) {
+    static advanceState(options?: { count?: number; rounds?: number }) {
         return new HarnessBlock(async (harness) => {
-            for (let i = 0; i < count; i++) {
+            const count = options?.count ?? 1;
+            const total = options?.rounds
+                ? options.rounds * harness.peers.length
+                : count;
+            for (let i = 0; i < total; i++) {
                 await harness.transitionActions.increment();
             }
 
@@ -86,38 +90,6 @@ export class Scenario {
                 (contract) => contract.add(value),
                 { waitForPeers }
             );
-
-            return harness;
-        });
-    }
-
-    /**
-     * One full round (all peers write once in order)
-     */
-    static fullRound() {
-        return new HarnessBlock(async (harness) => {
-            const peerCount = harness.peers.length;
-
-            for (let i = 0; i < peerCount; i++) {
-                await harness.transitionActions.increment();
-            }
-
-            return harness;
-        });
-    }
-
-    /**
-     * N complete rounds (all peers write N times each)
-     */
-    static multipleRounds(rounds: number) {
-        return new HarnessBlock(async (harness) => {
-            const peerCount = harness.peers.length;
-
-            for (let round = 0; round < rounds; round++) {
-                for (let peer = 0; peer < peerCount; peer++) {
-                    await harness.transitionActions.increment();
-                }
-            }
 
             return harness;
         });
@@ -204,7 +176,7 @@ export class Scenario {
         return HarnessBlock.compose(
             Scenario.startChannel(3, 0, options),
             Assert.participantCount({ expectedCount: 3 }),
-            Scenario.advanceState(initialTransitions),
+            Scenario.advanceState({ count: initialTransitions }),
             Lifecycle.addPeer(), // Adds spectator at index 3
             // Wait for all peers (including newly added spectator at index 3) to sync
             Assert.peersInSync([0, 1, 2, 3])

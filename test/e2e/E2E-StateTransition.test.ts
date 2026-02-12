@@ -21,7 +21,7 @@ describe("E2E: State Transitions", function () {
         it("should handle consecutive blocks between participants", async function () {
             await ScenarioRunner.execute(
                 Scenario.startChannel(3),
-                Scenario.advanceState(10),
+                Scenario.advanceState({ count: 10 }),
                 Assert.allPeersInSync(),
                 Assert.blockHeight(9) // 10 blocks after genesis = height 9
             );
@@ -30,7 +30,7 @@ describe("E2E: State Transitions", function () {
         it("should handle full round rotation", async function () {
             await ScenarioRunner.execute(
                 Scenario.startChannel(4),
-                Scenario.fullRound(), // All 4 peers write once
+                Scenario.advanceState({ rounds: 1 }), // All 4 peers write once
                 Assert.allPeersInSync(),
                 Assert.blockHeight(3) // 4 transitions = height 3
             );
@@ -39,7 +39,7 @@ describe("E2E: State Transitions", function () {
         it("should handle multiple rotation rounds", async function () {
             await ScenarioRunner.execute(
                 Scenario.startChannel(3),
-                Scenario.multipleRounds(3), // 3 rounds = 9 transitions
+                Scenario.advanceState({ rounds: 3 }), // 3 rounds = 9 transitions
                 Assert.allPeersInSync(),
                 Assert.blockHeight(8)
             );
