@@ -32,9 +32,9 @@ describe("E2E: State Snapshots", function () {
             Scenario.startChannel(3),
 
             // Execute the 3 specific state transitions
-            Scenario.advanceState({ count: 1 }),
+            Transition.advanceState({ count: 1 }),
             Transition.valid((c) => c.leaveChannel()),
-            Scenario.advanceState({ count: 1 }),
+            Transition.advanceState({ count: 1 }),
             Assert.allPeersInSync(),
             Event.reset(),
             Assert.channelWithdrawalsMatchSnapshot(),

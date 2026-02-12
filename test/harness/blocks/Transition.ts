@@ -5,6 +5,48 @@ import { HarnessBlock } from "./HarnessBlock";
  */
 export class Transition {
     /**
+     * Advance state by N sequential writes or M full rounds
+     */
+    static advanceState(options?: { count?: number; rounds?: number }) {
+        return new HarnessBlock(async (harness) => {
+            const count = options?.count ?? 1;
+            const total = options?.rounds
+                ? options.rounds * harness.peers.length
+                : count;
+            for (let i = 0; i < total; i++) {
+                await harness.transitionActions.increment();
+            }
+
+            return harness;
+        });
+    }
+
+    /**
+     * Specific peer writes a block (out-of-order authoring with control)
+     */
+    static peerWrite(options: {
+        peer: number;
+        value?: number;
+        waitForPeers?: number[];
+    }) {
+        const { peer, value = 1, waitForPeers } = options;
+        return new HarnessBlock(async (harness) => {
+            const peerObj = harness.peers[peer];
+            if (!peerObj) {
+                throw new Error(`Peer ${peer} not found`);
+            }
+
+            await harness.transitionActions.submit(
+                peerObj,
+                (contract) => contract.add(value),
+                { waitForPeers }
+            );
+
+            return harness;
+        });
+    }
+
+    /**
      * Execute a valid state transition from the next peer to write
      *
      * @example

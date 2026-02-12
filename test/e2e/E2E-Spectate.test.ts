@@ -150,7 +150,7 @@ describe("E2E: Spectate Service", function () {
             await ScenarioRunner.execute(
                 Scenario.spectatorJoinedAndSynced(),
                 // Continue transitioning 3 more times with all 4 peers
-                Scenario.advanceState({ count: 3 }),
+                Transition.advanceState({ count: 3 }),
                 Assert.peersInSync([0, 1, 2, 3]),
                 // Participant count should remain the same as initial (3)
                 // On-chain snapshot should still be on original fork
@@ -172,7 +172,7 @@ describe("E2E: Spectate Service", function () {
                         evidenceTime: 10 // Increased from 3 to give more time for all peers to commit disputes
                     }
                 }),
-                Scenario.advanceState({ count: 5 }),
+                Transition.advanceState({ count: 5 }),
                 Assert.allPeersInSync(),
 
                 // Create and resolve invalid state transition dispute
@@ -222,7 +222,7 @@ describe("E2E: Spectate Service", function () {
                 // Add a spectator to the genesis state
                 Lifecycle.addPeer(),
                 Assert.participantCount({ expectedCount: 2, peerIndex: 2 }),
-                Scenario.advanceState({ count: 1 }),
+                Transition.advanceState({ count: 1 }),
                 // Assert all peers including spectator synced with the new state
                 Assert.peersInSync([0, 1, 2]),
                 Assert.participantCount({ expectedCount: 2, peerIndex: 2 })
@@ -234,7 +234,7 @@ describe("E2E: Spectate Service", function () {
                 // Setup 2 peers but don't make any moves yet (stay at genesis)
                 Scenario.startChannel(2),
 
-                Scenario.advanceState({ count: 1 }),
+                Transition.advanceState({ count: 1 }),
                 Assert.peersInSync([0, 1]),
                 Lifecycle.addPeer(),
                 Assert.participantCount({ expectedCount: 2, peerIndex: 2 }),
