@@ -16,16 +16,6 @@ export class Scenario {
     // ========================================
 
     /**
-     * Empty channel with peers but no transitions (genesis only)
-     */
-    static emptyChannel(peerCount: number, options?: HarnessOptions) {
-        return HarnessBlock.compose(
-            Lifecycle.setup(peerCount, options),
-            Lifecycle.openChannel()
-        );
-    }
-
-    /**
      * Channel configured for timeout testing (short timeouts)
      */
 
@@ -43,11 +33,11 @@ export class Scenario {
     }
 
     /**
-     * Active channel with N peers and M transitions
+     * Start channel with N peers and M transitions
      */
-    static activeChannel(
+    static startChannel(
         peerCount: number,
-        transitionCount: number,
+        transitionCount: number = 0,
         options?: HarnessOptions
     ) {
         return HarnessBlock.compose(
@@ -149,7 +139,7 @@ export class Scenario {
         };
     }) {
         return HarnessBlock.compose(
-            Scenario.activeChannel(4, 2, options),
+            Scenario.startChannel(4, 2, options),
             Assert.allPeersInSync(),
             Scenario.disputeWithReduction({ maliciousPeerIndex: 2 })
         );
@@ -181,7 +171,7 @@ export class Scenario {
         options?: HarnessOptions
     ) {
         return HarnessBlock.compose(
-            Scenario.activeChannel(peerCount, 2, options),
+            Scenario.startChannel(peerCount, 2, options),
             Assert.allPeersInSync(),
             Event.reset(),
             Event.captureOriginalFork()
@@ -196,7 +186,7 @@ export class Scenario {
         value: number = 10
     ) {
         return HarnessBlock.compose(
-            Scenario.activeChannel(3, 1),
+            Scenario.startChannel(3, 1),
             Assert.allPeersInSync(),
             Event.reset(),
             Byzantine.stubBroadcast(peerIndex),
@@ -212,7 +202,7 @@ export class Scenario {
         options?: HarnessOptions
     ) {
         return HarnessBlock.compose(
-            Scenario.emptyChannel(3, options),
+            Scenario.startChannel(3, 0, options),
             Assert.participantCount({ expectedCount: 3 }),
             Scenario.advanceState(initialTransitions),
             Lifecycle.addPeer(), // Adds spectator at index 3
@@ -226,7 +216,7 @@ export class Scenario {
      */
     static readyForRedispute() {
         return HarnessBlock.compose(
-            Scenario.emptyChannel(4, {
+            Scenario.startChannel(4, 0, {
                 timeConfig: {
                     p2pTime: 2,
                     agreementTime: 1,
@@ -247,7 +237,7 @@ export class Scenario {
      */
     static peerMissingSnapshot() {
         return HarnessBlock.compose(
-            Scenario.emptyChannel(3, {
+            Scenario.startChannel(3, 0, {
                 timeConfig: {
                     p2pTime: 1,
                     agreementTime: 1,
@@ -273,7 +263,7 @@ export class Scenario {
         const { numPeers, numBlocks, byzantinePeer } = options;
 
         return HarnessBlock.compose(
-            Scenario.activeChannel(numPeers, numBlocks),
+            Scenario.startChannel(numPeers, numBlocks),
             Byzantine.doubleSignFrom(byzantinePeer),
             Assert.disputeCommitted(),
             Event.reset()

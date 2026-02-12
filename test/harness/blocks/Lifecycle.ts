@@ -53,7 +53,7 @@ export class Lifecycle {
      * @example
      * ```ts
      * await ScenarioRunner.execute(
-     *     Scenario.emptyChannel(2, { autoConnect: false }),
+     *     Scenario.startChannel(2, 0, { autoConnect: false }),
      *     Lifecycle.triggerConnections(),
      *     // ... test connection behavior
      * );

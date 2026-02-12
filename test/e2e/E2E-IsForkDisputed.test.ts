@@ -116,7 +116,7 @@ describe("E2E: Is Fork Disputed", function () {
 
         it("should disconnect non-responding peers after acknowledgment timeout", async function () {
             await ScenarioRunner.execute(
-                Scenario.emptyChannel(3, {
+                Scenario.startChannel(3, 0, {
                     timeConfig: { agreementTime: 1 }
                 }),
 
@@ -170,7 +170,7 @@ describe("E2E: Is Fork Disputed", function () {
 
         it("should disconnect peer requesting acknowledgment of non-disputed fork", async function () {
             await ScenarioRunner.execute(
-                Scenario.activeChannel(3, 2),
+                Scenario.startChannel(3, 2),
                 Event.reset(),
 
                 RPC.sendFakeDisputeRequest({

@@ -23,7 +23,7 @@ describe("E2E: Init Handshake", function () {
     describe("Handshake Completion", function () {
         it("should complete handshake successfully and create peer profile", async function () {
             await ScenarioRunner.execute(
-                Scenario.emptyChannel(3, { autoConnect: false }),
+                Scenario.startChannel(3, 0, { autoConnect: false }),
 
                 RPC.connectPeers([0, 1]),
                 Event.waitUntilEventOccurs("onConnection", 5000),
@@ -42,7 +42,7 @@ describe("E2E: Init Handshake", function () {
 
         it("should update existing profile transport on successful handshake", async function () {
             await ScenarioRunner.execute(
-                Scenario.emptyChannel(2, { autoConnect: true }),
+                Scenario.startChannel(2, 0, { autoConnect: true }),
                 Event.waitUntilEventOccurs("onConnection", 5000),
 
                 AssertRPC.handshakeCompleted({ peer1: 0, peer2: 1 }),
@@ -73,7 +73,7 @@ describe("E2E: Init Handshake", function () {
     describe("Time Validation", function () {
         it("should disconnect peer when handshake request time difference exceeds agreementTime", async function () {
             await ScenarioRunner.execute(
-                Scenario.emptyChannel(3, { autoConnect: false }),
+                Scenario.startChannel(3, 0, { autoConnect: false }),
 
                 RPC.connectPeers([0, 1]),
                 Event.waitUntilEventOccurs("onConnection", 5000),
@@ -99,7 +99,7 @@ describe("E2E: Init Handshake", function () {
 
         it("should disconnect peer that doesn't respond within agreementTime", async function () {
             await ScenarioRunner.execute(
-                Scenario.emptyChannel(3, {
+                Scenario.startChannel(3, 0, {
                     autoConnect: false,
                     timeConfig: { agreementTime: 1 }
                 }),
@@ -126,7 +126,7 @@ describe("E2E: Init Handshake", function () {
 
         it("should disconnect peer when handshake response RTT exceeds agreementTime", async function () {
             await ScenarioRunner.execute(
-                Scenario.emptyChannel(3, { autoConnect: false }),
+                Scenario.startChannel(3, 0, { autoConnect: false }),
 
                 RPC.connectPeers([0, 1]),
                 Event.waitUntilEventOccurs("onConnection", 5000),
@@ -157,7 +157,7 @@ describe("E2E: Init Handshake", function () {
 
         it("should disconnect peer when handshake response time doesn't match init time", async function () {
             await ScenarioRunner.execute(
-                Scenario.emptyChannel(2, { autoConnect: true }),
+                Scenario.startChannel(2, 0, { autoConnect: true }),
                 Event.waitUntilEventOccurs("onConnection", 5000),
 
                 RPC.clearHandshakeChallenge({
@@ -188,7 +188,7 @@ describe("E2E: Init Handshake", function () {
     describe("Signature Validation", function () {
         it("should disconnect peer when handshake response has invalid signature", async function () {
             await ScenarioRunner.execute(
-                Scenario.emptyChannel(2, { autoConnect: true }),
+                Scenario.startChannel(2, 0, { autoConnect: true }),
                 Event.waitUntilEventOccurs("onConnection", 5000),
 
                 RPC.clearHandshakeChallenge({
@@ -217,7 +217,7 @@ describe("E2E: Init Handshake", function () {
     describe("Unsolicited Messages", function () {
         it("should disconnect peer sending unsolicited handshake response", async function () {
             await ScenarioRunner.execute(
-                Scenario.emptyChannel(3, { autoConnect: false }),
+                Scenario.startChannel(3, 0, { autoConnect: false }),
 
                 RPC.connectPeers([0, 1]),
                 Event.waitUntilEventOccurs("onConnection", 5000),

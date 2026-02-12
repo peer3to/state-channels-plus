@@ -34,7 +34,7 @@ describe("E2E: Spectate Service", function () {
         it.skip("should NOT allow spectate RPC before handshake completes", async function () {
             const { harness, cleanup } =
                 await ScenarioRunner.executeWithCleanup(
-                    Scenario.emptyChannel(2, {
+                    Scenario.startChannel(2, 0, {
                         autoConnect: false,
                         timeConfig: {
                             agreementTime: 10,
@@ -164,7 +164,7 @@ describe("E2E: Spectate Service", function () {
         it("should spectate successfully even when it must traverse forks (dispute -> reduced fork)", async function () {
             await ScenarioRunner.execute(
                 // Setup 5 peers and advance state
-                Scenario.emptyChannel(5, {
+                Scenario.startChannel(5, 0, {
                     timeConfig: {
                         p2pTime: 30,
                         agreementTime: 2,
@@ -218,7 +218,7 @@ describe("E2E: Spectate Service", function () {
         it("should spectate successfully when joining at genesis state", async function () {
             await ScenarioRunner.execute(
                 // Setup 2 peers but don't make any moves yet (stay at genesis)
-                Scenario.emptyChannel(2),
+                Scenario.startChannel(2),
                 // Add a spectator to the genesis state
                 Lifecycle.addPeer(),
                 Assert.participantCount({ expectedCount: 2, peerIndex: 2 }),
@@ -232,7 +232,7 @@ describe("E2E: Spectate Service", function () {
         it("should spectate successfully when joining at block 0", async function () {
             await ScenarioRunner.execute(
                 // Setup 2 peers but don't make any moves yet (stay at genesis)
-                Scenario.emptyChannel(2),
+                Scenario.startChannel(2),
 
                 Scenario.advanceState(1),
                 Assert.peersInSync([0, 1]),

@@ -86,10 +86,10 @@ export interface EventSpies {
 /**
  * Options for configuring the test harness
  */
-export interface HarnessOptions<
+export type HarnessOptions<
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
-> {
+> = {
     /**
      * ⚙️ LOG LEVEL CONTROL (for cleaner test output)
      *
@@ -99,10 +99,10 @@ export interface HarnessOptions<
      * @example
      * ```ts
      * // Quiet tests (recommended for CI/passing tests)
-     * Scenario.emptyChannel(3, { logLevel: "error" })
+     * Scenario.startChannel(3, 0, { logLevel: "error" })
      *
      * // Verbose debugging (when investigating failures)
-     * Scenario.emptyChannel(3, { logLevel: "debug" })
+     * Scenario.startChannel(3, 0, { logLevel: "debug" })
      * ```
      *
      * @default undefined (uses LOG_LEVEL env var or "info")
@@ -116,7 +116,7 @@ export interface HarnessOptions<
     autoConnect?: boolean;
     configOverrides?: Partial<Config>; // Direct config overrides
     rpcServiceFactories?: TFactories;
-}
+};
 
 export type SubmitTransactionOptions = {
     waitForSync?: boolean;

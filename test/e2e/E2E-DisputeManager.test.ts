@@ -25,7 +25,7 @@ describe("E2E: Dispute Manager", function () {
     describe("Dispute Initiation", function () {
         it("should create dispute for double-sign detected", async function () {
             await ScenarioRunner.execute(
-                Scenario.activeChannel(3, 2),
+                Scenario.startChannel(3, 2),
                 Byzantine.doubleSignFrom(1), // Peer 1 double-signs
                 Assert.disputeInitiatedBy({ peers: [0, 2] }), // Peers 0,2 detect
                 Assert.disputeCommitted()
@@ -34,7 +34,7 @@ describe("E2E: Dispute Manager", function () {
 
         it("should create dispute for invalid state transition", async function () {
             await ScenarioRunner.execute(
-                Scenario.activeChannel(3, 2),
+                Scenario.startChannel(3, 2),
                 Byzantine.invalidTransitionFrom(2), // Peer 2 submits invalid
                 Assert.disputeInitiatedBy({ peers: [0, 1] }),
                 Assert.disputeCommitted(2)
@@ -43,7 +43,7 @@ describe("E2E: Dispute Manager", function () {
 
         it("should dispute forged inbound message blocks", async function () {
             await ScenarioRunner.execute(
-                Scenario.activeChannel(3, 2),
+                Scenario.startChannel(3, 2),
                 Event.reset(),
                 Byzantine.forgedInboundMessageFromNext(),
                 Assert.honestPeersInitiateDispute(),
@@ -53,7 +53,7 @@ describe("E2E: Dispute Manager", function () {
 
         it("should handle double-sign from different peer configurations", async function () {
             await ScenarioRunner.execute(
-                Scenario.activeChannel(4, 3),
+                Scenario.startChannel(4, 3),
                 Byzantine.doubleSignFrom(2), // Peer 2 attacks
                 Assert.disputeInitiatedBy({ peers: [0, 1, 3] }) // Others detect
             );
@@ -63,7 +63,7 @@ describe("E2E: Dispute Manager", function () {
     describe("Dispute Resolution and Fork Management", function () {
         it("should reduce invalid state transition disputes and create new fork", async function () {
             await ScenarioRunner.execute(
-                Scenario.activeChannel(4, 2, {
+                Scenario.startChannel(4, 2, {
                     timeConfig: {
                         p2pTime: 3,
                         agreementTime: 2,

@@ -29,7 +29,7 @@ describe("E2E: State Snapshots", function () {
 
     it("should post updated state snapshot on-chain after 3 transitions", async function () {
         await ScenarioRunner.execute(
-            Scenario.emptyChannel(3),
+            Scenario.startChannel(3),
 
             // Execute the 3 specific state transitions
             Scenario.advanceState(1),

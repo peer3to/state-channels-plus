@@ -126,7 +126,7 @@ describe("E2E: Timeouts", function () {
     describe("Network Liveness", function () {
         it("should maintain liveness when peer disconnects mid-transaction", async function () {
             await ScenarioRunner.execute(
-                Scenario.activeChannel(3, 2),
+                Scenario.startChannel(3, 2),
                 Byzantine.disconnect(2), // Peer 2 goes offline
                 Scenario.advanceState(1), // Should work with peers 0,1
                 Assert.peersInSync([0, 1]),
