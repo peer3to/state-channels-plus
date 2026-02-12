@@ -24,7 +24,7 @@ export class AssertRPC {
                     expectedFinalCount,
                 {
                     timeoutMs,
-                    timeoutMessage: `Expected peer ${peerIndex} to have ${expectedFinalCount} connection(s) within ${timeoutMs}ms`
+                    timeoutMessage: `Expected peer ${peerIndex} to have ${expectedFinalCount} connection(s) within ${timeoutMs}ms, actual: ${harness.stateQuery.getConnectionCount(peerIndex)}`
                 }
             );
 
@@ -59,7 +59,7 @@ export class AssertRPC {
                     expectedCount,
                 {
                     timeoutMs,
-                    timeoutMessage: `Expected peer ${peerIndex} to lose ${expectedDisconnections} connection(s) within ${timeoutMs}ms`
+                    timeoutMessage: `Expected peer ${peerIndex} to lose ${expectedDisconnections} connection(s) within ${timeoutMs}ms, lost: ${connectionsBefore - harness.stateQuery.getConnectionCount(peerIndex)}`
                 }
             );
 
