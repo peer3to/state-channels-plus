@@ -2,10 +2,14 @@ import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
 import { Logger, SignatureUtils } from "@/utils";
 import { ForkId } from "@/types/types";
 
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    DisputeConfirmationStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import DisputeManager, {
     ConstructDisputeResult
 } from "@/disputeManager/DisputeManager";
+import { BytesLike } from "ethers";
 
 /**
  * DisputeOrchestrator - High-level dispute resolution workflows
@@ -30,9 +34,15 @@ export class DisputeOrchestrator {
      */
     async postTamperedDispute(
         authorPeerIndex: number,
-        tamper: (dispute: any, confirmation: any) => void,
+        tamper: (
+            dispute: DisputeStruct,
+            confirmation: DisputeConfirmationStruct
+        ) => void,
         forkId?: ForkId
-    ): Promise<{ dispute: any; disputeConfirmation: any }> {
+    ): Promise<{
+        dispute: DisputeStruct;
+        disputeConfirmation: DisputeConfirmationStruct;
+    }> {
         const peer = this.harness.getPeer(authorPeerIndex);
         const targetForkId = forkId || this.harness.activeForkId!;
 

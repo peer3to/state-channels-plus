@@ -2,6 +2,7 @@ import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { Logger } from "@/utils";
 import { expect } from "chai";
 import { ForkId } from "@/types/types";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 export class AssertActions {
     constructor(
@@ -88,12 +89,11 @@ export class AssertActions {
      */
     async assertAllPeersInSync(
         options: {
-            expectedState?: any;
             peerIndices?: number[];
             timeout?: number;
         } = {}
     ): Promise<void> {
-        const { expectedState, peerIndices, timeout = 10000 } = options;
+        const { peerIndices, timeout = 10000 } = options;
         const indicesToCheck =
             peerIndices ??
             Array.from({ length: this.harness.peers.length }, (_, i) => i);
@@ -133,13 +133,6 @@ export class AssertActions {
             expect(peerState).to.deep.equal(
                 firstPeerState,
                 `Peer ${peerIndex} state does not match Peer ${firstPeerIndex}`
-            );
-        }
-
-        if (expectedState !== undefined) {
-            expect(firstPeerState).to.deep.equal(
-                expectedState,
-                "State does not match expected state"
             );
         }
     }
@@ -185,17 +178,11 @@ export class AssertActions {
     }): Promise<void> {
         const { timeoutMs = 5000, expectedCountPerPeer = 1 } = options || {};
 
-        // Get malicious peer index (set by Byzantine blocks)
-        const maliciousPeerIndex = this.harness.context.lastMaliciousPeerIndex;
-        if (maliciousPeerIndex === undefined) {
-            throw new Error(
-                "No malicious peer index found. This should be used after a Byzantine attack block."
-            );
-        }
-
         // Get honest peers (all except malicious)
         const honestPeers = this.harness.peers
-            .filter((peer) => peer.index !== maliciousPeerIndex)
+            .filter(
+                (peer) => peer.index !== this.harness.context.maliciousPeerIndex
+            )
             .map((peer) => peer.index);
 
         const condition = () => {
@@ -389,7 +376,7 @@ export class AssertActions {
      * Assert fraud proof was stored for a dispute
      */
     async assertFraudProofStored(options: {
-        dispute: any;
+        dispute: DisputeStruct;
         timeoutMs?: number;
     }): Promise<void> {
         const { dispute, timeoutMs = 2000 } = options;

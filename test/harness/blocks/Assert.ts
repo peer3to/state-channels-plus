@@ -91,15 +91,8 @@ export class Assert {
         const { timeoutMs = 10000, minHonestPeers = 3 } = options || {};
 
         return new HarnessBlock(async (harness) => {
-            const originalForkId = harness.context.originalForkId;
-            if (!originalForkId) {
-                throw new Error(
-                    "No original fork ID captured. Use Event.captureOriginalFork() before this assertion."
-                );
-            }
-
             await harness.assertActions.assertForkChanged({
-                originalForkId,
+                originalForkId: harness.context.originalForkId,
                 timeoutMs,
                 minHonestPeers
             });
@@ -113,21 +106,14 @@ export class Assert {
      */
     static forkUnchanged() {
         return new HarnessBlock(async (harness) => {
-            const originalForkId = harness.context.originalForkId;
-            if (!originalForkId) {
-                throw new Error(
-                    "No original fork ID captured. Use Event.captureOriginalFork() before this assertion."
-                );
-            }
-
             const forkUnchanged = harness.peers.every(
-                (p) => p.stateManager.forkId === originalForkId
+                (p) => p.stateManager.forkId === harness.context.originalForkId
             );
 
             if (!forkUnchanged) {
                 const forkIds = harness.peers.map((p) => p.stateManager.forkId);
                 throw new Error(
-                    `Expected fork to remain ${originalForkId}, but found: ${JSON.stringify(forkIds)}`
+                    `Expected fork to remain ${harness.context.originalForkId}, but found: ${JSON.stringify(forkIds)}`
                 );
             }
 
@@ -143,15 +129,8 @@ export class Assert {
         const { timeoutMs = 2000 } = options || {};
 
         return new HarnessBlock(async (harness) => {
-            const dispute = harness.context.lastTamperedDispute;
-            if (!dispute) {
-                throw new Error(
-                    "No tampered dispute found. Use Byzantine.tamperedDispute* blocks before this assertion."
-                );
-            }
-
             await harness.assertActions.assertFraudProofStored({
-                dispute,
+                dispute: harness.context.lastTamperedDispute,
                 timeoutMs
             });
 
@@ -164,15 +143,8 @@ export class Assert {
      */
     static onlyHonestPeersInSync() {
         return new HarnessBlock(async (harness) => {
-            const honestIndices = harness.context.honestPeerIndices;
-            if (!honestIndices) {
-                throw new Error(
-                    "honestPeerIndices not set - use Scenario.disputeResolution() or Byzantine.createAndResolveFork() first"
-                );
-            }
-
             await harness.assertActions.assertAllPeersInSync({
-                peerIndices: honestIndices
+                peerIndices: harness.context.honestPeerIndices
             });
 
             return harness;
@@ -184,18 +156,11 @@ export class Assert {
      */
     static maliciousPeerExcluded() {
         return new HarnessBlock(async (harness) => {
-            const maliciousIndex = harness.context.maliciousPeerIndex;
-            if (maliciousIndex === undefined) {
-                throw new Error(
-                    "maliciousPeerIndex not set - use Scenario.disputeResolution() or Byzantine.createAndResolveFork() first"
-                );
-            }
-
             const nextWriter = await harness.stateQuery.getNextPeerToWrite();
 
-            if (nextWriter.index === maliciousIndex) {
+            if (nextWriter.index === harness.context.maliciousPeerIndex) {
                 throw new Error(
-                    `Malicious peer ${maliciousIndex} should not receive next turn, but it did`
+                    `Malicious peer ${harness.context.maliciousPeerIndex} should not receive next turn, but it did`
                 );
             }
 
@@ -334,12 +299,7 @@ export class Assert {
 
             // Use named context key
             const countBefore =
-                harness.context[`snapshotCount_${checkpointName}`];
-            if (countBefore === undefined) {
-                throw new Error(
-                    `No baseline snapshot count found for checkpoint "${checkpointName}". Use Assert.storeSnapshotCount() first.`
-                );
-            }
+                harness.context.getSnapshotCount(checkpointName);
 
             const snapshotStorage = peer.stateManager.storage
                 .stateSnapshots as any;
@@ -594,12 +554,6 @@ export class Assert {
             const stateMachine = peer.stateManager.diamondStateMachine;
 
             // Get channel balance before (from context) and after
-            const channelBalanceBefore = harness.context.channelBalanceBefore;
-            if (!channelBalanceBefore) {
-                throw new Error(
-                    "No channelBalanceBefore in context. Call Context.storeChannelBalance() before posting snapshot."
-                );
-            }
 
             const channelBalanceAfter =
                 await harness.channelManager.getChannelBalance(
@@ -609,20 +563,13 @@ export class Assert {
             // Calculate actual delta
             const actualDelta = await stateMachine.subtractBalance(
                 channelBalanceAfter.totalWithdrawals,
-                channelBalanceBefore.totalWithdrawals
+                harness.context.channelBalanceBefore.totalWithdrawals
             );
-            const expectedWithdrawalsDelta =
-                harness.context.expectedWithdrawalsDelta;
-            if (!expectedWithdrawalsDelta) {
-                throw new Error(
-                    "No expectedWithdrawalsDelta in context. Call Context.captureContextForSnapshotSameFork() first."
-                );
-            }
 
             // Compare
             const deltaMatches = await stateMachine.areBalancesEqual(
                 actualDelta,
-                expectedWithdrawalsDelta
+                harness.context.expectedWithdrawalsDelta
             );
 
             if (!deltaMatches) {
@@ -644,13 +591,6 @@ export class Assert {
                 throw new Error(`Peer ${peerIndex} not found`);
             }
 
-            const lastSnapshot = harness.context.lastMilestoneSnapshot;
-            if (!lastSnapshot) {
-                throw new Error(
-                    "No last milestone snapshot found in context. Call Context.captureContextForSnapshotSameFork() first."
-                );
-            }
-
             const onChainSnapshot = StateSnapshot.from(
                 await harness.channelManager.getStateSnapshot(harness.channelId)
             );
@@ -658,7 +598,8 @@ export class Assert {
             const stateMachine = peer.stateManager.diamondStateMachine;
             const withdrawalsMatch = await stateMachine.areBalancesEqual(
                 onChainSnapshot.snapshotData.totalWithdrawals,
-                lastSnapshot.snapshotData.totalWithdrawals
+                harness.context.lastMilestoneSnapshot.snapshotData
+                    .totalWithdrawals
             );
             if (!withdrawalsMatch) {
                 throw new Error(
@@ -668,7 +609,7 @@ export class Assert {
 
             const depositsMatch = await stateMachine.areBalancesEqual(
                 onChainSnapshot.snapshotData.totalDeposits,
-                lastSnapshot.snapshotData.totalDeposits
+                harness.context.lastMilestoneSnapshot.snapshotData.totalDeposits
             );
             if (!depositsMatch) {
                 throw new Error(
@@ -690,22 +631,12 @@ export class Assert {
         const { timeoutMs = 2000 } = options || {};
 
         return new HarnessBlock(async (harness) => {
-            const tamperedDisputePromise =
-                harness.context.tamperedDisputePromise;
-            if (!tamperedDisputePromise) {
-                throw new Error(
-                    "No tampered dispute promise found. Use Byzantine.interceptDisputeConstruction() first."
-                );
-            }
-
             // Wait for the tampered dispute to be constructed
-            const tamperedDispute = await tamperedDisputePromise;
+            const tamperedDispute =
+                await harness.context.tamperedDisputePromise;
 
             // Restore the interception (cleanup)
-            const restore = harness.context.restoreDisputeConstruction;
-            if (restore) {
-                restore();
-            }
+            harness.context.restoreDisputeConstruction();
 
             // Wait for fraud proof to be stored using event barrier
             const condition = () => {
@@ -749,7 +680,7 @@ export class Assert {
                 snapshotStorage.snapshotsByHash.keys()
             ).length;
 
-            harness.context[`snapshotCount_${contextKey}`] = count;
+            harness.context.setSnapshotCount(contextKey, count);
 
             return harness;
         });

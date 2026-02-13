@@ -1,3 +1,4 @@
+import { ForkId } from "@/types";
 import { HarnessBlock } from "./HarnessBlock";
 import { EventSpies } from "@test/fixtures/PeerTestHarness";
 
@@ -86,17 +87,12 @@ export class Event {
         }
     ) {
         return new HarnessBlock(async (harness) => {
-            const honestIndices = harness.context.honestPeerIndices;
-            if (!honestIndices) {
-                throw new Error(
-                    "honestPeerIndices not set - use Scenario.disputeResolution() or Byzantine.createAndResolveFork() first"
-                );
-            }
-
-            const expectedCounts = honestIndices.map((peerId) => ({
-                peerId,
-                expectedCount: expectedCountPerPeer
-            }));
+            const expectedCounts = harness.context.honestPeerIndices.map(
+                (peerId) => ({
+                    peerId,
+                    expectedCount: expectedCountPerPeer
+                })
+            );
 
             const success = await harness.eventActions.waitForEventCounts(
                 eventName,
@@ -131,7 +127,7 @@ export class Event {
      */
     static captureOriginalFork() {
         return new HarnessBlock(async (harness) => {
-            harness.context.originalForkId = harness.activeForkId;
+            harness.context.originalForkId = harness.activeForkId as ForkId;
             return harness;
         });
     }
@@ -234,26 +230,14 @@ export class Event {
         const { timeoutMs = 10000, honestPeerIndices } = options || {};
 
         return new HarnessBlock(async (harness) => {
-            const originalForkId = harness.context.originalForkId;
-            if (!originalForkId) {
-                throw new Error(
-                    "No original fork ID captured. Use Event.captureOriginalFork() before waiting for fork change."
-                );
-            }
-
             // Use provided honest peers or get from harness context
             const honest =
                 honestPeerIndices || harness.context.honestPeerIndices;
-            if (!honest || honest.length === 0) {
-                throw new Error(
-                    "No honest peer indices provided and none found in harness context"
-                );
-            }
 
             // Use event-driven fork change detection
             const { ZeroHash } = await import("ethers");
             const forkChanged = await harness.waitForForkChange({
-                excludeForkIds: [originalForkId, ZeroHash],
+                excludeForkIds: [harness.context.originalForkId, ZeroHash],
                 peerIndices: honest,
                 timeoutMs
             });

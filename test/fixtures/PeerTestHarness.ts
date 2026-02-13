@@ -9,7 +9,7 @@ import { EvmStateMachine, P2pInstance } from "@/evm";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
 import { AStateMachine, StateChannelManagerProxy } from "@typechain-types";
-import { ForkId, ChannelId, Address, Hash, Bytes } from "@/types/types";
+import { ForkId, ChannelId, Address, Hash } from "@/types/types";
 import { TimeConfig } from "@/types/time";
 
 import {
@@ -36,7 +36,7 @@ import { EventActions } from "@test/harness/actions/EventActions";
 import { StateQueryActions } from "@test/harness/actions/StateQueryActions";
 import { DisputeOrchestrator } from "@test/harness/actions/DisputeOrchestrator";
 import { RPCActions } from "@test/harness/actions/RPCActions";
-import { HarnessContext } from "@test/harness";
+import { HarnessContext } from "@test/fixtures/HarnessContext";
 
 export interface TestPeer<
     T extends AStateMachine,
@@ -124,11 +124,6 @@ export type SubmitTransactionOptions = {
     waitForTurn?: boolean;
 };
 
-export type AssertAllPeersInSyncOptions = {
-    expectedState?: Bytes;
-    peerIndices?: number[];
-};
-
 export type CreateAndResolveDisputeResult<
     T extends AStateMachine,
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -189,7 +184,7 @@ export class PeerTestHarness<
      * Test context for cross-block state sharing
      * Used by blocks to store and retrieve test-specific data (e.g., malicious peer index, fork IDs)
      */
-    public context: HarnessContext = {};
+    public context: HarnessContext = new HarnessContext();
 
     // barriers
     public connectionBarrier: EventBarrier;
@@ -635,15 +630,8 @@ export class PeerTestHarness<
 
         this.peers = [];
 
-        // Clear context properties stored by Context and Event blocks
-        delete (this as any).honestPeerIndices;
-        delete (this as any).maliciousPeerIndex;
-        delete (this as any).originalForkId;
-        delete (this as any).newForkId;
-        delete (this as any).lastMaliciousPeerIndex;
-
         // Fully reset the context object to ensure no properties leak between tests
-        this.context = {};
+        this.context.clear();
 
         // Cleanup discovery server and peer servers
         await LocalDiscoveryServer.cleanup();

@@ -45,12 +45,13 @@ export class Transition {
         }
     ) {
         return new HarnessBlock(async (harness) => {
-            const honestIndices =
-                harness.context.honestPeerIndices ||
-                Array.from({ length: harness.peers.length }, (_, i) => i);
-            if (!honestIndices) {
-                throw new Error(
-                    "honestPeerIndices not set - use Scenario.disputeResolution() or Byzantine.createAndResolveFork() first"
+            let honestIndices: number[];
+            try {
+                honestIndices = harness.context.honestPeerIndices;
+            } catch (error) {
+                honestIndices = Array.from(
+                    { length: harness.peers.length },
+                    (_, i) => i
                 );
             }
 

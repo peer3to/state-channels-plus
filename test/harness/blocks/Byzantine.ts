@@ -1,6 +1,12 @@
+import { Bytes } from "@/types";
 import { HarnessBlock } from "./HarnessBlock";
 import { Codec, Type, hash } from "@/utils";
 import { SignatureUtils } from "@/utils/SignatureUtils";
+import {
+    DisputeConfirmationStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 class DisputeTampering {
     /**
@@ -60,7 +66,7 @@ class DisputeTampering {
      * This makes auditing data reconstruction partial (missing snapshot) and state proof invalid
      */
     static tamperPartialAuditing(dispute: {
-        input: { stateProof: any };
+        input: { stateProof: StateProofStruct };
     }): void {
         const tamperedStateProof = dispute.input.stateProof;
         if (
@@ -143,7 +149,7 @@ export class Byzantine {
             const maliciousPeer = await harness.stateQuery.getNextPeerToWrite();
 
             // Store malicious peer index on harness for use by Event/Assert blocks
-            harness.context.lastMaliciousPeerIndex = maliciousPeer.index;
+            harness.context.maliciousPeerIndex = maliciousPeer.index;
 
             // Submit invalid transition (action only, no waiting)
             await harness.byzantineActions.submitInvalidStateTransitionBlock(
@@ -192,7 +198,7 @@ export class Byzantine {
             const maliciousPeer = await harness.stateQuery.getNextPeerToWrite();
 
             // Store malicious peer index on harness for use by Event/Assert blocks
-            harness.context.lastMaliciousPeerIndex = maliciousPeer.index;
+            harness.context.maliciousPeerIndex = maliciousPeer.index;
 
             // Submit forged inbound message block (action only, no waiting)
             await harness.byzantineActions.submitForgedInboundMessageBlock(
@@ -343,7 +349,10 @@ export class Byzantine {
      */
     static interceptDisputeConstruction(options: {
         peerIndex: number;
-        tamperFn: (dispute: any, confirmation: any) => void | Promise<void>;
+        tamperFn: (
+            dispute: DisputeStruct,
+            confirmation: DisputeConfirmationStruct
+        ) => void | Promise<void>;
     }) {
         const { peerIndex, tamperFn } = options;
 
@@ -363,7 +372,7 @@ export class Byzantine {
                         );
                         res.disputeConfirmation.signedDispute = {
                             encodedDispute: tamperedSig.encoded,
-                            signature: tamperedSig.signature as any
+                            signature: tamperedSig.signature as Bytes
                         };
 
                         return res;
@@ -417,8 +426,10 @@ export class Byzantine {
                 eventHandler.onBlockCalldataPosted.bind(eventHandler);
 
             // Store original handler for potential restoration
-            harness.context[`peer${peerIndex}OriginalCalldataHandler`] =
-                originalHandler;
+            harness.context.setPeerOriginalCalldataHandler(
+                peerIndex,
+                originalHandler
+            );
 
             // Stub with no-op
             eventHandler.onBlockCalldataPosted = async () => {
@@ -440,12 +451,7 @@ export class Byzantine {
             }
 
             const originalHandler =
-                harness.context[`peer${peerIndex}OriginalCalldataHandler`];
-            if (!originalHandler) {
-                throw new Error(
-                    `No original calldata handler found for peer ${peerIndex}`
-                );
-            }
+                harness.context.getPeerOriginalCalldataHandler(peerIndex);
 
             peer.stateManager.eventHandler.onBlockCalldataPosted =
                 originalHandler;
@@ -467,8 +473,10 @@ export class Byzantine {
             const remoteRpc = peer.stateManager.p2pManager.remoteRpc;
 
             // Store original function for potential restoration
-            harness.context[`peer${peerIndex}OriginalBroadcast`] =
-                remoteRpc.stateTransitionService.onBlockConfirmation;
+            harness.context.setPeerOriginalBroadcast(
+                peerIndex,
+                remoteRpc.stateTransitionService.onBlockConfirmation
+            );
 
             // Stub with no-op broadcast
             remoteRpc.stateTransitionService.onBlockConfirmation = (
