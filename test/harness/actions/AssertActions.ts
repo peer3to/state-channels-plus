@@ -394,7 +394,7 @@ export class AssertActions {
     /**
      * Assert fraud proof was stored for a dispute
      */
-    async assertFraudProofStored(options: {
+    async assertDisputeFraudProofStored(options: {
         dispute: DisputeStruct;
         timeoutMs?: number;
     }): Promise<void> {

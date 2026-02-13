@@ -34,7 +34,8 @@ export class Assert {
 
     static disputeCommittedByAllPeers =
         AssertDispute.disputeCommittedByAllPeers;
-    static fraudProofStored = AssertDispute.fraudProofStored;
+    static disputeFraudProofStoredForLatestInvalidDispute =
+        AssertDispute.disputeFraudProofStoredForLatestInvalidDispute;
     static fraudProofStoredForTamperedDispute =
         AssertDispute.fraudProofStoredForTamperedDispute;
     static disputeInitiatedBy = AssertDispute.disputeInitiatedBy;

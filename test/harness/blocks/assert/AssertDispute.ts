@@ -18,10 +18,12 @@ export class AssertDispute {
     }
 
     /**
-     * Assert fraud proof was stored for the last tampered dispute
+     * Assert dispute fraud proof was stored for the last tampered dispute
      * Uses event barrier instead of polling
      */
-    static fraudProofStored(options?: { timeoutMs?: number }) {
+    static disputeFraudProofStoredForLatestInvalidDispute(options?: {
+        timeoutMs?: number;
+    }) {
         const { timeoutMs = 2000 } = options || {};
 
         return new HarnessBlock(async (harness) => {
@@ -32,7 +34,7 @@ export class AssertDispute {
                 );
             }
 
-            await harness.assertActions.assertFraudProofStored({
+            await harness.assertActions.assertDisputeFraudProofStored({
                 dispute,
                 timeoutMs
             });

@@ -134,7 +134,7 @@ describe("E2E: Dispute Manager", function () {
                     mode: "atLeast"
                 }),
                 // Assert: Fraud proof stored and fork unchanged
-                Assert.fraudProofStored(),
+                Assert.disputeFraudProofStoredForLatestInvalidDispute(),
                 Assert.forkUnchanged()
             );
         });
@@ -151,7 +151,7 @@ describe("E2E: Dispute Manager", function () {
                 }),
 
                 // Assert: Fraud proof stored and fork unchanged
-                Assert.fraudProofStored(),
+                Assert.disputeFraudProofStoredForLatestInvalidDispute(),
                 Assert.forkUnchanged()
             );
         });
@@ -168,7 +168,7 @@ describe("E2E: Dispute Manager", function () {
                     mode: "atLeast"
                 }),
                 // Assert: Fraud proof stored and fork unchanged
-                Assert.fraudProofStored(),
+                Assert.disputeFraudProofStoredForLatestInvalidDispute(),
                 Assert.forkUnchanged()
             );
         });
@@ -185,7 +185,7 @@ describe("E2E: Dispute Manager", function () {
                     mode: "atLeast"
                 }),
                 // Assert: Fraud proof stored and fork unchanged
-                Assert.fraudProofStored(),
+                Assert.disputeFraudProofStoredForLatestInvalidDispute(),
                 Assert.forkUnchanged()
             );
         });
@@ -202,7 +202,7 @@ describe("E2E: Dispute Manager", function () {
                     mode: "atLeast"
                 }),
                 // Assert: Fraud proof stored and fork unchanged
-                Assert.fraudProofStored(),
+                Assert.disputeFraudProofStoredForLatestInvalidDispute(),
                 Assert.forkUnchanged()
             );
         });
