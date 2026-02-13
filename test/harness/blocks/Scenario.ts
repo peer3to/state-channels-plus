@@ -140,7 +140,9 @@ export class Scenario {
     /**
      * Four peers with fork resolution (peer 2 removed)
      */
-    static fourPeerForkResolution(options?: {
+    static openChannelAndResolveDispute(options?: {
+        numPeers?: number;
+        numBlocks?: number;
         timeConfig?: {
             p2pTime?: number;
             agreementTime?: number;
@@ -148,8 +150,9 @@ export class Scenario {
             evidenceTime?: number;
         };
     }) {
+        const { numPeers = 4, numBlocks = 2, timeConfig } = options || {};
         return HarnessBlock.compose(
-            Scenario.activeChannel(4, 2, options),
+            Scenario.activeChannel(numPeers, numBlocks, { timeConfig }),
             Assert.allPeersInSync(),
             Scenario.disputeResolution({ maliciousPeerIndex: 2 })
         );
@@ -167,7 +170,7 @@ export class Scenario {
         };
     }) {
         return HarnessBlock.compose(
-            Scenario.fourPeerForkResolution(options),
+            Scenario.openChannelAndResolveDispute(options),
             Transition.postSnapshot({ peerIndex: 0 }),
             Assert.snapshotOnFork()
         );
