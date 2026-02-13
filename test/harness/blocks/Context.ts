@@ -99,6 +99,23 @@ export class Context {
         });
     }
 
+    /**
+     * Store the current snapshot count for a peer in the harness context
+     */
+    static storeSnapshotCount(peerIndex: number, contextKey: string) {
+        return new HarnessBlock(async (harness) => {
+            const snapshotStorage = harness.peers[peerIndex].stateManager
+                .storage.stateSnapshots as any;
+            const count = Array.from(
+                snapshotStorage.snapshotsByHash.keys()
+            ).length;
+
+            harness.context[`snapshotCount_${contextKey}`] = count;
+
+            return harness;
+        });
+    }
+
     private static async computeExpectedWithdrawalsDelta(
         peer: { stateManager: StateManager },
         lastSnapshot: StateSnapshot,

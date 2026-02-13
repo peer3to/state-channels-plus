@@ -172,7 +172,7 @@ export class Scenario {
                 }
             }),
             Byzantine.stubCalldataHandler(2),
-            Assert.storeSnapshotCount(2, "before_isolation"),
+            Context.storeSnapshotCount(2, "before_isolation"),
             Byzantine.disconnect(2),
             Event.reset()
         );
