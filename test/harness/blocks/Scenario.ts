@@ -1,6 +1,6 @@
 import { HarnessBlock } from "./HarnessBlock";
 import { Lifecycle } from "./Lifecycle";
-import { HarnessOptions } from "@test/fixtures/PeerTestHarness";
+import { HarnessOptions } from "../core/types";
 import { Assert } from "./Assert";
 import { Byzantine } from "./Byzantine";
 import { Transition } from "./Transition";

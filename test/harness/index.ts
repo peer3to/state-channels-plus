@@ -38,4 +38,4 @@ export {
 } from "@test/utils/SyncCoordinator";
 
 // Re-export the original harness for compatibility
-export { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
+export { PeerTestHarness } from "@test/fixtures/PeerTestHarness";

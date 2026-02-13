@@ -1,8 +1,5 @@
-import {
-    PeerTestHarness,
-    TestPeer,
-    CreateAndResolveDisputeResult
-} from "@test/fixtures/PeerTestHarness";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { CreateAndResolveDisputeResult, TestPeer } from "../core/types";
 import { Logger, SignatureUtils } from "@/utils";
 import { ForkId } from "@/types/types";
 import { ZeroHash, BytesLike } from "ethers";

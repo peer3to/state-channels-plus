@@ -1,4 +1,5 @@
-import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { TestPeer } from "@test/harness/core/types";
 import { Logger, Codec, Type } from "@/utils";
 import { ForkId, Bytes, Hash, BlockHeight } from "@/types/types";
 import Block from "@/models/Block";

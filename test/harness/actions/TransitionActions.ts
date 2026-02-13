@@ -1,4 +1,5 @@
-import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { TestPeer } from "@test/harness/core/types";
 import { Logger } from "@/utils";
 import { TransitionContract } from "../blocks/Transition";
 

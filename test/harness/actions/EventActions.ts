@@ -1,4 +1,5 @@
-import { PeerTestHarness, EventSpies } from "@test/fixtures/PeerTestHarness";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { EventSpies } from "../core/types";
 import { Logger } from "@/utils";
 import { expect } from "chai";
 

@@ -1,5 +1,5 @@
 import { HarnessBlock } from "./HarnessBlock";
-import { EventSpies } from "@test/fixtures/PeerTestHarness";
+import { EventSpies } from "../core/types";
 
 /**
  * Event-driven synchronization blocks

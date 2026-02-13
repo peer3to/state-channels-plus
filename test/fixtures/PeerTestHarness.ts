@@ -5,12 +5,10 @@ import * as sinon from "sinon";
 import hre from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { setImmediate } from "node:timers";
-import { EvmStateMachine, P2pInstance } from "@/evm";
-import StateManager from "@/stateManager";
+import { EvmStateMachine } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
 import { MathStateMachine, StateChannelManagerProxy } from "@typechain-types";
-import { ForkId, ChannelId, Address, Hash, Bytes } from "@/types/types";
-import { TimeConfig } from "@/types/time";
+import { ForkId, ChannelId, Address, Hash } from "@/types/types";
 
 import {
     createLogger,
@@ -36,116 +34,7 @@ import { StateQueryActions } from "@test/harness/actions/StateQueryActions";
 import { DisputeOrchestrator } from "@test/harness/actions/DisputeOrchestrator";
 import { RPCActions } from "@test/harness/actions/RPCActions";
 import { HarnessContext } from "@test/harness";
-export type TestPeer<
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
-> = {
-    index: number;
-    signer: Signer;
-    address: string;
-    p2pInstance: P2pInstance<MathStateMachine, TFactories>;
-    stateManager: StateManager;
-    contractInstance: MathStateMachine;
-    eventSpies: EventSpies;
-    turnBarrier: EventBarrier;
-    logger: Logger;
-};
-
-/**
- * Spy functions for tracking event calls
- * match with P2pEventHooks and EventHandler methods
- */
-export type EventSpies = {
-    // P2pEventHooks spies
-    onConnection?: sinon.SinonSpy;
-    onTurn?: sinon.SinonSpy;
-    onSetState?: sinon.SinonSpy;
-    onPostingCalldata?: sinon.SinonSpy;
-    onPostedCalldata?: sinon.SinonSpy;
-    disputeStarted?: sinon.SinonSpy;
-    onInitiatingDispute?: sinon.SinonSpy;
-    onDisputeUpdate?: sinon.SinonSpy;
-
-    // EventHandler method spies
-    onChannelOpened?: sinon.SinonSpy;
-    onStateSnapshotUpdated?: sinon.SinonSpy;
-    onBlockCalldataPosted?: sinon.SinonSpy;
-    onDisputeCommitted?: sinon.SinonSpy;
-    onChainSlashed?: sinon.SinonSpy;
-    onDisputeReducedResultCommitted?: sinon.SinonSpy;
-    onWithdrawalsUpdated?: sinon.SinonSpy;
-    onChannelStorageCleared?: sinon.SinonSpy;
-    onDisputeKilled?: sinon.SinonSpy;
-    onInboundMessagesProcessed?: sinon.SinonSpy;
-};
-
-/**
- * Options for configuring the test harness
- */
-export type HarnessOptions<
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
-> = {
-    /**
-     * ⚙️ LOG LEVEL CONTROL (for cleaner test output)
-     *
-     * Set to "error" to suppress verbose logs during tests.
-     * Set to "debug" or "verbose" for detailed debugging.
-     *
-     * @example
-     * ```ts
-     * // Quiet tests (recommended for CI/passing tests)
-     * Scenario.startChannel(3, 0, { logLevel: "error" })
-     *
-     * // Verbose debugging (when investigating failures)
-     * Scenario.startChannel(3, 0, { logLevel: "debug" })
-     * ```
-     *
-     * @default undefined (uses LOG_LEVEL env var or "info")
-     */
-    logLevel?: "debug" | "verbose" | "info" | "warn" | "error";
-
-    timeConfig?: Partial<TimeConfig>;
-    channelId?: string;
-    initialBalance?: number;
-    gasLimit?: number;
-    autoConnect?: boolean;
-    configOverrides?: Partial<Config>; // Direct config overrides
-    rpcServiceFactories?: TFactories;
-};
-
-export type SubmitTransactionOptions = {
-    waitForSync?: boolean;
-    waitForPeers?: number[];
-    waitForTurn?: boolean;
-};
-
-export type AssertAllPeersInSyncOptions = {
-    expectedState?: Bytes;
-    peerIndices?: number[];
-};
-
-export type CreateAndResolveDisputeResult<
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
-> = {
-    originalForkId: ForkId;
-    newForkId: ForkId;
-    maliciousPeerIndex: number;
-    honestPeerIndices: number[];
-    honestPeers: Array<TestPeer<TFactories>>;
-};
-
-export type CreateAndResolveForkResult<
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
-> = {
-    originalForkId: ForkId;
-    reducedForkId: ForkId;
-    maliciousPeerIndex: number;
-    honestPeerIndices: number[];
-    honestPeers: Array<TestPeer<TFactories>>;
-};
+import { TestPeer, EventSpies, HarnessOptions } from "@test/harness/core/types";
 
 /**
  * Main test harness for E2E peer-to-peer testing

@@ -1,5 +1,5 @@
 import { HarnessBlock } from "./HarnessBlock";
-import { HarnessOptions } from "@test/fixtures/PeerTestHarness";
+import { HarnessOptions } from "../core/types";
 import { Signer } from "ethers";
 
 /**

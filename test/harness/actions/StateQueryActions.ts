@@ -1,4 +1,5 @@
-import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { TestPeer } from "@test/harness/core/types";
 import { Logger } from "@/utils";
 import { Address, Hash } from "@/types/types";
 import { ATransport } from "@/transport";

@@ -1,6 +1,6 @@
 import { ForkId } from "@/types/types";
 import { Logger, EventBarrier } from "@/utils";
-import { TestPeer } from "@test/fixtures/PeerTestHarness";
+import type { TestPeer } from "@test/harness/core/types";
 
 export type WaitForPeersInSyncOptions = {
     timeout?: number;
