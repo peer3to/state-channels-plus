@@ -1,5 +1,6 @@
-import { ForkId, Address } from "@/types/types";
+import { ForkId } from "@/types/types";
 import { Logger, EventBarrier } from "@/utils";
+import { TestPeer } from "@test/fixtures/PeerTestHarness";
 
 export type WaitForPeersInSyncOptions = {
     timeout?: number;
@@ -23,7 +24,7 @@ export class SyncCoordinator {
      * Wait for all peers (or specific peer indices) to have the same latest block (same hash and height)
      */
     public async waitForPeersInSync(
-        peers: Array<{ stateManager: any; address: Address }>,
+        peers: TestPeer[],
         forkId: ForkId,
         options: WaitForPeersInSyncOptions
     ): Promise<void> {
@@ -98,60 +99,6 @@ export class SyncCoordinator {
         throw new Error(
             `Peers at indices [${indicesToCheck.join(", ")}] failed to synchronize within ${timeoutMs}ms. States: ${peerStates.join("; ")}`
         );
-    }
-
-    /**
-     * Check if peers are currently in sync (no waiting)
-     */
-    public checkPeersInSync(
-        peers: Array<{ stateManager: any; address: Address }>,
-        forkId: ForkId,
-        peerIndices?: number[]
-    ): {
-        inSync: boolean;
-        syncDetails: { peerIndex: number; blockHash: string; height: number }[];
-    } {
-        const indicesToCheck =
-            peerIndices ?? Array.from({ length: peers.length }, (_, i) => i);
-
-        if (indicesToCheck.length < 2) {
-            return { inSync: true, syncDetails: [] }; // Less than 2 peers is considered "in sync"
-        }
-
-        const syncDetails = indicesToCheck.map((peerIndex) => {
-            const block =
-                peers[peerIndex].stateManager.storage.blocks.getLatestBlock(
-                    forkId
-                );
-            return {
-                peerIndex,
-                blockHash: block?.hash || "no_block",
-                height: block?.height || -1
-            };
-        });
-
-        const firstBlock =
-            peers[indicesToCheck[0]].stateManager.storage.blocks.getLatestBlock(
-                forkId
-            );
-
-        if (!firstBlock) {
-            return { inSync: false, syncDetails };
-        }
-
-        const allInSync = indicesToCheck.every((peerIndex) => {
-            const peerBlock =
-                peers[peerIndex].stateManager.storage.blocks.getLatestBlock(
-                    forkId
-                );
-            return (
-                peerBlock &&
-                peerBlock.hash === firstBlock.hash &&
-                peerBlock.height === firstBlock.height
-            );
-        });
-
-        return { inSync: allInSync, syncDetails };
     }
 }
 

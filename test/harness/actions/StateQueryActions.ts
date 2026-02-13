@@ -1,11 +1,8 @@
 import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
 import { Logger } from "@/utils";
-import { ForkId, Address } from "@/types/types";
-import { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { Address, Hash } from "@/types/types";
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
-import { AStateMachine } from "@typechain-types";
-import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
 /**
  * StateQueryActions handles all read-only state queries.
@@ -19,55 +16,42 @@ import type { RpcServiceFactoryMap } from "@/rpc/registry";
  */
 export class StateQueryActions {
     constructor(
-        private harness: PeerTestHarness<any, any>,
+        private harness: PeerTestHarness,
         private logger: Logger
     ) {}
 
     /**
-     * Get the state machine state for a peer
+     * Get the latest state machine state hash for a peer - ONLY if it exists in storage
      */
-    getStateMachineState(peerIndex: number, forkId: ForkId): any {
+    public getLatestStateMachineStateHash(peerIndex: number): Hash | null {
         const peer = this.harness.peers[peerIndex];
+        const storage = peer.stateManager.storage;
         if (!peer) throw new Error(`Peer ${peerIndex} not found`);
 
-        const latestBlock =
-            peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        if (!latestBlock) {
-            const genesisSnapshot =
-                peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                    forkId
-                );
-            return genesisSnapshot ? "genesis" : null;
-        }
-
-        const stateSnapshot =
-            peer.stateManager.storage.stateSnapshots.getStateSnapshotByHash(
-                latestBlock.stateSnapshotHash
-            );
-        return stateSnapshot ? stateSnapshot.snapshotData : null;
-    }
-
-    /**
-     * Get the state machine state hash for a peer
-     */
-    private getStateMachineStateHash(peerIndex: number): string | null {
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) throw new Error(`Peer ${peerIndex} not found`);
-
-        const latestBlock = peer.stateManager.storage.blocks.getLatestBlock(
+        const latestBlock = storage.blocks.getLatestBlock(
             this.harness.activeForkId!
         );
         if (!latestBlock) return null;
 
-        return latestBlock.stateSnapshotHash?.toString() || null;
+        const latestStateSnapshot =
+            storage.stateSnapshots.getStateSnapshotByHash(
+                latestBlock.stateSnapshotHash
+            );
+        if (!latestStateSnapshot) return null;
+
+        const latestStateMachineState =
+            storage.stateMachineStates.getStateMachineState(
+                latestStateSnapshot.stateMachineStateHash
+            );
+        if (!latestStateMachineState) return null;
+
+        return latestStateSnapshot.stateMachineStateHash; // return the hash if the state exists
     }
 
     /**
      * Get the next peer that should write a block
      */
-    async getNextPeerToWrite(): Promise<
-        TestPeer<AStateMachine, RpcServiceFactoryMap>
-    > {
+    async getNextPeerToWrite(): Promise<TestPeer> {
         try {
             const nextAddress =
                 await this.harness.peers[0].stateManager.diamondStateMachine.getNextToWrite();
@@ -79,7 +63,7 @@ export class StateQueryActions {
             );
             if (!nextPeer) {
                 // Enhanced error reporting
-                const stateHash = this.getStateMachineStateHash(0);
+                const stateHash = this.getLatestStateMachineStateHash(0);
                 const peerAddresses = this.harness.peers.map((p) => p.address);
 
                 const latestBlock =

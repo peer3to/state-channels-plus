@@ -284,7 +284,7 @@ describe("E2E: Dispute Manager", function () {
         it("should handle valid dispute when validating peer is missing snapshot data", async function () {
             await ScenarioRunner.execute(
                 // Setup: 3 peers, peer 2 isolated (can't sync from P2P or chain)
-                Scenario.peerMissingSnapshot(),
+                Scenario.peer2Isolated(),
 
                 // Submit transaction without peer 2 (peer 2 won't receive it)
                 // Block stays UNFINALIZED (in signedBlocks, not milestones)

@@ -6,14 +6,10 @@ import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
  */
 export class HarnessBlock {
     constructor(
-        private readonly step: (
-            h: PeerTestHarness<any, any>
-        ) => Promise<PeerTestHarness<any, any>>
+        private readonly step: (h: PeerTestHarness) => Promise<PeerTestHarness>
     ) {}
 
-    async run(
-        harness: PeerTestHarness<any, any>
-    ): Promise<PeerTestHarness<any, any>> {
+    async run(harness: PeerTestHarness): Promise<PeerTestHarness> {
         return this.step(harness);
     }
 
@@ -34,9 +30,9 @@ export class HarnessBlock {
  * Compose multiple blocks into a sequence without creating new harness
  */
 export async function composeBlocks(
-    harness: PeerTestHarness<any, any>,
+    harness: PeerTestHarness,
     ...blocks: HarnessBlock[]
-): Promise<PeerTestHarness<any, any>> {
+): Promise<PeerTestHarness> {
     for (const block of blocks) {
         harness = await block.run(harness);
     }
@@ -72,7 +68,7 @@ export class ScenarioRunner {
      *
      */
     static async executeWithCleanup(...blocks: HarnessBlock[]): Promise<{
-        harness: PeerTestHarness<any, any>;
+        harness: PeerTestHarness;
         cleanup: () => Promise<void>;
     }> {
         let harness = new PeerTestHarness();

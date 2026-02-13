@@ -13,7 +13,7 @@ import { NetworkController } from "./NetworkController";
  */
 export class ChannelActions {
     constructor(
-        private harness: PeerTestHarness<any, any>,
+        private harness: PeerTestHarness,
         private logger: Logger
     ) {}
 
@@ -34,7 +34,7 @@ export class ChannelActions {
     ): OpenChannelStruct {
         const participantAddresses =
             args.participantAddresses ??
-            this.harness.peers.map((p: any) => p.address);
+            this.harness.peers.map((p) => p.address);
 
         return createOpenChannelTestObject(participantAddresses, {
             channelId: this.harness.options.channelId,
@@ -47,7 +47,7 @@ export class ChannelActions {
         signerIndices?: number[]
     ): Promise<BytesLike[]> {
         const indices =
-            signerIndices ?? this.harness.peers.map((peer: any) => peer.index);
+            signerIndices ?? this.harness.peers.map((peer) => peer.index);
         const signatures = await Promise.all(
             indices.map((i: number) =>
                 SignatureUtils.signOpenChannel(
@@ -99,12 +99,12 @@ export class ChannelActions {
             !!forkId && forkId !== "0x00" && forkId !== "0x0";
 
         const getPeerForkIds = () =>
-            this.harness.peers.map((peer: any) => peer.stateManager.forkId);
+            this.harness.peers.map((peer) => peer.stateManager.forkId);
 
         this.logger.debug("Waiting for fork ID to be set on all peers...");
 
         // Wait for onSetState event on all peers (called when forkId is set)
-        const eventCounts = this.harness.peers.map((_: any, index: number) => ({
+        const eventCounts = this.harness.peers.map((_, index: number) => ({
             peerId: index,
             expectedCount: 1
         }));
@@ -127,7 +127,7 @@ export class ChannelActions {
         const peerForkIds = getPeerForkIds();
         const allValidAndSame =
             peerForkIds.every(isValidForkId) &&
-            peerForkIds.every((id: any) => id === peerForkIds[0]);
+            peerForkIds.every((id) => id === peerForkIds[0]);
 
         if (!allValidAndSame) {
             throw new Error(

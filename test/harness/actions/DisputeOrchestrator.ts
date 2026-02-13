@@ -1,14 +1,16 @@
 import {
     PeerTestHarness,
     TestPeer,
-    CreateAndResolveDisputeResult,
-    CreateAndResolveForkResult
+    CreateAndResolveDisputeResult
 } from "@test/fixtures/PeerTestHarness";
 import { Logger, SignatureUtils } from "@/utils";
 import { ForkId } from "@/types/types";
 import { ZeroHash, BytesLike } from "ethers";
 import { expect } from "chai";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    DisputeStruct,
+    DisputeConfirmationStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import DisputeManager, {
     ConstructDisputeResult
 } from "@/disputeManager/DisputeManager";
@@ -26,7 +28,7 @@ import DisputeManager, {
  */
 export class DisputeOrchestrator {
     constructor(
-        private harness: PeerTestHarness<any, any>,
+        private harness: PeerTestHarness,
         private logger: Logger
     ) {}
 
@@ -48,7 +50,7 @@ export class DisputeOrchestrator {
             expectedDisputesCommittedPerPeer?: number;
             assertMaliciousRemoved?: boolean;
         }
-    ): Promise<CreateAndResolveDisputeResult<any, any>> {
+    ): Promise<CreateAndResolveDisputeResult> {
         return this.createAndResolveDispute(
             async () => {
                 await this.harness.byzantineActions.submitInvalidStateTransitionBlock(
@@ -69,9 +71,15 @@ export class DisputeOrchestrator {
      */
     async postTamperedDispute(
         authorPeerIndex: number,
-        tamper: (dispute: any, confirmation: any) => void,
+        tamper: (
+            dispute: DisputeStruct,
+            confirmation: DisputeConfirmationStruct
+        ) => void,
         forkId?: ForkId
-    ): Promise<{ dispute: any; disputeConfirmation: any }> {
+    ): Promise<{
+        dispute: DisputeStruct;
+        disputeConfirmation: DisputeConfirmationStruct;
+    }> {
         const peer = this.harness.getPeer(authorPeerIndex);
         const targetForkId = forkId || this.harness.activeForkId!;
 
@@ -110,7 +118,7 @@ export class DisputeOrchestrator {
      * Returns a restore function and a promise that resolves with the tampered dispute.
      */
     withConstructDisputeTampering(
-        peerOrIndex: number | TestPeer<any, any>,
+        peerOrIndex: number | TestPeer,
         tamper: (
             result: ConstructDisputeResult
         ) => Promise<ConstructDisputeResult>
@@ -179,7 +187,7 @@ export class DisputeOrchestrator {
             disputesCommittedMode?: "exact" | "atLeast";
             assertMaliciousRemoved?: boolean;
         }
-    ): Promise<CreateAndResolveDisputeResult<any, any>> {
+    ): Promise<CreateAndResolveDisputeResult> {
         const originalForkId = options?.forkId || this.harness.activeForkId!;
         const honestPeerIndices =
             options?.honestPeerIndices ??

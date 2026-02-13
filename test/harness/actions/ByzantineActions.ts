@@ -13,11 +13,10 @@ import {
 import { ethers, ZeroHash } from "ethers";
 import Clock from "@/Clock";
 import { hash } from "@/utils";
-import { AStateMachine } from "@typechain-types";
 
 export class ByzantineActions {
     constructor(
-        private harness: PeerTestHarness<any, any>,
+        private harness: PeerTestHarness,
         private logger: Logger
     ) {}
 
@@ -138,7 +137,7 @@ export class ByzantineActions {
         if (options?.transactionData) {
             transactionData = options.transactionData;
         } else {
-            const contractInterface = (peer.contractInstance as any).interface;
+            const contractInterface = peer.contractInstance.interface;
             transactionData = contractInterface.encodeFunctionData("add", [
                 1
             ]) as Bytes;
@@ -261,7 +260,7 @@ export class ByzantineActions {
             timestamp: BigInt(Clock.getTimeInSeconds())
         };
 
-        const contractInterface = (peer.contractInstance as any).interface;
+        const contractInterface = peer.contractInstance.interface;
         const transactionData = contractInterface.encodeFunctionData("add", [
             1
         ]) as Bytes;
@@ -391,7 +390,7 @@ export class ByzantineActions {
 
     // Private helper methods
     private getPreviousBlockHash(
-        peer: TestPeer<AStateMachine>,
+        peer: TestPeer,
         forkId: ForkId,
         height?: BlockHeight
     ): Hash {
@@ -418,7 +417,7 @@ export class ByzantineActions {
     }
 
     private getStateSnapshotHash(
-        peer: TestPeer<AStateMachine>,
+        peer: TestPeer,
         forkId: ForkId,
         previousBlock?: Block
     ): Hash {

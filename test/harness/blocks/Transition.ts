@@ -1,4 +1,7 @@
+import { MathStateMachine } from "@typechain-types/index";
 import { HarnessBlock } from "./HarnessBlock";
+
+export type TransitionContract = MathStateMachine;
 
 /**
  * Transition namespace containing blocks for state transitions
@@ -13,7 +16,7 @@ export class Transition {
     static advanceState(options?: {
         count?: number;
         rounds?: number;
-        txFn?: (contract: any) => Promise<any>;
+        txFn?: (contract: TransitionContract) => Promise<any>;
         waitForSync?: boolean;
         waitForPeers?: number[];
         waitForTurn?: boolean;
@@ -80,7 +83,7 @@ export class Transition {
 
      */
     static fromHonestPeersOnly(
-        txFn: (contract: any) => Promise<any>,
+        txFn: (contract: TransitionContract) => Promise<any>,
         options?: {
             waitForSync?: boolean;
         }
@@ -109,7 +112,7 @@ export class Transition {
      * Execute multiple transitions from honest peers in sequence
      */
     static sequenceFromHonestPeers(
-        txFns: Array<(contract: any) => Promise<any>>
+        txFns: Array<(contract: TransitionContract) => Promise<any>>
     ) {
         return new HarnessBlock(async (harness) => {
             const honestIndices = harness.context.honestPeerIndices;
@@ -161,13 +164,13 @@ export class Transition {
      */
     static validWithoutPeer(
         excludePeer: number,
-        txFn: (contract: any) => Promise<any>
+        txFn: (contract: TransitionContract) => Promise<any>
     ) {
         return new HarnessBlock(async (harness) => {
             // Get all peer indices except the excluded one
             const includedPeers = harness.peers
-                .map((_, i) => i)
-                .filter((i) => i !== excludePeer);
+                .map((_: unknown, i: number) => i)
+                .filter((i: number) => i !== excludePeer);
 
             await harness.transitionActions.submitNext(txFn, {
                 waitForPeers: includedPeers,

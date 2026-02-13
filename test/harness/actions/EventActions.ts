@@ -12,7 +12,7 @@ import { expect } from "chai";
  */
 export class EventActions {
     constructor(
-        private harness: PeerTestHarness<any, any>,
+        private harness: PeerTestHarness,
         private logger: Logger
     ) {}
 

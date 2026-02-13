@@ -8,7 +8,7 @@ import { setImmediate } from "node:timers";
 import { EvmStateMachine, P2pInstance } from "@/evm";
 import StateManager from "@/stateManager";
 import P2pEventHooks from "@/P2pEventHooks";
-import { AStateMachine, StateChannelManagerProxy } from "@typechain-types";
+import { MathStateMachine, StateChannelManagerProxy } from "@typechain-types";
 import { ForkId, ChannelId, Address, Hash, Bytes } from "@/types/types";
 import { TimeConfig } from "@/types/time";
 
@@ -19,7 +19,6 @@ import {
     retry,
     EventBarrier
 } from "@/utils";
-import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { createConfig, Config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
@@ -37,29 +36,26 @@ import { StateQueryActions } from "@test/harness/actions/StateQueryActions";
 import { DisputeOrchestrator } from "@test/harness/actions/DisputeOrchestrator";
 import { RPCActions } from "@test/harness/actions/RPCActions";
 import { HarnessContext } from "@test/harness";
-
-export interface TestPeer<
-    T extends AStateMachine,
+export type TestPeer<
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
-> {
+> = {
     index: number;
     signer: Signer;
     address: string;
-    p2pInstance: P2pInstance<T, TFactories>;
+    p2pInstance: P2pInstance<MathStateMachine, TFactories>;
     stateManager: StateManager;
-    contractInstance: T;
+    contractInstance: MathStateMachine;
     eventSpies: EventSpies;
-    joinChannelCommitment?: JoinChannelStruct;
     turnBarrier: EventBarrier;
     logger: Logger;
-}
+};
 
 /**
  * Spy functions for tracking event calls
  * match with P2pEventHooks and EventHandler methods
  */
-export interface EventSpies {
+export type EventSpies = {
     // P2pEventHooks spies
     onConnection?: sinon.SinonSpy;
     onTurn?: sinon.SinonSpy;
@@ -81,7 +77,7 @@ export interface EventSpies {
     onChannelStorageCleared?: sinon.SinonSpy;
     onDisputeKilled?: sinon.SinonSpy;
     onInboundMessagesProcessed?: sinon.SinonSpy;
-}
+};
 
 /**
  * Options for configuring the test harness
@@ -130,7 +126,6 @@ export type AssertAllPeersInSyncOptions = {
 };
 
 export type CreateAndResolveDisputeResult<
-    T extends AStateMachine,
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
 > = {
@@ -138,11 +133,10 @@ export type CreateAndResolveDisputeResult<
     newForkId: ForkId;
     maliciousPeerIndex: number;
     honestPeerIndices: number[];
-    honestPeers: Array<TestPeer<T, TFactories>>;
+    honestPeers: Array<TestPeer<TFactories>>;
 };
 
 export type CreateAndResolveForkResult<
-    T extends AStateMachine,
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
 > = {
@@ -150,14 +144,13 @@ export type CreateAndResolveForkResult<
     reducedForkId: ForkId;
     maliciousPeerIndex: number;
     honestPeerIndices: number[];
-    honestPeers: Array<TestPeer<T, TFactories>>;
+    honestPeers: Array<TestPeer<TFactories>>;
 };
 
 /**
  * Main test harness for E2E peer-to-peer testing
  */
 export class PeerTestHarness<
-    T extends AStateMachine,
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
 > {
@@ -174,9 +167,9 @@ export class PeerTestHarness<
         PeerTestHarness.defaultLogLevel = level;
     }
 
-    public peers: TestPeer<T, TFactories>[] = [];
+    public peers: TestPeer<TFactories>[] = [];
     public channelManager!: StateChannelManagerProxy;
-    private sharedDeployTx!: any;
+    private sharedDeployTx!: unknown;
     public channelId!: ChannelId;
     public options!: Required<HarnessOptions<TFactories>>;
     public activeForkId?: ForkId;
@@ -237,12 +230,9 @@ export class PeerTestHarness<
         this.rpcActions = new RPCActions(this, this.logger);
     }
 
-    async setup<
-        // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-        const TNewFactories extends RpcServiceFactoryMap = {}
-    >(
+    async setup(
         numPeers: number,
-        options?: HarnessOptions<TNewFactories>
+        options?: HarnessOptions<TFactories>
     ): Promise<void> {
         if (numPeers < 2 || numPeers > 10) {
             throw new Error("Number of peers must be between 2 and 10");
@@ -297,7 +287,7 @@ export class PeerTestHarness<
      * Create a new peer after `setup()` has already run.
      * If a channel is already open (i.e. `this.channelId` is set), the peer is also connected to that channel.
      */
-    public async addPeer(signer?: Signer): Promise<TestPeer<T, TFactories>> {
+    public async addPeer(signer?: Signer): Promise<TestPeer<TFactories>> {
         if (!this.channelManager || !this.sharedDeployTx) {
             throw new Error("Harness not initialized; call setup() first");
         }
@@ -322,7 +312,7 @@ export class PeerTestHarness<
             await peer.p2pInstance.p2pSigner.connectToChannel(this.channelId);
         }
 
-        return peer as TestPeer<T, TFactories>;
+        return peer as TestPeer<TFactories>;
     }
 
     private async deployContracts(): Promise<void> {
@@ -457,7 +447,7 @@ export class PeerTestHarness<
                 eventSpies.onInitiatingDispute?.(disputeHash, dispute);
                 this.eventCountsBarrier.signal();
             },
-            onDisputeUpdate: (dispute: any) => {
+            onDisputeUpdate: (dispute: DisputeStruct) => {
                 PeerLogger.info("Dispute updated", {
                     component: "P2pEventHooks"
                 });
@@ -481,21 +471,18 @@ export class PeerTestHarness<
             await hre.ethers.getContractFactory("MathStateMachine");
         const mathInstance = await mathSMFactory.deploy(this.options.gasLimit);
 
-        const p2pInstance = await EvmStateMachine.p2pSetup<any, TFactories>(
-            signer,
-            this.sharedDeployTx,
-            this.channelManager,
-            mathInstance,
-            {
-                peerId: index,
-                peerLogger: PeerLogger,
-                p2pEventHooks: hooks,
-                rpcServiceFactories: this.options.rpcServiceFactories,
-                config: this.harnessConfig
-            }
-        );
+        const p2pInstance = await EvmStateMachine.p2pSetup<
+            MathStateMachine,
+            TFactories
+        >(signer, this.sharedDeployTx, this.channelManager, mathInstance, {
+            peerId: index,
+            peerLogger: PeerLogger,
+            p2pEventHooks: hooks,
+            rpcServiceFactories: this.options.rpcServiceFactories,
+            config: this.harnessConfig
+        });
 
-        const peer: TestPeer<T, TFactories> = {
+        const peer: TestPeer<TFactories> = {
             index,
             signer,
             address,
@@ -507,9 +494,6 @@ export class PeerTestHarness<
             logger: PeerLogger
         };
 
-        // Attach harness to stateManager for RPC barrier signaling
-        (peer.stateManager as any).testHarness = this;
-
         // Wrap EventHandler methods with spies (without replacing the original functionality)
         this.wrapEventHandlerWithSpies(peer);
 
@@ -517,7 +501,7 @@ export class PeerTestHarness<
         this.logger.debug(`Peer ${index} created successfully`);
     }
 
-    private wrapEventHandlerWithSpies(peer: TestPeer<T, TFactories>): void {
+    private wrapEventHandlerWithSpies(peer: TestPeer<TFactories>): void {
         const eventHandler = peer.stateManager.eventHandler;
         const spies = peer.eventSpies;
         const eventCountsBarrier = this.eventCountsBarrier;
@@ -529,10 +513,10 @@ export class PeerTestHarness<
 
                 // Only intercept EventHandler methods that have corresponding spies
                 if (typeof originalMethod === "function" && prop in spies) {
-                    return function (...args: any[]) {
+                    return function (...args: unknown[]) {
                         // Call the spy first to record the call
                         const spy = spies[prop as keyof EventSpies];
-                        spy?.(...args);
+                        spy?.(...(args as Parameters<sinon.SinonSpy>));
 
                         // Then call the original method
                         Reflect.apply(originalMethod, target, args);
@@ -592,7 +576,7 @@ export class PeerTestHarness<
         this.connectionBarrier.clear();
         this.eventCountsBarrier.clear();
 
-        const disposePromises: Promise<any>[] = [];
+        const disposePromises: Promise<unknown>[] = [];
 
         for (const peer of this.peers) {
             try {
@@ -635,13 +619,6 @@ export class PeerTestHarness<
 
         this.peers = [];
 
-        // Clear context properties stored by Context and Event blocks
-        delete (this as any).honestPeerIndices;
-        delete (this as any).maliciousPeerIndex;
-        delete (this as any).originalForkId;
-        delete (this as any).newForkId;
-        delete (this as any).lastMaliciousPeerIndex;
-
         // Fully reset the context object to ensure no properties leak between tests
         this.context = {};
 
@@ -649,7 +626,7 @@ export class PeerTestHarness<
         await LocalDiscoveryServer.cleanup();
     }
 
-    getPeer(index: number): TestPeer<T, TFactories> {
+    getPeer(index: number): TestPeer<TFactories> {
         const peer = this.peers[index];
         if (!peer) throw new Error(`Peer ${index} not found`);
         return peer;

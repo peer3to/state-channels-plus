@@ -1,14 +1,18 @@
 import { HarnessBlock } from "./HarnessBlock";
 import { Codec, Type, hash } from "@/utils";
 import { SignatureUtils } from "@/utils/SignatureUtils";
+import {
+    DisputeStruct,
+    DisputeConfirmationStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import { BytesLike } from "ethers";
 
 class DisputeTampering {
     /**
      * Tampers with the auditing data hash to make it incorrect
      */
-    static tamperAuditingDataHash(dispute: {
-        input: { disputeAuditingDataHash: string };
-    }): void {
+    static tamperAuditingDataHash(dispute: DisputeStruct): void {
         // Tamper: set incorrect auditing data hash (dummy value)
         dispute.input.disputeAuditingDataHash = hash("0x42");
     }
@@ -20,9 +24,7 @@ class DisputeTampering {
         wrongParticipantAddress: string,
         blockHeight: number
     ) {
-        return (dispute: {
-            input: { timeout: { participant: string; blockHeight: number } };
-        }): void => {
+        return (dispute: DisputeStruct): void => {
             // Tamper: set timeout participant to someone who is NOT next to write
             dispute.input.timeout.participant = wrongParticipantAddress;
             dispute.input.timeout.blockHeight = blockHeight;
@@ -33,12 +35,7 @@ class DisputeTampering {
      * Tampers BOTH the auditing data hash AND the latest state snapshot hash
      * This causes both commitment check and state proof verification to fail
      */
-    static tamperDoubleFault(dispute: {
-        input: {
-            disputeAuditingDataHash: string;
-            latestStateSnapshotHash: string;
-        };
-    }): void {
+    static tamperDoubleFault(dispute: DisputeStruct): void {
         // Tamper BOTH: auditing data hash (commitment check fails)
         dispute.input.disputeAuditingDataHash = hash("0x42");
         // AND: latest state snapshot hash (state proof verification fails)
@@ -48,9 +45,7 @@ class DisputeTampering {
     /**
      * Tampers the latest state snapshot hash ONLY (commitment stays valid)
      */
-    static tamperInvalidStateProof(dispute: {
-        input: { latestStateSnapshotHash: string };
-    }): void {
+    static tamperInvalidStateProof(dispute: DisputeStruct): void {
         // Only tamper the state proof (commitment stays valid)
         dispute.input.latestStateSnapshotHash = hash("0x42");
     }
@@ -59,9 +54,7 @@ class DisputeTampering {
      * Tampers with the first milestone's first block to reference an unknown snapshot
      * This makes auditing data reconstruction partial (missing snapshot) and state proof invalid
      */
-    static tamperPartialAuditing(dispute: {
-        input: { stateProof: any };
-    }): void {
+    static tamperPartialAuditing(dispute: DisputeStruct): void {
         const tamperedStateProof = dispute.input.stateProof;
         if (
             tamperedStateProof.milestones.length === 0 ||
@@ -388,16 +381,6 @@ export class Byzantine {
     static disconnect(peerIndex: number) {
         return new HarnessBlock(async (harness) => {
             await harness.networkController.disconnectPeer(peerIndex);
-            return harness;
-        });
-    }
-
-    /**
-     * Simulate a peer timeout (disconnect + wait for timeout events)
-     */
-    static timeout(peerIndex: number) {
-        return new HarnessBlock(async (harness) => {
-            await harness.networkController.simulatePeerTimeout(peerIndex);
             return harness;
         });
     }

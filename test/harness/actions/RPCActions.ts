@@ -10,7 +10,7 @@ import InitHandshakeService from "@/rpc/services/initHandshake/InitHandshakeServ
  */
 export class RPCActions {
     constructor(
-        private harness: PeerTestHarness<any, any>,
+        private harness: PeerTestHarness,
         private logger: Logger
     ) {}
 

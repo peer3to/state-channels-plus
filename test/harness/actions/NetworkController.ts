@@ -6,7 +6,7 @@ import { Logger, LocalDiscoveryServer } from "@/utils";
  */
 export class NetworkController {
     constructor(
-        private harness: PeerTestHarness<any, any>,
+        private harness: PeerTestHarness,
         private logger: Logger
     ) {}
 
@@ -55,7 +55,7 @@ export class NetworkController {
 
         const condition = () =>
             this.harness.peers.filter(
-                (p: any) =>
+                (p) =>
                     p.p2pInstance.p2pSigner.p2pManager.openConnections.length >
                     0
             ).length >= Math.min(2, this.harness.peers.length);
@@ -84,12 +84,5 @@ export class NetworkController {
         }
 
         peer.logger.warn("Disconnected to simulate timeout");
-    }
-
-    /**
-     * Alias for disconnectPeer (simulates a peer timing out)
-     */
-    async simulatePeerTimeout(peerIndex: number): Promise<void> {
-        return this.disconnectPeer(peerIndex);
     }
 }

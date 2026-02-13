@@ -1,5 +1,6 @@
 import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
 import { Logger } from "@/utils";
+import { TransitionContract } from "../blocks/Transition";
 
 export type TransitionOptions = {
     waitForSync?: boolean;
@@ -12,7 +13,7 @@ export type TransitionOptions = {
  */
 export class TransitionActions {
     constructor(
-        private harness: PeerTestHarness<any, any>,
+        private harness: PeerTestHarness,
         private logger: Logger
     ) {}
 
@@ -20,16 +21,16 @@ export class TransitionActions {
      * Submit a valid transaction from the next peer to write
      */
     async submitNext(
-        txFn: (contract: any) => Promise<any>,
+        txFn: (contract: TransitionContract) => Promise<any>,
         options: TransitionOptions = { waitForTurn: true, waitForSync: true }
-    ): Promise<void> {
+    ): Promise<any> {
         const nextPeer = await this.getNextPeerToWrite();
 
         if (options.waitForTurn) {
             await this.waitForTurn(nextPeer);
         }
 
-        await this.submit(nextPeer, txFn, {
+        return this.submit(nextPeer, txFn, {
             waitForSync: options.waitForSync ?? true,
             waitForPeers: options.waitForPeers,
             waitForTurn: false // already waited above
@@ -44,10 +45,10 @@ export class TransitionActions {
      * Submit a transaction from a specific peer
      */
     async submit(
-        peer: TestPeer<any, any>,
-        txFn: (contract: any) => Promise<any>,
+        peer: TestPeer,
+        txFn: (contract: TransitionContract) => Promise<any>,
         options: TransitionOptions = { waitForSync: true }
-    ): Promise<void> {
+    ): Promise<any> {
         if (options.waitForTurn) {
             await this.waitForTurn(peer);
         }
@@ -72,17 +73,14 @@ export class TransitionActions {
         return result;
     }
 
-    private async getNextPeerToWrite(): Promise<TestPeer<any, any>> {
+    private async getNextPeerToWrite(): Promise<TestPeer> {
         return this.harness.stateQuery.getNextPeerToWrite();
     }
 
     /**
      * Wait for a peer to receive their turn
      */
-    private async waitForTurn(
-        peer: TestPeer<any, any>,
-        timeoutMs = 3000
-    ): Promise<void> {
+    private async waitForTurn(peer: TestPeer, timeoutMs = 3000): Promise<void> {
         try {
             await peer.turnBarrier.waitFor(
                 () => peer.stateManager.isMyTurn?.() ?? false,

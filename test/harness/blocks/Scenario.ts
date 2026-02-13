@@ -1,6 +1,6 @@
 import { HarnessBlock } from "./HarnessBlock";
 import { Lifecycle } from "./Lifecycle";
-import { HarnessOptions } from "../core/types";
+import { HarnessOptions } from "@test/fixtures/PeerTestHarness";
 import { Assert } from "./Assert";
 import { Byzantine } from "./Byzantine";
 import { Transition } from "./Transition";
@@ -162,7 +162,7 @@ export class Scenario {
     /**
      * Three peers, one peer (peer 2) isolated from P2P and chain sync
      */
-    static peerMissingSnapshot() {
+    static peer2Isolated() {
         return HarnessBlock.compose(
             Scenario.startChannel(3, 0, {
                 timeConfig: {
@@ -173,7 +173,7 @@ export class Scenario {
             }),
             Byzantine.stubCalldataHandler(2),
             Assert.storeSnapshotCount(2, "before_isolation"),
-            Byzantine.timeout(2),
+            Byzantine.disconnect(2),
             Event.reset()
         );
     }

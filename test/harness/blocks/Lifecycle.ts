@@ -14,7 +14,7 @@ export class Lifecycle {
     /**
      * Initialize the harness with N peers
      */
-    static setup(numPeers: number, options?: HarnessOptions<any>) {
+    static setup(numPeers: number, options?: HarnessOptions) {
         return new HarnessBlock(async (harness) => {
             await harness.setup(numPeers, options);
             return harness;

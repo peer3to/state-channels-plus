@@ -1,11 +1,13 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { Logger } from "@/utils";
 import { expect } from "chai";
-import { ForkId } from "@/types/types";
+import { ForkId, Hash } from "@/types/types";
+import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 export class AssertActions {
     constructor(
-        private harness: PeerTestHarness<any, any>,
+        private harness: PeerTestHarness,
         private logger: Logger
     ) {}
 
@@ -88,12 +90,16 @@ export class AssertActions {
      */
     async assertAllPeersInSync(
         options: {
-            expectedState?: any;
+            expectedStateMachineStateHash?: Hash;
             peerIndices?: number[];
             timeout?: number;
         } = {}
     ): Promise<void> {
-        const { expectedState, peerIndices, timeout = 10000 } = options;
+        const {
+            expectedStateMachineStateHash,
+            peerIndices,
+            timeout = 10000
+        } = options;
         const indicesToCheck =
             peerIndices ??
             Array.from({ length: this.harness.peers.length }, (_, i) => i);
@@ -118,17 +124,17 @@ export class AssertActions {
 
         // Check state machine state synchronization
         const firstPeerIndex = indicesToCheck[0];
-        const firstPeerState = this.harness.stateQuery.getStateMachineState(
-            firstPeerIndex,
-            this.harness.activeForkId!
-        );
+        const firstPeerState =
+            this.harness.stateQuery.getLatestStateMachineStateHash(
+                firstPeerIndex
+            );
 
         for (let i = 1; i < indicesToCheck.length; i++) {
             const peerIndex = indicesToCheck[i];
-            const peerState = this.harness.stateQuery.getStateMachineState(
-                peerIndex,
-                this.harness.activeForkId!
-            );
+            const peerState =
+                this.harness.stateQuery.getLatestStateMachineStateHash(
+                    peerIndex
+                );
 
             expect(peerState).to.deep.equal(
                 firstPeerState,
@@ -136,9 +142,9 @@ export class AssertActions {
             );
         }
 
-        if (expectedState !== undefined) {
+        if (expectedStateMachineStateHash !== undefined) {
             expect(firstPeerState).to.deep.equal(
-                expectedState,
+                expectedStateMachineStateHash,
                 "State does not match expected state"
             );
         }
@@ -389,7 +395,7 @@ export class AssertActions {
      * Assert fraud proof was stored for a dispute
      */
     async assertFraudProofStored(options: {
-        dispute: any;
+        dispute: DisputeStruct;
         timeoutMs?: number;
     }): Promise<void> {
         const { dispute, timeoutMs = 2000 } = options;
