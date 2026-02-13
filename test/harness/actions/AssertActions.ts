@@ -46,7 +46,7 @@ export class AssertActions {
         }
     }
 
-    async disputeCommitted(
+    async disputeCommittedByAllPeers(
         timeout: number = 5000,
         expectedCount: number
     ): Promise<void> {

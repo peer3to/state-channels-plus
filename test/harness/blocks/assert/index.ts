@@ -33,7 +33,8 @@ export class Assert {
     static onChainBalanceMatchesSnapshot =
         AssertSnapshot.onChainBalanceMatchesSnapshot;
 
-    static disputeCommitted = AssertDispute.disputeCommitted;
+    static disputeCommittedByAllPeers =
+        AssertDispute.disputeCommittedByAllPeers;
     static fraudProofStored = AssertDispute.fraudProofStored;
     static fraudProofStoredForTamperedDispute =
         AssertDispute.fraudProofStoredForTamperedDispute;

@@ -192,7 +192,7 @@ export class Scenario {
         return HarnessBlock.compose(
             Scenario.startChannel(numPeers, numBlocks),
             Byzantine.doubleSignFrom(byzantinePeer),
-            Assert.disputeCommitted(),
+            Assert.disputeCommittedByAllPeers(),
             Event.reset()
         );
     }

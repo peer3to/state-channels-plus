@@ -28,7 +28,7 @@ describe("E2E: Dispute Manager", function () {
                 Scenario.startChannel(3, 2),
                 Byzantine.doubleSignFrom(1), // Peer 1 double-signs
                 Assert.disputeInitiatedBy({ peers: [0, 2] }), // Peers 0,2 detect
-                Assert.disputeCommitted()
+                Assert.disputeCommittedByAllPeers()
             );
         });
 
@@ -37,7 +37,7 @@ describe("E2E: Dispute Manager", function () {
                 Scenario.startChannel(3, 2),
                 Byzantine.invalidTransitionFrom(2), // Peer 2 submits invalid
                 Assert.disputeInitiatedBy({ peers: [0, 1] }),
-                Assert.disputeCommitted(2)
+                Assert.disputeCommittedByAllPeers(2)
             );
         });
 
@@ -47,7 +47,7 @@ describe("E2E: Dispute Manager", function () {
                 Event.reset(),
                 Byzantine.forgedInboundMessageFromNext(),
                 Assert.honestPeersInitiateDispute(),
-                Assert.disputeCommitted(2)
+                Assert.disputeCommittedByAllPeers(2)
             );
         });
 

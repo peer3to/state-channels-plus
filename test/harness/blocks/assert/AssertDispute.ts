@@ -4,12 +4,12 @@ export class AssertDispute {
     /**
      * Assert dispute was committed on-chain by all peers
      */
-    static disputeCommitted(
+    static disputeCommittedByAllPeers(
         expectedCount: number = 2,
         timeoutMs: number = 5000
     ) {
         return new HarnessBlock(async (harness) => {
-            await harness.assertActions.disputeCommitted(
+            await harness.assertActions.disputeCommittedByAllPeers(
                 timeoutMs,
                 expectedCount
             );
