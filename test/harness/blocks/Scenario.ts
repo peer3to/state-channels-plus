@@ -1,7 +1,7 @@
 import { HarnessBlock } from "./HarnessBlock";
 import { Lifecycle } from "./Lifecycle";
 import { HarnessOptions } from "../core/types";
-import { Assert } from "./Assert";
+import { Assert } from "./assert";
 import { Byzantine } from "./Byzantine";
 import { Transition } from "./Transition";
 import { Event } from "./Event";

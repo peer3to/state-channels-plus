@@ -17,8 +17,8 @@ export { RPC } from "./blocks/RPC";
 // Layer 3: Scenario blocks (high-level composition)
 export { Scenario } from "./blocks/Scenario";
 export { Byzantine } from "./blocks/Byzantine";
-export { Assert } from "./blocks/Assert";
-export { AssertRPC } from "./blocks/AssertRPC";
+export { Assert } from "./blocks/assert";
+export { AssertRPC } from "./blocks/assert";
 export { Event } from "./blocks/Event";
 export { Context } from "./blocks/Context";
 

@@ -1,4 +1,4 @@
-import { HarnessBlock } from "./HarnessBlock";
+import { HarnessBlock } from "../HarnessBlock";
 
 /**
  * RPC-specific assertion blocks
