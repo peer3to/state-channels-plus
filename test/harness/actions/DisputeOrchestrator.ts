@@ -1,13 +1,7 @@
-import {
-    PeerTestHarness,
-    TestPeer,
-    CreateAndResolveDisputeResult,
-    CreateAndResolveForkResult
-} from "@test/fixtures/PeerTestHarness";
+import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
 import { Logger, SignatureUtils } from "@/utils";
 import { ForkId } from "@/types/types";
-import { ZeroHash, BytesLike } from "ethers";
-import { expect } from "chai";
+
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import DisputeManager, {
     ConstructDisputeResult
@@ -29,39 +23,6 @@ export class DisputeOrchestrator {
         private harness: PeerTestHarness<any, any>,
         private logger: Logger
     ) {}
-
-    /**
-     * Creates a dispute via the provided action, then waits until:
-     * - disputes are committed on-chain (observed via onDisputeCommitted events)
-     * - honest peers converge on a new fork (fork reduction settled)
-     */
-
-    async createAndResolveInvalidStateTransitionDispute(
-        maliciousPeerIndex: number,
-        options?: {
-            forkId?: ForkId;
-            honestPeerIndices?: number[];
-            resetEventSpies?: boolean;
-            disputesCommittedTimeoutMs?: number;
-            forkSettleTimeoutMs?: number;
-            disputesCommittedMode?: "exact" | "atLeast";
-            expectedDisputesCommittedPerPeer?: number;
-            assertMaliciousRemoved?: boolean;
-        }
-    ): Promise<CreateAndResolveDisputeResult<any, any>> {
-        return this.createAndResolveDispute(
-            async () => {
-                await this.harness.byzantineActions.submitInvalidStateTransitionBlock(
-                    maliciousPeerIndex,
-                    {
-                        forkId: options?.forkId || this.harness.activeForkId!
-                    }
-                );
-            },
-            maliciousPeerIndex,
-            options
-        );
-    }
 
     /**
      * Build and post a tampered dispute from a peer (used to exercise DisputeValidationService rejection paths).
@@ -144,129 +105,6 @@ export class DisputeOrchestrator {
                 disputeManager.constructDispute = originalConstructDispute;
             },
             dispute: disputePromise
-        };
-    }
-
-    private async getParticipantPeerIndices(
-        providerPeerIndex: number = 0
-    ): Promise<number[]> {
-        const provider = this.harness.getPeer(providerPeerIndex);
-        const participants =
-            await provider.stateManager.diamondStateMachine.getParticipants();
-        const participantSet = new Set(
-            participants.map((a) => a.toString().toLowerCase())
-        );
-
-        return this.harness.peers
-            .map((p) => p.index)
-            .filter((idx) =>
-                participantSet.has(
-                    this.harness.getPeer(idx).address.toLowerCase()
-                )
-            );
-    }
-
-    private async createAndResolveDispute(
-        disputeAction: () => Promise<void>,
-        maliciousPeerIndex: number,
-        options?: {
-            forkId?: ForkId;
-            honestPeerIndices?: number[];
-            resetEventSpies?: boolean;
-            disputesCommittedTimeoutMs?: number;
-            forkSettleTimeoutMs?: number;
-            expectedDisputesCommittedPerPeer?: number;
-            disputesCommittedMode?: "exact" | "atLeast";
-            assertMaliciousRemoved?: boolean;
-        }
-    ): Promise<CreateAndResolveDisputeResult<any, any>> {
-        const originalForkId = options?.forkId || this.harness.activeForkId!;
-        const honestPeerIndices =
-            options?.honestPeerIndices ??
-            (await this.getParticipantPeerIndices()).filter(
-                (i) => i !== maliciousPeerIndex
-            );
-
-        if (honestPeerIndices.length < 1) {
-            throw new Error(
-                `Need at least 1 honest peer to resolve dispute (got ${honestPeerIndices.length})`
-            );
-        }
-
-        if (options?.resetEventSpies !== false) {
-            this.harness.eventActions.resetEventSpies();
-        }
-
-        await disputeAction();
-
-        const disputesCommittedTimeoutMs =
-            options?.disputesCommittedTimeoutMs ?? 5000;
-
-        const expectedDisputesCommittedPerPeer =
-            options?.expectedDisputesCommittedPerPeer ?? 1;
-
-        const disputesCommitted =
-            await this.harness.eventActions.waitForEventCounts(
-                "onDisputeCommitted",
-                honestPeerIndices.map((peerId) => ({
-                    peerId,
-                    expectedCount: expectedDisputesCommittedPerPeer
-                })),
-                disputesCommittedTimeoutMs,
-                { mode: options?.disputesCommittedMode ?? "atLeast" }
-            );
-
-        if (!disputesCommitted) {
-            throw new Error(
-                `Disputes not committed across peers within ${String(
-                    disputesCommittedTimeoutMs
-                )}ms`
-            );
-        }
-
-        // Wait for fork to change using event barrier
-        const forkSettled = await this.harness.waitForForkChange({
-            excludeForkIds: [originalForkId],
-            peerIndices: honestPeerIndices,
-            timeoutMs: options?.forkSettleTimeoutMs ?? 10000
-        });
-
-        if (!forkSettled) {
-            throw new Error(
-                `Fork did not settle within ${String(
-                    options?.forkSettleTimeoutMs ?? 10000
-                )}ms`
-            );
-        }
-
-        const honestPeers = honestPeerIndices.map((idx) =>
-            this.harness.getPeer(idx)
-        );
-        const newForkId = honestPeers[0]!.stateManager.forkId;
-
-        if (newForkId === originalForkId || newForkId === ZeroHash) {
-            throw new Error(
-                `Expected new forkId after reduction (got ${newForkId})`
-            );
-        }
-
-        if (options?.assertMaliciousRemoved ?? true) {
-            const maliciousAddress =
-                this.harness.getPeer(maliciousPeerIndex).address;
-            for (const peer of honestPeers) {
-                const participants =
-                    await peer.stateManager.diamondStateMachine.getParticipants();
-                expect(participants).to.have.lengthOf(honestPeers.length);
-                expect(participants).to.not.include(maliciousAddress);
-            }
-        }
-
-        return {
-            originalForkId,
-            newForkId,
-            maliciousPeerIndex,
-            honestPeerIndices,
-            honestPeers
         };
     }
 }
