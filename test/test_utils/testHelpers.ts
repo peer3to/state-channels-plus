@@ -7,7 +7,6 @@ import {
     OpenChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
-import P2pEventHooks from "@/P2pEventHooks";
 import { hash } from "@/utils";
 
 export type TestObjectOptions = {
@@ -77,16 +76,6 @@ export const createOpenChannelTestObject = (
         data: "0x00"
     };
     return oc;
-};
-
-export const getCurrentBlockTime = async (
-    provider: ethers.Provider
-): Promise<number> => {
-    const block = await provider.getBlock("latest");
-    return block!.timestamp;
-};
-export const getCurrentTimeSeconds = (): number => {
-    return Math.floor(Date.now() / 1000);
 };
 
 export async function deployMathChannelProxyFixture(
@@ -160,22 +149,6 @@ export async function getMathDeploymentTransaction(
     return await MathStateMachineFactory.getDeployTransaction(gasLimit);
 }
 
-export function getMathP2pEventHooks(
-    onTurnCallback: () => void,
-    myAddress: string
-) {
-    const hooks: P2pEventHooks = {
-        onTurn(
-            address: AddressLike,
-            _turnTime: number,
-            _agreementTime: number,
-            _chainFallbackTime: number
-        ): void {
-            (address as string) == myAddress && onTurnCallback();
-        }
-    };
-    return hooks;
-}
 export async function deployUtilityFacetTestContract(
     _ethers: typeof ethers & HardhatEthersHelpers
 ) {

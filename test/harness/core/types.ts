@@ -146,34 +146,12 @@ export type EventSpies = {
     onInboundMessagesProcessed?: sinon.SinonSpy;
 };
 
-export type SubmitTransactionOptions = {
-    waitForSync?: boolean;
-    waitForPeers?: number[];
-    waitForTurn?: boolean;
-};
-
-export type AssertAllPeersInSyncOptions = {
-    expectedState?: Bytes;
-    peerIndices?: number[];
-};
-
 export type CreateAndResolveDisputeResult<
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
 > = {
     originalForkId: ForkId;
     newForkId: ForkId;
-    maliciousPeerIndex: number;
-    honestPeerIndices: number[];
-    honestPeers: Array<TestPeer<TFactories>>;
-};
-
-export type CreateAndResolveForkResult<
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
-> = {
-    originalForkId: ForkId;
-    reducedForkId: ForkId;
     maliciousPeerIndex: number;
     honestPeerIndices: number[];
     honestPeers: Array<TestPeer<TFactories>>;
