@@ -52,7 +52,7 @@ describe("E2E: State Snapshots", function () {
 
     it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - 2 independent snapshot updates", async function () {
         await ScenarioRunner.execute(
-            Scenario.forkResolutionWithSnapshotMoved({
+            Scenario.disputeResolutionWithSnapshotMovedtoNewFork({
                 timeConfig: forkTimeConfig
             }),
 

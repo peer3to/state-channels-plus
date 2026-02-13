@@ -151,14 +151,14 @@ export class Scenario {
         return HarnessBlock.compose(
             Scenario.activeChannel(4, 2, options),
             Assert.allPeersInSync(),
-            Scenario.forkResolution({ maliciousPeerIndex: 2 })
+            Scenario.disputeResolution({ maliciousPeerIndex: 2 })
         );
     }
 
     /**
      * Fork resolution with snapshot moved to reduced fork
      */
-    static forkResolutionWithSnapshotMoved(options?: {
+    static disputeResolutionWithSnapshotMovedtoNewFork(options?: {
         timeConfig?: {
             p2pTime?: number;
             agreementTime?: number;
@@ -284,76 +284,19 @@ export class Scenario {
     // FORK RESOLUTION SCENARIOS
     // ========================================
 
-    /**
-     * Fork resolution scenario: malicious peer creates invalid transition,
-     * honest peers dispute, fork reduces
-     */
-    static forkResolution(options: {
-        maliciousPeerIndex: number;
-        honestPeerIndices?: number[];
-    }) {
-        const { maliciousPeerIndex, honestPeerIndices } = options;
-
-        return new HarnessBlock(async (harness) => {
-            const forkId = harness.activeForkId;
-            if (!forkId) {
-                throw new Error(
-                    "No active fork ID - channel must be opened first"
-                );
-            }
-
-            const totalPeers = harness.peers.length;
-            const honest =
-                honestPeerIndices ||
-                Array.from({ length: totalPeers }, (_, i) => i).filter(
-                    (i) => i !== maliciousPeerIndex
-                );
-
-            // Compose all blocks using HarnessBlock.compose()
-            return HarnessBlock.compose(
-                Context.markMaliciousPeer({
-                    maliciousPeerIndex,
-                    honestPeerIndices
-                }),
-                Event.captureOriginalFork(),
-                Event.reset(),
-                Byzantine.invalidTransitionFrom(maliciousPeerIndex),
-                Event.waitForAllPeers("onDisputeCommitted", honest.length, {
-                    timeoutMs: 5000,
-                    mode: "atLeast"
-                }),
-                Event.waitForForkChange({
-                    timeoutMs: 10000,
-                    honestPeerIndices: honest
-                }),
-                Context.updateActiveFork()
-            ).run(harness);
-        });
-    }
-
-    /**
-     * Fork resolution with full settlement control (longer timeouts)
-     *
-     * This is a high-level composition block that creates an invalid state transition
-     * dispute and waits for fork resolution with configurable timing for dispute commits
-     * and fork settlement.
-     *
-     * Unlike forkResolution(), this provides:
-     * - Control over dispute commit timing (disputesCommittedTimeoutMs)
-     * - Control over fork settlement timing (forkSettleTimeoutMs)
-     * - More lenient dispute commit requirements (some peers may be slow)
-     */
-    static disputeWithReduction(options: {
+    static disputeResolution(options: {
         maliciousPeerIndex: number;
         honestPeerIndices?: number[];
         forkSettleTimeoutMs?: number;
         disputesCommittedTimeoutMs?: number;
+        disputesCommittedMode?: "atLeast" | "exact";
     }) {
         const {
             maliciousPeerIndex,
             honestPeerIndices,
             forkSettleTimeoutMs = 10000,
-            disputesCommittedTimeoutMs = 5000
+            disputesCommittedTimeoutMs = 5000,
+            disputesCommittedMode = "atLeast"
         } = options;
 
         return new HarnessBlock(async (harness) => {
@@ -371,30 +314,29 @@ export class Scenario {
                     (i) => i !== maliciousPeerIndex
                 );
 
-            // Mark malicious peer context for later blocks
-            harness.context.maliciousPeerIndex = maliciousPeerIndex;
-            harness.context.honestPeerIndices = honest;
-
-            // Use disputeOrchestrator action to handle the complex workflow
-            const result =
-                await harness.disputeOrchestrator.createAndResolveInvalidStateTransitionDispute(
+            return HarnessBlock.compose(
+                Context.markMaliciousPeer({
                     maliciousPeerIndex,
-                    {
-                        forkId,
-                        honestPeerIndices: honest,
-                        forkSettleTimeoutMs,
-                        disputesCommittedTimeoutMs,
-                        resetEventSpies: true,
-                        disputesCommittedMode: "atLeast",
-                        assertMaliciousRemoved: false
-                    }
-                );
+                    honestPeerIndices: honest
+                }),
 
-            // Update active fork context
-            harness.context.originalForkId = forkId;
-            harness.activeForkId = result.newForkId;
+                Event.captureOriginalFork(),
+                Event.reset(),
 
-            return harness;
+                Byzantine.invalidTransitionFrom(maliciousPeerIndex),
+
+                Event.waitForAllPeers("onDisputeCommitted", honest.length, {
+                    timeoutMs: disputesCommittedTimeoutMs,
+                    mode: disputesCommittedMode
+                }),
+
+                Event.waitForForkChange({
+                    timeoutMs: forkSettleTimeoutMs,
+                    honestPeerIndices: honest
+                }),
+
+                Context.updateActiveFork()
+            ).run(harness);
         });
     }
 }

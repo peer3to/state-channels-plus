@@ -86,7 +86,7 @@ describe("E2E: Dispute Manager", function () {
         it("should post updated state snapshot after fork resolution", async function () {
             await ScenarioRunner.execute(
                 // Use the composed scenario (setup + fork resolution + first snapshot post)
-                Scenario.forkResolutionWithSnapshotMoved({
+                Scenario.disputeResolutionWithSnapshotMovedtoNewFork({
                     timeConfig: {
                         p2pTime: 3,
                         agreementTime: 2,

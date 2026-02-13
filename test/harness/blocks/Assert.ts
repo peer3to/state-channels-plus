@@ -167,7 +167,7 @@ export class Assert {
             const honestIndices = harness.context.honestPeerIndices;
             if (!honestIndices) {
                 throw new Error(
-                    "honestPeerIndices not set - use Scenario.forkResolution() or Byzantine.createAndResolveFork() first"
+                    "honestPeerIndices not set - use Scenario.disputeResolution() or Byzantine.createAndResolveFork() first"
                 );
             }
 
@@ -187,7 +187,7 @@ export class Assert {
             const maliciousIndex = harness.context.maliciousPeerIndex;
             if (maliciousIndex === undefined) {
                 throw new Error(
-                    "maliciousPeerIndex not set - use Scenario.forkResolution() or Byzantine.createAndResolveFork() first"
+                    "maliciousPeerIndex not set - use Scenario.disputeResolution() or Byzantine.createAndResolveFork() first"
                 );
             }
 

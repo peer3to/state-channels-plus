@@ -89,7 +89,7 @@ export class Event {
             const honestIndices = harness.context.honestPeerIndices;
             if (!honestIndices) {
                 throw new Error(
-                    "honestPeerIndices not set - use Scenario.forkResolution() or Byzantine.createAndResolveFork() first"
+                    "honestPeerIndices not set - use Scenario.disputeResolution() or Byzantine.createAndResolveFork() first"
                 );
             }
 
