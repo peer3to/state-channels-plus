@@ -52,7 +52,7 @@ describe("E2E: State Snapshots", function () {
 
     it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - 2 independent snapshot updates", async function () {
         await ScenarioRunner.execute(
-            Scenario.forkResolutionWithSnapshotMoved({
+            Scenario.fourPeersDisputeResolutionAndSnapshotUpdate({
                 timeConfig: forkTimeConfig
             }),
 
@@ -84,7 +84,7 @@ describe("E2E: State Snapshots", function () {
     it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - multicall", async function () {
         await ScenarioRunner.execute(
             // Fork resolved locally; do NOT post snapshot yet so on-chain is still on disputed fork
-            Scenario.fourPeerForkResolution({ timeConfig: forkTimeConfig }),
+            Scenario.fourPeersDisputeResolution({ timeConfig: forkTimeConfig }),
 
             // Three transitions on reduced fork (same as test 2) to have both fork update and same-fork update
             Transition.fromHonestPeersOnly((c) => c.add(1)),
@@ -110,7 +110,7 @@ describe("E2E: State Snapshots", function () {
                 mode: "atLeast"
             }),
             Assert.onChainBalanceMatchesSnapshot(),
-            Assert.snapshotOnFork(),
+            Assert.onChainSnapshotOnFork(),
             Assert.maliciousPeerExcluded()
         );
     });

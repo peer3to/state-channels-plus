@@ -191,66 +191,6 @@ export class AssertSync {
     }
 
     /**
-     * Assert that a group of peers have the same latest block (hash and height)
-     */
-    static peersHaveSameLatestBlock(
-        peerIndices: number[],
-        options?: { timeoutMs?: number }
-    ) {
-        const { timeoutMs = 5000 } = options || {};
-
-        return new HarnessBlock(async (harness) => {
-            const forkId = harness.activeForkId;
-            if (!forkId) {
-                throw new Error("No active fork ID");
-            }
-
-            const condition = () => {
-                const blocks = peerIndices.map((i) =>
-                    harness.peers[i].stateManager.storage.blocks.getLatestBlock(
-                        forkId
-                    )
-                );
-
-                if (blocks.some((b) => !b)) return false;
-
-                const firstHash = blocks[0]!.hash;
-                const firstHeight = blocks[0]!.height;
-
-                return blocks.every(
-                    (b) => b!.hash === firstHash && b!.height === firstHeight
-                );
-            };
-
-            if (condition()) {
-                return harness;
-            }
-
-            try {
-                await harness.eventCountsBarrier.waitFor(condition, {
-                    timeoutMs,
-                    timeoutMessage: `Peers did not have same latest block within ${timeoutMs}ms`
-                });
-            } catch {
-                const blocks = peerIndices.map((i) => ({
-                    peer: i,
-                    hash: harness.peers[
-                        i
-                    ].stateManager.storage.blocks.getLatestBlock(forkId)?.hash,
-                    height: harness.peers[
-                        i
-                    ].stateManager.storage.blocks.getLatestBlock(forkId)?.height
-                }));
-                throw new Error(
-                    `Peers ${peerIndices.join(", ")} do not have the same latest block: ${JSON.stringify(blocks)}`
-                );
-            }
-
-            return harness;
-        });
-    }
-
-    /**
      * Assert participant count matches expected value
      */
     static participantCount({

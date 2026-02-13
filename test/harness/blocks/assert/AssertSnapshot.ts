@@ -5,7 +5,7 @@ export class AssertSnapshot {
     /**
      * Assert on-chain snapshot is on the expected fork
      */
-    static snapshotOnFork(options?: { expectedForkId?: string }) {
+    static onChainSnapshotOnFork(options?: { expectedForkId?: string }) {
         return new HarnessBlock(async (harness) => {
             const expectedForkId =
                 options?.expectedForkId || harness.activeForkId;

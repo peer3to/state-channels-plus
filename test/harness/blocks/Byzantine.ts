@@ -200,7 +200,7 @@ export class Byzantine {
     /**
      * Peer posts a tampered dispute with incorrect auditing data hash
      */
-    static tamperedDisputeAuditingData(peerIndex: number) {
+    static postTamperedDisputeAuditingData(peerIndex: number) {
         return Byzantine.postTamperedDisputeWith(
             peerIndex,
             DisputeTampering.tamperAuditingDataHash
@@ -210,12 +210,16 @@ export class Byzantine {
     /**
      * Peer posts a tampered timeout dispute with wrong participant
      */
-    static tamperedTimeoutDispute(options: {
-        submitter: number;
-        wrongParticipant: number;
+    static postTamperedDisputeTimeout(options: {
+        submitterIndex: number;
+        wrongParticipantIndex: number;
         blockHeight?: number;
     }) {
-        const { submitter, wrongParticipant, blockHeight = 2 } = options;
+        const {
+            submitterIndex: submitter,
+            wrongParticipantIndex: wrongParticipant,
+            blockHeight = 2
+        } = options;
 
         return new HarnessBlock(async (harness) => {
             const notNextPeer = harness.peers[wrongParticipant];

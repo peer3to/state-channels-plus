@@ -18,7 +18,6 @@ export class Scenario {
     /**
      * Channel configured for timeout testing (short timeouts)
      */
-
     static timeoutSetup(peerCount: number = 3) {
         return HarnessBlock.compose(
             Lifecycle.setup(peerCount, {
@@ -54,7 +53,7 @@ export class Scenario {
     /**
      * Four peers with fork resolution (peer 2 removed)
      */
-    static fourPeerForkResolution(options?: {
+    static fourPeersDisputeResolution(options?: {
         timeConfig?: {
             p2pTime?: number;
             agreementTime?: number;
@@ -72,7 +71,7 @@ export class Scenario {
     /**
      * Fork resolution with snapshot moved to reduced fork
      */
-    static forkResolutionWithSnapshotMoved(options?: {
+    static fourPeersDisputeResolutionAndSnapshotUpdate(options?: {
         timeConfig?: {
             p2pTime?: number;
             agreementTime?: number;
@@ -81,19 +80,16 @@ export class Scenario {
         };
     }) {
         return HarnessBlock.compose(
-            Scenario.fourPeerForkResolution(options),
+            Scenario.fourPeersDisputeResolution(options),
             Transition.postSnapshot({ peerIndex: 0 }),
-            Assert.snapshotOnFork()
+            Assert.onChainSnapshotOnFork()
         );
     }
 
     /**
      * Channel ready for tampered dispute testing
      */
-    static readyForTamperedDispute(
-        peerCount: number = 3,
-        options?: HarnessOptions
-    ) {
+    static preDisputeSetup(peerCount: number = 3, options?: HarnessOptions) {
         return HarnessBlock.compose(
             Scenario.startChannel(peerCount, 2, options),
             Assert.allPeersInSync(),

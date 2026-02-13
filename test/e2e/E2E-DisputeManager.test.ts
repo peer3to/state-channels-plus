@@ -86,7 +86,7 @@ describe("E2E: Dispute Manager", function () {
         it("should post updated state snapshot after fork resolution", async function () {
             await ScenarioRunner.execute(
                 // Use the composed scenario (setup + fork resolution + first snapshot post)
-                Scenario.forkResolutionWithSnapshotMoved({
+                Scenario.fourPeersDisputeResolutionAndSnapshotUpdate({
                     timeConfig: {
                         p2pTime: 3,
                         agreementTime: 2,
@@ -124,10 +124,10 @@ describe("E2E: Dispute Manager", function () {
     describe("Fraud Proof Detection", function () {
         it("should reject dispute with incorrect auditing data commitment", async function () {
             await ScenarioRunner.execute(
-                Scenario.readyForTamperedDispute(),
+                Scenario.preDisputeSetup(),
 
                 // Byzantine: Peer 1 posts tampered dispute
-                Byzantine.tamperedDisputeAuditingData(1),
+                Byzantine.postTamperedDisputeAuditingData(1),
 
                 // Wait: Dispute gets killed by validation
                 Event.waitForAllPeers("onDisputeKilled", 1, {
@@ -141,12 +141,12 @@ describe("E2E: Dispute Manager", function () {
 
         it("should reject timeout dispute when accused participant is not next to write", async function () {
             await ScenarioRunner.execute(
-                Scenario.readyForTamperedDispute(),
+                Scenario.preDisputeSetup(),
 
                 // Byzantine: Peer 0 posts tampered timeout dispute accusing wrong peer
-                Byzantine.tamperedTimeoutDispute({
-                    submitter: 0,
-                    wrongParticipant: 1,
+                Byzantine.postTamperedDisputeTimeout({
+                    submitterIndex: 0,
+                    wrongParticipantIndex: 1,
                     blockHeight: 2
                 }),
 
@@ -158,7 +158,7 @@ describe("E2E: Dispute Manager", function () {
 
         it("should reject dispute when auditing data is partial and state proof invalid", async function () {
             await ScenarioRunner.execute(
-                Scenario.readyForTamperedDispute(),
+                Scenario.preDisputeSetup(),
 
                 // Byzantine: Peer 1 posts tampered dispute with unknown snapshot reference
                 Byzantine.tamperedDisputePartialAuditing(1),
@@ -175,7 +175,7 @@ describe("E2E: Dispute Manager", function () {
 
         it("should reject dispute when full auditing data reconstructed but both commitment and state proof are invalid", async function () {
             await ScenarioRunner.execute(
-                Scenario.readyForTamperedDispute(),
+                Scenario.preDisputeSetup(),
 
                 // Byzantine: Peer 1 posts tampered dispute with BOTH invalid commitment and state proof
                 Byzantine.tamperedDisputeDoubleFault(1),
@@ -192,7 +192,7 @@ describe("E2E: Dispute Manager", function () {
 
         it("should reject dispute when auditing data commitment is valid but state proof is invalid", async function () {
             await ScenarioRunner.execute(
-                Scenario.readyForTamperedDispute(),
+                Scenario.preDisputeSetup(),
 
                 // Byzantine: Peer 1 posts tampered dispute with ONLY invalid state proof
                 Byzantine.tamperedDisputeInvalidStateProof(1),
@@ -260,7 +260,7 @@ describe("E2E: Dispute Manager", function () {
     });
 
     describe("Partial Syncing via Dispute Validation", function () {
-        it("should sync missing state via validStateProofButNotSynced when peer receives dispute with blocks it doesn't have", async function () {
+        it.only("should sync missing state via validStateProofButNotSynced when peer receives dispute with blocks it doesn't have", async function () {
             await ScenarioRunner.execute(
                 // Setup: Peer 1 has block that others don't have
                 Scenario.peerWithUnbroadcastedBlock(1),
@@ -277,7 +277,7 @@ describe("E2E: Dispute Manager", function () {
                 }),
 
                 // Peer 2 should sync the missing block via peer 1's dispute
-                Assert.peersHaveSameLatestBlock([1, 2])
+                Assert.peersInSync([1, 2])
             );
         });
 

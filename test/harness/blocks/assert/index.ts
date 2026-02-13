@@ -19,10 +19,9 @@ export class Assert {
     static onlyHonestPeersInSync = AssertSync.onlyHonestPeersInSync;
     static maliciousPeerExcluded = AssertSync.maliciousPeerExcluded;
     static peerBlockHeightGreaterThan = AssertSync.peerBlockHeightGreaterThan;
-    static peersHaveSameLatestBlock = AssertSync.peersHaveSameLatestBlock;
     static participantCount = AssertSync.participantCount;
 
-    static snapshotOnFork = AssertSnapshot.snapshotOnFork;
+    static onChainSnapshotOnFork = AssertSnapshot.onChainSnapshotOnFork;
     static snapshotMatchesLocal = AssertSnapshot.snapshotMatchesLocal;
     static snapshotCountIncreasedSince =
         AssertSnapshot.snapshotCountIncreasedSince;

@@ -155,7 +155,7 @@ describe("E2E: Spectate Service", function () {
                 // Participant count should remain the same as initial (3)
                 // On-chain snapshot should still be on original fork
                 Assert.participantCount({ expectedCount: 3, peerIndex: 3 }),
-                Assert.snapshotOnFork()
+                Assert.onChainSnapshotOnFork()
             );
         });
     });
@@ -209,7 +209,7 @@ describe("E2E: Spectate Service", function () {
                 // Verify all peers are in sync
                 Assert.peersInSync([0, 1, 3, 4, 5]),
                 Assert.participantCount({ expectedCount: 4, peerIndex: 5 }), // Check on peer 5 (spectator)
-                Assert.snapshotOnFork()
+                Assert.onChainSnapshotOnFork()
             );
         });
     });

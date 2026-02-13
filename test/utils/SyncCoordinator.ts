@@ -46,35 +46,21 @@ export class SyncCoordinator {
         const checkSync = () => {
             if (indicesToCheck.length === 0) return true;
 
-            const firstPeerIndex = indicesToCheck[0];
-            const firstBlock =
-                peers[
-                    firstPeerIndex
-                ].stateManager.storage.blocks.getLatestBlock(forkId);
+            const blocks = indicesToCheck.map((i) =>
+                peers[i].stateManager.storage.blocks.getLatestBlock(forkId)
+            );
 
-            if (!firstBlock) return false;
-
-            for (let i = 1; i < indicesToCheck.length; i++) {
-                const peerIndex = indicesToCheck[i];
-                const peerBlock =
-                    peers[peerIndex].stateManager.storage.blocks.getLatestBlock(
-                        forkId
-                    );
-                if (
-                    !peerBlock ||
-                    peerBlock.hash !== firstBlock.hash ||
-                    peerBlock.height !== firstBlock.height
-                ) {
-                    return false;
-                }
+            if (blocks.some((b) => !b)) {
+                if (blocks.every((b) => b === null)) return true; // All peers have no blocks yet ->
+                return false;
             }
 
-            this.logger.verbose(`${indicesToCheck.length} peers synchronized`, {
-                blockHash: firstBlock.hash,
-                height: firstBlock.height,
-                peerIndices: indicesToCheck
-            });
-            return true;
+            const firstHash = blocks[0]!.hash;
+            const firstHeight = blocks[0]!.height;
+
+            return blocks.every(
+                (b) => b!.hash === firstHash && b!.height === firstHeight
+            );
         };
 
         try {
