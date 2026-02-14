@@ -2,7 +2,6 @@ import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { Logger } from "@/utils";
 import { expect } from "chai";
 import { ForkId, Hash } from "@/types/types";
-import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 export class AssertActions {
@@ -364,7 +363,7 @@ export class AssertActions {
                 timeoutMs,
                 timeoutMessage: `Dispute fraud proof was not stored on all peers within ${timeoutMs}ms`
             });
-        } catch (error) {
+        } catch {
             throw new Error(
                 `Dispute fraud proof was not stored on all peers within ${timeoutMs}ms`
             );

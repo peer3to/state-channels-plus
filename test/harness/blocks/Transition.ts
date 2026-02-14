@@ -94,7 +94,7 @@ export class Transition {
                 Array.from({ length: harness.peers.length }, (_, i) => i);
             if (!honestIndices) {
                 throw new Error(
-                    "honestPeerIndices not set - use Scenario.disputeWithReduction() or Byzantine.createAndResolveFork() first"
+                    "honestPeerIndices not set - use Scenario.disputeWithReduction() first"
                 );
             }
 
@@ -118,7 +118,7 @@ export class Transition {
             const honestIndices = harness.context.honestPeerIndices;
             if (!honestIndices) {
                 throw new Error(
-                    "honestPeerIndices not set - use Scenario.disputeWithReduction() or Byzantine.createAndResolveFork() first"
+                    "honestPeerIndices not set - use Scenario.disputeWithReduction() first"
                 );
             }
 

@@ -181,7 +181,7 @@ export class StateQueryActions {
                 timeoutMessage: `Transport from peer ${fromPeerIndex} to peer ${toPeerIndex} not available within ${timeoutMs}ms`
             });
             return resolvedTransport!;
-        } catch (error) {
+        } catch {
             throw new Error(
                 `Transport from peer ${fromPeerIndex} to peer ${toPeerIndex} not available within ${timeoutMs}ms`
             );

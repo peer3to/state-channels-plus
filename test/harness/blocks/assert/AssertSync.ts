@@ -42,7 +42,7 @@ export class AssertSync {
             const originalForkId = harness.context.originalForkId;
             if (!originalForkId) {
                 throw new Error(
-                    "No original fork ID captured. Use Event.captureOriginalFork() before this assertion."
+                    "No original fork ID captured. Use Context.captureOriginalFork() before this assertion."
                 );
             }
 
@@ -64,7 +64,7 @@ export class AssertSync {
             const originalForkId = harness.context.originalForkId;
             if (!originalForkId) {
                 throw new Error(
-                    "No original fork ID captured. Use Event.captureOriginalFork() before this assertion."
+                    "No original fork ID captured. Use Context.captureOriginalFork() before this assertion."
                 );
             }
 
@@ -91,7 +91,7 @@ export class AssertSync {
             const honestIndices = harness.context.honestPeerIndices;
             if (!honestIndices) {
                 throw new Error(
-                    "honestPeerIndices not set - use Scenario.disputeWithReduction() or Byzantine.createAndResolveFork() first"
+                    "honestPeerIndices not set - use Scenario.disputeWithReduction() first"
                 );
             }
 
@@ -111,7 +111,7 @@ export class AssertSync {
             const maliciousIndex = harness.context.maliciousPeerIndex;
             if (maliciousIndex === undefined) {
                 throw new Error(
-                    "maliciousPeerIndex not set - use Scenario.disputeWithReduction() or Byzantine.createAndResolveFork() first"
+                    "maliciousPeerIndex not set - use Scenario.disputeWithReduction() first"
                 );
             }
 

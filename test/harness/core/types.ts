@@ -10,7 +10,7 @@ import StateManager from "@/stateManager";
 import { MathStateMachine } from "@typechain-types";
 import { EventBarrier, Logger } from "@/utils";
 import type { RpcServiceFactoryMap } from "@/rpc";
-import { Bytes, TimeConfig } from "@/types";
+import { TimeConfig } from "@/types";
 import { Config } from "@/utils";
 
 /**
@@ -18,7 +18,7 @@ import { Config } from "@/utils";
  * These fields are set by certain blocks and consumed by others
  */
 export interface HarnessContext {
-    /** Original fork ID captured before dispute/fork change (set by Event.captureOriginalFork) */
+    /** Original fork ID captured before dispute/fork change (set by Context.captureOriginalFork) */
     originalForkId?: ForkId;
 
     /** New fork ID after fork change (set by Context.updateActiveFork) */
@@ -36,16 +36,16 @@ export interface HarnessContext {
     /** Last tampered dispute object (set by Byzantine blocks) */
     lastTamperedDispute?: DisputeStruct;
 
-    /** last milestone snapshot before posting snapshot (set by Context.captureContextForSnapshotSameFork) */
+    /** last milestone snapshot before posting snapshot (set by Context.capturePrePostSnapshotContext) */
     lastMilestoneSnapshot?: StateSnapshot;
 
-    /** Channel balance before posting snapshot (set by Context.captureContextForSnapshotSameFork) */
+    /** Channel balance before posting snapshot (set by Context.capturePrePostSnapshotContext) */
     channelBalanceBefore?: ChannelBalanceStructOutput;
 
-    /** Expected withdrawals delta from prepared outbound messages (set by Context.captureContextForSnapshotSameFork) */
+    /** Expected withdrawals delta from prepared outbound messages (set by Context.capturePrePostSnapshotContext) */
     expectedWithdrawalsDelta?: BalanceStruct;
 
-    /** Dynamic snapshot count storage for named contexts - indexed by context key (set by Assert.storeSnapshotCount) */
+    /** Dynamic snapshot count storage for named contexts - indexed by context key (set by Context.storeSnapshotCount) */
     [key: `snapshotCount_${string}`]: number;
 
     /** Dynamic snapshot count storage for peers - indexed by peer index (set by Context blocks) */

@@ -1,7 +1,6 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { EventSpies } from "../core/types";
 import { Logger } from "@/utils";
-import { expect } from "chai";
 
 /**
  * EventActions handles all event spy management and queries.

@@ -110,7 +110,7 @@ export class AssertSnapshot {
 
     /**
      * Wait for peer's snapshot count to increase from named checkpoint
-     * Uses Assert.storeSnapshotCount() to set the baseline checkpoint
+     * Uses Context.storeSnapshotCount() to set the baseline checkpoint
      */
     static snapshotCountIncreasedSince(
         peerIndex: number,
@@ -129,7 +129,7 @@ export class AssertSnapshot {
                 harness.context[`snapshotCount_${checkpointName}`];
             if (countBefore === undefined) {
                 throw new Error(
-                    `No baseline snapshot count found for checkpoint "${checkpointName}". Use Assert.storeSnapshotCount() first.`
+                    `No baseline snapshot count found for checkpoint "${checkpointName}". Use Context.storeSnapshotCount() first.`
                 );
             }
 

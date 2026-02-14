@@ -9,12 +9,6 @@ export class AssertDispute {
         timeoutMs?: number;
         peersIndices?: number[];
     }) {
-        const {
-            expectedCount = 2,
-            timeoutMs = 5000,
-            peersIndices
-        } = options || {};
-
         return new HarnessBlock(async (harness) => {
             await harness.assertActions.disputeCommittedByPeers(options);
             return harness;
