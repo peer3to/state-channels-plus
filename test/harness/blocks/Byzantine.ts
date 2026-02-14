@@ -1,79 +1,8 @@
 import { HarnessBlock } from "./HarnessBlock";
-import { Codec, Type, hash } from "@/utils";
-import { SignatureUtils } from "@/utils/SignatureUtils";
 import {
-    DisputeStruct,
-    DisputeConfirmationStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { BytesLike } from "ethers";
-
-class DisputeTampering {
-    /**
-     * Tampers with the auditing data hash to make it incorrect
-     */
-    static tamperAuditingDataHash(dispute: DisputeStruct): void {
-        // Tamper: set incorrect auditing data hash (dummy value)
-        dispute.input.disputeAuditingDataHash = hash("0x42");
-    }
-
-    /**
-     * Tampers with the timeout participant address
-     */
-    static createTamperTimeoutParticipant(
-        wrongParticipantAddress: string,
-        blockHeight: number
-    ) {
-        return (dispute: DisputeStruct): void => {
-            // Tamper: set timeout participant to someone who is NOT next to write
-            dispute.input.timeout.participant = wrongParticipantAddress;
-            dispute.input.timeout.blockHeight = blockHeight;
-        };
-    }
-
-    /**
-     * Tampers BOTH the auditing data hash AND the latest state snapshot hash
-     * This causes both commitment check and state proof verification to fail
-     */
-    static tamperDoubleFault(dispute: DisputeStruct): void {
-        // Tamper BOTH: auditing data hash (commitment check fails)
-        dispute.input.disputeAuditingDataHash = hash("0x42");
-        // AND: latest state snapshot hash (state proof verification fails)
-        dispute.input.latestStateSnapshotHash = hash("0x43");
-    }
-
-    /**
-     * Tampers the latest state snapshot hash ONLY (commitment stays valid)
-     */
-    static tamperInvalidStateProof(dispute: DisputeStruct): void {
-        // Only tamper the state proof (commitment stays valid)
-        dispute.input.latestStateSnapshotHash = hash("0x42");
-    }
-
-    /**
-     * Tampers with the first milestone's first block to reference an unknown snapshot
-     * This makes auditing data reconstruction partial (missing snapshot) and state proof invalid
-     */
-    static tamperPartialAuditing(dispute: DisputeStruct): void {
-        const tamperedStateProof = dispute.input.stateProof;
-        if (
-            tamperedStateProof.milestones.length === 0 ||
-            tamperedStateProof.milestones[0].blockConfirmations.length === 0
-        ) {
-            throw new Error("No milestones to tamper");
-        }
-        const firstBc = tamperedStateProof.milestones[0].blockConfirmations[0];
-        const block = Codec.decode(
-            firstBc.signedBlock.encodedBlock,
-            Type.Block
-        );
-
-        // Tamper: Set to unknown snapshot hash (not stored - makes auditing data partial)
-        block.stateSnapshotHash = hash("0xDEADBEEF");
-
-        firstBc.signedBlock.encodedBlock = Codec.encode(block, Type.Block);
-    }
-}
+    DisputeTampering,
+    DisputeTamper
+} from "@test/harness/actions/DisputeTamperingActions";
 
 /**
  * Malicious behavior patterns and attack scenarios
@@ -309,10 +238,7 @@ export class Byzantine {
     /**
      * Generic block: Post a tampered dispute with a custom tamper function
      */
-    static postTamperedDisputeWith(
-        peerIndex: number,
-        tamperFn: (dispute: any) => void
-    ) {
+    static postTamperedDisputeWith(peerIndex: number, tamperFn: DisputeTamper) {
         return new HarnessBlock(async (harness) => {
             const forkId = harness.activeForkId;
             if (!forkId) {
@@ -322,7 +248,7 @@ export class Byzantine {
             }
 
             const { dispute } =
-                await harness.disputeOrchestrator.postTamperedDispute(
+                await harness.disputeTampering.postTamperedDispute(
                     peerIndex,
                     tamperFn,
                     forkId
@@ -338,38 +264,25 @@ export class Byzantine {
     /**
      * Setup tampered dispute construction interception for a peer
      */
-    static interceptDisputeConstruction(options: {
+    static stubDisputeConstruction(options: {
         peerIndex: number;
-        tamperFn: (dispute: any, confirmation: any) => void | Promise<void>;
+        tamperFn: DisputeTamper;
     }) {
         const { peerIndex, tamperFn } = options;
 
         return new HarnessBlock(async (harness) => {
-            const { dispute: tamperedDisputePromise, restore } =
-                harness.disputeOrchestrator.withConstructDisputeTampering(
-                    peerIndex,
-                    async (res) => {
-                        // Apply the tamper function
-                        await tamperFn(res.dispute, res.disputeConfirmation);
+            harness.disputeTampering.stubConstructDispute(peerIndex, tamperFn);
 
-                        // Re-sign the tampered dispute
-                        const peer = harness.peers[peerIndex];
-                        const tamperedSig = await SignatureUtils.signDispute(
-                            res.dispute,
-                            peer.signer
-                        );
-                        res.disputeConfirmation.signedDispute = {
-                            encodedDispute: tamperedSig.encoded,
-                            signature: tamperedSig.signature as any
-                        };
+            return harness;
+        });
+    }
 
-                        return res;
-                    }
-                );
-
-            // Store the promise and restore function
-            harness.context.tamperedDisputePromise = tamperedDisputePromise;
-            harness.context.restoreDisputeConstruction = restore;
+    /**
+     * Restore a previously stubbed constructDispute for a peer
+     */
+    static restoreDisputeConstruction(peerIndex: number) {
+        return new HarnessBlock(async (harness) => {
+            harness.disputeTampering.restoreConstructDispute(peerIndex);
 
             return harness;
         });

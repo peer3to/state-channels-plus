@@ -27,6 +27,10 @@ export { ChannelActions } from "./actions/ChannelActions";
 export { TransitionActions } from "./actions/TransitionActions";
 export { NetworkController } from "./actions/NetworkController";
 export { DisputeOrchestrator } from "./actions/DisputeOrchestrator";
+export {
+    DisputeTampering,
+    DisputeTamperingActions
+} from "./actions/DisputeTamperingActions";
 export { AssertActions } from "./actions/AssertActions";
 export { ByzantineActions } from "./actions/ByzantineActions";
 export { RPCActions } from "./actions/RPCActions";

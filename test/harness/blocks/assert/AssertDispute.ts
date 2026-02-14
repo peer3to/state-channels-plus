@@ -59,19 +59,11 @@ export class AssertDispute {
         const { timeoutMs = 2000 } = options || {};
 
         return new HarnessBlock(async (harness) => {
-            const tamperedDisputePromise =
-                harness.context.tamperedDisputePromise;
-            if (!tamperedDisputePromise) {
+            const tamperedDispute = harness.context.lastTamperedDispute;
+            if (!tamperedDispute) {
                 throw new Error(
-                    "No tampered dispute promise found. Use Byzantine.interceptDisputeConstruction() first."
+                    "No tampered dispute found. Use Byzantine.interceptDisputeConstruction() first."
                 );
-            }
-
-            const tamperedDispute = await tamperedDisputePromise;
-
-            const restore = harness.context.restoreDisputeConstruction;
-            if (restore) {
-                restore();
             }
 
             const condition = () => {

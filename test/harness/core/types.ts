@@ -36,12 +36,6 @@ export interface HarnessContext {
     /** Last tampered dispute object (set by Byzantine blocks) */
     lastTamperedDispute?: DisputeStruct;
 
-    /** Promise that resolves to tampered dispute (set by Byzantine.interceptDisputeConstruction) */
-    tamperedDisputePromise?: Promise<DisputeStruct>;
-
-    /** Function to restore dispute construction after interception (set by Byzantine.interceptDisputeConstruction) */
-    restoreDisputeConstruction?: () => void;
-
     /** last milestone snapshot before posting snapshot (set by Context.captureContextForSnapshotSameFork) */
     lastMilestoneSnapshot?: StateSnapshot;
 

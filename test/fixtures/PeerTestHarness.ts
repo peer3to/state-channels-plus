@@ -32,6 +32,7 @@ import { ByzantineActions } from "@test/harness/actions/ByzantineActions";
 import { EventActions } from "@test/harness/actions/EventActions";
 import { StateQueryActions } from "@test/harness/actions/StateQueryActions";
 import { DisputeOrchestrator } from "@test/harness/actions/DisputeOrchestrator";
+import { DisputeTamperingActions } from "@test/harness/actions/DisputeTamperingActions";
 import { RPCActions } from "@test/harness/actions/RPCActions";
 import { HarnessContext } from "@test/harness";
 import { TestPeer, EventSpies, HarnessOptions } from "@test/harness/core/types";
@@ -88,6 +89,7 @@ export class PeerTestHarness<
     public readonly eventActions!: EventActions;
     public readonly stateQuery!: StateQueryActions;
     public readonly disputeOrchestrator!: DisputeOrchestrator;
+    public readonly disputeTampering!: DisputeTamperingActions;
     public readonly rpcActions!: RPCActions;
 
     constructor() {
@@ -116,6 +118,7 @@ export class PeerTestHarness<
         this.eventActions = new EventActions(this, this.logger);
         this.stateQuery = new StateQueryActions(this, this.logger);
         this.disputeOrchestrator = new DisputeOrchestrator(this, this.logger);
+        this.disputeTampering = new DisputeTamperingActions(this, this.logger);
         this.rpcActions = new RPCActions(this, this.logger);
     }
 
@@ -564,14 +567,17 @@ export class PeerTestHarness<
             if (peerForks.length === 0) return false;
 
             if (expectedForkId) {
-                return peerForks.every((fid) => fid === expectedForkId);
+                const isGood = peerForks.every((fid) => fid === expectedForkId);
+                if (isGood) this.activeForkId = expectedForkId;
+                return isGood;
             } else {
                 // All peers have moved to same new fork
                 const uniqueForks = new Set(peerForks);
-                return (
+                const isGood =
                     uniqueForks.size === 1 &&
-                    peerForks.length === peersToCheck.length
-                );
+                    peerForks.length === peersToCheck.length;
+                if (isGood) this.activeForkId = peerForks[0];
+                return isGood;
             }
         };
 

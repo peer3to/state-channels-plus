@@ -241,20 +241,23 @@ export class Scenario {
             harness.context.maliciousPeerIndex = maliciousPeerIndex;
             harness.context.honestPeerIndices = honest;
 
-            // Use disputeOrchestrator action to handle the complex workflow
-            const result =
-                await harness.disputeOrchestrator.createAndResolveInvalidStateTransitionDispute(
-                    maliciousPeerIndex,
-                    {
-                        forkId,
-                        honestPeerIndices: honest,
-                        forkSettleTimeoutMs,
-                        disputesCommittedTimeoutMs,
-                        resetEventSpies: true,
-                        disputesCommittedMode: "atLeast",
-                        assertMaliciousRemoved: false
-                    }
-                );
+            await harness.disputeOrchestrator.createInvalidStateTransitionDispute(
+                maliciousPeerIndex,
+                {
+                    forkId,
+                    resetEventSpies: true
+                }
+            );
+
+            const result = await harness.disputeOrchestrator.resolveDispute({
+                maliciousPeerIndex,
+                forkId,
+                honestPeerIndices: honest,
+                forkSettleTimeoutMs,
+                disputesCommittedTimeoutMs,
+                disputesCommittedMode: "atLeast",
+                assertMaliciousRemoved: false
+            });
 
             // Update active fork context
             harness.context.originalForkId = forkId;

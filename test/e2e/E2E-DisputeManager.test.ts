@@ -216,7 +216,7 @@ describe("E2E: Dispute Manager", function () {
                 Scenario.readyForRedispute(),
 
                 // Setup interception: when peer 0 constructs a dispute, tamper it
-                Byzantine.interceptDisputeConstruction({
+                Byzantine.stubDisputeConstruction({
                     peerIndex: 0,
                     tamperFn: async (dispute) => {
                         // Corrupt first signed block's transaction count
@@ -255,7 +255,10 @@ describe("E2E: Dispute Manager", function () {
                 Event.waitForPeerDisputes(2, 2, { timeoutMs: 15000 }),
 
                 // Verify peer 2 stored fraud proof for peer 0's tampered dispute
-                Assert.fraudProofStoredForTamperedDispute(2)
+                Assert.fraudProofStoredForTamperedDispute(2),
+
+                // Cleanup: restore constructDispute interception
+                Byzantine.restoreDisputeConstruction(0)
             );
         });
     });
