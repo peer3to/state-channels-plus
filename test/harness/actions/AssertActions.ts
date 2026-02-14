@@ -75,24 +75,33 @@ export class AssertActions {
         expect(disputeCommitted).to.be.true;
     }
 
-    async blockHeight(expectedHeight: number): Promise<void> {
+    async blockHeight(options: {
+        expectedHeight: number;
+        peerIndices?: number[];
+    }): Promise<void> {
+        const { expectedHeight, peerIndices } = options;
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        if (peers.length === 0) {
+            throw new Error("No peers available to check block height");
+        }
+
         const forkId = this.harness.activeForkId;
         if (!forkId) {
             throw new Error("No active fork ID");
         }
 
-        const latestBlock =
-            this.harness.peers[0].stateManager.storage.blocks.getLatestBlock(
-                forkId
+        for (const peer of peers) {
+            const latestBlock =
+                peer.stateManager.storage.blocks.getLatestBlock(forkId);
+            expect(latestBlock).to.not.equal(
+                undefined,
+                `Peer ${peer.index} should have a latest block`
             );
-        expect(latestBlock).to.not.equal(
-            undefined,
-            "Should have a latest block"
-        );
-        expect(latestBlock?.height).to.equal(
-            expectedHeight,
-            `Block height should be ${expectedHeight}`
-        );
+            expect(latestBlock?.height).to.equal(
+                expectedHeight,
+                `Peer ${peer.index} block height should be ${expectedHeight}`
+            );
+        }
     }
 
     /**

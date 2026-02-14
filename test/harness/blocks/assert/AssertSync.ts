@@ -30,9 +30,12 @@ export class AssertSync {
     /**
      * Assert block height matches expected value
      */
-    static blockHeight(expectedHeight: number) {
+    static blockHeight(options: {
+        expectedHeight: number;
+        peerIndices?: number[];
+    }) {
         return new HarnessBlock(async (harness) => {
-            await harness.assertActions.blockHeight(expectedHeight);
+            await harness.assertActions.blockHeight(options);
             return harness;
         });
     }

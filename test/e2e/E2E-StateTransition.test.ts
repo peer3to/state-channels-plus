@@ -23,7 +23,7 @@ describe("E2E: State Transitions", function () {
                 Scenario.startChannel(3),
                 Transition.advanceState({ count: 10 }),
                 Assert.allPeersInSync(),
-                Assert.blockHeight(9) // 10 blocks after genesis = height 9
+                Assert.blockHeight({ expectedHeight: 9 }) // 10 blocks after genesis = height 9
             );
         });
 
@@ -32,7 +32,7 @@ describe("E2E: State Transitions", function () {
                 Scenario.startChannel(4),
                 Transition.advanceState({ rounds: 1 }), // All 4 peers write once
                 Assert.allPeersInSync(),
-                Assert.blockHeight(3) // 4 transitions = height 3
+                Assert.blockHeight({ expectedHeight: 3 }) // 4 transitions = height 3
             );
         });
 
@@ -41,7 +41,7 @@ describe("E2E: State Transitions", function () {
                 Scenario.startChannel(3),
                 Transition.advanceState({ rounds: 3 }), // 3 rounds = 9 transitions
                 Assert.allPeersInSync(),
-                Assert.blockHeight(8)
+                Assert.blockHeight({ expectedHeight: 8 })
             );
         });
     });

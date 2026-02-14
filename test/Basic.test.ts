@@ -6,7 +6,7 @@ describe("Basic P2P Simulation", function () {
             Scenario.startChannel(2),
             Transition.advanceState(),
             Assert.allPeersInSync(),
-            Assert.blockHeight(0)
+            Assert.blockHeight({ expectedHeight: 0 })
         );
     });
 });
