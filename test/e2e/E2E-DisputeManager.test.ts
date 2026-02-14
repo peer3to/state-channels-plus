@@ -134,7 +134,7 @@ describe("E2E: Dispute Manager", function () {
                     mode: "atLeast"
                 }),
                 // Assert: Fraud proof stored and fork unchanged
-                Assert.disputeFraudProofStoredForLatestInvalidDispute(),
+                Assert.latestDisputeFraudProofStored(),
                 Assert.forkUnchanged()
             );
         });
@@ -151,7 +151,7 @@ describe("E2E: Dispute Manager", function () {
                 }),
 
                 // Assert: Fraud proof stored and fork unchanged
-                Assert.disputeFraudProofStoredForLatestInvalidDispute(),
+                Assert.latestDisputeFraudProofStored(),
                 Assert.forkUnchanged()
             );
         });
@@ -168,7 +168,7 @@ describe("E2E: Dispute Manager", function () {
                     mode: "atLeast"
                 }),
                 // Assert: Fraud proof stored and fork unchanged
-                Assert.disputeFraudProofStoredForLatestInvalidDispute(),
+                Assert.latestDisputeFraudProofStored(),
                 Assert.forkUnchanged()
             );
         });
@@ -185,7 +185,7 @@ describe("E2E: Dispute Manager", function () {
                     mode: "atLeast"
                 }),
                 // Assert: Fraud proof stored and fork unchanged
-                Assert.disputeFraudProofStoredForLatestInvalidDispute(),
+                Assert.latestDisputeFraudProofStored(),
                 Assert.forkUnchanged()
             );
         });
@@ -202,7 +202,7 @@ describe("E2E: Dispute Manager", function () {
                     mode: "atLeast"
                 }),
                 // Assert: Fraud proof stored and fork unchanged
-                Assert.disputeFraudProofStoredForLatestInvalidDispute(),
+                Assert.latestDisputeFraudProofStored(),
                 Assert.forkUnchanged()
             );
         });
@@ -260,7 +260,7 @@ describe("E2E: Dispute Manager", function () {
     });
 
     describe("Partial Syncing via Dispute Validation", function () {
-        it.only("should sync missing state via validStateProofButNotSynced when peer receives dispute with blocks it doesn't have", async function () {
+        it("should sync missing state via validStateProofButNotSynced when peer receives dispute with blocks it doesn't have", async function () {
             await ScenarioRunner.execute(
                 // Setup: Peer 1 has block that others don't have
                 Scenario.peerWithUnbroadcastedBlock(1),

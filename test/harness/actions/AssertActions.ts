@@ -392,16 +392,17 @@ export class AssertActions {
     }
 
     /**
-     * Assert fraud proof was stored for a dispute
+     * Assert dispute fraud proof was stored for a dispute
      */
     async assertDisputeFraudProofStored(options: {
         dispute: DisputeStruct;
         timeoutMs?: number;
+        peerIndices?: number[];
     }): Promise<void> {
-        const { dispute, timeoutMs = 2000 } = options;
-
+        const { dispute, timeoutMs = 2000, peerIndices } = options;
+        const peers = this.harness.getFilteredPeers(peerIndices);
         const condition = () => {
-            return this.harness.peers.every((peer) => {
+            return peers.every((peer) => {
                 const proof =
                     peer.stateManager.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
                         dispute
@@ -419,11 +420,11 @@ export class AssertActions {
         try {
             await this.harness.eventCountsBarrier.waitFor(condition, {
                 timeoutMs,
-                timeoutMessage: `Fraud proof was not stored on all peers within ${timeoutMs}ms`
+                timeoutMessage: `Dispute fraud proof was not stored on all peers within ${timeoutMs}ms`
             });
         } catch (error) {
             throw new Error(
-                `Fraud proof was not stored on all peers within ${timeoutMs}ms`
+                `Dispute fraud proof was not stored on all peers within ${timeoutMs}ms`
             );
         }
     }

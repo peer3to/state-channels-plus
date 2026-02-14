@@ -525,6 +525,11 @@ export class PeerTestHarness<
         return this.peers.map((p) => p.address);
     }
 
+    getFilteredPeers(peerIndices?: number[]): TestPeer<TFactories>[] {
+        return peerIndices
+            ? peerIndices.map((i) => this.getPeer(i))
+            : this.peers;
+    }
     getConfig(): Partial<Config> {
         return this.harnessConfig;
     }
