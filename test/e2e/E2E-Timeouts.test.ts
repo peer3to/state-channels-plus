@@ -33,7 +33,7 @@ describe("E2E: Timeouts", function () {
                     timeoutMs: 10000
                 }),
                 Assert.didNotInitiateDispute({ peers: [2] }),
-                Assert.disputeCommittedByAll({ expectedCountPerPeer: 1 }),
+                Assert.disputeCommittedByPeers({ expectedCount: 1 }),
                 Assert.noCalldataPosted()
             );
         });
@@ -100,7 +100,7 @@ describe("E2E: Timeouts", function () {
                     peers: [0, 1],
                     timeoutMs: 10000
                 }),
-                Assert.disputeCommittedByAll(),
+                Assert.disputeCommittedByPeers(),
                 // Assert it's a forced timeout
                 Assert.timeoutIsForced({ participant: 2 })
             );

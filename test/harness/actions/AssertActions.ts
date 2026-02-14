@@ -161,37 +161,6 @@ export class AssertActions {
     }
 
     /**
-     * Assert all peers committed disputes with expected count per peer
-     */
-    async disputeCommittedByAll(options?: {
-        expectedCountPerPeer?: number;
-        timeoutMs?: number;
-    }): Promise<void> {
-        const { expectedCountPerPeer = 1, timeoutMs = 5000 } = options || {};
-
-        const condition = () => {
-            return this.harness.peers.every(
-                (peer) =>
-                    this.harness.eventActions.getEventCallCount(
-                        peer.index,
-                        "onDisputeCommitted"
-                    ) >= expectedCountPerPeer
-            );
-        };
-
-        // Check immediately
-        if (condition()) {
-            return;
-        }
-
-        // Use event barrier
-        await this.harness.eventCountsBarrier.waitFor(condition, {
-            timeoutMs,
-            timeoutMessage: `All peers did not commit ${expectedCountPerPeer} disputes within ${timeoutMs}ms`
-        });
-    }
-
-    /**
      * Assert honest peers initiated disputes
      * Uses honest peer indices from harness context (set by Byzantine blocks)
      */

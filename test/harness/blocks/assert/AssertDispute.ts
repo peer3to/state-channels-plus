@@ -139,19 +139,6 @@ export class AssertDispute {
     }
 
     /**
-     * Assert all peers committed the dispute
-     */
-    static disputeCommittedByAll(options?: {
-        expectedCountPerPeer?: number;
-        timeoutMs?: number;
-    }) {
-        return new HarnessBlock(async (harness) => {
-            await harness.assertActions.disputeCommittedByAll(options);
-            return harness;
-        });
-    }
-
-    /**
      * Assert no disputes occurred (neither initiated nor committed)
      */
     static noDisputes() {
