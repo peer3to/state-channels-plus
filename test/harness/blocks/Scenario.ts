@@ -94,7 +94,7 @@ export class Scenario {
             Scenario.startChannel(peerCount, 2, options),
             Assert.peersInSync(),
             Event.reset(),
-            Event.captureOriginalFork()
+            Context.captureOriginalFork()
         );
     }
 

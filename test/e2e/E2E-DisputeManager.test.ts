@@ -6,7 +6,8 @@ import {
     Assert,
     Event,
     Transition,
-    PeerTestHarness
+    PeerTestHarness,
+    Context
 } from "@test/harness";
 
 PeerTestHarness.setDefaultLogLevel("error");
@@ -74,7 +75,7 @@ describe("E2E: Dispute Manager", function () {
                 Assert.peersInSync(),
                 Event.reset(),
 
-                Event.captureOriginalFork(),
+                Context.captureOriginalFork(),
                 Byzantine.invalidTransitionFromNext(),
                 Assert.disputeCommittedByPeers({
                     expectedCount: 3

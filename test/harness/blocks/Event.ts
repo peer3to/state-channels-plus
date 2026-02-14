@@ -127,16 +127,6 @@ export class Event {
     }
 
     /**
-     * Capture the current fork ID for later comparison
-     */
-    static captureOriginalFork() {
-        return new HarnessBlock(async (harness) => {
-            harness.context.originalForkId = harness.activeForkId;
-            return harness;
-        });
-    }
-
-    /**
      * Wait for a generic event to occur on any peer (synchronization point)
      */
     static waitUntilEventOccurs(

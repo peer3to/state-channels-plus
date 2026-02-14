@@ -141,4 +141,14 @@ export class Context {
         }
         return expectedWithdrawalsDeltaBalance;
     }
+
+    /**
+     * Capture the current fork ID for later comparison
+     */
+    static captureOriginalFork() {
+        return new HarnessBlock(async (harness) => {
+            harness.context.originalForkId = harness.activeForkId;
+            return harness;
+        });
+    }
 }
