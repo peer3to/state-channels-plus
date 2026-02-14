@@ -11,7 +11,6 @@ export { AssertCalldata };
 export { AssertRPC };
 
 export class Assert {
-    static allPeersInSync = AssertSync.allPeersInSync;
     static peersInSync = AssertSync.peersInSync;
     static blockHeight = AssertSync.blockHeight;
     static forkChanged = AssertSync.forkChanged;

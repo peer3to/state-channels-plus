@@ -3,23 +3,12 @@ import { expect } from "chai";
 
 export class AssertSync {
     /**
-     * Assert all peers are in sync with same block height and hash
-     */
-    static allPeersInSync(options?: { timeout?: number }) {
-        const { timeout = 10000 } = options || {};
-        return new HarnessBlock(async (harness) => {
-            await harness.assertActions.assertAllPeersInSync({ timeout });
-            return harness;
-        });
-    }
-
-    /**
      * Assert all specified peers are in sync
      */
-    static peersInSync(peerIndices: number[], options?: { timeout?: number }) {
-        const { timeout = 10000 } = options || {};
+    static peersInSync(options?: { timeout?: number; peerIndices?: number[] }) {
+        const { timeout = 10000, peerIndices } = options || {};
         return new HarnessBlock(async (harness) => {
-            await harness.assertActions.assertAllPeersInSync({
+            await harness.assertActions.assertPeersInSync({
                 peerIndices,
                 timeout
             });
@@ -106,7 +95,7 @@ export class AssertSync {
                 );
             }
 
-            await harness.assertActions.assertAllPeersInSync({
+            await harness.assertActions.assertPeersInSync({
                 peerIndices: honestIndices
             });
 

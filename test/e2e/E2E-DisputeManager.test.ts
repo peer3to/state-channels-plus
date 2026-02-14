@@ -71,7 +71,7 @@ describe("E2E: Dispute Manager", function () {
                         evidenceTime: 3
                     }
                 }),
-                Assert.allPeersInSync(),
+                Assert.peersInSync(),
                 Event.reset(),
 
                 Event.captureOriginalFork(),
@@ -277,7 +277,7 @@ describe("E2E: Dispute Manager", function () {
                 }),
 
                 // Peer 2 should sync the missing block via peer 1's dispute
-                Assert.peersInSync([1, 2])
+                Assert.peersInSync({ peerIndices: [1, 2] })
             );
         });
 

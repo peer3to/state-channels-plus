@@ -63,7 +63,7 @@ export class Scenario {
     }) {
         return HarnessBlock.compose(
             Scenario.startChannel(4, 2, options),
-            Assert.allPeersInSync(),
+            Assert.peersInSync(),
             Scenario.disputeWithReduction({ maliciousPeerIndex: 2 })
         );
     }
@@ -92,7 +92,7 @@ export class Scenario {
     static preDisputeSetup(peerCount: number = 3, options?: HarnessOptions) {
         return HarnessBlock.compose(
             Scenario.startChannel(peerCount, 2, options),
-            Assert.allPeersInSync(),
+            Assert.peersInSync(),
             Event.reset(),
             Event.captureOriginalFork()
         );
@@ -107,7 +107,7 @@ export class Scenario {
     ) {
         return HarnessBlock.compose(
             Scenario.startChannel(3, 1),
-            Assert.allPeersInSync(),
+            Assert.peersInSync(),
             Event.reset(),
             Byzantine.stubBroadcast(peerIndex),
             Transition.advanceState({
@@ -130,7 +130,7 @@ export class Scenario {
             Transition.advanceState({ count: initialTransitions }),
             Lifecycle.addPeer(), // Adds spectator at index 3
             // Wait for all peers (including newly added spectator at index 3) to sync
-            Assert.peersInSync([0, 1, 2, 3])
+            Assert.peersInSync({ peerIndices: [0, 1, 2, 3] })
         );
     }
 
@@ -150,7 +150,7 @@ export class Scenario {
             Byzantine.disconnect(3),
             // Do 1 transaction to build up signedBlocks for state proofs
             Transition.advanceState({ txFn: (c) => c.add(1) }),
-            Assert.peersInSync([0, 1, 2]),
+            Assert.peersInSync({ peerIndices: [0, 1, 2] }),
             Event.reset()
         );
     }

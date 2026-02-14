@@ -35,7 +35,7 @@ describe("E2E: State Snapshots", function () {
             Transition.advanceState({ count: 1 }),
             Transition.advanceState({ txFn: (c) => c.leaveChannel() }),
             Transition.advanceState({ count: 1 }),
-            Assert.allPeersInSync(),
+            Assert.peersInSync(),
             Event.reset(),
             Assert.channelWithdrawalsMatchSnapshot(),
             // Prepare snapshot data and store in context for delta assertions

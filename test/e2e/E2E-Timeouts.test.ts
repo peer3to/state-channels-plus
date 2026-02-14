@@ -130,7 +130,7 @@ describe("E2E: Timeouts", function () {
                 Scenario.startChannel(3, 2),
                 Byzantine.disconnect(2), // Peer 2 goes offline
                 Transition.advanceState({ count: 1 }), // Should work with peers 0,1
-                Assert.peersInSync([0, 1]),
+                Assert.peersInSync({ peerIndices: [0, 1] }),
                 Assert.noDisputes()
             );
         });

@@ -32,10 +32,7 @@ export { ByzantineActions } from "./actions/ByzantineActions";
 export { RPCActions } from "./actions/RPCActions";
 
 // Re-export SyncCoordinator
-export {
-    default as SyncCoordinator,
-    WaitForPeersInSyncOptions
-} from "@test/utils/SyncCoordinator";
+export { default as SyncCoordinator } from "@test/utils/SyncCoordinator";
 
 // Re-export the original harness for compatibility
 export { PeerTestHarness } from "@test/fixtures/PeerTestHarness";

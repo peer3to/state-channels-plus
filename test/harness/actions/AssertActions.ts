@@ -107,7 +107,7 @@ export class AssertActions {
     /**
      * Assert all peers are in sync (block hash and state match)
      */
-    async assertAllPeersInSync(
+    async assertPeersInSync(
         options: {
             expectedStateMachineStateHash?: Hash;
             peerIndices?: number[];
@@ -119,11 +119,8 @@ export class AssertActions {
             peerIndices,
             timeout = 10000
         } = options;
-        const indicesToCheck =
-            peerIndices ??
-            Array.from({ length: this.harness.peers.length }, (_, i) => i);
-
-        if (indicesToCheck.length < 2)
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        if (peers.length < 2)
             throw new Error("Need at least 2 peers to check sync");
 
         const forkId = this.harness.activeForkId;
@@ -132,24 +129,21 @@ export class AssertActions {
         }
 
         // Wait for peers to sync using the event barrier approach
-        await this.harness.syncCoordinator.waitForPeersInSync(
-            this.harness.peers,
+        await this.harness.syncCoordinator.waitForPeersToSync(
+            peers,
             forkId,
-            {
-                timeout,
-                peerIndices
-            }
+            timeout
         );
 
         // Check state machine state synchronization
-        const firstPeerIndex = indicesToCheck[0];
+        const firstPeerIndex = peers[0].index;
         const firstPeerState =
             this.harness.stateQuery.getLatestStateMachineStateHash(
                 firstPeerIndex
             );
 
-        for (let i = 1; i < indicesToCheck.length; i++) {
-            const peerIndex = indicesToCheck[i];
+        for (let i = 1; i < peers.length; i++) {
+            const peerIndex = peers[i].index;
             const peerState =
                 this.harness.stateQuery.getLatestStateMachineStateHash(
                     peerIndex
