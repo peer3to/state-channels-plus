@@ -39,8 +39,6 @@ export class Assert {
     static disputeInitiatedByPeers = AssertDispute.disputeInitiatedByPeers;
     static didNotInitiateDispute = AssertDispute.didNotInitiateDispute;
     static noDisputes = AssertDispute.noDisputes;
-    static honestPeersInitiateDispute =
-        AssertDispute.honestPeersInitiateDispute;
     static timeoutIsForced = AssertDispute.timeoutIsForced;
 
     static noCalldataPosted = AssertCalldata.noCalldataPosted;

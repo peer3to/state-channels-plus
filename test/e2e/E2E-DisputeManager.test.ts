@@ -46,7 +46,7 @@ describe("E2E: Dispute Manager", function () {
                 Scenario.startChannel(3, 2),
                 Event.reset(),
                 Byzantine.forgedInboundMessageFromNext(),
-                Assert.honestPeersInitiateDispute(),
+                Assert.disputeInitiatedByPeers(),
                 Assert.disputeCommittedByPeers({ expectedCount: 2 })
             );
         });

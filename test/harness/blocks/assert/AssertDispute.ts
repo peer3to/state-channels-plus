@@ -105,14 +105,14 @@ export class AssertDispute {
     /**
      * Assert specific peers initiated disputes
      */
-    static disputeInitiatedByPeers(options: {
-        peers: number[];
+    static disputeInitiatedByPeers(options?: {
+        peers?: number[];
         timeoutMs?: number;
     }) {
         return new HarnessBlock(async (harness) => {
             await harness.assertActions.disputeInitiatedByPeers({
-                peersIndices: options.peers,
-                timeoutMs: options.timeoutMs
+                peersIndices: options?.peers,
+                timeoutMs: options?.timeoutMs
             });
             return harness;
         });
@@ -144,20 +144,6 @@ export class AssertDispute {
     static noDisputes() {
         return new HarnessBlock(async (harness) => {
             harness.assertActions.assertNoDisputes();
-            return harness;
-        });
-    }
-
-    /**
-     * Assert honest peers initiated disputes
-     *
-     */
-    static honestPeersInitiateDispute(options?: {
-        timeoutMs?: number;
-        expectedCountPerPeer?: number;
-    }) {
-        return new HarnessBlock(async (harness) => {
-            await harness.assertActions.honestPeersInitiateDispute(options);
             return harness;
         });
     }
