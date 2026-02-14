@@ -1,9 +1,11 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
 import { Logger } from "@/utils";
-import { Address, Hash } from "@/types/types";
+import { Address, BlockHeight, ForkId, Hash } from "@/types/types";
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
+import { ethers } from "@/index";
+import Block from "@/models/Block";
 
 /**
  * StateQueryActions handles all read-only state queries.
@@ -47,6 +49,45 @@ export class StateQueryActions {
         if (!latestStateMachineState) return null;
 
         return latestStateSnapshot.stateMachineStateHash; // return the hash if the state exists
+    }
+
+    public getPreviousBlockHash(
+        peer: TestPeer,
+        forkId: ForkId,
+        height?: BlockHeight
+    ): Hash {
+        if (height !== undefined) {
+            const previousBlockOrSnapshot =
+                peer.stateManager.storage.getPreviousBlockOrSnapshot({
+                    forkId,
+                    height
+                });
+            return previousBlockOrSnapshot.block
+                ? previousBlockOrSnapshot.block.hash
+                : previousBlockOrSnapshot.stateSnapshot!.hash;
+        }
+
+        const previousBlock =
+            peer.stateManager.storage.blocks.getLatestBlock(forkId);
+        return (
+            previousBlock?.hash ||
+            peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                forkId
+            )?.hash ||
+            ethers.ZeroHash
+        );
+    }
+
+    public getStateSnapshotHash(
+        peer: TestPeer,
+        forkId: ForkId,
+        previousBlock?: Block
+    ): Hash {
+        return previousBlock
+            ? previousBlock.stateSnapshotHash
+            : peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                  forkId
+              )?.hash || ethers.ZeroHash;
     }
 
     /**

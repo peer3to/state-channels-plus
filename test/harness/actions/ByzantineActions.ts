@@ -127,7 +127,7 @@ export class ByzantineActions {
 
         const nextBlockHeight =
             peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
-        const previousBlockHash = this.getPreviousBlockHash(
+        const previousBlockHash = this.harness.stateQuery.getPreviousBlockHash(
             peer,
             forkId,
             nextBlockHeight
@@ -205,12 +205,12 @@ export class ByzantineActions {
             peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
         const previousBlock =
             peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        const previousBlockHash = this.getPreviousBlockHash(
+        const previousBlockHash = this.harness.stateQuery.getPreviousBlockHash(
             peer,
             forkId,
             nextBlockHeight
         );
-        const stateSnapshotHash = this.getStateSnapshotHash(
+        const stateSnapshotHash = this.harness.stateQuery.getStateSnapshotHash(
             peer,
             forkId,
             previousBlock
@@ -325,8 +325,11 @@ export class ByzantineActions {
 
         const previousBlock =
             peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        const previousBlockHash = this.getPreviousBlockHash(peer, forkId);
-        const stateSnapshotHash = this.getStateSnapshotHash(
+        const previousBlockHash = this.harness.stateQuery.getPreviousBlockHash(
+            peer,
+            forkId
+        );
+        const stateSnapshotHash = this.harness.stateQuery.getStateSnapshotHash(
             peer,
             forkId,
             previousBlock
@@ -387,45 +390,5 @@ export class ByzantineActions {
         this.logger.info(`Junk calldata posted on-chain by peer ${peerIndex}`);
 
         return blockStruct;
-    }
-
-    // Private helper methods
-    private getPreviousBlockHash(
-        peer: TestPeer,
-        forkId: ForkId,
-        height?: BlockHeight
-    ): Hash {
-        if (height !== undefined) {
-            const previousBlockOrSnapshot =
-                peer.stateManager.storage.getPreviousBlockOrSnapshot({
-                    forkId,
-                    height
-                });
-            return previousBlockOrSnapshot.block
-                ? previousBlockOrSnapshot.block.hash
-                : previousBlockOrSnapshot.stateSnapshot!.hash;
-        }
-
-        const previousBlock =
-            peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        return (
-            previousBlock?.hash ||
-            peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                forkId
-            )?.hash ||
-            ethers.ZeroHash
-        );
-    }
-
-    private getStateSnapshotHash(
-        peer: TestPeer,
-        forkId: ForkId,
-        previousBlock?: Block
-    ): Hash {
-        return previousBlock
-            ? previousBlock.stateSnapshotHash
-            : peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                  forkId
-              )?.hash || ethers.ZeroHash;
     }
 }

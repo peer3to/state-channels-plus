@@ -140,7 +140,7 @@ describe("E2E: Dispute Manager", function () {
             );
         });
 
-        it("should reject timeout dispute when accused participant is not next to write", async function () {
+        it("should reject timeout dispute when timedout participant is not next to write", async function () {
             await ScenarioRunner.execute(
                 Scenario.preDisputeSetup(),
 
