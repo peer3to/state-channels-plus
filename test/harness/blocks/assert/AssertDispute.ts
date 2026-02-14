@@ -4,15 +4,19 @@ export class AssertDispute {
     /**
      * Assert dispute was committed on-chain by all peers
      */
-    static disputeCommittedByAllPeers(
-        expectedCount: number = 2,
-        timeoutMs: number = 5000
-    ) {
+    static disputeCommittedByPeers(options?: {
+        expectedCount?: number;
+        timeoutMs?: number;
+        peersIndices?: number[];
+    }) {
+        const {
+            expectedCount = 2,
+            timeoutMs = 5000,
+            peersIndices
+        } = options || {};
+
         return new HarnessBlock(async (harness) => {
-            await harness.assertActions.disputeCommittedByAllPeers(
-                timeoutMs,
-                expectedCount
-            );
+            await harness.assertActions.disputeCommittedByPeers(options);
             return harness;
         });
     }
@@ -101,12 +105,15 @@ export class AssertDispute {
     /**
      * Assert specific peers initiated disputes
      */
-    static disputeInitiatedBy(options: {
+    static disputeInitiatedByPeers(options: {
         peers: number[];
         timeoutMs?: number;
     }) {
         return new HarnessBlock(async (harness) => {
-            await harness.assertActions.disputeInitiatedBy(options);
+            await harness.assertActions.disputeInitiatedByPeers({
+                peersIndices: options.peers,
+                timeoutMs: options.timeoutMs
+            });
             return harness;
         });
     }

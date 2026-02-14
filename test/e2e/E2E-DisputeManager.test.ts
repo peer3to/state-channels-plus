@@ -27,8 +27,8 @@ describe("E2E: Dispute Manager", function () {
             await ScenarioRunner.execute(
                 Scenario.startChannel(3, 2),
                 Byzantine.doubleSignFrom(1), // Peer 1 double-signs
-                Assert.disputeInitiatedBy({ peers: [0, 2] }), // Peers 0,2 detect
-                Assert.disputeCommittedByAllPeers()
+                Assert.disputeInitiatedByPeers({ peers: [0, 2] }), // Peers 0,2 detect
+                Assert.disputeCommittedByPeers()
             );
         });
 
@@ -36,8 +36,8 @@ describe("E2E: Dispute Manager", function () {
             await ScenarioRunner.execute(
                 Scenario.startChannel(3, 2),
                 Byzantine.invalidTransitionFrom(2), // Peer 2 submits invalid
-                Assert.disputeInitiatedBy({ peers: [0, 1] }),
-                Assert.disputeCommittedByAllPeers(2)
+                Assert.disputeInitiatedByPeers({ peers: [0, 1] }),
+                Assert.disputeCommittedByPeers({ expectedCount: 2 })
             );
         });
 
@@ -47,7 +47,7 @@ describe("E2E: Dispute Manager", function () {
                 Event.reset(),
                 Byzantine.forgedInboundMessageFromNext(),
                 Assert.honestPeersInitiateDispute(),
-                Assert.disputeCommittedByAllPeers(2)
+                Assert.disputeCommittedByPeers({ expectedCount: 2 })
             );
         });
 
@@ -55,7 +55,7 @@ describe("E2E: Dispute Manager", function () {
             await ScenarioRunner.execute(
                 Scenario.startChannel(4, 3),
                 Byzantine.doubleSignFrom(2), // Peer 2 attacks
-                Assert.disputeInitiatedBy({ peers: [0, 1, 3] }) // Others detect
+                Assert.disputeInitiatedByPeers({ peers: [0, 1, 3] }) // Others detect
             );
         });
     });

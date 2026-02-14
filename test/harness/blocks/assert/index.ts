@@ -32,13 +32,12 @@ export class Assert {
     static onChainBalanceMatchesSnapshot =
         AssertSnapshot.onChainBalanceMatchesSnapshot;
 
-    static disputeCommittedByAllPeers =
-        AssertDispute.disputeCommittedByAllPeers;
+    static disputeCommittedByPeers = AssertDispute.disputeCommittedByPeers;
     static latestDisputeFraudProofStored =
         AssertDispute.latestDisputeFraudProofStored;
     static fraudProofStoredForTamperedDispute =
         AssertDispute.fraudProofStoredForTamperedDispute;
-    static disputeInitiatedBy = AssertDispute.disputeInitiatedBy;
+    static disputeInitiatedByPeers = AssertDispute.disputeInitiatedByPeers;
     static didNotInitiateDispute = AssertDispute.didNotInitiateDispute;
     static disputeCommittedByAll = AssertDispute.disputeCommittedByAll;
     static noDisputes = AssertDispute.noDisputes;

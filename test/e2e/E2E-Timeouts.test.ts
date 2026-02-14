@@ -28,7 +28,7 @@ describe("E2E: Timeouts", function () {
                 // Peer 2 should take turn but doesn't -> timeout triggers
 
                 Event.reset(),
-                Assert.disputeInitiatedBy({
+                Assert.disputeInitiatedByPeers({
                     peers: [0, 1],
                     timeoutMs: 10000
                 }),
@@ -44,7 +44,7 @@ describe("E2E: Timeouts", function () {
                 Transition.advanceState({ count: 2 }), // First 2 peers take turn, 3rd doesn't
 
                 Event.reset(),
-                Assert.disputeInitiatedBy({
+                Assert.disputeInitiatedByPeers({
                     peers: [0, 1],
                     timeoutMs: 10000
                 })
@@ -77,7 +77,7 @@ describe("E2E: Timeouts", function () {
                 // Now it's peer 1's turn - disconnect them (author peer)
                 Byzantine.disconnect(1),
                 // Wait for timeout dispute from peers 0 and 2
-                Assert.disputeInitiatedBy({
+                Assert.disputeInitiatedByPeers({
                     peers: [0, 2],
                     timeoutMs: 10000
                 })
@@ -96,7 +96,7 @@ describe("E2E: Timeouts", function () {
                 // Wait for other peers to detect the calldata
                 Event.waitUntilEventOccurs("onBlockCalldataPosted"),
                 // Assert forced timeout detection
-                Assert.disputeInitiatedBy({
+                Assert.disputeInitiatedByPeers({
                     peers: [0, 1],
                     timeoutMs: 10000
                 }),
@@ -116,7 +116,7 @@ describe("E2E: Timeouts", function () {
                 Byzantine.postJunkCalldata(2, { heightOffset: 0 }), // For current height
                 Event.waitUntilEventOccurs("onBlockCalldataPosted"),
                 Event.reset(),
-                Assert.disputeInitiatedBy({
+                Assert.disputeInitiatedByPeers({
                     peers: [1, 2],
                     timeoutMs: 10000
                 })

@@ -11,14 +11,14 @@ export class AssertActions {
         private logger: Logger
     ) {}
 
-    async disputeInitiatedBy(options: {
-        peers: number[];
+    async disputeInitiatedByPeers(options: {
+        peersIndices?: number[];
         timeoutMs?: number;
     }): Promise<void> {
-        const { peers, timeoutMs = 5000 } = options;
-
-        const expectedCounts = peers.map((peerId) => ({
-            peerId,
+        const { peersIndices, timeoutMs = 5000 } = options;
+        const peers = this.harness.getFilteredPeers(peersIndices);
+        const expectedCounts = peers.map((peer) => ({
+            peerId: peer.index,
             expectedCount: 1
         }));
 
@@ -31,26 +31,36 @@ export class AssertActions {
 
         expect(disputeCreated).to.be.true;
 
-        const allPeerIndices = this.harness.peers.map((p) => p.index);
-        const nonInitiators = allPeerIndices.filter((i) => !peers.includes(i));
+        const nonInitiators = this.harness.peers.filter(
+            (peer) => !peers.includes(peer)
+        );
 
-        for (const peerIndex of nonInitiators) {
+        for (const peer of nonInitiators) {
             const count = this.harness.eventActions.getEventCallCount(
-                peerIndex,
+                peer.index,
                 "onInitiatingDispute"
             );
             expect(count).to.equal(
                 0,
-                `Peer ${peerIndex} should not have initiated dispute`
+                `Peer ${peer.index} should not have initiated dispute`
             );
         }
     }
 
-    async disputeCommittedByAllPeers(
-        timeout: number = 5000,
-        expectedCount: number
-    ): Promise<void> {
-        const expectedCounts = this.harness.peers.map((p) => ({
+    async disputeCommittedByPeers(options?: {
+        expectedCount?: number;
+        timeoutMs?: number;
+        peersIndices?: number[];
+    }): Promise<void> {
+        const {
+            expectedCount = 2,
+            timeoutMs = 5000,
+            peersIndices
+        } = options || {};
+
+        const peers = this.harness.getFilteredPeers(peersIndices);
+
+        const expectedCounts = peers.map((p) => ({
             peerId: p.index,
             expectedCount: expectedCount
         }));
@@ -59,7 +69,7 @@ export class AssertActions {
             await this.harness.eventActions.waitForEventCounts(
                 "onDisputeCommitted",
                 expectedCounts,
-                timeout
+                timeoutMs
             );
 
         expect(disputeCommitted).to.be.true;
