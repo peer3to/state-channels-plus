@@ -1,7 +1,7 @@
 import { Address } from "@/types/types";
+import Clock from "@/Clock";
 import type { LogUploader } from "./LogUploader";
 import type { LogStore } from "./logStore";
-import { formatTime } from "./formatUtils";
 
 // The context exclusive to each logger
 export type ExclusiveLoggerContext = {
@@ -70,8 +70,16 @@ export abstract class Logger {
     private log(level: LogLevel, message: string, meta: any[]): void {
         if (!this.shouldProcessLevel(level)) return;
         const stack = new Error().stack!;
+
+        let timeSeconds: number;
+        try {
+            timeSeconds = Clock.getTimeInSeconds();
+        } catch {
+            timeSeconds = Math.floor(Date.now() / 1000);
+        }
+
         const logEntry: LogEntry = {
-            time: formatTime(),
+            time: String(timeSeconds),
             level,
             message,
             context: this.context,

@@ -10,6 +10,7 @@ import type { LogUploaderOptions } from "../LogUploader";
 import type { LogStore } from "../logStore";
 import { Colors } from "./colors";
 import { config, isNodeRuntime } from "../../config";
+import { formatTimeFromSeconds } from "../formatUtils";
 
 export class NodeLogger extends Logger {
     private excludedTags: Set<string>;
@@ -71,7 +72,7 @@ export class NodeLogger extends Logger {
             return "";
         }
 
-        const time = logEntry.time;
+        const time = formatTimeFromSeconds(logEntry.time);
         const level = logEntry.level;
         const levelUpper = level.toUpperCase();
 

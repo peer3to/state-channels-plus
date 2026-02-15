@@ -12,8 +12,10 @@ export function safeJson(value: any): string {
     );
 }
 
-export function formatTime(): string {
-    return new Date().toLocaleTimeString("en-US", {
+export function formatTimeFromSeconds(timeSeconds: string): string {
+    const time = Number(timeSeconds);
+    if (!Number.isFinite(time)) return "";
+    return new Date(time * 1000).toLocaleTimeString("en-US", {
         hour12: false,
         hour: "2-digit",
         minute: "2-digit",
