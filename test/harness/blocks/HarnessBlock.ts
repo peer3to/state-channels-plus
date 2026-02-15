@@ -58,6 +58,16 @@ export class ScenarioRunner {
             for (const block of blocks) {
                 harness = await block.run(harness);
             }
+        } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+
+            harness.peers.map((peer) =>
+                peer.logger.error(
+                    `Peer ${peer.index} encountered an error: ${error.message}`
+                )
+            );
+
+            throw err;
         } finally {
             await harness.cleanup();
         }
@@ -73,8 +83,20 @@ export class ScenarioRunner {
     }> {
         let harness = new PeerTestHarness();
 
-        for (const block of blocks) {
-            harness = await block.run(harness);
+        try {
+            for (const block of blocks) {
+                harness = await block.run(harness);
+            }
+        } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+
+            harness.peers.map((peer) =>
+                peer.logger.error(
+                    `Peer ${peer.index} encountered an error: ${error.message}`
+                )
+            );
+
+            throw err;
         }
 
         return {

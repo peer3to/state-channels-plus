@@ -32,6 +32,15 @@ export class Lifecycle {
         });
     }
 
+    static resolveDispute(maliciousPeerIndex: number) {
+        return new HarnessBlock(async (harness) => {
+            await harness.disputeOrchestrator.resolveDispute({
+                maliciousPeerIndex,
+                forkId: harness.activeForkId!
+            });
+            return harness;
+        });
+    }
     /**
      * Add a new peer after the harness is already set up
      */
@@ -66,6 +75,15 @@ export class Lifecycle {
                     harness.channelId!.toString()
                 );
             }
+            return harness;
+        });
+    }
+
+    static triggerUploadLogs() {
+        return new HarnessBlock(async (harness) => {
+            await harness.peers.map((peer) =>
+                peer.logger.error(`Triggering log upload on peer ${peer.index}`)
+            );
             return harness;
         });
     }

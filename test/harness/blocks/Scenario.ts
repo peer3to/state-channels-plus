@@ -101,17 +101,12 @@ export class Scenario {
     /**
      * Peer has unbroadcasted block (partial sync scenario)
      */
-    static peerWithUnbroadcastedBlock(
-        peerIndex: number = 1,
-        value: number = 10
-    ) {
+    static peerWithUnbroadcastedBlock(peerIndex: number = 1) {
         return HarnessBlock.compose(
-            Scenario.startChannel(3, 1),
             Assert.peersInSync(),
             Event.reset(),
             Byzantine.stubBroadcast(peerIndex),
             Transition.advanceState({
-                txFn: (c) => c.add(value),
                 waitForSync: false
             })
         );

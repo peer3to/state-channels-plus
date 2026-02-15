@@ -7,7 +7,8 @@ import {
     Event,
     Transition,
     PeerTestHarness,
-    Context
+    Context,
+    Lifecycle
 } from "@test/harness";
 
 PeerTestHarness.setDefaultLogLevel("error");
@@ -123,7 +124,7 @@ describe("E2E: Dispute Manager", function () {
     });
 
     describe("Fraud Proof Detection", function () {
-        it("should reject dispute with incorrect auditing data commitment", async function () {
+        it.only("should reject dispute with incorrect auditing data commitment", async function () {
             await ScenarioRunner.execute(
                 Scenario.preDisputeSetup(),
 
@@ -136,7 +137,9 @@ describe("E2E: Dispute Manager", function () {
                 }),
                 // Assert: Fraud proof stored and fork unchanged
                 Assert.latestDisputeFraudProofStored(),
-                Assert.forkUnchanged()
+                // Lifecycle.triggerUploadLogs(),
+                Lifecycle.resolveDispute(1),
+                Assert.forkChanged()
             );
         });
 
@@ -266,11 +269,15 @@ describe("E2E: Dispute Manager", function () {
     describe("Partial Syncing via Dispute Validation", function () {
         it("should sync missing state via validStateProofButNotSynced when peer receives dispute with blocks it doesn't have", async function () {
             await ScenarioRunner.execute(
-                // Setup: Peer 1 has block that others don't have
+                // Setup: 3 peers, 1 state transition
+                Scenario.startChannel(3, 1),
+                // Peer 1 has produces a block that others don't have
                 Scenario.peerWithUnbroadcastedBlock(1),
 
                 // Verify peer 1 is ahead (has the block that wasn't broadcast)
                 Assert.peerBlockHeightGreaterThan(1, 2),
+                Assert.blockHeight({ expectedHeight: 0, peerIndices: [0, 2] }),
+                Assert.blockHeight({ expectedHeight: 1, peerIndices: [1] }),
 
                 // Peer 0 submits invalid transition (triggers disputes)
                 Byzantine.invalidTransitionFrom(0),

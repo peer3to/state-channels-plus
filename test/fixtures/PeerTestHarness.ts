@@ -1,6 +1,6 @@
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
-import { Signer } from "ethers";
+import { ethers, Signer } from "ethers";
 import * as sinon from "sinon";
 import hre from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
@@ -18,7 +18,7 @@ import {
     EventBarrier
 } from "@/utils";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { createConfig, Config } from "@/utils/config";
+import { createConfig, Config, config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
 import { deployFullStack } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
@@ -36,6 +36,7 @@ import { DisputeTamperingActions } from "@test/harness/actions/DisputeTamperingA
 import { RPCActions } from "@test/harness/actions/RPCActions";
 import { HarnessContext } from "@test/harness";
 import { TestPeer, EventSpies, HarnessOptions } from "@test/harness/core/types";
+import { LogLevel } from "@/utils/logging/Logger";
 
 /**
  * Main test harness for E2E peer-to-peer testing
@@ -102,7 +103,11 @@ export class PeerTestHarness<
         createConfig(); // Ensure config is initialized -> load env for tests
 
         // Logger starts with default level - will be reconfigured in setup()
-        this.logger = createLogger({}, { component: "TestHarness" });
+        this.logger = createLogger(
+            {},
+            { component: "TestHarness" },
+            { level: config.LOG_LEVEL as LogLevel, attachErrorListener: true }
+        );
         LocalDiscoveryServer.setLogger(this.logger);
         this.connectionBarrier = new EventBarrier(this.logger);
         this.eventCountsBarrier = new EventBarrier(this.logger);
@@ -135,7 +140,10 @@ export class PeerTestHarness<
         };
         this.options = {
             logLevel:
-                options?.logLevel ?? PeerTestHarness.defaultLogLevel ?? "info", // Use global default if not specified
+                options?.logLevel ??
+                (config.LOG_LEVEL as LogLevel) ??
+                PeerTestHarness.defaultLogLevel ??
+                "info", // Use global default if not specified
             timeConfig: options?.timeConfig || {},
             channelId:
                 options?.channelId ||
@@ -151,9 +159,9 @@ export class PeerTestHarness<
         // Reconfigure logger with user-specified log level
         if (this.options.logLevel) {
             this.logger = createLogger(
-                {},
+                { peerAddress: ethers.ZeroAddress },
                 { component: "TestHarness" },
-                { level: this.options.logLevel }
+                { level: this.options.logLevel, attachErrorListener: true }
             );
             LocalDiscoveryServer.setLogger(this.logger);
         }
@@ -173,6 +181,11 @@ export class PeerTestHarness<
         this.startAutoTimeAdvance();
 
         this.logger.info("Test harness setup completed");
+    }
+
+    setChannelId(channelId: ChannelId) {
+        this.channelId = channelId;
+        this.logger.updateSharedContext({ channelId: String(channelId) });
     }
 
     /**
@@ -239,7 +252,7 @@ export class PeerTestHarness<
                 peerAddress: address
             },
             { component: `PeerTestHarness` },
-            { level: this.options.logLevel } // Use same log level as harness
+            { level: this.options.logLevel, attachErrorListener: true } // Use same log level as harness
         );
 
         this.logger.debug(`Creating peer ${index} at ${address}`);

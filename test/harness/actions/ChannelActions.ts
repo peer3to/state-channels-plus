@@ -63,7 +63,7 @@ export class ChannelActions {
         openChannel: OpenChannelStruct,
         signatures: BytesLike[]
     ): Promise<ForkId> {
-        this.harness.channelId = openChannel.channelId;
+        this.harness.setChannelId(openChannel.channelId);
         this.logger.debug(`Channel created with ID: ${openChannel.channelId}`);
 
         // Connect peers to the channel
