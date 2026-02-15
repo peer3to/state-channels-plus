@@ -32,6 +32,30 @@ function formatTimestamp() {
     return `${day}-${month}-${year}#${hours}:${minutes}:${seconds}`;
 }
 
+function parseTimestamp(timestamp) {
+    const m =
+        /^([0-9]{2})-([0-9]{2})-([0-9]{4})#([0-9]{2}):([0-9]{2}):([0-9]{2})$/.exec(
+            String(timestamp)
+        );
+    if (!m) return null;
+    const day = Number(m[1]);
+    const month = Number(m[2]);
+    const year = Number(m[3]);
+    const hours = Number(m[4]);
+    const minutes = Number(m[5]);
+    const seconds = Number(m[6]);
+    const d = new Date(year, month - 1, day, hours, minutes, seconds);
+    const ms = d.getTime();
+    return Number.isFinite(ms) ? ms : null;
+}
+
+function extractChannelTimestampFromDirName(channelId, dirName) {
+    const prefix = `${channelId}_`;
+    if (!String(dirName).startsWith(prefix)) return null;
+    const ts = String(dirName).slice(prefix.length);
+    return ts || null;
+}
+
 async function ensureLogDir() {
     await fs.mkdir(LOG_DIR, { recursive: true });
 }
@@ -42,13 +66,54 @@ async function listChannelDirs() {
     return entries.filter((d) => d.isDirectory()).map((d) => d.name);
 }
 
-async function resolveChannelDir(channelId) {
+async function resolveChannelDir(channelId, options = {}) {
+    const { rotateIfOld = false } = options;
+    const nowMs = Date.now();
+    const maxAgeMs = 5 * 60 * 1000;
+
+    async function maybeRotate(dirName) {
+        const ts = extractChannelTimestampFromDirName(channelId, dirName);
+        const tsMs = ts ? parseTimestamp(ts) : null;
+        if (!rotateIfOld) {
+            return { dirName, timestamp: ts || formatTimestamp() };
+        }
+        if (tsMs == null || nowMs - tsMs <= maxAgeMs) {
+            console.log(
+                `Keeping old log dir ${dirName} for channel ${channelId} DeltaMs (${nowMs - tsMs}ms)`
+            );
+            return { dirName, timestamp: ts || formatTimestamp() };
+        }
+        console.log(
+            `Renaming old log dir ${dirName} for channel ${channelId} DeltaMs (${nowMs - tsMs}ms)`
+        );
+        const newTimestamp = formatTimestamp();
+        const oldFull = path.join(LOG_DIR, dirName);
+        const newDirName = `${channelId}_${newTimestamp}`;
+        const newFull = path.join(LOG_DIR, newDirName);
+
+        await fs.rename(oldFull, newFull);
+        return { dirName: newDirName, timestamp: newTimestamp };
+    }
+
     if (channelDirCache.has(channelId)) {
         const cached = channelDirCache.get(channelId);
-        try {
-            await fs.access(cached);
-            return cached;
-        } catch {
+        const cachedDirName = cached && cached.dirName;
+        const cachedFull = cached && cached.full;
+        if (cachedDirName && cachedFull) {
+            try {
+                await fs.access(cachedFull);
+                const rotated = await maybeRotate(cachedDirName);
+                const full = path.join(LOG_DIR, rotated.dirName);
+                channelDirCache.set(channelId, {
+                    dirName: rotated.dirName,
+                    full,
+                    timestamp: rotated.timestamp
+                });
+                return { dir: full, timestamp: rotated.timestamp };
+            } catch {
+                channelDirCache.delete(channelId);
+            }
+        } else {
             channelDirCache.delete(channelId);
         }
     }
@@ -64,14 +129,26 @@ async function resolveChannelDir(channelId) {
             })
         );
         withStats.sort((a, b) => b.mtime - a.mtime);
-        channelDirCache.set(channelId, withStats[0].full);
-        return withStats[0].full;
+        const chosenDirName = withStats[0].dir;
+        const rotated = await maybeRotate(chosenDirName);
+        const full = path.join(LOG_DIR, rotated.dirName);
+        channelDirCache.set(channelId, {
+            dirName: rotated.dirName,
+            full,
+            timestamp: rotated.timestamp
+        });
+        return { dir: full, timestamp: rotated.timestamp };
     }
 
-    const created = path.join(LOG_DIR, `${channelId}_${formatTimestamp()}`);
+    const timestamp = formatTimestamp();
+    const created = path.join(LOG_DIR, `${channelId}_${timestamp}`);
     await fs.mkdir(created, { recursive: true });
-    channelDirCache.set(channelId, created);
-    return created;
+    channelDirCache.set(channelId, {
+        dirName: `${channelId}_${timestamp}`,
+        full: created,
+        timestamp
+    });
+    return { dir: created, timestamp };
 }
 
 function sanitizeSegment(value) {
@@ -92,8 +169,10 @@ app.post(
                 return;
             }
 
-            const channelDir = await resolveChannelDir(channelId);
-            const timestamp = formatTimestamp();
+            const { dir: channelDir, timestamp } = await resolveChannelDir(
+                channelId,
+                { rotateIfOld: true }
+            );
             const safePeer = sanitizeSegment(peerAddress);
             const filename = `${timestamp}_${safePeer}`;
             const filepath = path.join(channelDir, filename);
@@ -139,7 +218,7 @@ app.get("/logs/index", async (_req, res) => {
 app.get("/logs/:channelId/:peerAddress", async (req, res) => {
     try {
         const { channelId, peerAddress } = req.params;
-        const channelDir = await resolveChannelDir(channelId);
+        const { dir: channelDir } = await resolveChannelDir(channelId);
         const files = await fs.readdir(channelDir);
         const safePeer = sanitizeSegment(peerAddress);
         const target = files.find((f) => f.endsWith(`_${safePeer}`));
