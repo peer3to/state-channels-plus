@@ -119,22 +119,14 @@ app.get("/logs/index", async (_req, res) => {
         const response = {};
 
         for (const dir of dirs) {
-            const channelId = dir.split("_")[0];
+            const channelIdAndTimestamp = dir;
             const fullDir = path.join(LOG_DIR, dir);
             const files = await fs.readdir(fullDir);
-            const peers = new Set();
 
-            for (const file of files) {
-                const parts = file.split("_");
-                if (parts.length < 2) continue;
-                const peer = parts.slice(1).join("_");
-                peers.add(peer);
+            if (!response[channelIdAndTimestamp]) {
+                response[channelIdAndTimestamp] = [];
             }
-
-            if (!response[channelId]) {
-                response[channelId] = [];
-            }
-            response[channelId].push(...Array.from(peers));
+            response[channelIdAndTimestamp].push(files);
         }
 
         res.status(200).json(response);
