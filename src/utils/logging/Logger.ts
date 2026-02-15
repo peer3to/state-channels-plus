@@ -103,6 +103,11 @@ export abstract class Logger {
     public logEntry(logEntry: LogEntry): void {
         this.write(logEntry);
     }
+
+    public async uploadLogs(message: any, ...meta: any[]): Promise<void> {
+        this.info(message, ...meta);
+        await this.logUploader?.uploadLogs();
+    }
     protected abstract createChild(context: ExclusiveLoggerContext): Logger;
     protected abstract write(logEntry: LogEntry): void;
     public abstract group(label?: string): void;

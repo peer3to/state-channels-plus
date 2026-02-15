@@ -61,12 +61,15 @@ export class ScenarioRunner {
         } catch (err) {
             const error = err instanceof Error ? err : new Error(String(err));
 
+            const prommises: Promise<any>[] = [];
             harness.peers.map((peer) =>
-                peer.logger.error(
-                    `Peer ${peer.index} encountered an error: ${error.message}`
+                prommises.push(
+                    peer.logger.uploadLogs(
+                        `Peer ${peer.index} encountered an error: ${error.message}`
+                    )
                 )
             );
-
+            await Promise.all(prommises);
             throw err;
         } finally {
             await harness.cleanup();
@@ -90,9 +93,12 @@ export class ScenarioRunner {
         } catch (err) {
             const error = err instanceof Error ? err : new Error(String(err));
 
+            const prommises: Promise<any>[] = [];
             harness.peers.map((peer) =>
-                peer.logger.error(
-                    `Peer ${peer.index} encountered an error: ${error.message}`
+                prommises.push(
+                    peer.logger.uploadLogs(
+                        `Peer ${peer.index} encountered an error: ${error.message}`
+                    )
                 )
             );
 
