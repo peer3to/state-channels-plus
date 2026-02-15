@@ -126,7 +126,7 @@ app.get("/logs/index", async (_req, res) => {
             if (!response[channelIdAndTimestamp]) {
                 response[channelIdAndTimestamp] = [];
             }
-            response[channelIdAndTimestamp].push(files);
+            response[channelIdAndTimestamp].push(...files);
         }
 
         res.status(200).json(response);
