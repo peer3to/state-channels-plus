@@ -20,6 +20,30 @@ const channelDirCache = new Map();
 app.use(cors());
 app.use(express.json());
 
+function parseArgValue(argv, name) {
+    // Supports: --name value, --name=value
+    const exactIdx = argv.indexOf(name);
+    if (exactIdx !== -1) {
+        const v = argv[exactIdx + 1];
+        return v != null && !String(v).startsWith("--") ? String(v) : null;
+    }
+    const prefix = `${name}=`;
+    const withEq = argv.find((a) => String(a).startsWith(prefix));
+    if (withEq) return String(withEq).slice(prefix.length);
+    return null;
+}
+
+function parseIntArg(argv, name) {
+    const raw = parseArgValue(argv, name);
+    if (raw == null) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? Math.trunc(n) : 0;
+}
+
+// CLI: --channelDirMaxAgeMs=300000 (default: 5 minutes)
+const CHANNEL_DIR_MAX_AGE_MS =
+    parseIntArg(process.argv, "--age") * 60 * 1000 ?? 5 * 60 * 1000;
+
 function formatTimestamp() {
     const now = new Date();
     const pad = (n, len = 2) => String(n).padStart(len, "0");
@@ -69,7 +93,7 @@ async function listChannelDirs() {
 async function resolveChannelDir(channelId, options = {}) {
     const { rotateIfOld = false } = options;
     const nowMs = Date.now();
-    const maxAgeMs = 5 * 60 * 1000;
+    const maxAgeMs = CHANNEL_DIR_MAX_AGE_MS;
 
     async function maybeRotate(dirName) {
         const ts = extractChannelTimestampFromDirName(channelId, dirName);
@@ -174,7 +198,7 @@ app.post(
                 { rotateIfOld: true }
             );
             const safePeer = sanitizeSegment(peerAddress);
-            const filename = `${timestamp}_${safePeer}`;
+            const filename = `${safePeer}`;
             const filepath = path.join(channelDir, filename);
 
             await fs.writeFile(filepath, compressedLogs, "utf8");
@@ -221,7 +245,9 @@ app.get("/logs/:channelId/:peerAddress", async (req, res) => {
         const { dir: channelDir } = await resolveChannelDir(channelId);
         const files = await fs.readdir(channelDir);
         const safePeer = sanitizeSegment(peerAddress);
-        const target = files.find((f) => f.endsWith(`_${safePeer}`));
+        const target =
+            files.find((f) => f === safePeer) ||
+            files.find((f) => f.endsWith(`_${safePeer}`));
 
         if (!target) {
             res.status(404).json({ error: "Log not found" });
