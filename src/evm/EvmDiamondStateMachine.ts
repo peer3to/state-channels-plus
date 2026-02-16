@@ -38,6 +38,7 @@ import { LocalDiamondArtifact } from "@/utils/GeneratedArtifacts";
 
 import { createConfig, config, Config } from "@/utils/config";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 /**
  * Manages peer-to-peer communication and state machines
@@ -435,6 +436,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         // Sync clock to DLT
         await Clock.init(signer.provider!);
+
+        await LoggerUtils.logTimestamp(logger);
 
         // Connect signer to state channel contract
         deployedStateChannelContractInstance =

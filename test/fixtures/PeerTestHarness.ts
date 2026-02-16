@@ -1,6 +1,6 @@
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
-import { ethers, Signer } from "ethers";
+import { Signer } from "ethers";
 import * as sinon from "sinon";
 import hre from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
@@ -68,6 +68,8 @@ export class PeerTestHarness<
     public logger: Logger;
     public syncCoordinator!: SyncCoordinator;
     private autoTimeAdvanceInterval?: NodeJS.Timeout;
+    private autoTimeAdvanceTickInProgress = false;
+    private restoreAutomineOnCleanup = false;
 
     /**
      * Test context for cross-block state sharing
@@ -156,16 +158,6 @@ export class PeerTestHarness<
                 {}) as TFactories
         };
 
-        // Reconfigure logger with user-specified log level
-        if (this.options.logLevel) {
-            this.logger = createLogger(
-                { peerAddress: ethers.ZeroAddress },
-                { component: "TestHarness" },
-                { level: this.options.logLevel, attachErrorListener: true }
-            );
-            LocalDiscoveryServer.setLogger(this.logger);
-        }
-
         this.syncCoordinator = new SyncCoordinator(
             this.logger,
             this.eventCountsBarrier
@@ -178,7 +170,7 @@ export class PeerTestHarness<
         }
 
         // Start automatic blockchain time advancement
-        this.startAutoTimeAdvance();
+        await this.startAutoTimeAdvance();
 
         this.logger.info("Test harness setup completed");
     }
@@ -246,7 +238,7 @@ export class PeerTestHarness<
     private async createPeer(index: number, signer: Signer): Promise<void> {
         const address = await signer.getAddress();
 
-        const PeerLogger = createLogger(
+        const peerLogger = createLogger(
             {
                 peerId: index,
                 peerAddress: address
@@ -257,7 +249,7 @@ export class PeerTestHarness<
 
         this.logger.debug(`Creating peer ${index} at ${address}`);
 
-        const peerTurnBarrier = new EventBarrier(PeerLogger);
+        const peerTurnBarrier = new EventBarrier(peerLogger);
 
         const eventSpies: EventSpies = {
             // P2pEventHooks spies
@@ -285,7 +277,7 @@ export class PeerTestHarness<
 
         const hooks: P2pEventHooks = {
             onConnection: (addr: Address, isChannelOpened: boolean) => {
-                PeerLogger.verbose(`Connection established with ${addr}`, {
+                peerLogger.verbose(`Connection established with ${addr}`, {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onConnection?.(addr, isChannelOpened);
@@ -293,7 +285,7 @@ export class PeerTestHarness<
                 this.eventCountsBarrier.signal();
             },
             onDisconnection: (addr: Address) => {
-                PeerLogger.verbose(`Disconnection from ${addr}`, {
+                peerLogger.verbose(`Disconnection from ${addr}`, {
                     component: "P2pEventHooks"
                 });
                 this.disconnectionBarrier.signal();
@@ -305,7 +297,7 @@ export class PeerTestHarness<
                 _agreementTime: number,
                 _chainFallbackTime: number
             ) => {
-                PeerLogger.verbose(`Turn received from ${addr}`, {
+                peerLogger.verbose(`Turn received from ${addr}`, {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onTurn?.(addr);
@@ -313,26 +305,26 @@ export class PeerTestHarness<
                 this.eventCountsBarrier.signal();
             },
             onSetState: () => {
-                PeerLogger.debug("State set", { component: "P2pEventHooks" });
+                peerLogger.debug("State set", { component: "P2pEventHooks" });
                 eventSpies.onSetState?.();
                 this.eventCountsBarrier.signal();
             },
             onPostingCalldata: () => {
-                PeerLogger.debug("Posting calldata to blockchain", {
+                peerLogger.debug("Posting calldata to blockchain", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onPostingCalldata?.();
                 this.eventCountsBarrier.signal();
             },
             onPostedCalldata: () => {
-                PeerLogger.debug("Calldata posted to blockchain", {
+                peerLogger.debug("Calldata posted to blockchain", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onPostedCalldata?.();
                 this.eventCountsBarrier.signal();
             },
             onDisputeStarted: (maxDuration: number) => {
-                PeerLogger.debug("Dispute started", {
+                peerLogger.debug("Dispute started", {
                     component: "P2pEventHooks",
                     maxDuration
                 });
@@ -343,7 +335,7 @@ export class PeerTestHarness<
                 disputeHash: Hash,
                 dispute: DisputeStruct
             ) => {
-                PeerLogger.info(
+                peerLogger.info(
                     `Initiating dispute - DisputeHash:${disputeHash}`,
                     {
                         component: "P2pEventHooks"
@@ -353,14 +345,14 @@ export class PeerTestHarness<
                 this.eventCountsBarrier.signal();
             },
             onDisputeUpdate: (dispute: DisputeStruct) => {
-                PeerLogger.info("Dispute updated", {
+                peerLogger.info("Dispute updated", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onDisputeUpdate?.(dispute);
                 this.eventCountsBarrier.signal();
             },
             onDisputeAcknowledgment: (addr: Address) => {
-                PeerLogger.verbose(
+                peerLogger.verbose(
                     `Dispute acknowledgment received from ${addr}`,
                     {
                         component: "P2pEventHooks"
@@ -381,7 +373,7 @@ export class PeerTestHarness<
             TFactories
         >(signer, this.sharedDeployTx, this.channelManager, mathInstance, {
             peerId: index,
-            peerLogger: PeerLogger,
+            peerLogger: peerLogger,
             p2pEventHooks: hooks,
             rpcServiceFactories: this.options.rpcServiceFactories,
             config: this.harnessConfig
@@ -396,7 +388,7 @@ export class PeerTestHarness<
             contractInstance: p2pInstance.p2pContractInstance,
             eventSpies,
             turnBarrier: peerTurnBarrier,
-            logger: PeerLogger
+            logger: peerLogger
         };
 
         // Wrap EventHandler methods with spies (without replacing the original functionality)
@@ -443,27 +435,42 @@ export class PeerTestHarness<
 
     /**
      * Starts automatic blockchain time advancement to simulate natural time passing.
-     * Advances chain time by 1 second every second.
+     * Mines blocks on a fixed cadence so time progresses even without transactions.
      */
-    startAutoTimeAdvance(intervalMs: number = 1000): void {
+    async startAutoTimeAdvance(options?: {
+        intervalMs?: number;
+        stepSeconds?: number;
+        disableAutomine?: boolean;
+    }): Promise<void> {
         if (this.autoTimeAdvanceInterval) {
             this.logger.debug("Auto time advance already running");
             return;
         }
 
+        const intervalMs = options?.intervalMs ?? 2000;
+        const stepSeconds = options?.stepSeconds ?? 2;
+        const disableAutomine = options?.disableAutomine ?? true;
+
         this.logger.debug(
-            `Starting auto blockchain time advance (every ${intervalMs}ms)`
+            `Starting auto blockchain time advance (every ${intervalMs}ms, step ${stepSeconds}s)`
         );
 
-        this.autoTimeAdvanceInterval = setInterval(
-            () =>
-                retry(() => time.increase(1), {
-                    maxRetries: 30,
-                    delayMs: 5,
-                    useExponentialBackoff: false
-                }),
-            intervalMs
-        );
+        if (disableAutomine) {
+            await hre.ethers.provider.send("evm_setAutomine", [false]);
+            this.restoreAutomineOnCleanup = true;
+        }
+
+        this.autoTimeAdvanceInterval = setInterval(() => {
+            if (this.autoTimeAdvanceTickInProgress) return;
+            this.autoTimeAdvanceTickInProgress = true;
+            void retry(() => time.increase(stepSeconds), {
+                maxRetries: 30,
+                delayMs: 5,
+                useExponentialBackoff: false
+            }).finally(() => {
+                this.autoTimeAdvanceTickInProgress = false;
+            });
+        }, intervalMs);
     }
     async cleanup(): Promise<void> {
         this.logger.debug("Starting cleanup...");
@@ -472,6 +479,16 @@ export class PeerTestHarness<
         if (this.autoTimeAdvanceInterval) {
             clearInterval(this.autoTimeAdvanceInterval);
             this.autoTimeAdvanceInterval = undefined;
+        }
+        this.autoTimeAdvanceTickInProgress = false;
+
+        if (this.restoreAutomineOnCleanup) {
+            try {
+                await hre.ethers.provider.send("evm_setAutomine", [true]);
+            } catch {
+                // ignore
+            }
+            this.restoreAutomineOnCleanup = false;
         }
 
         if (this.channelManager) {

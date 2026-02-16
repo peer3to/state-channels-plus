@@ -29,6 +29,7 @@ import {
     MessageBlockStruct,
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import Clock from "@/Clock";
 export class LoggerUtils {
     // ====================================
     // SIMPLE FORMATTERS
@@ -101,6 +102,24 @@ export class LoggerUtils {
         logger.warn(`⏱️ Timeout @ block ${blockHeight}`, {
             timeoutStruct: this.getTimeoutStructMetadata(timeoutStruct),
             previousBlockOrSnapshot: block || snapshot
+        });
+    }
+
+    static async logTimestamp(logger: Logger) {
+        const virtualClockBefore = Clock.getTimeInSeconds();
+        const localClockBefore = Math.floor(new Date().getTime() / 1000);
+        const { timestamp, blockNumber } = await Clock.getBlockchainTime();
+        const virtualClockAfter = Clock.getTimeInSeconds();
+        const localClockAfter = Math.floor(new Date().getTime() / 1000);
+        const network = await Clock.getBlockchainNetwork();
+        logger.info(`⏰ CLOCK:`, {
+            virtualClockBefore,
+            localClockBefore,
+            blockchainTime: timestamp,
+            blockNumber,
+            virtualClockAfter,
+            localClockAfter,
+            network
         });
     }
 

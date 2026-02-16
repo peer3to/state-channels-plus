@@ -18,13 +18,14 @@ export class Scenario {
     /**
      * Channel configured for timeout testing (short timeouts)
      */
-    static timeoutSetup(peerCount: number = 3) {
+    static timeoutSetup(peerCount: number = 3, transitionCount: number = 0) {
         return HarnessBlock.compose(
             Lifecycle.setup(peerCount, {
                 timeConfig: {
                     p2pTime: 1,
                     agreementTime: 1,
-                    chainFallbackTime: 2
+                    chainFallbackTime: 2,
+                    evidenceTime: 3
                 }
             }),
             Lifecycle.openChannel()
@@ -89,9 +90,9 @@ export class Scenario {
     /**
      * Channel ready for tampered dispute testing
      */
-    static preDisputeSetup(peerCount: number = 3, options?: HarnessOptions) {
+    static preDisputeSetup(peerCount: number = 3) {
         return HarnessBlock.compose(
-            Scenario.startChannel(peerCount, 2, options),
+            Scenario.timeoutSetup(peerCount),
             Assert.peersInSync(),
             Event.reset(),
             Context.captureOriginalFork()

@@ -13,7 +13,7 @@ const config: Partial<Config> = {
     ENABLE_CRASH_LOG_COLLECTION: false,
     CRASH_LOG_UPLOAD_ENDPOINT: "http://localhost:3001/logs/upload",
     // CRASH_LOG_API_TOKEN: "",
-    CRASH_LOG_MAX_SIZE_MB: 5
+    CRASH_LOG_MAX_SIZE_MB: 20
 };
 
 export default config;

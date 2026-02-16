@@ -38,7 +38,7 @@ export class SyncCoordinator {
             );
 
             if (blocks.some((b) => !b)) {
-                if (blocks.every((b) => b === null)) return true; // All peers have no blocks yet ->
+                if (blocks.every((b) => b === undefined)) return true; // All peers have no blocks yet ->
                 return false;
             }
 

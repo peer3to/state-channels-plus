@@ -28,6 +28,25 @@ class Clock {
         }
         return averageBlockTime;
     }
+
+    public static async getBlockchainTime(): Promise<{
+        timestamp: number;
+        blockNumber: number;
+    }> {
+        const provider = Clock.getInstance().provider;
+        const latestBlock = await provider.getBlock("latest");
+        if (!latestBlock) throw new Error("Could not get latest block");
+        return {
+            timestamp: latestBlock.timestamp,
+            blockNumber: latestBlock.number
+        };
+    }
+
+    public static async getBlockchainNetwork() {
+        const provider = Clock.getInstance().provider;
+        return await provider.getNetwork();
+    }
+
     private static getInstance(): Clock {
         if (!Clock.instance) throw new Error("Clock not initialized!");
         return Clock.instance;

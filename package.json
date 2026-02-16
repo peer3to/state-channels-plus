@@ -84,6 +84,7 @@
     "test:all": "yarn hardhat test",
     "test:compile": "yarn compile && yarn test",
     "test:e2e": "LOG_LEVEL=warn yarn hardhat test test/e2e/*",
+    "test:e2e:info": "LOG_LEVEL=info yarn hardhat test test/e2e/*",
     "test:e2e:debug": "LOG_LEVEL=debug yarn hardhat test test/e2e/*",
     "test:e2e:verbose": "LOG_LEVEL=verbose yarn hardhat test test/e2e/*",
     "test:e2e:parallel": "node scripts/test-e2e-parallel.js",

@@ -85,7 +85,11 @@ export default class DisputeValidationService {
             dispute.input.forkId,
             dispute.input.stateProof
         );
-
+        this.logger.debug("tryReconstructAuditingData", {
+            isPartial,
+            dispute: LoggerUtils.getDisputeMetadata(dispute),
+            auditingData: LoggerUtils.getAuditingMetadata(auditingData)
+        });
         const isValidStateProofWithoutIntegrity =
             await this.diamondStateMachine.localDiamondContract.verifyStateProof(
                 dispute,
@@ -95,6 +99,9 @@ export default class DisputeValidationService {
 
         if (isPartial) {
             if (!isValidStateProofWithoutIntegrity) {
+                this.logger.debug(
+                    "isPartial & invalid state proof WITHOUT integrity"
+                );
                 // partial auditingData and invalid stateProof
                 this.disputeFraudProofService.createDisputeInvalidStateProofWithoutAuditingDataIntegrityVerified(
                     dispute,
@@ -116,6 +123,10 @@ export default class DisputeValidationService {
             );
         if (!isValidCommitment) {
             if (!isValidStateProofWithoutIntegrity) {
+                this.logger.debug(
+                    "Full auditingData & wrong commitment & invalid state proof WITHOUT integrity",
+                    { dispute: LoggerUtils.getDisputeMetadata(dispute) }
+                );
                 // full auditingData and invalid stateProof
                 this.disputeFraudProofService.createDisputeInvalidStateProofWithoutAuditingDataIntegrityVerified(
                     dispute,
@@ -123,6 +134,10 @@ export default class DisputeValidationService {
                 );
                 return false;
             }
+            this.logger.debug(
+                "Full auditingData & wrong commitment & valid state proof WITHOUT integrity -> auditing data is junk",
+                { dispute: LoggerUtils.getDisputeMetadata(dispute) }
+            );
             // stateProof is correct -> dispute.auditingDataHash is junk
             this.disputeFraudProofService.createDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks(
                 dispute,
@@ -143,7 +158,9 @@ export default class DisputeValidationService {
         disputeAuditingData: DisputeAuditingDataStruct
     ): Promise<boolean> {
         // continuing down the happy path with the disputeAuditingData verified against the commitment
-
+        this.logger.debug("Full auditingData & valid commitment", {
+            dispute: LoggerUtils.getDisputeMetadata(dispute)
+        });
         //run stateProof with auditingDataIntegrityVerified = true
         if (
             !(await this.diamondStateMachine.localDiamondContract.verifyStateProof(
@@ -152,6 +169,12 @@ export default class DisputeValidationService {
                 true
             ))
         ) {
+            this.logger.debug(
+                "Invalid state proof with auditing data integrity verified",
+                {
+                    dispute: LoggerUtils.getDisputeMetadata(dispute)
+                }
+            );
             // data integrity verified but stateProof invalid
             this.disputeFraudProofService.createDisputeInvalidStateProofWithAuditingDataIntegrityVerified(
                 dispute,
@@ -167,6 +190,9 @@ export default class DisputeValidationService {
                 disputeAuditingData
             ))
         ) {
+            this.logger.debug("Valid commitment, but incorrect auditing data", {
+                dispute: LoggerUtils.getDisputeMetadata(dispute)
+            });
             // valid stateProof, data integrity verified, but incorrect auditingData
             this.disputeFraudProofService.createDisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified(
                 dispute,
@@ -185,6 +211,9 @@ export default class DisputeValidationService {
     private async trySync(
         dispute: DisputeStruct
     ): Promise<{ shouldContinueVerification: boolean }> {
+        this.logger.debug("trySync", {
+            dispute: LoggerUtils.getDisputeMetadata(dispute)
+        });
         const unfinalizedBlocks =
             await this.diamondStateMachine.localDiamondContract.getUnfinalizedBlockConfirmationsFromStateProof(
                 dispute.input.stateProof
@@ -228,6 +257,9 @@ export default class DisputeValidationService {
             }
             index++;
         }
+        this.logger.debug("trySync completed - synced", {
+            dispute: LoggerUtils.getDisputeMetadata(dispute)
+        });
         return { shouldContinueVerification: true };
     }
 
@@ -236,7 +268,9 @@ export default class DisputeValidationService {
         disputeAuditingData: DisputeAuditingDataStruct
     ): Promise<boolean> {
         // Continuing down the happy path
-
+        this.logger.debug("Valid state proof and auditing data", {
+            dispute: LoggerUtils.getDisputeMetadata(dispute)
+        });
         // (STATEFUL - view) check on-chain slashes
         const disputeCreationTimestamp =
             await this.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
@@ -245,6 +279,12 @@ export default class DisputeValidationService {
             );
         // This should always be synced since this was triggered by the on-chain event
         if (Number(disputeCreationTimestamp) === 0) {
+            this.logger.error(
+                "Dispute creation timestamp = 0, in LocalDiamond",
+                {
+                    dispute: LoggerUtils.getDisputeMetadata(dispute)
+                }
+            );
             return false;
         }
         let onChainSlashes = new Set<Address>(
@@ -310,6 +350,9 @@ export default class DisputeValidationService {
                 result.block.height >
                 Number(disputeAuditingData.latestStateSnapshot.blockHeight)
             ) {
+                this.logger.debug("Dispute not latest state", {
+                    dispute: LoggerUtils.getDisputeMetadata(dispute)
+                });
                 this.disputeFraudProofService.createDisputeNotLatestState(
                     dispute,
                     result.block.encode(),

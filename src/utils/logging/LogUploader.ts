@@ -1,11 +1,8 @@
 import axios from "axios";
-import {
-    compressToBase64,
-    decompressFromBase64,
-    encodeLogs
-} from "./logEncoder";
+import { compressToBase64, encodeLogs } from "./logEncoder";
 import { LogStore } from "./logStore";
 import { ExclusiveLoggerContext, SharedLoggerContext } from ".";
+import { ethers } from "ethers";
 
 export type LogUploaderOptions = {
     logUploader?: LogUploader;
@@ -19,7 +16,6 @@ export type LogUploaderConfig = {
 };
 
 export abstract class LogUploader {
-    protected uploadInProgress = false;
     protected endpointUrl: string;
     constructor(
         protected readonly logStore: LogStore,
@@ -47,12 +43,11 @@ export abstract class LogUploader {
         // TODO - use the above arguments
         try {
             if (!this.isEnabled()) return;
-            if (this.uploadInProgress) return;
-            this.uploadInProgress = true;
 
             const storedLogs = this.logStore.getAllLogs();
-            const channelId = this.sharedContext.channelId;
-            const peerAddress = this.sharedContext.peerAddress;
+            const channelId = this.sharedContext.channelId || ethers.ZeroHash;
+            const peerAddress =
+                this.sharedContext.peerAddress || ethers.ZeroAddress;
 
             if (!channelId || !peerAddress) {
                 return; // ignore
@@ -92,7 +87,6 @@ export abstract class LogUploader {
         } catch (uploadError) {
             console.error("LogUploader upload failed:", uploadError);
         } finally {
-            this.uploadInProgress = false;
         }
     }
 }

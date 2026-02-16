@@ -2,6 +2,7 @@ import { Address } from "@/types/types";
 import Clock from "@/Clock";
 import type { LogUploader } from "./LogUploader";
 import type { LogStore } from "./logStore";
+import { LoggerUtils } from "../LoggerUtils";
 
 // The context exclusive to each logger
 export type ExclusiveLoggerContext = {
@@ -54,7 +55,6 @@ export abstract class Logger {
     }
 
     public updateSharedContext(update: SharedLoggerContext): void {
-        if (update?.channelId || update?.peerAddress) this.logStore.clearLogs();
         const newSharedContext = { ...this.sharedContext, ...update };
         Object.assign(this.sharedContext, newSharedContext);
     }
@@ -113,7 +113,9 @@ export abstract class Logger {
     }
 
     public async uploadLogs(message: any, ...meta: any[]): Promise<void> {
-        this.info(message, ...meta);
+        await LoggerUtils.logTimestamp(this);
+        const localTime = new Date().getTime() / 1000;
+        this.warn(message, ...meta, localTime);
         await this.logUploader?.uploadLogs();
     }
     protected abstract createChild(context: ExclusiveLoggerContext): Logger;

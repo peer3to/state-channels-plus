@@ -62,6 +62,11 @@ export class ScenarioRunner {
             const error = err instanceof Error ? err : new Error(String(err));
 
             const prommises: Promise<any>[] = [];
+            prommises.push(
+                harness.logger.uploadLogs(
+                    `Harness encountered an error: ${error.message}`
+                )
+            );
             harness.peers.map((peer) =>
                 prommises.push(
                     peer.logger.uploadLogs(
@@ -94,6 +99,11 @@ export class ScenarioRunner {
             const error = err instanceof Error ? err : new Error(String(err));
 
             const prommises: Promise<any>[] = [];
+            prommises.push(
+                harness.logger.uploadLogs(
+                    `Harness encountered an error: ${error.message}`
+                )
+            );
             harness.peers.map((peer) =>
                 prommises.push(
                     peer.logger.uploadLogs(
@@ -101,7 +111,7 @@ export class ScenarioRunner {
                     )
                 )
             );
-
+            await Promise.all(prommises);
             throw err;
         }
 

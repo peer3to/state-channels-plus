@@ -135,7 +135,7 @@ describe("E2E: Dispute Manager", function () {
                 Event.waitForAllPeers("onDisputeKilled", 1, {
                     mode: "atLeast"
                 }),
-                // Assert: Fraud proof stored and fork unchanged
+                // Assert: Fraud proof stored
                 Assert.latestDisputeFraudProofStored(),
                 // Lifecycle.triggerUploadLogs(),
                 Lifecycle.resolveDispute(1),
