@@ -18,7 +18,6 @@ const app = express();
 const channelDirCache = new Map();
 
 app.use(cors());
-app.use(express.json());
 
 function parseArgValue(argv, name) {
     // Supports: --name value, --name=value
@@ -179,42 +178,38 @@ function sanitizeSegment(value) {
     return String(value).replace(/[\/]/g, "_");
 }
 
-app.post(
-    "/logs/upload",
-    express.raw({ type: "*/*", limit: "50mb" }),
-    async (req, res) => {
-        try {
-            const { channelId, peerAddress, compressedLogs } = req.body || {};
+app.post("/logs/upload", express.json({ limit: "50mb" }), async (req, res) => {
+    try {
+        const { channelId, peerAddress, compressedLogs } = req.body || {};
 
-            if (!channelId || !peerAddress || !compressedLogs) {
-                res.status(400).json({
-                    error: "Incorrect request data"
-                });
-                return;
-            }
-
-            const { dir: channelDir, timestamp } = await resolveChannelDir(
-                channelId,
-                { rotateIfOld: true }
-            );
-            const safePeer = sanitizeSegment(peerAddress);
-            const filename = `${safePeer}`;
-            const filepath = path.join(channelDir, filename);
-
-            await fs.writeFile(filepath, compressedLogs, "utf8");
-
-            res.status(200).json({
-                success: true,
-                channelId,
-                peerAddress,
-                filename
+        if (!channelId || !peerAddress || !compressedLogs) {
+            res.status(400).json({
+                error: "Incorrect request data"
             });
-        } catch (err) {
-            console.error("[CrashLogServer] Upload failed:", err);
-            res.status(500).json({ error: "Internal server error" });
+            return;
         }
+
+        const { dir: channelDir, timestamp } = await resolveChannelDir(
+            channelId,
+            { rotateIfOld: true }
+        );
+        const safePeer = sanitizeSegment(peerAddress);
+        const filename = `${safePeer}`;
+        const filepath = path.join(channelDir, filename);
+
+        await fs.writeFile(filepath, compressedLogs, "utf8");
+
+        res.status(200).json({
+            success: true,
+            channelId,
+            peerAddress,
+            filename
+        });
+    } catch (err) {
+        console.error("[CrashLogServer] Upload failed:", err);
+        res.status(500).json({ error: "Internal server error" });
     }
-);
+});
 
 app.get("/logs/index", async (_req, res) => {
     try {
