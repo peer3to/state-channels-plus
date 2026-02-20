@@ -1,6 +1,7 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { EventSpies } from "../core/types";
 import { Logger } from "@/utils";
+import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 
 /**
  * EventActions handles all event spy management and queries.
@@ -55,7 +56,16 @@ export class EventActions {
                 timeoutMessage: `${String(eventName)} counts not reached within ${timeoutMs}ms`
             });
             return true;
-        } catch {
+        } catch (error) {
+            const barrierError = error as EventBarrierCapturedError;
+            this.logger.error("waitForEventCounts waitFor failed", {
+                error,
+                eventName: String(eventName),
+                expectedCounts,
+                timeoutMs,
+                mode,
+                capturedBarrierStack: barrierError.capturedBarrierStack
+            });
             return false;
         }
     }

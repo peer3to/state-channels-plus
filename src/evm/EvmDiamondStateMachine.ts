@@ -357,7 +357,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         const diamondExecuter = new ContractExecuter(
             evm,
-            diamondResult.address
+            diamondResult.address,
+            logger
         );
         const localDiamondSigner = new LocalDiamondSigner(
             signer,
@@ -377,7 +378,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         return {
             evmDiamondStateMachine: new EvmDiamondStateMachine(
-                new ContractExecuter(evm, stateMachineAddress),
+                new ContractExecuter(evm, stateMachineAddress, logger),
                 contractInterface,
                 diamondExecuter,
                 proxiedLocalDiamond

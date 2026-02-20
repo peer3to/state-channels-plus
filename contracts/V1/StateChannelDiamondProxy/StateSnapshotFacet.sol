@@ -107,8 +107,9 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot[] memory milestoneSnapshots,
         SnapshotData memory genesisSnapshotData
     ) internal view returns (bool) {
-        (bool isValid,) = UtilityFacet(utilityFacetAddress)
-            .verifyMilestones(forkId, milestoneProofs, milestoneSnapshots, genesisSnapshotData);
+        (bool isValid,) = UtilityFacet(utilityFacetAddress).verifyMilestones(
+            forkId, milestoneProofs, milestoneSnapshots, genesisSnapshotData
+        );
         return isValid;
     }
 

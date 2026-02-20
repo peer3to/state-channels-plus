@@ -6,6 +6,7 @@ import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
 import { ethers } from "@/index";
 import Block from "@/models/Block";
+import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 
 /**
  * StateQueryActions handles all read-only state queries.
@@ -181,10 +182,21 @@ export class StateQueryActions {
                 timeoutMessage: `Transport from peer ${fromPeerIndex} to peer ${toPeerIndex} not available within ${timeoutMs}ms`
             });
             return resolvedTransport!;
-        } catch {
-            throw new Error(
+        } catch (error) {
+            const barrierError = error as EventBarrierCapturedError;
+            this.logger.error("waitForPeerTransport waitFor failed", {
+                error,
+                capturedBarrierStack: barrierError.capturedBarrierStack,
+                fromPeerIndex,
+                toPeerIndex,
+                timeoutMs
+            });
+            const wrappedError = new Error(
                 `Transport from peer ${fromPeerIndex} to peer ${toPeerIndex} not available within ${timeoutMs}ms`
-            );
+            ) as EventBarrierCapturedError;
+            wrappedError.capturedBarrierStack =
+                barrierError.capturedBarrierStack;
+            throw wrappedError;
         }
     }
 

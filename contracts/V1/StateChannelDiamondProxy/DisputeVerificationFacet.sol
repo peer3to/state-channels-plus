@@ -271,8 +271,9 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         address[] memory removals = reducedOutput.selfRemovals;
         if (reducedOutput.timeout.participant != address(0) && reducedOutput.slashedParticipants.length == 0) {
-            removals = UtilityFacet(utilityFacetAddress)
-                .insertIntoAddressArrayNoDuplicates(removals, reducedOutput.timeout.participant);
+            removals = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
+                removals, reducedOutput.timeout.participant
+            );
         }
 
         DisputeOutputState memory outputState = generateDisputeOutputState(
@@ -469,17 +470,20 @@ contract DisputeVerificationFacet is StateChannelCommon {
         console.log("BALANCE 4.1 - snapshotData.totalDeposits:", snapshotData.totalDeposits.amount);
         console.log("BALANCE 4.2 - stateMachineBalance:", stateMachineBalance.amount);
         console.log("BALANCE 4.3 - snapshotData.totalWithdrawals:", snapshotData.totalWithdrawals.amount);
-        if (!stateMachineImplementation.areBalancesEqual(
+        if (
+            !stateMachineImplementation.areBalancesEqual(
                 snapshotData.totalDeposits,
                 stateMachineImplementation.addBalance(snapshotData.totalWithdrawals, stateMachineBalance)
-            )) return false;
+            )
+        ) return false;
         console.log("BALANCE 5");
         return true;
     }
 
     function _killDispute(Dispute memory dispute) internal {
         DisputeData storage disputeData = disputeData[dispute.input.channelId];
-        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[_getDisputeFork(dispute)];
+        bytes32 forkId = _getDisputeFork(dispute);
+        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[forkId];
 
         // require that the dispute window exists and is not expired
         (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
@@ -505,21 +509,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             disputeWindow.evidence.disputeCommitments[disputeWindow.evidence.disputeCommitments.length - 1];
         disputeWindow.evidence.disputeCommitments.pop();
 
-        //if dispute window is empty, delete it
-        if (disputeWindow.evidence.disputeCommitments.length == 0) {
-            bytes32 forkId = _getDisputeFork(dispute);
-            delete disputeData.disputeWindowMap[forkId];
-
-            for (uint256 i = 0; i < disputeData.disputedForks.length; i++) {
-                if (disputeData.disputedForks[i] == forkId) {
-                    //remove disputed fork from the list
-                    disputeData.disputedForks[i] = disputeData.disputedForks[disputeData.disputedForks.length - 1];
-                    disputeData.disputedForks.pop();
-                    break;
-                }
-            }
-            emit DisputeKilled(dispute.input.channelId, forkId, dispute.input.disputer);
-        }
+        emit DisputeKilled(dispute.input.channelId, forkId, dispute.input.disputer, commitment);
     }
 
     function _calculateRemovals(DisputeInput memory disputeInput) internal pure returns (address[] memory removals) {
@@ -564,8 +554,10 @@ contract DisputeVerificationFacet is StateChannelCommon {
         (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
         if (
             hasBlock
-                && (latestBlock.stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))
-                    || latestBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash)
+                && (
+                    latestBlock.stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))
+                        || latestBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash
+                )
         ) {
             return false;
         }
@@ -621,13 +613,23 @@ contract DisputeVerificationFacet is StateChannelCommon {
         internal
         returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
     {
-        exitChannels = new ExitChannel[](slashedParticipants.length);
+        ExitChannel[] memory _exitChannels = new ExitChannel[](slashedParticipants.length);
         stateMachineImplementation.setState(encodedState);
+        uint256 slashCount = 0;
         for (uint256 i = 0; i < slashedParticipants.length; i++) {
             bool success;
-            (success, exitChannels[i]) = stateMachineImplementation.slashParticipant(slashedParticipants[i]);
-            require(success, ErrorDisputeStateMachineSlashingFailed());
+            ExitChannel memory exitChannel;
+            (success, exitChannel) = stateMachineImplementation.slashParticipant(slashedParticipants[i]);
+            if (success) {
+                _exitChannels[slashCount++] = exitChannel;
+            }
         }
+
+        exitChannels = new ExitChannel[](slashCount);
+        for (uint256 i = 0; i < slashCount; i++) {
+            exitChannels[i] = _exitChannels[i];
+        }
+
         return (stateMachineImplementation.getState(), exitChannels);
     }
 
@@ -635,14 +637,23 @@ contract DisputeVerificationFacet is StateChannelCommon {
         internal
         returns (bytes memory encodedModifiedState, ExitChannel[] memory)
     {
-        ExitChannel[] memory exitChannels = new ExitChannel[](participants.length);
+        ExitChannel[] memory _exitChannels = new ExitChannel[](participants.length);
         stateMachineImplementation.setState(encodedState);
+        uint256 removalCount = 0;
         for (uint256 i = 0; i < participants.length; i++) {
             bool success;
-            (success, exitChannels[i]) = stateMachineImplementation.removeParticipant(participants[i]);
-            // require(success, "Remove failed");
-            require(success, ErrorDisputeStateMachineRemovingFailed());
+            ExitChannel memory exitChannel;
+            (success, exitChannel) = stateMachineImplementation.removeParticipant(participants[i]);
+            if (success) {
+                _exitChannels[removalCount++] = exitChannel;
+            }
         }
+
+        ExitChannel[] memory exitChannels = new ExitChannel[](removalCount);
+        for (uint256 i = 0; i < removalCount; i++) {
+            exitChannels[i] = _exitChannels[i];
+        }
+
         return (stateMachineImplementation.getState(), exitChannels);
     }
 }

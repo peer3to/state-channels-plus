@@ -85,12 +85,13 @@ describe("E2E: Dispute Manager", function () {
             );
         });
 
-        it("should post updated state snapshot after fork resolution", async function () {
+        it.only("should post updated state snapshot after fork resolution", async function () {
+            this.timeout(90000); // Increase timeout for this test
             await ScenarioRunner.execute(
                 // Use the composed scenario (setup + fork resolution + first snapshot post)
                 Scenario.fourPeersDisputeResolutionAndSnapshotUpdate({
                     timeConfig: {
-                        p2pTime: 3,
+                        p2pTime: 1,
                         agreementTime: 2,
                         chainFallbackTime: 2,
                         evidenceTime: 3

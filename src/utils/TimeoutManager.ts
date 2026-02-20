@@ -36,6 +36,9 @@ export class TimeoutManager {
                     if (result instanceof Promise) {
                         await result;
                     }
+                    this.logger.verbose(
+                        `Completed scheduled task '${taskName}'`
+                    );
                 } catch (error) {
                     console.error(
                         `TimeoutManager: Error executing scheduled task '${taskName}':`,

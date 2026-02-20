@@ -44,13 +44,6 @@ class HolepunchTransport extends ATransport {
     _close(): void {
         this.holepunchPeerInfo.ban(true);
         this.holepunchSocket.end();
-
-        //TODO! unban if transports are empty
-
-        // setTimeout(() => {
-        //     console.log("PeerInfo unban");
-        //     this.holepunchPeerInfo.ban(false);
-        // }, 10000);
     }
 }
 export default HolepunchTransport;

@@ -1,7 +1,7 @@
 import axios from "axios";
 import { compressToBase64, encodeLogs } from "./logEncoder";
 import { LogStore } from "./logStore";
-import { ExclusiveLoggerContext, SharedLoggerContext } from ".";
+import { ExclusiveLoggerContext, Logger, SharedLoggerContext } from ".";
 import { ethers } from "ethers";
 
 export type LogUploaderOptions = {
@@ -10,13 +10,12 @@ export type LogUploaderOptions = {
     attachErrorListener?: boolean;
 };
 export type LogUploaderConfig = {
-    enabled: boolean;
     uploadEndpoint: string;
     apiToken?: string;
 };
 
 export abstract class LogUploader {
-    protected endpointUrl: string;
+    protected logger?: Logger;
     constructor(
         protected readonly logStore: LogStore,
         protected readonly config: LogUploaderConfig,
@@ -27,13 +26,15 @@ export abstract class LogUploader {
         if (attachErrorListener && this.isEnabled()) {
             this.attachListeners();
         }
-        this.endpointUrl = config.uploadEndpoint;
     }
 
+    setLogger(logger: Logger) {
+        this.logger = logger;
+    }
     protected abstract attachListeners(): void;
 
     protected isEnabled(): boolean {
-        return Boolean(this.config.enabled && this.config.uploadEndpoint);
+        return Boolean(this.config.uploadEndpoint);
     }
 
     public async uploadLogs(
@@ -41,6 +42,8 @@ export abstract class LogUploader {
         isUserInitiated = false
     ): Promise<void> {
         // TODO - use the above arguments
+        let rawLogsSize;
+        let compressedLogsSize;
         try {
             if (!this.isEnabled()) return;
 
@@ -55,16 +58,9 @@ export abstract class LogUploader {
 
             // Generate plain log and compress before upload
             const serializedLogs = encodeLogs(storedLogs);
-            // const serializedSize = serializedLogs.length * 2;
+            rawLogsSize = serializedLogs.length * 2;
             const compressedLogs = compressToBase64(serializedLogs);
-            // const compressedSize = compressedLogs.length * 2;
-
-            // const decompressed = decompressFromBase64(compressedLogs);
-            // console.log(
-            //     "Decompressed logs match:",
-            //     decompressed === serializedLogs,
-            //     `(${serializedSize} bytes -> ${compressedSize} bytes)`
-            // );
+            compressedLogsSize = compressedLogs.length * 2;
 
             const headers: Record<string, string> = {
                 "Content-Type": "application/json"
@@ -74,7 +70,7 @@ export abstract class LogUploader {
             }
 
             await axios.post(
-                this.endpointUrl,
+                this.config.uploadEndpoint,
                 {
                     channelId,
                     peerAddress,
@@ -82,10 +78,16 @@ export abstract class LogUploader {
                 },
                 { headers }
             );
-
+            console.trace(
+                `Logs uploaded successfully. Raw size: ${rawLogsSize / 1e6}MB, Compressed size: ${compressedLogsSize / 1e6}MB.`
+            );
             // don't clear logs, since if multiple uploads are started, only the first will have the logs
         } catch (uploadError) {
-            console.error("LogUploader upload failed:", uploadError);
+            delete (uploadError as any).config.data;
+            console.error(
+                `Log upload failed: Raw size: ${rawLogsSize ? rawLogsSize / 1e6 : "N/A"}MB, Compressed size: ${compressedLogsSize ? compressedLogsSize / 1e6 : "N/A"}MB`,
+                (uploadError as any).status
+            );
         } finally {
         }
     }

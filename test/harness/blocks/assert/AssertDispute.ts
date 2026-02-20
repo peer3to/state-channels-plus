@@ -1,4 +1,5 @@
 import { HarnessBlock } from "../HarnessBlock";
+import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 
 export class AssertDispute {
     /**
@@ -78,10 +79,14 @@ export class AssertDispute {
                     timeoutMs,
                     timeoutMessage: `Fraud proof not stored within ${timeoutMs}ms`
                 });
-            } catch {
-                throw new Error(
+            } catch (error) {
+                const barrierError = error as EventBarrierCapturedError;
+                const wrappedError = new Error(
                     `Fraud proof for tampered dispute was not stored by peer ${detectingPeerIndex} within ${timeoutMs}ms`
-                );
+                ) as EventBarrierCapturedError;
+                wrappedError.capturedBarrierStack =
+                    barrierError.capturedBarrierStack;
+                throw wrappedError;
             }
 
             return harness;

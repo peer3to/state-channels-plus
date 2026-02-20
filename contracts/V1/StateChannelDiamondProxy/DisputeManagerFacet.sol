@@ -67,10 +67,14 @@ contract DisputeManagerFacet is StateChannelCommon {
             disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp; // kill period recalculated from here
             disputeData.disputedForks.push(forkId); // add the disputed fork to the list
         } else {
+            bool hasNoCommitments = disputeWindow.evidence.disputeCommitments.length == 0;
+
             require(
-                !_isEvidencePeriodExpired(disputeWindow, getEvidenceTime()), RaceConditionDisputeEvidencePeriodExpired()
+                !_isEvidencePeriodExpired(disputeWindow, getEvidenceTime()) || hasNoCommitments,
+                RaceConditionDisputeEvidencePeriodExpired()
             );
             require(!_hadParticipantPostedEvidence(disputeWindow, dispute.input.disputer), ErrorDisputeAlreadyPosted());
+
             disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp; // kill period recalculated from here
         }
 
@@ -152,10 +156,12 @@ contract DisputeManagerFacet is StateChannelCommon {
             return false;
         }
         address[] memory thresholdSet = getOnChainThresholdSet(dispute.input.channelId);
-        bytes[] memory signatures = UtilityFacet(utilityFacetAddress)
-            .insertBytesInByteArray(disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures);
-        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress)
-            .verifyThresholdSigned(thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures);
+        bytes[] memory signatures = UtilityFacet(utilityFacetAddress).insertBytesInByteArray(
+            disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures
+        );
+        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
+            thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures
+        );
         return isThresholdFinal;
     }
 
@@ -168,10 +174,9 @@ contract DisputeManagerFacet is StateChannelCommon {
         address[] memory pendingParticipants = getPendingParticipants(dispute.input.channelId);
         if (disputeConfirmation.signatures.length < pendingParticipants.length) return true;
 
-        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress)
-            .verifyThresholdSigned(
-                pendingParticipants, disputeConfirmation.signedDispute.encodedDispute, disputeConfirmation.signatures
-            );
+        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
+            pendingParticipants, disputeConfirmation.signedDispute.encodedDispute, disputeConfirmation.signatures
+        );
         return !isThresholdFinal;
     }
 }

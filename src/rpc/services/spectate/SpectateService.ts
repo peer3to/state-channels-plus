@@ -89,7 +89,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 );
             },
             this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
-            "SpectateService - spectateSync timeout"
+            `SpectateService - spectateSync timeout - peer ${normalizedPeerAddress}`
         );
 
         this.requestMapByPeerAddress.set(normalizedPeerAddress, syncRequest);

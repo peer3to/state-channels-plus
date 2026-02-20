@@ -303,24 +303,24 @@ class StateManager {
     }
     public setReductionTimeout(
         forkId: ForkId,
-        triggerTimestamp: Timestamp,
+        localTriggerTimestamp: Timestamp,
         isRescheduled: boolean = false
     ) {
+        const now = Clock.getTimeInSeconds();
         this.logger.debug(
-            `setReductionTimeout called for fork ${forkId} at ${triggerTimestamp}`
+            `setReductionTimeout called for fork ${forkId} at ${localTriggerTimestamp} (in ${localTriggerTimestamp - now}s)`
         );
         if (this.forkId !== forkId) return;
 
         const existingHandle = this.reductionTriggerMap.get(forkId);
-        const now = Clock.getTimeInSeconds();
 
         // If existing timeout exists, only replace if new timeout is further in the future
         if (existingHandle) {
-            if (existingHandle.triggerTimestamp > triggerTimestamp) {
+            if (existingHandle.triggerTimestamp > localTriggerTimestamp) {
                 return;
             }
             if (
-                existingHandle.triggerTimestamp == triggerTimestamp &&
+                existingHandle.triggerTimestamp == localTriggerTimestamp &&
                 !isRescheduled
             ) {
                 return;
@@ -334,17 +334,17 @@ class StateManager {
                 // Don't call reductionTriggerMap.delete(forkId) - race condition problem
                 this.tryReduce(forkId);
             },
-            Math.max(0, (triggerTimestamp - now) * 1000),
+            Math.max(0, (localTriggerTimestamp - now) * 1000),
             `reduction-${forkId}`
         );
 
         this.reductionTriggerMap.set(forkId, {
             handle,
-            triggerTimestamp
+            triggerTimestamp: localTriggerTimestamp
         });
 
-        this.logger.debug(
-            `Scheduled reduction timeout for fork ${forkId} at ${triggerTimestamp} (in ${triggerTimestamp - now}s)`
+        this.logger.info(
+            `Scheduled reduction timeout for fork ${forkId} at ${localTriggerTimestamp} (in ${localTriggerTimestamp - now}s)`
         );
     }
     private async tryReduce(forkId: ForkId) {
@@ -382,7 +382,7 @@ class StateManager {
                 );
                 return this.setReductionTimeout(
                     forkId,
-                    Number(killTimestamp),
+                    Clock.getTimeInSeconds() + timeRemaining,
                     true
                 );
             }
@@ -407,8 +407,13 @@ class StateManager {
             Number(onChainKillTimestamp) - Number(onChainTimestamp) // TODO this was Clock.getTimeInSeconds() before, but we were ecountering remaining == 0
         );
 
+        await LoggerUtils.logTimestamp(this.logger, "verbose");
         this.logger.debug(
-            `On-chain Reduction check for fork ${forkId}: canReduce=${canReduceOnChain}, timeRemaining=${remaining}s`
+            `On-chain Reduction check for fork ${forkId}: canReduce=${canReduceOnChain}, timeRemaining=${remaining}s`,
+            {
+                onChainKillTimestamp,
+                onChainTimestamp
+            }
         );
 
         if (!canReduceOnChain) {
@@ -418,7 +423,7 @@ class StateManager {
                 );
                 return this.setReductionTimeout(
                     forkId,
-                    Number(onChainKillTimestamp),
+                    Clock.getTimeInSeconds() + remaining,
                     true
                 );
             }
@@ -427,20 +432,33 @@ class StateManager {
             );
         }
 
+        //TODO - see to put all genesisTimestamp logic in one place
+        const genesisTimestamp =
+            Number(onChainKillTimestamp) + this.timeConfig.evidenceTime;
         // Step 4: Perform reduction
-        await this.performReduction(forkId, Number(onChainKillTimestamp));
+        await this.performReduction(forkId, genesisTimestamp);
     }
 
     private async performReduction(
         forkId: ForkId,
         genesisTimestamp: Timestamp
     ) {
+        const now = Clock.getTimeInSeconds();
+        this.logger.info(
+            `Performing reduction for fork ${forkId} with genesis timestamp ${genesisTimestamp}, in (${genesisTimestamp - now}s)`
+        );
         const disputes = await this.agreementManager.getForkDisputes(
             this.channelId,
             forkId,
             this.stateChannelManagerContract
         );
 
+        this.logger.debug(
+            `Performing reduction on disputes for fork ${LoggerUtils.formatHash(forkId)}`,
+            {
+                disputes: disputes.map((d) => LoggerUtils.getDisputeMetadata(d))
+            }
+        );
         const reducedOutput =
             await this.stateChannelManagerContract.reduce.staticCall(disputes);
 
@@ -450,27 +468,51 @@ class StateManager {
         );
         let txResponse: TransactionResponse;
         this.logger.debug(
-            `Submitting reduction transaction for fork ${forkId}`
+            `Submitting reduction transaction for fork ${LoggerUtils.formatHash(forkId)}`,
+            {
+                disputes: disputes.map((d) =>
+                    LoggerUtils.getDisputeMetadata(d)
+                ),
+                reduceData: {
+                    latestStateSnapshot: LoggerUtils.getSnapshotMetadata(
+                        StateSnapshot.from(reduceData.latestStateSnapshot)
+                    ),
+                    encodedStateMachineState:
+                        reduceData.encodedStateMachineState,
+                    inboundMessageBlocks: reduceData.inboundMessageBlocks.map(
+                        (b) => LoggerUtils.getMessageBlockMetadata(b)
+                    )
+                }
+            }
         );
         this.stateChannelManagerContract
             .reduceAndFinalize(
                 disputes,
                 reduceData.latestStateSnapshot,
                 reduceData.encodedStateMachineState,
-                reduceData.inboundMessageBlocks
+                reduceData.inboundMessageBlocks,
+                {
+                    gasLimit: 10_000_000
+                }
             )
             .then((tx) => {
                 txResponse = tx;
                 return tx.wait();
             })
+            .then((receipt) => {
+                this.logger.info(
+                    `Reduction complete (on-chain): transitioning from fork ${LoggerUtils.formatHash(forkId)}`
+                );
+            })
             .catch(async (error) => {
                 const success = await tryHandleEvmError(error, {
                     tx: txResponse!,
+                    forkId,
                     logger: this.logger,
                     handlers: {
                         RaceConditionDisputeAlreadyReduced: () => {
                             this.logger.debug(
-                                `Reduction already completed by another peer - RaceConditionDisputeAlreadyReduced`
+                                `Reduction already completed by another peer for fork ${LoggerUtils.formatHash(forkId)} - RaceConditionDisputeAlreadyReduced`
                             );
                         }
                     },
@@ -494,14 +536,25 @@ class StateManager {
                     reduceData.encodedStateMachineState,
                     reduceData.inboundMessageBlocks
                 );
-
+            this.logger.debug(
+                `Optimistic local reduction computed for fork ${LoggerUtils.formatHash(forkId)}`,
+                {
+                    reducedSnapshotData:
+                        LoggerUtils.getSnapshotDataMetadata(snapshotData),
+                    outboundMessageBlock: outboundMessageBlock
+                        ? LoggerUtils.getMessageBlockMetadata(
+                              outboundMessageBlock
+                          )
+                        : null
+                }
+            );
             const reducedForkId = ethers.keccak256(
                 Codec.encode(snapshotData, Type.SnapshotData)
             );
 
             // Update local state to the reduced fork
             this.logger.info(
-                `Reduction complete: transitioning to fork ${reducedForkId}`
+                `Reduction complete (local): transitioning from fork ${LoggerUtils.formatHash(forkId)} to fork ${LoggerUtils.formatHash(reducedForkId)}`
             );
             this.setGenesisState(
                 snapshotData,
@@ -566,7 +619,7 @@ class StateManager {
         outboundMessageBlock?: MessageBlockStruct
     ): Promise<void> {
         await this.mutex.lock();
-        const normalizedTimestamp = Number(stateSnapshot.timestamp);
+        const normalizedGenesisTimestamp = Number(stateSnapshot.timestamp);
 
         // Persist state snapshot (as a model)
         const latestSnapshot = StateSnapshot.from(stateSnapshot);
@@ -603,12 +656,21 @@ class StateManager {
             this.forkId
         );
 
-        this.logger.info("setLatestState - nextToWrite", { nextToWrite });
-
-        let timeLost = Clock.getTimeInSeconds() - normalizedTimestamp;
-        timeLost = timeLost < 0 ? 0 : timeLost; // if timestamp is in the future - no time is lost
+        const timeAdjustment =
+            normalizedGenesisTimestamp - Clock.getTimeInSeconds();
         const turnTime = this.timeConfig.p2pTime;
-
+        const timeoutWaitTime =
+            this.getTimeoutWaitTimeSeconds() + timeAdjustment;
+        this.logger.info(
+            `setLatestState - schedule timeoutNext in (${timeoutWaitTime}s)`,
+            {
+                nextToWrite,
+                turnTime,
+                timeAdjustment,
+                timeoutWaitTime,
+                genesisTimestamp: normalizedGenesisTimestamp
+            }
+        );
         this.timeoutManager.scheduleTask(
             () =>
                 this.tryTimeoutParticipant(
@@ -616,14 +678,14 @@ class StateManager {
                     nextTransactionCnt,
                     nextToWrite
                 ),
-            (this.getTimeoutWaitTimeSeconds() - timeLost) * 1000,
-            "participantTimeout"
+            timeoutWaitTime * 1000,
+            `participantTimeout(setState) - fork ${forkId} - block ${nextTransactionCnt} - participant ${nextToWrite}`
         );
 
         this.timeoutManager.scheduleTask(
             () => this.tryExecuteFromQueue(),
             0,
-            "queueProcessing"
+            "tryExecuteFromQueue"
         );
 
         this.p2pEventHooks.onSetState?.();
@@ -1450,7 +1512,7 @@ class StateManager {
                         currentForkId
                     );
                 // if reduceResult exists and is final
-                if (existingReducedResult?.reducedForkId) {
+                if (existingReducedResult?.reducedForkId != ethers.ZeroHash) {
                     this.logger.debug(
                         "prepareUpdateStateSnapshotFork - reduced result exists; traversing",
                         {
@@ -1536,8 +1598,8 @@ class StateManager {
                     "prepareUpdateStateSnapshotFork - reduce data prepared",
                     {
                         forkId: currentForkId,
-                        latestStateSnapshotForkId: (reduceData as any)
-                            ?.latestStateSnapshot?.forkId
+                        latestStateSnapshotForkId:
+                            reduceData.latestStateSnapshot.forkId
                     }
                 );
 
@@ -1733,11 +1795,24 @@ class StateManager {
                   participantAddress
               )
             : previousBlockOrSnapshot.stateSnapshot!.timestamp;
+        const timeoutWaitTime = this.getTimeoutWaitTimeSeconds();
         let difference =
             previousRelevantTimestamp +
-            this.getTimeoutWaitTimeSeconds() -
+            timeoutWaitTime -
             Clock.getTimeInSeconds();
         if (difference > 0) {
+            this.logger.info(
+                `tryTimeoutParticipant - rescheduling in (${difference}s)`,
+                {
+                    forkId,
+                    blockHeight,
+                    participantAddress,
+                    difference,
+                    previousRelevantTimestamp,
+                    previousBlockOrSnapshot,
+                    timeoutWaitTime
+                }
+            );
             this.timeoutManager.scheduleTask(
                 async () => {
                     await this.tryTimeoutParticipant(
@@ -1747,7 +1822,7 @@ class StateManager {
                     );
                 },
                 difference * 1000,
-                "timeoutParticipantDelayed"
+                `timeoutParticipantDelayed - fork ${forkId} - block ${blockHeight} - participant ${participantAddress}`
             );
             return;
         }
@@ -1771,6 +1846,17 @@ class StateManager {
                     // There's a chance that the on-chain timestamp will not persist if the BlockConfirmation pipeline didn't decide to persist the block since most likely the calldata is junk
                     // This is not a problem since on the next run difference < 0 -> force timeout
                     // Only inefficiency is we'd querry the RPC node for calldata for this 2 times in the case of a force timeout like this
+                    this.logger.info(
+                        `tryTimeoutParticipant - after fetching, rescheduling in (${difference}s)`,
+                        {
+                            forkId,
+                            blockHeight,
+                            participantAddress,
+                            difference,
+                            updatedPreviousBlock,
+                            timeoutWaitTime
+                        }
+                    );
                     this.timeoutManager.scheduleTask(
                         async () => {
                             await this.tryTimeoutParticipant(
@@ -1780,7 +1866,7 @@ class StateManager {
                             );
                         },
                         difference * 1000,
-                        "timeoutParticipantDelayed"
+                        `timeoutParticipantDelayed - fork ${forkId} - block ${blockHeight} - participant ${participantAddress}`
                     );
                     return;
                 }
@@ -2315,7 +2401,7 @@ class StateManager {
                     this.maybePostBlockOnChain(block.hash);
                 },
                 this.timeConfig.agreementTime * 1000,
-                "maybePostBlockOnChain"
+                `maybePostBlockOnChain - block ${block.height} - fork ${block.forkId}`
             );
         }
 
@@ -2329,13 +2415,13 @@ class StateManager {
                     nextToWrite
                 ),
             this.getTimeoutWaitTimeSeconds() * 1000,
-            "participantTimeout"
+            `participantTimeout(onSuccess) - fork ${block.forkId} - block ${block.height + 1} - participant ${nextToWrite}`
         );
         // step 13 - try execute from queue
         this.timeoutManager.scheduleTask(
             () => this.tryExecuteFromQueue(),
             0,
-            "queueProcessing"
+            "tryExecuteFromQueue"
         );
     }
 
@@ -2379,7 +2465,7 @@ class StateManager {
                 }
             },
             this.timeConfig.agreementTime * 1000,
-            "MaybeExitOnChain"
+            `MaybeExitOnChain - block ${block.height} - fork ${block.forkId}`
         );
     }
 

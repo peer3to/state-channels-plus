@@ -21,10 +21,9 @@ import {
 } from "@/types/types";
 import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
-import { Codec, hash, Logger, Type } from "@/utils";
+import { Codec, hash, Logger, tryDecodeCustomError, Type } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { isEqual } from "lodash";
-import { ZeroHash } from "ethers";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 import { Status } from "@/types";
 
@@ -249,20 +248,19 @@ export class EventHandler {
         const canConstructMoreEvidence =
             await this.canConstructMoreEvidence(dispute);
         if (canConstructMoreEvidence) {
+            this.logger.info(
+                `More evidence can be constructed for dispute ${formattedHash}, disputing...`
+            );
             return this.stateManager.disputeManager.dispute(forkId);
         }
 
-        const { timestamp: potentialGenesisTimestamp } =
-            await this.diamondStateMachine.localDiamondContract.getGenesisTimestamp(
+        const { killPeriodEnd } =
+            await this.diamondStateMachine.localDiamondContract.isKillPeriodExpired(
                 channelId,
-                forkId, // originForkId is this forkId
-                ZeroHash // resulting forkId is not relevant here
+                forkId
             );
 
-        this.stateManager.setReductionTimeout(
-            forkId,
-            Number(potentialGenesisTimestamp)
-        );
+        this.stateManager.setReductionTimeout(forkId, Number(killPeriodEnd));
     }
 
     private async canConstructMoreEvidence(
@@ -274,21 +272,34 @@ export class EventHandler {
                 this.stateManager.latestForkId
             );
 
-        // Compare reduced disputes to see if we have more evidence
-        const singleDisputeReduction =
-            await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
-                [dispute]
-            );
+        this.logger.verbose("Constructed our own dispute for comparison", {
+            ourDispute: LoggerUtils.getDisputeMetadata(ourDispute),
+            theirDispute: LoggerUtils.getDisputeMetadata(dispute)
+        });
 
-        const combinedDisputeReduction =
-            await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
-                [ourDispute, dispute]
+        let hasMoreEvidence;
+        try {
+            // Compare reduced disputes to see if we have more evidence
+            const singleDisputeReduction =
+                await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
+                    [dispute]
+                );
+            const combinedDisputeReduction =
+                await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
+                    [ourDispute, dispute]
+                );
+            hasMoreEvidence = !isEqual(
+                singleDisputeReduction,
+                combinedDisputeReduction
             );
-
-        const hasMoreEvidence = !isEqual(
-            singleDisputeReduction,
-            combinedDisputeReduction
-        );
+        } catch (error) {
+            const custom = tryDecodeCustomError(error);
+            this.logger.error("Error during dispute reduction comparison", {
+                errors: error,
+                custom
+            });
+            throw error;
+        }
         this.logger.debug(`hasMoreEvidence=${hasMoreEvidence}`);
         return hasMoreEvidence;
     }
@@ -409,19 +420,22 @@ export class EventHandler {
     async onDisputeKilled(
         channelId: ChannelId,
         forkId: ForkId,
-        disputer: Address
+        disputer: Address,
+        disputeHash: Hash
     ): Promise<void> {
         await this.diamondStateMachine.localDiamondContract.onDisputeKilled(
             channelId,
             forkId,
-            disputer
+            disputer,
+            disputeHash
         );
 
         // Log dispute killed event
         // Note: The kill reason is logged earlier when validation fails in onDisputeCommitted
         this.logger.warn("💀 Dispute killed on-chain", {
             forkId,
-            disputer: LoggerUtils.formatHash(disputer),
+            disputer: disputer,
+            disputeHash: disputeHash,
             channelId
         });
 
@@ -430,15 +444,12 @@ export class EventHandler {
             disputer
         );
 
-        // is window deleted?
-        const isWindowDeleted =
-            Number(
-                await this.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
-                    channelId,
-                    forkId
-                )
-            ) === 0;
-        if (!isWindowDeleted) return;
+        const commitments =
+            await this.diamondStateMachine.localDiamondContract.getWindowCommitments(
+                channelId,
+                forkId
+            );
+        if (commitments.length !== 0) return;
 
         //isDisputeWindowRelevant?
         const isRelevant = this.stateManager.forkId === forkId;

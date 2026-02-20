@@ -1,3 +1,4 @@
+import { EventBarrierCapturedError } from "@/utils/EventBarrier";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 /**
@@ -53,6 +54,8 @@ export class ScenarioRunner {
      */
     static async execute(...blocks: HarnessBlock[]): Promise<void> {
         let harness = new PeerTestHarness();
+        // Start automatic blockchain time advancement
+        await harness.startAutoTimeAdvance();
 
         try {
             for (const block of blocks) {
@@ -64,13 +67,25 @@ export class ScenarioRunner {
             const prommises: Promise<any>[] = [];
             prommises.push(
                 harness.logger.uploadLogs(
-                    `Harness encountered an error: ${error.message}`
+                    `Harness encountered an error: ${error.message}`,
+                    {
+                        stack: error.stack,
+                        capturedBarrierStack: (
+                            error as EventBarrierCapturedError
+                        ).capturedBarrierStack
+                    }
                 )
             );
             harness.peers.map((peer) =>
                 prommises.push(
                     peer.logger.uploadLogs(
-                        `Peer ${peer.index} encountered an error: ${error.message}`
+                        `Peer ${peer.index} encountered an error: ${error.message}`,
+                        {
+                            stack: error.stack,
+                            capturedBarrierStack: (
+                                error as EventBarrierCapturedError
+                            ).capturedBarrierStack
+                        }
                     )
                 )
             );
@@ -90,6 +105,8 @@ export class ScenarioRunner {
         cleanup: () => Promise<void>;
     }> {
         let harness = new PeerTestHarness();
+        // Start automatic blockchain time advancement
+        await harness.startAutoTimeAdvance();
 
         try {
             for (const block of blocks) {
@@ -101,13 +118,25 @@ export class ScenarioRunner {
             const prommises: Promise<any>[] = [];
             prommises.push(
                 harness.logger.uploadLogs(
-                    `Harness encountered an error: ${error.message}`
+                    `Harness encountered an error: ${error.message}`,
+                    {
+                        stack: error.stack,
+                        capturedBarrierStack: (
+                            error as EventBarrierCapturedError
+                        ).capturedBarrierStack
+                    }
                 )
             );
             harness.peers.map((peer) =>
                 prommises.push(
                     peer.logger.uploadLogs(
-                        `Peer ${peer.index} encountered an error: ${error.message}`
+                        `Peer ${peer.index} encountered an error: ${error.message}`,
+                        {
+                            stack: error.stack,
+                            capturedBarrierStack: (
+                                error as EventBarrierCapturedError
+                            ).capturedBarrierStack
+                        }
                     )
                 )
             );

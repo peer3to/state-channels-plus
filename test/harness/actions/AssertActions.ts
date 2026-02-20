@@ -3,6 +3,7 @@ import { Logger } from "@/utils";
 import { expect } from "chai";
 import { ForkId, Hash } from "@/types/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 
 export class AssertActions {
     constructor(
@@ -363,10 +364,20 @@ export class AssertActions {
                 timeoutMs,
                 timeoutMessage: `Dispute fraud proof was not stored on all peers within ${timeoutMs}ms`
             });
-        } catch {
-            throw new Error(
+        } catch (error) {
+            const barrierError = error as EventBarrierCapturedError;
+            this.logger.error("assertDisputeFraudProofStored waitFor failed", {
+                error,
+                capturedBarrierStack: barrierError.capturedBarrierStack,
+                timeoutMs,
+                peerIndices: peers.map((peer) => peer.index)
+            });
+            const wrappedError = new Error(
                 `Dispute fraud proof was not stored on all peers within ${timeoutMs}ms`
-            );
+            ) as EventBarrierCapturedError;
+            wrappedError.capturedBarrierStack =
+                barrierError.capturedBarrierStack;
+            throw wrappedError;
         }
     }
 }

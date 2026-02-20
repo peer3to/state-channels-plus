@@ -6,11 +6,16 @@ export type EventBarrierOptions = {
     label?: string;
 };
 
+export type EventBarrierCapturedError = Error & {
+    capturedBarrierStack?: string;
+};
+
 type Waiter = {
     condition: () => boolean | Promise<boolean>;
     resolve: () => void;
     reject: (error: Error) => void;
     timeoutId: NodeJS.Timeout;
+    capturedStack?: string;
 };
 
 /**
@@ -27,6 +32,7 @@ export class EventBarrier {
         options: EventBarrierOptions = {}
     ): Promise<void> {
         const { timeoutMs = 5000, timeoutMessage } = options;
+        const capturedStack = new Error("EventBarrier.waitFor called").stack;
 
         // Fast path: resolve immediately if condition already satisfied.
         if (await condition()) {
@@ -40,8 +46,13 @@ export class EventBarrier {
                     "EventBarrier timeout: " +
                     (timeoutMessage ||
                         `Condition not met within ${timeoutMs}ms`);
+                const error = this.createErrorWithCapturedStack(
+                    errorMessage,
+                    undefined,
+                    waiter.capturedStack
+                );
                 this.logger.error(errorMessage);
-                reject(new Error(errorMessage));
+                reject(error);
             }, timeoutMs);
 
             const waiter: Waiter = {
@@ -56,7 +67,8 @@ export class EventBarrier {
                     this.waiters.delete(waiter);
                     reject(err);
                 },
-                timeoutId
+                timeoutId,
+                capturedStack
             };
 
             this.waiters.add(waiter);
@@ -68,7 +80,6 @@ export class EventBarrier {
      */
     async signal(): Promise<void> {
         const waiters = Array.from(this.waiters);
-
         await Promise.allSettled(
             waiters.map(async (waiter) => {
                 try {
@@ -76,13 +87,47 @@ export class EventBarrier {
                         waiter.resolve();
                     }
                 } catch (err) {
-                    this.logger.error(
-                        `EventBarrier - signal - Error evaluating condition: ${(err as Error).message}`
+                    const message =
+                        err instanceof Error ? err.message : String(err);
+                    const wrappedError = this.createErrorWithCapturedStack(
+                        `EventBarrier condition evaluation failed: ${message}`,
+                        err,
+                        waiter.capturedStack
                     );
-                    waiter.reject(err as Error);
+                    this.logger.error(
+                        `EventBarrier - signal - Error evaluating condition: ${message}`
+                    );
+                    waiter.reject(wrappedError);
                 }
             })
         );
+    }
+
+    private createErrorWithCapturedStack(
+        message: string,
+        cause: unknown,
+        capturedStack?: string
+    ): Error {
+        const error = new Error(message) as EventBarrierCapturedError;
+
+        if (capturedStack) {
+            error.capturedBarrierStack = capturedStack;
+        }
+
+        if (capturedStack) {
+            const stackParts = [`${error.name}: ${error.message}`];
+            stackParts.push("Barrier initialized at:");
+            stackParts.push(capturedStack);
+
+            if (cause instanceof Error && cause.stack) {
+                stackParts.push("Cause stack:");
+                stackParts.push(cause.stack);
+            }
+
+            error.stack = stackParts.join("\n");
+        }
+
+        return error;
     }
 
     /**

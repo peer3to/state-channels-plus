@@ -2,6 +2,7 @@ import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/Math
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import { Signer } from "ethers";
 import * as sinon from "sinon";
+import * as dotenv from "dotenv";
 import hre from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { setImmediate } from "node:timers";
@@ -37,6 +38,13 @@ import { RPCActions } from "@test/harness/actions/RPCActions";
 import { HarnessContext } from "@test/harness";
 import { TestPeer, EventSpies, HarnessOptions } from "@test/harness/core/types";
 import { LogLevel } from "@/utils/logging/Logger";
+import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
+import { monitorEventLoopDelay, performance } from "node:perf_hooks";
+
+// peformance monitoring
+const h = monitorEventLoopDelay();
+h.enable();
+let last = performance.eventLoopUtilization();
 
 /**
  * Main test harness for E2E peer-to-peer testing
@@ -102,7 +110,8 @@ export class PeerTestHarness<
                 return Number(this);
             };
         }
-        createConfig(); // Ensure config is initialized -> load env for tests
+        dotenv.config(); // use .env since it's gitignored and it's only for testing - not altering SDK usage
+        createConfig(); // Ensure config is initialized for tests
 
         // Logger starts with default level - will be reconfigured in setup()
         this.logger = createLogger(
@@ -110,6 +119,27 @@ export class PeerTestHarness<
             { component: "TestHarness" },
             { level: config.LOG_LEVEL as LogLevel, attachErrorListener: true }
         );
+        setInterval(() => {
+            const elu = performance.eventLoopUtilization(last);
+            last = performance.eventLoopUtilization();
+            const dMean = h.mean / 1e6; // convert to ms
+            const d50 = h.percentile(50) / 1e6;
+            const d90 = h.percentile(90) / 1e6;
+            const d99 = h.percentile(99) / 1e6;
+            const dMax = h.max / 1e6;
+            this.logger.verbose(
+                `Event Loop mean delay: ${dMean}ms, max: ${dMax}ms, utilization: ${elu.utilization}`,
+                {
+                    dMean,
+                    d50,
+                    d90,
+                    d99,
+                    dMax,
+                    utilization: elu.utilization
+                }
+            );
+            h.reset();
+        }, 1000);
         LocalDiscoveryServer.setLogger(this.logger);
         this.connectionBarrier = new EventBarrier(this.logger);
         this.eventCountsBarrier = new EventBarrier(this.logger);
@@ -168,9 +198,6 @@ export class PeerTestHarness<
         for (let i = 0; i < numPeers; i++) {
             await this.createPeer(i, signers[i]);
         }
-
-        // Start automatic blockchain time advancement
-        await this.startAutoTimeAdvance();
 
         this.logger.info("Test harness setup completed");
     }
@@ -463,11 +490,40 @@ export class PeerTestHarness<
         this.autoTimeAdvanceInterval = setInterval(() => {
             if (this.autoTimeAdvanceTickInProgress) return;
             this.autoTimeAdvanceTickInProgress = true;
-            void retry(() => time.increase(stepSeconds), {
-                maxRetries: 30,
-                delayMs: 5,
-                useExponentialBackoff: false
-            }).finally(() => {
+            void retry(
+                async () => {
+                    await time.increase(stepSeconds);
+
+                    const latestBlock =
+                        await hre.ethers.provider.getBlock("latest");
+
+                    if (!latestBlock) {
+                        this.logger.verbose(
+                            "Auto time advance mined block, but latest block was unavailable"
+                        );
+                        return;
+                    }
+
+                    const transactionHashes = (
+                        latestBlock.transactions || []
+                    ).map((tx) => String(tx));
+
+                    this.logger.debug(
+                        `Auto-mined block ${latestBlock.number} txCount: ${transactionHashes.length}`,
+                        {
+                            blockNumber: latestBlock.number,
+                            timestamp: latestBlock.timestamp,
+                            transactionCount: transactionHashes.length,
+                            transactionHashes
+                        }
+                    );
+                },
+                {
+                    maxRetries: 30,
+                    delayMs: 5,
+                    useExponentialBackoff: false
+                }
+            ).finally(() => {
                 this.autoTimeAdvanceTickInProgress = false;
             });
         }, intervalMs);
@@ -621,7 +677,15 @@ export class PeerTestHarness<
                 timeoutMessage: `Fork change not detected within ${timeoutMs}ms`
             });
             return true;
-        } catch {
+        } catch (error) {
+            const barrierError = error as EventBarrierCapturedError;
+            this.logger.error("waitForForkChange waitFor failed", {
+                error,
+                capturedBarrierStack: barrierError.capturedBarrierStack,
+                expectedForkId,
+                peerIndices,
+                timeoutMs
+            });
             return false;
         }
     }

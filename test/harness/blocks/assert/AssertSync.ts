@@ -1,5 +1,6 @@
 import { HarnessBlock } from "../HarnessBlock";
 import { expect } from "chai";
+import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 
 export class AssertSync {
     /**
@@ -164,7 +165,8 @@ export class AssertSync {
                     timeoutMs,
                     timeoutMessage: `Peer ${peerIndex} height did not exceed peer ${otherPeerIndex} within ${timeoutMs}ms`
                 });
-            } catch {
+            } catch (error) {
+                const barrierError = error as EventBarrierCapturedError;
                 const peerHeight =
                     harness.peers[
                         peerIndex
@@ -173,9 +175,12 @@ export class AssertSync {
                     harness.peers[
                         otherPeerIndex
                     ].stateManager.storage.blocks.getNextBlockHeight(forkId);
-                throw new Error(
+                const wrappedError = new Error(
                     `Peer ${peerIndex} block height (${peerHeight}) is not greater than peer ${otherPeerIndex} (${otherHeight})`
-                );
+                ) as EventBarrierCapturedError;
+                wrappedError.capturedBarrierStack =
+                    barrierError.capturedBarrierStack;
+                throw wrappedError;
             }
 
             return harness;

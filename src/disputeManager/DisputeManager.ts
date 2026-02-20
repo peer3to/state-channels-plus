@@ -82,7 +82,12 @@ class DisputeManager {
     public async dispute(forkId: ForkId): Promise<void> {
         try {
             await this.mutex.lock();
-            if (this.storage.disputes.didIDispute(forkId)) return;
+            if (this.storage.disputes.didIDispute(forkId)) {
+                this.logger.info(
+                    `Already initiated dispute for forkId ${forkId}, skipping dispute attempt.`
+                );
+                return;
+            }
 
             const {
                 dispute,

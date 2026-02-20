@@ -1,5 +1,6 @@
 import { HarnessBlock } from "../HarnessBlock";
 import { StateSnapshot } from "@/models";
+import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 
 export class AssertSnapshot {
     /**
@@ -152,14 +153,18 @@ export class AssertSnapshot {
                     timeoutMs,
                     timeoutMessage: `Snapshot count did not increase within ${timeoutMs}ms`
                 });
-            } catch {
+            } catch (error) {
+                const barrierError = error as EventBarrierCapturedError;
                 const countAfter = Array.from(
                     snapshotStorage.snapshotsByHash.keys()
                 ).length;
-                throw new Error(
+                const wrappedError = new Error(
                     `Peer ${peerIndex} snapshot count did not increase from baseline ${countBefore} within ${timeoutMs}ms (checkpoint: "${checkpointName}"). ` +
                         `Current count: ${countAfter}`
-                );
+                ) as EventBarrierCapturedError;
+                wrappedError.capturedBarrierStack =
+                    barrierError.capturedBarrierStack;
+                throw wrappedError;
             }
 
             return harness;

@@ -65,7 +65,8 @@ export class Scenario {
         return HarnessBlock.compose(
             Scenario.startChannel(4, 2, options),
             Assert.peersInSync(),
-            Scenario.disputeWithReduction({ maliciousPeerIndex: 2 })
+            Scenario.disputeWithReduction({ maliciousPeerIndex: 2 }),
+            Assert.forkChanged({ minHonestPeers: 3 })
         );
     }
 
@@ -214,7 +215,7 @@ export class Scenario {
         const {
             maliciousPeerIndex,
             honestPeerIndices,
-            forkSettleTimeoutMs = 10000,
+            forkSettleTimeoutMs = 20000,
             disputesCommittedTimeoutMs = 5000
         } = options;
 
