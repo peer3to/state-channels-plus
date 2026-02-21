@@ -7,6 +7,7 @@ import { Codec, SignatureUtils, Type } from "@/utils";
 import Clock from "@/Clock";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { NetworkController } from "./NetworkController";
+import { HarnessOptions } from "@test/harness/core/types";
 
 /**
  * Handles channel-related operations: open, join, verify
@@ -16,6 +17,25 @@ export class ChannelActions {
         private harness: PeerTestHarness,
         private logger: Logger
     ) {}
+
+    /**
+     * Full channel bootstrap in one call:
+     * setup peers -> open channel -> optional initial transitions
+     */
+    async start(
+        numPeers: number,
+        transitionCount: number = 0,
+        options?: HarnessOptions
+    ): Promise<ForkId> {
+        await this.harness.setup(numPeers, options);
+        const forkId = await this.openChannel();
+
+        for (let i = 0; i < transitionCount; i++) {
+            await this.harness.transitionActions.increment(1);
+        }
+
+        return forkId;
+    }
 
     /**
      * Open a channel with all current peers

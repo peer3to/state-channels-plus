@@ -19,7 +19,8 @@ export type RaceConditionErrorName =
     | "RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch"
     | "RaceConditionDisputeTimeoutNotMinTimestamp"
     | "RaceConditionUnexpectedBlockCalldataPosted"
-    | "RaceConditionGenesisTimestampNotAvailable";
+    | "RaceConditionGenesisTimestampNotAvailable"
+    | "ErrorCantParticipateInDispute";
 
 export type RaceConditionErrorHandlers = Partial<
     Record<RaceConditionErrorName, () => void>

@@ -9,7 +9,7 @@ export class AssertSync {
     static peersInSync(options?: { timeout?: number; peerIndices?: number[] }) {
         const { timeout = 10000, peerIndices } = options || {};
         return new HarnessBlock(async (harness) => {
-            await harness.assertActions.assertPeersInSync({
+            await harness.assertActions.sync.peersInSync({
                 peerIndices,
                 timeout
             });
@@ -25,7 +25,7 @@ export class AssertSync {
         peerIndices?: number[];
     }) {
         return new HarnessBlock(async (harness) => {
-            await harness.assertActions.blockHeight(options);
+            await harness.assertActions.sync.blockHeight(options);
             return harness;
         });
     }
@@ -47,7 +47,7 @@ export class AssertSync {
                 );
             }
 
-            await harness.assertActions.assertForkChanged({
+            await harness.assertActions.sync.forkChanged({
                 originalForkId,
                 timeoutMs,
                 minHonestPeers
@@ -96,7 +96,7 @@ export class AssertSync {
                 );
             }
 
-            await harness.assertActions.assertPeersInSync({
+            await harness.assertActions.sync.peersInSync({
                 peerIndices: honestIndices
             });
 

@@ -22,9 +22,7 @@ const config: HardhatUserConfig = {
             url: "http://srbpi.duckdns.org:8545"
         }
     },
-    mocha: {
-        require: ["test/setup.ts"]
-    },
+    mocha: {},
     solidity: {
         version: "0.8.30",
         settings: {

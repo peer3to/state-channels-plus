@@ -6,7 +6,7 @@ export class AssertCalldata {
      */
     static noCalldataPosted() {
         return new HarnessBlock(async (harness) => {
-            harness.assertActions.assertNoCalldataPosted();
+            harness.assertActions.calldata.noCalldataPosted();
             return harness;
         });
     }
@@ -18,7 +18,7 @@ export class AssertCalldata {
      */
     static calldataPosted(options?: { timeoutMs?: number }) {
         return new HarnessBlock(async (harness) => {
-            await harness.assertActions.calldataPostedByAny(options);
+            await harness.assertActions.calldata.calldataPosted(options);
             return harness;
         });
     }

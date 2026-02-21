@@ -13,6 +13,10 @@ import {
 import { ethers, ZeroHash } from "ethers";
 import Clock from "@/Clock";
 import { hash } from "@/utils";
+import {
+    DisputeTampering,
+    DisputeTamper
+} from "@test/harness/actions/DisputeTamperingActions";
 
 export class ByzantineActions {
     constructor(
@@ -389,5 +393,172 @@ export class ByzantineActions {
         this.logger.info(`Junk calldata posted on-chain by peer ${peerIndex}`);
 
         return blockStruct;
+    }
+
+    async invalidTransitionFromNext(): Promise<void> {
+        const forkId = this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error("No active fork ID - channel must be opened first");
+        }
+
+        const maliciousPeer =
+            await this.harness.stateQuery.getNextPeerToWrite();
+        this.harness.context.lastMaliciousPeerIndex = maliciousPeer.index;
+        await this.submitInvalidStateTransitionBlock(maliciousPeer.index, {
+            forkId
+        });
+    }
+
+    async forgedInboundMessageFromNext(): Promise<void> {
+        const forkId = this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error("No active fork ID - channel must be opened first");
+        }
+
+        const maliciousPeer =
+            await this.harness.stateQuery.getNextPeerToWrite();
+        this.harness.context.lastMaliciousPeerIndex = maliciousPeer.index;
+        await this.submitForgedInboundMessageBlock(maliciousPeer.index, {
+            forkId
+        });
+    }
+
+    async postTamperedDisputeWith(
+        peerIndex: number,
+        tamperFn: DisputeTamper
+    ): Promise<void> {
+        const forkId = this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error("No active fork ID - channel must be opened first");
+        }
+
+        const { dispute } =
+            await this.harness.disputeTampering.postTamperedDispute(
+                peerIndex,
+                tamperFn,
+                forkId
+            );
+        this.harness.context.lastTamperedDispute = dispute;
+    }
+
+    async postTamperedDisputeAuditingData(peerIndex: number): Promise<void> {
+        await this.postTamperedDisputeWith(
+            peerIndex,
+            DisputeTampering.tamperAuditingDataHash
+        );
+    }
+
+    async postTamperedDisputeTimeout(options: {
+        submitterIndex: number;
+        wrongParticipantIndex: number;
+        blockHeight?: number;
+    }): Promise<void> {
+        const {
+            submitterIndex,
+            wrongParticipantIndex,
+            blockHeight = 2
+        } = options;
+
+        const wrongPeer = this.harness.peers[wrongParticipantIndex];
+        if (!wrongPeer) {
+            throw new Error(`Peer ${wrongParticipantIndex} not found`);
+        }
+
+        const tamperFn = DisputeTampering.createTamperTimeoutParticipant(
+            wrongPeer.address,
+            blockHeight
+        );
+        await this.postTamperedDisputeWith(submitterIndex, tamperFn);
+    }
+
+    async tamperedDisputePartialAuditing(peerIndex: number): Promise<void> {
+        await this.postTamperedDisputeWith(
+            peerIndex,
+            DisputeTampering.tamperPartialAuditing
+        );
+    }
+
+    async tamperedDisputeDoubleFault(peerIndex: number): Promise<void> {
+        await this.postTamperedDisputeWith(
+            peerIndex,
+            DisputeTampering.tamperDoubleFault
+        );
+    }
+
+    async tamperedDisputeInvalidStateProof(peerIndex: number): Promise<void> {
+        await this.postTamperedDisputeWith(
+            peerIndex,
+            DisputeTampering.tamperInvalidStateProof
+        );
+    }
+
+    stubDisputeConstruction(options: {
+        peerIndex: number;
+        tamperFn: DisputeTamper;
+    }): void {
+        this.harness.disputeTampering.stubConstructDispute(
+            options.peerIndex,
+            options.tamperFn
+        );
+    }
+
+    restoreDisputeConstruction(peerIndex: number): void {
+        this.harness.disputeTampering.restoreConstructDispute(peerIndex);
+    }
+
+    async disconnect(peerIndex: number): Promise<void> {
+        await this.harness.networkController.disconnectPeer(peerIndex);
+    }
+
+    stubCalldataHandler(peerIndex: number): void {
+        const peer = this.harness.peers[peerIndex];
+        if (!peer) {
+            throw new Error(`Peer ${peerIndex} not found`);
+        }
+
+        const eventHandler = peer.stateManager.eventHandler;
+        const original = eventHandler.onBlockCalldataPosted.bind(eventHandler);
+        this.harness.context[`peer${peerIndex}OriginalCalldataHandler`] =
+            original;
+        eventHandler.onBlockCalldataPosted = async () => {};
+    }
+
+    restoreCalldataHandler(peerIndex: number): void {
+        const peer = this.harness.peers[peerIndex];
+        if (!peer) {
+            throw new Error(`Peer ${peerIndex} not found`);
+        }
+
+        const original =
+            this.harness.context[`peer${peerIndex}OriginalCalldataHandler`];
+        if (!original) {
+            throw new Error(
+                `No original calldata handler found for peer ${peerIndex}`
+            );
+        }
+
+        peer.stateManager.eventHandler.onBlockCalldataPosted = original;
+    }
+
+    stubBroadcast(peerIndex: number): void {
+        const peer = this.harness.peers[peerIndex];
+        if (!peer) {
+            throw new Error(`Peer ${peerIndex} not found`);
+        }
+
+        const remoteRpc = peer.stateManager.p2pManager.remoteRpc;
+        this.harness.context[`peer${peerIndex}OriginalBroadcast`] =
+            remoteRpc.stateTransitionService.onBlockConfirmation;
+
+        remoteRpc.stateTransitionService.onBlockConfirmation = (
+            _blockConfirmation
+        ) => {
+            peer.logger.info("Suppressed broadcast from peer " + peerIndex);
+            return {
+                broadcast: () => {},
+                sendOne: () => {},
+                sendMultiple: () => {}
+            } as any;
+        };
     }
 }

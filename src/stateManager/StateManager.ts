@@ -514,6 +514,9 @@ class StateManager {
                             this.logger.debug(
                                 `Reduction already completed by another peer for fork ${LoggerUtils.formatHash(forkId)} - RaceConditionDisputeAlreadyReduced`
                             );
+                        },
+                        ErrorCantParticipateInDispute: () => {
+                            // TODO -> ignore -> malicious peer
                         }
                     },
                     signer: this.signer

@@ -51,7 +51,9 @@ export class EventBarrier {
                     undefined,
                     waiter.capturedStack
                 );
-                this.logger.error(errorMessage);
+                this.logger.error(errorMessage, {
+                    capturedStack: waiter.capturedStack
+                });
                 reject(error);
             }, timeoutMs);
 

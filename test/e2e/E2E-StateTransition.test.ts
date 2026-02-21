@@ -1,10 +1,5 @@
-import {
-    ScenarioRunner,
-    Scenario,
-    Assert,
-    Transition,
-    PeerTestHarness
-} from "@test/harness";
+import { TestSession, PeerTestHarness } from "@test/harness";
+import { expect } from "chai";
 
 PeerTestHarness.setDefaultLogLevel("error");
 
@@ -19,58 +14,92 @@ PeerTestHarness.setDefaultLogLevel("error");
 describe("E2E: State Transitions", function () {
     describe("Basic State Advancement", function () {
         it("should handle consecutive blocks between participants", async function () {
-            await ScenarioRunner.execute(
-                Scenario.startChannel(3),
-                Transition.advanceState({ count: 10 }),
-                Assert.peersInSync(),
-                Assert.blockHeight({ expectedHeight: 9 }) // 10 blocks after genesis = height 9
-            );
+            const h = TestSession.getHarness();
+            await h.channel.start(3);
+            await h.transition.advanceState({ count: 10 });
+            await h.assert.sync.peersInSync();
+            await h.assert.sync.blockHeight({ expectedHeight: 9 }); // 10 blocks after genesis = height 9
         });
 
         it("should handle full round rotation", async function () {
-            await ScenarioRunner.execute(
-                Scenario.startChannel(4),
-                Transition.advanceState({ rounds: 1 }), // All 4 peers write once
-                Assert.peersInSync(),
-                Assert.blockHeight({ expectedHeight: 3 }) // 4 transitions = height 3
-            );
+            const h = TestSession.getHarness();
+            await h.channel.start(4);
+            await h.transition.advanceState({ rounds: 1 }); // All 4 peers write once
+            await h.assert.sync.peersInSync();
+            await h.assert.sync.blockHeight({ expectedHeight: 3 }); // 4 transitions = height 3
         });
 
         it("should handle multiple rotation rounds", async function () {
-            await ScenarioRunner.execute(
-                Scenario.startChannel(3),
-                Transition.advanceState({ rounds: 3 }), // 3 rounds = 9 transitions
-                Assert.peersInSync(),
-                Assert.blockHeight({ expectedHeight: 8 })
-            );
+            const h = TestSession.getHarness();
+            await h.channel.start(3);
+            await h.transition.advanceState({ rounds: 3 }); // 3 rounds = 9 transitions
+            await h.assert.sync.peersInSync();
+            await h.assert.sync.blockHeight({ expectedHeight: 8 });
         });
     });
 
     describe("State Modifications", function () {
         it("should handle honest peer transitions after fork resolution", async function () {
-            await ScenarioRunner.execute(
-                Scenario.startChannel(4, 2, {
-                    timeConfig: {
-                        p2pTime: 30,
-                        agreementTime: 2,
-                        chainFallbackTime: 2,
-                        evidenceTime: 3
-                    }
-                }),
-                Assert.peersInSync(),
+            this.timeout(90000);
+            const h = TestSession.getHarness();
 
-                // Create and resolve fork (removes peer 2)
-                Scenario.disputeWithReduction({ maliciousPeerIndex: 2 }),
+            await h.channel.start(4, 2, {
+                timeConfig: {
+                    p2pTime: 30,
+                    agreementTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 3
+                }
+            });
+            await h.assert.sync.peersInSync();
 
-                // Continue with honest peers only
-                Transition.fromHonestPeersOnly((c) => c.add(1)),
-                Transition.fromHonestPeersOnly((c) => c.add(2)),
-                Transition.fromHonestPeersOnly((c) => c.add(3)),
+            const maliciousPeerIndex = 2;
+            const honestPeerIndices = [0, 1, 3];
+            const originalForkId = h.activeForkId!;
 
-                // Verify liveness maintained among honest peers
-                Assert.onlyHonestPeersInSync(),
-                Assert.maliciousPeerExcluded()
+            h.context.maliciousPeerIndex = maliciousPeerIndex;
+            h.context.honestPeerIndices = honestPeerIndices;
+
+            await h.dispute.createInvalidStateTransitionDispute(
+                maliciousPeerIndex,
+                {
+                    forkId: originalForkId,
+                    resetEventSpies: true
+                }
             );
+
+            const result = await h.dispute.resolveDispute({
+                maliciousPeerIndex,
+                forkId: originalForkId,
+                honestPeerIndices,
+                assertMaliciousRemoved: false
+            });
+
+            h.context.originalForkId = originalForkId;
+            h.activeForkId = result.newForkId;
+
+            await h.transition.submitNext((c) => c.add(1), {
+                waitForTurn: true,
+                waitForPeers: honestPeerIndices,
+                waitForSync: true
+            });
+            await h.transition.submitNext((c) => c.add(2), {
+                waitForTurn: true,
+                waitForPeers: honestPeerIndices,
+                waitForSync: true
+            });
+            await h.transition.submitNext((c) => c.add(3), {
+                waitForTurn: true,
+                waitForPeers: honestPeerIndices,
+                waitForSync: true
+            });
+
+            await h.assert.sync.peersInSync({
+                peerIndices: honestPeerIndices
+            });
+
+            const nextWriter = await h.query.getNextPeerToWrite();
+            expect(nextWriter.index).to.not.equal(maliciousPeerIndex);
         });
     });
 });

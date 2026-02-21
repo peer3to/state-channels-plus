@@ -1,12 +1,4 @@
-import {
-    ScenarioRunner,
-    Scenario,
-    Assert,
-    Event,
-    Transition,
-    Context,
-    PeerTestHarness
-} from "@test/harness";
+import { TestSession, PeerTestHarness } from "@test/harness";
 
 PeerTestHarness.setDefaultLogLevel("error");
 
@@ -28,90 +20,86 @@ describe("E2E: State Snapshots", function () {
     };
 
     it("should post updated state snapshot on-chain after 3 transitions", async function () {
-        await ScenarioRunner.execute(
-            Scenario.startChannel(3),
+        const h = TestSession.getHarness();
+        await h.channel.start(3);
 
-            // Execute the 3 specific state transitions
-            Transition.advanceState({ count: 1 }),
-            Transition.advanceState({ txFn: (c) => c.leaveChannel() }),
-            Transition.advanceState({ count: 1 }),
-            Assert.peersInSync(),
-            Event.reset(),
-            Assert.channelWithdrawalsMatchSnapshot(),
-            // Prepare snapshot data and store in context for delta assertions
-            Context.capturePrePostSnapshotContext(),
-            Transition.postSnapshot(),
-            Assert.channelWithdrawalsMatchSnapshot(),
-            Assert.withdrawalDeltaMatchesExpected(),
-            Event.waitForAllPeers("onStateSnapshotUpdated", 1, {
-                mode: "atLeast"
-            }),
-            Assert.snapshotMatchesLocal()
+        await h.transition.advanceState({ count: 1 });
+        await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
+        await h.transition.advanceState({ count: 1 });
+
+        await h.assert.sync.peersInSync();
+        h.event.resetEventSpies();
+        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
+        await h.contextApi.capturePrePostSnapshotContext();
+        await h.transition.postSnapshot();
+        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
+        await h.assert.snapshot.withdrawalDeltaMatchesExpected();
+        await h.event.waitForEventCounts(
+            "onStateSnapshotUpdated",
+            h.peers.map((peer) => ({ peerId: peer.index, expectedCount: 1 })),
+            10000,
+            { mode: "atLeast" }
         );
+        await h.assert.snapshot.snapshotMatchesLocal();
     });
 
     it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - 2 independent snapshot updates", async function () {
-        await ScenarioRunner.execute(
-            Scenario.fourPeersDisputeResolutionAndSnapshotUpdate({
-                timeConfig: forkTimeConfig
-            }),
+        const h = TestSession.getHarness();
+        await h.scenario.fourPeerDisputeResolutionAndSnapshotUpdate({
+            timeConfig: forkTimeConfig
+        });
 
-            Transition.fromHonestPeersOnly((c) => c.add(1)),
-            Transition.fromHonestPeersOnly((c) => c.leaveChannel()),
-            Transition.fromHonestPeersOnly((c) => c.add(3)),
-            Assert.onlyHonestPeersInSync(),
-            Event.reset(),
+        await h.transition.fromHonestPeersOnly((c) => c.add(1));
+        await h.transition.fromHonestPeersOnly((c) => c.leaveChannel());
+        await h.transition.fromHonestPeersOnly((c) => c.add(3));
+        await h.assert.sync.onlyHonestPeersInSync();
+        h.event.resetEventSpies();
 
-            Assert.channelWithdrawalsMatchSnapshot(),
+        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
+        await h.contextApi.capturePrePostSnapshotContext();
+        await h.transition.postSnapshot();
+        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
+        await h.assert.snapshot.withdrawalDeltaMatchesExpected();
 
-            // Prepare snapshot data and store in context for delta assertions
-            Context.capturePrePostSnapshotContext(),
-
-            Transition.postSnapshot(),
-
-            Assert.channelWithdrawalsMatchSnapshot(),
-            Assert.withdrawalDeltaMatchesExpected(),
-
-            Event.waitForHonestPeers("onStateSnapshotUpdated", 1, {
-                mode: "atLeast"
-            }),
-
-            Assert.snapshotMatchesLocal(),
-            Assert.maliciousPeerExcluded()
+        const honest = h.context.honestPeerIndices || [];
+        await h.event.waitForEventCounts(
+            "onStateSnapshotUpdated",
+            honest.map((peerId) => ({ peerId, expectedCount: 1 })),
+            10000,
+            { mode: "atLeast" }
         );
+
+        await h.assert.snapshot.snapshotMatchesLocal();
+        await h.assert.sync.maliciousPeerExcluded();
     });
 
     it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - multicall", async function () {
-        await ScenarioRunner.execute(
-            // Fork resolved locally; do NOT post snapshot yet so on-chain is still on disputed fork
-            Scenario.fourPeersDisputeResolution({ timeConfig: forkTimeConfig }),
+        const h = TestSession.getHarness();
 
-            // Three transitions on reduced fork (same as test 2) to have both fork update and same-fork update
-            Transition.fromHonestPeersOnly((c) => c.add(1)),
-            Transition.fromHonestPeersOnly((c) => c.leaveChannel()),
-            Transition.fromHonestPeersOnly((c) => c.add(3)),
+        await h.scenario.fourPeerDisputeResolution({
+            timeConfig: forkTimeConfig
+        });
+        await h.transition.fromHonestPeersOnly((c) => c.add(1));
+        await h.transition.fromHonestPeersOnly((c) => c.leaveChannel());
+        await h.transition.fromHonestPeersOnly((c) => c.add(3));
 
-            Assert.onlyHonestPeersInSync(),
-            Event.reset(),
+        await h.assert.sync.onlyHonestPeersInSync();
+        h.event.resetEventSpies();
+        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
+        await h.contextApi.capturePrePostSnapshotContext();
+        await h.transition.postSnapshot();
+        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
+        await h.assert.snapshot.withdrawalDeltaMatchesExpected();
 
-            Assert.channelWithdrawalsMatchSnapshot(),
-
-            // Prepare snapshot data and store in context for delta assertions
-            Context.capturePrePostSnapshotContext(),
-
-            // Single postSnapshot triggers multicall (updateStateSnapshotFork + updateStateSnapshotSameFork)
-            Transition.postSnapshot(),
-
-            Assert.channelWithdrawalsMatchSnapshot(),
-            Assert.withdrawalDeltaMatchesExpected(),
-
-            // Wait for honest peers to observe the event
-            Event.waitForHonestPeers("onStateSnapshotUpdated", 1, {
-                mode: "atLeast"
-            }),
-            Assert.onChainBalanceMatchesSnapshot(),
-            Assert.onChainSnapshotOnFork(),
-            Assert.maliciousPeerExcluded()
+        const honest = h.context.honestPeerIndices || [];
+        await h.event.waitForEventCounts(
+            "onStateSnapshotUpdated",
+            honest.map((peerId) => ({ peerId, expectedCount: 1 })),
+            10000,
+            { mode: "atLeast" }
         );
+        await h.assert.snapshot.onChainBalanceMatchesSnapshot();
+        await h.assert.snapshot.onChainSnapshotOnFork();
+        await h.assert.sync.maliciousPeerExcluded();
     });
 });

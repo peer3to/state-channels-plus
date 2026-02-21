@@ -88,4 +88,111 @@ export class EventActions {
             });
         }
     }
+
+    async waitUntilEventOccurs(
+        eventName: keyof EventSpies,
+        timeoutMs: number = 5000
+    ): Promise<void> {
+        const condition = () => {
+            return this.harness.peers.some(
+                (peer) => this.getEventCallCount(peer.index, eventName) > 0
+            );
+        };
+
+        await this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs,
+            timeoutMessage: `Event ${String(eventName)} did not occur within ${timeoutMs}ms`
+        });
+    }
+
+    async waitForAllPeers(
+        eventName: keyof EventSpies,
+        expectedCountPerPeer: number,
+        options?: { timeoutMs?: number; mode?: "exact" | "atLeast" }
+    ): Promise<void> {
+        const expectedCounts = this.harness.peers.map((peer) => ({
+            peerId: peer.index,
+            expectedCount: expectedCountPerPeer
+        }));
+
+        const ok = await this.waitForEventCounts(
+            eventName,
+            expectedCounts,
+            options?.timeoutMs,
+            { mode: options?.mode }
+        );
+
+        if (!ok) {
+            throw new Error(
+                `Event ${String(eventName)} not reached for all peers: expected ${expectedCountPerPeer} per peer`
+            );
+        }
+    }
+
+    async waitForPeers(
+        eventName: keyof EventSpies,
+        peerIds: number[],
+        expectedCountPerPeer: number,
+        options?: { timeoutMs?: number; mode?: "exact" | "atLeast" }
+    ): Promise<void> {
+        const expectedCounts = peerIds.map((peerId) => ({
+            peerId,
+            expectedCount: expectedCountPerPeer
+        }));
+
+        const ok = await this.waitForEventCounts(
+            eventName,
+            expectedCounts,
+            options?.timeoutMs,
+            { mode: options?.mode }
+        );
+
+        if (!ok) {
+            throw new Error(
+                `Event ${String(eventName)} not reached for peers ${peerIds}: expected ${expectedCountPerPeer} per peer`
+            );
+        }
+    }
+
+    async waitForPeerDisputes(
+        peerIndex: number,
+        minCount: number,
+        options?: { timeoutMs?: number }
+    ): Promise<void> {
+        const { timeoutMs = 10000 } = options || {};
+        const condition = () => {
+            const count = this.getEventCallCount(
+                peerIndex,
+                "onInitiatingDispute"
+            );
+            return count >= minCount;
+        };
+
+        await this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs,
+            timeoutMessage: `Peer ${peerIndex} did not initiate ${minCount} disputes within ${timeoutMs}ms`
+        });
+    }
+
+    async waitForDisputeFromAnyPeer(
+        peerIndices: number[],
+        options?: { timeoutMs?: number }
+    ): Promise<void> {
+        const { timeoutMs = 10000 } = options || {};
+        const condition = () => {
+            for (const peerIndex of peerIndices) {
+                if (
+                    this.getEventCallCount(peerIndex, "onInitiatingDispute") > 0
+                ) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        await this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs,
+            timeoutMessage: `None of peers ${peerIndices.join(", ")} initiated a dispute within ${timeoutMs}ms`
+        });
+    }
 }

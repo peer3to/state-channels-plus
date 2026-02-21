@@ -28,13 +28,15 @@ import type { RpcServiceFactoryMap } from "@/rpc/registry";
 import { ChannelActions } from "@test/harness/actions/ChannelActions";
 import { TransitionActions } from "@test/harness/actions/TransitionActions";
 import { NetworkController } from "@test/harness/actions/NetworkController";
-import { AssertActions } from "@test/harness/actions/AssertActions";
+import { AssertActions } from "@test/harness";
 import { ByzantineActions } from "@test/harness/actions/ByzantineActions";
 import { EventActions } from "@test/harness/actions/EventActions";
 import { StateQueryActions } from "@test/harness/actions/StateQueryActions";
 import { DisputeOrchestrator } from "@test/harness/actions/DisputeOrchestrator";
 import { DisputeTamperingActions } from "@test/harness/actions/DisputeTamperingActions";
 import { RPCActions } from "@test/harness/actions/RPCActions";
+import { ContextActions } from "@test/harness/actions/ContextActions";
+import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
 import { HarnessContext } from "@test/harness";
 import { TestPeer, EventSpies, HarnessOptions } from "@test/harness/core/types";
 import { LogLevel } from "@/utils/logging/Logger";
@@ -102,6 +104,22 @@ export class PeerTestHarness<
     public readonly disputeOrchestrator!: DisputeOrchestrator;
     public readonly disputeTampering!: DisputeTamperingActions;
     public readonly rpcActions!: RPCActions;
+    public readonly contextActions!: ContextActions;
+    public readonly scenarioActions!: ScenarioActions;
+
+    // ergonomic aliases for action-first tests
+    public readonly channel!: ChannelActions;
+    public readonly transition!: TransitionActions;
+    public readonly network!: NetworkController;
+    public readonly assert!: AssertActions;
+    public readonly byzantine!: ByzantineActions;
+    public readonly event!: EventActions;
+    public readonly query!: StateQueryActions;
+    public readonly dispute!: DisputeOrchestrator;
+    public readonly tamper!: DisputeTamperingActions;
+    public readonly rpc!: RPCActions;
+    public readonly contextApi!: ContextActions;
+    public readonly scenario!: ScenarioActions;
 
     constructor() {
         // toJSON can't serialize BigInts, so we need to override it
@@ -157,6 +175,21 @@ export class PeerTestHarness<
         this.disputeOrchestrator = new DisputeOrchestrator(this, this.logger);
         this.disputeTampering = new DisputeTamperingActions(this, this.logger);
         this.rpcActions = new RPCActions(this, this.logger);
+        this.contextActions = new ContextActions(this, this.logger);
+        this.scenarioActions = new ScenarioActions(this, this.logger);
+
+        this.channel = this.channelActions;
+        this.transition = this.transitionActions;
+        this.network = this.networkController;
+        this.assert = this.assertActions;
+        this.byzantine = this.byzantineActions;
+        this.event = this.eventActions;
+        this.query = this.stateQuery;
+        this.dispute = this.disputeOrchestrator;
+        this.tamper = this.disputeTampering;
+        this.rpc = this.rpcActions;
+        this.contextApi = this.contextActions;
+        this.scenario = this.scenarioActions;
     }
 
     async setup(

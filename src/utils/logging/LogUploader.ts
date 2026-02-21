@@ -118,13 +118,23 @@ export class NodeLogUploader extends LogUploader {
         if (typeof process === "undefined" || !process.on) return;
 
         process.on("uncaughtException", (error) => {
-            this.uploadLogs(error);
+            this.logger?.error(
+                " ######### Uncaught exception captured, uploading logs",
+                {
+                    error
+                }
+            );
         });
 
         process.on("unhandledRejection", (reason) => {
-            this.uploadLogs(
-                reason instanceof Error ? reason : new Error(String(reason))
+            this.logger?.error(
+                " ######### Unhandled rejection captured, uploading logs",
+                {
+                    reason
+                }
             );
+
+            throw reason;
         });
     }
 }

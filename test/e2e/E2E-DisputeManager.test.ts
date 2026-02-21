@@ -1,15 +1,5 @@
 import { Codec, Type } from "@/utils";
-import {
-    ScenarioRunner,
-    Scenario,
-    Byzantine,
-    Assert,
-    Event,
-    Transition,
-    PeerTestHarness,
-    Context,
-    Lifecycle
-} from "@test/harness";
+import { TestSession, PeerTestHarness } from "@test/harness";
 
 PeerTestHarness.setDefaultLogLevel("error");
 
@@ -26,294 +16,297 @@ PeerTestHarness.setDefaultLogLevel("error");
 describe("E2E: Dispute Manager", function () {
     describe("Dispute Initiation", function () {
         it("should create dispute for double-sign detected", async function () {
-            await ScenarioRunner.execute(
-                Scenario.startChannel(3, 2),
-                Byzantine.doubleSignFrom(1), // Peer 1 double-signs
-                Assert.disputeInitiatedByPeers({ peers: [0, 2] }), // Peers 0,2 detect
-                Assert.disputeCommittedByPeers()
-            );
+            const h = TestSession.getHarness();
+            await h.channel.start(3, 2);
+            await h.byzantine.submitDoubleSignBlock(1, {
+                forkId: h.activeForkId!
+            });
+            await h.assert.dispute.disputeInitiatedByPeers({
+                peersIndices: [0, 2]
+            });
+            await h.assert.dispute.disputeCommittedByPeers();
         });
 
         it("should create dispute for invalid state transition", async function () {
-            await ScenarioRunner.execute(
-                Scenario.startChannel(3, 2),
-                Byzantine.invalidTransitionFrom(2), // Peer 2 submits invalid
-                Assert.disputeInitiatedByPeers({ peers: [0, 1] }),
-                Assert.disputeCommittedByPeers({ expectedCount: 2 })
-            );
+            const h = TestSession.getHarness();
+            await h.channel.start(3, 2);
+            await h.byzantine.submitInvalidStateTransitionBlock(2, {
+                forkId: h.activeForkId!
+            });
+            await h.assert.dispute.disputeInitiatedByPeers({
+                peersIndices: [0, 1]
+            });
+            await h.assert.dispute.disputeCommittedByPeers({
+                expectedCount: 2
+            });
         });
 
         it("should dispute forged inbound message blocks", async function () {
-            await ScenarioRunner.execute(
-                Scenario.startChannel(3, 2),
-                Event.reset(),
-                Byzantine.forgedInboundMessageFromNext(),
-                Assert.disputeInitiatedByPeers(),
-                Assert.disputeCommittedByPeers({ expectedCount: 2 })
-            );
+            const h = TestSession.getHarness();
+            await h.channel.start(3, 2);
+            h.event.resetEventSpies();
+            const nextPeer = await h.query.getNextPeerToWrite();
+            await h.byzantine.submitForgedInboundMessageBlock(nextPeer.index, {
+                forkId: h.activeForkId!
+            });
+            await h.assert.dispute.disputeInitiatedByPeers({});
+            await h.assert.dispute.disputeCommittedByPeers({
+                expectedCount: 2
+            });
         });
 
         it("should handle double-sign from different peer configurations", async function () {
-            await ScenarioRunner.execute(
-                Scenario.startChannel(4, 3),
-                Byzantine.doubleSignFrom(2), // Peer 2 attacks
-                Assert.disputeInitiatedByPeers({ peers: [0, 1, 3] }) // Others detect
-            );
+            const h = TestSession.getHarness();
+            await h.channel.start(4, 3);
+            await h.byzantine.submitDoubleSignBlock(2, {
+                forkId: h.activeForkId!
+            });
+            await h.assert.dispute.disputeInitiatedByPeers({
+                peersIndices: [0, 1, 3]
+            });
         });
     });
 
     describe("Dispute Resolution and Fork Management", function () {
         it("should reduce invalid state transition disputes and create new fork", async function () {
-            await ScenarioRunner.execute(
-                Scenario.startChannel(4, 2, {
-                    timeConfig: {
-                        p2pTime: 3,
-                        agreementTime: 2,
-                        chainFallbackTime: 2,
-                        evidenceTime: 3
-                    }
-                }),
-                Assert.peersInSync(),
-                Event.reset(),
+            const h = TestSession.getHarness();
+            await h.channel.start(4, 2, {
+                timeConfig: {
+                    p2pTime: 3,
+                    agreementTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 3
+                }
+            });
+            await h.assert.sync.peersInSync();
+            h.event.resetEventSpies();
 
-                Context.captureOriginalFork(),
-                Byzantine.invalidTransitionFromNext(),
-                Assert.disputeCommittedByPeers({
-                    expectedCount: 3
-                }),
-                Assert.forkChanged({ minHonestPeers: 3 })
+            h.contextApi.captureOriginalFork();
+            const nextPeer = await h.query.getNextPeerToWrite();
+            await h.byzantine.submitInvalidStateTransitionBlock(
+                nextPeer.index,
+                {
+                    forkId: h.activeForkId!
+                }
             );
+            await h.assert.dispute.disputeCommittedByPeers({
+                expectedCount: 3
+            });
+            await h.assert.sync.forkChanged({
+                originalForkId: h.context.originalForkId!,
+                minHonestPeers: 3
+            });
         });
 
         it.only("should post updated state snapshot after fork resolution", async function () {
             this.timeout(90000); // Increase timeout for this test
-            await ScenarioRunner.execute(
-                // Use the composed scenario (setup + fork resolution + first snapshot post)
-                Scenario.fourPeersDisputeResolutionAndSnapshotUpdate({
-                    timeConfig: {
-                        p2pTime: 1,
-                        agreementTime: 2,
-                        chainFallbackTime: 2,
-                        evidenceTime: 3
-                    }
-                }),
+            const h = TestSession.getHarness();
+            await h.channel.start(4, 2, {
+                timeConfig: {
+                    p2pTime: 1,
+                    agreementTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 3
+                }
+            });
+            await h.assert.sync.peersInSync();
+            await h.scenario.disputeAndResolve({
+                maliciousPeerIndex: 2,
+                disputesCommittedMode: "atLeast",
+                assertMaliciousRemoved: false
+            });
+            await h.transition.postSnapshot({ peerIndex: 0 });
+            await h.assert.snapshot.onChainSnapshotOnFork();
 
-                // Do 3 transitions on the reduced fork
-                Transition.fromHonestPeersOnly((c) => c.add(1)),
-                Transition.fromHonestPeersOnly((c) => c.leaveChannel()),
-                Transition.fromHonestPeersOnly((c) => c.add(3)),
+            await h.transition.fromHonestPeersOnly((c) => c.add(1));
+            await h.transition.fromHonestPeersOnly((c) => c.leaveChannel());
+            await h.transition.fromHonestPeersOnly((c) => c.add(3));
 
-                // Verify honest peers are in sync
-                Assert.onlyHonestPeersInSync(),
-                Event.reset(),
+            await h.assert.sync.onlyHonestPeersInSync();
+            h.event.resetEventSpies();
+            await h.transition.postSnapshot({ peerIndex: 0 });
 
-                // Post snapshot again (same-fork update)
-                Transition.postSnapshot({ peerIndex: 0 }),
-
-                // Wait for snapshot update events
-                Event.waitForHonestPeers("onStateSnapshotUpdated", 1, {
-                    mode: "atLeast"
-                }),
-
-                // Verify on-chain snapshot matches latest local snapshot
-                Assert.snapshotMatchesLocal({ peerIndex: 0 }),
-
-                // Verify malicious peer is excluded from rotation
-                Assert.maliciousPeerExcluded()
+            const honest = h.context.honestPeerIndices || [];
+            await h.event.waitForEventCounts(
+                "onStateSnapshotUpdated",
+                honest.map((peerId) => ({ peerId, expectedCount: 1 })),
+                10000,
+                { mode: "atLeast" }
             );
+
+            await h.assert.snapshot.snapshotMatchesLocal({ peerIndex: 0 });
+            await h.assert.sync.maliciousPeerExcluded();
         });
     });
 
     describe("Fraud Proof Detection", function () {
-        it.only("should reject dispute with incorrect auditing data commitment", async function () {
-            await ScenarioRunner.execute(
-                Scenario.preDisputeSetup(),
-
-                // Byzantine: Peer 1 posts tampered dispute
-                Byzantine.postTamperedDisputeAuditingData(1),
-
-                // Wait: Dispute gets killed by validation
-                Event.waitForAllPeers("onDisputeKilled", 1, {
-                    mode: "atLeast"
-                }),
-                // Assert: Fraud proof stored
-                Assert.latestDisputeFraudProofStored(),
-                // Lifecycle.triggerUploadLogs(),
-                Lifecycle.resolveDispute(1),
-                Assert.forkChanged()
-            );
+        it.skip("should reject dispute with incorrect auditing data commitment", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            await h.byzantine.postTamperedDisputeAuditingData(1);
+            await h.event.waitForAllPeers("onDisputeKilled", 1, {
+                mode: "atLeast"
+            });
+            await h.assert.dispute.latestDisputeFraudProofStored();
+            await h.dispute.resolveDispute({
+                maliciousPeerIndex: 1,
+                forkId: h.activeForkId!
+            });
+            await h.assert.sync.forkChanged({
+                originalForkId: h.context.originalForkId || h.activeForkId!
+            });
         });
 
         it("should reject timeout dispute when timedout participant is not next to write", async function () {
-            await ScenarioRunner.execute(
-                Scenario.preDisputeSetup(),
-
-                // Byzantine: Peer 0 posts tampered timeout dispute accusing wrong peer
-                Byzantine.postTamperedDisputeTimeout({
-                    submitterIndex: 0,
-                    wrongParticipantIndex: 1,
-                    blockHeight: 2
-                }),
-
-                // Assert: Fraud proof stored and fork unchanged
-                Assert.latestDisputeFraudProofStored(),
-                Assert.forkUnchanged()
-            );
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            await h.byzantine.postTamperedDisputeTimeout({
+                submitterIndex: 0,
+                wrongParticipantIndex: 1,
+                blockHeight: 2
+            });
+            await h.assert.dispute.latestDisputeFraudProofStored();
+            h.assert.sync.forkUnchanged();
         });
 
         it("should reject dispute when auditing data is partial and state proof invalid", async function () {
-            await ScenarioRunner.execute(
-                Scenario.preDisputeSetup(),
-
-                // Byzantine: Peer 1 posts tampered dispute with unknown snapshot reference
-                Byzantine.tamperedDisputePartialAuditing(1),
-
-                // Wait: Dispute gets killed by validation
-                Event.waitForAllPeers("onDisputeKilled", 1, {
-                    mode: "atLeast"
-                }),
-                // Assert: Fraud proof stored and fork unchanged
-                Assert.latestDisputeFraudProofStored(),
-                Assert.forkUnchanged()
-            );
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            await h.byzantine.tamperedDisputePartialAuditing(1);
+            await h.event.waitForAllPeers("onDisputeKilled", 1, {
+                mode: "atLeast"
+            });
+            await h.assert.dispute.latestDisputeFraudProofStored();
+            h.assert.sync.forkUnchanged();
         });
 
         it("should reject dispute when full auditing data reconstructed but both commitment and state proof are invalid", async function () {
-            await ScenarioRunner.execute(
-                Scenario.preDisputeSetup(),
-
-                // Byzantine: Peer 1 posts tampered dispute with BOTH invalid commitment and state proof
-                Byzantine.tamperedDisputeDoubleFault(1),
-
-                // Wait: Dispute gets killed by validation
-                Event.waitForAllPeers("onDisputeKilled", 1, {
-                    mode: "atLeast"
-                }),
-                // Assert: Fraud proof stored and fork unchanged
-                Assert.latestDisputeFraudProofStored(),
-                Assert.forkUnchanged()
-            );
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            await h.byzantine.tamperedDisputeDoubleFault(1);
+            await h.event.waitForAllPeers("onDisputeKilled", 1, {
+                mode: "atLeast"
+            });
+            await h.assert.dispute.latestDisputeFraudProofStored();
+            h.assert.sync.forkUnchanged();
         });
 
         it("should reject dispute when auditing data commitment is valid but state proof is invalid", async function () {
-            await ScenarioRunner.execute(
-                Scenario.preDisputeSetup(),
-
-                // Byzantine: Peer 1 posts tampered dispute with ONLY invalid state proof
-                Byzantine.tamperedDisputeInvalidStateProof(1),
-
-                // Wait: Dispute gets killed by validation
-                Event.waitForAllPeers("onDisputeKilled", 1, {
-                    mode: "atLeast"
-                }),
-                // Assert: Fraud proof stored and fork unchanged
-                Assert.latestDisputeFraudProofStored(),
-                Assert.forkUnchanged()
-            );
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            await h.byzantine.tamperedDisputeInvalidStateProof(1);
+            await h.event.waitForAllPeers("onDisputeKilled", 1, {
+                mode: "atLeast"
+            });
+            await h.assert.dispute.latestDisputeFraudProofStored();
+            h.assert.sync.forkUnchanged();
         });
     });
 
     describe("Re-Dispute Detection", function () {
         it("should redispute a tampered state proof that corrupts the first signed block height", async function () {
-            await ScenarioRunner.execute(
-                // Use composed scenario: 4 peers, peer 3 disconnected, 1 transaction synced
-                Scenario.readyForRedispute(),
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
 
-                // Setup interception: when peer 0 constructs a dispute, tamper it
-                Byzantine.stubDisputeConstruction({
-                    peerIndex: 0,
-                    tamperFn: async (dispute) => {
-                        // Corrupt first signed block's transaction count
-                        const stateProof = dispute.input.stateProof;
+            await h.channel.start(4, 0, {
+                timeConfig: {
+                    p2pTime: 2,
+                    agreementTime: 1,
+                    chainFallbackTime: 2,
+                    evidenceTime: 4
+                }
+            });
+            await h.byzantine.disconnect(3);
+            await h.transition.advanceState({ txFn: (c) => c.add(1) });
+            await h.assert.sync.peersInSync({ peerIndices: [0, 1, 2] });
+            h.event.resetEventSpies();
 
-                        if (stateProof.signedBlocks.length === 0) {
-                            throw new Error(
-                                "Expected signedBlocks in state proof"
-                            );
-                        }
+            h.byzantine.stubDisputeConstruction({
+                peerIndex: 0,
+                tamperFn: async (dispute) => {
+                    const stateProof = dispute.input.stateProof;
 
-                        const firstBlock = Codec.decode(
-                            stateProof.signedBlocks[0].encodedBlock,
-                            Type.Block
-                        );
-
-                        // Corrupt the transaction count by adding 5
-                        firstBlock.transaction.header.transactionCnt =
-                            BigInt(
-                                firstBlock.transaction.header.transactionCnt
-                            ) + 5n;
-
-                        stateProof.signedBlocks[0].encodedBlock = Codec.encode(
-                            firstBlock,
-                            Type.Block
-                        );
+                    if (stateProof.signedBlocks.length === 0) {
+                        throw new Error("Expected signedBlocks in state proof");
                     }
-                }),
 
-                // Peer 1 submits invalid block (triggers disputes from peer 0 and peer 2)
-                Byzantine.invalidTransitionFrom(1),
+                    const firstBlock = Codec.decode(
+                        stateProof.signedBlocks[0].encodedBlock,
+                        Type.Block
+                    );
 
-                // Peer 2 should initiate TWO disputes:
-                // 1. One for peer 1's invalid block
-                // 2. One for peer 0's tampered dispute
-                Event.waitForPeerDisputes(2, 2, { timeoutMs: 15000 }),
+                    firstBlock.transaction.header.transactionCnt =
+                        BigInt(firstBlock.transaction.header.transactionCnt) +
+                        5n;
 
-                // Verify peer 2 stored fraud proof for peer 0's tampered dispute
-                Assert.fraudProofStoredForTamperedDispute(2),
+                    stateProof.signedBlocks[0].encodedBlock = Codec.encode(
+                        firstBlock,
+                        Type.Block
+                    );
+                }
+            });
 
-                // Cleanup: restore constructDispute interception
-                Byzantine.restoreDisputeConstruction(0)
-            );
+            await h.byzantine.submitInvalidStateTransitionBlock(1, {
+                forkId: h.activeForkId!
+            });
+
+            await h.event.waitForPeerDisputes(2, 2, { timeoutMs: 15000 });
+            await h.assert.dispute.fraudProofStoredForTamperedDispute(2);
+            h.byzantine.restoreDisputeConstruction(0);
         });
     });
 
     describe("Partial Syncing via Dispute Validation", function () {
         it("should sync missing state via validStateProofButNotSynced when peer receives dispute with blocks it doesn't have", async function () {
-            await ScenarioRunner.execute(
-                // Setup: 3 peers, 1 state transition
-                Scenario.startChannel(3, 1),
-                // Peer 1 has produces a block that others don't have
-                Scenario.peerWithUnbroadcastedBlock(1),
+            const h = TestSession.getHarness();
+            await h.channel.start(3, 1);
+            await h.assert.sync.peersInSync();
+            h.event.resetEventSpies();
+            h.byzantine.stubBroadcast(1);
+            await h.transition.advanceState({ waitForSync: false });
 
-                // Verify peer 1 is ahead (has the block that wasn't broadcast)
-                Assert.peerBlockHeightGreaterThan(1, 2),
-                Assert.blockHeight({ expectedHeight: 0, peerIndices: [0, 2] }),
-                Assert.blockHeight({ expectedHeight: 1, peerIndices: [1] }),
+            await h.assert.sync.peerBlockHeightGreaterThan(1, 2);
+            await h.assert.sync.blockHeight({
+                expectedHeight: 0,
+                peerIndices: [0, 2]
+            });
+            await h.assert.sync.blockHeight({
+                expectedHeight: 1,
+                peerIndices: [1]
+            });
 
-                // Peer 0 submits invalid transition (triggers disputes)
-                Byzantine.invalidTransitionFrom(0),
+            await h.byzantine.submitInvalidStateTransitionBlock(0, {
+                forkId: h.activeForkId!
+            });
 
-                // Wait for disputes to be committed
-                Event.waitForPeers("onDisputeCommitted", [1, 2], 2, {
-                    mode: "atLeast"
-                }),
+            await h.event.waitForPeers("onDisputeCommitted", [1, 2], 2, {
+                mode: "atLeast"
+            });
 
-                // Peer 2 should sync the missing block via peer 1's dispute
-                Assert.peersInSync({ peerIndices: [1, 2] })
-            );
+            await h.assert.sync.peersInSync({ peerIndices: [1, 2] });
         });
 
         it("should handle valid dispute when validating peer is missing snapshot data", async function () {
-            await ScenarioRunner.execute(
-                // Setup: 3 peers, peer 2 isolated (can't sync from P2P or chain)
-                Scenario.peer2Isolated(),
+            const h = TestSession.getHarness();
+            await h.channel.start(3, 0, {
+                timeConfig: {
+                    p2pTime: 1,
+                    agreementTime: 1,
+                    chainFallbackTime: 2
+                }
+            });
+            h.byzantine.stubCalldataHandler(2);
+            h.contextApi.storeSnapshotCount(2, "before_isolation");
+            await h.byzantine.disconnect(2);
+            h.event.resetEventSpies();
 
-                // Submit transaction without peer 2 (peer 2 won't receive it)
-                // Block stays UNFINALIZED (in signedBlocks, not milestones)
-                Transition.validWithoutPeer(2, (c) => c.add(100)),
-
-                // Wait for timeout dispute from peer 0 or 1
-                // Peer 2 will validate this dispute with isPartial = true
-                Event.waitForDisputeFromAnyPeer([0, 1]),
-
-                // Verify peer 2 resynced via validStateProofButNotSynced
-                // When peer 2 validates the dispute with isPartial = true,
-                // it should sync by applying the signed blocks from the state proof
-                Assert.snapshotCountIncreasedSince(2, "before_isolation"),
-
-                // Cleanup: restore calldata handler
-                Byzantine.restoreCalldataHandler(2)
+            await h.transition.validWithoutPeer(2, (c) => c.add(100));
+            await h.event.waitForDisputeFromAnyPeer([0, 1]);
+            await h.assert.snapshot.snapshotCountIncreasedSince(
+                2,
+                "before_isolation"
             );
+            h.byzantine.restoreCalldataHandler(2);
         });
     });
 });

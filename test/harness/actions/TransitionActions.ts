@@ -1,7 +1,9 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
 import { Logger } from "@/utils";
-import { TransitionContract } from "../blocks/Transition";
+import { MathStateMachine } from "@typechain-types/index";
+
+export type TransitionContract = MathStateMachine;
 
 export type TransitionOptions = {
     waitForSync?: boolean;
@@ -25,7 +27,7 @@ export class TransitionActions {
         txFn: (contract: TransitionContract) => Promise<any>,
         options: TransitionOptions = { waitForTurn: true, waitForSync: true }
     ): Promise<any> {
-        const nextPeer = await this.getNextPeerToWrite();
+        const nextPeer = await this.harness.stateQuery.getNextPeerToWrite();
 
         if (options.waitForTurn) {
             await this.waitForTurn(nextPeer);
@@ -40,6 +42,119 @@ export class TransitionActions {
 
     async increment(value: number = 1, options?: TransitionOptions) {
         return this.submitNext((contract) => contract.add(value), options);
+    }
+
+    async advanceState(options?: {
+        count?: number;
+        rounds?: number;
+        txFn?: (contract: TransitionContract) => Promise<any>;
+        waitForSync?: boolean;
+        waitForPeers?: number[];
+        waitForTurn?: boolean;
+    }): Promise<void> {
+        const count = options?.count ?? 1;
+        const total = options?.rounds
+            ? options.rounds * this.harness.peers.length
+            : count;
+
+        const transitionOptions = {
+            waitForSync: options?.waitForSync,
+            waitForPeers: options?.waitForPeers,
+            waitForTurn: options?.waitForTurn
+        };
+
+        if (options?.txFn) {
+            for (let i = 0; i < total; i++) {
+                await this.submitNext(options.txFn, transitionOptions);
+            }
+            return;
+        }
+
+        for (let i = 0; i < total; i++) {
+            await this.increment(1, transitionOptions);
+        }
+    }
+
+    async peerWrite(options: {
+        peer: number;
+        value?: number;
+        waitForPeers?: number[];
+    }): Promise<void> {
+        const { peer, value = 1, waitForPeers } = options;
+        const peerObj = this.harness.peers[peer];
+        if (!peerObj) {
+            throw new Error(`Peer ${peer} not found`);
+        }
+
+        await this.submit(peerObj, (contract) => contract.add(value), {
+            waitForPeers
+        });
+    }
+
+    async fromHonestPeersOnly(
+        txFn: (contract: TransitionContract) => Promise<any>,
+        options?: { waitForSync?: boolean }
+    ): Promise<void> {
+        const honestIndices =
+            this.harness.context.honestPeerIndices ||
+            Array.from({ length: this.harness.peers.length }, (_, i) => i);
+
+        await this.submitNext(txFn, {
+            waitForTurn: true,
+            waitForPeers: honestIndices,
+            waitForSync: options?.waitForSync ?? true
+        });
+    }
+
+    async sequenceFromHonestPeers(
+        txFns: Array<(contract: TransitionContract) => Promise<any>>
+    ): Promise<void> {
+        const honestIndices = this.harness.context.honestPeerIndices;
+        if (!honestIndices) {
+            throw new Error(
+                "honestPeerIndices not set - resolve dispute context first"
+            );
+        }
+
+        for (const txFn of txFns) {
+            await this.submitNext(txFn, {
+                waitForTurn: true,
+                waitForPeers: honestIndices,
+                waitForSync: true
+            });
+        }
+    }
+
+    async postSnapshot(options?: {
+        peerIndex?: number;
+        forkId?: string;
+    }): Promise<void> {
+        const { peerIndex = 0 } = options || {};
+        const forkId = options?.forkId || this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error("No active fork ID - channel must be opened first");
+        }
+
+        const peer = this.harness.peers[peerIndex];
+        if (!peer) {
+            throw new Error(`Peer ${peerIndex} not found`);
+        }
+
+        await peer.stateManager.postStateSnapshot(forkId);
+    }
+
+    async validWithoutPeer(
+        excludePeer: number,
+        txFn: (contract: TransitionContract) => Promise<any>
+    ): Promise<void> {
+        const includedPeers = this.harness.peers
+            .map((_: unknown, i: number) => i)
+            .filter((i: number) => i !== excludePeer);
+
+        await this.submitNext(txFn, {
+            waitForPeers: includedPeers,
+            waitForSync: true
+        });
     }
 
     /**
@@ -70,10 +185,6 @@ export class TransitionActions {
         }
 
         return result;
-    }
-
-    private async getNextPeerToWrite(): Promise<TestPeer> {
-        return this.harness.stateQuery.getNextPeerToWrite();
     }
 
     /**

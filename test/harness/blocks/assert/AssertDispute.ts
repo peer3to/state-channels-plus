@@ -11,7 +11,9 @@ export class AssertDispute {
         peersIndices?: number[];
     }) {
         return new HarnessBlock(async (harness) => {
-            await harness.assertActions.disputeCommittedByPeers(options);
+            await harness.assertActions.dispute.disputeCommittedByPeers(
+                options
+            );
             return harness;
         });
     }
@@ -34,7 +36,7 @@ export class AssertDispute {
                 );
             }
 
-            await harness.assertActions.assertDisputeFraudProofStored({
+            await harness.assertActions.dispute.assertDisputeFraudProofStored({
                 dispute,
                 timeoutMs,
                 peerIndices: peers
@@ -101,7 +103,7 @@ export class AssertDispute {
         timeoutMs?: number;
     }) {
         return new HarnessBlock(async (harness) => {
-            await harness.assertActions.disputeInitiatedByPeers({
+            await harness.assertActions.dispute.disputeInitiatedByPeers({
                 peersIndices: options?.peers,
                 timeoutMs: options?.timeoutMs
             });
@@ -134,7 +136,7 @@ export class AssertDispute {
      */
     static noDisputes() {
         return new HarnessBlock(async (harness) => {
-            harness.assertActions.assertNoDisputes();
+            harness.assertActions.dispute.noDisputes();
             return harness;
         });
     }
@@ -153,7 +155,7 @@ export class AssertDispute {
                 throw new Error("No active fork ID");
             }
 
-            harness.assertActions.assertTimeoutIsForced({
+            harness.assertActions.dispute.timeoutIsForced({
                 participant,
                 peerToCheck,
                 forkId
