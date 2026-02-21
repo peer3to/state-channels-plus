@@ -24,27 +24,6 @@ if (
     });
 }
 
-// Block system
-export {
-    HarnessBlock,
-    ScenarioRunner,
-    composeBlocks
-} from "./blocks/HarnessBlock";
-
-// Layer 2: Block namespaces (thin orchestration)
-export { Lifecycle } from "./blocks/Lifecycle";
-export { Transition } from "./blocks/Transition";
-export { Time } from "./blocks/Time";
-export { RPC } from "./blocks/RPC";
-
-// Layer 3: Scenario blocks (high-level composition)
-export { Scenario } from "./blocks/Scenario";
-export { Byzantine } from "./blocks/Byzantine";
-export { Assert } from "./blocks/assert/";
-export { AssertRPC } from "./blocks/assert/";
-export { Event } from "./blocks/Event";
-export { Context } from "./blocks/Context";
-
 // Action classes (for advanced usage)
 export { ChannelActions } from "./actions/ChannelActions";
 export { TransitionActions } from "./actions/TransitionActions";
