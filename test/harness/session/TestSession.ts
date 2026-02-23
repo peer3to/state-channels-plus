@@ -2,7 +2,7 @@ import { PeerTestHarness } from "../../fixtures/PeerTestHarness";
 
 export class TestSession {
     private static harness?: PeerTestHarness;
-
+    private static firstDetachedError?: Error;
     static async reset(): Promise<void> {
         await this.clear();
 
@@ -26,7 +26,18 @@ export class TestSession {
         }
 
         await this.harness.cleanup();
+        this.firstDetachedError = undefined;
         this.harness = undefined;
+    }
+
+    static setFirstDetachedError(error: Error): void {
+        if (!this.firstDetachedError) {
+            this.firstDetachedError = error;
+        }
+    }
+
+    static getFirstDetachedError(): Error | undefined {
+        return this.firstDetachedError;
     }
 }
 

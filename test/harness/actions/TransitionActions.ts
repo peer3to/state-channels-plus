@@ -2,6 +2,7 @@ import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
 import { Logger } from "@/utils";
 import { MathStateMachine } from "@typechain-types/index";
+import { StateSnapshot } from "@/models";
 
 export type TransitionContract = MathStateMachine;
 
@@ -128,7 +129,7 @@ export class TransitionActions {
     async postSnapshot(options?: {
         peerIndex?: number;
         forkId?: string;
-    }): Promise<void> {
+    }): Promise<StateSnapshot | undefined> {
         const { peerIndex = 0 } = options || {};
         const forkId = options?.forkId || this.harness.activeForkId;
         if (!forkId) {
@@ -140,7 +141,7 @@ export class TransitionActions {
             throw new Error(`Peer ${peerIndex} not found`);
         }
 
-        await peer.stateManager.postStateSnapshot(forkId);
+        return await peer.stateManager.postStateSnapshot(forkId);
     }
 
     async validWithoutPeer(

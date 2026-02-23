@@ -7,6 +7,7 @@ import PeerProfile from "@/PeerProfile";
 import { ethers } from "@/index";
 import Block from "@/models/Block";
 import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
+import { StateSnapshot } from "@/models";
 
 /**
  * StateQueryActions handles all read-only state queries.
@@ -91,6 +92,14 @@ export class StateQueryActions {
               )?.hash || ethers.ZeroHash;
     }
 
+    public async getLocalStateSnapshot(peer: TestPeer): Promise<StateSnapshot> {
+        const stateManager = peer.stateManager;
+        const localDiamond =
+            stateManager.diamondStateMachine.localDiamondContract;
+        return StateSnapshot.from(
+            await localDiamond.getStateSnapshot(stateManager.channelId)
+        );
+    }
     /**
      * Get the next peer that should write a block
      */

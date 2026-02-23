@@ -24,8 +24,8 @@ export interface HarnessContext {
     /** New fork ID after fork change (set by Context.updateActiveFork) */
     newForkId?: ForkId;
 
-    /** Index of the malicious peer in Byzantine attack scenarios (set by Context.markMaliciousPeer, Byzantine blocks) */
-    maliciousPeerIndex?: number;
+    /** Indices of malicious peers in Byzantine attack scenarios (set by Context.markMaliciousPeer, Byzantine blocks) */
+    maliciousPeerIndices?: number[];
 
     /** Last malicious peer index from most recent Byzantine attack (set by Byzantine blocks) */
     lastMaliciousPeerIndex?: number;

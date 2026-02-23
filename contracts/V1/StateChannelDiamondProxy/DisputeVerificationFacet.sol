@@ -202,15 +202,31 @@ contract DisputeVerificationFacet is StateChannelCommon {
         Dispute[] memory disputes,
         StateSnapshot memory stateSnapshot,
         bytes memory encodedStateMachineState,
-        MessageBlock[] memory inboundMessageBlocks
+        MessageBlock[] memory inboundMessageBlocks,
+        bytes32 expectedReducedForkId
     ) public {
         require(disputes.length > 0, ErrorNoDisputesProvided());
         bytes32 channelId = disputes[0].input.channelId;
         bytes32 forkId = disputes[0].input.forkId;
-        require(canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
 
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[disputes[0].input.forkId];
+
+        // no dispute window exists for this fork -> nothing to reduce
+        if (!_isDisputeWidnowCreated(disputeWindow)) {
+            return;
+        }
+
+        // already reduced: expectation must match
+        if (disputeWindow.reducedResult.forkId != bytes32(0)) {
+            require(
+                disputeWindow.reducedResult.forkId == expectedReducedForkId,
+                RaceConditionReductionExpectationDoesntMatch()
+            );
+            return;
+        }
+
+        // require(canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
         // require that provided disputes correspond to committed set
         require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
 
@@ -222,6 +238,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         // compute the new forkId
         bytes32 winningForkId = keccak256(abi.encode(snapshotData));
+
+        require(winningForkId == expectedReducedForkId, RaceConditionReductionExpectationDoesntMatch());
 
         // commit reduced result (enforces kill period expiration inside)
         _commitToDisputeReducedResult(channelId, disputeWindow, winningForkId, block.timestamp - getEvidenceTime());
@@ -271,9 +289,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         address[] memory removals = reducedOutput.selfRemovals;
         if (reducedOutput.timeout.participant != address(0) && reducedOutput.slashedParticipants.length == 0) {
-            removals = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
-                removals, reducedOutput.timeout.participant
-            );
+            removals = UtilityFacet(utilityFacetAddress)
+                .insertIntoAddressArrayNoDuplicates(removals, reducedOutput.timeout.participant);
         }
 
         DisputeOutputState memory outputState = generateDisputeOutputState(
@@ -470,12 +487,10 @@ contract DisputeVerificationFacet is StateChannelCommon {
         console.log("BALANCE 4.1 - snapshotData.totalDeposits:", snapshotData.totalDeposits.amount);
         console.log("BALANCE 4.2 - stateMachineBalance:", stateMachineBalance.amount);
         console.log("BALANCE 4.3 - snapshotData.totalWithdrawals:", snapshotData.totalWithdrawals.amount);
-        if (
-            !stateMachineImplementation.areBalancesEqual(
+        if (!stateMachineImplementation.areBalancesEqual(
                 snapshotData.totalDeposits,
                 stateMachineImplementation.addBalance(snapshotData.totalWithdrawals, stateMachineBalance)
-            )
-        ) return false;
+            )) return false;
         console.log("BALANCE 5");
         return true;
     }
@@ -554,10 +569,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
         (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
         if (
             hasBlock
-                && (
-                    latestBlock.stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))
-                        || latestBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash
-                )
+                && (latestBlock.stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))
+                    || latestBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash)
         ) {
             return false;
         }

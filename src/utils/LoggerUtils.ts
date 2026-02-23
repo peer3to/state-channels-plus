@@ -26,12 +26,20 @@ import ATransport from "@/transport/ATransport";
 import { Block, StateSnapshot } from "@/models";
 import Storage from "@/storage";
 import {
+    MessageStruct,
     MessageBlockStruct,
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import { LogLevel } from "./logging/Logger";
 export class LoggerUtils {
+    private static readonly MESSAGE_TYPE_LABELS: Record<string, string> = {
+        "0x9ce4e6bf06971600d59f74bebec9880ea91b2f4bdbfcc850572617eeaad2edc8":
+            "JOIN_CHANNEL_MESSAGE",
+        "0x7fc958f6d896a018ea54afc012524ea8e277a718198f19cfe9d7795f10efadae":
+            "EXIT_CHANNEL_MESSAGE"
+    };
+
     // ====================================
     // SIMPLE FORMATTERS
     // ====================================
@@ -262,6 +270,32 @@ export class LoggerUtils {
                 data: String(messageBlock.totalBalance.data)
             }
         };
+    }
+
+    static getMessageStructMeta(message: MessageStruct) {
+        const messageType = String(message.messageType);
+        const decodedMessageType = this.decodeMessageType(messageType);
+
+        return {
+            messageType,
+            decodedMessageType,
+            participant: String(message.participant),
+            balance: {
+                amount: Number(message.balance.amount),
+                data: String(message.balance.data)
+            },
+            dataHash: String(hash(message.data)),
+            dataLength: String(message.data).length
+        };
+    }
+
+    static decodeMessageType(messageType: string): string {
+        const normalized = messageType.toLowerCase();
+        return (
+            this.MESSAGE_TYPE_LABELS[normalized] ??
+            this.MESSAGE_TYPE_LABELS[messageType] ??
+            "UNKNOWN_MESSAGE_TYPE"
+        );
     }
 
     static getReducedOutputMetadata(reducedOutput: ReduceOutputStruct) {

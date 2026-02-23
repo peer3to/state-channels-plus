@@ -2,7 +2,8 @@ import { config, isNodeRuntime } from "../config";
 import type {
     ExclusiveLoggerContext,
     SharedLoggerContext,
-    LogLevel
+    LogLevel,
+    LoggerDestroyOptions
 } from "./Logger";
 import { Logger } from "./Logger";
 import { LogStore } from "./logStore";
@@ -12,7 +13,12 @@ import { NodeLogger } from "./node/NodeLogger";
 import { BrowserLogger } from "./browser/BrowserLogger";
 import { decodeLogs, decompressFromBase64 } from "./logEncoder";
 
-export type { Logger, ExclusiveLoggerContext, SharedLoggerContext };
+export type {
+    Logger,
+    ExclusiveLoggerContext,
+    SharedLoggerContext,
+    LoggerDestroyOptions
+};
 export { decodeLogs, decompressFromBase64 };
 
 export type CreateLoggerOptions = {
@@ -41,7 +47,7 @@ export const createLogger = (
             uploadEndpoint: config.CRASH_LOG_UPLOAD_ENDPOINT,
             apiToken: config.CRASH_LOG_API_TOKEN || ""
         } as LogUploaderConfig);
-
+    console.trace("Creating logger");
     if (!isNodeRuntime()) {
         return new BrowserLogger(
             exclusiveContext,

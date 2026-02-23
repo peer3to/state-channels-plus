@@ -114,9 +114,12 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
             channelBalance.latestOutboundMessageBlockHeight = 0;
         }
         // verify threshold signature - must be from all participants - this is deterministic - no race condition on-chain
-        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            openChannelData.participants, openChannelConfirmation.encodedOpenChannel, openChannelConfirmation.signatures
-        );
+        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress)
+            .verifyThresholdSigned(
+                openChannelData.participants,
+                openChannelConfirmation.encodedOpenChannel,
+                openChannelConfirmation.signatures
+            );
         require(isValid, reason);
 
         JoinChannel[] memory joinChannels = new JoinChannel[](openChannelData.participants.length);
@@ -156,10 +159,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
         bytes32 forkId = keccak256(abi.encode(genesisSnapshotData));
         StateSnapshot memory genesisStateSnapshot = StateSnapshot({
-            snapshotData: genesisSnapshotData,
-            forkId: forkId,
-            blockHeight: 0,
-            timestamp: block.timestamp
+            snapshotData: genesisSnapshotData, forkId: forkId, blockHeight: 0, timestamp: block.timestamp
         });
 
         stateSnapshots[openChannelData.channelId] = genesisStateSnapshot;
@@ -486,13 +486,14 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         Dispute[] memory disputes,
         StateSnapshot memory stateSnapshot,
         bytes memory encodedStateMachineState,
-        MessageBlock[] memory inboundMessageBlocks
+        MessageBlock[] memory inboundMessageBlocks,
+        bytes32 expectedReducedForkId
     ) public override {
         _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(
                 DisputeVerificationFacet.reduceAndFinalize,
-                (disputes, stateSnapshot, encodedStateMachineState, inboundMessageBlocks)
+                (disputes, stateSnapshot, encodedStateMachineState, inboundMessageBlocks, expectedReducedForkId)
             )
         );
     }
@@ -502,12 +503,12 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     function isKillPeriodExpired(bytes32 channelId, bytes32 forkId)
         public
         view
-        returns (bool isKillPeriodExpired, uint256 killPeriodEnd, uint256 blockTimestamp)
+        returns (bool isExpired, uint256 killPeriodEnd, uint256 blockTimestamp)
     {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
-        (isKillPeriodExpired, killPeriodEnd) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
-        return (isKillPeriodExpired, killPeriodEnd, block.timestamp);
+        (isExpired, killPeriodEnd) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        return (isExpired, killPeriodEnd, block.timestamp);
     }
 
     function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {

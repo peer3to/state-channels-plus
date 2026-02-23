@@ -74,6 +74,7 @@ error RaceConditionJoinChannelExpired();
 error RaceConditionDisputeEvidencePeriodExpired();
 error RaceConditionDisputeKillPeriodNotExpired();
 error RaceConditionDisputeAlreadyReduced();
+error RaceConditionReductionExpectationDoesntMatch();
 error RaceConditionDisputeAuditingRequired();
 error RaceConditionDisputeTimeoutCalldataPosted();
 error RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch();

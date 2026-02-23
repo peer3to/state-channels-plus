@@ -3,6 +3,7 @@ import { Logger } from "./logging";
 export type EventBarrierOptions = {
     timeoutMs?: number;
     timeoutMessage?: string;
+    timeoutMeta?: object;
     label?: string;
 };
 
@@ -31,7 +32,7 @@ export class EventBarrier {
         condition: () => boolean | Promise<boolean>,
         options: EventBarrierOptions = {}
     ): Promise<void> {
-        const { timeoutMs = 5000, timeoutMessage } = options;
+        const { timeoutMs = 5000, timeoutMessage, timeoutMeta } = options;
         const capturedStack = new Error("EventBarrier.waitFor called").stack;
 
         // Fast path: resolve immediately if condition already satisfied.
@@ -52,6 +53,7 @@ export class EventBarrier {
                     waiter.capturedStack
                 );
                 this.logger.error(errorMessage, {
+                    timeoutMeta,
                     capturedStack: waiter.capturedStack
                 });
                 reject(error);

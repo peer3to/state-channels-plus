@@ -10,7 +10,7 @@ import type P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import EventBarrier from "@/utils/EventBarrier";
 import { Status } from "@/types";
-import { getChecksumAddress } from "@/utils";
+import { DetachedPromises, getChecksumAddress } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { EventBarrierCapturedError } from "@/utils/EventBarrier";
 
@@ -288,7 +288,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
             `Signaling handshake completion for transport ${TransportType[transport.transportType]}`,
             { ...transportMeta }
         );
-        void this.handshakeBarrier.signal();
+        DetachedPromises.collect(this.handshakeBarrier.signal());
     }
 }
 

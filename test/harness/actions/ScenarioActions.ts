@@ -65,19 +65,12 @@ export class ScenarioActions {
         };
     }) {
         await this.fourPeersDisputeResolution(options);
-        await this.harness.transition.postSnapshot({ peerIndex: 0 });
-        await this.harness.assert.snapshot.onChainSnapshotOnFork();
-    }
-
-    async fourPeerDisputeResolutionAndSnapshotUpdate(options?: {
-        timeConfig?: {
-            p2pTime?: number;
-            agreementTime?: number;
-            chainFallbackTime?: number;
-            evidenceTime?: number;
-        };
-    }) {
-        await this.fourPeersDisputeResolutionAndSnapshotUpdate(options);
+        const expectedSnapshot = await this.harness.transition.postSnapshot({
+            peerIndex: 0
+        });
+        await this.harness.assert.snapshot.onChainSnapshotChangedDetached({
+            expectedSnapshot
+        });
     }
 
     async preDisputeSetup(peerCount: number = 3) {

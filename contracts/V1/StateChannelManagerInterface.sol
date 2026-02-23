@@ -86,6 +86,7 @@ abstract contract StateChannelManagerInterface {
         Dispute[] memory disputes,
         StateSnapshot memory stateSnapshot,
         bytes memory encodedStateMachineState,
-        MessageBlock[] memory inboundMessageBlocks
+        MessageBlock[] memory inboundMessageBlocks,
+        bytes32 expectedReducedForkId
     ) public virtual;
 }

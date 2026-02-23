@@ -16,6 +16,7 @@ export type LogUploaderConfig = {
 
 export abstract class LogUploader {
     protected logger?: Logger;
+    private destroyed = false;
     constructor(
         protected readonly logStore: LogStore,
         protected readonly config: LogUploaderConfig,
@@ -32,6 +33,7 @@ export abstract class LogUploader {
         this.logger = logger;
     }
     protected abstract attachListeners(): void;
+    protected abstract detachListeners(): void;
 
     protected isEnabled(): boolean {
         return Boolean(this.config.uploadEndpoint);
@@ -68,7 +70,9 @@ export abstract class LogUploader {
             if (this.config.apiToken) {
                 headers["Authorization"] = `Bearer ${this.config.apiToken}`;
             }
-
+            console.trace(
+                `Log uploading started. Raw size: ${rawLogsSize / 1e6}MB, Compressed size: ${compressedLogsSize / 1e6}MB.`
+            );
             await axios.post(
                 this.config.uploadEndpoint,
                 {
@@ -91,50 +95,103 @@ export abstract class LogUploader {
         } finally {
         }
     }
+
+    public destroy(): void {
+        if (this.destroyed) {
+            return;
+        }
+
+        console.trace("Destroying LogUploader");
+
+        this.destroyed = true;
+        this.detachListeners();
+    }
 }
 
 export class BrowserLogUploader extends LogUploader {
+    private onWindowError?: (e: ErrorEvent) => void;
+    private onWindowUnhandledRejection?: (e: PromiseRejectionEvent) => void;
+
     protected attachListeners(): void {
         if (typeof window === "undefined") return;
 
-        window.addEventListener("error", (e) => {
+        this.onWindowError = (e: ErrorEvent) => {
             if (e.error) {
                 this.uploadLogs(e.error);
             }
-        });
+        };
+        window.addEventListener("error", this.onWindowError);
 
-        window.addEventListener("unhandledrejection", (e) => {
+        this.onWindowUnhandledRejection = (e: PromiseRejectionEvent) => {
             this.uploadLogs(
                 e.reason instanceof Error
                     ? e.reason
                     : new Error(String(e.reason))
             );
-        });
+        };
+        window.addEventListener(
+            "unhandledrejection",
+            this.onWindowUnhandledRejection
+        );
+    }
+
+    protected detachListeners(): void {
+        if (typeof window === "undefined") return;
+
+        if (this.onWindowError) {
+            window.removeEventListener("error", this.onWindowError);
+            this.onWindowError = undefined;
+        }
+
+        if (this.onWindowUnhandledRejection) {
+            window.removeEventListener(
+                "unhandledrejection",
+                this.onWindowUnhandledRejection
+            );
+            this.onWindowUnhandledRejection = undefined;
+        }
     }
 }
 
 export class NodeLogUploader extends LogUploader {
+    private onUncaughtException?: (error: unknown) => void;
+    private onUnhandledRejection?: (reason: unknown) => void;
+
     protected attachListeners(): void {
         if (typeof process === "undefined" || !process.on) return;
 
-        process.on("uncaughtException", (error) => {
+        this.onUncaughtException = (error: unknown) => {
             this.logger?.error(
                 " ######### Uncaught exception captured, uploading logs",
                 {
                     error
                 }
             );
-        });
+        };
+        process.on("uncaughtException", this.onUncaughtException);
 
-        process.on("unhandledRejection", (reason) => {
+        this.onUnhandledRejection = (reason: unknown) => {
             this.logger?.error(
                 " ######### Unhandled rejection captured, uploading logs",
                 {
                     reason
                 }
             );
+        };
+        process.on("unhandledRejection", this.onUnhandledRejection);
+    }
 
-            throw reason;
-        });
+    protected detachListeners(): void {
+        if (typeof process === "undefined" || !process.off) return;
+
+        if (this.onUncaughtException) {
+            process.off("uncaughtException", this.onUncaughtException);
+            this.onUncaughtException = undefined;
+        }
+
+        if (this.onUnhandledRejection) {
+            process.off("unhandledRejection", this.onUnhandledRejection);
+            this.onUnhandledRejection = undefined;
+        }
     }
 }

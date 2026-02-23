@@ -22,7 +22,7 @@ export class ContextActions {
             );
 
         this.harness.context.honestPeerIndices = honest;
-        this.harness.context.maliciousPeerIndex = maliciousPeerIndex;
+        this.harness.context.maliciousPeerIndices = [maliciousPeerIndex];
     }
 
     updateActiveFork(): void {

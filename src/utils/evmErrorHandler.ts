@@ -14,6 +14,7 @@ export type RaceConditionErrorName =
     | "RaceConditionDisputeEvidencePeriodExpired"
     | "RaceConditionDisputeKillPeriodNotExpired"
     | "RaceConditionDisputeAlreadyReduced"
+    | "RaceConditionReductionExpectationDoesntMatch"
     | "RaceConditionDisputeAuditingRequired"
     | "RaceConditionDisputeTimeoutCalldataPosted"
     | "RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch"

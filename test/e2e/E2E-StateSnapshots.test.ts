@@ -45,7 +45,7 @@ describe("E2E: State Snapshots", function () {
 
     it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - 2 independent snapshot updates", async function () {
         const h = TestSession.getHarness();
-        await h.scenario.fourPeerDisputeResolutionAndSnapshotUpdate({
+        await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdate({
             timeConfig: forkTimeConfig
         });
 

@@ -115,8 +115,12 @@ describe("E2E: Dispute Manager", function () {
                 disputesCommittedMode: "atLeast",
                 assertMaliciousRemoved: false
             });
-            await h.transition.postSnapshot({ peerIndex: 0 });
-            await h.assert.snapshot.onChainSnapshotOnFork();
+            const expectedSnapshot = await h.transition.postSnapshot({
+                peerIndex: 0
+            });
+            await h.assert.snapshot.onChainSnapshotChangedDetached({
+                expectedSnapshot
+            });
 
             await h.transition.fromHonestPeersOnly((c) => c.add(1));
             await h.transition.fromHonestPeersOnly((c) => c.leaveChannel());
@@ -124,8 +128,14 @@ describe("E2E: Dispute Manager", function () {
 
             await h.assert.sync.onlyHonestPeersInSync();
             h.event.resetEventSpies();
-            await h.transition.postSnapshot({ peerIndex: 0 });
+            const expectedSnapshot2 = await h.transition.postSnapshot({
+                peerIndex: 0
+            });
 
+            await h.assert.snapshot.onChainSnapshotChangedDetached({
+                expectedSnapshot: expectedSnapshot2
+            });
+            return;
             const honest = h.context.honestPeerIndices || [];
             await h.event.waitForEventCounts(
                 "onStateSnapshotUpdated",

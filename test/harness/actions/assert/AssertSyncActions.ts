@@ -150,17 +150,17 @@ export class AssertSyncActions {
     }
 
     async maliciousPeerExcluded(): Promise<void> {
-        const maliciousIndex = this.harness.context.maliciousPeerIndex;
-        if (maliciousIndex === undefined) {
+        const maliciousIndices = this.harness.context.maliciousPeerIndices;
+        if (!maliciousIndices || maliciousIndices.length === 0) {
             throw new Error(
                 "maliciousPeerIndex not set - resolve dispute context first"
             );
         }
 
         const nextWriter = await this.harness.stateQuery.getNextPeerToWrite();
-        if (nextWriter.index === maliciousIndex) {
+        if (maliciousIndices.includes(nextWriter.index)) {
             throw new Error(
-                `Malicious peer ${maliciousIndex} should not receive next turn, but it did`
+                `Malicious peer ${nextWriter.index} should not receive next turn, but it did`
             );
         }
     }

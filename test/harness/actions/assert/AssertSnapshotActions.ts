@@ -1,4 +1,6 @@
 import { StateSnapshot } from "@/models";
+import { DetachedPromises } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 export class AssertSnapshotActions {
@@ -24,6 +26,59 @@ export class AssertSnapshotActions {
                 `Expected on-chain snapshot to be on fork ${expectedForkId}, but found ${onChainSnapshot.forkID}`
             );
         }
+    }
+
+    async onChainSnapshotChangedDetached(options?: {
+        expectedForkId?: string;
+        expectedSnapshot?: StateSnapshot;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const {
+            expectedForkId,
+            expectedSnapshot,
+            timeoutMs = 8000
+        } = options || {};
+
+        let honestPeers;
+        let localSnapshots: StateSnapshot[] = [];
+        const condition = async () => {
+            honestPeers = this.harness.getHonestPeers();
+            localSnapshots = await Promise.all(
+                honestPeers.map((peer) =>
+                    this.harness.stateQuery.getLocalStateSnapshot(peer)
+                )
+            );
+            for (const localSnapshot of localSnapshots) {
+                if (
+                    expectedSnapshot &&
+                    expectedSnapshot.hash !== localSnapshot.hash
+                )
+                    return false;
+                if (
+                    !expectedSnapshot &&
+                    expectedForkId &&
+                    localSnapshot.forkID !== expectedForkId
+                )
+                    return false;
+            }
+
+            return true; // all honest peers observed a snapshot update event
+        };
+
+        const promise = this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs: timeoutMs,
+            timeoutMessage: `On-chain snapshot did not change within ${timeoutMs}ms`,
+            timeoutMeta: {
+                expectedForkId,
+                expectedSnapshot: expectedSnapshot
+                    ? LoggerUtils.getSnapshotMetadata(expectedSnapshot)
+                    : undefined,
+                localSnapshots: localSnapshots.map((s) =>
+                    LoggerUtils.getSnapshotMetadata(s)
+                )
+            }
+        });
+        DetachedPromises.collect(promise);
     }
 
     async snapshotMatchesLocal(options?: {

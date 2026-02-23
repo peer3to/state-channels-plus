@@ -24,7 +24,7 @@ const config: HardhatUserConfig = {
     },
     mocha: {},
     solidity: {
-        version: "0.8.30",
+        version: "0.8.34",
         settings: {
             viaIR: true, // Enable the via-IR pipeline
             optimizer: {

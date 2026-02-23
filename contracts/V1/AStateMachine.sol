@@ -2,6 +2,7 @@ pragma solidity ^0.8.8;
 
 import "./types/DataTypes.sol";
 import "./types/MessageTypeHashes.sol";
+import "hardhat/console.sol";
 
 abstract contract AStateMachine {
     Transaction _tx; // This should be used instead of msg.sender at least for now
@@ -102,6 +103,7 @@ abstract contract AStateMachine {
 
     function _clearOutboundMessages() internal {
         delete _outboundMessages;
+        console.log("Clearing outbound messages. Count after clear:", _outboundMessages.length);
     }
 
     function setState(bytes memory encodedState) external _nonReentrant {
@@ -130,11 +132,7 @@ abstract contract AStateMachine {
         return _removeParticipant(adr);
     }
 
-    function stateTransition(Transaction calldata transaction)
-        external
-        _nonReentrant
-        returns (bool, Message[] memory)
-    {
+    function stateTransition(Transaction calldata transaction) external _nonReentrant returns (bool, Message[] memory) {
         _clearOutboundMessages();
         _tx = transaction;
         (bool success, bytes memory result) = address(this).call{gas: gasLimit}(transaction.body.data);
@@ -149,6 +147,7 @@ abstract contract AStateMachine {
             }
         }
         Message[] memory recordedMessages = new Message[](_outboundMessages.length);
+        console.log("Recorded outbound messages count:", _outboundMessages.length);
         for (uint256 i = 0; i < _outboundMessages.length; i++) {
             recordedMessages[i] = _outboundMessages[i];
         }

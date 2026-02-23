@@ -432,7 +432,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                     peerId: pid,
                     peerAddress: signerAddress
                 },
-                { component: "ClientApp" }
+                { component: "ClientApp" },
+                { attachErrorListener: true }
             );
 
         // Sync clock to DLT

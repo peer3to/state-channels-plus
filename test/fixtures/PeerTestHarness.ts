@@ -135,7 +135,7 @@ export class PeerTestHarness<
         this.logger = createLogger(
             {},
             { component: "TestHarness" },
-            { level: config.LOG_LEVEL as LogLevel, attachErrorListener: true }
+            { level: config.LOG_LEVEL as LogLevel, attachErrorListener: false }
         );
         setInterval(() => {
             const elu = performance.eventLoopUtilization(last);
@@ -304,7 +304,7 @@ export class PeerTestHarness<
                 peerAddress: address
             },
             { component: `PeerTestHarness` },
-            { level: this.options.logLevel, attachErrorListener: true } // Use same log level as harness
+            { level: this.options.logLevel, attachErrorListener: false } // Use same log level as harness
         );
 
         this.logger.debug(`Creating peer ${index} at ${address}`);
@@ -470,13 +470,13 @@ export class PeerTestHarness<
 
                 // Only intercept EventHandler methods that have corresponding spies
                 if (typeof originalMethod === "function" && prop in spies) {
-                    return function (...args: unknown[]) {
+                    return async function (...args: unknown[]) {
                         // Call the spy first to record the call
                         const spy = spies[prop as keyof EventSpies];
                         spy?.(...(args as Parameters<sinon.SinonSpy>));
 
                         // Then call the original method
-                        Reflect.apply(originalMethod, target, args);
+                        await Reflect.apply(originalMethod, target, args);
                         return eventCountsBarrier.signal();
                     };
                 }
@@ -594,26 +594,13 @@ export class PeerTestHarness<
                 peer.logger.verbose("Cleaning up peer", {
                     component: "TestHarness"
                 });
-                peer.contractInstance.removeAllListeners();
-
-                // Close P2P connections
-                const connections = [
-                    ...peer.p2pInstance.p2pSigner.p2pManager.openConnections
-                ];
-                for (const connection of connections) {
-                    try {
-                        connection.close();
-                    } catch (error) {
-                        peer.logger.warn(`Error closing connection: ${error}`);
-                    }
-                }
-                peer.p2pInstance.p2pSigner.p2pManager.openConnections = [];
 
                 disposePromises.push(peer.p2pInstance.dispose());
 
                 Object.values(peer.eventSpies).forEach((spy) =>
                     spy?.resetHistory()
                 );
+
                 peer.logger.verbose("Peer cleanup completed", {
                     component: "TestHarness"
                 });
@@ -635,6 +622,8 @@ export class PeerTestHarness<
 
         // Cleanup discovery server and peer servers
         await LocalDiscoveryServer.cleanup();
+
+        this.logger.dispose();
     }
 
     getPeer(index: number): TestPeer<TFactories> {
@@ -651,6 +640,14 @@ export class PeerTestHarness<
         return peerIndices
             ? peerIndices.map((i) => this.getPeer(i))
             : this.peers;
+    }
+
+    getHonestPeers(excludePeerIndices?: number[]): TestPeer<TFactories>[] {
+        const excludeSet = new Set<number>([
+            ...(excludePeerIndices ?? []),
+            ...(this.context.maliciousPeerIndices ?? [])
+        ]);
+        return this.peers.filter((peer) => !excludeSet.has(peer.index));
     }
     getConfig(): Partial<Config> {
         return this.harnessConfig;
