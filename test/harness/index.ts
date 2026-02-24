@@ -41,9 +41,11 @@ if (
             `Test afterEach started - awaiting ${DetachedPromises.size()} detached promises`
         );
 
-        await DetachedPromises.awaitAllAndClearRecursive();
+        await DetachedPromises.awaitAllAndClear();
 
         const firstDetachedError = TestSession.getFirstDetachedError();
+
+        const loggerPromises: Promise<void>[] = [];
 
         if (this.currentTest?.state === "failed" || firstDetachedError) {
             console.trace(`Test failed - trying to upload logs!`);
@@ -56,7 +58,7 @@ if (
                         firstDetachedError: firstDetachedError || "N/A"
                     }
                 );
-                DetachedPromises.collect(promise);
+                loggerPromises.push(promise);
             });
             const promise = h.logger.uploadLogs(
                 `FAILED (Harness): ${this.currentTest?.title}`,
@@ -65,9 +67,9 @@ if (
                     firstDetachedError: firstDetachedError || "N/A"
                 }
             );
-            DetachedPromises.collect(promise);
+            loggerPromises.push(promise);
         }
-        await DetachedPromises.awaitAllAndClearRecursive();
+        await Promise.allSettled(loggerPromises);
         console.trace(
             `Test afterEach completed - all detached promises settled`
         );

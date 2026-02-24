@@ -1245,14 +1245,55 @@ class StateManager {
         ];
 
         if (callData.length > 0) {
+            this.logger.info(
+                `Posting state snapshot on-chain for fork ${LoggerUtils.formatHash(forkId)}`,
+                {
+                    expectedSnapshot: expectedSnapshot
+                        ? LoggerUtils.getSnapshotMetadata(expectedSnapshot)
+                        : "ERROR N/A",
+                    forkData: {
+                        snapshot: forkData?.expectedSnapshot
+                            ? LoggerUtils.getSnapshotMetadata(
+                                  forkData.expectedSnapshot
+                              )
+                            : "N/A",
+                        outboundMessageBlocks: forkData?.outboundMessageBlocks
+                            ? forkData.outboundMessageBlocks.map(
+                                  LoggerUtils.getMessageBlockMetadata
+                              )
+                            : "N/A"
+                    },
+                    sameForkData: {
+                        snapshot: sameForkData?.expectedSnapshot
+                            ? LoggerUtils.getSnapshotMetadata(
+                                  sameForkData.expectedSnapshot
+                              )
+                            : "N/A",
+                        outboundMessageBlocks:
+                            sameForkData?.outboundMessageBlocks
+                                ? sameForkData.outboundMessageBlocks.map(
+                                      LoggerUtils.getMessageBlockMetadata
+                                  )
+                                : "N/A"
+                    }
+                }
+            );
+            let transactionResponse: TransactionResponse;
             const txResponsePromise = this.stateChannelManagerContract
                 .multicall(callData)
                 .then((txResponse) => {
+                    transactionResponse = txResponse;
                     const txReceiptPromise = txResponse.wait();
                     DetachedPromises.collect(txReceiptPromise);
                     return txReceiptPromise;
                 })
                 .catch((error) => {
+                    const custom = tryHandleEvmError(error, {
+                        tx: transactionResponse!,
+                        logger: this.logger,
+                        signer: this.signer,
+                        forkId
+                    });
                     this.logger.error("Error posting state snapshot", {
                         error:
                             error instanceof Error
@@ -1400,7 +1441,6 @@ class StateManager {
         | {
               callData: string[];
               expectedSnapshot: StateSnapshot;
-              genesisSnapshot: StateSnapshot;
               outboundMessageBlocks: MessageBlockStruct[];
           }
         | undefined
@@ -1670,7 +1710,6 @@ class StateManager {
             return {
                 callData,
                 expectedSnapshot: genesisSnapshot,
-                genesisSnapshot,
                 outboundMessageBlocks
             };
         } catch (error) {

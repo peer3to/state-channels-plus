@@ -103,6 +103,10 @@ abstract contract AStateMachine {
 
     function _clearOutboundMessages() internal {
         delete _outboundMessages;
+        // TODO - pop loop since for some reason sometimes delete doesn't set length to 0
+        while (_outboundMessages.length > 0) {
+            _outboundMessages.pop();
+        }
         console.log("Clearing outbound messages. Count after clear:", _outboundMessages.length);
     }
 

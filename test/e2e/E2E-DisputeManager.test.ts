@@ -98,7 +98,7 @@ describe("E2E: Dispute Manager", function () {
             });
         });
 
-        it.only("should post updated state snapshot after fork resolution", async function () {
+        it("should post updated state snapshot after fork resolution", async function () {
             this.timeout(90000); // Increase timeout for this test
             const h = TestSession.getHarness();
             await h.channel.start(4, 2, {
@@ -136,21 +136,11 @@ describe("E2E: Dispute Manager", function () {
                 expectedSnapshot: expectedSnapshot2
             });
             return;
-            const honest = h.context.honestPeerIndices || [];
-            await h.event.waitForEventCounts(
-                "onStateSnapshotUpdated",
-                honest.map((peerId) => ({ peerId, expectedCount: 1 })),
-                10000,
-                { mode: "atLeast" }
-            );
-
-            await h.assert.snapshot.snapshotMatchesLocal({ peerIndex: 0 });
-            await h.assert.sync.maliciousPeerExcluded();
         });
     });
 
     describe("Fraud Proof Detection", function () {
-        it.skip("should reject dispute with incorrect auditing data commitment", async function () {
+        it.only("should reject dispute with incorrect auditing data commitment", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             await h.byzantine.postTamperedDisputeAuditingData(1);

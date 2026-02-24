@@ -16,6 +16,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
         DisputeData storage disputeData = disputeData[channelId];
         bytes32 targetForkId = newStateSnapshot.forkId;
+        if (currentStateSnapshot.forkId == targetForkId) return; // already on the correct fork
         require(
             UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(newStateSnapshot),
             ErrorInvalidStateSnapshot()
@@ -26,7 +27,6 @@ contract StateSnapshotFacet is StateChannelCommon {
         mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
         DisputeWindow storage disputeWindow = disputeWindowMap[currentStateSnapshot.forkId];
         bool updated = false;
-
         while (
             disputeWindow.reducedResult.forkId != bytes32(0)
                 && _isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime())
@@ -107,9 +107,8 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot[] memory milestoneSnapshots,
         SnapshotData memory genesisSnapshotData
     ) internal view returns (bool) {
-        (bool isValid,) = UtilityFacet(utilityFacetAddress).verifyMilestones(
-            forkId, milestoneProofs, milestoneSnapshots, genesisSnapshotData
-        );
+        (bool isValid,) = UtilityFacet(utilityFacetAddress)
+            .verifyMilestones(forkId, milestoneProofs, milestoneSnapshots, genesisSnapshotData);
         return isValid;
     }
 
