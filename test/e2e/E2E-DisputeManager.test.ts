@@ -98,7 +98,7 @@ describe("E2E: Dispute Manager", function () {
             });
         });
 
-        it("should post updated state snapshot after fork resolution", async function () {
+        it.only("should post updated state snapshot after fork resolution", async function () {
             this.timeout(90000); // Increase timeout for this test
             const h = TestSession.getHarness();
             await h.channel.start(4, 2, {
@@ -140,7 +140,7 @@ describe("E2E: Dispute Manager", function () {
     });
 
     describe("Fraud Proof Detection", function () {
-        it.only("should reject dispute with incorrect auditing data commitment", async function () {
+        it("should reject dispute with incorrect auditing data commitment", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             await h.byzantine.postTamperedDisputeAuditingData(1);

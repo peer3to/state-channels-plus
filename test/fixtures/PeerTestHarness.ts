@@ -275,8 +275,6 @@ export class PeerTestHarness<
     private async deployContracts(): Promise<void> {
         const mathSMFactory =
             await hre.ethers.getContractFactory("MathStateMachine");
-        const mathInstance = await mathSMFactory.deploy(this.options.gasLimit);
-        await mathInstance.waitForDeployment();
 
         this.sharedDeployTx = await mathSMFactory.getDeployTransaction(
             this.options.gasLimit
