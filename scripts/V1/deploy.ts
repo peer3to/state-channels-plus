@@ -197,17 +197,16 @@ export async function deployFullStack(
         timeConfig
     } = params;
 
-    const { address: stateMachineAddress } = await deployArtifact(
-        stateMachineArtifact,
-        signer,
-        { args: stateMachineArgs }
-    );
+    const stateMachinePromise = deployArtifact(stateMachineArtifact, signer, {
+        args: stateMachineArgs
+    });
 
-    const { address: consumerFacetAddress } = await deployArtifact(
-        consumerFacetArtifact,
-        signer,
-        { args: consumerFacetArgs }
-    );
+    const consumerFacetPromise = deployArtifact(consumerFacetArtifact, signer, {
+        args: consumerFacetArgs
+    });
+
+    const { address: stateMachineAddress } = await stateMachinePromise;
+    const { address: consumerFacetAddress } = await consumerFacetPromise;
 
     return deploy(
         stateMachineAddress,

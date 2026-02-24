@@ -496,8 +496,7 @@ export class PeerTestHarness<
      * Mines blocks on a fixed cadence so time progresses even without transactions.
      */
     async startAutoTimeAdvance(options?: {
-        intervalMs?: number;
-        stepSeconds?: number;
+        intervalSeconds?: number;
         disableAutomine?: boolean;
     }): Promise<void> {
         if (this.autoTimeAdvanceInterval) {
@@ -505,12 +504,11 @@ export class PeerTestHarness<
             return;
         }
 
-        const intervalMs = options?.intervalMs ?? 2000;
-        const stepSeconds = options?.stepSeconds ?? 2;
+        const intervalSeconds = options?.intervalSeconds ?? 2;
         const disableAutomine = options?.disableAutomine ?? true;
 
         this.logger.debug(
-            `Starting auto blockchain time advance (every ${intervalMs}ms, step ${stepSeconds}s)`
+            `Starting auto blockchain mine (every ${intervalSeconds}s)`
         );
 
         if (disableAutomine) {
@@ -523,7 +521,7 @@ export class PeerTestHarness<
             this.autoTimeAdvanceTickInProgress = true;
             void retry(
                 async () => {
-                    await time.increase(stepSeconds);
+                    await time.increase(intervalSeconds);
 
                     const latestBlock =
                         await hre.ethers.provider.getBlock("latest");
@@ -557,7 +555,7 @@ export class PeerTestHarness<
             ).finally(() => {
                 this.autoTimeAdvanceTickInProgress = false;
             });
-        }, intervalMs);
+        }, intervalSeconds * 1000);
     }
     async cleanup(): Promise<void> {
         this.logger.debug("Starting cleanup...");

@@ -70,9 +70,9 @@ export abstract class LogUploader {
             if (this.config.apiToken) {
                 headers["Authorization"] = `Bearer ${this.config.apiToken}`;
             }
-            console.trace(
-                `Log uploading started. Raw size: ${rawLogsSize / 1e6}MB, Compressed size: ${compressedLogsSize / 1e6}MB.`
-            );
+            // console.trace(
+            //     `Log uploading started. Raw size: ${rawLogsSize / 1e6}MB, Compressed size: ${compressedLogsSize / 1e6}MB.`
+            // );
             await axios.post(
                 this.config.uploadEndpoint,
                 {
@@ -82,9 +82,9 @@ export abstract class LogUploader {
                 },
                 { headers }
             );
-            console.trace(
-                `Logs uploaded successfully. Raw size: ${rawLogsSize / 1e6}MB, Compressed size: ${compressedLogsSize / 1e6}MB.`
-            );
+            // console.trace(
+            //     `Logs uploaded successfully. Raw size: ${rawLogsSize / 1e6}MB, Compressed size: ${compressedLogsSize / 1e6}MB.`
+            // );
             // don't clear logs, since if multiple uploads are started, only the first will have the logs
         } catch (uploadError) {
             delete (uploadError as any).config.data;
@@ -101,7 +101,7 @@ export abstract class LogUploader {
             return;
         }
 
-        console.trace("Destroying LogUploader");
+        // console.trace("Destroying LogUploader");
 
         this.destroyed = true;
         this.detachListeners();

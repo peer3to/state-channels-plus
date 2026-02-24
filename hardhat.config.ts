@@ -13,7 +13,8 @@ const config: HardhatUserConfig = {
     defaultNetwork: "hardhat",
     networks: {
         hardhat: {
-            allowUnlimitedContractSize: true
+            allowUnlimitedContractSize: true,
+            gas: "auto"
         },
         localhost: {
             url: "http://127.0.0.1:8545"

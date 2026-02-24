@@ -47,7 +47,6 @@ export const createLogger = (
             uploadEndpoint: config.CRASH_LOG_UPLOAD_ENDPOINT,
             apiToken: config.CRASH_LOG_API_TOKEN || ""
         } as LogUploaderConfig);
-    console.trace("Creating logger");
     if (!isNodeRuntime()) {
         return new BrowserLogger(
             exclusiveContext,

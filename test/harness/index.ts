@@ -37,10 +37,6 @@ if (
     });
 
     afterEach(async function () {
-        console.trace(
-            `Test afterEach started - awaiting ${DetachedPromises.size()} detached promises`
-        );
-
         await DetachedPromises.awaitAllAndClear();
 
         const firstDetachedError = TestSession.getFirstDetachedError();
