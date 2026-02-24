@@ -23,12 +23,11 @@ export class AssertDisputeActions {
             expectedCount: 1
         }));
 
-        const disputeCreated =
-            await this.harness.eventActions.waitForEventCounts(
-                "onInitiatingDispute",
-                expectedCounts,
-                timeoutMs
-            );
+        const disputeCreated = await this.harness.event.waitForEventCounts(
+            "onInitiatingDispute",
+            expectedCounts,
+            timeoutMs
+        );
 
         expect(disputeCreated).to.be.true;
 
@@ -37,7 +36,7 @@ export class AssertDisputeActions {
         );
 
         for (const peer of nonInitiators) {
-            const count = this.harness.eventActions.getEventCallCount(
+            const count = this.harness.event.getEventCallCount(
                 peer.index,
                 "onInitiatingDispute"
             );
@@ -52,7 +51,7 @@ export class AssertDisputeActions {
         const peers = this.harness.getFilteredPeers(options.peers);
 
         for (const peer of peers) {
-            const count = this.harness.eventActions.getEventCallCount(
+            const count = this.harness.event.getEventCallCount(
                 peer.index,
                 "onInitiatingDispute"
             );
@@ -81,12 +80,11 @@ export class AssertDisputeActions {
             expectedCount: expectedCount
         }));
 
-        const disputeCommitted =
-            await this.harness.eventActions.waitForEventCounts(
-                "onDisputeCommitted",
-                expectedCounts,
-                timeoutMs
-            );
+        const disputeCommitted = await this.harness.event.waitForEventCounts(
+            "onDisputeCommitted",
+            expectedCounts,
+            timeoutMs
+        );
 
         expect(disputeCommitted).to.be.true;
     }
@@ -176,7 +174,7 @@ export class AssertDisputeActions {
         const totalInitiated = this.harness.peers.reduce((sum, peer) => {
             return (
                 sum +
-                this.harness.eventActions.getEventCallCount(
+                this.harness.event.getEventCallCount(
                     peer.index,
                     "onInitiatingDispute"
                 )
@@ -186,7 +184,7 @@ export class AssertDisputeActions {
         const totalCommitted = this.harness.peers.reduce((sum, peer) => {
             return (
                 sum +
-                this.harness.eventActions.getEventCallCount(
+                this.harness.event.getEventCallCount(
                     peer.index,
                     "onDisputeCommitted"
                 )

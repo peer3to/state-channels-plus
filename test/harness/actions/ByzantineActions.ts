@@ -130,7 +130,7 @@ export class ByzantineActions {
 
         const nextBlockHeight =
             peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
-        const previousBlockHash = this.harness.stateQuery.getPreviousBlockHash(
+        const previousBlockHash = this.harness.query.getPreviousBlockHash(
             peer,
             forkId,
             nextBlockHeight
@@ -208,12 +208,12 @@ export class ByzantineActions {
             peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
         const previousBlock =
             peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        const previousBlockHash = this.harness.stateQuery.getPreviousBlockHash(
+        const previousBlockHash = this.harness.query.getPreviousBlockHash(
             peer,
             forkId,
             nextBlockHeight
         );
-        const stateSnapshotHash = this.harness.stateQuery.getStateSnapshotHash(
+        const stateSnapshotHash = this.harness.query.getStateSnapshotHash(
             peer,
             forkId,
             previousBlock
@@ -328,11 +328,11 @@ export class ByzantineActions {
 
         const previousBlock =
             peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        const previousBlockHash = this.harness.stateQuery.getPreviousBlockHash(
+        const previousBlockHash = this.harness.query.getPreviousBlockHash(
             peer,
             forkId
         );
-        const stateSnapshotHash = this.harness.stateQuery.getStateSnapshotHash(
+        const stateSnapshotHash = this.harness.query.getStateSnapshotHash(
             peer,
             forkId,
             previousBlock
@@ -401,8 +401,7 @@ export class ByzantineActions {
             throw new Error("No active fork ID - channel must be opened first");
         }
 
-        const maliciousPeer =
-            await this.harness.stateQuery.getNextPeerToWrite();
+        const maliciousPeer = await this.harness.query.getNextPeerToWrite();
         this.harness.context.lastMaliciousPeerIndex = maliciousPeer.index;
         await this.submitInvalidStateTransitionBlock(maliciousPeer.index, {
             forkId
@@ -415,8 +414,7 @@ export class ByzantineActions {
             throw new Error("No active fork ID - channel must be opened first");
         }
 
-        const maliciousPeer =
-            await this.harness.stateQuery.getNextPeerToWrite();
+        const maliciousPeer = await this.harness.query.getNextPeerToWrite();
         this.harness.context.lastMaliciousPeerIndex = maliciousPeer.index;
         await this.submitForgedInboundMessageBlock(maliciousPeer.index, {
             forkId
@@ -432,12 +430,11 @@ export class ByzantineActions {
             throw new Error("No active fork ID - channel must be opened first");
         }
 
-        const { dispute } =
-            await this.harness.disputeTampering.postTamperedDispute(
-                peerIndex,
-                tamperFn,
-                forkId
-            );
+        const { dispute } = await this.harness.tamper.postTamperedDispute(
+            peerIndex,
+            tamperFn,
+            forkId
+        );
         this.harness.context.lastTamperedDispute = dispute;
     }
 
@@ -496,18 +493,18 @@ export class ByzantineActions {
         peerIndex: number;
         tamperFn: DisputeTamper;
     }): void {
-        this.harness.disputeTampering.stubConstructDispute(
+        this.harness.tamper.stubConstructDispute(
             options.peerIndex,
             options.tamperFn
         );
     }
 
     restoreDisputeConstruction(peerIndex: number): void {
-        this.harness.disputeTampering.restoreConstructDispute(peerIndex);
+        this.harness.tamper.restoreConstructDispute(peerIndex);
     }
 
     async disconnect(peerIndex: number): Promise<void> {
-        await this.harness.networkController.disconnectPeer(peerIndex);
+        await this.harness.network.disconnectPeer(peerIndex);
     }
 
     stubCalldataHandler(peerIndex: number): void {

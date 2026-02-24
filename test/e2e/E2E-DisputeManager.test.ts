@@ -17,7 +17,7 @@ describe("E2E: Dispute Manager", function () {
     describe("Dispute Initiation", function () {
         it("should create dispute for double-sign detected", async function () {
             const h = TestSession.getHarness();
-            await h.channel.start(3, 2);
+            await h.lifecycle.start(3, 2);
             await h.byzantine.submitDoubleSignBlock(1, {
                 forkId: h.activeForkId!
             });
@@ -29,7 +29,7 @@ describe("E2E: Dispute Manager", function () {
 
         it("should create dispute for invalid state transition", async function () {
             const h = TestSession.getHarness();
-            await h.channel.start(3, 2);
+            await h.lifecycle.start(3, 2);
             await h.byzantine.submitInvalidStateTransitionBlock(2, {
                 forkId: h.activeForkId!
             });
@@ -43,7 +43,7 @@ describe("E2E: Dispute Manager", function () {
 
         it("should dispute forged inbound message blocks", async function () {
             const h = TestSession.getHarness();
-            await h.channel.start(3, 2);
+            await h.lifecycle.start(3, 2);
             h.event.resetEventSpies();
             const nextPeer = await h.query.getNextPeerToWrite();
             await h.byzantine.submitForgedInboundMessageBlock(nextPeer.index, {
@@ -57,7 +57,7 @@ describe("E2E: Dispute Manager", function () {
 
         it("should handle double-sign from different peer configurations", async function () {
             const h = TestSession.getHarness();
-            await h.channel.start(4, 3);
+            await h.lifecycle.start(4, 3);
             await h.byzantine.submitDoubleSignBlock(2, {
                 forkId: h.activeForkId!
             });
@@ -70,7 +70,7 @@ describe("E2E: Dispute Manager", function () {
     describe("Dispute Resolution and Fork Management", function () {
         it("should reduce invalid state transition disputes and create new fork", async function () {
             const h = TestSession.getHarness();
-            await h.channel.start(4, 2, {
+            await h.lifecycle.start(4, 2, {
                 timeConfig: {
                     p2pTime: 3,
                     agreementTime: 2,
@@ -101,7 +101,7 @@ describe("E2E: Dispute Manager", function () {
         it.only("should post updated state snapshot after fork resolution", async function () {
             this.timeout(90000); // Increase timeout for this test
             const h = TestSession.getHarness();
-            await h.channel.start(4, 2, {
+            await h.lifecycle.start(4, 2, {
                 timeConfig: {
                     p2pTime: 1,
                     agreementTime: 2,
@@ -208,7 +208,7 @@ describe("E2E: Dispute Manager", function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
 
-            await h.channel.start(4, 0, {
+            await h.lifecycle.start(4, 0, {
                 timeConfig: {
                     p2pTime: 2,
                     agreementTime: 1,
@@ -259,7 +259,7 @@ describe("E2E: Dispute Manager", function () {
     describe("Partial Syncing via Dispute Validation", function () {
         it("should sync missing state via validStateProofButNotSynced when peer receives dispute with blocks it doesn't have", async function () {
             const h = TestSession.getHarness();
-            await h.channel.start(3, 1);
+            await h.lifecycle.start(3, 1);
             await h.assert.sync.peersInSync();
             h.event.resetEventSpies();
             h.byzantine.stubBroadcast(1);
@@ -288,7 +288,7 @@ describe("E2E: Dispute Manager", function () {
 
         it("should handle valid dispute when validating peer is missing snapshot data", async function () {
             const h = TestSession.getHarness();
-            await h.channel.start(3, 0, {
+            await h.lifecycle.start(3, 0, {
                 timeConfig: {
                     p2pTime: 1,
                     agreementTime: 1,

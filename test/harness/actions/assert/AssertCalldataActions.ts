@@ -7,7 +7,7 @@ export class AssertCalldataActions {
         const totalPosted = this.harness.peers.reduce((sum, peer) => {
             return (
                 sum +
-                this.harness.eventActions.getEventCallCount(
+                this.harness.event.getEventCallCount(
                     peer.index,
                     "onPostedCalldata"
                 )
@@ -17,7 +17,7 @@ export class AssertCalldataActions {
         const totalBlockCalldata = this.harness.peers.reduce((sum, peer) => {
             return (
                 sum +
-                this.harness.eventActions.getEventCallCount(
+                this.harness.event.getEventCallCount(
                     peer.index,
                     "onBlockCalldataPosted"
                 )
@@ -37,11 +37,11 @@ export class AssertCalldataActions {
         const condition = () => {
             return this.harness.peers.some(
                 (peer) =>
-                    this.harness.eventActions.getEventCallCount(
+                    this.harness.event.getEventCallCount(
                         peer.index,
                         "onPostedCalldata"
                     ) > 0 ||
-                    this.harness.eventActions.getEventCallCount(
+                    this.harness.event.getEventCallCount(
                         peer.index,
                         "onBlockCalldataPosted"
                     ) > 0

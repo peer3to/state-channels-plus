@@ -10,7 +10,7 @@ export class ScenarioActions {
     ) {}
 
     async timeoutSetup(peerCount: number = 3, transitionCount: number = 0) {
-        await this.harness.channel.start(peerCount, transitionCount, {
+        await this.harness.lifecycle.start(peerCount, transitionCount, {
             timeConfig: {
                 p2pTime: 1,
                 agreementTime: 1,
@@ -25,7 +25,7 @@ export class ScenarioActions {
         transitionCount: number = 0,
         options?: HarnessOptions
     ) {
-        await this.harness.channel.start(peerCount, transitionCount, options);
+        await this.harness.lifecycle.start(peerCount, transitionCount, options);
     }
 
     async fourPeersDisputeResolution(options?: {
@@ -182,12 +182,12 @@ export class ScenarioActions {
                 .map((_, i) => i)
                 .filter((i) => i !== options.maliciousPeerIndex);
 
-        this.harness.contextActions.markMaliciousPeer({
+        this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: options.maliciousPeerIndex,
             honestPeerIndices
         });
 
-        await this.harness.disputeOrchestrator.createInvalidStateTransitionDispute(
+        await this.harness.dispute.createInvalidStateTransitionDispute(
             options.maliciousPeerIndex,
             {
                 forkId: originalForkId,
@@ -195,7 +195,7 @@ export class ScenarioActions {
             }
         );
 
-        const result = await this.harness.disputeOrchestrator.resolveDispute({
+        const result = await this.harness.dispute.resolveDispute({
             maliciousPeerIndex: options.maliciousPeerIndex,
             forkId: originalForkId,
             honestPeerIndices,

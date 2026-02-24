@@ -125,7 +125,7 @@ describe("E2E: Timeouts", function () {
     describe("Network Liveness", function () {
         it("should maintain liveness when peer disconnects mid-transaction", async function () {
             const h = TestSession.getHarness();
-            await h.channel.start(3, 2);
+            await h.lifecycle.start(3, 2);
             await h.network.disconnectPeer(2);
             await h.transition.advanceState({ count: 1 });
             await h.assert.sync.peersInSync({ peerIndices: [0, 1] });

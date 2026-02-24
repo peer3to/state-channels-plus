@@ -40,7 +40,7 @@ export class RPCActions {
         peerIndex: number,
         otherPeerAddress: Address
     ): boolean {
-        const profile = this.harness.stateQuery.getProfile(
+        const profile = this.harness.query.getProfile(
             peerIndex,
             otherPeerAddress
         );
@@ -120,7 +120,7 @@ export class RPCActions {
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
         const fakeForkId = fakeHash() as ForkId;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             toPeer,
             fromPeer,
             5000
@@ -149,7 +149,7 @@ export class RPCActions {
         const buildingPeerObj = this.harness.getPeer(buildingPeer);
         const observingPeerObj = this.harness.getPeer(observingPeer);
 
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             observingPeer,
             buildingPeer,
             5000
@@ -174,7 +174,7 @@ export class RPCActions {
     }
 
     async connectPeers(peerIndices: number[]): Promise<void> {
-        await this.harness.networkController.connectPeers(peerIndices);
+        await this.harness.network.connectPeers(peerIndices);
     }
 
     async newPeerJoins(options: {
@@ -193,7 +193,7 @@ export class RPCActions {
         timeOffset: number;
     }): Promise<void> {
         const { fromPeer, toPeer, timeOffset } = options;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             toPeer,
             fromPeer,
             5000
@@ -215,7 +215,7 @@ export class RPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             fromPeer,
             toPeer,
             5000
@@ -231,7 +231,7 @@ export class RPCActions {
         delaySeconds: number;
     }): Promise<void> {
         const { fromPeer, toPeer, delaySeconds } = options;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             toPeer,
             fromPeer,
             5000
@@ -268,7 +268,7 @@ export class RPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             toPeer,
             fromPeer,
             5000
@@ -294,7 +294,7 @@ export class RPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             toPeer,
             fromPeer,
             5000
@@ -327,7 +327,7 @@ export class RPCActions {
         targetPeer: number;
     }): Promise<void> {
         const { peerIndex, targetPeer } = options;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             peerIndex,
             targetPeer,
             5000
@@ -342,7 +342,7 @@ export class RPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             toPeer,
             fromPeer,
             5000
@@ -375,7 +375,7 @@ export class RPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             fromPeer,
             toPeer,
             5000

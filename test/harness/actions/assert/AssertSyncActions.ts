@@ -32,16 +32,12 @@ export class AssertSyncActions {
 
         const firstPeerIndex = peers[0].index;
         const firstPeerState =
-            this.harness.stateQuery.getLatestStateMachineStateHash(
-                firstPeerIndex
-            );
+            this.harness.query.getLatestStateMachineStateHash(firstPeerIndex);
 
         for (let i = 1; i < peers.length; i++) {
             const peerIndex = peers[i].index;
             const peerState =
-                this.harness.stateQuery.getLatestStateMachineStateHash(
-                    peerIndex
-                );
+                this.harness.query.getLatestStateMachineStateHash(peerIndex);
 
             expect(peerState).to.deep.equal(
                 firstPeerState,
@@ -157,7 +153,7 @@ export class AssertSyncActions {
             );
         }
 
-        const nextWriter = await this.harness.stateQuery.getNextPeerToWrite();
+        const nextWriter = await this.harness.query.getNextPeerToWrite();
         if (maliciousIndices.includes(nextWriter.index)) {
             throw new Error(
                 `Malicious peer ${nextWriter.index} should not receive next turn, but it did`

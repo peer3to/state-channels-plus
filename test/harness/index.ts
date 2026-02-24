@@ -75,7 +75,7 @@ if (
 }
 
 // Action classes (for advanced usage)
-export { ChannelActions } from "./actions/ChannelActions";
+export { LifecycleActions as ChannelActions } from "./actions/lifecycle/LifecycleActions";
 export { TransitionActions } from "./actions/TransitionActions";
 export { NetworkController } from "./actions/NetworkController";
 export { DisputeOrchestrator } from "./actions/DisputeOrchestrator";

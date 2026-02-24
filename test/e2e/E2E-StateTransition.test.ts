@@ -15,7 +15,7 @@ describe("E2E: State Transitions", function () {
     describe("Basic State Advancement", function () {
         it("should handle consecutive blocks between participants", async function () {
             const h = TestSession.getHarness();
-            await h.channel.start(3);
+            await h.lifecycle.start(3);
             await h.transition.advanceState({ count: 10 });
             await h.assert.sync.peersInSync();
             await h.assert.sync.blockHeight({ expectedHeight: 9 }); // 10 blocks after genesis = height 9
@@ -23,7 +23,7 @@ describe("E2E: State Transitions", function () {
 
         it("should handle full round rotation", async function () {
             const h = TestSession.getHarness();
-            await h.channel.start(4);
+            await h.lifecycle.start(4);
             await h.transition.advanceState({ rounds: 1 }); // All 4 peers write once
             await h.assert.sync.peersInSync();
             await h.assert.sync.blockHeight({ expectedHeight: 3 }); // 4 transitions = height 3
@@ -31,7 +31,7 @@ describe("E2E: State Transitions", function () {
 
         it("should handle multiple rotation rounds", async function () {
             const h = TestSession.getHarness();
-            await h.channel.start(3);
+            await h.lifecycle.start(3);
             await h.transition.advanceState({ rounds: 3 }); // 3 rounds = 9 transitions
             await h.assert.sync.peersInSync();
             await h.assert.sync.blockHeight({ expectedHeight: 8 });
@@ -43,7 +43,7 @@ describe("E2E: State Transitions", function () {
             this.timeout(90000);
             const h = TestSession.getHarness();
 
-            await h.channel.start(4, 2, {
+            await h.lifecycle.start(4, 2, {
                 timeConfig: {
                     p2pTime: 30,
                     agreementTime: 2,

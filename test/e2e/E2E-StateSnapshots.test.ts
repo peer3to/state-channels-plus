@@ -21,7 +21,7 @@ describe("E2E: State Snapshots", function () {
 
     it("should post updated state snapshot on-chain after 3 transitions", async function () {
         const h = TestSession.getHarness();
-        await h.channel.start(3);
+        await h.lifecycle.start(3);
 
         await h.transition.advanceState({ count: 1 });
         await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });

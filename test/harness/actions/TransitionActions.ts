@@ -28,7 +28,7 @@ export class TransitionActions {
         txFn: (contract: TransitionContract) => Promise<any>,
         options: TransitionOptions = { waitForTurn: true, waitForSync: true }
     ): Promise<any> {
-        const nextPeer = await this.harness.stateQuery.getNextPeerToWrite();
+        const nextPeer = await this.harness.query.getNextPeerToWrite();
 
         if (options.waitForTurn) {
             await this.waitForTurn(nextPeer);

@@ -25,7 +25,7 @@ import { deployFullStack } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
-import { ChannelActions } from "@test/harness/actions/ChannelActions";
+import { LifecycleActions } from "@test/harness/actions/lifecycle/LifecycleActions";
 import { TransitionActions } from "@test/harness/actions/TransitionActions";
 import { NetworkController } from "@test/harness/actions/NetworkController";
 import { AssertActions } from "@test/harness";
@@ -94,21 +94,7 @@ export class PeerTestHarness<
     public disconnectionBarrier: EventBarrier;
 
     // action instances
-    public readonly channelActions!: ChannelActions;
-    public readonly transitionActions!: TransitionActions;
-    public readonly networkController!: NetworkController;
-    public readonly assertActions!: AssertActions;
-    public readonly byzantineActions!: ByzantineActions;
-    public readonly eventActions!: EventActions;
-    public readonly stateQuery!: StateQueryActions;
-    public readonly disputeOrchestrator!: DisputeOrchestrator;
-    public readonly disputeTampering!: DisputeTamperingActions;
-    public readonly rpcActions!: RPCActions;
-    public readonly contextActions!: ContextActions;
-    public readonly scenarioActions!: ScenarioActions;
-
-    // ergonomic aliases for action-first tests
-    public readonly channel!: ChannelActions;
+    public readonly lifecycle!: LifecycleActions;
     public readonly transition!: TransitionActions;
     public readonly network!: NetworkController;
     public readonly assert!: AssertActions;
@@ -165,31 +151,18 @@ export class PeerTestHarness<
         this.disconnectionBarrier = new EventBarrier(this.logger);
 
         // Initialize action instances
-        this.channelActions = new ChannelActions(this, this.logger);
-        this.transitionActions = new TransitionActions(this, this.logger);
-        this.networkController = new NetworkController(this, this.logger);
-        this.assertActions = new AssertActions(this, this.logger);
-        this.byzantineActions = new ByzantineActions(this, this.logger);
-        this.eventActions = new EventActions(this, this.logger);
-        this.stateQuery = new StateQueryActions(this, this.logger);
-        this.disputeOrchestrator = new DisputeOrchestrator(this, this.logger);
-        this.disputeTampering = new DisputeTamperingActions(this, this.logger);
-        this.rpcActions = new RPCActions(this, this.logger);
-        this.contextActions = new ContextActions(this, this.logger);
-        this.scenarioActions = new ScenarioActions(this, this.logger);
-
-        this.channel = this.channelActions;
-        this.transition = this.transitionActions;
-        this.network = this.networkController;
-        this.assert = this.assertActions;
-        this.byzantine = this.byzantineActions;
-        this.event = this.eventActions;
-        this.query = this.stateQuery;
-        this.dispute = this.disputeOrchestrator;
-        this.tamper = this.disputeTampering;
-        this.rpc = this.rpcActions;
-        this.contextApi = this.contextActions;
-        this.scenario = this.scenarioActions;
+        this.lifecycle = new LifecycleActions(this, this.logger);
+        this.transition = new TransitionActions(this, this.logger);
+        this.network = new NetworkController(this, this.logger);
+        this.assert = new AssertActions(this, this.logger);
+        this.byzantine = new ByzantineActions(this, this.logger);
+        this.event = new EventActions(this, this.logger);
+        this.query = new StateQueryActions(this, this.logger);
+        this.dispute = new DisputeOrchestrator(this, this.logger);
+        this.tamper = new DisputeTamperingActions(this, this.logger);
+        this.rpc = new RPCActions(this, this.logger);
+        this.contextApi = new ContextActions(this, this.logger);
+        this.scenario = new ScenarioActions(this, this.logger);
     }
 
     async setup(
@@ -209,7 +182,12 @@ export class PeerTestHarness<
                 (config.LOG_LEVEL as LogLevel) ??
                 PeerTestHarness.defaultLogLevel ??
                 "info", // Use global default if not specified
-            timeConfig: options?.timeConfig || {},
+            timeConfig: options?.timeConfig || {
+                p2pTime: 1,
+                agreementTime: 2,
+                chainFallbackTime: 2,
+                evidenceTime: 3
+            },
             channelId:
                 options?.channelId ||
                 `test-channel-${Date.now()}-${process.pid}-${Math.floor(Math.random() * 1e9)}`,

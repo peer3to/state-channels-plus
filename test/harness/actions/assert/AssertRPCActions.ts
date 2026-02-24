@@ -13,11 +13,11 @@ export class AssertRPCActions {
 
         await this.harness.disconnectionBarrier.waitFor(
             () =>
-                this.harness.stateQuery.getConnectionCount(peerIndex) ===
+                this.harness.query.getConnectionCount(peerIndex) ===
                 expectedFinalCount,
             {
                 timeoutMs,
-                timeoutMessage: `Expected peer ${peerIndex} to have ${expectedFinalCount} connection(s) within ${timeoutMs}ms, actual: ${this.harness.stateQuery.getConnectionCount(peerIndex)}`
+                timeoutMessage: `Expected peer ${peerIndex} to have ${expectedFinalCount} connection(s) within ${timeoutMs}ms, actual: ${this.harness.query.getConnectionCount(peerIndex)}`
             }
         );
     }
@@ -25,7 +25,7 @@ export class AssertRPCActions {
     handshakeCompleted(options: { peer1: number; peer2: number }): void {
         const { peer1, peer2 } = options;
         const peer2Obj = this.harness.getPeer(peer2);
-        const isCompleted = this.harness.rpcActions.isHandshakeCompleted(
+        const isCompleted = this.harness.rpc.isHandshakeCompleted(
             peer1,
             peer2Obj.address
         );
@@ -64,7 +64,7 @@ export class AssertRPCActions {
         }
 
         const requestingService =
-            this.harness.rpcActions.getIsForkDisputedService(requestingPeer);
+            this.harness.rpc.getIsForkDisputedService(requestingPeer);
 
         const totalPeers = this.harness.peers.length;
         const expectedAcknowledgments = totalPeers - excludePeers.length - 1;
@@ -100,8 +100,7 @@ export class AssertRPCActions {
             throw new Error("No active fork ID");
         }
 
-        const service =
-            this.harness.rpcActions.getIsForkDisputedService(peerIndex);
+        const service = this.harness.rpc.getIsForkDisputedService(peerIndex);
         const disputedForksBefore = service.disputedForks.size;
         service.requestDisputeAcknowledgment(
             this.harness.channelId!,
@@ -129,7 +128,7 @@ export class AssertRPCActions {
 
         const requestingPeerObj = this.harness.getPeer(requestingPeer);
         const service =
-            this.harness.rpcActions.getIsForkDisputedService(respondingPeer);
+            this.harness.rpc.getIsForkDisputedService(respondingPeer);
 
         const acknowledged = service.didIAcknowledgeDisputedFork(
             requestingPeerObj.address,
@@ -148,7 +147,7 @@ export class AssertRPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        const transport = await this.harness.stateQuery
+        const transport = await this.harness.query
             .waitForPeerTransport(fromPeer, toPeer, 1000)
             .catch(() => null);
 

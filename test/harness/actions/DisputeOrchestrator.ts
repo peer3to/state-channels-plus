@@ -33,10 +33,10 @@ export class DisputeOrchestrator {
         }
     ): Promise<void> {
         if (options?.resetEventSpies) {
-            this.harness.eventActions.resetEventSpies();
+            this.harness.event.resetEventSpies();
         }
 
-        await this.harness.byzantineActions.submitInvalidStateTransitionBlock(
+        await this.harness.byzantine.submitInvalidStateTransitionBlock(
             maliciousPeerIndex,
             {
                 forkId: options?.forkId || this.harness.activeForkId!
@@ -77,16 +77,15 @@ export class DisputeOrchestrator {
         const expectedDisputesCommittedPerPeer =
             options.expectedDisputesCommittedPerPeer ?? 1;
 
-        const disputesCommitted =
-            await this.harness.eventActions.waitForEventCounts(
-                "onDisputeCommitted",
-                honestPeerIndices.map((peerId) => ({
-                    peerId,
-                    expectedCount: expectedDisputesCommittedPerPeer
-                })),
-                disputesCommittedTimeoutMs,
-                { mode: options.disputesCommittedMode ?? "atLeast" }
-            );
+        const disputesCommitted = await this.harness.event.waitForEventCounts(
+            "onDisputeCommitted",
+            honestPeerIndices.map((peerId) => ({
+                peerId,
+                expectedCount: expectedDisputesCommittedPerPeer
+            })),
+            disputesCommittedTimeoutMs,
+            { mode: options.disputesCommittedMode ?? "atLeast" }
+        );
 
         if (!disputesCommitted) {
             throw new Error(

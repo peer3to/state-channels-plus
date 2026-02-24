@@ -6,13 +6,13 @@ import { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes
 import { Codec, SignatureUtils, Type } from "@/utils";
 import Clock from "@/Clock";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
-import { NetworkController } from "./NetworkController";
+import { NetworkController } from "../NetworkController";
 import { HarnessOptions } from "@test/harness/core/types";
 
 /**
  * Handles channel-related operations: open, join, verify
  */
-export class ChannelActions {
+export class LifecycleActions {
     constructor(
         private harness: PeerTestHarness,
         private logger: Logger
@@ -31,7 +31,7 @@ export class ChannelActions {
         const forkId = await this.openChannel();
 
         for (let i = 0; i < transitionCount; i++) {
-            await this.harness.transitionActions.increment(1);
+            await this.harness.transition.increment(1);
         }
 
         return forkId;
@@ -48,6 +48,8 @@ export class ChannelActions {
         const signatures = await this.signOpenChannelStruct(openChannel);
         return this.submitOpenChannel(openChannel, signatures);
     }
+
+    // ************** PRIVATE HELPERS ****************
 
     private buildOpenChannelStruct(
         args: { participantAddresses?: string[] } = {}
@@ -129,13 +131,12 @@ export class ChannelActions {
             expectedCount: 1
         }));
 
-        const stateSetOnAllPeers =
-            await this.harness.eventActions.waitForEventCounts(
-                "onSetState",
-                eventCounts,
-                2000,
-                { mode: "atLeast" }
-            );
+        const stateSetOnAllPeers = await this.harness.event.waitForEventCounts(
+            "onSetState",
+            eventCounts,
+            2000,
+            { mode: "atLeast" }
+        );
 
         if (!stateSetOnAllPeers) {
             throw new Error(
