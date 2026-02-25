@@ -68,7 +68,7 @@ describe("E2E: State Transitions", function () {
                 }
             );
 
-            const result = await h.dispute.resolveDispute({
+            const result = await h.dispute.resolveDisputeWait({
                 maliciousPeerIndex,
                 forkId: originalForkId,
                 honestPeerIndices,

@@ -14,11 +14,12 @@ export class AssertStorageActions {
 
     honestPeersStoredFraudProof(options: {
         fraudProofType?: FraudProofType;
+        peerIndices?: number[];
         maliciousPeerIndex: number;
     }): void {
-        const { fraudProofType, maliciousPeerIndex } = options;
+        const { fraudProofType, peerIndices, maliciousPeerIndex } = options;
         const maliciousPeer = this.harness.getPeer(maliciousPeerIndex);
-        const honestPeers = this.harness.getHonestPeers();
+        const honestPeers = this.harness.getFilteredOrHonestPeers(peerIndices);
 
         for (const honestPeer of honestPeers) {
             const peerStorage = this.harness.query.getPeerStorage(

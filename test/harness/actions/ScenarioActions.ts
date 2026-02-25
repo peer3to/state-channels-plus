@@ -20,9 +20,7 @@ export class ScenarioActions {
         await this.harness.lifecycle.start(4, 2, options);
         await this.harness.assert.sync.peersInSyncWait();
         await this.disputeWithReduction({ maliciousPeerIndex: 2 });
-        await this.harness.assert.sync.forkChangedWait({
-            originalForkId: this.harness.context.originalForkId!
-        });
+        await this.harness.assert.sync.forkChangedWait();
     }
 
     async fourPeersDisputeResolutionAndSnapshotUpdate(options?: {
@@ -164,7 +162,7 @@ export class ScenarioActions {
             }
         );
 
-        const result = await this.harness.dispute.resolveDispute({
+        const result = await this.harness.dispute.resolveDisputeWait({
             maliciousPeerIndex: options.maliciousPeerIndex,
             forkId: originalForkId,
             honestPeerIndices,

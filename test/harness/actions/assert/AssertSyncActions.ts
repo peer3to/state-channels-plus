@@ -83,14 +83,21 @@ export class AssertSyncActions {
         }
     }
 
-    forkChanged(options: {
-        originalForkId: ForkId;
+    forkChanged(options?: {
+        originalForkId?: ForkId;
         expectedForkId?: ForkId;
         excludeForkIds?: ForkId[];
+        honestPeerIndices?: number[];
     }) {
-        const { originalForkId, expectedForkId, excludeForkIds = [] } = options;
+        const {
+            originalForkId = this.harness.context.originalForkId ||
+                this.harness.activeForkId!,
+            expectedForkId,
+            excludeForkIds = [],
+            honestPeerIndices
+        } = options || {};
 
-        const peers = this.harness.getHonestPeers();
+        const peers = this.harness.getFilteredOrHonestPeers(honestPeerIndices);
 
         const excludeSet = new Set([
             ...excludeForkIds,
@@ -125,13 +132,14 @@ export class AssertSyncActions {
             return;
         }
     }
-    async forkChangedWait(options: {
-        originalForkId: ForkId;
+    async forkChangedWait(options?: {
+        originalForkId?: ForkId;
         expectedForkId?: ForkId;
         excludeForkIds?: ForkId[];
+        honestPeerIndices?: number[];
         timeoutMs?: number;
     }): Promise<void> {
-        const { timeoutMs = 5000 } = options;
+        const { timeoutMs = 5000 } = options || {};
         const condition = () => {
             try {
                 this.forkChanged(options);
