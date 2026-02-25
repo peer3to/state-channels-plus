@@ -83,7 +83,7 @@ export class PeerTestHarness<
      * Test context for cross-block state sharing
      * Used by blocks to store and retrieve test-specific data (e.g., malicious peer index, fork IDs)
      */
-    public context: HarnessContext = {};
+    public context = new HarnessContext();
 
     // barriers
     public connectionBarrier: EventBarrier;
@@ -618,7 +618,7 @@ export class PeerTestHarness<
         this.peers = [];
 
         // Fully reset the context object to ensure no properties leak between tests
-        this.context = {};
+        this.context = new HarnessContext();
 
         // Cleanup discovery server and peer servers
         await LocalDiscoveryServer.cleanup();

@@ -20,9 +20,12 @@ export class AssertDisputeActions {
         const { peersIndices, timeoutMs = 5000 } = options || {};
 
         let peers = this.harness.getFilteredOrHonestPeers(peersIndices);
-        const maliciousPeerIndex = this.harness.context.lastMaliciousPeerIndex;
-        if (maliciousPeerIndex)
-            peers = peers.filter((peer) => peer.index !== maliciousPeerIndex);
+        const maliciousPeerIndices = this.harness.context.maliciousPeerIndices;
+        if (maliciousPeerIndices && maliciousPeerIndices.length > 0) {
+            peers = peers.filter(
+                (peer) => !maliciousPeerIndices.includes(peer.index)
+            );
+        }
 
         const expectedCounts = peers.map((peer) => ({
             peerId: peer.index,

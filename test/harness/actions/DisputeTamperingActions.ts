@@ -94,7 +94,7 @@ export class DisputeTamperingActions {
             .uploadDispute(disputeConfirmation);
         await txResp.wait();
 
-        this.harness.context.lastTamperedDispute = dispute;
+        this.harness.context.tamperedDisputes.push(dispute);
 
         return { dispute, disputeConfirmation };
     }
@@ -124,7 +124,7 @@ export class DisputeTamperingActions {
                 result.disputeConfirmation
             );
 
-            this.harness.context.lastTamperedDispute = result.dispute;
+            this.harness.context.tamperedDisputes.push(result.dispute);
 
             if (options?.autoRestore) {
                 this.restoreConstructDispute(peerIndex);

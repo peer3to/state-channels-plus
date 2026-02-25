@@ -187,11 +187,9 @@ export class AssertSyncActions {
     }
 
     async onlyHonestPeersInSync(): Promise<void> {
-        const honestIndices = this.harness.context.honestPeerIndices;
-        if (!honestIndices) {
-            throw new Error(
-                "honestPeerIndices not set - resolve dispute context first"
-            );
+        const honestIndices = this.harness.getHonestPeers().map((p) => p.index);
+        if (!honestIndices || honestIndices.length === 0) {
+            throw new Error("No honest peers found");
         }
 
         await this.peersInSyncWait({ peerIndices: honestIndices });

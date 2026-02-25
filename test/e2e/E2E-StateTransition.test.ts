@@ -58,7 +58,6 @@ describe("E2E: State Transitions", function () {
             const originalForkId = h.activeForkId!;
 
             h.context.maliciousPeerIndices = [maliciousPeerIndex];
-            h.context.honestPeerIndices = honestPeerIndices;
 
             await h.dispute.createInvalidStateTransitionDispute(
                 maliciousPeerIndex,

@@ -17,24 +17,15 @@ import { Config } from "@/utils";
  * Test context fields used by blocks for cross-block state sharing
  * These fields are set by certain blocks and consumed by others
  */
-export interface HarnessContext {
+export class HarnessContext {
     /** Original fork ID captured before dispute/fork change (set by Context.captureOriginalFork) */
     originalForkId?: ForkId;
 
     /** Indices of malicious peers in Byzantine attack scenarios (set by Context.markMaliciousPeer, Byzantine blocks) */
-    maliciousPeerIndices?: number[];
-
-    /** Last malicious peer index from most recent Byzantine attack (set by Byzantine blocks) */
-    lastMaliciousPeerIndex?: number;
-
-    /** Indices of honest peers in Byzantine attack scenarios (set by Context.markMaliciousPeer) */
-    honestPeerIndices?: number[];
+    maliciousPeerIndices: number[] = [];
 
     /** Last tampered dispute object (set by Byzantine blocks) */
-    lastTamperedDispute?: DisputeStruct;
-
-    /** Fork IDs marked as disputed in test context (set by Context.markForkAsDisputed) */
-    disputedForkIds?: ForkId[];
+    tamperedDisputes: DisputeStruct[] = [];
 
     /** last milestone snapshot before posting snapshot (set by Context.capturePrePostSnapshotContext) */
     lastMilestoneSnapshot?: StateSnapshot;

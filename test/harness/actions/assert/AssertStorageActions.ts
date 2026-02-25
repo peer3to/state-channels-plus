@@ -48,37 +48,39 @@ export class AssertStorageActions {
 
     honestPeersStoredDisputeFraudProof(options?: {
         disputeFraudProofType?: DisputeFraudProofType;
-        dispute?: DisputeStruct;
+        disputes?: DisputeStruct[];
     }): void {
         const {
             disputeFraudProofType,
-            dispute = this.harness.context.lastTamperedDispute
+            disputes = this.harness.context.tamperedDisputes
         } = options || {};
         const honestPeers = this.harness.getHonestPeers();
-        if (!dispute)
+        if (!disputes || disputes.length === 0)
             throw new Error(
-                "No dispute provided and no last tampered dispute in context"
+                "No disputes provided and no tampered disputes in context"
             );
         for (const honestPeer of honestPeers) {
             const peerStorage = this.harness.query.getPeerStorage(
                 honestPeer.index
             );
-            const dpf =
-                peerStorage.disputeFraudProofs.getDisputeFraudProofForDispute(
-                    dispute
-                );
-            if (!dpf)
-                throw new Error(
-                    `Peer ${honestPeer.index} has no dispute fraud proofs for dispute ${dispute}`
-                );
-            if (disputeFraudProofType) {
-                if (
-                    dpf.proofType !==
-                    toSolidityDisputeFraudProofType(disputeFraudProofType)
-                ) {
-                    throw new Error(
-                        `Peer ${honestPeer.index} has a dispute fraud proof for dispute ${dispute}, but it is of type ${dpf.proofType} instead of ${disputeFraudProofType}`
+            for (const dispute of disputes) {
+                const dpf =
+                    peerStorage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                        dispute
                     );
+                if (!dpf)
+                    throw new Error(
+                        `Peer ${honestPeer.index} has no dispute fraud proofs for dispute ${dispute}`
+                    );
+                if (disputeFraudProofType) {
+                    if (
+                        dpf.proofType !==
+                        toSolidityDisputeFraudProofType(disputeFraudProofType)
+                    ) {
+                        throw new Error(
+                            `Peer ${honestPeer.index} has a dispute fraud proof for dispute ${dispute}, but it is of type ${dpf.proofType} instead of ${disputeFraudProofType}`
+                        );
+                    }
                 }
             }
         }
@@ -86,7 +88,7 @@ export class AssertStorageActions {
 
     honestPeersStoredDisputeFraudProofWait(options?: {
         disputeFraudProofType?: DisputeFraudProofType;
-        dispute?: DisputeStruct;
+        disputes?: DisputeStruct[];
         timeoutMs?: number;
     }): Promise<void> {
         const condition = () => {
@@ -107,7 +109,7 @@ export class AssertStorageActions {
 
     async honestPeersStoredDisputeFraudProofDetached(options?: {
         disputeFraudProofType?: DisputeFraudProofType;
-        dispute?: DisputeStruct;
+        disputes?: DisputeStruct[];
         timeoutMs?: number;
     }): Promise<void> {
         const promise = this.honestPeersStoredDisputeFraudProofWait(options);

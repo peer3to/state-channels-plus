@@ -96,9 +96,7 @@ export class TransitionActions {
         txFn: (contract: TransitionContract) => Promise<any>,
         options?: { waitForSync?: boolean }
     ): Promise<void> {
-        const honestIndices =
-            this.harness.context.honestPeerIndices ||
-            Array.from({ length: this.harness.peers.length }, (_, i) => i);
+        const honestIndices = this.harness.getHonestPeers().map((p) => p.index);
 
         await this.submitNext(txFn, {
             waitForTurn: true,
@@ -110,7 +108,7 @@ export class TransitionActions {
     async sequenceFromHonestPeers(
         txFns: Array<(contract: TransitionContract) => Promise<any>>
     ): Promise<void> {
-        const honestIndices = this.harness.context.honestPeerIndices;
+        const honestIndices = this.harness.getHonestPeers().map((p) => p.index);
         if (!honestIndices) {
             throw new Error(
                 "honestPeerIndices not set - resolve dispute context first"

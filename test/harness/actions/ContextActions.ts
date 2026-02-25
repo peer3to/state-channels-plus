@@ -22,8 +22,7 @@ export class ContextActions {
                 (i) => i !== maliciousPeerIndex
             );
 
-        this.harness.context.honestPeerIndices = honest;
-        this.harness.context.maliciousPeerIndices = [maliciousPeerIndex];
+        this.harness.context.maliciousPeerIndices.push(maliciousPeerIndex);
     }
 
     async capturePrePostSnapshotContext(options?: {
@@ -81,16 +80,6 @@ export class ContextActions {
 
     captureOriginalFork(): void {
         this.harness.context.originalForkId = this.harness.activeForkId;
-    }
-
-    markForkAsDisputed(forkId: ForkId): void {
-        if (!this.harness.context.disputedForkIds) {
-            this.harness.context.disputedForkIds = [];
-        }
-
-        if (!this.harness.context.disputedForkIds.includes(forkId)) {
-            this.harness.context.disputedForkIds.push(forkId);
-        }
     }
 
     private async computeExpectedWithdrawalsDelta(

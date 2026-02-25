@@ -61,7 +61,7 @@ describe("E2E: State Snapshots", function () {
         await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
         await h.assert.snapshot.withdrawalDeltaMatchesExpected();
 
-        const honest = h.context.honestPeerIndices || [];
+        const honest = h.getHonestPeers().map((p) => p.index);
         await h.event.waitForEventCounts(
             "onStateSnapshotUpdated",
             honest.map((peerId) => ({ peerId, expectedCount: 1 })),
@@ -91,7 +91,7 @@ describe("E2E: State Snapshots", function () {
         await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
         await h.assert.snapshot.withdrawalDeltaMatchesExpected();
 
-        const honest = h.context.honestPeerIndices || [];
+        const honest = h.getHonestPeers().map((p) => p.index);
         await h.event.waitForEventCounts(
             "onStateSnapshotUpdated",
             honest.map((peerId) => ({ peerId, expectedCount: 1 })),
