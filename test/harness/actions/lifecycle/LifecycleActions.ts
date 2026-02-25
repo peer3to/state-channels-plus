@@ -161,8 +161,6 @@ export class LifecycleActions {
             );
         }
 
-        this.harness.activeForkId = peerForkIds[0] as ForkId;
-
         // State machine is already initialized when onSetState fires
         // (setState is called before forkId is set and before onSetState is called)
         if (!this.harness.activeForkId) {

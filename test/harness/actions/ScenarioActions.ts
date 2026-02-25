@@ -112,9 +112,7 @@ export class ScenarioActions {
         const { numPeers, numBlocks, byzantinePeer } = options;
 
         await this.harness.lifecycle.start(numPeers, numBlocks);
-        await this.harness.byzantine.submitDoubleSignBlock(byzantinePeer, {
-            forkId: this.harness.activeForkId!
-        });
+        await this.harness.byzantine.submitDoubleSignBlock(byzantinePeer);
         await this.harness.assert.dispute.committedWait();
         this.harness.event.resetEventSpies();
     }
@@ -179,7 +177,6 @@ export class ScenarioActions {
         });
 
         this.harness.context.originalForkId = originalForkId;
-        this.harness.activeForkId = result.newForkId;
 
         this.logger.debug(
             `Scenario disputeAndResolve completed: maliciousPeer=${options.maliciousPeerIndex}, originalFork=${originalForkId}, newFork=${result.newForkId}`

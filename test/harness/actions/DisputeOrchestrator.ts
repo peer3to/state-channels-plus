@@ -39,7 +39,7 @@ export class DisputeOrchestrator {
         await this.harness.byzantine.submitInvalidStateTransitionBlock(
             maliciousPeerIndex,
             {
-                forkId: options?.forkId || this.harness.activeForkId!
+                forkId: options?.forkId
             }
         );
     }

@@ -76,7 +76,7 @@ describe("E2E: State Transitions", function () {
             });
 
             h.context.originalForkId = originalForkId;
-            h.activeForkId = result.newForkId;
+            // h.activeForkId = result.newForkId;
 
             await h.transition.submitNext((c) => c.add(1), {
                 waitForTurn: true,

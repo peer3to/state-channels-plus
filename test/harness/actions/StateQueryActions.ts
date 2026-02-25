@@ -215,4 +215,42 @@ export class StateQueryActions {
             evmAddress
         );
     }
+
+    async getDisputeHashes(options?: {
+        peerIndices?: number[];
+        disputedForkId?: ForkId;
+    }): Promise<Hash[]> {
+        const { peerIndices, disputedForkId } = options || {};
+        const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
+
+        const forkId = disputedForkId ?? this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error(
+                "No fork ID available to query dispute commitments"
+            );
+        }
+
+        const disputeHashes = new Set<Hash>();
+
+        const disputeWindowsByPeer = await Promise.all(
+            peers.map((peer) => {
+                const localDiamond = this.harness.getLocalDiamond(peer.index);
+                return localDiamond.getDisputeWindows(this.harness.channelId, [
+                    forkId
+                ]);
+            })
+        );
+
+        for (const disputeWindows of disputeWindowsByPeer) {
+            const disputeWindow = disputeWindows[0];
+            if (!disputeWindow) continue;
+
+            for (const disputeCommitment of disputeWindow.evidence
+                .disputeCommitments) {
+                disputeHashes.add(disputeCommitment as Hash);
+            }
+        }
+
+        return Array.from(disputeHashes);
+    }
 }

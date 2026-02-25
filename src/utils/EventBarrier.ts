@@ -3,7 +3,7 @@ import { Logger } from "./logging";
 export type EventBarrierOptions = {
     timeoutMs?: number;
     timeoutMessage?: string;
-    timeoutMessageFn?: () => string;
+    timeoutMessageFn?: () => Promise<string> | string;
     timeoutMeta?: object;
     timeoutMetaFn?: () => object;
     label?: string;
@@ -49,12 +49,12 @@ export class EventBarrier {
         }
 
         return new Promise<void>((resolve, reject) => {
-            const timeoutId = setTimeout(() => {
+            const timeoutId = setTimeout(async () => {
                 this.waiters.delete(waiter);
                 const errorMessage =
                     "EventBarrier timeout: " +
                     (timeoutMessageFn
-                        ? timeoutMessageFn()
+                        ? await timeoutMessageFn()
                         : timeoutMessage ||
                           `Condition not met within ${timeoutMs}ms`);
 

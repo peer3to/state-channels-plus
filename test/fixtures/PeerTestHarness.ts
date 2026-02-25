@@ -72,7 +72,6 @@ export class PeerTestHarness<
     private sharedDeployTx!: unknown;
     public channelId!: ChannelId;
     public options!: Required<HarnessOptions<TFactories>>;
-    public activeForkId?: ForkId;
     private harnessConfig!: Partial<Config>;
     public logger: Logger;
     public syncCoordinator!: SyncCoordinator;
@@ -105,6 +104,34 @@ export class PeerTestHarness<
     public readonly rpc!: RPCActions;
     public readonly contextApi!: ContextActions;
     public readonly scenario!: ScenarioActions;
+
+    public get activeForkId(): ForkId | undefined {
+        const honestPeers = this.getHonestPeers();
+
+        if (honestPeers.length === 0) {
+            throw new Error(
+                "No honest peers available to determine active fork ID"
+            );
+        }
+
+        const [firstHonestPeer, ...remainingHonestPeers] = honestPeers;
+        const activeForkId = firstHonestPeer.stateManager.forkId;
+
+        for (const peer of remainingHonestPeers) {
+            if (peer.stateManager.forkId !== activeForkId) {
+                throw new Error(
+                    `Honest peers have inconsistent fork IDs: ${honestPeers
+                        .map(
+                            (honestPeer) =>
+                                `${honestPeer.index}:${honestPeer.stateManager.forkId}`
+                        )
+                        .join(", ")}`
+                );
+            }
+        }
+
+        return activeForkId;
+    }
 
     constructor() {
         // toJSON can't serialize BigInts, so we need to override it
@@ -622,8 +649,19 @@ export class PeerTestHarness<
         ]);
         return this.peers.filter((peer) => !excludeSet.has(peer.index));
     }
+    getFilteredOrHonestPeers(peerIndices?: number[]): TestPeer<TFactories>[] {
+        if (peerIndices) {
+            return this.getFilteredPeers(peerIndices);
+        }
+        return this.getHonestPeers();
+    }
     getConfig(): Partial<Config> {
         return this.harnessConfig;
+    }
+
+    getLocalDiamond(peerIndex: number) {
+        const peer = this.getPeer(peerIndex);
+        return peer.stateManager.diamondStateMachine.localDiamondContract;
     }
 }
 

@@ -1,11 +1,11 @@
-import { ForkId } from "@/types";
+import { ForkId, Hash } from "@/types";
 import {
     DisputeFraudProofType,
     FraudProofType,
     toSolidityDisputeFraudProofType,
     toSolidityFraudProofType
 } from "@/types/sol-enums";
-import { DetachedPromises } from "@/utils";
+import { Codec, DetachedPromises, hash, Type } from "@/utils";
 import PeerTestHarness from "@test/fixtures/PeerTestHarness";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
@@ -148,5 +148,70 @@ export class AssertStorageActions {
                     `but was ${timeout.participant}`
             );
         }
+    }
+
+    async storedDisputeConfirmations(options?: {
+        peerIndices?: number[];
+        disputeHashes?: Hash[];
+        forkId?: ForkId;
+    }): Promise<void> {
+        const {
+            peerIndices,
+            disputeHashes = await this.harness.query.getDisputeHashes({
+                peerIndices,
+                disputedForkId: options?.forkId
+            })
+        } = options || {};
+
+        if (!disputeHashes || disputeHashes.length === 0) {
+            throw new Error(
+                "No dispute hash provided and no dispute available to derive hash"
+            );
+        }
+        const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
+        for (const peer of peers) {
+            const storage = this.harness.query.getPeerStorage(peer.index);
+            for (const disputeHash of disputeHashes) {
+                const disputeConfirmation =
+                    storage.disputes.getDisputeConfirmation(disputeHash);
+                if (!disputeConfirmation) {
+                    const existingConfirmationHashes = Array.from(
+                        (storage.disputes as any).disputes.keys()
+                    );
+                    throw new Error(
+                        `No dispute confirmation found for hash ${disputeHash} on peer ${peer.index}, existing confirmations: ${JSON.stringify(existingConfirmationHashes)}`
+                    );
+                }
+            }
+        }
+    }
+    async storedDisputeConfirmationsWait(options?: {
+        peerIndices?: number[];
+        disputeHashes?: Hash[];
+        forkId?: ForkId;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const condition = async () => {
+            try {
+                await this.storedDisputeConfirmations(options);
+                return true;
+            } catch (error) {
+                return false;
+            }
+        };
+
+        const promise = this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs: options?.timeoutMs,
+            timeoutMessageFn: async () => {
+                let errorMsg = `Dispute confirmations were not stored on all peers within ${options?.timeoutMs ?? 5000}ms`;
+                try {
+                    await this.storedDisputeConfirmations(options);
+                } catch (error) {
+                    errorMsg += ` - ${error instanceof Error ? error.message : String(error)}`;
+                }
+                return errorMsg;
+            }
+        });
+        return promise;
     }
 }

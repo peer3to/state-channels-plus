@@ -113,7 +113,6 @@ export class AssertSyncActions {
                 throw new Error(
                     `Expected all peers to move to fork ${expectedForkId}, but found: ${JSON.stringify(peerForks)}`
                 );
-            this.harness.activeForkId = expectedForkId;
             return;
         } else {
             // All peers have moved to same new fork
@@ -123,7 +122,6 @@ export class AssertSyncActions {
                 throw new Error(
                     `Expected all peers to move to the same new fork, but found: ${JSON.stringify(peerForks)}`
                 );
-            this.harness.activeForkId = peerForks[0];
             return;
         }
     }

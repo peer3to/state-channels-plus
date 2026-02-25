@@ -1,4 +1,5 @@
 import { StateSnapshot } from "@/models";
+import { ForkId } from "@/types";
 import type StateManager from "@/stateManager";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { Logger } from "@/utils";
@@ -23,20 +24,6 @@ export class ContextActions {
 
         this.harness.context.honestPeerIndices = honest;
         this.harness.context.maliciousPeerIndices = [maliciousPeerIndex];
-    }
-
-    updateActiveFork(): void {
-        const honestIndices = this.harness.context.honestPeerIndices;
-        if (!honestIndices || honestIndices.length === 0) {
-            throw new Error(
-                "honestPeerIndices not set - call markMaliciousPeer first"
-            );
-        }
-
-        const newForkId =
-            this.harness.peers[honestIndices[0]].stateManager.forkId;
-        this.harness.context.newForkId = newForkId;
-        this.harness.activeForkId = newForkId;
     }
 
     async capturePrePostSnapshotContext(options?: {
@@ -94,6 +81,16 @@ export class ContextActions {
 
     captureOriginalFork(): void {
         this.harness.context.originalForkId = this.harness.activeForkId;
+    }
+
+    markForkAsDisputed(forkId: ForkId): void {
+        if (!this.harness.context.disputedForkIds) {
+            this.harness.context.disputedForkIds = [];
+        }
+
+        if (!this.harness.context.disputedForkIds.includes(forkId)) {
+            this.harness.context.disputedForkIds.push(forkId);
+        }
     }
 
     private async computeExpectedWithdrawalsDelta(

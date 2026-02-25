@@ -82,7 +82,6 @@ describe("E2E: Timeouts", function () {
             }
 
             await h.byzantine.postJunkCalldataOnChain(2, {
-                forkId: h.activeForkId!,
                 height: currentBlock.height + 1
             });
             await h.event.waitUntilEventOccurs("onBlockCalldataPosted");
@@ -110,7 +109,6 @@ describe("E2E: Timeouts", function () {
             }
 
             await h.byzantine.postJunkCalldataOnChain(2, {
-                forkId: h.activeForkId!,
                 height: currentBlock.height
             });
             await h.event.waitUntilEventOccurs("onBlockCalldataPosted");

@@ -16,29 +16,26 @@ PeerTestHarness.setDefaultLogLevel("error");
  */
 describe("E2E: Dispute Manager", function () {
     describe("Dispute Initiation", function () {
-        it("should create dispute for double-sign detected", async function () {
+        it.only("should create dispute for double-sign detected", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
-            await h.byzantine.submitDoubleSignBlock(1, {
-                forkId: h.activeForkId!
+            await h.byzantine.submitDoubleSignBlock(1);
+            await h.assert.dispute.initiatedAndCommitedWait();
+            await h.assert.storage.honestPeersStoredFraudProof({
+                fraudProofType: FraudProofType.BlockDoubleSign,
+                maliciousPeerIndex: 1
             });
-            await h.assert.dispute.initiatedWait({
-                peersIndices: [0, 2]
-            });
-            await h.assert.dispute.committedWait();
+            await h.assert.storage.storedDisputeConfirmationsWait();
         });
 
         it("should create dispute for invalid state transition", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
-            await h.byzantine.submitInvalidStateTransitionBlock(2, {
-                forkId: h.activeForkId!
-            });
-            await h.assert.dispute.initiatedWait({
-                peersIndices: [0, 1]
-            });
-            await h.assert.dispute.committedWait({
-                expectedCount: 2
+            await h.byzantine.submitInvalidStateTransitionBlock(2);
+            await h.assert.dispute.initiatedAndCommitedWait();
+            await h.assert.storage.honestPeersStoredFraudProof({
+                fraudProofType: FraudProofType.BlockInvalidStateTransition,
+                maliciousPeerIndex: 2
             });
         });
 
@@ -47,13 +44,8 @@ describe("E2E: Dispute Manager", function () {
             await h.lifecycle.start(3, 2);
             h.event.resetEventSpies();
             const nextPeer = await h.query.getNextPeerToWrite();
-            await h.byzantine.submitForgedInboundMessageBlock(nextPeer.index, {
-                forkId: h.activeForkId!
-            });
-            await h.assert.dispute.initiatedWait();
-            await h.assert.dispute.committedWait({
-                expectedCount: 2
-            });
+            await h.byzantine.submitForgedInboundMessageBlock(nextPeer.index);
+            await h.assert.dispute.initiatedAndCommitedWait();
             await h.assert.storage.honestPeersStoredFraudProof({
                 fraudProofType: FraudProofType.ForgedInboundMessageBlock,
                 maliciousPeerIndex: nextPeer.index
@@ -63,9 +55,7 @@ describe("E2E: Dispute Manager", function () {
         it("should handle double-sign from different peer configurations", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 3);
-            await h.byzantine.submitDoubleSignBlock(2, {
-                forkId: h.activeForkId!
-            });
+            await h.byzantine.submitDoubleSignBlock(2);
             await h.assert.dispute.initiatedAndCommitedWait();
         });
     });
@@ -108,7 +98,7 @@ describe("E2E: Dispute Manager", function () {
     });
 
     describe("Fraud Proof Detection", function () {
-        it.only("should reject dispute with incorrect auditing data commitment", async function () {
+        it("should reject dispute with incorrect auditing data commitment", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             await h.byzantine.postTamperedDisputeAuditingData(1);
@@ -214,9 +204,7 @@ describe("E2E: Dispute Manager", function () {
                 }
             });
 
-            await h.byzantine.submitInvalidStateTransitionBlock(1, {
-                forkId: h.activeForkId!
-            });
+            await h.byzantine.submitInvalidStateTransitionBlock(1);
 
             await h.event.waitForPeerDisputes(2, 2, { timeoutMs: 15000 });
             await h.assert.storage.honestPeersStoredDisputeFraudProofWait();
@@ -243,9 +231,7 @@ describe("E2E: Dispute Manager", function () {
                 peerIndices: [1]
             });
 
-            await h.byzantine.submitInvalidStateTransitionBlock(0, {
-                forkId: h.activeForkId!
-            });
+            await h.byzantine.submitInvalidStateTransitionBlock(0);
 
             await h.event.waitForPeers("onDisputeCommitted", [1, 2], 2, {
                 mode: "atLeast"
