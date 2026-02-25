@@ -1,11 +1,12 @@
 import type { ForkId, Hash } from "@/types/types";
 import { expect } from "chai";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { ZeroHash } from "ethers";
 
 export class AssertSyncActions {
     constructor(private readonly harness: PeerTestHarness) {}
 
-    async peersInSync(options?: {
+    async peersInSyncWait(options?: {
         expectedStateMachineStateHash?: Hash;
         peerIndices?: number[];
         timeout?: number;
@@ -82,34 +83,79 @@ export class AssertSyncActions {
         }
     }
 
-    async forkChanged(options: {
+    forkChanged(options: {
         originalForkId: ForkId;
-        timeoutMs?: number;
-        minHonestPeers?: number;
-    }): Promise<void> {
-        const {
-            originalForkId,
-            timeoutMs = 10000,
-            minHonestPeers = 3
-        } = options;
+        expectedForkId?: ForkId;
+        excludeForkIds?: ForkId[];
+    }) {
+        const { originalForkId, expectedForkId, excludeForkIds = [] } = options;
 
-        const { ZeroHash } = await import("ethers");
-        const forkChanged = await this.harness.waitForForkChange({
-            excludeForkIds: [originalForkId, ZeroHash],
-            timeoutMs
-        });
+        const peers = this.harness.getHonestPeers();
 
-        if (!forkChanged) {
-            const peerForks = this.harness.peers
-                .map((p) => p.stateManager.forkId)
-                .filter(
-                    (forkId) => forkId !== ZeroHash && forkId !== originalForkId
-                );
-            const peersOnNewFork = peerForks.length;
+        const excludeSet = new Set([
+            ...excludeForkIds,
+            ZeroHash,
+            originalForkId
+        ]);
+
+        const peerForks = peers
+            .map((p) => p.stateManager.forkId)
+            .filter((fid) => !excludeSet.has(fid));
+
+        if (peerForks.length != peers.length)
             throw new Error(
-                `Fork did not change within ${timeoutMs}ms. Expected at least ${minHonestPeers} peers on new fork, got ${peersOnNewFork}.`
+                `Not all peers have moved to a new fork - expected ${peers.length}, actual ${peerForks.length}`
             );
+
+        if (expectedForkId) {
+            const isGood = peerForks.every((fid) => fid === expectedForkId);
+            if (!isGood)
+                throw new Error(
+                    `Expected all peers to move to fork ${expectedForkId}, but found: ${JSON.stringify(peerForks)}`
+                );
+            this.harness.activeForkId = expectedForkId;
+            return;
+        } else {
+            // All peers have moved to same new fork
+            const uniqueForks = new Set(peerForks);
+            const isGood = uniqueForks.size === 1;
+            if (!isGood)
+                throw new Error(
+                    `Expected all peers to move to the same new fork, but found: ${JSON.stringify(peerForks)}`
+                );
+            this.harness.activeForkId = peerForks[0];
+            return;
         }
+    }
+    async forkChangedWait(options: {
+        originalForkId: ForkId;
+        expectedForkId?: ForkId;
+        excludeForkIds?: ForkId[];
+        timeoutMs?: number;
+    }): Promise<void> {
+        const { timeoutMs = 5000 } = options;
+        const condition = () => {
+            try {
+                this.forkChanged(options);
+                return true;
+            } catch (error) {
+                return false;
+            }
+        };
+
+        await this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs,
+            timeoutMessage: `Fork change not detected within ${timeoutMs}ms`,
+            timeoutMessageFn: () => {
+                let errorMsg = `Fork change not detected within ${timeoutMs}ms`;
+                try {
+                    this.forkChanged(options);
+                } catch (error) {
+                    errorMsg += ` - ${error instanceof Error ? error.message : String(error)}`;
+                }
+                return errorMsg;
+            }
+        });
     }
 
     forkUnchanged(): void {
@@ -142,7 +188,7 @@ export class AssertSyncActions {
             );
         }
 
-        await this.peersInSync({ peerIndices: honestIndices });
+        await this.peersInSyncWait({ peerIndices: honestIndices });
     }
 
     async maliciousPeerExcluded(): Promise<void> {

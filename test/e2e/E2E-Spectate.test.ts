@@ -25,7 +25,7 @@ describe("E2E: Spectate Service", function () {
         // Guard functionality is better validated through integration behavior (normal flows work).
         it.skip("should NOT allow spectate RPC before handshake completes", async function () {
             const harness = TestSession.getHarness();
-            await harness.scenario.startChannel(2, 0, {
+            await harness.lifecycle.start(2, 0, {
                 autoConnect: false,
                 timeConfig: {
                     agreementTime: 10,
@@ -138,7 +138,7 @@ describe("E2E: Spectate Service", function () {
             const h = TestSession.getHarness();
             await h.scenario.spectatorJoinedAndSynced();
             await h.transition.advanceState({ count: 3 });
-            await h.assert.sync.peersInSync({ peerIndices: [0, 1, 2, 3] });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2, 3] });
             await h.assert.sync.participantCount({
                 expectedCount: 3,
                 peerIndex: 3
@@ -150,7 +150,7 @@ describe("E2E: Spectate Service", function () {
     describe("Fork Traversal Spectating", function () {
         it("should spectate successfully even when it must traverse forks (dispute -> reduced fork)", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.startChannel(5, 0, {
+            await h.lifecycle.start(5, 0, {
                 timeConfig: {
                     p2pTime: 30,
                     agreementTime: 2,
@@ -159,7 +159,7 @@ describe("E2E: Spectate Service", function () {
                 }
             });
             await h.transition.advanceState({ count: 5 });
-            await h.assert.sync.peersInSync();
+            await h.assert.sync.peersInSyncWait();
 
             await h.scenario.disputeWithReduction({
                 maliciousPeerIndex: 2,
@@ -173,18 +173,26 @@ describe("E2E: Spectate Service", function () {
                 (c) => c.add(2),
                 (c) => c.add(2)
             ]);
-            await h.assert.sync.peersInSync({ peerIndices: [0, 1, 3, 4] });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 3, 4] });
 
             await h.addPeer();
             await h.event.waitUntilEventOccurs("onConnection", 5000);
-            await h.assert.sync.peersInSync({ peerIndices: [0, 1, 3, 4, 5] });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [0, 1, 3, 4, 5]
+            });
 
             await h.transition.fromHonestPeersOnly((c) => c.add(2));
-            await h.assert.sync.peersInSync({ peerIndices: [0, 1, 3, 4, 5] });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [0, 1, 3, 4, 5]
+            });
             await h.transition.fromHonestPeersOnly((c) => c.add(2));
-            await h.assert.sync.peersInSync({ peerIndices: [0, 1, 3, 4, 5] });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [0, 1, 3, 4, 5]
+            });
 
-            await h.assert.sync.peersInSync({ peerIndices: [0, 1, 3, 4, 5] });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [0, 1, 3, 4, 5]
+            });
             await h.assert.sync.participantCount({
                 expectedCount: 4,
                 peerIndex: 5
@@ -196,14 +204,14 @@ describe("E2E: Spectate Service", function () {
     describe("block height 0 spectating", function () {
         it("should spectate successfully when joining at genesis state", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.startChannel(2);
+            await h.lifecycle.start(2, 0);
             await h.addPeer();
             await h.assert.sync.participantCount({
                 expectedCount: 2,
                 peerIndex: 2
             });
             await h.transition.advanceState({ count: 1 });
-            await h.assert.sync.peersInSync({ peerIndices: [0, 1, 2] });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
             await h.assert.sync.participantCount({
                 expectedCount: 2,
                 peerIndex: 2
@@ -212,15 +220,15 @@ describe("E2E: Spectate Service", function () {
 
         it("should spectate successfully when joining at block 0", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.startChannel(2);
+            await h.lifecycle.start(2, 0);
             await h.transition.advanceState({ count: 1 });
-            await h.assert.sync.peersInSync({ peerIndices: [0, 1] });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
             await h.addPeer();
             await h.assert.sync.participantCount({
                 expectedCount: 2,
                 peerIndex: 2
             });
-            await h.assert.sync.peersInSync({ peerIndices: [0, 1, 2] });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
             await h.assert.sync.participantCount({
                 expectedCount: 2,
                 peerIndex: 2

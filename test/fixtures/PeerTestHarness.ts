@@ -40,7 +40,6 @@ import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
 import { HarnessContext } from "@test/harness";
 import { TestPeer, EventSpies, HarnessOptions } from "@test/harness/core/types";
 import { LogLevel } from "@/utils/logging/Logger";
-import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 
 // peformance monitoring
@@ -625,73 +624,6 @@ export class PeerTestHarness<
     }
     getConfig(): Partial<Config> {
         return this.harnessConfig;
-    }
-
-    async waitForForkChange(
-        options: {
-            expectedForkId?: ForkId;
-            excludeForkIds?: ForkId[];
-            peerIndices?: number[];
-            timeoutMs?: number;
-        } = {}
-    ): Promise<boolean> {
-        const {
-            expectedForkId,
-            excludeForkIds = [],
-            peerIndices,
-            timeoutMs = 10000
-        } = options;
-
-        const peersToCheck = peerIndices
-            ? peerIndices.map((i) => this.peers[i])
-            : this.peers;
-
-        const { ZeroHash } = await import("ethers");
-        const excludeSet = new Set([...excludeForkIds, ZeroHash]);
-
-        const condition = () => {
-            const peerForks = peersToCheck
-                .map((p) => p.stateManager.forkId)
-                .filter((fid) => !excludeSet.has(fid));
-
-            if (peerForks.length === 0) return false;
-
-            if (expectedForkId) {
-                const isGood = peerForks.every((fid) => fid === expectedForkId);
-                if (isGood) this.activeForkId = expectedForkId;
-                return isGood;
-            } else {
-                // All peers have moved to same new fork
-                const uniqueForks = new Set(peerForks);
-                const isGood =
-                    uniqueForks.size === 1 &&
-                    peerForks.length === peersToCheck.length;
-                if (isGood) this.activeForkId = peerForks[0];
-                return isGood;
-            }
-        };
-
-        // Check immediately
-        if (condition()) return true;
-
-        // Use event barrier (fires on state changes)
-        try {
-            await this.eventCountsBarrier.waitFor(condition, {
-                timeoutMs,
-                timeoutMessage: `Fork change not detected within ${timeoutMs}ms`
-            });
-            return true;
-        } catch (error) {
-            const barrierError = error as EventBarrierCapturedError;
-            this.logger.error("waitForForkChange waitFor failed", {
-                error,
-                capturedBarrierStack: barrierError.capturedBarrierStack,
-                expectedForkId,
-                peerIndices,
-                timeoutMs
-            });
-            return false;
-        }
     }
 }
 

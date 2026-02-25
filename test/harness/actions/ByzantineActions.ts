@@ -17,6 +17,7 @@ import {
     DisputeTampering,
     DisputeTamper
 } from "@test/harness/actions/DisputeTamperingActions";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 export class ByzantineActions {
     constructor(
@@ -38,6 +39,9 @@ export class ByzantineActions {
         originalBlock: Block;
     }> {
         const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
         this.logger.debug(
@@ -116,6 +120,9 @@ export class ByzantineActions {
         }
     ): Promise<Block> {
         const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
         this.logger.debug(
@@ -202,6 +209,9 @@ export class ByzantineActions {
         }
     ): Promise<Block> {
         const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
         const nextBlockHeight =
@@ -304,6 +314,10 @@ export class ByzantineActions {
             { forkId }
         );
 
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
+
         peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
             .onBlockConfirmation(forgedBlock.blockConfirmationStruct)
             .broadcast();
@@ -323,6 +337,9 @@ export class ByzantineActions {
         }
     ): Promise<BlockStruct> {
         const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
         const forkId = options.forkId || this.harness.activeForkId!;
         const height = options.height;
 
@@ -402,7 +419,9 @@ export class ByzantineActions {
         }
 
         const maliciousPeer = await this.harness.query.getNextPeerToWrite();
-        this.harness.context.lastMaliciousPeerIndex = maliciousPeer.index;
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: maliciousPeer.index
+        });
         await this.submitInvalidStateTransitionBlock(maliciousPeer.index, {
             forkId
         });
@@ -415,7 +434,9 @@ export class ByzantineActions {
         }
 
         const maliciousPeer = await this.harness.query.getNextPeerToWrite();
-        this.harness.context.lastMaliciousPeerIndex = maliciousPeer.index;
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: maliciousPeer.index
+        });
         await this.submitForgedInboundMessageBlock(maliciousPeer.index, {
             forkId
         });
@@ -424,7 +445,7 @@ export class ByzantineActions {
     async postTamperedDisputeWith(
         peerIndex: number,
         tamperFn: DisputeTamper
-    ): Promise<void> {
+    ): Promise<DisputeStruct> {
         const forkId = this.harness.activeForkId;
         if (!forkId) {
             throw new Error("No active fork ID - channel must be opened first");
@@ -435,11 +456,16 @@ export class ByzantineActions {
             tamperFn,
             forkId
         );
-        this.harness.context.lastTamperedDispute = dispute;
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
+        return dispute;
     }
 
-    async postTamperedDisputeAuditingData(peerIndex: number): Promise<void> {
-        await this.postTamperedDisputeWith(
+    async postTamperedDisputeAuditingData(
+        peerIndex: number
+    ): Promise<DisputeStruct> {
+        return this.postTamperedDisputeWith(
             peerIndex,
             DisputeTampering.tamperAuditingDataHash
         );
@@ -449,7 +475,7 @@ export class ByzantineActions {
         submitterIndex: number;
         wrongParticipantIndex: number;
         blockHeight?: number;
-    }): Promise<void> {
+    }): Promise<DisputeStruct> {
         const {
             submitterIndex,
             wrongParticipantIndex,
@@ -465,25 +491,31 @@ export class ByzantineActions {
             wrongPeer.address,
             blockHeight
         );
-        await this.postTamperedDisputeWith(submitterIndex, tamperFn);
+        return this.postTamperedDisputeWith(submitterIndex, tamperFn);
     }
 
-    async tamperedDisputePartialAuditing(peerIndex: number): Promise<void> {
-        await this.postTamperedDisputeWith(
+    async tamperedDisputePartialAuditing(
+        peerIndex: number
+    ): Promise<DisputeStruct> {
+        return this.postTamperedDisputeWith(
             peerIndex,
             DisputeTampering.tamperPartialAuditing
         );
     }
 
-    async tamperedDisputeDoubleFault(peerIndex: number): Promise<void> {
-        await this.postTamperedDisputeWith(
+    async tamperedDisputeDoubleFault(
+        peerIndex: number
+    ): Promise<DisputeStruct> {
+        return this.postTamperedDisputeWith(
             peerIndex,
             DisputeTampering.tamperDoubleFault
         );
     }
 
-    async tamperedDisputeInvalidStateProof(peerIndex: number): Promise<void> {
-        await this.postTamperedDisputeWith(
+    async tamperedDisputeInvalidStateProof(
+        peerIndex: number
+    ): Promise<DisputeStruct> {
+        return this.postTamperedDisputeWith(
             peerIndex,
             DisputeTampering.tamperInvalidStateProof
         );

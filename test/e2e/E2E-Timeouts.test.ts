@@ -16,25 +16,25 @@ describe("E2E: Timeouts", function () {
         it("should handle timeout when next peer to write does not author a block", async function () {
             this.timeout(90000);
             const h = TestSession.getHarness();
-            await h.scenario.timeoutSetup(3);
+            await h.lifecycle.timeoutSetup(3);
             await h.transition.advanceState({ count: 2 }); // Peers 0 and 1 take their turn
 
             h.event.resetEventSpies();
-            await h.assert.dispute.disputeInitiatedByPeers({
+            await h.assert.dispute.initiatedWait({
                 peersIndices: [0, 1],
                 timeoutMs: 10000
             });
-            await h.assert.dispute.didNotInitiateDispute({ peers: [2] });
+            await h.assert.dispute.didNotInitiate({ peers: [2] });
             h.assert.calldata.noCalldataPosted();
         });
 
         it("should demonstrate timeout creates disputes", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.timeoutSetup(3);
+            await h.lifecycle.timeoutSetup(3);
             await h.transition.advanceState({ count: 2 }); // First 2 peers take turn, 3rd doesn't
 
             h.event.resetEventSpies();
-            await h.assert.dispute.disputeInitiatedByPeers({
+            await h.assert.dispute.initiatedWait({
                 peersIndices: [0, 1],
                 timeoutMs: 10000
             });
@@ -44,7 +44,7 @@ describe("E2E: Timeouts", function () {
     describe("Network Disconnection Timeouts", function () {
         it("should handle timeout when non-author peer disconnects (calldata posting)", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.timeoutSetup(3);
+            await h.lifecycle.timeoutSetup(3);
             await h.transition.advanceState({ rounds: 1 }); // All 3 peers write once
             h.event.resetEventSpies();
             await h.network.disconnectPeer(2);
@@ -54,12 +54,12 @@ describe("E2E: Timeouts", function () {
 
         it("should handle timeout when author peer disconnects", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.timeoutSetup(3);
+            await h.lifecycle.timeoutSetup(3);
             await h.transition.advanceState({ rounds: 1 }); // Heights 0,1,2
             await h.transition.advanceState({ count: 1 }); // Height 3
             h.event.resetEventSpies();
             await h.network.disconnectPeer(1);
-            await h.assert.dispute.disputeInitiatedByPeers({
+            await h.assert.dispute.initiatedWait({
                 peersIndices: [0, 2],
                 timeoutMs: 10000
             });
@@ -69,7 +69,7 @@ describe("E2E: Timeouts", function () {
     describe("Forced Timeout (Junk Calldata)", function () {
         it("should create forced timeout when peer posts junk calldata that is rejected", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.timeoutSetup(3);
+            await h.lifecycle.timeoutSetup(3);
             await h.transition.advanceState({ count: 2 }); // Peers 0 and 1 write
             h.event.resetEventSpies();
 
@@ -86,17 +86,17 @@ describe("E2E: Timeouts", function () {
                 height: currentBlock.height + 1
             });
             await h.event.waitUntilEventOccurs("onBlockCalldataPosted");
-            await h.assert.dispute.disputeInitiatedByPeers({
+            await h.assert.dispute.initiatedWait({
                 peersIndices: [0, 1],
                 timeoutMs: 10000
             });
-            await h.assert.dispute.disputeCommittedByPeers();
-            h.assert.dispute.timeoutIsForced({ participant: 2 });
+            await h.assert.dispute.committedWait();
+            h.assert.storage.storedTimeout({ participant: 2 });
         });
 
         it("should handle timeout when previous peer posted junk calldata and next peer doesn't author block", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.timeoutSetup(3);
+            await h.lifecycle.timeoutSetup(3);
             await h.transition.advanceState({ count: 2 }); // Peers 0 and 1 write
             await h.transition.peerWrite({ peer: 2 }); // Peer 2 writes valid block
             h.event.resetEventSpies();
@@ -115,7 +115,7 @@ describe("E2E: Timeouts", function () {
             });
             await h.event.waitUntilEventOccurs("onBlockCalldataPosted");
             h.event.resetEventSpies();
-            await h.assert.dispute.disputeInitiatedByPeers({
+            await h.assert.dispute.initiatedWait({
                 peersIndices: [1, 2],
                 timeoutMs: 10000
             });
@@ -128,7 +128,7 @@ describe("E2E: Timeouts", function () {
             await h.lifecycle.start(3, 2);
             await h.network.disconnectPeer(2);
             await h.transition.advanceState({ count: 1 });
-            await h.assert.sync.peersInSync({ peerIndices: [0, 1] });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
             h.assert.dispute.noDisputes();
         });
     });

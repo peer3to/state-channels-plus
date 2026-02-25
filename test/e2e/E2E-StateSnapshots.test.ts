@@ -27,7 +27,7 @@ describe("E2E: State Snapshots", function () {
         await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
         await h.transition.advanceState({ count: 1 });
 
-        await h.assert.sync.peersInSync();
+        await h.assert.sync.peersInSyncWait();
         h.event.resetEventSpies();
         await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
         await h.contextApi.capturePrePostSnapshotContext();
@@ -76,7 +76,7 @@ describe("E2E: State Snapshots", function () {
     it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - multicall", async function () {
         const h = TestSession.getHarness();
 
-        await h.scenario.fourPeerDisputeResolution({
+        await h.scenario.fourPeersDisputeResolution({
             timeConfig: forkTimeConfig
         });
         await h.transition.fromHonestPeersOnly((c) => c.add(1));

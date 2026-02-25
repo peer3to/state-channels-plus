@@ -17,7 +17,7 @@ describe("E2E: State Transitions", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3);
             await h.transition.advanceState({ count: 10 });
-            await h.assert.sync.peersInSync();
+            await h.assert.sync.peersInSyncWait();
             await h.assert.sync.blockHeight({ expectedHeight: 9 }); // 10 blocks after genesis = height 9
         });
 
@@ -25,7 +25,7 @@ describe("E2E: State Transitions", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4);
             await h.transition.advanceState({ rounds: 1 }); // All 4 peers write once
-            await h.assert.sync.peersInSync();
+            await h.assert.sync.peersInSyncWait();
             await h.assert.sync.blockHeight({ expectedHeight: 3 }); // 4 transitions = height 3
         });
 
@@ -33,7 +33,7 @@ describe("E2E: State Transitions", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3);
             await h.transition.advanceState({ rounds: 3 }); // 3 rounds = 9 transitions
-            await h.assert.sync.peersInSync();
+            await h.assert.sync.peersInSyncWait();
             await h.assert.sync.blockHeight({ expectedHeight: 8 });
         });
     });
@@ -51,7 +51,7 @@ describe("E2E: State Transitions", function () {
                     evidenceTime: 3
                 }
             });
-            await h.assert.sync.peersInSync();
+            await h.assert.sync.peersInSyncWait();
 
             const maliciousPeerIndex = 2;
             const honestPeerIndices = [0, 1, 3];
@@ -94,7 +94,7 @@ describe("E2E: State Transitions", function () {
                 waitForSync: true
             });
 
-            await h.assert.sync.peersInSync({
+            await h.assert.sync.peersInSyncWait({
                 peerIndices: honestPeerIndices
             });
 

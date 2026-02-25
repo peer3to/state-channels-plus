@@ -37,6 +37,17 @@ export class LifecycleActions {
         return forkId;
     }
 
+    async timeoutSetup(peerCount: number = 3, transitionCount: number = 0) {
+        await this.start(peerCount, transitionCount, {
+            timeConfig: {
+                p2pTime: 1,
+                agreementTime: 1,
+                chainFallbackTime: 2,
+                evidenceTime: 3
+            }
+        });
+    }
+
     /**
      * Open a channel with all current peers
      */
@@ -131,18 +142,12 @@ export class LifecycleActions {
             expectedCount: 1
         }));
 
-        const stateSetOnAllPeers = await this.harness.event.waitForEventCounts(
+        await this.harness.event.waitForEventCounts(
             "onSetState",
             eventCounts,
             2000,
             { mode: "atLeast" }
         );
-
-        if (!stateSetOnAllPeers) {
-            throw new Error(
-                "Failed to get fork ID on all peers after waiting 2000ms."
-            );
-        }
 
         // Verify all peers have the same valid fork ID
         const peerForkIds = getPeerForkIds();

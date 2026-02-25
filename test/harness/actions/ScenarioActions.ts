@@ -9,25 +9,6 @@ export class ScenarioActions {
         private logger: Logger
     ) {}
 
-    async timeoutSetup(peerCount: number = 3, transitionCount: number = 0) {
-        await this.harness.lifecycle.start(peerCount, transitionCount, {
-            timeConfig: {
-                p2pTime: 1,
-                agreementTime: 1,
-                chainFallbackTime: 2,
-                evidenceTime: 3
-            }
-        });
-    }
-
-    async startChannel(
-        peerCount: number,
-        transitionCount: number = 0,
-        options?: HarnessOptions
-    ) {
-        await this.harness.lifecycle.start(peerCount, transitionCount, options);
-    }
-
     async fourPeersDisputeResolution(options?: {
         timeConfig?: {
             p2pTime?: number;
@@ -36,24 +17,12 @@ export class ScenarioActions {
             evidenceTime?: number;
         };
     }) {
-        await this.startChannel(4, 2, options);
-        await this.harness.assert.sync.peersInSync();
+        await this.harness.lifecycle.start(4, 2, options);
+        await this.harness.assert.sync.peersInSyncWait();
         await this.disputeWithReduction({ maliciousPeerIndex: 2 });
-        await this.harness.assert.sync.forkChanged({
-            originalForkId: this.harness.context.originalForkId!,
-            minHonestPeers: 3
+        await this.harness.assert.sync.forkChangedWait({
+            originalForkId: this.harness.context.originalForkId!
         });
-    }
-
-    async fourPeerDisputeResolution(options?: {
-        timeConfig?: {
-            p2pTime?: number;
-            agreementTime?: number;
-            chainFallbackTime?: number;
-            evidenceTime?: number;
-        };
-    }) {
-        await this.fourPeersDisputeResolution(options);
     }
 
     async fourPeersDisputeResolutionAndSnapshotUpdate(options?: {
@@ -74,14 +43,14 @@ export class ScenarioActions {
     }
 
     async preDisputeSetup(peerCount: number = 3) {
-        await this.timeoutSetup(peerCount);
-        await this.harness.assert.sync.peersInSync();
+        await this.harness.lifecycle.timeoutSetup(peerCount, 2);
+        await this.harness.assert.sync.peersInSyncWait();
         this.harness.event.resetEventSpies();
         this.harness.contextApi.captureOriginalFork();
     }
 
     async peerWithUnbroadcastedBlock(peerIndex: number = 1) {
-        await this.harness.assert.sync.peersInSync();
+        await this.harness.assert.sync.peersInSyncWait();
         this.harness.event.resetEventSpies();
         this.harness.byzantine.stubBroadcast(peerIndex);
         await this.harness.transition.advanceState({ waitForSync: false });
@@ -91,19 +60,19 @@ export class ScenarioActions {
         initialTransitions: number = 3,
         options?: HarnessOptions
     ) {
-        await this.startChannel(3, 0, options);
+        await this.harness.lifecycle.start(3, 0, options);
         await this.harness.assert.sync.participantCount({ expectedCount: 3 });
         await this.harness.transition.advanceState({
             count: initialTransitions
         });
         await this.harness.addPeer();
-        await this.harness.assert.sync.peersInSync({
+        await this.harness.assert.sync.peersInSyncWait({
             peerIndices: [0, 1, 2, 3]
         });
     }
 
     async readyForRedispute() {
-        await this.startChannel(4, 0, {
+        await this.harness.lifecycle.start(4, 0, {
             timeConfig: {
                 p2pTime: 2,
                 agreementTime: 1,
@@ -114,12 +83,14 @@ export class ScenarioActions {
 
         await this.harness.byzantine.disconnect(3);
         await this.harness.transition.advanceState({ txFn: (c) => c.add(1) });
-        await this.harness.assert.sync.peersInSync({ peerIndices: [0, 1, 2] });
+        await this.harness.assert.sync.peersInSyncWait({
+            peerIndices: [0, 1, 2]
+        });
         this.harness.event.resetEventSpies();
     }
 
     async peer2Isolated() {
-        await this.startChannel(3, 0, {
+        await this.harness.lifecycle.start(3, 0, {
             timeConfig: {
                 p2pTime: 1,
                 agreementTime: 1,
@@ -140,11 +111,11 @@ export class ScenarioActions {
     }) {
         const { numPeers, numBlocks, byzantinePeer } = options;
 
-        await this.startChannel(numPeers, numBlocks);
+        await this.harness.lifecycle.start(numPeers, numBlocks);
         await this.harness.byzantine.submitDoubleSignBlock(byzantinePeer, {
             forkId: this.harness.activeForkId!
         });
-        await this.harness.assert.dispute.disputeCommittedByPeers();
+        await this.harness.assert.dispute.committedWait();
         this.harness.event.resetEventSpies();
     }
 

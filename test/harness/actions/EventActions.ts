@@ -1,7 +1,6 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { EventSpies } from "../core/types";
 import { Logger } from "@/utils";
-import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 
 /**
  * EventActions handles all event spy management and queries.
@@ -21,7 +20,7 @@ export class EventActions {
      * Get the number of times an event was called for a peer
      */
     getEventCallCount(peerIndex: number, eventName: keyof EventSpies): number {
-        const peer = this.harness.peers[peerIndex];
+        const peer = this.harness.getPeer(peerIndex);
         if (!peer) throw new Error(`Peer ${peerIndex} not found`);
         const spy = peer.eventSpies[eventName];
         const count = spy ? spy.callCount : 0;
@@ -50,24 +49,24 @@ export class EventActions {
             return true;
         };
 
-        try {
-            await this.harness.eventCountsBarrier.waitFor(condition, {
-                timeoutMs,
-                timeoutMessage: `${String(eventName)} counts not reached within ${timeoutMs}ms`
-            });
-            return true;
-        } catch (error) {
-            const barrierError = error as EventBarrierCapturedError;
-            this.logger.error("waitForEventCounts waitFor failed", {
-                error,
-                eventName: String(eventName),
-                expectedCounts,
-                timeoutMs,
-                mode,
-                capturedBarrierStack: barrierError.capturedBarrierStack
-            });
-            return false;
-        }
+        await this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs,
+            timeoutMessageFn: () => {
+                let actualCounts: Array<{
+                    peerId: number;
+                    actualCount: number;
+                }> = [];
+                for (const { peerId, expectedCount } of expectedCounts) {
+                    const actualCount = this.getEventCallCount(
+                        peerId,
+                        eventName
+                    );
+                    actualCounts.push({ peerId, actualCount });
+                }
+                return `${String(eventName)} counts not reached within ${timeoutMs}ms, expected: ${JSON.stringify(expectedCounts)}, actual: ${JSON.stringify(actualCounts)}`;
+            }
+        });
+        return true;
     }
 
     /**
@@ -115,18 +114,12 @@ export class EventActions {
             expectedCount: expectedCountPerPeer
         }));
 
-        const ok = await this.waitForEventCounts(
+        await this.waitForEventCounts(
             eventName,
             expectedCounts,
             options?.timeoutMs,
             { mode: options?.mode }
         );
-
-        if (!ok) {
-            throw new Error(
-                `Event ${String(eventName)} not reached for all peers: expected ${expectedCountPerPeer} per peer`
-            );
-        }
     }
 
     async waitForPeers(
@@ -140,18 +133,12 @@ export class EventActions {
             expectedCount: expectedCountPerPeer
         }));
 
-        const ok = await this.waitForEventCounts(
+        await this.waitForEventCounts(
             eventName,
             expectedCounts,
             options?.timeoutMs,
             { mode: options?.mode }
         );
-
-        if (!ok) {
-            throw new Error(
-                `Event ${String(eventName)} not reached for peers ${peerIds}: expected ${expectedCountPerPeer} per peer`
-            );
-        }
     }
 
     async waitForPeerDisputes(

@@ -6,7 +6,6 @@ import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
 import { ethers } from "@/index";
 import Block from "@/models/Block";
-import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 import { StateSnapshot } from "@/models";
 
 /**
@@ -25,11 +24,16 @@ export class StateQueryActions {
         private logger: Logger
     ) {}
 
+    public getPeerStorage(peerIndex: number) {
+        const peer = this.harness.getPeer(peerIndex);
+        return peer.stateManager.storage;
+    }
+
     /**
      * Get the latest state machine state hash for a peer - ONLY if it exists in storage
      */
     public getLatestStateMachineStateHash(peerIndex: number): Hash | null {
-        const peer = this.harness.peers[peerIndex];
+        const peer = this.harness.getPeer(peerIndex);
         const storage = peer.stateManager.storage;
         if (!peer) throw new Error(`Peer ${peerIndex} not found`);
 
@@ -184,29 +188,11 @@ export class StateQueryActions {
             return resolvedTransport!;
         }
 
-        // Use connection barrier for event-driven waiting
-        try {
-            await this.harness.connectionBarrier.waitFor(condition, {
-                timeoutMs,
-                timeoutMessage: `Transport from peer ${fromPeerIndex} to peer ${toPeerIndex} not available within ${timeoutMs}ms`
-            });
-            return resolvedTransport!;
-        } catch (error) {
-            const barrierError = error as EventBarrierCapturedError;
-            this.logger.error("waitForPeerTransport waitFor failed", {
-                error,
-                capturedBarrierStack: barrierError.capturedBarrierStack,
-                fromPeerIndex,
-                toPeerIndex,
-                timeoutMs
-            });
-            const wrappedError = new Error(
-                `Transport from peer ${fromPeerIndex} to peer ${toPeerIndex} not available within ${timeoutMs}ms`
-            ) as EventBarrierCapturedError;
-            wrappedError.capturedBarrierStack =
-                barrierError.capturedBarrierStack;
-            throw wrappedError;
-        }
+        await this.harness.connectionBarrier.waitFor(condition, {
+            timeoutMs,
+            timeoutMessage: `Transport from peer ${fromPeerIndex} to peer ${toPeerIndex} not available within ${timeoutMs}ms`
+        });
+        return resolvedTransport!;
     }
 
     /**

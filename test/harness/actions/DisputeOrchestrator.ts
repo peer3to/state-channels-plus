@@ -77,7 +77,7 @@ export class DisputeOrchestrator {
         const expectedDisputesCommittedPerPeer =
             options.expectedDisputesCommittedPerPeer ?? 1;
 
-        const disputesCommitted = await this.harness.event.waitForEventCounts(
+        await this.harness.event.waitForEventCounts(
             "onDisputeCommitted",
             honestPeerIndices.map((peerId) => ({
                 peerId,
@@ -87,27 +87,11 @@ export class DisputeOrchestrator {
             { mode: options.disputesCommittedMode ?? "atLeast" }
         );
 
-        if (!disputesCommitted) {
-            throw new Error(
-                `Disputes not committed across peers within ${String(
-                    disputesCommittedTimeoutMs
-                )}ms`
-            );
-        }
-
-        const forkSettled = await this.harness.waitForForkChange({
+        await this.harness.assert.sync.forkChangedWait({
+            originalForkId,
             excludeForkIds: [originalForkId],
-            peerIndices: honestPeerIndices,
             timeoutMs: options.forkSettleTimeoutMs ?? 10000
         });
-
-        if (!forkSettled) {
-            throw new Error(
-                `Fork did not settle within ${String(
-                    options.forkSettleTimeoutMs ?? 10000
-                )}ms`
-            );
-        }
 
         const honestPeers = honestPeerIndices.map((idx) =>
             this.harness.getPeer(idx)
